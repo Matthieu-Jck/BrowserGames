@@ -7,7 +7,8 @@
 // or the zoom's step change, its lines a constant width on screen), the power overlay (P: each grid's
 // buildings washed in its colour — its wires take the same colour in the wires view —, the
 // buildings that make or use power but hang on no wire outlined in coral), the Link tool's
-// marks (the source's reach, what a click would wire, its wires, the pillars to start from),
+// marks (the source's reach, what a click would wire, its wires, the pillars to start from, and
+// the tile of land that bars the hovered wire — D78 —, flat in plan and on its rock top in iso),
 // and the selection outline (both views: flat in plan; in iso on the rock top the building stands
 // on, as the dig marks are — owner, 2026-10-13: a turbine on the mountains showed its outline on
 // the ground below it, as if it stood somewhere else).
@@ -81,6 +82,9 @@ export class OverlaysView {
   private readonly reach = new Graphics();
   private readonly power = new Graphics();
   private readonly linkG = new Graphics();
+  /** The tile that bars the Link tool's hovered wire (D78): flat in plan, on its rock top in iso (cross-faded). */
+  private readonly blockPlan = new Graphics();
+  private readonly blockIso = new Graphics();
   private powerSig = '';
   private linkSig = '';
   private landSig = '';
@@ -105,7 +109,7 @@ export class OverlaysView {
     this.grid.tileScale.set(1 / 64);
     gridLayer.addChild(this.grid);
     landLayer.addChild(this.landGrid, this.landHeld, this.landMark);
-    overlayLayer.addChild(this.power, this.routes, this.marksPlan, this.marksIso, this.reach, this.linkG, this.sel, this.selIso);
+    overlayLayer.addChild(this.power, this.routes, this.marksPlan, this.marksIso, this.reach, this.linkG, this.blockPlan, this.blockIso, this.sel, this.selIso);
   }
 
   /**
@@ -117,7 +121,11 @@ export class OverlaysView {
     this.updateRoutes(sim);
     this.updateReach(sim, selected, ghostReach);
     this.updatePower(sim);
-    this.updateLinking(sim);
+    this.updateLinking(sim, levelAt);
+    this.blockPlan.alpha = t;
+    this.blockPlan.visible = t > 0.01;
+    this.blockIso.alpha = 1 - t;
+    this.blockIso.visible = t < 0.99;
     // Grid over the visible tiles only.
     const [x0, y0, x1, y1] = view.map((v, i) => (i < 2 ? Math.floor(v) - 1 : Math.ceil(v) + 1)) as [number, number, number, number];
     this.grid.position.set(x0, y0);
@@ -380,15 +388,24 @@ export class OverlaysView {
    * The Link tool: with a source, its reach (its footprint grown by the wire range: the rounded
    * rectangle a footprint edge-to-edge range sweeps), the buildings a click would wire
    * (turquoise) and the ones it is wired to (ink); without one, a ring on every pillar and on the
-   * Heart to start from. The hovered building is outlined in the colour of what a click would do.
+   * Heart to start from. The hovered building is outlined in the colour of what a click would do;
+   * when the land bars that wire, the tile rising above it is marked red, a cross over it.
    */
-  private updateLinking(sim: Sim): void {
+  private updateLinking(sim: Sim, levelAt: (x: number, y: number) => number): void {
     const pv = this.linking;
-    const sig = pv ? pv.sig : '';
+    const sig = pv ? `${pv.sig}:${pv.block ? `${pv.block[0]},${pv.block[1]},${levelAt(pv.block[0], pv.block[1])}` : ''}` : '';
     if (sig === this.linkSig) return;
     this.linkSig = sig;
     const g = this.linkG;
     g.clear();
+    for (const [bg, lift] of [[this.blockPlan, false], [this.blockIso, true]] as const) {
+      bg.clear();
+      if (!pv?.block) continue;
+      const [bx, by] = pv.block, d = lift ? levelAt(bx, by) * SHIFT : 0, x = bx - d, y = by - d;
+      bg.rect(x + 0.06, y + 0.06, 0.88, 0.88).fill({ color: num(C.ledRed), alpha: 0.3 }).stroke({ width: 0.1, color: num(C.ledRed), alpha: 1 });
+      bg.moveTo(x + 0.22, y + 0.22).lineTo(x + 0.78, y + 0.78).moveTo(x + 0.78, y + 0.22).lineTo(x + 0.22, y + 0.78);
+      bg.stroke({ width: 0.14, color: num(C.ledRed), alpha: 1, cap: 'round' });
+    }
     if (!pv) return;
     const rectOf = (id: number): [number, number, number, number] | null => {
       const e = sim.ents.get(id);

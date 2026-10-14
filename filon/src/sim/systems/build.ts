@@ -1,6 +1,7 @@
 // build.ts — placing and removing structures. The placement rules, in order: unlock, world
 // edge, fog, occupancy, terrain, deposit / water / vent needs, the claim's land (docs/land.md:
-// production on its parcels, nothing on a sister claim's), cost. An occupied tile is no refusal
+// production on its parcels, nothing on a sister claim's), the step a line piece faces (D77: only
+// a traction ribbon changes level, one terrace at a time), cost. An occupied tile is no refusal
 // when what stands there may be replaced (Mindustry-style): same replace group, wholly inside the
 // new footprint, not the very same building. It comes down first, fully refunded, so its refund
 // counts towards the new cost. Off the claim's land a kite flies the materials out: the building

@@ -652,7 +652,8 @@ volumes (`sorted`, NaN on the floor). An item falling into a pit shrinks to half
 
 **GhostView.** On `ghost` (tile units), `draw(pre, sim, hover, showHover)` redraws only when a
 JSON signature of the `Preview` changes. Each piece shows its plan sprite (alpha 0.72, reddened
-when refused), or a straight belt piece for ribbons. Its footprint is washed and outlined on top,
+when refused), or a straight belt piece for ribbons — the traction ribbon's for a ribbon refused at a
+step (`needs_lift`, D77): the piece that would take it. Its footprint is washed and outlined on top,
 cyan when it fits and red (`ledRed`) when it does not: the `Graphics` sits above the sprite
 container. Then come the marking box (ink when clearing, coral when marking), the demolition box
 with the doomed footprints, and a white hover outline when nothing else shows. Outside a box,
@@ -706,7 +707,10 @@ rebuilt only when its signature changes. The z-order inside `overlays` follows t
   reach as the rounded rectangle its footprint sweeps out to the range, the source outlined in
   cyan, the buildings a click would wire in turquoise, its wires' other ends in ink; without one, a
   cyan ring on every pillar and on the Heart; the hovered building outlined in the colour of the
-  click's verdict (turquoise wire, coral cut, red refused). Rebuilt on the preview's `sig`.
+  click's verdict (turquoise wire, coral cut, red refused); when the land bars the hovered wire
+  (`block`, D78), that tile washed red with a cross, flat in plan and on its rock top in iso
+  (`blockPlan` / `blockIso`, lifted by `levelAt` × `SHIFT`, cross-faded). Rebuilt on the preview's
+  `sig` and the barring tile.
 - *Selection*: a cyan footprint outline with ink corner ticks, readable in both views.
 
 **WiresView** (D25). Each wire of `sim.links` is drawn twice, once per view, above every building,

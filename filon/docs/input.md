@@ -150,7 +150,7 @@ Space (pan modifier) is hard-coded in `input.ts`, not in the table.
 | Tool | Left press | Left release | Right press | Right release |
 |---|---|---|---|---|
 | `build` | Places at `originFor` immediately (over what it replaces) → `{placed: 1}` or `{refused}` | — | Puts the tool away | — |
-| `belt` | `from` = tile | Lays the sim's plan of `beltPath(from → tile)` (`placeBelts`) → `{placed: n}`, or the plan's first refusal (none when the drag only runs over what is already there) | Drops the drag, else puts the tool away | — |
+| `belt` | `from` = tile | Lays the sim's plan of `beltPath(from → tile)` (`placeBelts`) → `{placed: n}` (with `left: {n, reason}` when the plan left tiles out: their count, the first one's reason), or the plan's first refusal (none when the drag only runs over what is already there) | Drops the drag, else puts the tool away | — |
 | `remove` | `from` = tile | Removes the box → `{removed}` | Starts a right box | Removes the box → `{removed}` |
 | `mark` | `from`, `clear = false` | `designate(box, true)` → `{marked}` | `from`, `clear = true` | `designate(box, false)` → `{cleared}` |
 | none | (Input pans or selects) | — | Starts a right box | Removes the box → `{removed}` |
@@ -172,7 +172,10 @@ Space (pan modifier) is hard-coded in `input.ts`, not in the table.
     perpendicular to it (not at the drag's first or last tile, not at its bend), a junction
     (`crossing`) is laid instead, so both lines keep flowing;
   - the tiles share one budget in path order, so a drag that runs short turns `unaffordable` from
-    the tile where it would stop.
+    the tile where it would stop;
+  - a tile facing a step its piece cannot take is left out (D77: `needs_lift` for a ribbon, `steep`
+    for a traction ribbon two terraces away, `cliff` for a conduit); the rest is laid, the toast
+    counts what was left out, and the gaps take traction ribbons.
 - **Rotation.** `rotate(dir)` flips the bend during a ribbon drag, turns a build or ribbon tool
   otherwise (remembered in `lastRot` for the next pick), and does nothing for remove and mark.
   After a drag, the ribbon tool keeps the last tile's direction.
@@ -199,8 +202,9 @@ the remove tool's `from ?? hover`), then a mark box, then build or ribbon pieces
 
 GhostView draws it, keying its redraw on `pieces`, `box`, `doomed`, `mark` and the hover
 ([render.md](render.md#10-world-views)). The tip shows the cost, the refusal and the mark count.
-`ToolResult {placed?, removed?, refused?, marked?, cleared?}` becomes toasts in the app's build
-mode: a refusal shows its `reason.*` string, and removals and marks get info toasts.
+`ToolResult {placed?, removed?, refused?, left?, marked?, cleared?}` becomes toasts in the app's build
+mode: a refusal shows its `reason.*` string, a drag laid in part how many tiles it left out and why
+(`toast.left`, D77), and removals and marks get info toasts.
 
 ## 4b. `link-tool.ts`: the « Relier » tool (D25)
 
@@ -226,7 +230,8 @@ selected.
 `ring` (its footprint and range, for the reach outline), `targets` (what a click would wire now:
 `canLink` ok — pylons farther than the source's own range included, a wire taking the longer
 reach), `linked` (its wires), `points` (no source yet: every pillar and the Heart), `hover` and its
-`verdict`. The overlays draw the ring and marks, the wires view the preview wire
+`verdict`, and `block`: when the verdict is `blocked` (D78), the first tile from the source that
+rises above the wire (`wireObstacle`), which the overlays mark. The overlays draw the ring and marks, the wires view the preview wire
 ([render.md](render.md#10-world-views)). The build bar's hint line reads `build.hint.link` (no
 source) or `build.hint.linkFrom`.
 

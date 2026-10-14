@@ -23,7 +23,7 @@ export const BUILDINGS = {
       P(4, 4, 'S', 'out'),
     ],
     // gen.kw: the built-in solar panel's peak (BAL.hearthSolarKw wins; D25). A link point of 6 wires.
-    gen: { kw: 240 }, pole: { range: 8, slots: 6 }, storageCap: 5000,
+    gen: { kw: 240 }, pole: { range: 8, slots: 6, climb: 1 }, storageCap: 5000,
   },
   beacon: {
     name: { fr: "Balise d'arpentage", en: 'Survey Beacon' },
@@ -229,15 +229,15 @@ export const BUILDINGS = {
   // ── energy ────────────────────────────────────────────────────────────────
   mast: {
     name: { fr: 'Poteau', en: 'Pole' },
-    desc: { fr: 'Porte le courant : 8 fils jusqu’à 6 tuiles. Relie-le (outil Relier, L) au Cœur, à d’autres poteaux et aux bâtiments à alimenter.', en: 'Carries power: 8 wires up to 6 tiles long. Link it (Link tool, L) to the Core, other poles and the buildings to power.' },
+    desc: { fr: 'Porte le courant : 8 fils jusqu’à 6 tuiles, qui montent ou descendent d’un gradin et passent un gradin de relief. Relie-le (outil Relier, L) au Cœur, à d’autres poteaux et aux bâtiments à alimenter.', en: 'Carries power: 8 wires up to 6 tiles long, climbing or coming down one terrace and clearing a one-terrace rise. Link it (Link tool, L) to the Core, other poles and the buildings to power.' },
     kind: 'pole', replaceGroup: 'power', category: 'energy', w: 1, h: 1, needsZone: false, onRock: true, unlock: 'start',
-    cost: [['iron_plate', 2], ['copper_wire', 1]], ports: [], pole: { range: 6, slots: 8 },
+    cost: [['iron_plate', 2], ['copper_wire', 1]], ports: [], pole: { range: 6, slots: 8, climb: 1 }, // one terrace up or down, one above the land (D78)
   },
   pylon: {
     name: { fr: 'Pylône', en: 'Pylon' },
-    desc: { fr: 'Un grand pylône de 2×2 qui porte loin : 4 fils jusqu’à 40 tuiles (60 avec Pylônes renforcés).', en: 'A big 2×2 pylon that carries far: 4 wires up to 40 tiles long (60 with Reinforced Pylons).' },
+    desc: { fr: 'Un grand pylône de 2×2 qui porte loin : 4 fils jusqu’à 40 tuiles (60 avec Pylônes renforcés), qui montent ou descendent de 3 gradins et passent 3 gradins de relief, jamais une montagne.', en: 'A big 2×2 pylon that carries far: 4 wires up to 40 tiles long (60 with Reinforced Pylons), climbing or coming down 3 terraces and clearing a 3-terrace rise, never a mountain.' },
     kind: 'pole', replaceGroup: 'power', category: 'energy', w: 2, h: 2, needsZone: false, onRock: true, unlock: 'tr4', // 2×2 and twice as tall since D75 (owner, 2026-10-14)
-    cost: [['iron_plate', 20], ['copper_wire', 10], ['ceramic', 4]], ports: [], pole: { range: 40, slots: 4, tall: true },
+    cost: [['iron_plate', 20], ['copper_wire', 10], ['ceramic', 4]], ports: [], pole: { range: 40, slots: 4, climb: 3, tall: true }, // three terraces up or down, three above the land: never over a mountain (D78)
   },
   brazier: {
     name: { fr: 'Générateur à charbon', en: 'Coal Generator' },

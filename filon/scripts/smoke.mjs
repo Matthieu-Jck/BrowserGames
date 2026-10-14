@@ -243,6 +243,41 @@ await step('build: off the claim’s land a kiln is refused, with the reason and
   assert(!(await FL(([x, y]) => window.FL.entityAt(x, y), far)), 'kiln placed off the claim’s land');
 });
 
+await step('build: a ribbon dragged over the Crown leaves its steps to traction ribbons (D77): the tip names it, the toast counts them', async () => {
+  await page.keyboard.press('Escape');
+  await FL(() => window.FL.tool('ribbon'));
+  // A free row east of the Heart whose drag meets the Crown's steps: the tiles the plan leaves out.
+  const row = await FL(() => {
+    const sim = window.FL.app.sim;
+    for (let y = 498; y <= 526; y++) {
+      const path = []; for (let x = 526; x <= 548; x++) path.push([x, y, 1]);
+      const plan = sim.planBelts('ribbon', path);
+      if (plan.some((s) => !s.ok && s.reason !== 'needs_lift')) continue;
+      const steps = plan.filter((s) => s.reason === 'needs_lift').map((s) => s.x);
+      if (steps.length >= 2) return { y, steps };
+    }
+    return null;
+  });
+  assert(row, 'no free row over the Crown');
+  await FL(([y]) => window.FL.lookAt(537, y, 1.2), [row.y]);
+  await page.waitForTimeout(300);
+  const [ax, ay] = await tileXY(526, row.y);
+  const [bx, by] = await tileXY(548, row.y);
+  await page.mouse.move(ax, ay);
+  await page.mouse.down();
+  await page.mouse.move(bx, by, { steps: 10 });
+  await page.waitForTimeout(250);
+  const tip = await page.evaluate(() => document.querySelector('#tooltip .tip-lift')?.textContent ?? null);
+  await page.screenshot({ path: shot('smoke-crown-steps.png') });
+  await page.mouse.up();
+  assert(tip && /traction|2|T/i.test(tip), `the tip does not name the traction ribbon: ${tip}`);
+  const t = (await FL(() => window.FL.toasts())).join(' | ');
+  assert(new RegExp(`${row.steps.length} (tuiles laissées|tiles left out)`).test(t), `no toast counting the steps left out: ${t}`);
+  const laid = await FL(([y, xs]) => xs.map((x) => window.FL.entityAt(x, y)), [row.y, row.steps]);
+  assert(laid.every((e) => !e), `a ribbon was laid facing a step: ${JSON.stringify(laid)}`);
+  assert((await FL(([y]) => window.FL.entityAt(526, y), [row.y]))?.def === 'ribbon', 'the rest of the drag was not laid');
+});
+
 await step('inspect: in the iso view a click on the Heart’s uplink (above its footprint) opens the inspector', async () => {
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');

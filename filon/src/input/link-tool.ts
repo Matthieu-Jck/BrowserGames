@@ -6,8 +6,9 @@
 // Esc or a right click unwinds: first the source, then the tool. It works in both views: the
 // shell resolves the building under the cursor (volumes in iso, tiles in plan) and hands its
 // id here; a left drag still pans. The preview tells the views what to draw: the source's
-// reach, the buildings a click would wire, its wires, and what a click on the hovered one does.
-import { gap2, isLinkPoint, linkable, linkPoint } from '@/sim/power/links';
+// reach, the buildings a click would wire, its wires, what a click on the hovered one does, and
+// when the land bars that wire (D78), the tile that rises above it.
+import { gap2, isLinkPoint, linkable, linkPoint, wireObstacle } from '@/sim/power/links';
 import type { LinkReason, Sim } from '@/sim/state';
 import { footprint } from '@/sim/entities';
 import type { Ent } from '@/sim/types';
@@ -38,6 +39,8 @@ export interface LinkPreview {
   /** The building under the cursor (0: none) and what a click on it would do. */
   readonly hover: number;
   readonly verdict: LinkVerdict | null;
+  /** The verdict is `blocked`: the first tile (from the source) that rises above the wire, [x, y]; else null. */
+  readonly block: readonly [number, number] | null;
   /** Changes whenever anything above does (views redraw on it). */
   readonly sig: string;
 }
@@ -119,9 +122,11 @@ export class LinkTool {
     const verdict = this.verdict(this.hover);
     const sig = `${key}:${this.hover}:${verdict}`;
     if (this.last?.sig === sig) return this.last;
+    const src = sim.ents.get(this.source), hov = sim.ents.get(this.hover);
+    const block = verdict === 'blocked' && src && hov ? wireObstacle(src, hov, (x, y) => sim.grid.level(x, y)) : null;
     this.last = {
       source: this.source, ring: this.cache.ring, targets: this.cache.targets, points: this.cache.points,
-      linked: this.source ? sim.links.of(this.source).slice() : EMPTY, hover: this.hover, verdict, sig,
+      linked: this.source ? sim.links.of(this.source).slice() : EMPTY, hover: this.hover, verdict, block, sig,
     };
     return this.last;
   }

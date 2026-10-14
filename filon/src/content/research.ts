@@ -238,8 +238,8 @@ const PATH_PLANS = {
   telemetry: plan('analytics', [], [['iron_plate', 8], ['copper_wire', 2]], {
     name: { fr: 'Télémétrie', en: 'Telemetry' },
     desc: {
-      fr: 'Les débits de ta base au HUD : ce que le Cœur gagne ou perd par minute, à côté de chaque stock.',
-      en: 'Your base’s rates in the HUD: what the Core gains or loses per minute, beside each stock.',
+      fr: 'Les débits de ta base au HUD : ce qui entre au Cœur chaque minute, à côté de chaque stock.',
+      en: 'Your base’s rates in the HUD: what comes into the Core each minute, beside each stock.',
     },
     effects: [flag('telemetry')],
   }),
@@ -326,7 +326,7 @@ export const PLAN_PATHS: readonly PlanLane[] = ['production', 'logistics', 'ener
  * The HUD, the stats screen and the hotkeys read these (src/ui/analytics.ts), never a bare string.
  */
 export const ANALYTICS = {
-  /** The Heart's Δ/min beside each stock, in the HUD. */
+  /** What comes into the Heart each minute, beside each stock in the HUD. */
   rates: 'telemetry',
   /** The Statistics screen (G) and its chip in the HUD. */
   ledger: 'statistics',

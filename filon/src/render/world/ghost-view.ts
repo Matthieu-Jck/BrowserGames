@@ -2,7 +2,8 @@
 // or the ribbon pieces a drag would lay, over a footprint tinted by validity (turquoise when
 // it fits, coral when it does not), what a placement would replace (amber, under the new
 // piece: refunded, not destroyed), the demolition box with what it would take, and a light
-// outline on the tile under the cursor. A directional routing block (router, sorters, gates:
+// outline on the tile under the cursor. A ribbon piece refused at a step (`needs_lift`, D77) is
+// drawn as the traction ribbon that would take it. A directional routing block (router, sorters, gates:
 // in from the back only) shows its flow while it is placed: a big turquoise arrow into its
 // back, small coral ones out of its three ways out — drawn from the piece's own rotation, which
 // is the ribbon's when the block is dropped onto one (`Sim.placementRot`). Redrawn only when
@@ -73,7 +74,7 @@ export class GhostView {
 
   draw(pre: Preview | null, sim: Sim, hover: [number, number] | null, showHover: boolean): void {
     this.follow();
-    const sig = JSON.stringify([pre?.pieces.map((p) => [p.def, p.x, p.y, p.rot, p.ok]), pre?.box, pre?.doomed, pre?.mark, showHover ? hover : null]);
+    const sig = JSON.stringify([pre?.pieces.map((p) => [p.def, p.x, p.y, p.rot, p.ok, p.reason]), pre?.box, pre?.doomed, pre?.mark, showHover ? hover : null]);
     if (sig === this.sig) return;
     this.sig = sig;
     for (const c of this.box.removeChildren()) c.destroy();
@@ -98,7 +99,8 @@ export class GhostView {
         g.rect(p.x, p.y, w, h).fill({ color: p.ok ? OK : BAD, alpha: 0.2 }).stroke({ width: 0.06, color: p.ok ? OK : BAD, alpha: 0.95 });
         const tint = p.ok ? 0xffffff : 0xff9a8a;
         if (isBeltDef(p.def)) {
-          const tier: BeltTier = p.def in BELT_TIERS ? (p.def as BeltTier) : 'ribbon';
+          // A ribbon facing a step it cannot take (D77): the piece that takes it, over the coral footprint.
+          const tier: BeltTier = p.reason === 'needs_lift' ? 'traction_ribbon' : p.def in BELT_TIERS ? (p.def as BeltTier) : 'ribbon';
           const tex = this.atlas.textures.get(beltKey(tier, false));
           if (!tex) continue;
           const s = new Sprite(tex);

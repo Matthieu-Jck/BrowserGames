@@ -169,7 +169,7 @@ export function completeJobs(sim: Sim): boolean {
       sim.grid.setTerrain(x, y, T.Dug);
       if (sim.grid.level(x, y) !== 0) sim.grid.setLevel(x, y, 0); // dug down to the floor (D45)
       const ore = embedded(x, y, sim.mods, sim.grid.source.embedCopper);
-      for (const o of ore) { sim.stock[o.item] = sim.stock[o.item]! + o.mu; sim.produced[o.item] = sim.produced[o.item]! + o.mu; }
+      for (const o of ore) { sim.stock[o.item] = sim.stock[o.item]! + o.mu; sim.produced[o.item] = sim.produced[o.item]! + o.mu; sim.hearthIn[o.item] = sim.hearthIn[o.item]! + o.mu; }
       sim.events.push({ k: 'dug', tile: j.tile, ore });
     } else {
       sim.grid.setTerrain(x, y, T.Filled);

@@ -250,6 +250,8 @@ export class ReservoirNode extends FNode {
   readonly kind = 'reservoir' as const;
   /** Live stock (milli-items per item). The Hearth's array is the colony's central stock. */
   stock: Float64Array;
+  /** The Hearth's node (set at each compile): what it takes in is counted (`TickCtx.hearthIn`). */
+  hearth = false;
   /** Capacity per item (mu); a single value for every item. */
   cap: number;
   /** Item offered by each output port (-1 = closed). */
@@ -394,9 +396,13 @@ export class ReservoirNode extends FNode {
     if (this.vState[item] === V_EMPTY) this.vPool[item] = this.vPool[item]! - mu;
   }
 
-  override give(_port: number, item: number, mu: number): void {
+  override give(_port: number, item: number, mu: number, ctx: TickCtx): void {
     if (this.single && this.locked < 0) this.locked = item;
-    if (!this.virtual) { this.stock[item] = this.stock[item]! + mu; return; }
+    if (!this.virtual) {
+      this.stock[item] = this.stock[item]! + mu;
+      if (this.hearth) ctx.hearthIn[item] = ctx.hearthIn[item]! + mu;
+      return;
+    }
     this.vIn[item] = this.vIn[item]! + mu;
     if (this.vState[item] === V_FULL) this.vPool[item] = this.vPool[item]! - mu;
   }

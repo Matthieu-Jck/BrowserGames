@@ -83,10 +83,10 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Collecteur de données · Relais de données | Data Collector · Data Relay | `data_collector`, `data_relay` [machine, `drill.anywhere`] | Powered makers of Survey Data, set anywhere (no deposit): 2 and 6 a minute. |
 | Laboratoire autonome | Autonomous Lab | `auto_lab` [lab] | A research lab that also makes 3 Survey Data a minute into its own store (Analytics · Data Mining). |
 | Serveur · Serveur refroidi · Supercalculateur | Server · Cooled Server · Supercomputer | `server`, `cooled_server`, `supercomputer` [server] | The claim's own compute: tokens a minute for its research while powered (2 000, 6 000, 20 000), billed before CrierBelt's (D70). |
-| Poteau | Pole | `mast` [pole] | A pillar: up to 8 wires, each up to 6 tiles long (edge to edge). A new one wires itself to the nearest pillar or Cœur in reach. |
-| Pylône | Pylon | `pylon` [pole] | A long-reach pillar, 2×2 and about three tiles tall (D75): up to 4 wires, 40 tiles long (60 with xp4). The 1×1 pylon of older saves is `pylon_1x1`, retired (refunded) |
+| Poteau | Pole | `mast` [pole] | A pillar: up to 8 wires, each up to 6 tiles long (edge to edge), climbing and clearing one terrace (D78). A new one wires itself to the nearest pillar or Cœur in reach. |
+| Pylône | Pylon | `pylon` [pole] | A long-reach pillar, 2×2 and about three tiles tall (D75): up to 4 wires, 40 tiles long (60 with xp4), climbing and clearing three terraces (D78). The 1×1 pylon of older saves is `pylon_1x1`, retired (refunded) |
 | fil · relier | wire · link | `sim.links` (`PowerLinks`), `link` / `unlink` commands | A power wire: an explicit, saved pair of buildings, one end a pillar or the Cœur, the other a pillar or anything that makes, uses or stores power (D25). Drawn hanging in the air. The « Relier » / Link tool (L) strings and cuts them. |
-| pilier | pillar | content `pole` (`mast`, `pylon`, and the Cœur) | A link point: a building that carries wires — its `range` (how far, edge to edge) and `slots` (how many). |
+| pilier | pillar | content `pole` (`mast`, `pylon`, and the Cœur) | A link point: a building that carries wires — its `range` (how far, edge to edge), `slots` (how many) and `climb` (how many terraces up, down and over, D78). |
 | réseau | grid | `Net` | The buildings joined by wires: one satisfaction for all; « hors réseau » = on no wire. |
 | Générateur à charbon | Coal Generator | `brazier` [generator] | +300 kW, burning 10 coal/min. |
 | Éolienne | Wind Turbine | `wind_flower` [wind] | +120 kW × local wind (0.7 in the cirque). |
@@ -181,6 +181,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | group | A connected component of the graph cut at reservoirs: the unit the catch-up warms up and extrapolates. | [groups.ts](../src/sim/graph/groups.ts) |
 | net (power grid) | A connected component of the wires among built, awake buildings (union-find, D25); every pillar heads one, an ordinary building joins one only through a wire. Its producers, consumers and accumulators share one satisfaction. | `Net`, `buildGrids` in [network.ts](../src/sim/power/network.ts) |
 | link point · reach · slots | A pillar or the Hearth (content `pole`) · how far a wire may go: footprint edge to footprint edge, the longer range of its two ends · how many wires a link point holds. | [links.ts](../src/sim/power/links.ts) `linkPoint`, `gap2`, `linkCheck` |
+| climb · « dénivelé » | How many levels a wire may climb or come down between its ends, and how high above the land it rides: the larger climb of its two ends (pole and Cœur 1, pylon 3, D78). A tile rising above it bars the wire (`blocked`). | [links.ts](../src/sim/power/links.ts) `wireClimb`, `wireSteep`, `wireObstacle` |
 | satisfaction *s* | Served ÷ demanded power on a grid, in ‰, floored to 25‰ steps. Machines run at speed × *s*. | [solve.ts](../src/sim/power/solve.ts), `SAT_STEP` |
 | merit order · dispatch | Renewables → fuel generators → accumulators · the ‰ of fuel capacity in use, which sets the fuel burn. | solve.ts |
 | `Mods` · flag | Research effects compiled into one table (‰ multipliers, additive integers) · a named boolean effect (`mods.flags`). | [modifiers.ts](../src/sim/research/modifiers.ts) |
