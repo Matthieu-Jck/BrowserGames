@@ -649,6 +649,29 @@ const GLYPHS: Record<Glyph, G> = {
     }
     stroke(ctx, hex);
   },
+  file: (ctx, col) => {
+    // Data file (D68): two glowing sheets, the front one dog-eared, its rows of data written as
+    // dark dashes — a page, not a cartridge (no shell, no label, no pins).
+    const back = poly([[11.5, 3], [24, 3], [27, 6], [27, 24.5], [11.5, 24.5]]);
+    fill(ctx, back, lo(col, 0.22));
+    stroke(ctx, back);
+    const E = 17.5, F = 6.5; // the fold: where the top edge stops, how deep the dog-ear goes
+    const sheet = poly([[5.5, 7], [E, 7], [E + F, 7 + F], [E + F, 29], [5.5, 29]]);
+    fill(ctx, sheet, col);
+    rim(ctx, sheet, -1.4, -1.8, lo(col, 0.26));
+    rim(ctx, sheet, 1.1, 1.3, hi(col, 0.45));
+    const ear = poly([[E, 7], [E, 7 + F], [E + F, 7 + F]]);
+    fill(ctx, ear, hi(col, 0.6));
+    stroke(ctx, ear, LINE);
+    const rows: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [
+      [[8.5, 12.5]], [[8.5, 11], [12.5, 17]], [[8.5, 15], [17, 21]], [[8.5, 10.5], [12.5, 15], [17, 21]], [[8.5, 18]],
+    ];
+    for (const [i, segs] of rows.entries()) {
+      const y = 11.5 + i * 3.6;
+      for (const [a, b] of segs) line(ctx, [[a, y], [b, y]], 1.8, lo(col, 0.62));
+    }
+    stroke(ctx, sheet);
+  },
   codex: (ctx, col) => {
     // Codex: a thick tome — dark cover, gold corners and emblem, its pages showing.
     const pages = rrect(9, 7, 18.5, 21.5, 1.2);
