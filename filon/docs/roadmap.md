@@ -15,7 +15,7 @@ Where Ocelle stands and what each remaining milestone must deliver. The mileston
 | Architecture pass | ✅ | Sim facade + `systems/`, `commands.ts` (exec / replay), `cfg.ts`, `src/app/` controllers, inspector panels, the layering test, `ARCHITECTURE.md`, `CLAUDE.md`, `docs/` |
 | **M6 The Crier** | ⏳ engine ✅, trade posts ✅ (sim, offline-exact, saved, smoke), Crier screen and orbital view in progress | see below |
 | M7 Persistence & absence | ✅ (2026-10-13) IndexedDB a/b slots + copies, checksums, gzip, migrations chain, saves re-pointed by content id (D47), one tab at a time, boot catch-up + online resync, « Pendant ton absence », export / import / start over in Settings ([persistence.md](persistence.md)) | the catch-up stays on the main thread until bases need a Worker |
-| M8 Onboarding & polish | ⏳ the tutorial ✅ (quests 0–11, quest log, guide, naming modal; [quests.md](quests.md)), generative audio ✅ ([audio.md](audio.md)) | see below |
+| M8 Onboarding & polish | ⏳ the tutorial ✅ (quests 0–10, quest log, guide, naming modal; [quests.md](quests.md)), generative audio ✅ ([audio.md](audio.md)) | see below |
 
 ## M6: the Crier (market) and "Économie visible"
 
@@ -55,7 +55,7 @@ Deviations from the plan:
 
 ## M8: onboarding and polish
 
-✅ Quests 0–11 (section 8: `content/quests.ts`, `sim/systems/quests.ts`, the quest log and the guide; a scripted run completes them in `quests.test.ts`, `FL.quests` / `FL.completeQuest`; [quests.md](quests.md)), night tint and lights, FX, the far-zoom look, the flow-heat overlay, ✅ generative audio (D30: score, ambience, cues, live volumes; [audio.md](audio.md)), Ctrl+Z (commands make undo tractable: inverse commands or a replay from a checkpoint), README for players, the full smoke run in fr-FR and en-US, a stress colony at > 30 fps.
+✅ Quests 0–10 (section 8: `content/quests.ts`, `sim/systems/quests.ts`, the quest log and the guide; a scripted run completes them in `quests.test.ts`, `FL.quests` / `FL.completeQuest`; [quests.md](quests.md)), night tint and lights, FX, the far-zoom look, the flow-heat overlay, ✅ generative audio (D30: score, ambience, cues, live volumes; [audio.md](audio.md)), Ctrl+Z (commands make undo tractable: inverse commands or a replay from a checkpoint), README for players, the full smoke run in fr-FR and en-US, a stress colony at > 30 fps.
 
 ## After v1
 

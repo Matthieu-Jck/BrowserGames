@@ -3,8 +3,9 @@
 // hidden or behind, and the difference is "time owed": the offline catch-up (sim/offline) pays it
 // with the same engine, exactly, before the player looks. Opening = the newest whole save that
 // opens (a damaged one falls back to the next), migrated, re-pointed to today's content
-// (save-remap.ts), rebuilt on its land. A save from a newer build stops everything instead: an
-// older build must never load it and then save over it.
+// (save-remap.ts), rebuilt on its land — the map version it was founded on (`mapV`, D63; absent:
+// map 1), never today's. A save from a newer build stops everything instead (a map version this
+// build does not know throws too): an older build must never load it and then save over it.
 import { SAVE_VERSION, deserialize, serialize, type SaveData } from '@/sim/serialize';
 import { remapSave, type RemapNote } from '@/sim/save-remap';
 import { catchUp } from '@/sim/offline/catchup';
@@ -32,11 +33,11 @@ export interface Opened {
   migratedFrom: number | null;
 }
 
-/** An envelope's base, rebuilt (no catch-up). */
+/** An envelope's base, rebuilt (no catch-up), on the land it was founded on. */
 export async function rebuild(env: Envelope): Promise<{ sim: Sim; note: RemapNote | null; migratedFrom: number | null }> {
   const m = migrate(await unseal(env));
   const r = remapSave(m.data);
-  const sim = deserialize(r.data, new MapGen(r.data.worldSeed, r.data.playerSeed));
+  const sim = deserialize(r.data, new MapGen(r.data.worldSeed, r.data.playerSeed, r.data.mapV ?? 1));
   return { sim, note: r.note, migratedFrom: m.from === SAVE_VERSION ? null : m.from };
 }
 

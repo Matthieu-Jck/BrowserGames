@@ -297,7 +297,7 @@ export class App {
   /**
    * Swap in another colony (a debug base and back, M7's load / import): selection and tools
    * dropped, the views rebuilt, the land repainted where it differs from the colony before (all of
-   * it on other seeds; else the chunks either one dug or filled), the statistics and pending cargo
+   * it on other seeds or another map version; else the chunks either one dug or filled), the statistics and pending cargo
    * lifts cleared (they belong to the colony before).
    */
   setSim(sim: Sim): void {
@@ -310,7 +310,10 @@ export class App {
     this.buildings.rebuild(sim);
     this.items.rebuild(sim);
     this.lights.rebuild(sim);
-    const sameLand = old.worldSeed === sim.worldSeed && old.playerSeed === sim.playerSeed;
+    // The same land: the same seeds AND the same map version (D63: a debug base on map 2 and the
+    // player's claim founded on map 1 share their seeds, not their land — the paint of one showed
+    // mountains the other does not have; owner, 2026-10-14: « la montagne n'existe pas »).
+    const sameLand = old.worldSeed === sim.worldSeed && old.playerSeed === sim.playerSeed && (old.grid.source.mapV ?? 1) === (sim.grid.source.mapV ?? 1);
     const chunks = new Set<number>();
     if (!sameLand) for (let ck = 0; ck < CHUNKS * CHUNKS; ck++) chunks.add(ck);
     else for (const g of [old.grid, sim.grid]) for (const t of [...g.terrainDiff.keys(), ...g.oreDiff.keys()]) chunks.add(((t >> 10) >> 5) * CHUNKS + ((t & 1023) >> 5)); // tile y·1024 + x → its chunk

@@ -79,7 +79,41 @@ export function postsToPads(d: Record<string, unknown>): Record<string, unknown>
   };
 }
 
-export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads };
+/**
+ * 4 → 5, the trade post without export streams (D64): its entrance takes, and it sells, every
+ * tradable item but its cargo — what it bought and holds or awaits. A post's cargo is what its
+ * orders buy, what is on its way to it, and what its container holds that its streams did not
+ * sell (its purchases); the streams go. A post's stock of a stream item stays in its store and is
+ * sold at the next lift, as before.
+ */
+export function streamsToCargo(d: Record<string, unknown>): Record<string, unknown> {
+  const trade = d.trade as { exports?: Array<[number, number[]]>; orders?: Array<{ post: number; item: number }>; inflight?: Array<{ post: number; item: number }> } | undefined;
+  if (!trade) return d;
+  const { exports = [], ...rest } = trade;
+  const cargo = new Map<number, Set<number>>();
+  const add = (post: number, it: number): void => { let s = cargo.get(post); if (!s) cargo.set(post, (s = new Set())); s.add(it); };
+  for (const o of trade.orders ?? []) add(o.post, o.item);
+  for (const s of trade.inflight ?? []) add(s.post, s.item);
+  const sells = new Map(exports.map(([post, items]) => [post, items] as const));
+  // The trade posts, by the save's own building table (7 numbers an entity: id, def, x, y, rot, cfg, builtAt).
+  const table = (d.content as { buildings?: string[] } | undefined)?.buildings ?? (BUILDING_IDS as readonly string[]);
+  const ents = (d.ents as number[] | undefined) ?? [];
+  const posts = new Set<number>();
+  for (let i = 0; i + 6 < ents.length; i += 7) {
+    const id = table[ents[i + 1]!];
+    if (id && (BUILDINGS as Record<string, { kind: string }>)[id]?.kind === 'trade') posts.add(ents[i]!);
+  }
+  for (const [id, st] of (d.stores as Array<[number, number[]]> | undefined) ?? []) {
+    if (!posts.has(id)) continue;
+    st.forEach((mu, it) => { if (mu > 0 && !(sells.get(id) ?? []).includes(it)) add(id, it); });
+  }
+  return {
+    ...d,
+    trade: { ...rest, cargo: [...cargo].sort((a, b) => a[0] - b[0]).map(([post, s]) => [post, [...s].sort((a, b) => a - b)]) },
+  };
+}
+
+export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo };
 
 export class SaveTooNew extends Error {
   constructor(readonly version: number) { super(`save version ${version} is newer than this build (${SAVE_VERSION})`); }

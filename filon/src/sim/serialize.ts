@@ -19,13 +19,19 @@ import { contentTable, remapSave, type ContentTable } from './save-remap';
 import { tileIndex } from './world/grid';
 import { packRuns } from './flow/chain';
 
-/** 2: ribbons save their cells, one item per tile (the tile-by-tile ribbons, D57); conduits their runs. */
-export const SAVE_VERSION = 4;
+/**
+ * 2: ribbons save their cells, one item per tile (the tile-by-tile ribbons, D57); conduits their
+ * runs. 3: land in parcels (D60). 4: the 5 × 5 trade post (D62). 5: a post's cargo instead of its
+ * export streams (D64).
+ */
+export const SAVE_VERSION = 5;
 
 export interface SaveData {
   v: number;
   worldSeed: number;
   playerSeed: number;
+  /** The map version the base's land was made by (D63, content `MAPS`; persist/colony.ts opens it on that land). Absent: 1, the land of every base founded before map versions. */
+  mapV?: number;
   foundingEpoch: number;
   colonyName: string;
   /** The claim's emblem (content/emblem.ts, by ids; absent: none yet). */
@@ -76,7 +82,8 @@ export interface SaveData {
   /** The Crier: the market's own (flow-dependent) state, and the colony's trade. */
   market?: MarketSave;
   trade?: {
-    exports: Array<[number, number[]]>;
+    /** Per post, its cargo (D64): the items it bought and holds or awaits, sorted. */
+    cargo: Array<[number, number[]]>;
     orders: ImportOrder[];
     nextOrderId: number;
     inflight: Shipment[];
@@ -117,6 +124,7 @@ export function serialize(sim: Sim): SaveData {
   return {
     v: SAVE_VERSION,
     worldSeed: sim.worldSeed, playerSeed: sim.playerSeed, foundingEpoch: sim.foundingEpoch, colonyName: sim.colonyName,
+    ...(sim.grid.source.mapV !== undefined ? { mapV: sim.grid.source.mapV } : {}),
     ...(sim.emblem ? { emblem: { ...sim.emblem } } : {}),
     tick: sim.tick, credits: sim.credits, hearthLevel: sim.hearthLevel, hearthId: sim.hearthId, nextId: sim.ents.nextId,
     content: contentTable(),
@@ -152,7 +160,7 @@ export function serialize(sim: Sim): SaveData {
     nextRouteId: sim.nextRouteId,
     market: sim.market.save(),
     trade: {
-      exports: [...sim.trade.exports].sort((a, b) => a[0] - b[0]).map(([id, items]) => [id, [...items]]),
+      cargo: [...sim.trade.cargo].sort((a, b) => a[0] - b[0]).map(([id, items]) => [id, [...items]]),
       orders: sim.trade.orders.map((o) => ({ ...o })),
       nextOrderId: sim.trade.nextOrderId,
       inflight: sim.trade.inflight.map((x) => ({ ...x })),
@@ -224,7 +232,7 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
   sim.prices = sim.market.prices();
   if (d.trade) {
     const t = sim.trade;
-    for (const [id, items] of d.trade.exports) t.exports.set(id, [...items]);
+    for (const [id, items] of d.trade.cargo ?? []) if (items.length) t.cargo.set(id, [...items]);
     t.orders = d.trade.orders.map((o) => ({ ...o }));
     t.nextOrderId = d.trade.nextOrderId;
     t.inflight = d.trade.inflight.map((x) => ({ ...x }));

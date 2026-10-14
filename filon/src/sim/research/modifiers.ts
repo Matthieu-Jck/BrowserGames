@@ -10,7 +10,7 @@ import type { Effect, ModTarget, PlanDef, ResearchDef } from '@/content/types';
 export type Mods = Record<ModTarget, number> & { flags: ReadonlySet<string>; slots: number };
 
 const ADDITIVE: ReadonlySet<ModTarget> = new Set<ModTarget>([
-  'landGrowth', 'pylonLink', 'dockShips', 'bridgeSpan', 'streams', 'tradeFee', 'solarNight',
+  'landGrowth', 'pylonLink', 'dockShips', 'bridgeSpan', 'orders', 'tradeFee', 'solarNight',
 ]);
 
 export function baseMods(): Mods {
@@ -19,10 +19,10 @@ export function baseMods(): Mods {
     'digSpeed', 'rubbleYield', 'embeddedOre', 'windOut', 'solarOut', 'solarNight', 'geoOut', 'accCap', 'accRate',
     'genOut', 'craftSpeed', 'tradeFee', 'deliveryDelay', 'slippage', 'landPrice', 'landRent', 'landGrowth', 'farLand',
     'remoteBeltCost', 'remoteBuildDelay', 'pylonLink', 'dockShips', 'shipCap', 'shipSpeed', 'ring3Caps',
-    'bridgeSpan', 'streams', 'excavatedSpeed', 'gustVariance', 'drifterDistance',
+    'bridgeSpan', 'orders', 'excavatedSpeed', 'gustVariance', 'drifterDistance',
   ];
   for (const t of targets) m[t] = ADDITIVE.has(t) ? 0 : 1000;
-  m.tradeFee = BAL.tradeFee[0]!;
+  m.tradeFee = BAL.tradeFee; // nothing lowers it (D64)
   m.landGrowth = BAL.land.growth;
   return { ...(m as Record<ModTarget, number>), flags: new Set<string>(), slots: 1 };
 }
@@ -60,7 +60,6 @@ export function computeMods(done: ReadonlySet<string>): Mods {
     const f = t === 'slippage' ? 1000 - bonus : 1000 + bonus;
     m[t] = Math.floor((m[t]! * f) / 1000);
   }
-  m.tradeFee = Math.max(20, m.tradeFee);
   return Object.assign(m, { flags, slots });
 }
 

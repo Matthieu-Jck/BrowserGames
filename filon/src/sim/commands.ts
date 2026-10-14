@@ -30,7 +30,6 @@ export type Command =
   | { k: 'drifter'; dock: number }
   | { k: 'route'; from: number; to: number; item: string; ships: number }
   | { k: 'unroute'; id: number }
-  | { k: 'exportItem'; post: number; slot: number; item: string | null }
   | { k: 'importOrder'; post: number; item: string; perMin: number; maxCents: number }
   | { k: 'cancelOrder'; id: number }
   | { k: 'spot'; item: string; side: 'sell' | 'buy'; n: number }
@@ -96,7 +95,6 @@ export function exec(sim: Sim, cmd: Command): boolean {
     case 'drifter': return sim.buyDrifter(cmd.dock);
     case 'route': return sim.addRoute(cmd.from, cmd.to, cmd.item, cmd.ships) > 0;
     case 'unroute': return sim.removeRoute(cmd.id);
-    case 'exportItem': return sim.setExport(cmd.post, cmd.slot, cmd.item) === null;
     case 'importOrder': return typeof sim.addImport(cmd.post, cmd.item, cmd.perMin, cmd.maxCents) === 'number';
     case 'cancelOrder': return sim.cancelImport(cmd.id);
     case 'spot': return 'cents' in sim.spotTrade(cmd.item, cmd.side, cmd.n);

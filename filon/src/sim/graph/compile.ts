@@ -652,11 +652,12 @@ export function compileGraph(inp: CompileInput): Graph {
 /** Milli-items per tick for a per-minute rate (60/min → 100). */
 export const mpt = (perMin: number): number => Math.round((perMin * 1000) / 600);
 
-/** Does a pump stand by water (on or next to a water tile)? */
+/** Does a pump stand by water (on or next to a water tile) on its own level (a tarn up on the Crown, D63, is not the floor's)? */
 function touchesWater(grid: Grid, e: Ent): boolean {
+  const lv = grid.level(e.x, e.y);
   for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
     const t = grid.terrain(e.x + dx, e.y + dy);
-    if (t === T.Shallow || t === T.Deep) return true;
+    if ((t === T.Shallow || t === T.Deep) && grid.level(e.x + dx, e.y + dy) === lv) return true;
   }
   return false;
 }
@@ -698,7 +699,9 @@ function windLocal(grid: Grid, e: Ent): number {
   const [w, h] = footprint(e.def, e.rot);
   const dx = e.x + w / 2 - CENTER, dy = e.y + h / 2 - CENTER;
   const r2 = dx * dx + dy * dy;
-  if (r2 < CIRQUE.crownOuter * CIRQUE.crownOuter) return BAL.windCirque; // sheltered inside the Crown
+  // Sheltered inside the Crown: its foot on this land's map (D63: map 1 keeps its own, 34).
+  const outer = grid.source.crownOuter ?? CIRQUE.crownOuter;
+  if (r2 < outer * outer) return BAL.windCirque;
   // Mesas (hardpan plateaus) are windy; the rest of the outside is plain.
   return grid.terrain(e.x, e.y) === T.Hardpan ? BAL.windMesa[0] : BAL.windPlain;
 }

@@ -49,7 +49,7 @@ type Kind = 'plain' | 'index' | 'refs';
 
 /** Every field of a save, and what the remap does with it. */
 export const FIELDS: { readonly [K in keyof Required<SaveData>]: Kind } = {
-  v: 'plain', worldSeed: 'plain', playerSeed: 'plain', foundingEpoch: 'plain', colonyName: 'plain', emblem: 'plain', tick: 'plain',
+  v: 'plain', worldSeed: 'plain', playerSeed: 'plain', mapV: 'plain', foundingEpoch: 'plain', colonyName: 'plain', emblem: 'plain', tick: 'plain',
   credits: 'plain', hearthLevel: 'plain', hearthId: 'plain', nextId: 'plain', content: 'plain',
   ents: 'index', portItems: 'index', stock: 'index', stores: 'index', acc: 'refs', links: 'refs',
   done: 'plain', terrainDiff: 'plain', levelDiff: 'plain', oreDiff: 'index', land: 'plain', explored: 'plain',
@@ -60,7 +60,7 @@ export const FIELDS: { readonly [K in keyof Required<SaveData>]: Kind } = {
 
 /** The same for the trade section. */
 export const TRADE_FIELDS: { readonly [K in keyof Required<NonNullable<SaveData['trade']>>]: Kind } = {
-  exports: 'index', orders: 'index', nextOrderId: 'plain', inflight: 'index', sold: 'index', bought: 'index',
+  cargo: 'index', orders: 'index', nextOrderId: 'plain', inflight: 'index', sold: 'index', bought: 'index',
   ledger: 'index', activity: 'refs', earned: 'plain', spent: 'plain', soldTotal: 'index', boughtTotal: 'index',
 };
 
@@ -247,8 +247,8 @@ export function remapSave(d: SaveData, to: ContentTable = contentTable(), retire
   const t = d.trade;
   const trade: SaveData['trade'] = t && {
     ...t,
-    // A stream slot per position (−1: empty); a gone item leaves its slot empty.
-    exports: t.exports.filter(([post]) => alive(post)).map(([post, items]) => [post, items.map(item)] as [number, number[]]),
+    // A post's cargo; a gone item leaves it (its goods were refunded with the store's).
+    cargo: (t.cargo ?? []).filter(([post]) => alive(post)).map(([post, items]) => [post, items.map(item).filter((i) => i >= 0).sort((a, b) => a - b)] as [number, number[]]),
     orders: t.orders.filter((o) => alive(o.post) && item(o.item) >= 0).map((o) => ({ ...o, item: item(o.item) })),
     inflight: t.inflight.filter((x) => {
       if (item(x.item) >= 0 && alive(x.post)) return true;

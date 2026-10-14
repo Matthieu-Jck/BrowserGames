@@ -227,8 +227,10 @@ export class MainMenu {
 }
 
 /**
- * The badge shown while a debug base is in play (top of the screen, over the HUD and the menu):
- * which level it is, and « Revenir à ma concession ». Plain DOM; the shell refreshes it when a base
+ * The badge shown while a debug base is in play: a small chip at the end of the HUD's research row
+ * (`Hud.pin`), out of the world's way (owner, 2026-10-14: the old badge, at the top centre, "blocks
+ * my game"). It shows the level's name and a « ↩ » button back to the claim (its full wording in
+ * the tooltip); the menu says which base is in play. Plain DOM; the shell refreshes it when a base
  * is swapped in or out, and on a language switch.
  */
 export class DebugBadge {
@@ -237,15 +239,18 @@ export class DebugBadge {
   private readonly back: HTMLButtonElement;
 
   constructor(private readonly host: MenuDebugHost) {
-    this.back = el<'button'>('button.btn.dbg-badge-back', { type: 'button', 'data-debug-back': '', onclick: () => host.restore() });
-    this.root = el('div.dbg-badge', { 'data-debug-badge': '', role: 'status', hidden: '' }, [el('span.dbg-badge-mark', {}, '⚑'), this.text, this.back]);
+    this.back = el<'button'>('button.btn.dbg-badge-back', { type: 'button', 'data-debug-back': '', onclick: () => host.restore() }, '↩');
+    // Its row opens the research screen on a click: the badge keeps its clicks to itself.
+    this.root = el('div.dbg-badge.cartouche', { 'data-debug-badge': '', role: 'status', hidden: '', onclick: (e: MouseEvent) => e.stopPropagation() }, [el('span.dbg-badge-mark', {}, '⚑'), this.text, this.back]);
   }
 
   refresh(): void {
     const now = this.host.current();
     setAttr(this.root, 'hidden', now ? null : '');
     setAttr(this.root, 'data-level', now);
-    setText(this.text, now ? t('debug.badge', { level: t(DEBUG_LEVEL_TEXT[now][0]) }) : '');
-    setText(this.back, t('debug.back'));
+    setText(this.text, now ? t(DEBUG_LEVEL_TEXT[now][0]) : '');
+    setAttr(this.root, 'title', now ? t('debug.badge', { level: t(DEBUG_LEVEL_TEXT[now][0]) }) : null);
+    setAttr(this.back, 'title', t('debug.back'));
+    setAttr(this.back, 'aria-label', t('debug.back'));
   }
 }

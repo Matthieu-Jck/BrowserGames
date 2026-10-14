@@ -224,7 +224,7 @@ function smelterLine(sim: Sim, budget: { tries: number }): string {
   }
 }
 
-/** A trade post against the Heart's south side (its plans first), then export streams of the reserved items: they sell the Heart's stock at every boundary. */
+/** A trade post against the Heart's south side (its plans first), then spot sales of the reserved items out of the Heart's stock (D64: a post sells only what its entrance brings). */
 function tradeStream(sim: Sim, pick: (n: number) => number): string {
   const post = sim.ents.sorted().find((e) => BUILDING_KIND[e.def] === 'trade');
   if (!post) {
@@ -233,7 +233,8 @@ function tradeStream(sim: Sim, pick: (n: number) => number): string {
     return `trade post ${x},${y}: ${sim.place('trade_post', x, y, 0).reason}`;
   }
   const it = RESERVED[pick(RESERVED.length)]!;
-  return `stream ${post.id} ${it}: ${sim.setExport(post.id, pick(2), it) ?? 'ok'}`;
+  const r = sim.spotTrade(it, 'sell', 1 + pick(40));
+  return `sale ${post.id} ${it}: ${'refused' in r ? r.refused : 'ok'}`;
 }
 
 /**

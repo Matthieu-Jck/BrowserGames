@@ -11,7 +11,7 @@ import { afterFee, valueCents } from '@/market/pricing';
 import { EPOCH, TPS } from '@/sim/constants';
 import type { Sim } from '@/sim/state';
 import { containerMu, orderHold, tradable } from '@/sim/systems/trade';
-import { deliveryTicks, orderSlots, streamSlots, throughputMu, tradeLevel, type ImportOrder, type TradeRefusal } from '@/sim/trade';
+import { deliveryTicks, orderSlots, throughputMu, tradeLevel, type ImportOrder, type TradeRefusal } from '@/sim/trade';
 import { seenBy } from './inspector/kit';
 import { itemPicker, type ItemPicker } from './item-picker';
 
@@ -56,14 +56,13 @@ export const refusalText = (r: TradeRefusal): string => tr(`trade.refused.${r}`)
 /** What every trade post does at the colony's research (they share the level). */
 export interface PostFacts {
   level: number;
-  /** Fee ‰ on every sale and purchase. */
+  /** CrierBelt's fee ‰ on every sale and purchase (D64: fixed). */
   fee: number;
   /** Items lifted per minute and post, imports and exports together. */
   perMin: number;
   /** Minutes from a purchase to the lift-off. */
   liftMin: number;
-  /** Export streams per post, standing orders in all. */
-  streams: number;
+  /** Standing orders in all. */
   orders: number;
 }
 
@@ -71,14 +70,14 @@ export function postFacts(sim: Sim): PostFacts {
   const level = tradeLevel(sim.mods);
   return {
     level, fee: sim.mods.tradeFee, perMin: throughputMu(level) / 1000,
-    liftMin: BAL.liftDelayMin[Math.min(3, level) - 1]!, streams: streamSlots(sim.mods), orders: orderSlots(sim.mods),
+    liftMin: BAL.liftDelayMin[Math.min(3, level) - 1]!, orders: orderSlots(sim.mods),
   };
 }
 
 /** Seconds of game time until a tick (never negative). */
 export const secondsTo = (sim: Sim, tick: number): number => Math.max(0, (tick - sim.tick) / TPS);
 
-/** The next epoch boundary, when posts sell their streams and fill their orders. */
+/** The next epoch boundary, when posts sell what their entrance brought and fill their orders. */
 export const nextBoundary = (sim: Sim): number => Math.ceil((sim.tick + 1) / EPOCH) * EPOCH;
 
 /** When goods of an item bought at tick `at` (a boundary) would land: the lift, then the nearest supplier's freighter. */
@@ -134,9 +133,9 @@ export function nextArrival(sim: Sim, post: number, item = -1): number | null {
 }
 
 /**
- * The colony's recurring trade (export streams and standing orders, not spot trades) in
+ * The colony's recurring trade (the posts' sales and standing orders, not spot trades) in
  * centi-◉ per hour, averaged over the last `win` boundaries — or since its oldest line in that
- * window, so that a stream set up a minute ago already shows its pace.
+ * window, so that a line led to a post a minute ago already shows its pace.
  */
 export function tradePerHour(sim: Sim, win = 10): number {
   const now = sim.absEpoch(), lines = sim.trade.ledger;
@@ -152,20 +151,6 @@ export function tradePerHour(sim: Sim, win = 10): number {
   return (sum / Math.max(1, Math.min(win, now - oldest + 1))) * 60;
 }
 
-/** Items sold by each post's streams at the last boundary: `${post}:${item}` → mu and centi-◉. */
-export function lastExports(sim: Sim): Map<string, { mu: number; cents: number }> {
-  const out = new Map<string, { mu: number; cents: number }>();
-  const now = sim.absEpoch(), lines = sim.trade.ledger;
-  for (let k = lines.length - 1; k >= 0; k--) {
-    const l = lines[k]!;
-    if (l.epoch < now) break;
-    if (l.kind !== 'export') continue;
-    const key = `${l.post}:${l.item}`, cur = out.get(key);
-    if (cur) { cur.mu += l.mu; cur.cents += l.cents; } else out.set(key, { mu: l.mu, cents: l.cents });
-  }
-  return out;
-}
-
 /**
  * A picker over the tradable items (item-picker.ts: each item's icon and name, on the button and in
  * the list), with an optional first « none » choice; `onPick` gets the item id, or null for none.
@@ -175,7 +160,7 @@ export function tradeSelect(current: number, none: string | null, onPick: (item:
   return itemPicker({ items: TRADABLE, value: current, none, onPick: (i) => onPick(i >= 0 ? ITEM_IDS[i]! : null), attrs, label, known: sim ? seenBy(sim) : undefined });
 }
 
-/** Rebuild key of a post's panel: its streams and its orders shape the DOM. */
+/** Rebuild key of a post's panel: its orders shape the DOM (the recap's rows keep themselves in step). */
 export function tradeSig(sim: Sim, post: number): string {
-  return `${sim.streamsOf(post).join('.')}|${sim.trade.orders.filter((o) => o.post === post).map((o) => o.id).join('.')}`;
+  return sim.trade.orders.filter((o) => o.post === post).map((o) => o.id).join('.');
 }

@@ -3,6 +3,8 @@
 // graph for recompilation and is logged as a command.
 import { BUILDING_KIND, CRECIPES, buildingDef, itemIdx, recipeIdx } from '@/content/registry';
 import { modulesOf, recipeOf, withFilter, withModules, withRecipe } from '../cfg';
+import { MachineNode } from '../flow/nodes';
+import { refundNode } from '../graph/compile';
 import type { Rot } from '../types';
 import type { Sim } from '../state';
 
@@ -15,6 +17,14 @@ export function setRecipe(sim: Sim, id: number, recipe: string | null): boolean 
     if (!cr.machines.has(e.def) || !sim.unlocked(cr.unlock)) return false;
   }
   if (recipeOf(e.cfg) === r) return true;
+  // What its node holds goes back to the Heart now, not at the next compile: a change and its undo
+  // between two compiles would keep the buffers, with a compile in between refund them — and
+  // looking at the sim (hash() compiles) must never change it (replay, commands.test.ts).
+  const n = sim.graph?.nodeByEnt.get(id);
+  if (n instanceof MachineNode) {
+    refundNode(n, (it, mu) => sim.refund(it, mu));
+    n.inBuf.fill(0); n.outBuf.fill(0); n.crafting = false; n.p = 0; n.carry = 0;
+  }
   e.cfg = withRecipe(e.cfg, r);
   sim.log.push({ tick: sim.tick, cmd: { k: 'recipe', id, recipe } });
   sim.dirty = true;

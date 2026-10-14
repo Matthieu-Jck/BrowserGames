@@ -7,10 +7,12 @@
 // box alone was too greedy: a mast or a derrick in front stole clicks aimed at what is behind.
 // A building standing on the mountains (D44) is tested where it is drawn, lifted onto the rock
 // top (a ribbon there on its tile's top), and ranks by the depth key it is drawn with
-// (render/world/stand.ts). A click that hits no
+// (render/world/stand.ts). A ribbon (not a traction ribbon: its elevator stands) or a conduit is a flat piece (the belts layer, or the rock top):
+// its tile's diamond and nothing above — testing it as a volume with its iso frame let a ribbon in
+// front take the clicks aimed at the trade post's apron behind it (owner, 2026-10-14). A click that hits no
 // sprite takes what the cursor's ray meets first: a rock top or a cliff (that tile's occupant, if
 // any — not some building on the ground far behind it), else the ground.
-import { BUILDING_IDS } from '@/content/registry';
+import { BUILDING_IDS, BUILDING_KIND, buildingDef } from '@/content/registry';
 import { bKey, type Atlas } from '@/render/art/atlas';
 import type { BuildingId } from '@/content/buildings';
 import { isoHead } from '@/render/art/recipes/buildings';
@@ -103,13 +105,14 @@ export class Picker {
         const [w, h] = footprint(e.def, e.rot);
         // On the mountains its volume stands on the rock top (a ribbon lies on it), and it ranks as it is drawn.
         const st = standOf(e), lift = drawnLevel(sim.grid, e), foot = lift * LH;
-        const top = foot + isoHead(BUILDING_IDS[e.def] as BuildingId) * LH;
+        const flat = (BUILDING_KIND[e.def] === 'belt' && !buildingDef(e.def).lift) || BUILDING_KIND[e.def] === 'conduit'; // a traction ribbon has its elevator
+        const top = flat ? foot : foot + isoHead(BUILDING_IDS[e.def] as BuildingId) * LH;
         const P = (u: number, v: number, z: number): [number, number] => { const [a, b] = apply(ISO_LIN, u, v); return [a, b - z]; };
         const hull: Array<[number, number]> = [P(e.x, e.y, top), P(e.x + w, e.y, top), P(e.x + w, e.y, foot), P(e.x + w, e.y + h, foot), P(e.x, e.y + h, foot), P(e.x, e.y + h, top)];
         if (!inConvex(hull, X, Y)) continue;
         const z = st ? st.z : lift > 0 ? beltZ(e.x, e.y) : buildingZ(e.x, e.y, w, h);
         if (z <= bestZ) continue;
-        if (this.solidAt(e.def, e.rot, e.x, e.y, lift, X, Y) === false) continue; // inside its box, but nothing drawn there
+        if (!flat && this.solidAt(e.def, e.rot, e.x, e.y, lift, X, Y) === false) continue; // inside its box, but nothing drawn there
         bestZ = z;
         best = e.id;
       }

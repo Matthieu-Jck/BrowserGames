@@ -20,13 +20,14 @@ atlases baked on the main thread. Render reads the sim and never mutates it.
 | [daynight.ts](../src/render/daynight.ts) | The time of day's look: keyframes → `Grade` (tint, night factor, sun, clouds); `DayNight` applies it and holds the `FL.dayPhase` offset |
 | [world/terrain-chunks.ts](../src/render/world/terrain-chunks.ts) | Streams painted ground / relief-paint chunk textures; fog |
 | [world/relief-view.ts](../src/render/world/relief-view.ts) | Near-zoom rock columns as depth-sorted sprites; `level(x, y)` (= `tileTop`) |
-| [world/buildings-view.ts](../src/render/world/buildings-view.ts) | Building sprites (iso + plan, lifted onto the rock top when they stand on the mountains), ribbon pieces; moving parts turning (`animate`); the cast shadows |
+| [world/buildings-view.ts](../src/render/world/buildings-view.ts) | Building sprites (iso + plan, lifted onto the rock top when they stand on the mountains), ribbon pieces; moving parts turning (`animate`); the incinerators' pits and their flames; the cast shadows |
 | [world/stand.ts](../src/render/world/stand.ts) | Pure: how high a building stands and how it sorts (D44): `computeStands` once per rebuild, `standOf` / `liftOf` for the other views, `standLevel` for the ghost, `drawnLevel` (a ribbon: its tile's top) for picking; the depth keys `rockZ`, `buildingZ`, `standZ`, `beltZ`, `liftZ` |
 | [world/traction-lifts.ts](../src/render/world/traction-lifts.ts) | The traction ribbons' elevators (D56): which steps get one (`liftOfBelt`), their frames baked on demand (`liftFrames`: back, car, front, plan mark) |
-| [world/belt-lift.ts](../src/render/world/belt-lift.ts) | Pure: where an item is drawn and how high (`place`: its tile's top, or on an elevator's car), where each car is (`settle`, `carAt`), and whether an item above the floor may be drawn over the volumes (`over`) |
+| [world/belt-lift.ts](../src/render/world/belt-lift.ts) | Pure: where an item is drawn and how high (`place`: its tile's top, or on an elevator's car), where each car is (`settle`, `carAt`), and where an item above the floor, in a shaft or at an incinerator sorts among the volumes (`itemZ`: its host tile's key) |
+| [world/pits.ts](../src/render/world/pits.ts) | The incinerators' pits (D51): an item's way in (`pitPath`: up the chute, over the lip, falling), the fire (`PitFire`, one per colony, `pitFire(sim)`: when the last item fell, its heat), the pit's frames baked on demand (`pitFrames`: back and front; `flameFrames`; `planFlameFrame`) |
 | [world/moving-parts.ts](../src/render/world/moving-parts.ts) | Pure: how fast a moving part turns (a turbine with the wind on its grid, a machine while it works), each building's own start phase |
 | [world/cast-shadows.ts](../src/render/world/cast-shadows.ts) | Pure: the cast shadows' look through the day (`shadowLook`: length, swing, opacity), the map that stretches a baked shadow (`shadowMap`), the sun's direction (`sunDirection`), the seam a mask is clipped to (`farSide`, `seamClip`), how far a shadow can reach (`shadowReach`) |
-| [world/items-view.ts](../src/render/world/items-view.ts) | Items riding ribbons and routing blocks: draws the item flow as particles, at the land's height (belt-lift.ts) |
+| [world/items-view.ts](../src/render/world/items-view.ts) | Items riding ribbons and routing blocks: draws the item flow at the land's height (belt-lift.ts) — on the floor as particles under the volumes, above it (or falling into a pit) as sprites sorted among the volumes in iso and as particles over the rock ribbons' plan copies in plan |
 | [world/item-flow.ts](../src/render/world/item-flow.ts) | Pure (no Pixi): the paths items ride across each ribbon tile (`buildPieces`: bends, a skybridge's leap and decks, a junction's hump and when items are drawn over it), a routing block's way through its centre |
 | [world/cell-flow.ts](../src/render/world/cell-flow.ts) | Pure: where each item is drawn, read from the engine's cells (D57): on its tile, eased in from where it was over one step |
 | [world/cast-shadows.ts](../src/render/world/cast-shadows.ts) `reliefSun`, [art/terrain.ts](../src/render/art/terrain.ts) `paintSunShadows`, [world/relief-view.ts](../src/render/world/relief-view.ts) `setSun` | The rock's shadows following the sun (D59): the floor's as a chunk texture (`s`), the rock tops' as a tint of their columns |
@@ -172,11 +173,12 @@ stage.root                          eventMode 'none'
 └─ world        [render group]      camera transform (scale = zoom, position)
    ├─ lit       [render group]      the graded world: DayNight's tint, one uniform
    │  ├─ plane        P             terrain · decals · belts
-   │  ├─ items        —     [rg]    item particles in view world px
+   │  ├─ items        —     [rg]    item particles on the floor, in view world px
    │  ├─ shadowsIso   M   × isoA    shadows  (the buildings' cast shadows on the ground)
    │  ├─ reliefPlane  P   × isoA    relief   (painted relief chunks)
-   │  ├─ planPlane    P   × planA   plan     (plan building sprites)
-   │  ├─ volumes      M   × isoA    objects  (iso buildings + cliff columns, z-sorted)
+   │  ├─ planPlane    P   × planA   plan     (plan building sprites; sorted: rock ribbons' copies, items over them, buildings)
+   │  ├─ volumes [rg] M   × isoA    objects  (iso buildings + cliff columns + items above the floor, z-sorted)
+   │  ├─ itemsOver    —     [rg]    items riding a junction's deck or a skybridge, over every building
    │  ├─ wiresIso     M   × isoA    wires [rg]      (power wires)
    │  ├─ wiresPlanPlane P × planA   wiresPlan [rg]
    │  └─ shade        —             cloud shadows (multiply; CloudShadows sets P itself)
@@ -192,11 +194,12 @@ stage.root                          eventMode 'none'
 | `terrain` | TerrainChunks: ground chunks, sand placeholders | |
 | `decals` | — | Declared, unused |
 | `belts` | BuildingsView: ribbon and conduit pieces on the floor (JunctionsView: the passages) | Flat in both views. A piece on rock goes to `objects` (iso, key `beltZ`) and `plan` instead (D56) |
-| `items` | ItemsView | Drawn above belts, below relief paint, plan sprites and volumes |
+| `items` | ItemsView: the items on the floor | Drawn above belts, below relief paint, plan sprites and volumes. Items above the floor (on rock, in an elevator's shaft) or at an incinerator are drawn among the volumes in iso (`objects`) and over their ribbons on `plan` |
+| `itemsOver` | ItemsView: items riding a junction's deck or a skybridge (the model's `o`) | Over every building in both views (render group) |
 | `shadows` | BuildingsView: the cast shadows | Iso px under M, faded with the volumes; above ribbons and items (they fall over them), under the relief paint and every volume (a shadow never falls on a building) |
 | `relief` | TerrainChunks: relief-paint chunks | The *painted* relief; relief *sprites* are in `objects` |
-| `plan` | BuildingsView: plan sprites | |
-| `objects` | BuildingsView iso sprites + ReliefView columns | `sortableChildren`, shared zIndex keys (§7.4) |
+| `plan` | BuildingsView: plan sprites; ItemsView: the items above the floor (a container drawn through P⁻¹, so in view px) | `sortableChildren` in bands (stand.ts `PLAN_Z`): the plan copies of ribbons and junction passages on rock (−2), the elevators' marks (−1.5), the items riding them (−1), every building sprite at 0 in the order laid — so items on rock show over their ribbons and go under a building, as on the floor |
+| `objects` | BuildingsView iso sprites (the incinerators' pits in two parts with their flames), ReliefView columns, ItemsView: pooled sprites of the items above the floor, in a shaft or at an incinerator | `sortableChildren`, shared zIndex keys (§7.4). Its parent `volumes` is a render group: an item crossing a tile changes its key, and the re-sort and re-batch stay inside the volumes |
 | `grid`, `overlays` | OverlaysView | Fade by `te` inside the view |
 | `land` | OverlaysView: the claim's land (D60) — parcels held, leased, a sister claim's; the land mode's parcel grid, hovered and picked parcel | Above the fog (a map of who holds what, readable over land not explored yet), below the ghost; untinted like the overlays |
 | `fog` | TerrainChunks fog masks | Above the overlays |
@@ -223,9 +226,9 @@ clamped. A container at alpha 0 is also made invisible, so Pixi skips it.
 | planA | 0 | 0 | 0.21 | 0.43 | 0.71 | 1 |
 
 The views fade their own content: grid `te × zoom ramp × 0.55`; the land `max(te, landOn)` (its grid and marks only with `landOn`); flat
-marks `te`, lifted marks `1 − te`. Items float `(3 + z + lv·LH)·(1 − te)` px above ribbons (z: a skybridge deck or a junction's hump; lv: the land's height under them, belt-lift.ts). Above the floor, or in an elevator's shaft, an item is drawn on `itemsOver` while `te < 0.5` unless higher rock in front covers its tile. Drifters fly at
+marks `te`, lifted marks `1 − te`. Items on the floor float `(3 + z)·(1 − te)` px above ribbons (z: a skybridge deck or a junction's hump). Above the floor, in an elevator's shaft or at an incinerator, an item is drawn among the volumes while `te < 0.6`, at its iso px `tileToIso(x, y) − (3 + z + lv·LH)` (lv: the land's height under it, belt-lift.ts) like any volume, so M carries it with the ribbon it rides, its sprite drawn through M⁻¹ so it stays upright; and on `plan` from `te > 0.3`, flat over the ribbons' plan copies (`(3 + z)·(1 − te)`): it cross-fades as its ribbon does. Drifters fly at
 80 px (±3) in iso and 6 px in plan. Relief-paint sprites show and relief columns stream only
-while `te < 0.6`. Render groups (`world`, `items`, `ghost`, `status`) keep the transforms on the
+while `te < 0.6`. Render groups (`world`, `items`, `itemsOver`, `volumes`, `ghost`, `status`) keep the transforms on the
 GPU and isolate rebuilds of fast-changing content.
 
 ## 6. Terrain chunks ([terrain-chunks.ts](../src/render/world/terrain-chunks.ts), [terrain.ts](../src/render/art/terrain.ts), [terrain.worker.ts](../src/render/art/terrain.worker.ts))
@@ -288,7 +291,7 @@ Shared by the worker and the main thread; no DOM, no Pixi.
 
 | Concept | Rule |
 |---|---|
-| Level | `levelOf(terrain, level)`: 0 off rock. On rock it is the sim's own level (D45, `grid.level`, the paint windows' `level` array), clamped 1..5 (`MAX_TERRACE`), × `STEP_LEVELS` (2): 2 to 10 relief levels. Since D52 (2026-10-13) it no longer comes from a smoothed height, so the drawn terraces are the levels placement, ribbons and wires obey, and a footprint the rules call level ground is drawn flat. 1 level = `LH` = 16 world px; a terrace is a one-tile-high wall. |
+| Level | `levelOf(terrain, level)`: 0 off rock. On rock it is the sim's own level (D45, `grid.level`, the paint windows' `level` array), clamped 1..5 (`MAX_TERRACE`), × `STEP_LEVELS` (2): 2 to 10 relief levels. Water and reclaimed ground (`Filled`) above the floor — the Crown's tarn (D63), the one water up there — stand at their level too, a column like the rock round them; any other ground has relief level 0. Since D52 (2026-10-13) it no longer comes from a smoothed height, so the drawn terraces are the levels placement, ribbons and wires obey, and a footprint the rules call level ground is drawn flat. 1 level = `LH` = 16 world px; a terrace is a one-tile-high wall. |
 | Tile top | `tileTop(land, x, y)`: THE height of a tile's top (levels; 0 = the floor), where whatever stands on it stands. Every lift reads it, so all move together when it changes: buildings on the mountains, their moving parts, shadows, night lights and wire anchors (through world/stand.ts), the build ghost, the iso picking, the overlays' marks on rock (`ReliefView.level`). Today `levelAt` over the land (a height of 0 off the world, as the paint windows read it), so it is exactly the level the sprites and the paint draw; meant to become the sim's `grid.level(x, y)` × one terrace's height. |
 | Ray | `surfaceTile(land, px, py)`: the tile a view ray meets first, from its ground point (where it crosses z = 0). A point `lv` levels up on the same ray lies `lv·SHIFT` tiles further along +x+y, so walking down from `MAX_LEVEL`, the first tile whose top reaches the ray is the rock top or cliff it hits; else the ground tile. |
 | Mask | `maskAt(level, x, y, at)`, 8 bits. `M_E/M_S/M_W/M_N`: that side drops below the threshold. `M_NE/M_SE/M_SW/M_NW`: the diagonal neighbour stands as high; kept only at convex corners, so columns that look alike share one sprite. |
@@ -299,13 +302,28 @@ Shared by the worker and the main thread; no DOM, no Pixi.
 
 ### 7.2 Painter ([rock.ts](../src/render/art/rock.ts))
 
-`drawColumn(ctx, proj, cls, masks, {detail, seed, k})` draws the slabs bottom-up. Walls come first:
+`drawColumn(ctx, proj, cls, masks, {detail, seed, k, top})` draws the slabs bottom-up. Walls come first:
 per-segment shade, occlusion at the foot, and hardness marks (`cls` 0 sandstone strata, 1 basalt
 joints, 2 obsidian facets and glints, 3 heartrock with glowing veins), hatched on shaded faces at
 detail 2. Next a flat top, lighter with height, with grain. The ink goes last: lit lip,
 silhouettes, ground contact, open-air verticals, folds. `columnShadow` casts along +x. Detail is
 0 (flat), 1 (worker, ≥ 32 px/tile) or 2 (sprites). The caller's `proj` picks the projection, so
 one painter serves both renderings and they always agree.
+
+**Water up on the rock** (D63: the Crown's tarn; owner: "put the lake at the top of the moutain").
+A column whose tile is water or reclaimed ground, or rock in whose corner three tiles of water at
+its height meet, gets a `top` (`TopLook`: what the tile is, and which tiles of its 3 × 3 hold water
+and deep water at its height; [terrain.ts](../src/render/art/terrain.ts) `columnLook` reads it from
+the paint window, and gives a column of water the hardest rock round it for its walls). Its top is
+the rock's, then its part of the pool: marching squares over the tile's corners (each worth the
+share of the four tiles meeting there that hold water, cut at a half), so the shore runs on from
+tile to tile — straight along a side, on the diagonal at a corner, into the rock's corner where
+the water turns — shallow, the deep within it (the same cut over deep tiles), a ripple, the shore
+inked over a paper glow as on the floor's water. Each part bleeds its colour (not over a deep
+neighbour's), and is clipped to its top only when a drop has cut that top back (the rock round
+the pool dug away), so tiles of water join without a seam. Reclaimed ground is fill. The water is
+drawn at its level in both renderings, never as a hole down to the floor; in plan the ground
+paint shows it within the rock (water before rock in `paintChunk`).
 
 ### 7.3 Two renderings of the same columns
 
@@ -320,9 +338,9 @@ supplies the cast shadows, which the sprites lack (hence the 32 px/tile cap). Pa
 threshold the sprites go and only the line work changes.
 
 **ReliefView.** Columns stream in 8 × 8-tile blocks, culled with `tileBoxBounds` plus the relief
-headroom. Per-chunk relief (levels, per-step masks, terrain) is computed with the worker's own
-`buildWindow` + `windowLevels` and cached. A sprite's atlas key is `${cls}:${masks}:${variant}`,
-with two hashed variants. Baking is capped at 8 ms per frame. A block appears only when all of its
+headroom. Per-chunk relief (levels, per-step masks, rock class, top) is computed with the worker's
+own `buildWindow` + `windowLevels` + `columnLook` and cached. A sprite's atlas key is
+`${cls}:${masks}:${variant}:${topKey}`, with two hashed variants. Baking is capped at 8 ms per frame. A block appears only when all of its
 columns are baked; otherwise it is retried next frame and the paint shows meanwhile (`pending`
 counts the waiting columns). Sprites are 2× (scale 0.5), anchored on the tile's back corner at
 `tileToIso(x, y)`. `invalidate(ck)` drops the 3 × 3 neighbourhood, because masks and smoothing read
@@ -347,13 +365,36 @@ buildingZ(x, y, w, h)       = 4·(2x + w − 1 + 2y + h − 1) + 1           // 
 standZ(x, y, w, h, reach)   = 8·(x + w − 1 + y + h − 1 + reach) + 0.5   // standing on the mountains
 beltZ(x, y)                 = 8·(x + y) + 0.5                           // a ribbon piece on a rock top
 liftZ(lowX, lowY)           = 8·(lowX + lowY) + 0.7                     // an elevator, by its low tile (+0.01 car, +0.02 front)
+// items (belt-lift.ts `itemZ`), by their host tile:
+beltZ + 0.05                                                            // on a ribbon (or bare rock) on the rock top
+liftZ + 0.03                                                            // on an elevator's low tile: over its front frame
+beltZ − 0.02                                                            // on a building's tile (a routing block, a junction's tunnel): under it
+key(pit) + 0.1 | + 0.2                                                  // an incinerator's: behind its flame (far half, falling) | over it all (near half)
 ```
+
+**Items among the volumes** (owner, 2026-10-14: "the copper is above the building that is in
+front… the traction ribbon sometimes makes items disappear"). An item above the floor, in an
+elevator's shaft or at an incinerator is a sprite in `objects` keyed by the tile it rides over,
+so the painter's order hides it behind exactly what stands in front of it — a higher column, a
+silo, a pole (only the pole's pixels) — and nothing else. The host is the tile its front-most
+point (`ITEM_REACH`, 0.16 tile along x and y: the glyph is a third of a tile across) is on, when
+every tile it overhangs is no higher than it rides and holds no building; else its centre's
+tile. That keeps an item crossing onto the next tile of a plateau from being clipped by that
+column's top, keeps one on the car at the top of a step down away from the viewer over the high
+column (it shows over the edge, then sinks behind it with the car), and keeps one at the foot of
+a wall behind it. A tile with an elevator keys its items after the elevator's front frame (drawn
+over its elevator, never behind it, owner 2026-10-13); a building's tile just under the building
+(after a junction's passage at − 0.05, under the bridge; a routing block swallows what goes in);
+an incinerator's tile, or one overhanging it, sorts with its pit (§10, *Incinerators*). On the
+floor away from any incinerator an item stays a particle on `items`, under every volume. The keys
+are worked out per tile on first ask after each rebuild (`BeltLift` reads the stands the
+buildings view has just worked out).
 
 A ribbon piece on rock sorts after the columns of its own diagonal and before those in front (a
 tile of the same diagonal never overlaps it on screen); a junction's passage just under it (− 0.05,
 under the bridge). An elevator stands on its step's low tile, so it sorts after that tile's ribbon
 and, when the high column is in front of it (its wall faces away from the camera), before that
-column, which hides all but its head.
+column, which hides all but its head — and the items in its shaft below the column's top.
 
 A cliff in front of a machine hides it, and a machine in front of a cliff covers it. Equal keys
 keep insertion order (the sort is stable). Sorting by centre depth is a painter's approximation
@@ -365,7 +406,7 @@ never overlap it on screen), as far as its longest shadow falls (`reach`, from
 rock. The reach stops short of a higher column in the building's screen band (rock in front of it
 still hides it) and of a building on the floor (it stays in front), and keeps every lifted
 building ahead of it after it (stands are worked out front to back). A moving part sorts at the
-key ± 0.2, a solar overlay at + 0.25, a chosen item at + 0.4. Inside one sprite, the recipe's
+key ± 0.2, a solar overlay at + 0.25, a chosen item at + 0.4, an incinerator's flame at + 0.12 and its near rim at + 0.15. Inside one sprite, the recipe's
 `Scene` orders the parts. The app's iso picking ranks its hits by the same keys.
 
 ## 8. Atlas ([atlas.ts](../src/render/art/atlas.ts))
@@ -425,6 +466,8 @@ Style rules, as the code applies them:
 8. **Power reads as power** (owner, 2026-10-12: "poles should look more like poles"; wires to "a precise place on every building"). The pole is a utility pole — a slim weathered-steel post on a concrete footing, a crossarm level across the screen (the local diagonal (1, −1)) on two braces, porcelain pin insulators, a junction box with its light, a drop cable (nobody climbs it: no pegs); the pylon a square steel lattice with a crossarm and suspension strings. Every building that takes part in power shows where its wires clamp: an insulator from [art/terminals.ts](../src/render/art/terminals.ts) — glazed porcelain (`C.ice`), a brass clamp, on a short dark service mast — at the point its table gives (§10, *WiresView*). The first pole's petal-cup drawing is kept, unused (`petalMastIso`, `petalMastTop`).
 9. **The CrierBelt mark** (owner, 2026-10-12: "simpler, more sci-fi"): a ringed planet — a teal world with a crisp shadow crescent, a brass belt rising to the right, its far half behind the planet, its near half across it; two colours, one precise ink line, flat fills, no wobble (`crierMarkMapped` in [shapes.ts](../src/render/art/shapes.ts)). It reads at 8 px (the crescent drops out below 7). One drawing through a `map(u, v)`: a sign from above (`crierMark`), a deck or a wall in iso (`crierMarkIso`, `crierMarkFace`), the Heart's curved uplink dish (`dish3d`), the intro's register (a canvas), the landing crane's hub. It wore it on the trade post and the Heart's dish until 2026-10-13 (owner: "the planet icons are not needed", D58); it is left on CrierBelt's own things: the register's heading, the freight container, the landing crane.
 10. **The trade post keeps a flame apron** (owner, 2026-10-14: "should block any construction in a 1 case radius around it because of the flames of the drones… a special ribbon at the entrance, and on the other side for the imports, that can resist to the flames", D62). Its 5 × 5 footprint is drawn in three parts, the same in iso (`trade_post` in [recipes/buildings.ts](../src/render/art/recipes/buildings.ts)) and in plan ([recipes/buildings-top.ts](../src/render/art/recipes/buildings-top.ts)). **The pad** (`TP_PAD`, the middle 3 × 3): the D58 platform on a `slab` / `plinth` over that rect only (their `at` argument), its hazard edge broken by the exit's hood, the deck (`TP_DECK` at local (2.5, 2.5), radius `TP_DECK_R`, height `DECK_Z`), three lamp posts (`TP_LAMPS`) and the power pedestal (`TP_PED`) with its wire terminal ([terminals.ts](../src/render/art/terminals.ts)). **The scorched apron** (the outer ring, `tpApron` / `scorchTop`): baked ground at the edge, ragged burns darkening towards the pad (`SCORCH`: baked, burnt, soot), blast streaks fanning out, stipple soot, cracks with a pale lip, sand fused to lilac glass, a few coral embers (paint, not LED tokens: the night would light them white), and CrierBelt's keep-out line in hazard dashes, half burnt off; its marks come from one seeded `apronMarks()` in local tiles, so both views and all four rotations agree. **The two flame-proof ribbons** (`TP_RIBBON`: the entrance across local (2, 4), the exit across (2, 0), at rotation 0; `tpRibbon` / `tpRibbonTop`): a dark-steel chute ramping from the ground at the apron's edge up to the pad (iso), its band (`TP_BAND`, a ribbon's width) laid with ceramic heat-shield plates, low riveted shield walls (`TP_WALL`) tempered along their length (`TP_TEMPER`: straw at the cool end, bronze, purple, blue at the pad), chevrons in the port's colour (cyan in, coral out) pointing the way the items go, and at the pad an armoured hood (`tpHood` / `tpHoodTop`) whose dark mouth faces the ribbon. The far ribbon is drawn before the pad, the near one after everything on it. The apron and the ribbons lie on the ground and **cast no shadow** (the recipe skips them in a `ShadowFrame`: a cast shadow is stretched from the foot with the day, and would drag a 5 × 5 decal across the sand).
+
+11. **The incinerator is a pit that burns what falls in** (owner, 2026-10-14: "the incinerator should have a style that shows more clearly that it will destroy the item. Maybe a hole in the ground with a flame that activates when an item falls in it?", D51). One tile, the same in iso (`pitIso` in [recipes/buildings.ts](../src/render/art/recipes/buildings.ts)) and plan (`pitTop` in [recipes/buildings-top.ts](../src/render/art/recipes/buildings-top.ts)), its geometry in `PIT` (local tiles, levels: the collar's radii and top, the throat's floor below the ground, the chutes' width and lip): scorched ground (`pitMarks`: soot blotches and cracks, seeded once for both views); a low riveted collar whose top is tempered by the heat (`PIT_TEMPER`: brass at its edge to blue at the throat); a dark throat whose far wall darkens into a coral glow down to a grate over the fire bed (`EMBER`, paint, not LED tokens: the pit's night glow is its fire's, lights-view.ts); on every side a steel chute from the tile's edge up over the collar to a lip above the throat, a turquoise band at its mouth (the way in, as every in-port) and a cyan chevron pointing in. It is drawn in parts (`PitPart`): the `back` (ground, throat, the collar's far half, the far chutes) and the `front` (the collar's near half, the near chutes), so the world can put an item falling in and the flame's root behind the near rim; the atlas sprite is both (`all`: icons, picking). **The flame** (`pitFlameIso`, `PIT_FLAMES` heights × two flickers, and the embers at level 0): flat tongues, coral outside, orange, a pale core, inked in dark coral, sparks over the tallest; embers rising and a wisp of smoke as it dies. In plan, the flame seen from above (`pitFlameTop`): a ragged star of coral tongues over the throat, faded in with the fire. The ground and the hole cast no shadow (a `ShadowFrame` skips them): only the collar and the chutes do.
 
 | Module | Draws | Frame |
 |---|---|---|
@@ -498,6 +541,25 @@ braked: wiring it sets it going), a machine's part turns while its node works (`
 dormant building stands still. Speeds ease towards their target (about a second), so a gust
 spins the crowns up; a rebuild keeps each part's phase and speed. `movingCount` counts them.
 
+**Incinerators** ([world/pits.ts](../src/render/world/pits.ts); the art: §9, note 11). An
+incinerator's iso sprite is its pit's `back` at its key, its flame at + 0.12 (hidden until
+something burns) and its near rim (`front`) at + 0.15, baked on demand on the pits' own DynAtlas
+(`pitFrames` per rotation of its art, `flameFrames`); in plan its sprite and, over it, the flame
+from above (`planFlameFrame`), its alpha the fire's heat. An item riding a chute on the pit's near
+half sorts over it all (+ 0.2), on its far half and once it tips in behind the flame (+ 0.1): it
+falls behind the near rim into the fire. **The fire** (`PitFire`, one per colony, `pitFire(sim)`;
+stepped in `animate`, at the render tick): each pit's feeding ribbons from the compiled graph (a
+chain whose out-edge goes to its `SinkNode`); an item has fallen at `lastOut.tick + 1 +
+PIT_WAY.gone · stepTicks`; the engine keeps only the last item out of a chain and a full line
+hands the next one on a tick before the one before has fallen, so each feeding ribbon's previous
+hand-off is kept too, and per pit the last fall seen. Its heat by the time since (`heatAt`,
+ticks): up to full in 0.15 s, down to a quarter over half a second, embers dying for a second
+more; a line feeding faster than the flame dies (a swift ribbon) keeps it burning. The flame shows
+`flameLevel(heat)` (1…6, the embers, or nothing), its flicker one of two frames stepped with game
+time (`flicker`: paused, it stands still): a texture swap on one page when it changes. A look
+only: nothing in `src/sim` is read but the graph and the chains' `lastOut`, and the same frames
+show the same fire on every screen. At night the lights view glows with it (*Day and night*).
+
 **Cast shadows** ([world/cast-shadows.ts](../src/render/world/cast-shadows.ts), [art/silhouette.ts](../src/render/art/silhouette.ts)).
 Every building lays its shadow on the ground on `shadows` (iso only, under every volume, over the
 ribbons and their items). The mask is the building's own recipe drawn through a `ShadowFrame`
@@ -559,7 +621,11 @@ went in (`throughBlock`), so it never jumps. Out of a line's head into what is n
 where it sits (the block's held items, `ForkNode.mu`) until handed on. No identity is kept from
 frame to frame: positions come from the engine every frame. Conduits draw nothing (their water is
 in the pipe's art). An item above the floor or in an elevator's shaft is placed by belt-lift.ts
-(D56) and drawn over the volumes unless rock in front covers its tile.
+(D56) and sorted among the volumes by the tile it rides over (§7.4). Into an incinerator, the
+item rides on at the line's pace — a tile a step, from the last tile's centre to the pit's
+centre — up the chute, tips over the lip and falls in (pits.ts `pitPath`: `FlowItem.d`, how far it
+has fallen), gone at `PIT_WAY.gone` (0.88 of the way), before the next item out of a full line
+overwrites the engine's `lastOut` (the glide is drawn a tick behind).
 
 Pieces (`buildPieces`, after each structural change): a straight tile goes entry edge → exit
 edge; a bend (`beltPiece`) a quarter circle round its corner; a tile in `graph.jumps` on to the
@@ -567,12 +633,16 @@ entry edge of the tile it hands to — over a skybridge's gap (rising to `DECK_Z
 tile, coming down on the far end) or through crossings; a routing block's path through its
 centre (`viaPiece`), its way out carried over the junctions in line with it (`linkFork`), so an
 item leaving a router through a junction glides across it instead of skipping a square. The view projects each point with P (lifted `(3 + z)·(1 − te)` px) without a
-container transform, so glyphs stay upright and undistorted. Items use the `ib:` belt frames:
+container transform, so glyphs stay upright and undistorted; those among the volumes are pooled
+Sprites at their iso px drawn through M⁻¹ (one decomposition a frame: scale and skew), and in
+plan particles in a container on `plan` drawn through P⁻¹ (§5). Items use the `ib:` belt frames:
 a bit under half a tile across (21 world px in iso, 0.5 × 32 in plan, growing up to ×1.33 when
 zoomed out); hidden below zoom 0.28 and culled outside `viewTiles` ± 1. Particles are pooled, one
 `ParticleContainer` per atlas page, the particle list rebuilt only when the count changes. For the
 trace rigs, `debugOn` / `debugSnapshot()` (`FL.itemsTrace(on)`) record every drawn item: its rank
-this frame, tile coords, height, item.
+this frame, tile coords, height, item, whether it rides a deck (`over`), its depth key among the
+volumes (`sorted`, NaN on the floor). An item falling into a pit shrinks to half and fades out
+(sprites only: in plan it is already under the incinerator's sprite).
 
 **GhostView.** On `ghost` (tile units), `draw(pre, sim, hover, showHover)` redraws only when a
 JSON signature of the `Preview` changes. Each piece shows its plan sprite (alpha 0.72, reddened
@@ -781,11 +851,15 @@ building stays clear. A multiply tint cannot brighten: what glows does so on `li
   posts — a post's pool covers its pad, not its apron — and, faintly, big machines; amber round hot machines), and the Heart's pulsing uplink
   beacon on the highest light its art draws (else at the top of its `isoHead`). Small blocks, ribbons, masts and the sleeping solar panels get
   none.
+- *The incinerators' fire.* Each pit gets a warm haze on its throat, a tall amber one up its flame
+  and a core (iso), a haze in plan; per frame their alpha is 0.12 (the bed smoulders) + 0.88 × its
+  fire's heat (pits.ts `pitFire`, as the buildings view stepped it the frame before), so the pit
+  flares at night as an item falls in.
 - *On the mountains.* A building's stand (`standOf`, worked out by the buildings view's rebuild,
   which runs first) lifts its iso glows, its pool and its beacon by its level, and sorts its solar
   overlays at its key + 0.25; plan lights stay flat.
 - *Cost.* Pooled sprites, rebuilt on structural changes only. Per frame: the `lights` render
-  group's alpha (= `night`; invisible by day), the beacon's pulse, and during a morph the two
+  group's alpha (= `night`; invisible by day), the beacon's pulse, the pits' fire, and during a morph the two
   containers' transforms (iso under M with `isoA`, plan under P with `planA × 0.55`).
 
 **Solar states.** The stage comes from the seen sun (`solarStage`): 0 closed (< 0.1), 1 half open
@@ -913,7 +987,8 @@ windows. `set(key, v)` adds stats (`tickMs`, `renderMs`, `chunks`, `chunksMissin
 1. **Pick the space** (§1). Flat, top-down content goes in tile units on a P plane. A pre-drawn
    volume goes in iso px in `objects`, with a zIndex on the shared scale (§7.4). Upright billboards
    go in view px computed with `apply(P, x, y)`, on a layer without a transform (`items`,
-   `status`).
+   `status`) — or, when they must hide behind what stands in front of them, as sprites in
+   `objects` at their iso px, drawn through M⁻¹ to stay upright (items-view.ts `Sorted`).
 2. **Layer.** Reuse a `LayerName`, or add one to the union and to the `Layers` constructor
    (`this.add(parent, name, renderGroup)`). Order in the constructor = z-order. The parent sets
    the transform and the fade: `plane`/`top` carry P and are always visible,
@@ -1001,11 +1076,20 @@ windows. `set(key, v)` adds stats (`tickMs`, `renderMs`, `chunks`, `chunksMissin
   ridge in front never hides a lifted building; a lifted building's shadow is planar at its own
   level (past a cliff edge it drapes over the wall instead of falling to the floor), and it may
   shade a building on the rock top beside it; a footprint over two terraces stands on the higher
-  one, floating over the lower (the engine allows it). Ribbons and items on rock (D56): an item is
-  hidden whole behind higher rock in front (the cover test reads the tile's centre), and drawn over
-  a building in front of it (buildings are not counted as cover); an item entering a traction ribbon
-  from its side jumps onto the car (the elevator times it by its progress along the step); a tile
-  that is the low end of two steps keeps one car.
+  one, floating over the lower (the engine allows it). Ribbons and items on rock (D56): an item
+  sorts by one tile (§7.4), a painter's approximation — a lifted building whose key its shadow's
+  reach pushed past the item's tile is drawn over an item in front of it (a pole's foot over the
+  item's top, rare: the reach stops at higher rock and floor buildings only), and an item on a
+  traction step down onto a building (a slide) is drawn over that building until it is gone at
+  its edge; items riding a junction's deck on rock are still drawn over every volume
+  (`itemsOver`); an item entering a traction ribbon from its side jumps onto the car (the
+  elevator times it by its progress along the step); a tile that is the low end of two steps
+  keeps one car (an old base may have two steps back to back; placement now keeps a flat ribbon tile in front of every elevator, owner 2026-10-14).
+- **Incinerators:** the fire reads only the ribbons feeding a pit (a chain's `lastOut`): an item a
+  routing block or a machine hands straight to an incinerator vanishes in the block and lights no
+  flame; at express pace (2–3 ticks a tile) the engine's next hand-off overwrites the gliding item
+  before it reaches the lip, so it vanishes on the chute (as items going into any building do at
+  that pace) — the flame still flares for each one.
 - **Day and night:** glows are not depth-sorted (a light behind a building shines through it;
   kept small, it reads as scatter); cloud shadows lie on the ground plane, not on volumes in
   height; the solar panel's petals mirror `sunDish`'s numbers (`BULB_DISH`, `BULB_TOP` in fx.ts) and
@@ -1052,8 +1136,9 @@ windows. `set(key, v)` adds stats (`tickMs`, `renderMs`, `chunks`, `chunksMissin
 | [world/stand.test.ts](../src/render/world/stand.test.ts) | A building stands at 0 on the floor, on the rock top on the mountains (`tileTop`, the highest under its footprint; the ghost asks the same, ribbons lie flat); it sorts after every column under it (its front corner too), past the flat rock its shadow falls on, never past a higher column or a building on the floor ahead (a ribbon there changes nothing), behind the lifted buildings in front of it |
 | [world/flow-arrows.test.ts](../src/render/world/flow-arrows.test.ts) | The ghost's way-in arrow comes from the tile behind into the block, the three ways out leave by the front and sides, in every rotation; only the blocks that take in at the back get them |
 | [world/item-flow.test.ts](../src/render/world/item-flow.test.ts) | The paths: a bend round its corner; a junction's hump on the north–south line (the art's own profile, drawn over the bridge a little before and after), none under the east–west one |
-| [world/cell-flow.test.ts](../src/render/world/cell-flow.test.ts) | Items drawn from the cells (D57), the real engine at 60 frames a second: a line through a junction (over its hump), a skybridge and onto a swift ribbon; a router dealing a line out three ways; a jammed line (each item still, on its tile's centre). Nothing jumps, nothing pops up but at a source, nothing vanishes but into a building |
-| [world/belt-lift.test.ts](../src/render/world/belt-lift.test.ts) | Items at their tile's top; up a traction elevator (onto the car, up with it standing still, off over the edge; the car back down alone), down one onto a ribbon, a slide onto a building; drawn over the volumes unless higher rock in front covers them |
+| [world/cell-flow.test.ts](../src/render/world/cell-flow.test.ts) | Items drawn from the cells (D57), the real engine at 60 frames a second: a line through a junction (over its hump), a skybridge and onto a swift ribbon into an incinerator (it rides into the pit); a router dealing a line out three ways; a jammed line (each item still, on its tile's centre). Nothing jumps, nothing pops up but at a source, nothing vanishes but into a building |
+| [world/belt-lift.test.ts](../src/render/world/belt-lift.test.ts) | Items at their tile's top; up a traction elevator (onto the car, up with it standing still, off over the edge; the car back down alone), down one onto a ribbon, a slide onto a building; among the volumes (`itemZ`): after their ribbon, keyed by the next tile of a plateau as they cross onto it, by their own against higher rock in front; down a step away from the viewer, after the high column while on the car at the top, behind it (and over the elevator's front frame) once it sinks, under a building in front; into an incinerator, over its pit on the near half, behind its flame on the far half and once it tips in |
+| [world/pits.test.ts](../src/render/world/pits.test.ts) | The way into a pit: flat on the ribbon, up the chute, then an accelerating fall, gone before a full line's next hand-off; the flame's heat (up fast, down, embers, nothing) and levels; driven by the real engine at 60 frames a second, one flare for every item that falls in, items seen falling, no jump, the fire out once nothing comes |
 | `scripts/smoke.mjs` | WebGL renderer; 20k particles > 30 fps; relief sprites > 100 near and 0 far; pan/zoom sweep settles with `chunksMissing === 0`; the morph settles; 10k items > 30 fps |
 
 Untested: `proj`/`isoToView` endpoints, the `setView` fades, `Camera.zoomBy`/`panScreen` (the real

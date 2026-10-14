@@ -3,7 +3,8 @@
 // again"): at its tile's top on the floor and on rock; across an elevator's low tile it reaches the
 // car, waits on it while it rises (or sinks) a terrace, then rolls on, meeting the tiles on either
 // side at their own height; the car follows it, then goes back alone; a step down onto a building
-// is a slide; an item is drawn over the volumes unless higher rock in front covers it.
+// is a slide; among the volumes an item sorts by the tile it rides over (its front-most one, when no
+// higher and not built on), after its elevator, inside an incinerator's pit once it tips in.
 import { describe, it, expect } from 'vitest';
 import { buildingIdx } from '@/content/registry';
 import { Entities, footprint } from '@/sim/entities';
@@ -11,7 +12,9 @@ import { Grid, tileIndex, type TerrainSource } from '@/sim/world/grid';
 import { CHUNK } from '@/sim/constants';
 import { T, type Ent, type Rot } from '@/sim/types';
 import { STEP_LEVELS } from '../relief';
-import { BeltLift, DOWN, RETURN_TICKS, UP, type Placed } from './belt-lift';
+import { BeltLift, DOWN, ITEM_DZ, RETURN_TICKS, UP, type Placed } from './belt-lift';
+import { PIT_Z } from './pits';
+import { beltZ, buildingZ, liftZ, rockZ } from './stand';
 
 class Field implements TerrainSource {
   constructor(private readonly at: (x: number, y: number) => number) {}
@@ -123,14 +126,64 @@ describe('belt lift: where items ride', () => {
     expect(at(lift, 500.5, 482.5).lv).toBe(0);
   });
 
-  it('over the volumes on open rock; under them behind higher rock in front', () => {
+  it('among the volumes: by the tile it rides over, its front-most one when it may overhang it', () => {
     // A tall block (land level 3: a level-6 top) at x 485–489, y 485–489 in the level-1 rock.
     const w = world((x, y) => (x >= 485 && x < 490 && y >= 485 && y < 490 ? 3 : undefined));
+    w.put('ribbon', 475, 475, 2);
+    w.put('ribbon', 475, 476, 2);
     const lift = new BeltLift();
     lift.rebuild(w);
-    expect(lift.over(475, 475)).toBe(true);
-    expect(lift.over(484, 484)).toBe(false); // the block's corner rises right in front of it
-    expect(lift.over(483, 484)).toBe(false);
-    expect(lift.over(487, 492)).toBe(true); // in front of the block, not behind it
+    const L = STEP_LEVELS;
+    // On a ribbon on the rock: after its piece, before the columns in front.
+    expect(lift.itemZ(475.5, 475.5, L, true, 0)).toBeCloseTo(beltZ(475, 475) + ITEM_DZ.belt, 9);
+    expect(lift.itemZ(475.5, 475.5, L, true, 0)).toBeLessThan(rockZ(476, 475));
+    // Crossing onto the next tile of the plateau (towards the viewer): already that tile's, so its top never clips it.
+    expect(lift.itemZ(475.5, 475.9, L, true, 0)).toBeCloseTo(beltZ(475, 476) + ITEM_DZ.belt, 9);
+    // Against higher rock in front: its own tile's, so the block (drawn after) hides it.
+    expect(lift.itemZ(485.5, 484.9, L, true, 0)).toBeCloseTo(beltZ(485, 484) + ITEM_DZ.belt, 9);
+    expect(lift.itemZ(485.5, 484.9, L, true, 0)).toBeLessThan(rockZ(485, 485));
+    expect(lift.itemZ(484.9, 484.9, L, true, 0)).toBeCloseTo(beltZ(484, 484) + ITEM_DZ.belt, 9); // the corner too
+    // On the floor, away from any pit: drawn with the ribbons.
+    expect(lift.itemZ(510.5, 480.5, 0, false, 0)).toBeNaN();
+  });
+
+  it('down a step away from the viewer: over the high rock while on the car at the top, behind it once it sinks', () => {
+    // The tile (490, 481) a terrace up (a level-4 top) over (490, 480): a traction ribbon there runs north, down onto a ribbon.
+    const w = world((x, y) => (x === 490 && y === 481 ? 2 : undefined));
+    w.put('traction_ribbon', 490, 481, 0);
+    w.put('ribbon', 490, 480, 0);
+    const lift = new BeltLift();
+    lift.rebuild(w);
+    const hi = 2 * STEP_LEVELS;
+    const key = (a: number): number => { const p = at(lift, 490.5, 481 - a); return lift.itemZ(p.x, p.y, p.lv, p.lv > 0 || p.shaft, 0); };
+    // Just onto the car at the top, its back still over the high tile: after that column (it shows over the edge).
+    const top = at(lift, 490.5, 481 - 0.05);
+    expect(top).toMatchObject({ shaft: true });
+    expect(top.lv).toBeCloseTo(hi, 6);
+    expect(key(0.05)).toBeGreaterThan(rockZ(490, 481));
+    // Sinking with the car: its elevator's, over the elevator's front frame, under the high column in front.
+    const mid = (DOWN.a1 + DOWN.a2) / 2;
+    expect(at(lift, 490.5, 481 - mid).lv).toBeLessThan(hi);
+    expect(key(mid)).toBeCloseTo(liftZ(490, 480) + ITEM_DZ.lift, 9);
+    expect(key(mid)).toBeGreaterThan(liftZ(490, 480) + 0.02);
+    expect(key(mid)).toBeLessThan(rockZ(490, 481));
+    // A building in front of the elevator covers it.
+    expect(key(mid)).toBeLessThan(buildingZ(491, 481, 2, 2));
+  });
+
+  it('into an incinerator: over its pit on the near half, between its back and its flame on the far half and once it tips in', () => {
+    const w = world();
+    const inc = w.put('incinerator', 520, 480, 0);
+    w.put('ribbon', 520, 481, 0);
+    const lift = new BeltLift();
+    lift.rebuild(w);
+    const z = buildingZ(inc.x, inc.y, 1, 1);
+    expect(lift.itemZ(520.5, 481.1, 0, false, 0)).toBeCloseTo(z + PIT_Z.over, 9); // overhanging it from the ribbon
+    expect(lift.itemZ(520.5, 480.6, 0, false, 0)).toBeCloseTo(z + PIT_Z.over, 9);
+    expect(lift.itemZ(520.5, 480.55, 0, false, 0.5)).toBeCloseTo(z + PIT_Z.fall, 9);
+    expect(lift.itemZ(520.5, 480.3, 0, false, 0)).toBeCloseTo(z + PIT_Z.fall, 9); // on the far chute: the flame is in front
+    expect(z + PIT_Z.fall).toBeLessThan(z + PIT_Z.flame);
+    expect(z + PIT_Z.fall).toBeLessThan(z + PIT_Z.front);
+    expect(lift.itemZ(520.5, 481.7, 0, false, 0)).toBeNaN(); // clear of it: with the ribbons
   });
 });

@@ -52,7 +52,7 @@ export const BUILDINGS = {
   pump: {
     name: { fr: 'Pompe à eau', en: 'Water Pump' },
     desc: { fr: 'Au bord de l’eau, pompe 60 eau/min dans un conduit. L’eau ne voyage pas sur les rubans.', en: 'At the water’s edge, pumps 60 water/min into a conduit. Water does not ride ribbons.' },
-    kind: 'pump', category: 'extraction', w: 1, h: 1, needsZone: true, unlock: 'tr3', kw: 30, idleKw: 3,
+    kind: 'pump', category: 'extraction', w: 1, h: 1, needsZone: true, onRock: true, unlock: 'tr3', kw: 30, idleKw: 3, // onRock: by the tarn up on the Crown (D63)
     cost: [['iron_plate', 5], ['glass', 2]], ports: [P(0, 0, 'N', 'out')],
   },
   backfiller: {
@@ -145,7 +145,7 @@ export const BUILDINGS = {
   conduit: {
     name: { fr: 'Conduit', en: 'Conduit' },
     desc: { fr: 'Le ruban de l’eau : 240/min, des pompes au four à céramique. Ne porte que des fluides ; se trace en glissant.', en: 'The water ribbon: 240/min, from pumps to the ceramic oven. Carries fluids only; lay it by dragging.' },
-    kind: 'conduit', replaceGroup: 'fluid', category: 'logistics', w: 1, h: 1, needsZone: false, unlock: 'tr3',
+    kind: 'conduit', replaceGroup: 'fluid', category: 'logistics', w: 1, h: 1, needsZone: false, onRock: true, unlock: 'tr3',
     cost: [['ceramic', 1]], ports: [], belt: { ticksPerTile: 2, perMin: 240 },
   },
   silo: {
@@ -212,7 +212,7 @@ export const BUILDINGS = {
   ceramic_oven: {
     name: { fr: 'Four à céramique', en: 'Ceramic Oven' },
     desc: { fr: 'Cuit la pierre et l’eau en céramique. La pierre vient des excavatrices, l’eau des pompes par conduit.', en: 'Fires stone and water into ceramic. Stone comes from excavators, water from pumps by conduit.' },
-    kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'tr3', crafts: true, kw: 120, idleKw: 12,
+    kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, onRock: true, unlock: 'tr3', crafts: true, kw: 120, idleKw: 12, // onRock: a mountain-top ceramic works by the tarn (D63)
     cost: [['iron_plate', 25], ['gear', 6]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
   },
   observatory: {

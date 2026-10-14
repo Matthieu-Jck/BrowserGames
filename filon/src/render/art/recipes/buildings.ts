@@ -22,7 +22,7 @@ import { castShadow, ellipsePts, flat, hatch, ink, pathOf, shape, stipple, type 
 import { arrowPoly, crierMarkMapped, hull, light, rivet } from '../shapes';
 import { pvPanel } from '../solar';
 import {
-  IS, IsoFrame, Scene, ShadowFrame, box, bucketWheelIso, cableIso, chevronIso, cupIso, cylinder,
+  ILH, IS, IsoFrame, Scene, ShadowFrame, box, bucketWheelIso, cableIso, chevronIso, cupIso, cylinder,
   dishIso, domeIso, drumIso, faceGlow, faceGrille, faceHazard, faceInk, faceLeds, facePanel, facePt, faceQuad, frustumIso,
   latheIso, pipeIso, portIso, prismIso, slab, sphereIso, spireIso, terminalIso, trussIso, wheelIso, type Face, type Faces, type RRect,
 } from '../iso-shapes';
@@ -1766,25 +1766,10 @@ const R: Partial<Record<BuildingId, Recipe>> = {
     },
   },
   incinerator: {
-    // The incinerator (D51): the routing blocks' riveted box in dark steel, a turquoise mouth on
-    // each of its four sides (everything goes in, nothing comes out), and on the lid a round grated
-    // firebox glowing amber (its one hot part) beside a short stack.
-    head: 1.2,
-    draw(ctx, f, s) {
-      forkBox(ctx, f, mix(C.steel, C.ink, 0.25), [C.turq, C.turq, C.turq, C.turq], s);
-      for (let side = 0; side < 4; side++) {
-        lidLane(ctx, f, laneRect(side, 0.5, 0.5, 0.3, 0.47, 0.09), mix(C.turq, C.ink, 0.45), s + 2 + side);
-        chevronIso(ctx, f, ...lanePt(side, 0.5, 0.5, 0.38), LID, (side + 2) & 3, 0.06, C.ice, s + 6 + side);
-      }
-      const c = f.p(0.5, 0.5, LID);
-      const [ex, ey] = f.ell(0.27);
-      flat(ctx, ellipsePts(c[0], c[1], ex, ey, s + 12, 0, 28), C.steelDD);
-      flat(ctx, ellipsePts(c[0], c[1], ex * 0.74, ey * 0.74, s + 13, 0, 28), C.ledWarm, 0.95);
-      for (const k of [-0.4, 0, 0.4]) ink(ctx, [[c[0] - ex * 0.7, c[1] + ey * k], [c[0] + ex * 0.7, c[1] + ey * k]], { w: 1.4, color: C.steelDD, shade: false, taper: 0, jitter: 0, seed: s + 14 });
-      ink(ctx, ellipsePts(c[0], c[1], ex, ey, s + 15, 0, 28), { closed: true, w: 1.5, shade: false, taper: 0, seed: s + 15 });
-      light(ctx, c[0], c[1], 4, C.ledWarm);
-      stackIso(ctx, f, 0.8, 0.2, 0.07, 1.2, s + 20, C.ledWarm, LID);
-    },
+    // The incinerator (D51): a pit sunk into scorched ground, chutes in from every side, a flame
+    // that flares when an item falls in (owner, 2026-10-14; `pitIso` below, world/pits.ts).
+    head: 0.45,
+    draw: (ctx, f, s) => pitIso(ctx, f, s, 'all'),
   },
   sorter: { head: LID, draw: (ctx, f, s) => sorterIso(ctx, f, s, false) },
   inverted_sorter: { head: LID, draw: (ctx, f, s) => sorterIso(ctx, f, s, true) },
@@ -2653,6 +2638,273 @@ function tpIris(ctx: Ctx, f: IsoFrame, cx: number, cy: number, z: number, r: num
     ink(ctx, [blade[0]!, blade[2]!], { w: 1, color: C.ink, alpha: 0.7, shade: false, taper: 0, jitter: 0, seed: s + i });
   }
   ink(ctx, ellipsePts(...f.p(cx, cy, z), ...f.ell(r), s + 20, 0, 48), { closed: true, w: 1.6, shade: false, seed: s + 21 });
+}
+
+// ── the incinerator's pit (D51; owner, 2026-10-14) ───────────────────────────
+//
+// "The incinerator should have a style that shows more clearly that it will destroy the item.
+// Maybe a hole in the ground with a flame that activates when an item falls in it?" The block is
+// a pit sunk into scorched ground: a low riveted collar whose top is tempered by the heat (straw
+// at its outer edge, bronze, purple, blue at the throat, as the trade post's flame-proof walls),
+// a dark throat whose far wall glows down to a grate over the fire bed, and on each side a steel
+// chute from the tile's edge up over the collar to a lip above the throat (a turquoise band at
+// its mouth: the way in, as every port; chevrons pointing in). Items ride a chute and tip over
+// its lip into the dark; the flame flares out of the throat when one falls (world/pits.ts).
+//
+// The world draws it in two parts with what moves between them (world/pits.ts): the `back` (the
+// ground, the throat, the collar's far half and the chutes on the far sides) and the `front` (the
+// collar's near half and the near chutes), so an item tipping in and the flame's root sink
+// behind the near rim. The atlas sprite is both (`all`: icons, picking).
+
+/** The pit's geometry (local tiles, levels): the collar's outer and inner radius and its top; the throat's floor (below the ground); the chutes' half-width, and where each ends over the throat (its lip, from the centre). */
+export const PIT = { ro: 0.44, ri: 0.3, zr: 0.17, floor: -0.42, hw: 0.125, lip: 0.265 } as const;
+/** The tempered collar, from its outer edge in (brass to blue: hotter towards the throat). */
+export const PIT_TEMPER = [mix(C.brassL, C.steelD, 0.25), mix(C.brass, C.steelD, 0.3), mix(C.violetL, C.steelD, 0.35), mix(C.steelL, C.steelD, 0.3)] as const;
+/** The fire bed's paint (not LED tokens: the night glow is the pit's own, world/lights-view.ts). */
+export const EMBER = mix(C.coral, C.warn, 0.45), EMBER_D = mix(C.coralD, C.ink, 0.35);
+
+/** The pit's marks on its ground (local tiles, the same in both views and every rotation): soot blotches, cracks. */
+interface PitMarks { burns: ReadonlyArray<{ r: readonly number[]; tone: 'baked' | 'burnt' | 'soot'; alpha: number }>; cracks: ReadonlyArray<ReadonlyArray<readonly [number, number]>> }
+let pitMemo: PitMarks | null = null;
+export function pitMarks(): PitMarks {
+  if (pitMemo) return pitMemo;
+  const rng = makeRng(5150);
+  const burns: Array<{ r: number[]; tone: 'baked' | 'burnt' | 'soot'; alpha: number }> = [];
+  for (const [r0, amp, tone, alpha] of [[0.66, 0.2, 'burnt', 0.5], [0.55, 0.16, 'soot', 0.45], [0.47, 0.08, 'soot', 0.7]] as const) {
+    const h = [2, 3, 5].map((k) => ({ k, a: (rng.range(0.4, 1) * amp) / k ** 0.5, p: rng.range(0, Math.PI * 2) }));
+    burns.push({ tone, alpha, r: Array.from({ length: 48 }, (_, i) => {
+      const t = (i / 48) * Math.PI * 2;
+      return r0 * (1 + h.reduce((v, q) => v + q.a * Math.sin(q.k * t + q.p), 0));
+    }) });
+  }
+  const cracks: Array<Array<readonly [number, number]>> = [];
+  for (let i = 0; i < 6; i++) {
+    // Short jagged cracks out from the collar, between the chutes (diagonals of the tile).
+    let a = Math.PI / 4 + (i % 4) * (Math.PI / 2) + rng.range(-0.35, 0.35), r = PIT.ro + 0.02;
+    const line: Array<readonly [number, number]> = [];
+    for (let j = 0; j < 4 && r < 0.68; j++) { line.push([0.5 + Math.cos(a) * r, 0.5 + Math.sin(a) * r]); r += rng.range(0.05, 0.09); a += rng.range(-0.35, 0.35); }
+    if (line.length > 1) cracks.push(line);
+  }
+  pitMemo = { burns, cracks };
+  return pitMemo;
+}
+
+/** A pit's part: the back (ground, throat, the collar's far half, the far chutes), the front (the collar's near half, the near chutes), or both. */
+export type PitPart = 'back' | 'front' | 'all';
+
+/** Points of a horizontal ring's arc at height z, radius r, between screen angles a0 → a1 (0 = screen right, π/2 = towards the viewer). */
+function pitArc(f: IsoFrame, r: number, z: number, a0: number, a1: number, n = 24): Pt[] {
+  const [cx, cy] = f.p(0.5, 0.5, z), [ex, ey] = f.ell(r);
+  return Array.from({ length: n + 1 }, (_, i) => { const a = a0 + ((a1 - a0) * i) / n; return [cx + Math.cos(a) * ex, cy + Math.sin(a) * ey] as Pt; });
+}
+
+/**
+ * A chute from a side's tile edge up onto the collar and on to its lip over the throat (local
+ * side, unrotated): a dark steel plate between two rails, a turquoise band at its mouth (the way
+ * in), a cyan chevron pointing in; heat-tinted where it overhangs the throat.
+ */
+function pitChute(ctx: Ctx, f: IsoFrame, side: number, s: number): void {
+  const { hw, ro, zr, lip } = PIT;
+  const dx = [0, 1, 0, -1][side]!, dy = [-1, 0, 1, 0][side]!, nx = -dy, ny = dx;
+  // A point at distance r from the centre along the side, offset u across it, at height z.
+  const at = (r: number, u: number, z: number): Pt => f.p(0.5 + dx * r + nx * u, 0.5 + dy * r + ny * u, z);
+  const zt = zr + 0.03;
+  const zAt = (r: number): number => (r >= 0.5 ? 0.02 : r >= ro ? 0.02 + (zt - 0.02) * ((0.5 - r) / (0.5 - ro)) : zt);
+  const rs = [0.5, ro, lip];
+  const plate: Pt[] = [...rs.map((r) => at(r, -hw, zAt(r))), ...rs.slice().reverse().map((r) => at(r, hw, zAt(r)))];
+  shape(ctx, plate, mix(C.steelD, C.steel, 0.35), { w: 1.4, shade: false, jitter: 0, seed: s });
+  // The overhang over the throat: heat-tinted.
+  flat(ctx, [at(ro - 0.04, -hw, zt), at(lip, -hw, zt), at(lip, hw, zt), at(ro - 0.04, hw, zt)], mix(C.violetL, C.steelD, 0.45), 0.85);
+  // Rails along both sides (lit inner edge), the mouth's turquoise band, a chevron pointing in.
+  for (const u of [-hw, hw]) {
+    const rail = rs.map((r) => at(r, u * 0.92, zAt(r) + 0.05));
+    ink(ctx, rail, { w: 3, color: C.steelDD, shade: false, taper: 0, jitter: 0, seed: s + 3 });
+    ink(ctx, rail, { w: 1.1, color: C.steelL, alpha: 0.7, shade: false, taper: 0, jitter: 0, seed: s + 4 });
+  }
+  shape(ctx, [at(0.5, -hw, 0.02), at(0.455, -hw, 0.04), at(0.455, hw, 0.04), at(0.5, hw, 0.02)], C.turq, { w: 1, shade: false, jitter: 0, seed: s + 5 });
+  const cr = (ro + 0.5) / 2 + 0.01, k = 0.07;
+  ink(ctx, [at(cr + k * 0.6, -0.09, zAt(cr) + 0.01), at(cr - k * 0.6, 0, zAt(cr) + 0.01), at(cr + k * 0.6, 0.09, zAt(cr) + 0.01)], { w: 2.2, color: C.cyan, shade: false, taper: 0, jitter: 0, seed: s + 6 });
+  // The lip's edge, sharp: the item tips over it.
+  ink(ctx, [at(lip, -hw, zt), at(lip, hw, zt)], { w: 1.6, shade: false, taper: 0, jitter: 0, seed: s + 7 });
+}
+
+/** The throat seen from above: dark, its far wall glowing hotter down to a grate over the fire bed. */
+function pitThroat(ctx: Ctx, f: IsoFrame, s: number): void {
+  const { ri, zr, floor } = PIT;
+  const open = pitArc(f, ri, zr, 0, Math.PI * 2, 40);
+  flat(ctx, open, C.ink);
+  ctx.save(); pathOf(ctx, open); ctx.clip();
+  // The far wall, in bands from the rim down: tempered steel, then hotter, then the glow at its foot.
+  const bands: Array<[number, number, string, number]> = [[zr, zr - 0.1, mix(C.steelD, C.violetL, 0.3), 1], [zr - 0.1, -0.16, mix(C.steelDD, C.coralD, 0.12), 1], [-0.16, floor + 0.07, mix(C.steelDD, C.coralD, 0.5), 1], [floor + 0.07, floor, mix(C.coralD, C.coral, 0.4), 0.95]];
+  for (const [z0, z1, col, a] of bands) {
+    const r0 = ri, r1 = ri * 0.94;
+    flat(ctx, [...pitArc(f, r0, z0, Math.PI, Math.PI * 2), ...pitArc(f, r1, z1, Math.PI * 2, Math.PI)], col, a);
+  }
+  hatch(ctx, [...pitArc(f, ri, zr, Math.PI, Math.PI * 2), ...pitArc(f, ri * 0.94, -0.12, Math.PI * 2, Math.PI)], Math.PI / 2, 3.4, { alpha: 0.35, seed: s + 1 });
+  // The fire bed and its grate: bars across (local x), coals glowing between them.
+  const bed = pitArc(f, ri * 0.92, floor, 0, Math.PI * 2, 32);
+  flat(ctx, bed, EMBER_D);
+  ctx.save(); pathOf(ctx, bed); ctx.clip();
+  for (let i = -3; i <= 3; i++) {
+    const y = 0.5 + i * 0.075;
+    flat(ctx, [f.p(0.2, y - 0.022, floor), f.p(0.8, y - 0.022, floor), f.p(0.8, y + 0.022, floor), f.p(0.2, y + 0.022, floor)], i & 1 ? EMBER : mix(EMBER, C.peachL, 0.35), 0.9);
+  }
+  for (let i = -3; i <= 4; i++) {
+    const y = 0.5 + (i - 0.5) * 0.075;
+    ink(ctx, [f.p(0.18, y, floor), f.p(0.82, y, floor)], { w: 2.4, color: C.steelDD, shade: false, taper: 0, jitter: 0, seed: s + 10 + i });
+  }
+  ctx.restore();
+  // The rim's shadow on the far wall; the dark under the near rim, where the fall goes out of sight.
+  flat(ctx, [...pitArc(f, ri, zr, Math.PI, Math.PI * 2), ...pitArc(f, ri * 0.97, zr - 0.07, Math.PI * 2, Math.PI)], C.ink, 0.55);
+  flat(ctx, [...pitArc(f, ri, zr, 0, Math.PI), ...pitArc(f, ri * 0.86, zr + 0.1, Math.PI, 0)], C.ink, 0.6);
+  ctx.restore();
+}
+
+/**
+ * The collar's half (`far`: the screen's upper half, else the near one): its outer wall where it
+ * shows (the near half), its tempered top, rivets; the outline of its silhouette.
+ */
+function pitCollar(ctx: Ctx, f: IsoFrame, far: boolean, s: number): void {
+  const { ro, ri, zr } = PIT;
+  const [a0, a1] = far ? [Math.PI, Math.PI * 2] : [0, Math.PI];
+  if (!far) {
+    const wall = [...pitArc(f, ro, zr, 0, Math.PI), ...pitArc(f, ro, 0, Math.PI, 0)];
+    flat(ctx, wall, C.steelD);
+    // Soot streaks up the wall and a lit band at its top.
+    ctx.save(); pathOf(ctx, wall); ctx.clip();
+    hatch(ctx, wall, Math.PI / 2, 4, { alpha: 0.4, seed: s + 1, w: 1.2 });
+    ctx.restore();
+    ink(ctx, pitArc(f, ro, zr - 0.03, 0.15, Math.PI - 0.15), { w: 1, color: C.steelL, alpha: 0.5, shade: false, taper: 0, jitter: 0, seed: s + 2 });
+  }
+  // The top: concentric tempered bands, outer edge first.
+  for (let i = 0; i < PIT_TEMPER.length; i++) {
+    const r0 = ro - ((ro - ri) * i) / PIT_TEMPER.length, r1 = ro - ((ro - ri) * (i + 1)) / PIT_TEMPER.length;
+    flat(ctx, [...pitArc(f, r0, zr, a0, a1), ...pitArc(f, r1, zr, a1, a0)], PIT_TEMPER[i]!);
+  }
+  ink(ctx, pitArc(f, ri, zr, a0, a1), { w: 1.4, shade: false, taper: 0, jitter: 0, seed: s + 3 });
+  ink(ctx, pitArc(f, ro, zr, a0, a1), { w: 1.2, color: mix(C.steelL, '#ffffff', 0.2), alpha: far ? 0.55 : 0.3, shade: false, taper: 0, jitter: 0, seed: s + 4 });
+  // Bolts round the top, between the chutes (each half its own).
+  const cy = f.p(0.5, 0.5, zr)[1];
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + Math.PI / 8, r = (ro + ri) / 2 + 0.035;
+    const p = f.p(0.5 + Math.cos(a) * r, 0.5 + Math.sin(a) * r, zr);
+    if ((p[1] < cy) === far) rivet(ctx, p[0], p[1], 1.5, mix(C.steelL, C.brassL, 0.25));
+  }
+  // The silhouette: the far half's back edge; the near half's flanks and foot.
+  const [ex] = f.ell(ro), c1 = f.p(0.5, 0.5, zr);
+  if (far) ink(ctx, pitArc(f, ro, zr, Math.PI, Math.PI * 2), { w: 2, seed: s + 6 });
+  else ink(ctx, [[c1[0] + ex, c1[1]], ...pitArc(f, ro, 0, 0, Math.PI), [c1[0] - ex, c1[1]]], { w: 2, seed: s + 5 });
+}
+
+/**
+ * The incinerator's pit, or one of its parts (`PitPart`, above). In a cast shadow's frame only
+ * the collar and the chutes cast one (the ground and the hole cannot).
+ */
+export function pitIso(ctx: Ctx, f: IsoFrame, s: number, part: PitPart = 'all'): void {
+  const solid = !(f instanceof ShadowFrame);
+  const near = (side: number): boolean => facing(f, side);
+  if (part !== 'front') {
+    if (solid) {
+      // Scorched ground: baked earth, soot blotches round the collar, cracks with a pale lip.
+      const g = (x: number, y: number): Pt => f.p(x, y, 0);
+      const foot: Pt[] = [g(0.02, 0.02), g(0.98, 0.02), g(0.98, 0.98), g(0.02, 0.98)];
+      const m = pitMarks();
+      flat(ctx, foot, SCORCH.baked);
+      ctx.save(); pathOf(ctx, foot); ctx.clip();
+      for (const b of m.burns) flat(ctx, b.r.map((v, i) => { const t = (i / b.r.length) * Math.PI * 2; return g(0.5 + Math.cos(t) * v, 0.5 + Math.sin(t) * v); }), SCORCH[b.tone], b.alpha);
+      for (const [i, c] of m.cracks.entries()) {
+        const pts = c.map(([x, y]) => g(x, y));
+        ink(ctx, pts.map(([x, y]) => [x - 0.8, y - 1] as Pt), { w: 1.1, color: SCORCH.baked, alpha: 0.6, shade: false, taper: 0.4, jitter: 0.2, seed: s + 60 + i });
+        ink(ctx, pts, { w: 1.5, color: C.ink, alpha: 0.7, shade: false, taper: 0.4, jitter: 0.2, seed: s + 60 + i });
+      }
+      ctx.restore();
+      ink(ctx, foot, { closed: true, w: 1, alpha: 0.3, shade: false, seed: s + 61 });
+      pitThroat(ctx, f, s + 100);
+    }
+    pitCollar(ctx, f, true, s + 200);
+    for (let side = 0; side < 4; side++) if (!near(side)) pitChute(ctx, f, side, s + 300 + side * 11);
+  }
+  if (part !== 'back') {
+    pitCollar(ctx, f, false, s + 400);
+    // The near chutes, the one nearer the viewer last.
+    const sides = [0, 1, 2, 3].filter(near).sort((a, b) => f.dir(a) - f.dir(b));
+    for (const side of sides) pitChute(ctx, f, side, s + 500 + side * 11);
+  }
+}
+
+/** The pit's flame: `level` 1…`PIT_FLAMES` (how high it flares), `variant` (its flicker), or embers and smoke (level 0). In the pit's own frame (`PIT_FLAME_HEAD`). */
+export const PIT_FLAMES = 6, PIT_FLAME_HEAD = 2.1;
+
+/**
+ * A flame flaring out of the pit's throat, as flat tongues: coral outside, orange, a pale core,
+ * inked in dark coral, a few sparks over the tallest; or, at level 0, embers rising from the bed
+ * and a thin wisp of smoke. Its root sits deep in the throat (the near rim hides it).
+ */
+export function pitFlameIso(ctx: Ctx, f: IsoFrame, level: number, variant: number, s: number): void {
+  const rng = makeRng(s + level * 31 + variant * 977);
+  const { ri, zr } = PIT;
+  const [cx, cy] = f.p(0.5, 0.5, zr - 0.08);
+  const [ex] = f.ell(ri);
+  if (level <= 0) {
+    for (let i = 0; i < 5; i++) {
+      const x = cx + rng.range(-0.6, 0.6) * ex, y = cy - rng.range(2, 26);
+      flat(ctx, ellipsePts(x, y, 2.6, 2.2, s + i, 0, 8), C.coral, 0.85);
+      flat(ctx, ellipsePts(x, y, 1.2, 1, s + i + 5, 0, 6), C.peachL);
+    }
+    const wisp: Pt[] = [];
+    for (let k = 0; k <= 8; k++) wisp.push([cx + Math.sin(k * 0.8 + variant * 2) * 6 + rng.range(-1, 1), cy - 6 - k * 9]);
+    ink(ctx, wisp, { w: 5, color: mix(C.lilacL, C.inkSoft, 0.35), alpha: 0.3, shade: false, taper: 0.5, jitter: 0.6, seed: s + 40 + variant });
+    return;
+  }
+  const h = level / PIT_FLAMES;
+  const H = (0.3 + 1.75 * h) * ILH, W = ex * (0.95 + 0.3 * h);
+  /** A tongue: from the left of its base up round `n` tips to its right, `k` its size (0…1). */
+  const tongue = (k: number, n: number, seed: number): Pt[] => {
+    const r = makeRng(seed);
+    const w = W * k, top = H * k;
+    const pts: Pt[] = [[cx - w, cy]];
+    const tips = Array.from({ length: n }, (_, i) => {
+      const u = n === 1 ? 0 : -0.62 + (1.24 * i) / (n - 1);
+      return { x: cx + u * w * 0.85 + r.range(-0.1, 0.1) * w, y: cy - top * (i === Math.floor(n / 2) ? 1 : r.range(0.62, 0.88)) };
+    });
+    for (const [i, t] of tips.entries()) {
+      const lx = i === 0 ? cx - w : (tips[i - 1]!.x + t.x) / 2, ly = i === 0 ? cy : cy - top * r.range(0.36, 0.52);
+      // Up the tongue's flank (a slight S), to its tip.
+      for (let j = 1; j <= 5; j++) { const q = j / 5; pts.push([lx + (t.x - lx) * q + Math.sin(q * Math.PI) * w * 0.12 * (i % 2 ? -1 : 1), ly + (t.y - ly) * q * q]); }
+      const nx = i === n - 1 ? cx + w : (t.x + tips[i + 1]!.x) / 2, ny = i === n - 1 ? cy : cy - top * r.range(0.36, 0.52);
+      for (let j = 1; j <= 5; j++) { const q = j / 5; pts.push([t.x + (nx - t.x) * q, t.y + (ny - t.y) * Math.sqrt(q)]); }
+    }
+    // The base: the near half of an ellipse (hidden behind the near rim).
+    for (let j = 1; j < 10; j++) { const a = (j / 10) * Math.PI; pts.push([cx + Math.cos(a) * w, cy + Math.sin(a) * w * 0.5]); }
+    return pts;
+  };
+  const outer = tongue(1, level >= 3 ? 3 : 2, s + variant * 13 + level);
+  flat(ctx, outer, C.coral);
+  flat(ctx, tongue(0.72, level >= 4 ? 3 : 2, s + 50 + variant * 7 + level), mix(C.coral, C.warn, 0.62));
+  flat(ctx, tongue(0.42, 1, s + 90 + variant * 3 + level), mix(C.warn, '#fff4d6', 0.7));
+  ink(ctx, outer.slice(0, outer.length - 8), { w: 1.5, color: C.coralD, alpha: 0.9, shade: false, taper: 0.1, jitter: 0.2, seed: s + 7 });
+  // Sparks over a tall flame.
+  if (level >= 3) {
+    for (let i = 0; i < level - 1; i++) {
+      const x = cx + rng.range(-1, 1) * W, y = cy - H * rng.range(0.85, 1.35);
+      ink(ctx, [[x, y], [x + rng.range(-1.5, 1.5), y - rng.range(3, 6)]], { w: 1.8, color: mix(C.warn, '#fff4d6', 0.5), shade: false, taper: 0.3, jitter: 0, seed: s + 60 + i });
+    }
+  }
+}
+/** One of the pit's parts drawn into a fresh canvas for a rotation (the world's back and front, world/pits.ts); `frame`: its anchor. */
+export function drawPitPart(part: PitPart, rot: Rot, make: (w: number, h: number) => { ctx: Ctx; canvas: unknown }): { canvas: unknown; frame: IsoFrame } {
+  const f = new IsoFrame(1, 1, rot, R.incinerator!.head);
+  const { ctx, canvas } = make(f.W, f.H);
+  pitIso(ctx, f, seedOf('incinerator'), part);
+  return { canvas, frame: f };
+}
+
+/** A frame of the pit's flame (level 0: embers), anchored as the pit's sprite (the footprint's ground corner). */
+export function drawPitFlame(level: number, variant: number, make: (w: number, h: number) => { ctx: Ctx; canvas: unknown }): { canvas: unknown; frame: IsoFrame } {
+  const f = new IsoFrame(1, 1, 0, PIT_FLAME_HEAD);
+  const { ctx, canvas } = make(f.W, f.H);
+  pitFlameIso(ctx, f, level, variant, seedOf('incinerator') + 700);
+  return { canvas, frame: f };
 }
 
 const seedOf = (id: string): number => (id.length * 131 + id.charCodeAt(0) * 17) | 0;

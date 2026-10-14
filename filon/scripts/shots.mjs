@@ -105,8 +105,8 @@ const post = await page.evaluate(() => {
   const FL = window.FL, sim = FL.app.sim, id = FL.tradePost();
   if (!id) return null;
   if (sim.tick < 600 * 45) FL.tick(600 * 45 - sim.tick);
-  sim.setExport(id, 0, 'glass');
-  sim.setExport(id, 1, 'iron_plate');
+  sim.spotTrade('glass', 'sell', 40); // a post sells what its entrance brings (D64): a spot sale from the Heart instead
+  sim.spotTrade('iron_plate', 'sell', 40);
   FL.connect(id, sim.hearthId); // an order buys only while the exit can hand its goods out
   sim.addImport(id, 'copper_ore', 10, Math.round(FL.price('copper_ore').ask * 200));
   FL.tick(600 * 30);

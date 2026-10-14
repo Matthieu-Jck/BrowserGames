@@ -3,7 +3,11 @@
 // One painter serves both the relief sprites (iso projection, full detail) and the terrain
 // worker (oblique projection into the ground texture, light detail), so far and near zooms
 // agree. Each hardness reads differently: banded sandstone, jointed basalt, faceted
-// obsidian, heartrock with glowing veins. Worker-safe (Canvas2D only).
+// obsidian, heartrock with glowing veins. A column of water up on the rock (the Crown's tarn,
+// D63) is the rock round it with the water for its top (`ColumnOpts.top`): each tile draws its
+// part of the pool, cut by marching squares over its corners so the shore runs on from tile to
+// tile (into the rock's own corner where three tiles of water meet it), inked like the floor's
+// water, deep at its heart; reclaimed ground is fill. Worker-safe (Canvas2D only).
 import { hashUnit } from '@/core/hash';
 import { slabOutline, shadeOf, STEP_LEVELS, wallRuns, type OutlinePt } from '../relief';
 import { C, mix, rgba } from './tokens';
@@ -47,6 +51,16 @@ function line(ctx: Ctx, pts: readonly Pt[], color: string, w: number, alpha = 1)
   ctx.restore();
 }
 
+/**
+ * The top of a column up on the rock that is water, reclaimed ground, or rock beside water at its
+ * height (D63: the Crown's tarn): `kind`, what the tile itself is; `wet` and `deep`, which tiles
+ * of its 3×3 (bit 3·(dy + 1) + dx + 1, the tile itself bit 4) hold water / deep water at its height.
+ */
+export interface TopLook { readonly kind: 'water' | 'ground' | 'rock'; readonly wet: number; readonly deep: number }
+
+/** A top look's key, for the sprite atlas. */
+export const topKey = (t: TopLook | null | undefined): string => (t ? `${t.kind[0]}${t.wet}.${t.deep}` : '');
+
 export interface ColumnOpts {
   /** 0 = flat (far terrain), 1 = light (terrain worker), 2 = full (sprites). */
   detail: 0 | 1 | 2;
@@ -54,6 +68,8 @@ export interface ColumnOpts {
   seed: number;
   /** Line width unit (px per 1 at sprite scale). */
   k: number;
+  /** Its top, when it is not rock (water up on the rock, ground reclaimed from it). */
+  top?: TopLook | null;
 }
 
 /**
@@ -125,9 +141,12 @@ function drawSlab(ctx: Ctx, P: Proj, cls: number, pts: readonly OutlinePt[], z0:
   ctx.lineWidth = 1.6;
   ctx.lineJoin = 'round';
   poly(ctx, topPts);
-  ctx.stroke(); // bleed 0.8 px so neighbouring tops join without a hairline
+  // Bleed 0.8 px so neighbouring tops join without a hairline (water bleeds its own colour instead).
+  const pool = z1 === L ? o.top : null;
+  if (pool?.kind !== 'water') ctx.stroke();
   ctx.fill();
-  if (o.detail >= 1 && z1 === L) {
+  if (pool && pool.kind !== 'rock') drawTop(ctx, P, topPts, z1, pool, o, rnd);
+  else if (o.detail >= 1 && z1 === L) {
     ctx.save();
     poly(ctx, topPts);
     ctx.clip();
@@ -165,6 +184,8 @@ function drawSlab(ctx: Ctx, P: Proj, cls: number, pts: readonly OutlinePt[], z0:
     }
     ctx.restore();
   }
+  // Rock beside water at its height: the pool's corner over its grain.
+  if (pool?.kind === 'rock') drawTop(ctx, P, topPts, z1, pool, o, rnd);
 
   // ── ink ──
   // Lit lip along the top of the lit walls, then silhouettes.
@@ -196,6 +217,114 @@ function drawSlab(ctx: Ctx, P: Proj, cls: number, pts: readonly OutlinePt[], z0:
       if (Math.abs(run[i]!.a - run[i + 1]!.a) > 0.1) line(ctx, [P(p.u, p.v, z0), P(p.u, p.v, z1)], C.ink, 0.9 * k, 0.5);
     }
   }
+}
+
+/** A tile's corners clockwise from the back (NW, NE, SE, SW), and the 3×3 bits (`TopLook.wet`) of the four tiles meeting at each. */
+const CORNERS: ReadonlyArray<readonly [number, number, readonly number[]]> = [
+  [0, 0, [0, 1, 3, 4]], [1, 0, [1, 2, 4, 5]], [1, 1, [4, 5, 7, 8]], [0, 1, [3, 4, 6, 7]],
+];
+/** The neighbour across each side (N, E, S, W: the side leaving each corner above), as a 3×3 bit. */
+const ACROSS = [1, 5, 7, 3] as const;
+
+/**
+ * The part of a tile inside a pool (`mask`: which tiles of its 3×3 hold it), in tile-local coords
+ * clockwise from the back: marching squares over the tile's corners, each worth the share of the
+ * four tiles meeting there that hold it, cut at a half. Every tile reads its corners from the same
+ * neighbours, so the outline runs on across tiles — straight along a shore, cut on the diagonal at
+ * a corner, out of the pool and into the rock where three tiles of water meet it. `shore`: does
+ * the segment leaving the point bound the pool (not a side shared with more of it)? `across`: the
+ * 3×3 bit of the tile beyond the side the segment runs along (−1: inside the tile).
+ */
+function poolPart(mask: number): Array<{ u: number; v: number; shore: boolean; across: number }> {
+  const val = CORNERS.map(([, , q]) => q.filter((b) => mask & (1 << b)).length / 4);
+  const pts: Array<{ u: number; v: number; edge: boolean; side: number }> = [];
+  for (let k = 0; k < 4; k++) {
+    const [u0, v0] = CORNERS[k]!, [u1, v1] = CORNERS[(k + 1) % 4]!;
+    const a = val[k]!, b = val[(k + 1) % 4]!;
+    if (a >= 0.5) pts.push({ u: u0, v: v0, edge: a === 0.5, side: k });
+    if (a !== 0.5 && b !== 0.5 && a < 0.5 !== b < 0.5) {
+      const t = (0.5 - a) / (b - a);
+      pts.push({ u: u0 + (u1 - u0) * t, v: v0 + (v1 - v0) * t, edge: true, side: k });
+    }
+  }
+  if (pts.length < 3) return [];
+  // A point on side k (leaving corner k) also lies on side k − 1 when it is corner k itself.
+  const onSide = (p: { u: number; v: number }, k: number): boolean => (k === 0 ? p.v === 0 : k === 1 ? p.u === 1 : k === 2 ? p.v === 1 : p.u === 0);
+  return pts.map((p, i) => {
+    const q = pts[(i + 1) % pts.length]!;
+    let shore = p.edge && q.edge, across = -1;
+    for (let k = 0; k < 4; k++) if (onSide(p, k) && onSide(q, k)) across = ACROSS[k]!;
+    if (across >= 0 && mask & (1 << across)) shore = false;
+    return { u: p.u, v: p.v, shore, across };
+  });
+}
+
+/** Ink a pool part's shore: a paper glow under the ink, as on the floor's water (terrain.ts). */
+function inkShore(ctx: Ctx, part: ReadonlyArray<{ shore: boolean }>, pp: readonly Pt[], color: string, w: number, glow: number): void {
+  for (const [c, width, a] of [[C.paper, glow, 0.7], [color, w, 0.95]] as const) {
+    if (!width) continue;
+    for (let i = 0; i < part.length; i++) if (part[i]!.shore) line(ctx, [pp[i]!, pp[(i + 1) % part.length]!], c, width, a);
+  }
+}
+
+/**
+ * The top of a column up on the rock that holds water or borders it (D63), over the top just
+ * drawn and inside `topPts`: its part of the pool (shallow, the deep within it), ripples, the
+ * shore; reclaimed ground first, as fill.
+ */
+function drawTop(ctx: Ctx, P: Proj, topPts: readonly Pt[], z: number, top: TopLook, o: ColumnOpts, rnd: (n: number) => number): void {
+  const k = o.k;
+  ctx.save();
+  // Kept inside a top cut back by a drop beside it (rock dug away round the pool); a whole tile's
+  // top is not clipped, so the bleed and the shore's ink run on into the next tile's.
+  if (topPts.length !== 4) {
+    poly(ctx, topPts);
+    ctx.clip();
+  }
+  if (top.kind === 'ground') {
+    ctx.fillStyle = C.filled;
+    poly(ctx, topPts);
+    ctx.fill();
+    if (o.detail >= 1) {
+      ctx.fillStyle = rgba(C.ink, 0.22);
+      for (let i = 0; i < 6; i++) {
+        const [x, y] = P(0.15 + rnd(400 + i) * 0.7, 0.15 + rnd(420 + i) * 0.7, z);
+        ctx.beginPath(); ctx.arc(x, y, (0.6 + rnd(440 + i) * 0.7) * k, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+  const wet = poolPart(top.wet), pw = wet.map((p) => P(p.u, p.v, z));
+  if (wet.length) {
+    // Each part bleeds into the next (no seam between two tiles of water) — not over a
+    // neighbour's deep water, drawn before it.
+    ctx.fillStyle = ctx.strokeStyle = C.shallow;
+    ctx.lineWidth = 1.6;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < wet.length; i++) {
+      const a = wet[i]!.across;
+      if (a >= 0 && top.deep & (1 << a)) continue;
+      ctx.beginPath(); ctx.moveTo(pw[i]![0], pw[i]![1]); ctx.lineTo(pw[(i + 1) % wet.length]![0], pw[(i + 1) % wet.length]![1]); ctx.stroke();
+    }
+    poly(ctx, pw);
+    ctx.fill();
+    const deep = poolPart(top.deep), pd = deep.map((p) => P(p.u, p.v, z));
+    if (deep.length) {
+      ctx.fillStyle = ctx.strokeStyle = C.deep;
+      poly(ctx, pd);
+      ctx.stroke();
+      ctx.fill();
+      if (o.detail >= 1) inkShore(ctx, deep, pd, C.turqL, 1.2 * k, 0);
+    }
+    if (o.detail >= 1 && top.wet & 16) {
+      // A ripple now and then on the tiles of water.
+      if (rnd(460) < 0.5) {
+        const u = 0.2 + rnd(470) * 0.45, v = 0.25 + rnd(480) * 0.5;
+        line(ctx, [P(u, v, z), P(u + 0.12, v - 0.05, z), P(u + 0.24, v, z)], 'rgba(255,255,255,0.75)', 1.1 * k);
+      }
+    }
+    inkShore(ctx, wet, pw, C.ink, (o.detail >= 2 ? 1.8 : 1.3) * k, 3 * k);
+  }
+  ctx.restore();
 }
 
 /** Strata, joints, facets or veins by hardness, then pen hatching on the shaded faces. */

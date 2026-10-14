@@ -191,4 +191,4 @@ export type ModTarget =
   | 'accCap' | 'accRate' | 'genOut' | 'craftSpeed' | 'tradeFee' | 'deliveryDelay' | 'slippage'
   | 'landPrice' | 'landRent' | 'landGrowth' | 'farLand' | 'remoteBeltCost' | 'remoteBuildDelay'
   | 'pylonLink' | 'dockShips' | 'shipCap' | 'shipSpeed' | 'ring3Caps'
-  | 'bridgeSpan' | 'streams' | 'excavatedSpeed' | 'gustVariance' | 'drifterDistance';
+  | 'bridgeSpan' | 'orders' | 'excavatedSpeed' | 'gustVariance' | 'drifterDistance';

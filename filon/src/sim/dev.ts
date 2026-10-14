@@ -5,7 +5,8 @@
 // commands, so a demo colony replays. Spots must be free ground: `canPlace(...).ok` also
 // accepts a placement that would replace what stands there.
 // At the end, the layout kit of the scripted debug bases (scenarios.ts): spots read off the map
-// as it stands, lines that keep off other buildings' ports, routers branching a laid line.
+// as it stands, lines that keep off other buildings' ports, routers branching a laid line; for the
+// late base's far works (scenario-late.ts, D66), pylon lines and lines over the mountains.
 import { BUILDING_KIND, buildingIdx, itemIdx } from '@/content/registry';
 import { PLAN_IDS, planDef } from '@/content/research';
 import { CIRQUE } from '@/content/world';
@@ -85,8 +86,9 @@ export function route(sim: Sim, from: [number, number], to: [number, number], fi
  * A ribbon line over the land as it is (D45): from tile `from` to one of `goals` (tile → the way
  * its last ribbon must point), on the floor and on rock (ribbons stand on rock), one level up or
  * down at a time — the tile that hands on to the next level is a traction ribbon (`lift`), every
- * other one a plain ribbon. It keeps off other ports' fronts and routing blocks' sides
- * (`keepOff`), the goals excepted. The tiles with their way and their ribbon, or null.
+ * other one a plain ribbon — and never two steps in a row (an elevator needs a flat ribbon tile in
+ * front of it: placement refuses it, `lift_room`). It keeps off other ports' fronts and routing
+ * blocks' sides (`keepOff`), the goals excepted. The tiles with their way and their ribbon, or null.
  */
 export function routeOver(sim: Sim, from: readonly [number, number], goals: ReadonlyMap<number, Rot>, maxNodes = 60_000): Array<[number, number, Rot, 'ribbon' | 'traction_ribbon']> | null {
   const avoid = keepOff(sim);
@@ -98,6 +100,56 @@ export function routeOver(sim: Sim, from: readonly [number, number], goals: Read
     return sim.grid.occ[tileIndex(x, y)] === 0 && sim.revealed(x, y) && (isFloor(t) || isRock(t));
   };
   if (!ok(from[0], from[1])) return null;
+  // Breadth first over (tile, came in by a step): a step may follow only a flat move.
+  const key = (t: number, stepped: boolean): number => t * 2 + (stepped ? 1 : 0);
+  const start = key(tileIndex(from[0], from[1]), false);
+  const prev = new Map<number, number>([[start, -1]]);
+  const q = [start];
+  let end = -1;
+  for (let h = 0; h < q.length && prev.size < maxNodes; h++) {
+    const k = q[h]!, cur = k >> 1, stepped = (k & 1) === 1;
+    if (goals.has(cur)) { end = k; break; }
+    const cx = cur % W, cy = (cur - cx) / W;
+    for (let d = 0; d < 4; d++) {
+      const nx = cx + DX[d]!, ny = cy + DY[d]!;
+      const n = tileIndex(nx, ny);
+      if (!ok(nx, ny) || (avoid.has(n) && !goals.has(n))) continue;
+      const dl = Math.abs(lv(n) - lv(cur));
+      if (dl > 1 || (dl === 1 && stepped)) continue;
+      const nk = key(n, dl === 1);
+      if (prev.has(nk)) continue;
+      prev.set(nk, k);
+      q.push(nk);
+    }
+  }
+  if (end < 0) return null;
+  const path: number[] = [];
+  for (let k = end; k !== -1; k = prev.get(k)!) path.push(k >> 1);
+  path.reverse();
+  // A tile met twice (once by each kind of move) would cross itself: no such route.
+  if (new Set(path).size !== path.length) return null;
+  return path.map((t, i) => {
+    const x = t % W, y = (t - x) / W;
+    if (i === path.length - 1) return [x, y, goals.get(t)!, 'ribbon'];
+    const n = path[i + 1]!, nx = n % W, ny = (n - nx) / W;
+    const dir = (nx > x ? 1 : nx < x ? 3 : ny > y ? 2 : 0) as Rot;
+    return [x, y, dir, lv(n) !== lv(t) ? 'traction_ribbon' : 'ribbon'];
+  });
+}
+
+/**
+ * A line on one level only (D45: a conduit has no lift, water does not fall): from tile `from` to
+ * one of `goals` (tile → the way its last tile points), breadth first over free floor and rock
+ * of `from`'s level, off other ports' fronts and routing blocks' sides (the goals excepted).
+ */
+export function routeLevel(sim: Sim, from: readonly [number, number], goals: ReadonlyMap<number, Rot>, maxNodes = 4000): BeltTiles | null {
+  const avoid = keepOff(sim), W = 1024, lv = sim.grid.level(from[0], from[1]);
+  const ok = (x: number, y: number): boolean => {
+    if (!inWorld(x, y) || sim.grid.occ[tileIndex(x, y)] !== 0 || !sim.revealed(x, y) || sim.grid.level(x, y) !== lv) return false;
+    const t = sim.grid.terrain(x, y);
+    return isFloor(t) || isRock(t);
+  };
+  if (!ok(from[0], from[1])) return null;
   const start = tileIndex(from[0], from[1]);
   const prev = new Map<number, number>([[start, -1]]);
   const q = [start];
@@ -107,9 +159,8 @@ export function routeOver(sim: Sim, from: readonly [number, number], goals: Read
     if (goals.has(cur)) { end = cur; break; }
     const cx = cur % W, cy = (cur - cx) / W;
     for (let d = 0; d < 4; d++) {
-      const nx = cx + DX[d]!, ny = cy + DY[d]!;
-      const n = tileIndex(nx, ny);
-      if (prev.has(n) || !ok(nx, ny) || Math.abs(lv(n) - lv(cur)) > 1 || (avoid.has(n) && !goals.has(n))) continue;
+      const nx = cx + DX[d]!, ny = cy + DY[d]!, n = tileIndex(nx, ny);
+      if (prev.has(n) || !ok(nx, ny) || (avoid.has(n) && !goals.has(n))) continue;
       prev.set(n, cur);
       q.push(n);
     }
@@ -119,11 +170,10 @@ export function routeOver(sim: Sim, from: readonly [number, number], goals: Read
   for (let t = end; t !== -1; t = prev.get(t)!) path.push(t);
   path.reverse();
   return path.map((t, i) => {
-    const x = t % W, y = (t - x) / W;
-    if (i === path.length - 1) return [x, y, goals.get(t)!, 'ribbon'];
-    const n = path[i + 1]!, nx = n % W, ny = (n - nx) / W;
-    const dir = (nx > x ? 1 : nx < x ? 3 : ny > y ? 2 : 0) as Rot;
-    return [x, y, dir, lv(n) !== lv(t) ? 'traction_ribbon' : 'ribbon'];
+    const x = t % W, y = (t - x) / W, n = path[i + 1];
+    if (n === undefined) return [x, y, goals.get(t)!];
+    const nx = n % W, ny = (n - nx) / W;
+    return [x, y, (nx > x ? 1 : nx < x ? 3 : ny > y ? 2 : 0) as Rot];
   });
 }
 
@@ -234,6 +284,85 @@ export function powerLine(sim: Sim, targetId: number, maxMasts = 24): number {
     n++;
     const m = sim.ents.get(r.id!)!;
     // The new mast wired itself to the nearest pillar; make sure it hangs on this line.
+    if (!sim.links.has(cur.id, m.id) && !sim.link(cur.id, m.id).ok && !hearthNetwork(sim).has(m.id)) return n;
+    cur = m;
+  }
+  sim.link(cur.id, targetId);
+  return n;
+}
+
+/**
+ * Wire a far building into the Heart's grid by pylons (Land Registry, tr4): from the grid's link
+ * point nearest it with a free slot, the fewest pylons, each within a pylon's reach of the last
+ * (with Reinforced Pylons, 40) and at most a terrace above or below it (D45), the last reaching
+ * the building — found breadth first over a lattice of free tiles (every `step` tiles) in a
+ * corridor between the two, off every port's front. Pylons off the claim's land come by kite
+ * (their cost ×3, granted by the caller); a sister claim's parcel is refused by placement, so the
+ * lattice goes round it. Paid, logged placements and `link` commands. Returns the pylons placed
+ * (0 when the building already hangs on the grid, or no line was found).
+ */
+export function pylonLine(sim: Sim, targetId: number, step = 4, maxPylons = 30): number {
+  const t = sim.ents.get(targetId);
+  if (!t || !linkable(t.def)) return 0;
+  const net = hearthNetwork(sim);
+  if (net.has(targetId)) return 0;
+  const pylon = buildingIdx('pylon');
+  const R = linkPoint(pylon, sim.mods)!.range;
+  const lv = (x: number, y: number): number => sim.grid.level(x, y);
+  const at = (x: number, y: number): Pick<Ent, 'def' | 'x' | 'y' | 'rot'> => ({ def: pylon, x, y, rot: 0 as Rot });
+  const sources = [...net].map((id) => sim.ents.get(id)).filter((e): e is Ent => !!e && isLinkPoint(e.def) && sim.links.degree(e.id) < (linkPoint(e.def, sim.mods)?.slots ?? 0))
+    .sort((a, b) => gap2(a, t) - gap2(b, t) || a.id - b.id);
+  const src = sources[0];
+  if (!src) return 0;
+  // Straight from the source when a pylon's wire reaches (the wire's reach is the longer end's).
+  if (gap2(src, t) <= Math.max(R, linkPoint(src.def, sim.mods)!.range) ** 2 && sim.link(src.id, targetId).ok) return 0;
+  // The corridor: lattice tiles within R of the segment source → target.
+  const ax = src.x, ay = src.y, bx = t.x, by = t.y, sx = bx - ax, sy = by - ay, L2 = Math.max(1, sx * sx + sy * sy);
+  const fronts = portFronts(sim);
+  const nodes: Array<{ x: number; y: number; l: number }> = [];
+  const x0 = Math.min(ax, bx) - R, x1 = Math.max(ax, bx) + R, y0 = Math.min(ay, by) - R, y1 = Math.max(ay, by) + R;
+  for (let y = y0 - (((y0 % step) + step) % step); y <= y1; y += step) {
+    for (let x = x0 - (((x0 % step) + step) % step); x <= x1; x += step) {
+      // Squared distance to the segment, in integers: the projection's parameter scaled by L2.
+      const k = Math.max(0, Math.min(L2, (x - ax) * sx + (y - ay) * sy));
+      const ex = (x - ax) * L2 - k * sx, ey = (y - ay) * L2 - k * sy;
+      if (ex * ex + ey * ey > R * R * L2 * L2) continue;
+      if (!inWorld(x, y) || fronts.has(tileIndex(x, y)) || !freeSpot(sim, 'pylon', x, y, 0)) continue;
+      nodes.push({ x, y, l: lv(x, y) });
+    }
+  }
+  // Breadth first from the source: a hop within R and a terrace.
+  const prev = new Int32Array(nodes.length).fill(-2);
+  let layer: number[] = [];
+  const sl = lv(src.x, src.y), tl = lv(t.x, t.y);
+  nodes.forEach((n, i) => { if (gap2(src, at(n.x, n.y)) <= R * R && Math.abs(n.l - sl) <= 1) { prev[i] = -1; layer.push(i); } });
+  let found = -1;
+  for (let hop = 0; hop < maxPylons && layer.length && found < 0; hop++) {
+    const next: number[] = [];
+    for (const i of layer) {
+      const n = nodes[i]!;
+      if (gap2(at(n.x, n.y), t) <= R * R && Math.abs(n.l - tl) <= 1) { found = i; break; }
+      for (let j = 0; j < nodes.length; j++) {
+        if (prev[j] !== -2) continue;
+        const m = nodes[j]!, dx = m.x - n.x, dy = m.y - n.y;
+        if (dx * dx + dy * dy > R * R || Math.abs(m.l - n.l) > 1) continue;
+        prev[j] = i;
+        next.push(j);
+      }
+    }
+    layer = next;
+  }
+  if (found < 0) return 0;
+  const path: number[] = [];
+  for (let i = found; i >= 0; i = prev[i]!) path.push(i);
+  path.reverse();
+  let cur: Ent = src, n = 0;
+  for (const i of path) {
+    const p = nodes[i]!;
+    const r = sim.place('pylon', p.x, p.y, 0);
+    if (!r.ok) return n;
+    n++;
+    const m = sim.ents.get(r.id!)!;
     if (!sim.links.has(cur.id, m.id) && !sim.link(cur.id, m.id).ok && !hearthNetwork(sim).has(m.id)) return n;
     cur = m;
   }
@@ -424,6 +553,10 @@ export function spotsNear(sim: Sim, def: string, near: readonly [number, number]
   if (opts.touch && !toucher) return [];
   const [tx, ty] = opts.toward ?? near;
   const out: Array<[number, number, Rot, number, number]> = [];
+  // On the mountains (`onRock`), a port opens onto free rock or floor of the building's own level
+  // (D45: a port meets only its own level): the potteries on the tarn's peak.
+  const open = (x: number, y: number, lv: number): boolean =>
+    opts.onRock ? (openRock(sim, x, y) || openFloor(sim, x, y)) && sim.grid.level(x, y) === lv : openFloor(sim, x, y);
   for (let y = near[1] - r; y <= near[1] + r; y++) {
     for (let x = near[0] - r; x <= near[0] + r; x++) {
       for (const rot of [0, 1, 2, 3] as const) {
@@ -437,12 +570,13 @@ export function spotsNear(sim: Sim, def: string, near: readonly [number, number]
         }
         if (!ok || (toucher && !touches({ def: di, x, y, rot }, toucher))) continue;
         const ports = worldPorts({ def: di, x, y, rot });
+        const lv = sim.grid.level(x, y);
         const opens = (p: WorldPort): boolean => {
           if (!inWorld(p.fx, p.fy)) return false;
           const t = tileIndex(p.fx, p.fy);
           if (toucher && sim.grid.occ[t] === toucher.id) return true;
-          if (p.io === 'out') return openFloor(sim, p.fx, p.fy) && !fronts.has(t);
-          return !outs.has(t) && (!inputsFree || openFloor(sim, p.fx, p.fy));
+          if (p.io === 'out') return open(p.fx, p.fy, lv) && !fronts.has(t);
+          return !outs.has(t) && (!inputsFree || open(p.fx, p.fy, lv));
         };
         if (!ports.every(opens)) continue;
         if (!freeSpot(sim, def, x, y, rot)) continue;
@@ -591,6 +725,19 @@ export function layFrom(sim: Sim, starts: ReadonlyArray<readonly [number, number
   return path && layAll(sim, path) ? path : null;
 }
 
+/**
+ * A ribbon from `fromId`'s outputs (`outIdx` -1: any) to one of `goals` (tile → the way its last
+ * ribbon points): into a drawn plan's entry, say (`maxNodes`: the search's bound, `findPath`'s).
+ * Returns the tiles laid, or null.
+ */
+export function layTo(sim: Sim, fromId: number, goals: ReadonlyMap<number, Rot>, outIdx = -1, maxNodes?: number): BeltTiles | null {
+  const a = sim.ents.get(fromId);
+  if (!a) return null;
+  const outs = worldPorts(a).filter((p) => p.io === 'out');
+  const path = findPath(sim, (outIdx >= 0 ? outs.slice(outIdx, outIdx + 1) : outs).map((o) => [o.fx, o.fy] as const), goals, keepOff(sim), sim.unlocked('junction'), maxNodes);
+  return path && layAll(sim, path) ? path : null;
+}
+
 /** Is tile (x, y) free floor beside a routing block (a ribbon laid there would be one of its outlets)? */
 export const besideRoutingBlock = (sim: Sim, x: number, y: number): boolean => openFloor(sim, x, y) && besideRouter(sim, x, y);
 
@@ -604,6 +751,16 @@ export function join(sim: Sim, fromId: number, line: BeltTiles): BeltTiles | nul
   if (!a) return null;
   const outs = worldPorts(a).filter((p) => p.io === 'out');
   const avoid = keepOff(sim);
+  const path = findPath(sim, outs.map((o) => [o.fx, o.fy] as const), sideGoals(sim, line, avoid), avoid, sim.unlocked('junction'));
+  return path && layAll(sim, path) ? path : null;
+}
+
+/**
+ * The ways into the side of a laid line (all its tiles but the last, first tiles first): each free
+ * floor tile beside one, and the direction from it into the line — goals for a ribbon that merges
+ * there (`join`, or `branch`'s `onto`).
+ */
+export function sideGoals(sim: Sim, line: BeltTiles, avoid: ReadonlySet<number> = keepOff(sim)): Map<number, Rot> {
   const goals = new Map<number, Rot>();
   for (let j = 0; j < line.length - 1; j++) {
     const [lx, ly] = line[j]!;
@@ -613,8 +770,29 @@ export function join(sim: Sim, fromId: number, line: BeltTiles): BeltTiles | nul
       if (openFloor(sim, nx, ny) && !avoid.has(tileIndex(nx, ny)) && !goals.has(tileIndex(nx, ny))) goals.set(tileIndex(nx, ny), opposite(d as Rot));
     }
   }
-  const path = findPath(sim, outs.map((o) => [o.fx, o.fy] as const), goals, avoid, sim.unlocked('junction'));
-  return path && layAll(sim, path) ? path : null;
+  return goals;
+}
+
+/**
+ * The ways into the side of a laid line on any level (`sideGoals` on the mountains too): each free
+ * floor or rock tile beside one of its plain ribbons (not a traction ribbon's lift, not its last
+ * tile), on that ribbon's level, with the direction into it — goals for `routeOver`.
+ */
+export function sideGoalsOver(sim: Sim, line: BeltTiles, avoid: ReadonlySet<number> = keepOff(sim)): Map<number, Rot> {
+  const goals = new Map<number, Rot>();
+  const plain = buildingIdx('ribbon');
+  for (let j = 0; j < line.length - 1; j++) {
+    const [lx, ly] = line[j]!;
+    if (sim.entityAt(lx, ly)?.def !== plain) continue;
+    const lv = sim.grid.level(lx, ly);
+    for (let d = 0; d < 4; d++) {
+      const nx = lx + DX[d]!, ny = ly + DY[d]!, t = tileIndex(nx, ny);
+      if (!inWorld(nx, ny) || sim.grid.occ[t] !== 0 || !sim.revealed(nx, ny) || sim.grid.level(nx, ny) !== lv || avoid.has(t) || goals.has(t)) continue;
+      const tt = sim.grid.terrain(nx, ny);
+      if (isFloor(tt) || isRock(tt)) goals.set(t, opposite(d as Rot));
+    }
+  }
+  return goals;
 }
 
 /**

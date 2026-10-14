@@ -362,20 +362,21 @@ export class Sim {
   removeRoute(id: number): boolean { return freight.removeRoute(this, id); }
 
   // ── commands: trade (systems/trade.ts) ───────────────────────────────────
-  setExport(post: number, slot: number, item: string | null): TradeRefusal | null { return trade.setExport(this, post, slot, item); }
   addImport(post: number, item: string, perMin: number, maxCents: number): number | TradeRefusal { return trade.addImport(this, post, item, perMin, maxCents); }
   cancelImport(id: number): boolean { return trade.cancelImport(this, id); }
   spotTrade(item: string, side: SpotSide, n: number): { cents: number } | { refused: TradeRefusal } { return trade.spotTrade(this, item, side, n); }
   quoteSpot(item: number, side: SpotSide, n: number): ReturnType<typeof trade.quoteSpot> { return trade.quoteSpot(this, item, side, n); }
   tradePosts(): Ent[] { return trade.tradePosts(this); }
-  streamsOf(post: number): number[] { return trade.streamsOf(this, post); }
+  /** A post's cargo (D64): what it bought and holds or awaits, sorted. */
+  cargoOf(post: number): readonly number[] { return trade.cargoOf(this, post); }
   /**
    * The epoch boundary (online: from step; offline: from the catch-up — the same call): trade
    * posts trade and the Crier settles, then the claim's value is sampled when due.
    */
-  tradeEpoch(): void {
-    trade.tradeEpoch(this);
+  tradeEpoch(): boolean {
+    const changed = trade.tradeEpoch(this);
     value.valueEpoch(this);
+    return changed;
   }
   /** The claim's value now, in centi-ocelles (systems/value.ts). */
   claimValue(): ReturnType<typeof value.claimValue> { return value.claimValue(this); }
@@ -478,9 +479,9 @@ export class Sim {
     h.ints([...this.land.bought].sort((a, b) => a - b)).ints([...this.land.granted].sort((a, b) => a - b));
     for (const [p, l] of [...this.land.leases].sort((a, b) => a[0] - b[0])) h.int(p).int(l.next).int(l.cents);
     for (const [cx, cy, r] of this.explored) h.int(cx).int(cy).int(r);
-    // Trade: streams, orders, goods in flight, the ocelles' history, and the market's own state.
+    // Trade: cargo, orders, goods in flight, the ocelles' history, and the market's own state.
     const t = this.trade;
-    for (const [post, items] of [...t.exports].sort((a, b) => a[0] - b[0])) h.int(post).ints(items);
+    for (const [post, items] of [...t.cargo].sort((a, b) => a[0] - b[0])) h.int(post).ints(items);
     for (const o of t.orders) h.int(o.id).int(o.post).int(o.item).int(o.perMin).int(o.maxCents).int(o.active ? 1 : 0);
     for (const sh of t.inflight) h.int(sh.post).int(sh.item).int(sh.mu).int(sh.arrive);
     h.int(t.nextOrderId).int(t.earned).int(t.spent).ints(t.sold).ints(t.bought);

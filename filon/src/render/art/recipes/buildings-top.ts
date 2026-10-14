@@ -20,8 +20,8 @@ import { pvPanel } from '../solar';
 import { CHARGER_BUSHING, HEART_MASTS, KIT_K, POLE, PYLON, kitDrawn, onArm, terminalProbe, terminalsOf, turnsArt } from '../terminals';
 import { SAND_WHEEL, TURBINE, bucketFull, vaneAt } from './moving';
 import {
-  JUNCTION, SCORCH, SKY, TP_BAND, TP_DECK, TP_DECK_R, TP_LAMPS, TP_PAD, TP_PED, TP_RIBBON, TP_TEMPER, TP_WALL, apronMarks, burnPts,
-  junctionHump, type SkyPiece,
+  EMBER, EMBER_D, JUNCTION, PIT, PIT_TEMPER, SCORCH, SKY, TP_BAND, TP_DECK, TP_DECK_R, TP_LAMPS, TP_PAD, TP_PED, TP_RIBBON, TP_TEMPER, TP_WALL, apronMarks, burnPts,
+  junctionHump, pitMarks, type SkyPiece,
 } from './buildings';
 
 export const TOP_PX = 64;     // px per tile in the atlas (2× of the 32 plan world px)
@@ -832,20 +832,7 @@ const R: Partial<Record<BuildingId, Recipe>> = {
     light(ctx, ...f.p(0.24, 0.24), f.l(0.025), C.led);
     intakeTop(ctx, f, s + 40);
   },
-  incinerator(ctx, f, s) {
-    // Everything goes in by any side (turquoise mouths, inward chevrons); a round grated firebox
-    // glows amber in the middle, a short stack in the north-east corner (D51).
-    forkPlate(ctx, f, [C.turq, C.turq, C.turq, C.turq], [2, 3, 0, 1], s, mix(C.steel, C.ink, 0.2));
-    const c = f.p(0.5, 0.5);
-    flat(ctx, ellipsePts(c[0], c[1], f.l(0.27), f.l(0.27), s + 3, 0, 28), C.steelDD);
-    flat(ctx, ellipsePts(c[0], c[1], f.l(0.2), f.l(0.2), s + 4, 0, 28), C.ledWarm, 0.95);
-    ctx.save();
-    ctx.strokeStyle = C.steelDD; ctx.lineWidth = 1.4;
-    for (const k of [-0.1, 0, 0.1]) { const [a, b] = [f.p(0.32, 0.5 + k), f.p(0.68, 0.5 + k)]; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
-    ctx.restore();
-    light(ctx, c[0], c[1], f.l(0.06), C.ledWarm);
-    stack(ctx, ...f.p(0.8, 0.2), f.l(0.08), C.steelD, s + 6, C.ledWarm, f.l(0.2));
-  },
+  incinerator: (ctx, f, s) => pitTop(ctx, f, s),
   distributor(ctx, f, s) {
     forkPlate(ctx, f, NEUTRAL, [null, null, null, null], s);
     const lid = rr(f, 0.18, 0.18, 1.82, 1.82, 0.1);
@@ -1461,6 +1448,90 @@ function tpHoodTop(ctx: Ctx, f: Frame, io: 'in' | 'out', s: number): void {
     ink(ctx, [f.p(x, h0 + 0.04), f.p(x, h1 - 0.04)], { w: 1, color: C.steelL, alpha: 0.5, shade: false, taper: 0, jitter: 0, seed: s + 2 + i });
   }
   light(ctx, ...f.p(2.5, (h0 + h1) / 2), f.l(0.04), io === 'in' ? C.led : C.ledWarm);
+}
+
+/**
+ * The incinerator's pit from above (D51; owner, 2026-10-14: "a hole in the ground with a flame"),
+ * the iso art's (`pitIso`): scorched ground with its soot and cracks, the four chutes in (a
+ * turquoise band at each mouth, a cyan chevron pointing in, rails), the tempered collar and its
+ * bolts, the dark throat with the grate over the glowing bed. The flame over it is the world's
+ * (`pitFlameTop`, world/pits.ts).
+ */
+function pitTop(ctx: Ctx, f: Frame, s: number): void {
+  const { ro, ri, hw, lip } = PIT;
+  const foot = rr(f, 0.02, 0.02, 0.98, 0.98, 0.02);
+  const m = pitMarks();
+  flat(ctx, foot, SCORCH.baked);
+  ctx.save(); pathOf(ctx, foot); ctx.clip();
+  for (const b of m.burns) flat(ctx, b.r.map((v, i) => { const t = (i / b.r.length) * Math.PI * 2; return f.p(0.5 + Math.cos(t) * v, 0.5 + Math.sin(t) * v); }), SCORCH[b.tone], b.alpha);
+  for (const [i, c] of m.cracks.entries()) {
+    const pts = c.map(([x, y]) => f.p(x, y));
+    ink(ctx, pts.map(([x, y]) => [x - 0.8, y - 0.8] as Pt), { w: 1.1, color: SCORCH.baked, alpha: 0.6, shade: false, taper: 0.4, jitter: 0.2, seed: s + 60 + i });
+    ink(ctx, pts, { w: 1.5, color: C.ink, alpha: 0.7, shade: false, taper: 0.4, jitter: 0.2, seed: s + 60 + i });
+  }
+  ctx.restore();
+  ink(ctx, foot, { closed: true, w: 1, alpha: 0.3, shade: false, seed: s + 61 });
+  const [cx, cy] = f.p(0.5, 0.5);
+  const disc = (r: number, n = 40): Pt[] => ellipsePts(cx, cy, f.l(r), f.l(r), s, 0, n);
+  // The collar's shadow down-right, then its tempered top, outer edge first.
+  flat(ctx, ellipsePts(cx + f.l(0.035), cy + f.l(0.05), f.l(ro), f.l(ro), s, 0, 40), C.inkSoft, 0.3);
+  for (let i = 0; i < PIT_TEMPER.length; i++) flat(ctx, disc(ro - ((ro - ri) * i) / PIT_TEMPER.length), PIT_TEMPER[i]!);
+  // The throat: dark, the bed glowing under the grate.
+  flat(ctx, disc(ri), C.ink);
+  flat(ctx, disc(ri * 0.82), EMBER_D);
+  ctx.save(); pathOf(ctx, disc(ri * 0.82)); ctx.clip();
+  for (let i = -3; i <= 3; i++) flat(ctx, rr(f, 0.5 - ri, 0.5 + i * 0.075 - 0.02, 0.5 + ri, 0.5 + i * 0.075 + 0.02, 0), i & 1 ? EMBER : mix(EMBER, C.peachL, 0.35), 0.9);
+  for (let i = -3; i <= 4; i++) { const y = 0.5 + (i - 0.5) * 0.075; ink(ctx, [f.p(0.5 - ri, y), f.p(0.5 + ri, y)], { w: 2.2, color: C.steelDD, shade: false, taper: 0, jitter: 0, seed: s + 10 + i }); }
+  ctx.restore();
+  ink(ctx, disc(ri), { closed: true, w: 1.6, shade: false, taper: 0, jitter: 0, seed: s + 3 });
+  ink(ctx, disc(ro), { closed: true, w: 1.8, seed: s + 4 });
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + Math.PI / 8, r = (ro + ri) / 2 + 0.035;
+    rivet(ctx, ...f.p(0.5 + Math.cos(a) * r, 0.5 + Math.sin(a) * r), f.l(0.022), mix(C.steelL, C.brassL, 0.25));
+  }
+  // The chutes, edge to lip, over the collar.
+  for (let side = 0; side < 4; side++) {
+    const dx = [0, 1, 0, -1][side]!, dy = [-1, 0, 1, 0][side]!, nx = -dy, ny = dx;
+    const at = (r: number, u: number): Pt => f.p(0.5 + dx * r + nx * u, 0.5 + dy * r + ny * u);
+    flat(ctx, [at(0.5, -hw + 0.03), at(lip - 0.02, -hw + 0.03), at(lip - 0.02, hw + 0.03), at(0.5, hw + 0.03)].map(([x, y]) => [x + f.l(0.025), y + f.l(0.035)] as Pt), C.inkSoft, 0.3);
+    shape(ctx, [at(0.5, -hw), at(lip, -hw), at(lip, hw), at(0.5, hw)], mix(C.steelD, C.steel, 0.35), { w: 1.3, shade: false, jitter: 0, seed: s + 20 + side });
+    flat(ctx, [at(ro - 0.04, -hw), at(lip, -hw), at(lip, hw), at(ro - 0.04, hw)], mix(C.violetL, C.steelD, 0.45), 0.85);
+    for (const u of [-hw, hw]) {
+      ink(ctx, [at(0.5, u * 0.9), at(lip, u * 0.9)], { w: 2.6, color: C.steelDD, shade: false, taper: 0, jitter: 0, seed: s + 30 + side });
+      ink(ctx, [at(0.5, u * 0.9), at(lip, u * 0.9)], { w: 1, color: C.steelL, alpha: 0.7, shade: false, taper: 0, jitter: 0, seed: s + 31 + side });
+    }
+    shape(ctx, [at(0.5, -hw), at(0.45, -hw), at(0.45, hw), at(0.5, hw)], C.turq, { w: 1, shade: false, jitter: 0, seed: s + 40 + side });
+    const c = (ro + 0.5) / 2 + 0.01, k = 0.045;
+    ink(ctx, [at(c + k, -0.08), at(c - k, 0), at(c + k, 0.08)], { w: 2.2, color: C.cyan, shade: false, taper: 0, jitter: 0, seed: s + 50 + side });
+    ink(ctx, [at(lip, -hw), at(lip, hw)], { w: 1.5, shade: false, taper: 0, jitter: 0, seed: s + 55 + side });
+  }
+}
+
+/**
+ * The pit's flame from above, for the plan view (the world fades it in with the fire: world/pits.ts):
+ * a ragged ring of coral tongues licking out of the throat over the collar, orange inside, a pale
+ * core over the grate. Drawn in a 1 × 1 plan frame (TOP_PX a tile, margin TOP_MARGIN).
+ */
+export function pitFlameTop(ctx: Ctx, s: number): void {
+  const f = new Frame(TOP_PX, TOP_MARGIN, 1, 1, 0);
+  const [cx, cy] = f.p(0.5, 0.5);
+  const rng = makeRng(s);
+  const star = (r0: number, r1: number, n: number, seed: number): Pt[] => {
+    const q = makeRng(seed);
+    return Array.from({ length: n * 2 }, (_, i) => {
+      const a = (i / (n * 2)) * Math.PI * 2 + q.range(-0.08, 0.08), r = f.l(i % 2 ? r0 : r1 * q.range(0.8, 1.1));
+      return [cx + Math.cos(a) * r, cy + Math.sin(a) * r] as Pt;
+    });
+  };
+  const outer = star(PIT.ri * 0.85, PIT.ro * 1.05, 9, s + 1);
+  flat(ctx, outer, C.coral, 0.92);
+  ink(ctx, outer, { closed: true, w: 1.3, color: C.coralD, alpha: 0.85, shade: false, taper: 0, jitter: 0.2, seed: s + 2 });
+  flat(ctx, star(PIT.ri * 0.55, PIT.ri * 1.05, 7, s + 3), mix(C.coral, C.warn, 0.62));
+  flat(ctx, ellipsePts(cx, cy, f.l(PIT.ri * 0.42), f.l(PIT.ri * 0.42), s + 4, 0.2, 18), mix(C.warn, '#fff4d6', 0.7));
+  for (let i = 0; i < 5; i++) {
+    const a = rng.range(0, Math.PI * 2), r = f.l(rng.range(PIT.ro * 1.05, 0.48));
+    flat(ctx, ellipsePts(cx + Math.cos(a) * r, cy + Math.sin(a) * r, 1.6, 1.6, s + 10 + i, 0, 8), mix(C.warn, '#fff4d6', 0.5));
+  }
 }
 
 const seedOf = (id: string): number => (id.length * 131 + id.charCodeAt(0) * 17) | 0;

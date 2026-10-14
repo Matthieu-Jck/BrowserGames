@@ -4,10 +4,13 @@
 // the plan sprites (plan only), and above everything the grid, overlays, fog, the land's parcels
 // and the ghost.
 // Volumes (iso buildings and cliffs, depth-sorted together) live in iso world px under
-// M(t) = P(t)·P(0)⁻¹; items are placed in world px by their view, under the buildings — but for
-// those riding a junction's bridge, on their own layer over them. The buildings' cast shadows
-// lie on the ground under the volumes, above the ribbons and their items (iso px under M, with
-// the volumes' fade). Churny layers get their own render groups.
+// M(t) = P(t)·P(0)⁻¹; items on the floor are placed in world px by their view, under the
+// buildings — but for those riding a junction's bridge, on their own layer over them — and
+// items above the floor (on the rock, in an elevator's shaft, falling into an incinerator) are
+// sorted among the volumes (world/items-view.ts). The buildings' cast shadows lie on the ground
+// under the volumes, above the ribbons and their items (iso px under M, with the volumes' fade).
+// Churny layers get their own render groups: the volumes too, since items moving among them
+// re-sort them most frames, and a render group re-batches only itself.
 import { Container, Matrix } from 'pixi.js';
 import { isoToView, type Lin } from './projection';
 
@@ -41,7 +44,7 @@ export class Layers {
   private readonly plane = new Container({ label: 'plane' });
   private readonly reliefPlane = new Container({ label: 'reliefPlane' });
   private readonly planPlane = new Container({ label: 'planPlane' });
-  private readonly volumes = new Container({ label: 'volumes' });
+  private readonly volumes = new Container({ label: 'volumes', isRenderGroup: true });
   private readonly shadowsIso = new Container({ label: 'shadowsIso' });
   private readonly wiresIso = new Container({ label: 'wiresIso' });
   private readonly wiresPlanPlane = new Container({ label: 'wiresPlanPlane' });

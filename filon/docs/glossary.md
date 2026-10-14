@@ -27,7 +27,8 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | concession · base | claim · base | `Sim.colonyName` | The player's single persistent base, fully automated and piloted from afar (code says "colony"). |
 | le Souffle | the Sough | gust levels in `constants.ts` | The constant wind. Also the French name of the Energy branch. |
 | Cirque de Bonne-Veine | the cirque | `CIRQUE` | The starting basin (r ≤ 23), the same for every colony. |
-| la Couronne | the Crown | `CIRQUE.softRockTo`, `crownOuter` | The mountain ring around the cirque (r 23–32): H1 rock to r 28, H2 beyond. |
+| la Couronne | the Crown | `CIRQUE`, `crownOuter`, `crownReach` | The closed mountain ring round the cirque (D45). Map 2 (D63): a sandstone ridge two levels high from the floor's rim (r ≈ 23) to its foot (r ≈ 29), rising in a few places to lilac level-3 peaks; the biggest holds the tarn. Map 1 (older bases): three levels to r 34 |
+| le lac perché / the tarn | the tarn | `CIRQUE.lake`, `TerrainSource.tarn` | The cirque's lake, up on the Crown's biggest peak at its level (D63): a pump on its edge, a ceramic works beside it on the rock |
 | col | pass | `CIRQUE.passDirs` | A gap through the Crown. |
 | le filon fatigué | the tired vein | the `copper_ore` deposit of `CIRQUE` | The deliberately poor copper deposit (≈ 6.75 ore/min) that forces imports. |
 | Proche couronne · Les Étendues · Les Lointains · Mer de dunes | — | `RINGS.near`, `reaches`, `far`, `playable` | The rings beyond the Crown (32–160, 160–320, 320–480); décor past 500. |
@@ -225,8 +226,8 @@ The story behind the names is in [lore.md](lore.md) (D29).
 
 | Term | Meaning | Where |
 |---|---|---|
-| Comptoir / Trade Post (`trade_post`, kind `trade`) | The colony's dock at the Crier: a 5×5 store whose one entrance takes its export streams and whose one exit hands out its purchases in turn (D62) | `sim/trade.ts`, `systems/trade.ts` |
-| Export stream / flux d'export | An item a post sells at every epoch boundary (what came in by ribbon; next to the Hearth, also from its stock) | `TradeState.exports` |
+| Comptoir / Trade Post (`trade_post`, kind `trade`) | The colony's dock at the Crier: a 5×5 store whose one entrance takes, and sells, every tradable item but its cargo, and whose one exit hands out its purchases in turn (D62, D64) | `sim/trade.ts`, `systems/trade.ts` |
+| Cargaison / cargo | What a post bought and holds or awaits (on order, on its way, in its container): its exit hands it out, its entrance takes everything else, to sell (D64; export streams are gone) | `TradeState.cargo`, `cargoOf` |
 | Standing order / ordre d'import | Item, whole items/min, max price: bought each boundary while the ask is under the max (pause above, resume 3 % below) | `ImportOrder`, `orderTrades` |
 | Spot / comptant | A stock sold or bought at once along the market's depth (slippage), booked on the market | `spotTrade`, `quoteSpot`, `MarketService.book` |
 | Lift / levée | Goods leaving or reaching a post; a delivery comes after the lift delay plus the supplying colony's delay | `deliveryTicks`, `Shipment` |

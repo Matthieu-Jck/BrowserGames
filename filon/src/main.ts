@@ -31,7 +31,7 @@ import { el, qs, setText } from '@/core/dom';
 import { updateTweens } from '@/core/tween';
 import { Sim } from '@/sim/state';
 import { MapGen } from '@/sim/world/mapgen';
-import { WORLD_SEED } from '@/content/world';
+import { MAP_VERSION, WORLD_SEED } from '@/content/world';
 import { WORLD_EPOCH0 } from '@/sim/constants';
 import { validateContent } from '@/content/validate';
 import { buildDemo } from '@/sim/dev';
@@ -41,10 +41,10 @@ function applyLocaleToDocument(): void {
   document.title = `${t('app.title')} — ${t('app.tagline')}`;
 }
 
-/** A new colony on the land of `playerSeed`, founded this minute (when the player has no base yet; ?demo). */
+/** A new colony on the land of `playerSeed`, founded this minute on today's map (when the player has no base yet; ?demo). */
 function foundColony(playerSeed: number): Sim {
   const nowEpoch = Math.floor(Date.now() / 60000);
-  return new Sim({ worldSeed: WORLD_SEED, playerSeed, source: new MapGen(WORLD_SEED, playerSeed), foundingEpoch: Math.max(WORLD_EPOCH0, nowEpoch) });
+  return new Sim({ worldSeed: WORLD_SEED, playerSeed, source: new MapGen(WORLD_SEED, playerSeed, MAP_VERSION), foundingEpoch: Math.max(WORLD_EPOCH0, nowEpoch) });
 }
 
 /**

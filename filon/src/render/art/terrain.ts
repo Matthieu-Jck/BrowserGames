@@ -6,6 +6,8 @@
 // · the RELIEF paint (iso only): rock columns painted obliquely (each level lifts a column by
 //   a ground shift along −x −y) with their cast shadows, so that laid in iso the terraces
 //   stand up exactly as the relief sprites draw them — the far-zoom stand-in for the sprites.
+//   Water up on the rock (the Crown's tarn, D63) is a column too, topped by its pool
+//   (`columnLook`): in iso it lies at its level, in plan the ground shows it within the rock.
 // Every random choice is hashed from WORLD coordinates and every shape reads a border window,
 // so chunks join seamlessly. Runs in a worker (OffscreenCanvas) — no DOM, no Pixi.
 import { ITEMS } from '@/content/items';
@@ -13,8 +15,8 @@ import { ITEM_IDS } from '@/content/registry';
 import { hash32, hashUnit } from '@/core/hash';
 import { T } from '@/sim/types';
 import { C, mix, rgba } from './tokens';
-import { columnShadow, drawColumn, type Proj } from './rock';
-import { isRockT, levelOf, maskAt, MAX_LEVEL, MAX_TERRACE, SHIFT, SMOOTH, STEP_LEVELS } from '../relief';
+import { columnShadow, drawColumn, type Proj, type TopLook } from './rock';
+import { isRockT, isWaterT, levelOf, maskAt, MAX_LEVEL, MAX_TERRACE, SHIFT, SMOOTH, STEP_LEVELS } from '../relief';
 
 type Ctx2 = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D;
 
@@ -64,8 +66,6 @@ export function buildWindow(chunkAt: (cx: number, cy: number) => ChunkArrays, cx
   }
   return d;
 }
-
-const isWaterT = (t: number): boolean => t === T.Shallow || t === T.Deep;
 
 const GROUND: Record<number, string> = {
   [T.Sand]: C.sand, [T.Hardpan]: C.hardpan, [T.Salt]: C.salt, [T.Vent]: C.hardpan, [T.DuneSea]: C.duneSea,
@@ -398,6 +398,29 @@ export function windowLevels(d: PaintData): { lv: Uint8Array; masks: Uint8Array[
   return { lv, masks };
 }
 
+/**
+ * How a raised window tile is drawn: its rock class (for a column of water or reclaimed ground up
+ * on the rock, D63: the hardest rock round it, its basin) and its top when it is not plain rock —
+ * water or reclaimed ground, or rock in whose corner three tiles of water at its height meet —
+ * with which of its 3×3 hold water and deep water at its height (art/rock.ts `TopLook`).
+ */
+export function columnLook(d: PaintData, lv: Uint8Array, o: number): { cls: number; top: TopLook | null } {
+  const t = d.terrain[o]!, L = lv[o]!;
+  let wet = 0, deep = 0, cls = isRockT(t) ? t - T.Rock1 : 0;
+  for (let j = -1; j <= 1; j++) {
+    for (let i = -1; i <= 1; i++) {
+      const n = o + j * WIN + i, u = d.terrain[n] ?? T.Sand, bit = 1 << (3 * (j + 1) + i + 1);
+      if (isWaterT(u) && lv[n] === L) { wet |= bit; if (u === T.Deep) deep |= bit; }
+      if (!isRockT(t) && isRockT(u) && u - T.Rock1 > cls) cls = u - T.Rock1;
+    }
+  }
+  if (isWaterT(t)) return { cls, top: { kind: 'water', wet, deep } };
+  if (!isRockT(t)) return { cls, top: { kind: 'ground', wet, deep } };
+  // Rock: a top of its own only where a corner of it is under water (its three other tiles wet).
+  const corner = (a: number, b: number, c: number): boolean => (wet & (1 << a)) !== 0 && (wet & (1 << b)) !== 0 && (wet & (1 << c)) !== 0;
+  return { cls, top: corner(0, 1, 3) || corner(1, 2, 5) || corner(5, 7, 8) || corner(3, 6, 7) ? { kind: 'rock', wet, deep } : null };
+}
+
 /** The per-step masks of one window tile. */
 export const tileMasks = (lv: Uint8Array, masks: readonly Uint8Array[], o: number): number[] => {
   const out: number[] = [];
@@ -437,9 +460,9 @@ export function paintRelief(ctx: Ctx2, d: PaintData, ppt: number, scratch: (w: n
   const detail = ppt >= 32 ? 1 : 0;
   const k = Math.max(0.35, ppt / 70);
   for (const [i, j] of cols) {
-    const tt = d.terrain[j * WIN + i]!;
+    const o = j * WIN + i, { cls, top } = columnLook(d, lv, o);
     const wx = d.cx * 32 - B + i, wy = d.cy * 32 - B + j;
-    drawColumn(ctx, proj(i, j), tt - T.Rock1, tileMasks(lv, masks, j * WIN + i), { detail, seed: hash32(wx, wy, 0x2c), k });
+    drawColumn(ctx, proj(i, j), cls, tileMasks(lv, masks, o), { detail, seed: hash32(wx, wy, 0x2c), k, top });
   }
   return true;
 }

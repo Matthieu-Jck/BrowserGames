@@ -13,8 +13,10 @@
 //
 // Out of a line's head into something that is not a ribbon (the line's `lastOut`): a building
 // takes it at its edge (the item glides there and is gone), a routing block at its centre, where
-// it then sits until the block hands it on (the next ribbon eases it out of the centre). Conduits
-// carry water inside their pipes: nothing is drawn.
+// it then sits until the block hands it on (the next ribbon eases it out of the centre), an
+// incinerator over its pit's lip: the item rides on at the line's pace up the chute and falls in
+// (pits.ts `pitPath`: `d`, how far it has fallen, so the items view draws it sinking behind the
+// near rim). Conduits carry water inside their pipes: nothing is drawn.
 import { MU, WORLD } from '@/sim/constants';
 import { VIA_BEHIND, type Chain } from '@/sim/flow/chain';
 import { ForkNode } from '@/sim/flow/nodes';
@@ -22,16 +24,18 @@ import type { Sim } from '@/sim/state';
 import { footprint } from '@/sim/entities';
 import { DX, DY } from '@/sim/types';
 import { lengthOf, pieceAt, type Piece, type Pt } from './item-flow';
+import { PIT_WAY, pitPath } from './pits';
 
-/** One item to draw: its item, where (tile coords) and how high (iso px), and whether over the bridges. */
-export interface FlowItem { item: number; x: number; y: number; z: number; o: number }
+/** One item to draw: its item, where (tile coords) and how high (iso px), whether over the bridges, how far it has fallen into a pit (0…1). */
+export interface FlowItem { item: number; x: number; y: number; z: number; o: number; d: number }
 
 /** Where along a tile's piece its centre lies (a leap's start tile: half a tile into its way). */
 const centreOf = (p: Piece): number => (p.bend ? 0.5 : 0.5 / Math.max(1, lengthOf(p)));
 const len = (p: Piece): number => Math.max(1e-6, lengthOf(p));
 
 const PT: Pt = { x: 0, y: 0, z: 0, o: 0 };
-const OUT: FlowItem = { item: 0, x: 0, y: 0, z: 0, o: 0 };
+const OUT: FlowItem = { item: 0, x: 0, y: 0, z: 0, o: 0, d: 0 };
+const FALL = { z: 0, d: 0 };
 
 export class CellFlow {
   private pieces = new Map<number, Piece>();
@@ -53,9 +57,9 @@ export class CellFlow {
     if (g.version !== this.graphVer) this.relink(sim);
     const [vx0, vy0, vx1, vy1] = view;
     const inView = (x: number, y: number): boolean => x >= vx0 - 2 && x <= vx1 + 2 && y >= vy0 - 2 && y <= vy1 + 2;
-    const out = (item: number, p: Pt): void => {
+    const out = (item: number, p: Pt, d = 0): void => {
       if (!inView(p.x, p.y)) return;
-      OUT.item = item; OUT.x = p.x; OUT.y = p.y; OUT.z = p.z; OUT.o = p.o;
+      OUT.item = item; OUT.x = p.x; OUT.y = p.y; OUT.z = p.z; OUT.o = p.o; OUT.d = d;
       emit(OUT);
     };
     // Items gliding into a routing block this step, per block (the rest it holds sit at its centre);
@@ -117,6 +121,16 @@ export class CellFlow {
       if (!dst || dst.kind === 'chain') continue; // the next ribbon eases it in itself
       const pa = this.pieces.get(c.tiles[c.length - 1]!);
       if (!pa) continue;
+      if (dst.kind === 'sink') {
+        // Into an incinerator: on over the edge to its pit's centre, a tile a step, and in.
+        const e = sim.ents.get(dst.ent);
+        if (!e || f >= PIT_WAY.gone) continue;
+        this.toPoint(pa, [e.x + 0.5, e.y + 0.5], f, PT);
+        pitPath(f, FALL);
+        PT.z += FALL.z;
+        out(lo.item, PT, FALL.d);
+        continue;
+      }
       if (dst instanceof ForkNode) {
         const ctr = this.centres.get(dst.idx);
         if (!ctr || dst.mu < MU || dst.item !== lo.item) continue; // already handed on

@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest';
-import { BAL } from '@/content/balance';
 import { itemIdx } from '@/content/registry';
 import { Sim } from './state';
 import { testSource, line, steadyPower, wire, learnPlans } from './testkit';
@@ -147,12 +146,12 @@ describe('space', () => {
     expect(entry === exit || g.nodes[g.eDst[entry.outE[0]!]!] === exit).toBe(true);
   });
 
-  it('the Hearth grows a level with Mechanics and its materials: land comes cheaper', () => {
+  it('the Hearth grows a level with Mechanics and its materials: the land keeps its price', () => {
     const sim = spaceSim(['tr1']);
     const p = parcelAt(512 + 64, 512), before = sim.landPrice(p);
     expect(sim.upgradeHearth().ok).toBe(true);
     expect(sim.hearthLevel).toBe(2);
-    expect(sim.landPrice(p)).toBe(Math.floor((before * (1000 - BAL.land.hearthDiscount)) / 1000));
+    expect(sim.landPrice(p)).toBe(before); // owner, 2026-10-14: the Heart's level does not lower it
     expect(sim.upgradeHearth().reason).toBe('locked');
   });
 

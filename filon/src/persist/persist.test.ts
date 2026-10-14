@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { WORLD_EPOCH0 } from '@/sim/constants';
+import { CENTER, WORLD_EPOCH0 } from '@/sim/constants';
 import { foundScenario } from '@/sim/scenarios';
-import { serialize, SAVE_VERSION } from '@/sim/serialize';
+import { serialize, SAVE_VERSION, type SaveData } from '@/sim/serialize';
+import { Sim } from '@/sim/state';
+import { isWater } from '@/sim/types';
+import { MapGen } from '@/sim/world/mapgen';
+import { CIRQUE_V1, MAP_VERSION, WORLD_SEED } from '@/content/world';
 import { MemoryKV } from './kv';
 import { fromText, intact, seal, toText, unseal, type Envelope } from './envelope';
 import { migrate, SaveTooNew } from './migrate';
@@ -141,18 +145,41 @@ describe('migrations', () => {
     const { sim } = foundScenario('tutorial', { playerSeed: 1, near: WORLD_EPOCH0 + 1000, name: 'Essai' });
     const post = [...sim.ents.sorted()].find((e) => BUILDING_IDS[e.def] === 'trade_post')!;
     expect(post).toBeTruthy();
-    expect(sim.trade.orders.length + sim.trade.exports.size).toBeGreaterThan(0);
+    expect(sim.trade.orders.length).toBeGreaterThan(0);
     const plates = itemIdx('iron_plate');
     const d = { ...JSON.parse(JSON.stringify(serialize(sim))), v: 3 };
     const { data } = migrate(d);
     expect(data.content!.buildings).toContain('trade_post_3x3');
     expect(data.trade!.orders).toEqual([]);
-    expect(data.trade!.exports).toEqual([]);
     const r = remapSave(data);
+    expect(r.data.trade!.cargo).toEqual([]); // the post gone, its cargo with it
     expect(r.note?.removed).toEqual([{ id: 'trade_post_3x3', n: 1, refunded: true }]);
     const back = deserialize(r.data, sim.grid.source);
     expect([...back.ents.sorted()].some((e) => BUILDING_IDS[e.def] === 'trade_post')).toBe(false);
     expect(back.stock[plates]).toBeGreaterThanOrEqual(sim.stock[plates]! + 40_000); // its 40 plates back
+  });
+
+  it('4 → 5 (D64): the export streams go; a post\'s cargo is what it buys, what is on its way and the purchases its container holds', () => {
+    const { sim } = foundScenario('tutorial', { playerSeed: 1, near: WORLD_EPOCH0 + 1000, name: 'Essai' });
+    const post = [...sim.ents.sorted()].find((e) => BUILDING_IDS[e.def] === 'trade_post')!;
+    const ore = itemIdx('iron_ore'), plates = itemIdx('iron_plate'), glass = itemIdx('glass'), copper = itemIdx('copper_ore');
+    const d = JSON.parse(JSON.stringify(serialize(sim)));
+    const { cargo: _cargo, ...trade } = d.trade;
+    // A v4 post: it sold ore by a stream, bought plates by an order, glass is on its way, and its
+    // store holds ore (to sell) and copper (left of a cancelled purchase).
+    const store = Array.from({ length: d.stock.length }, () => 0);
+    store[ore] = 5000; store[copper] = 3000;
+    const v4 = {
+      ...d, v: 4,
+      stores: [...d.stores.filter(([id]: [number]) => id !== post.id), [post.id, store]],
+      trade: { ...trade, exports: [[post.id, [ore, -1]]], orders: [{ id: 9, post: post.id, item: plates, perMin: 4, maxCents: 900, active: true }], inflight: [{ post: post.id, item: glass, mu: 2000, arrive: sim.tick + 600, colony: 0 }] },
+    };
+    const { data, from } = migrate(v4);
+    expect(from).toBe(4);
+    expect('exports' in data.trade!).toBe(false);
+    expect(data.trade!.cargo).toEqual([[post.id, [plates, glass, copper].sort((a, b) => a - b)]]);
+    const back = deserialize(remapSave(data).data, sim.grid.source);
+    expect(back.cargoOf(post.id)).toEqual([plates, glass, copper].sort((a, b) => a - b));
   });
 
   it('a save from a newer build is refused, a missing step too', () => {
@@ -200,3 +227,34 @@ describe('opening the base and paying the time owed', () => {
     expect(real.creditsDelta).toBe(f.report.creditsDelta);
   });
 });
+
+describe('the land a base was founded on (D63)', () => {
+  it('a save from before map versions (no `mapV`) reopens on map 1 at the same hash; a base founded today saves its map', async () => {
+    const old = new Sim({ worldSeed: WORLD_SEED, playerSeed: 3, source: new MapGen(WORLD_SEED, 3, 1), foundingEpoch: WORLD_EPOCH0 + 500, colonyName: 'Ancienne' });
+    // A pump on the shore of map 1's lake, on the cirque's floor (map 2 has sand there).
+    old.done.add('tr3');
+    old.rebuildDerived();
+    old.grant('iron_plate', 50); old.grant('glass', 20);
+    const px = CENTER + CIRQUE_V1.lake.dx - 4, py = CENTER + CIRQUE_V1.lake.dy;
+    expect(old.place('pump', px, py, 0).ok).toBe(true);
+    old.run(300);
+    const saved = serialize(old);
+    expect(saved.mapV).toBe(1);
+    const { mapV: _v, ...before } = saved; // as written before the field existed
+    const slots = new SaveSlots(new MemoryKV());
+    await slots.save(before as SaveData, T0);
+    const back = (await openSaved(slots))!.sim;
+    expect(back.grid.source.mapV).toBe(1);
+    expect(back.hash()).toBe(old.hash());
+    expect(isWater(back.grid.terrain(px + 1, py))).toBe(true); // the lake is still there
+    back.run(600); old.run(600);
+    expect(back.hash()).toBe(old.hash());
+    expect(serialize(back).mapV).toBe(1); // and it keeps its map from now on
+    // Today's bases: today's map, written in the save.
+    expect(data.mapV).toBe(MAP_VERSION);
+    const slots2 = new SaveSlots(new MemoryKV());
+    await slots2.save(data, T0);
+    expect((await openSaved(slots2))!.sim.grid.source.mapV).toBe(MAP_VERSION);
+  });
+});
+

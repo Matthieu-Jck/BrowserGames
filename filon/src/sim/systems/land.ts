@@ -50,7 +50,6 @@ export function landPrice(sim: Sim, p: number): number {
   // Each parcel bought makes the next dearer.
   for (let i = 0; i < sim.land.bought.size; i++) cents = Math.floor((cents * m.landGrowth) / 1000);
   cents = Math.floor((cents * m.landPrice) / 1000);
-  cents = Math.floor((cents * (1000 - L.hearthDiscount * (sim.hearthLevel - 1))) / 1000);
   const [cx, cy] = parcelCentre(p), dx = cx - CENTER, dy = cy - CENTER;
   if (dx * dx + dy * dy > L.farRadius * L.farRadius) cents = Math.floor((cents * m.farLand) / 1000);
   const owner = sim.land.sister(p);

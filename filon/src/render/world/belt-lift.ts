@@ -17,20 +17,28 @@
 // climbing, up when coming down) to wait for the next (`RETURN_TICKS` for the whole step). A step
 // down onto a building (no room for a shaft) is a slide down the ribbon's last stretch instead.
 //
-// An item above the floor, or in an elevator's shaft, must be drawn over the volumes (the items'
-// layer lies under them: the rock it rides on, the shaft it rides in would cover it), but not over
-// higher rock in front of it: `over` says whether it may be — yes, unless rock in front stands high
-// enough to cover its tile's centre on screen (then it stays under the volumes and is hidden, as the
-// rock hides that tile's ribbon), or it passes under a junction's bridge there. A column d
-// diagonals ahead (d = Δx + Δy, across |Δx − Δy| ≤ 1 screen columns) covers a point L levels up at
-// a tile's centre when its top H reaches H − L ≥ d − 1 + |Δx − Δy| (iso: half a tile's height =
-// one level). Buildings do not count: most are far from solid blocks (a pole in front hid every
-// item on an elevator behind it), and an item drawn over a building's corner is the lesser harm.
+// Where an item sorts among the volumes (`itemZ`; owner, 2026-10-14: "the copper is above the
+// building that is in front… the traction ribbon sometimes makes items disappear"). An item above
+// the floor, in an elevator's shaft or on an incinerator's tile is drawn inside the depth-sorted
+// `objects` layer (items-view.ts), keyed on the world/stand.ts scale, so the painter's order
+// hides it behind whatever stands in front — rock or building — and nothing else. Its key is its
+// host tile's: after that tile's ribbon piece (`beltZ` + 0.05), after its elevator's front frame
+// (`liftZ` + 0.03: drawn over its elevator, never behind it, owner 2026-10-13), just under a
+// building it goes into (`beltZ` − 0.02: over the junction's passage, under its bridge, as on the
+// floor a routing block swallows it), between an incinerator's back and its flame on the pit's far
+// half and once it has tipped in, over the whole pit on its near half (pits.ts `PIT_Z`). The host is the tile its front-most
+// point is on (an item is about a third of a tile across), so it is not clipped by the next
+// column's top as it crosses a tile edge on a plateau — when every tile it overhangs is no higher
+// than it rides and holds no building (else its centre's tile: a higher column in front still
+// hides it). An item over an incinerator's tile, or overhanging one, is the pit's. An item on the
+// floor elsewhere is drawn with the ribbons, under every volume (NaN).
 import { BUILDING_KIND } from '@/content/registry';
 import { WORLD } from '@/sim/constants';
 import { DX, DY, type Ent } from '@/sim/types';
 import { LIFT } from '../art/recipes/lifts';
-import { MAX_LEVEL, STEP_LEVELS, tileTop, type ReliefLand } from '../relief';
+import { STEP_LEVELS, tileTop, type ReliefLand } from '../relief';
+import { PIT_Z } from './pits';
+import { beltZ, depthKey, flat, liftZ } from './stand';
 import { liftOfBelt, type Lift } from './traction-lifts';
 
 /** What the lift reads of a colony (a Sim): its land and occupancy, its buildings. */
@@ -56,8 +64,13 @@ export const DOWN = { a1: 0.12, a2: 0.4, free: 0.5 } as const;
 export const RETURN_TICKS = 5;
 /** The last stretch of a traction ribbon over which an item slides down onto a building (no shaft). */
 export const SLIDE = 0.2;
-/** How far ahead the cover test looks (diagonals): past the highest rock. */
-const AHEAD = MAX_LEVEL + 2;
+/** How far an item reaches from its centre towards the viewer, along x and along y (tiles): its glyph is about a third of a tile across. */
+export const ITEM_REACH = 0.16;
+/** An item's key above its host tile's (see the header): on a ribbon, on an elevator, under a building it goes into. */
+export const ITEM_DZ = { belt: 0.05, lift: 0.03, under: -0.02 } as const;
+
+/** What a tile is to the items that ride over it: its top, its key for them, and whether they may overhang it (no building on it), or it is a pit. */
+interface Host { top: number; z: number; open: boolean; pit: boolean }
 
 const smooth = (t: number): number => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 
@@ -69,19 +82,23 @@ export class BeltLift {
   /** Elevators by their low tile; slides (a step down onto a building) by the ribbon's tile. */
   private cars = new Map<number, Car>();
   private slides = new Map<number, Lift>();
-  /** Per tile: drawn over the volumes (1) or under them (0), worked out on first ask. */
-  private overAt = new Map<number, number>();
+  /** Per tile: what it is to the items over it (`Host`), worked out on first ask. */
+  private hosts = new Map<number, Host>();
+  /** The tiles round each incinerator (an item there may overhang its pit): the only floor tiles whose items sort among the volumes. */
+  private nearPit = new Set<number>();
   private last = NaN;
 
-  /** Re-read the traction steps (after structural changes, or another colony); cars keep their height; cover answers start afresh. */
+  /** Re-read the traction steps (after structural changes, or another colony); cars keep their height; the hosts start afresh (after the buildings view's stands). */
   rebuild(world: LiftWorld): void {
     const old = world === this.world ? this.cars : new Map<number, Car>();
     this.world = world;
     this.cars = new Map();
     this.slides.clear();
-    this.overAt.clear();
+    this.hosts.clear();
+    this.nearPit.clear();
     const occupant = (x: number, y: number): number => world.ents.get(world.grid.occ[y * WORLD + x]!)?.def ?? -1;
     for (const e of world.ents.map.values()) {
+      if (BUILDING_KIND[e.def] === 'sink') for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) this.nearPit.add((e.y + j) * WORLD + e.x + i);
       const l = liftOfBelt(world.grid, occupant, e);
       if (!l) continue;
       if (!l.shaft) { this.slides.set(e.y * WORLD + e.x, l); continue; }
@@ -152,28 +169,46 @@ export class BeltLift {
     return this.cars.get(y * WORLD + x)?.z ?? 0;
   }
 
-  /** Is an item on tile (tx, ty), above the floor, drawn over the volumes (see the header)? */
-  over(tx: number, ty: number): boolean {
+  /** What tile (tx, ty) is to the items over it (see the header). */
+  private host(tx: number, ty: number): Host | null {
     const w = this.world;
-    if (!w || tx < 0 || ty < 0 || tx >= WORLD || ty >= WORLD) return false;
+    if (!w || tx < 0 || ty < 0 || tx >= WORLD || ty >= WORLD) return null;
     const k = ty * WORLD + tx;
-    let o = this.overAt.get(k);
-    if (o === undefined) this.overAt.set(k, (o = this.cover(w, tx, ty) ? 0 : 1));
-    return o === 1;
+    let h = this.hosts.get(k);
+    if (h) return h;
+    const top = tileTop(w.grid, tx, ty);
+    const e = w.ents.get(w.grid.occ[k]!);
+    if (this.cars.has(k)) h = { top, z: liftZ(tx, ty) + ITEM_DZ.lift, open: true, pit: false };
+    else if (e && BUILDING_KIND[e.def] === 'sink') h = { top, z: depthKey(e), open: false, pit: true };
+    else if (!e || flat(e.def)) h = { top, z: beltZ(tx, ty) + ITEM_DZ.belt, open: true, pit: false };
+    else h = { top, z: beltZ(tx, ty) + ITEM_DZ.under, open: false, pit: false };
+    this.hosts.set(k, h);
+    return h;
   }
 
-  /** Something in front covers the tile's centre (or it is a junction's tunnel)? */
-  private cover(w: LiftWorld, tx: number, ty: number): boolean {
-    const own = w.ents.get(w.grid.occ[ty * WORLD + tx]!);
-    if (own && BUILDING_KIND[own.def] === 'crossing') return true; // the passage under its bridge
-    const L = tileTop(w.grid, tx, ty);
-    for (let d = 1; d <= AHEAD; d++) {
-      // The tiles d diagonals ahead in this screen column (d even) or the two beside it (d odd).
-      for (let du = -(d & 1); du <= (d & 1); du += 2) {
-        const x = tx + (d + du) / 2, y = ty + (d - du) / 2;
-        if (x < WORLD && y < WORLD && tileTop(w.grid, x, y) - L >= d - 1 + Math.abs(du)) return true;
-      }
+  /**
+   * The depth key among the volumes of an item drawn at (x, y) (tile coords, where `place` put it),
+   * `lv` levels up, `lifted` (above the floor or in a shaft), fallen `d` into a pit: its host
+   * tile's (see the header); NaN for an item on the floor away from any pit, drawn with the ribbons.
+   */
+  itemZ(x: number, y: number, lv: number, lifted: boolean, d: number): number {
+    const tx = Math.floor(x), ty = Math.floor(y);
+    if (!lifted && !this.nearPit.has(ty * WORLD + tx)) return NaN; // on the floor, away from any pit: with the ribbons
+    const fx = Math.floor(x + ITEM_REACH), fy = Math.floor(y + ITEM_REACH);
+    const bx = Math.floor(x - ITEM_REACH), by = Math.floor(y - ITEM_REACH);
+    // Over a pit, or overhanging one: the pit's — behind its flame on the far half (the flame
+    // rises from the throat in front of it) or once it falls in, over everything on the near half.
+    for (const [i, j] of [[tx, ty], [fx, ty], [tx, fy], [fx, fy], [bx, ty], [tx, by]] as const) {
+      const h = this.host(i, j);
+      if (h?.pit) return h.z + (d > 0 || x + y < i + j + 1 ? PIT_Z.fall : PIT_Z.over);
     }
-    return false;
+    if (!lifted) return NaN;
+    const own = this.host(tx, ty);
+    if (!own) return NaN;
+    if (fx === tx && fy === ty) return own.z;
+    // Overhanging the tiles in front: keyed by the front-most one, if none is higher or built on.
+    const ok = (i: number, j: number): boolean => { const h = this.host(i, j); return !!h && h.open && h.top <= lv + 1e-6; };
+    if ((fx !== tx && !ok(fx, ty)) || (fy !== ty && !ok(tx, fy)) || !ok(fx, fy)) return own.z;
+    return this.host(fx, fy)!.z;
   }
 }

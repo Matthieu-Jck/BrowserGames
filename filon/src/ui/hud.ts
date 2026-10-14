@@ -132,6 +132,8 @@ export class Hud {
   private readonly clockTime: HTMLElement;
   private readonly clockTemp: HTMLElement;
   private researchSig = '';
+  /** Chips the shell pins at the end of the research row (the debug base's badge). */
+  private readonly pinned: HTMLElement[] = [];
   /** Stock samples, one per second, for the Δ/min (last 60). */
   private samples: Float64Array[] = [];
   private lastSample = -1;
@@ -192,6 +194,12 @@ export class Hud {
     return c;
   }
 
+  /** Keep a chip of the shell's at the end of the research row (it flows with the row, never over the world). */
+  pin(node: HTMLElement): void {
+    this.pinned.push(node);
+    this.research.append(node);
+  }
+
   /** The tech tree's chip (the way into the tree, D33), then one chip per project: a progress ring, the name, the time left. */
   private refreshResearch(sim: Sim): void {
     const L = locale();
@@ -205,7 +213,7 @@ export class Hud {
         return el('button.hud-rs.cartouche', { 'data-id': p.id }, [el('span.hud-ring'), el('span.hud-rs-name.lettering', {}, name), el('span.hud-rs-eta')]);
       });
       this.treeName.textContent = t('tree.hud');
-      this.research.replaceChildren(this.tree, this.stats, ...chips);
+      this.research.replaceChildren(this.tree, this.stats, ...chips, ...this.pinned);
     }
     // The Statistics chip: the ledger's way in (G), shown once it is unlocked (D41).
     setAttr(this.stats, 'hidden', analyticsOn(sim, 'ledger') ? null : '');

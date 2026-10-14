@@ -9,7 +9,6 @@ import { el, setText } from '@/core/dom';
 import { duration } from '@/i18n/format';
 import { locale, t, tr } from '@/i18n/i18n';
 import { footprint } from '@/sim/entities';
-import { glyph } from '../glyphs';
 import { costChips, fmt, heading, heldList, itemRow, note, type Panel } from './kit';
 
 /** The Heart: the top of its stock, its level and the next upgrade. */
@@ -24,8 +23,6 @@ export const hearthPanel: Panel = ({ sim, host, live }) => {
   const out: Array<HTMLElement | null> = [
     heading(t('insp.stock')), list,
     heading(t('insp.hearth.level', { n: lv })),
-    // The land discount its level gives (BAL.land.hearthDiscount ‰ per level past the first), as the parcel glyph and a figure.
-    lv > 1 ? el('div.insp-row.insp-gv', { title: t('insp.hearth.land.tip') }, [glyph('parcel'), t('insp.hearth.land', { v: fmt((BAL.land.hearthDiscount * (lv - 1)) / 10) })]) : null,
   ];
   if (!up) { out.push(note(t('insp.hearth.max'))); return out; }
   const ok = sim.unlocked(up.unlock);

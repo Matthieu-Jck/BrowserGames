@@ -25,14 +25,14 @@
 // ticks, centi-ocelles.
 import { BAL } from '@/content/balance';
 import { COLONY_NAME_MAX, QUEST_CHECK_TICKS, QUEST_IDS, QUESTS, type QuestDef, type QuestObjective, type QuestReward, type Reveal } from '@/content/quests';
-import { CRECIPES, buildingIdx, costOf, itemIdx, recipeIdx, toMu } from '@/content/registry';
+import { buildingIdx, costOf, itemIdx, recipeIdx, toMu } from '@/content/registry';
 import type { StateHasher } from '@/core/hash';
 import { recipeOf } from '../cfg';
 import { CENTER, EPOCH } from '../constants';
 import { footprint } from '../entities';
 import { T, type Ent } from '../types';
 import type { Sim } from '../state';
-import { nextToHearth, tradePosts } from './trade';
+import { tradePosts } from './trade';
 
 export interface QuestState {
   /** Quests completed, in the order they were (ids), and the tick each one was. */
@@ -48,8 +48,6 @@ export interface QuestState {
   win: number[];
   /** A name was given (the `nameColony` command). */
   named: boolean;
-  /** The Crier's fees are waived while `tick` is below this (a reward). */
-  feeFreeUntil: number;
   /** Titles earned (QUEST_TITLES ids). */
   titles: string[];
   /** The player skipped the tutorial: no more quests, and the whole interface shows. */
@@ -58,7 +56,7 @@ export interface QuestState {
 
 export function newQuestState(): QuestState {
   const q = QUESTS[QUEST_IDS[0]!] as QuestDef;
-  return { done: [], doneAt: [], cur: 0, base: q.objectives.map(() => 0), win: q.objectives.flatMap(() => [-1, 0, -1, 0]), named: false, feeFreeUntil: 0, titles: [], skipped: false };
+  return { done: [], doneAt: [], cur: 0, base: q.objectives.map(() => 0), win: q.objectives.flatMap(() => [-1, 0, -1, 0]), named: false, titles: [], skipped: false };
 }
 
 /** The current quest (null once every quest is done). */
@@ -176,30 +174,18 @@ function dugTiles(sim: Sim): number {
 
 /** A built building whose footprint centre lies r tiles or more from the Hearth's (doubled, integer). */
 function beyond(sim: Sim, r: number): boolean {
-  const c2 = 2 * CENTER + 1, r2 = 4 * r * r;
+  // On the rock it must stand past the Crown's farthest terrace (D63: its peaks reach past its foot
+  // `r` in a few places); on the floor past its foot is beyond it.
+  const reach = Math.max(r, sim.grid.source.crownReach ?? r);
+  const c2 = 2 * CENTER + 1;
   for (const e of sim.ents.sorted()) {
     if (e.builtAt !== 0) continue;
     const [w, h] = footprint(e.def, e.rot);
     const dx = 2 * e.x + w - c2, dy = 2 * e.y + h - c2;
-    if (dx * dx + dy * dy >= r2) return true;
+    const far = sim.grid.level(e.x, e.y) > 0 ? reach : r;
+    if (dx * dx + dy * dy >= 4 * far * far) return true;
   }
   return false;
-}
-
-/** Items sold by some export stream (any post). */
-function streamItems(sim: Sim): Set<number> {
-  const out = new Set<number>();
-  for (const items of sim.trade.exports.values()) for (const it of items) if (it >= 0) out.add(it);
-  return out;
-}
-
-/**
- * The output items of the first `n` lines of « Ce qui rapporte » at this epoch's prices —
- * the board the Crier screen shows (recipes unlocked, the colony's craft speed).
- */
-export function boardTop(sim: Sim, n: number): number[] {
-  const ids = CRECIPES.filter((r) => sim.unlocked(r.unlock)).map((r) => r.id);
-  return sim.market.board(ids, BAL.market.energyCost, { craftSpeed: sim.mods.craftSpeed }).slice(0, n).map((r) => itemIdx(r.item));
 }
 
 // ── objectives ──────────────────────────────────────────────────────────────
@@ -243,18 +229,13 @@ export function objectiveProgress(sim: Sim, o: QuestObjective, base = 0, win: re
     case 'powered': return count(countBuilt(sim, o.defs, (e) => powered(sim, e.id)), o.n);
     case 'research': return flag(sim.done.has(o.id) || sim.projects.some((p) => p.id === o.id));
     case 'unlocked': return count(o.ids.filter((id) => sim.unlocked(id)).length, o.ids.length);
-    case 'post': return flag(tradePosts(sim).some((p) => nextToHearth(sim, p)));
+    case 'post': return flag(tradePosts(sim).length > 0);
     case 'export': return count(Math.floor((sumOf(sim.trade.soldTotal, o.items) - base) / 1000), o.n);
     case 'order': { const it = itemIdx(o.item); return flag(sim.trade.orders.some((x) => x.item === it)); }
     case 'import': return count(Math.floor((delivered(sim, o.items) - base) / 1000), o.n);
-    case 'board': {
-      const sold = streamItems(sim);
-      return flag(sold.size > 0 && boardTop(sim, o.top).some((it) => sold.has(it)));
-    }
     case 'dig': return count(dugTiles(sim), o.n);
     case 'reach': return flag(beyond(sim, o.r));
     case 'recipe': { const r = recipeIdx(o.recipe) + 1; return count(countBuilt(sim, o.defs, (e) => recipeOf(e.cfg) === r), o.n); }
-    case 'stream': return flag(streamItems(sim).has(itemIdx(o.item)));
     case 'delivers': {
       const it = o.item === undefined ? -1 : itemIdx(o.item);
       return count(countBuilt(sim, o.defs, (e) => (it < 0 || drillItem(sim, e.id) === it) && reachesHearth(sim, e.id)), o.n);
@@ -300,12 +281,8 @@ function payReward(sim: Sim, r: QuestReward, title: string | undefined): void {
   // Into the Hearth, past its cap if need be (nothing vanishes; refunds do the same).
   for (const { item, mu } of rewardItems(r)) sim.stock[item] = sim.stock[item]! + mu;
   if (r.credits) sim.credits += r.credits * 100;
-  if (r.feeFreeMin) sim.quests.feeFreeUntil = Math.max(sim.quests.feeFreeUntil, sim.tick) + r.feeFreeMin * EPOCH;
   if (r.title && title && !sim.quests.titles.includes(title)) sim.quests.titles.push(title);
 }
-
-/** Are the Crier's fees waived right now (a reward)? */
-export const feeWaived = (sim: Sim): boolean => sim.tick < sim.quests.feeFreeUntil;
 
 // ── the quest machine ───────────────────────────────────────────────────────
 
@@ -429,7 +406,8 @@ export interface QuestSave {
   base: number[];
   win: number[];
   named: boolean;
-  feeFreeUntil: number;
+  /** Old saves (before D64): the Crier's fees waived until then. Read by nothing now. */
+  feeFreeUntil?: number;
   titles: string[];
   skipped?: boolean;
 }
@@ -437,7 +415,7 @@ export interface QuestSave {
 export function saveQuests(st: QuestState): QuestSave {
   return {
     done: [...st.done], doneAt: [...st.doneAt], cur: QUEST_IDS[st.cur] ?? null,
-    base: [...st.base], win: [...st.win], named: st.named, feeFreeUntil: st.feeFreeUntil, titles: [...st.titles], skipped: st.skipped,
+    base: [...st.base], win: [...st.win], named: st.named, titles: [...st.titles], skipped: st.skipped,
   };
 }
 
@@ -448,7 +426,6 @@ export function loadQuests(sim: Sim, d: QuestSave): void {
   st.done = []; st.doneAt = [];
   d.done.forEach((id, i) => { if (known.has(id)) { st.done.push(id); st.doneAt.push(d.doneAt[i] ?? 0); } });
   st.named = d.named;
-  st.feeFreeUntil = d.feeFreeUntil;
   st.titles = [...d.titles];
   st.skipped = !!d.skipped;
   st.cur = firstUndone(st.done);
@@ -463,7 +440,7 @@ export function loadQuests(sim: Sim, d: QuestSave): void {
 
 /** The quest state in the colony hash (it changes what the Hearth will receive). */
 export function hashQuests(st: QuestState, h: StateHasher): void {
-  h.int(st.cur).int(st.named ? 1 : 0).int(st.skipped ? 1 : 0).int(st.feeFreeUntil).ints(st.doneAt).ints(st.base).ints(st.win);
+  h.int(st.cur).int(st.named ? 1 : 0).int(st.skipped ? 1 : 0).ints(st.doneAt).ints(st.base).ints(st.win);
   for (const id of st.done) h.str(id);
   for (const t of st.titles) h.str(t);
 }

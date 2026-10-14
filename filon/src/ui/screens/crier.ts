@@ -4,16 +4,16 @@
 // on the right, three tabs:
 //   · Prices: every tradable item with this minute's sell / buy price, a 24 h sparkline, the
 //     trend, what the Hearth holds and the player's own flow; items under an event are flagged;
-//   · Trade: per trade post its export streams and standing import orders (state, next
-//     delivery, a form to add one), spot trades with a live quote (total, unit price, the
-//     price factor and the lasting shock), and the goods in flight;
+//   · Trade: per trade post what it does (it sells whatever its entrance brings, D64) and its
+//     standing import orders (state, next delivery, a form to add one), spot trades with a live
+//     quote (total, unit price, the price factor and the lasting shock), and the goods in flight;
 //   · What pays: the unlocked recipes by ◉ per raw tile-minute, their margin per machine, and
 //     what the player's own flow does to the output's price.
 // Every item named shows its icon (mention.ts), and every item choice is an item picker with icons
 // (item-picker.ts, through trade-view's `tradeSelect`); the header's chips say what they are on hover.
 // Built once (again only on a locale or world change); refresh() (4 Hz while open) writes
 // values through change-only setters, and each part rebuilds only when its signature changes
-// (posts, streams slots, orders, unlocked recipes, events). Selects and inputs the player is
+// (posts, orders, unlocked recipes, events). Selects and inputs the player is
 // using are never rebuilt or overwritten. The sim decides: this shows, and asks through the
 // Sim's trade commands (refusals become toasts).
 import { BAL } from '@/content/balance';
@@ -28,7 +28,6 @@ import type { BoardRow, ColonyView, ItemMarket, MarketEvent, MarketSnapshot } fr
 import type { Atlas } from '@/render/art/atlas';
 import { EPOCH, TPS } from '@/sim/constants';
 import type { Sim } from '@/sim/state';
-import { nextToHearth } from '@/sim/systems/trade';
 import { maxPosts, type ImportOrder } from '@/sim/trade';
 import type { Ent } from '@/sim/types';
 import { itemIcon } from '../build-bar';
@@ -37,7 +36,7 @@ import { itemName } from '../inspector/kit';
 import type { ItemPicker } from '../item-picker';
 import { itemMention, itemRef, plain } from '../mention';
 import {
-  arrivalTick, feeText, lastExports, minutes, nextArrival, nextBoundary, oc, ocNum, orderStateText, postFacts,
+  arrivalTick, feeText, minutes, nextArrival, nextBoundary, oc, ocNum, orderStateText, postFacts,
   refusalText, secondsTo, spct, TRADABLE, tradePerHour, tradeSelect, unitBuyCents, unitSellCents, type PostFacts,
 } from '../trade-view';
 import { OrbitView, type OrbitLift } from '../orbit/orbit-view';
@@ -242,15 +241,10 @@ class PricesPane {
 
 // ── Trade: posts, spot, goods in flight ───────────────────────────────────────
 
-/** One trade post: its export streams, its standing orders and the form to add one. */
+/** One trade post: what it sells, its standing orders and the form to add one. */
 class PostCard {
   readonly root: HTMLElement;
-  private readonly tag = el('span.cr-tag');
   private readonly act = el('span.cr-post-act');
-  private readonly help = el('p.cr-help');
-  private readonly streamsCount = el('span.cr-count');
-  private readonly slotsEl = el('div.cr-slots');
-  private slots: Array<{ sel: ItemPicker; info: HTMLElement }> = [];
   private readonly ordersCount = el('span.cr-count');
   private readonly ordersEl = el('div.cr-orders');
   private orders: Array<{ o: ImportOrder; state: HTMLElement; eta: HTMLElement }> = [];
@@ -279,11 +273,8 @@ class PostCard {
       oninput: () => { this.form.max = this.max.value; this.form.touched = true; }, onkeydown: keys(add),
     });
     this.root = el('article.cr-post', { 'data-post': String(id) }, [
-      el('header.cr-post-head', {}, [el('h3.lettering', {}, t('crier.post.name', { n: id })), this.tag, this.act]),
-      el('section.cr-post-sec', {}, [
-        el('h4.lettering', {}, [t('crier.streams'), ' ', this.streamsCount]),
-        this.slotsEl, this.help,
-      ]),
+      el('header.cr-post-head', {}, [el('h3.lettering', {}, t('crier.post.name', { n: id })), this.act]),
+      el('p.cr-help', {}, t('crier.post.ribbons.tip', { fee: feeText(ctx.host.sim().mods.tradeFee) })),
       el('section.cr-post-sec', {}, [
         el('h4.lettering', {}, [t('crier.orders'), ' ', this.ordersCount]),
         this.ordersEl,
@@ -323,24 +314,6 @@ class PostCard {
     this.ctx.host.notify('good', t('crier.order.placed', { rate: rate(n), item: itemRef(it), max: oc(max) }));
   }
 
-  private setStream(slot: number, item: string | null, sel: ItemPicker): void {
-    const sim = this.ctx.host.sim();
-    const r = sim.setExport(this.id, slot, item);
-    const now = sim.streamsOf(this.id)[slot] ?? -1;
-    if (r) this.ctx.host.notify('bad', refusalText(r));
-    else if (item && ITEM_IDS[now] !== item) this.ctx.host.notify('warn', refusalText('exporting')); // sold by another slot already
-    sel.set(now);
-  }
-
-  private buildSlots(n: number): void {
-    const sim = this.ctx.host.sim();
-    this.slots = Array.from({ length: n }, (_, k) => {
-      const sel: ItemPicker = tradeSelect(-1, t('crier.stream.none'), (v) => this.setStream(k, v, sel), { 'data-export-slot': `${this.id}:${k}` }, sim, t('insp.trade.stream', { n: k + 1 }));
-      return { sel, info: el('small.cr-sub') };
-    });
-    this.slotsEl.replaceChildren(...this.slots.map((s, k) => el('div.cr-slot', {}, [el('span.cr-slot-n', {}, String(k + 1)), s.sel.root, s.info])));
-  }
-
   private buildOrders(mine: readonly ImportOrder[]): void {
     this.orders = [];
     const rows = mine.map((o) => {
@@ -362,26 +335,11 @@ class PostCard {
     if (this.ctx.host.sim().cancelImport(o.id)) this.ctx.host.notify('info', t('crier.order.cancelled', { item: itemRef(o.item) }));
   }
 
-  refresh(sim: Sim, e: Ent, f: PostFacts, sold: ReadonlyMap<string, { mu: number; cents: number }>, colonies: readonly ColonyView[]): void {
-    const hearth = nextToHearth(sim, e);
-    setText(this.tag, hearth ? t('crier.post.hearth') : '');
-    setAttr(this.tag, 'hidden', hearth ? null : '');
-    setText(this.help, hearth ? t('crier.post.hearth.tip', { n: BAL.tradeHearthReserve }) : t('crier.post.ribbons.tip'));
+  refresh(sim: Sim, e: Ent, f: PostFacts, colonies: readonly ColonyView[]): void {
     const a = sim.trade.activity.get(this.id);
     setText(this.act, a && a.epoch === sim.absEpoch() - 1
       ? t('crier.post.last', { used: Math.round((a.soldMu + a.boughtMu) / 1000), max: f.perMin, cents: oc(a.cents, true) })
       : t('crier.post.idle'));
-
-    // Export streams: slots follow research; values follow the sim unless a picker is open.
-    const streams = sim.streamsOf(this.id);
-    if (streams.length !== this.slots.length) this.buildSlots(streams.length);
-    setText(this.streamsCount, `${streams.filter((i) => i >= 0).length}/${streams.length}`);
-    streams.forEach((cur, k) => {
-      const s = this.slots[k]!;
-      s.sel.set(cur);
-      const out = sold.get(`${this.id}:${cur}`);
-      setText(s.info, cur >= 0 ? t('crier.stream.info', { bid: oc(sim.prices.bid[cur] ?? 0), n: Math.round((out?.mu ?? 0) / 1000) }) : '');
-    });
 
     // Standing orders: rows when the set changes; state and next delivery live.
     const mine = sim.trade.orders.filter((o) => o.post === this.id);
@@ -567,8 +525,7 @@ class TradePane {
     if (want.length !== this.posts.children.length || want.some((n, k) => this.posts.children[k] !== n)) this.posts.replaceChildren(...want);
     setAttr(this.nopost, 'hidden', posts.length ? '' : null);
     setText(this.postsCount, `${posts.length}/${maxPosts(sim.mods)}`);
-    const sold = lastExports(sim);
-    for (const p of posts) this.cards.get(p.id)!.refresh(sim, p, f, sold, snap.colonies);
+    for (const p of posts) this.cards.get(p.id)!.refresh(sim, p, f, snap.colonies);
     this.spot.refresh(sim, posts);
     this.flight.refresh(sim, snap.colonies);
   }

@@ -49,6 +49,29 @@ describe('the land’s levels (D45)', () => {
     expect(stuck.stock[COPPER]! - s0).toBe(0);
   });
 
+  it('an elevator takes two tiles: a traction step right after or right before another is refused, one flat tile between is fine', () => {
+    // Terraces east of the Heart: x 520 at level 1 (one tile deep), x 521–522 at level 2, x 523–524 at level 3.
+    const sim = new Sim({
+      worldSeed: 7, playerSeed: 11, foundingEpoch: WORLD_EPOCH0 + 24,
+      source: new FlatSource([], [
+        { x: 520, y: 500, w: 1, h: 4, t: T.Rock1, level: 1 }, { x: 521, y: 500, w: 2, h: 4, t: T.Rock1, level: 2 }, { x: 523, y: 500, w: 2, h: 4, t: T.Rock2, level: 3 },
+      ]),
+    });
+    learnPlans(sim);
+    sim.grant('iron_plate', 200); sim.grant('copper_wire', 100);
+    // Up onto the one-tile terrace, then straight up again: the second step has no flat tile in front of the first.
+    expect(sim.place('traction_ribbon', 519, 500, 1).ok).toBe(true);
+    expect(sim.canPlace('traction_ribbon', 520, 500, 1).reason).toBe('lift_room');
+    expect(sim.canPlace('ribbon', 520, 500, 1).ok).toBe(true); // a plain ribbon there is no step (the line just ends at the cliff)
+    // The other order: the upper step first, then the one feeding it.
+    expect(sim.place('traction_ribbon', 520, 501, 1).ok).toBe(true);
+    expect(sim.canPlace('traction_ribbon', 519, 501, 1).reason).toBe('lift_room');
+    // On the two-tile terrace there is room: a step, a flat ribbon, a step.
+    expect(sim.place('traction_ribbon', 520, 502, 1).ok).toBe(true);
+    expect(sim.place('ribbon', 521, 502, 1).ok).toBe(true);
+    expect(sim.place('traction_ribbon', 522, 502, 1).ok).toBe(true);
+  });
+
   it('a building stands on level ground; ribbons and poles stand on the rock too', () => {
     const sim = ridgeSim();
     expect(sim.canPlace('silo', 508, 502, 0).reason).toBe('uneven'); // a corner on the ridge

@@ -22,7 +22,9 @@ import type { Sim } from '../state';
 
 export type PlaceReason =
   | 'ok' | 'outside_world' | 'occupied' | 'terrain' | 'needs_deposit' | 'needs_water' | 'needs_vent'
-  | 'outside_zone' | 'sister_land' | 'locked' | 'unaffordable' | 'not_buildable' | 'fog' | 'limit' | 'reserve' | 'needs_sand' | 'uneven';
+  | 'outside_zone' | 'sister_land' | 'locked' | 'unaffordable' | 'not_buildable' | 'fog' | 'limit' | 'reserve' | 'needs_sand' | 'uneven'
+  /** A traction step next to another one: an elevator needs one flat ribbon tile in front of it. */
+  | 'lift_room';
 
 export type Cost = Array<{ item: number; mu: number }>;
 
@@ -140,7 +142,7 @@ export function canPlace(sim: Sim, defId: string, x: number, y: number, rot: Rot
   }
   // A drill wants a deposit; a ground collector bare sand under every tile (sand is the floor).
   if (b.kind === 'drill' && (b.drill?.ground ? !bare : !deposit)) return fail(b.drill?.ground ? 'needs_sand' : 'needs_deposit');
-  if (b.kind === 'pump' && !water && !touchesWater(sim, x, y, w, h)) return fail('needs_water');
+  if (b.kind === 'pump' && !water && !touchesWater(sim, x, y, w, h, level)) return fail('needs_water');
   if (b.kind === 'geothermal' && !vent) return fail('needs_vent');
   // On the mountains, the whole footprint or none of it (no building astride a cliff, D44).
   if (rock && rock !== w * h) return fail('terrain');
@@ -155,6 +157,7 @@ export function canPlace(sim: Sim, defId: string, x: number, y: number, rot: Rot
     cost = cost.map((c) => ({ item: c.item, mu: c.mu * mult }));
   }
   if (b.kind === 'trade' && [...sim.ents.map.values()].filter((o) => BUILDING_KIND[o.def] === 'trade').length >= maxPosts(sim.mods)) return fail('limit');
+  if (b.lift && liftCrowded(sim, def, x, y, rot)) return fail('lift_room');
   replaces.sort((a, c) => a - c);
   // What it replaces is refunded before the new building is paid: it counts towards the cost.
   if (!affordable(sim, cost, replaces)) return { ok: false, reason: 'unaffordable', cost, delay: 0, replaces };
@@ -166,8 +169,48 @@ export function canPlace(sim: Sim, defId: string, x: number, y: number, rot: Rot
   return { ok: true, reason: 'ok', cost, delay: remoteDelay(sim, x, y, inZone), replaces };
 }
 
-function touchesWater(sim: Sim, x: number, y: number, w: number, h: number): boolean {
-  for (let ty = y - 1; ty <= y + h; ty++) for (let tx = x - 1; tx <= x + w; tx++) if (isWater(sim.grid.terrain(tx, ty))) return true;
+/**
+ * Does a ribbon of `def` at (x, y) pointing `rot` change level into the tile ahead: a traction step
+ * (D45), its elevator standing on the step's low tile?
+ */
+function stepAt(sim: Sim, def: number, x: number, y: number, rot: Rot): boolean {
+  if (!buildingDef(def).lift) return false;
+  const gx = x + DX[rot]!, gy = y + DY[rot]!;
+  return inWorld(gx, gy) && sim.grid.level(gx, gy) !== sim.grid.level(x, y);
+}
+
+/**
+ * A traction step laid right after or right before another on its line (owner, 2026-10-14: "when
+ * there are two elevators in front of each other, there are visual bugs with the items and the
+ * up/down logic… let's make the elevator two blocs in length: one for the elevator, and one for a
+ * ribbon in front"): each step needs a flat tile on both sides, the ribbon ahead not stepping
+ * again, and no ribbon that steps feeding into it. Old lines laid so stay as they are.
+ */
+function liftCrowded(sim: Sim, def: number, x: number, y: number, rot: Rot): boolean {
+  if (!stepAt(sim, def, x, y, rot)) return false;
+  const beltAt = (tx: number, ty: number): Ent | undefined => {
+    if (!inWorld(tx, ty)) return undefined;
+    const o = sim.ents.get(sim.grid.occ[tileIndex(tx, ty)]!);
+    return o && BUILDING_KIND[o.def] === 'belt' && o.x === tx && o.y === ty ? o : undefined;
+  };
+  const ahead = beltAt(x + DX[rot]!, y + DY[rot]!);
+  if (ahead && stepAt(sim, ahead.def, ahead.x, ahead.y, ahead.rot)) return true;
+  for (let d = 0; d < 4; d++) {
+    const n = beltAt(x + DX[d]!, y + DY[d]!);
+    if (n && n.x + DX[n.rot]! === x && n.y + DY[n.rot]! === y && stepAt(sim, n.def, n.x, n.y, n.rot)) return true;
+  }
+  return false;
+}
+
+/**
+ * Is there water on `level` round the footprint (its 8-neighbourhood)? A pump draws water at its own
+ * level: the floor's from the floor, the Crown's tarn (D63) from the rock at the tarn's level round
+ * it — not from a tarn one terrace up, nor from a lake below a cliff.
+ */
+function touchesWater(sim: Sim, x: number, y: number, w: number, h: number, level: number): boolean {
+  for (let ty = y - 1; ty <= y + h; ty++) {
+    for (let tx = x - 1; tx <= x + w; tx++) if (isWater(sim.grid.terrain(tx, ty)) && sim.grid.level(tx, ty) === level) return true;
+  }
   return false;
 }
 
@@ -372,8 +415,8 @@ export function removeEntity(sim: Sim, id: number, silent: boolean): void {
     sim.fleet.delete(id);
   }
   sim.routes = sim.routes.filter((r) => r.from !== id && r.to !== id);
-  // A trade post's streams and orders go with it (goods in flight land in the Hearth).
-  sim.trade.exports.delete(id);
+  // A trade post's cargo and orders go with it (goods in flight land in the Hearth).
+  sim.trade.cargo.delete(id);
   sim.trade.orders = sim.trade.orders.filter((o) => o.post !== id);
   sim.trade.activity.delete(id);
   if (BUILDING_KIND[e.def] === 'machine') for (let k = 0; k < modulesOf(e.cfg); k++) sim.refund(itemIdx('pace_bell'), 1000);
@@ -408,7 +451,7 @@ export function completeConstructions(sim: Sim, now = sim.tick): number[] {
   return done;
 }
 
-/** Raise the Hearth a level (bigger store, land cheaper: `BAL.land.hearthDiscount`). */
+/** Raise the Hearth a level (a bigger store: `BAL.hearthCap`). */
 export function upgradeHearth(sim: Sim): { ok: boolean; reason: 'max' | 'locked' | 'unaffordable' | 'reserve' | null } {
   const up = BAL.hearthUpgrades[sim.hearthLevel - 1];
   if (!up) return { ok: false, reason: 'max' };

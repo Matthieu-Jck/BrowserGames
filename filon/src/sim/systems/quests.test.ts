@@ -9,7 +9,7 @@ import { deserialize, serialize } from '../serialize';
 import { heldIn, type Sim } from '../state';
 import type { Rot } from '../types';
 import { COAL, drillToHearth, line, steadyPower, testSim, testSource, wire } from '../testkit';
-import { boardTop, cleanName, currentQuest, objectiveProgress, questProgress, rewardItems } from './quests';
+import { cleanName, currentQuest, objectiveProgress, questProgress, rewardItems } from './quests';
 
 const idx = (id: QuestId): number => QUEST_IDS.indexOf(id);
 
@@ -96,7 +96,7 @@ function play(sim: Sim, last: QuestId = 'beyond_crown'): Record<string, number> 
   // 1 — the starting kit: a drill on iron, wired, a ribbon into the Hearth's north input: 10 ore in.
   at('first_strike', 0);
   ids.drill1 = drillToHearth(sim);
-  at('first_strike', 3);
+  at('first_strike', 2);
   until(sim, 'first_strike', 8 * EPOCH);
   if (stop('first_strike')) return ids;
 
@@ -189,7 +189,7 @@ function play(sim: Sim, last: QuestId = 'beyond_crown'): Record<string, number> 
   lay([[524, 504, 3], [523, 504, 3]]); // the second collector's line runs into the first's
   at('glassworks', 7);
   lay([...line(521, 507, 2, 6), ...line(521, 513, 3, 7)]);
-  at('glassworks', 8);
+  at('glassworks', 7);
   until(sim, 'glassworks', 6 * EPOCH);
   if (stop('glassworks')) return ids;
 
@@ -217,15 +217,18 @@ function play(sim: Sim, last: QuestId = 'beyond_crown'): Record<string, number> 
   until(sim, 'field_journal', 8 * EPOCH);
   if (stop('field_journal')) return ids;
 
-  // 7 — the trade post (its 5×5 pad and apron, D62) against the Hearth's west side, an export stream of glass.
+  // 7 — the trade post (its 5×5 pad and apron, D62) east of the glass line, glass led into its
+  // entrance by a router (it sells whatever comes in, D64).
   at('crier_calls', 0);
   unlock('trade_post');
   at('crier_calls', 1);
-  place('post', 'trade_post', 505, 510);
+  place('post', 'trade_post', 524, 509); // its entrance at (526, 513), fed from (526, 514)
   at('crier_calls', 2);
-  expect(sim.setExport(ids.post!, 0, 'glass')).toBeNull();
-  at('crier_calls', 3);
-  until(sim, 'crier_calls', 3 * EPOCH);
+  sim.grant('iron_plate', 2);
+  place('routerSale', 'router', 521, 512); // over the glass line going south: its east side out
+  lay([[522, 512, 1], [523, 512, 2], [523, 513, 2], [523, 514, 1], [524, 514, 1], [525, 514, 1], [526, 514, 0]]);
+  at('crier_calls', 2);
+  until(sim, 'crier_calls', 6 * EPOCH);
   if (stop('crier_calls')) return ids;
 
   // 8 — the copper vein: a drill, a wire mill fed by it through one ribbon, the wire to the
@@ -240,31 +243,24 @@ function play(sim: Sim, last: QuestId = 'beyond_crown'): Record<string, number> 
   expect(sim.setRecipe(ids.mill!, 'copper_wire')).toBe(true);
   at('tired_vein', 4);
   powerLine(sim, ids.copper!);
-  at('tired_vein', 5);
+  at('tired_vein', 4); // the drill and the mill wired: one step
   powerLine(sim, ids.mill!);
-  at('tired_vein', 6);
+  at('tired_vein', 5);
   lay([[516, 521, 0]]);
-  at('tired_vein', 7);
+  at('tired_vein', 6);
   lay([...line(516, 518, 3, 3), ...line(513, 518, 0, 4)]);
-  at('tired_vein', 8);
+  at('tired_vein', 6);
   until(sim, 'tired_vein', 4 * EPOCH);
   if (stop('tired_vein')) return ids;
 
-  // 9 — a standing import order of copper ore (delivered into the Hearth: the post touches it).
+  // 9 — a standing import order of copper ore (its goods would leave by the post's exit).
   at('first_purchase', 0);
   const ask = sim.prices.ask[itemIdx('copper_ore')]!;
   expect(typeof sim.addImport(ids.post!, 'copper_ore', 10, 2 * ask)).toBe('number');
   until(sim, 'first_purchase', QUEST_CHECK_TICKS);
   if (stop('first_purchase')) return ids;
 
-  // 10 — an export stream on one of the three best lines of « Ce qui rapporte ».
-  const top = boardTop(sim, 3);
-  expect(top.length).toBe(3);
-  expect(sim.setExport(ids.post!, 1, ITEM_IDS[top[0]!]!)).toBeNull();
-  until(sim, 'the_board', QUEST_CHECK_TICKS);
-  if (stop('the_board')) return ids;
-
-  // 11 — the survey beacon's plan, then a beacon through the Crown (the flat test world has no rock to dig).
+  // 10 — the survey beacon's plan, then a beacon through the Crown (the flat test world has no rock to dig).
   at('beyond_crown', 0);
   unlock('beacon');
   at('beyond_crown', 1);
@@ -279,11 +275,11 @@ const logged = (sim: Sim, k: Command['k']): Command[] => sim.log.filter((l) => l
 describe('quests', () => {
   it('the quest table holds together (the tutorial unlocks before it uses), and checks fall on every epoch boundary', () => {
     expect(questProblems()).toEqual([]);
-    expect(QUEST_IDS.length).toBe(12);
+    expect(QUEST_IDS.length).toBe(11);
     expect(EPOCH % QUEST_CHECK_TICKS).toBe(0);
   });
 
-  it('a scripted colony completes quests 0–11 in order, each once, each paid once', () => {
+  it('a scripted colony completes quests 0–10 in order, each once, each paid once', () => {
     const sim = colony();
     const credits0 = sim.credits;
     play(sim);
@@ -300,8 +296,7 @@ describe('quests', () => {
     // Ocelles: quests 6 and 7 pay 100 + 150 ◉ (on top of the trade).
     const t = sim.trade;
     expect(sim.credits - credits0 - (t.earned - t.spent)).toBe((100 + 150) * 100);
-    // Fees waived for 24 h from quest 9; the title of the path taken (a beacon: the passes).
-    expect(sim.quests.feeFreeUntil).toBe(sim.quests.doneAt[idx('first_purchase')]! + 24 * 60 * EPOCH);
+    // The title of the path taken (a beacon: the passes).
     expect(sim.quests.titles).toEqual(['arpentage']);
     // Nothing is left to complete, and nothing more is paid.
     const before = sim.hash();
@@ -324,9 +319,9 @@ describe('quests', () => {
       expect(sim.completeQuest(id, true)).toBe(false);
     }
     expect(sim.quests.done).toEqual(QUEST_IDS);
-    // The kits are the buildings' own costs; the board's prize is the Hearth's level-2 materials.
+    // The kits are the buildings' own costs; the first purchase's prize is the Hearth's level-2 materials.
     expect(rewardItems(QUESTS.first_wind.reward).map((c) => [ITEM_IDS[c.item], c.mu / 1000])).toEqual([['iron_plate', 20], ['copper_wire', 4]]);
-    expect(rewardItems(QUESTS.the_board.reward).map((c) => [ITEM_IDS[c.item], c.mu / 1000])).toEqual([['iron_plate', 200], ['gear', 50]]);
+    expect(rewardItems(QUESTS.first_purchase.reward).map((c) => [ITEM_IDS[c.item], c.mu / 1000])).toEqual([['iron_plate', 200], ['gear', 50]]);
     // A forced `any` quest takes its first objective's title.
     expect(sim.quests.titles).toEqual(['taille']);
   });
@@ -504,17 +499,14 @@ describe('quests', () => {
     expect(objectiveProgress(sim, { k: 'unlocked', ids: ['tr1'] }).met).toBe(false);
   });
 
-  it('fees are waived while the First Purchase reward lasts', () => {
+  it('CrierBelt takes a fifth of every trade, and nothing lowers it (D64)', () => {
     const sim = testSim();
     sim.grant('iron_plate', 200); sim.grant('glass', 50); sim.grant('copper_wire', 50);
-    const post = sim.place('trade_post', 505, 510, 0);
-    expect(post.ok).toBe(true);
+    expect(sim.place('trade_post', 505, 510, 0).ok).toBe(true);
     const plate = itemIdx('iron_plate');
+    expect(sim.mods.tradeFee).toBe(200);
     const paid = sim.quoteSpot(plate, 'sell', 50).cents;
-    for (const id of QUEST_IDS.slice(0, idx('first_purchase') + 1)) sim.completeQuest(id, true);
-    const free = sim.quoteSpot(plate, 'sell', 50).cents;
-    expect(free).toBeGreaterThan(paid);
-    sim.tick = sim.quests.feeFreeUntil; // a day later (a test shortcut: no command moves time)
+    for (const id of QUEST_IDS) sim.completeQuest(id, true);
     expect(sim.quoteSpot(plate, 'sell', 50).cents).toBe(paid);
   });
 });

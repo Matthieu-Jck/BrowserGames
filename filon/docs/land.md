@@ -37,8 +37,8 @@ or water filled):
 - plus, per deposit tile, the ore's value × the tile's richness (`BAL.land.depositPerValue`);
 - × the growth: each parcel the claim has bought makes the next one dearer (`BAL.land.growth`,
   ‰ per parcel; research lowers it);
-- × the discounts: the Heart's level (`BAL.land.hearthDiscount` per level past the first) and
-  research (`landPrice`);
+- × the research discounts (`landPrice`). The Heart's level does not change it (owner,
+  2026-10-14);
 - × the owner's markup on a sister claim's parcel.
 
 ## Buying and leasing

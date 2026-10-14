@@ -19,7 +19,7 @@
 // · objectives: what it asks, read by the engine (src/sim/systems/quests.ts) from the base's
 //   state and counters (`any`: one of them is enough);
 // · reward: what it gives, paid into the Heart when it completes (items, ◉, a building's
-//   materials, a Heart level's materials, waived Crier fees, a title in the register);
+//   materials, a Heart level's materials, a title in the register);
 // · steps: how the guide shows the way (src/ui/guide.ts) — each a UI target and a one-line
 //   hint; the first step whose `done` objective does not hold yet is the current one, so a step
 //   is never shown once the base already does what it asks.
@@ -62,24 +62,20 @@ export type QuestObjective = (
   | { readonly k: 'research'; readonly id: string }
   /** These nodes of the tech tree unlocked: plans taken, research learnt (D33). */
   | { readonly k: 'unlocked'; readonly ids: readonly string[] }
-  /** A trade post touching the Hearth (it sells from, and delivers into, its stock). */
+  /** A trade post built. */
   | { readonly k: 'post' }
-  /** n of these items sold through the Crier (streams and spot sales), *since*. */
+  /** n of these items sold through the Crier (by a post's entrance, or spot sales), *since*. */
   | { readonly k: 'export'; readonly items: readonly string[]; readonly n: number }
   /** A standing import order for this item. */
   | { readonly k: 'order'; readonly item: string }
   /** n of these items delivered by imports (bought and arrived), *since*. */
   | { readonly k: 'import'; readonly items: readonly string[]; readonly n: number }
-  /** An export stream sells the output of one of the `top` first lines of « Ce qui rapporte ». */
-  | { readonly k: 'board'; readonly top: number }
   /** n tiles dug out of rock (the colony's total). */
   | { readonly k: 'dig'; readonly n: number }
   /** A built building whose centre lies `r` tiles or more from the Hearth's. */
   | { readonly k: 'reach'; readonly r: number }
   /** n buildings among `defs` set to this recipe. */
   | { readonly k: 'recipe'; readonly defs: readonly string[]; readonly recipe: string; readonly n: number }
-  /** An export stream of this item, on any post. */
-  | { readonly k: 'stream'; readonly item: string }
   /** n built buildings among `defs` (drills on a deposit of `item`, if given) whose output reaches the Heart through ribbons and routing blocks. */
   | { readonly k: 'delivers'; readonly defs: readonly string[]; readonly item?: string; readonly n: number }
   /**
@@ -101,8 +97,6 @@ export interface QuestReward {
   readonly kit?: string;
   /** The materials of a Hearth level (2–4, from BAL.hearthUpgrades). */
   readonly hearthLevel?: number;
-  /** The Crier's fees are waived for this many game minutes. */
-  readonly feeFreeMin?: number;
   /** The title of the objective that completed the quest (`any` quests). */
   readonly title?: boolean;
 }
@@ -135,8 +129,8 @@ export type GuideTarget =
   | { readonly k: 'unlock'; readonly ids: readonly string[] }
   /** The research screen (the HUD chip), the node's card, its start button. */
   | { readonly k: 'research'; readonly id: string }
-  /** The Crier (the HUD ◉), a tab, then a control (export stream, order form, best line). */
-  | { readonly k: 'crier'; readonly tab: 'prices' | 'trade' | 'board'; readonly focus?: 'export' | 'order' | 'best' }
+  /** The Crier (the HUD ◉), a tab, then a control (the order form). */
+  | { readonly k: 'crier'; readonly tab: 'prices' | 'trade' | 'board'; readonly focus?: 'order' }
   /** The landscaping brush. */
   | { readonly k: 'brush' }
   /** The quest log's naming button. */
@@ -149,12 +143,10 @@ export interface QuestStep {
   readonly target: GuideTarget;
   /** The step is over once this holds (counters count from the founding). Omitted: it lasts until the quest ends. */
   readonly done?: QuestObjective;
-  /** UI-only: the step is over once the player has looked at this (the Crier's board). */
-  readonly seen?: 'board';
 }
 
 /** Extra live lines the quest log shows for a quest. */
-export type QuestInfo = 'vein' | 'delivery' | 'shortage' | 'board';
+export type QuestInfo = 'vein' | 'delivery' | 'shortage';
 
 /**
  * A piece of the interface the tutorial reveals (owner, 2026-10-12: nothing on screen before
@@ -232,7 +224,6 @@ export const QUESTS = {
         target: { k: 'build', def: 'ribbon', at: INTAKE },
         done: { k: 'delivers', defs: DRILLS, n: 1 },
       },
-      { hint: { fr: 'Le minerai arrive : laisse-le s’entasser jusqu’à 10.', en: 'The ore is coming in: let it pile up to 10.' }, target: { k: 'none' } },
     ],
   },
 
@@ -435,7 +426,6 @@ export const QUESTS = {
         target: { k: 'build', def: 'ribbon', at: INTAKE },
         done: { k: 'delivers', defs: KILNS, n: 2 },
       },
-      { hint: { fr: 'Le verre coule : dix en tout.', en: 'The glass is flowing: ten in all.' }, target: { k: 'none' } },
     ],
   },
 
@@ -502,12 +492,12 @@ export const QUESTS = {
     name: { fr: 'La Criée appelle', en: 'The Crier Calls' },
     reveals: ['credits', 'crier'],
     desc: {
-      fr: 'Port-Écume manque de verre et paie cher. Un comptoir collé au Cœur vend depuis son stock, à chaque levée : nos cargos montent, nous prenons notre part, le reste est à vous.',
-      en: 'Port-Écume is short of glass and pays well. A trade post against the Heart sells from its stock at every lift: our cargo craft go up, we take our cut, the rest is yours.',
+      fr: 'Port-Écume manque de verre et paie cher. Un comptoir vend chaque minute tout ce que son entrée lui apporte : nos cargos montent, nous prenons notre part, un cinquième, le reste est à vous.',
+      en: 'Port-Écume is short of glass and pays well. A trade post sells, every minute, whatever its entrance brings: our cargo craft go up, we take our cut, a fifth, the rest is yours.',
     },
     objectives: [
-      { k: 'post', label: { fr: 'Un comptoir collé au Cœur', en: 'A trade post against the Heart' } },
-      { k: 'export', items: ['glass'], n: 10 },
+      { k: 'post', label: { fr: 'Un comptoir', en: 'A trade post' } },
+      { k: 'export', items: ['glass'], n: 3 },
     ],
     reward: { credits: 150 },
     info: 'shortage',
@@ -518,16 +508,15 @@ export const QUESTS = {
         done: { k: 'unlocked', ids: ['trade_post'] },
       },
       {
-        hint: { fr: 'Pose un comptoir collé au Cœur (onglet Commerce).', en: 'Place a trade post against the Heart (Commerce tab).' },
-        target: { k: 'build', def: 'trade_post', at: NEAR_HEART },
+        hint: { fr: 'Pose un comptoir près de la fonderie à verre (onglet Commerce) : rien ne se construit dans l’anneau brûlé par ses drones.', en: 'Place a trade post near the glass smelter (Commerce tab): nothing is built in the ring its drones scorch.' },
+        target: { k: 'build', def: 'trade_post', at: { newest: 'kiln' } },
         done: { k: 'post' },
       },
       {
-        hint: { fr: 'Ouvre la Criée (M), onglet Échanges : un flux d’export de verre.', en: 'Open the Crier (M), Trade tab: an export stream of glass.' },
-        target: { k: 'crier', tab: 'trade', focus: 'export' },
-        done: { k: 'stream', item: 'glass' },
+        hint: { fr: 'Du verre à son entrée : un routeur sur le ruban du verre, puis un ruban jusqu’à l’entrée du comptoir (sa rampe turquoise).', en: 'Glass to its entrance: a router on the glass ribbon, then a ribbon to the post’s entrance (its teal ramp).' },
+        target: { k: 'branch', item: 'glass', to: ['trade_post'] },
+        done: { k: 'feeds', item: 'glass', to: ['trade_post'], n: 1 },
       },
-      { hint: { fr: 'Chaque minute, le comptoir vend le verre que le Cœur a en trop (il en garde 25).', en: 'Every minute the post sells the glass the Heart has to spare (it keeps 25).' }, target: { k: 'none' } },
     ],
   },
 
@@ -566,12 +555,7 @@ export const QUESTS = {
         done: { k: 'recipe', defs: ['wire_mill'], recipe: 'copper_wire', n: 1 },
       },
       {
-        hint: { fr: 'Relie la foreuse de cuivre au réseau (des poteaux portent les fils jusque-là).', en: 'Wire the copper drill into the grid (poles carry the wires out there).' },
-        target: { k: 'link' },
-        done: { k: 'linked', defs: DRILLS, item: 'copper_ore', n: 1 },
-      },
-      {
-        hint: { fr: 'Puis la tréfileuse.', en: 'Then the wire mill.' },
+        hint: { fr: 'Relie la foreuse de cuivre et la tréfileuse au réseau (des poteaux portent les fils jusque-là).', en: 'Wire the copper drill and the wire mill into the grid (poles carry the wires out there).' },
         target: { k: 'link' },
         done: { k: 'powered', defs: ['wire_mill'], n: 1 },
       },
@@ -585,7 +569,6 @@ export const QUESTS = {
         target: { k: 'build', def: 'ribbon', at: INTAKE },
         done: { k: 'delivers', defs: ['wire_mill'], n: 1 },
       },
-      { hint: { fr: 'Compte le fil : le filon ne suffira pas longtemps.', en: 'Count the wire: the vein will not last you long.' }, target: { k: 'none' } },
     ],
   },
 
@@ -593,13 +576,13 @@ export const QUESTS = {
   first_purchase: {
     name: { fr: 'Premier achat', en: 'First Purchase' },
     desc: {
-      fr: 'Ce que le cirque n’a pas, la Criée le vend. Un ordre d’import permanent achète chaque minute, tant que le prix reste sous votre maximum. Vos achats arrivent dans le conteneur du comptoir et n’en sortent que par sa sortie, chacun son tour : tant qu’elle ne mène nulle part, l’ordre attend et rien n’est débité. Pour ce premier achat, CrierBelt vous offre une journée sans commission.',
-      en: 'What the cirque lacks, the Crier sells. A standing import order buys every minute, as long as the price stays under your maximum. Your purchases land in the post’s container and leave only by its exit, each in turn: until it leads somewhere, the order waits and nothing is paid. For this first purchase, CrierBelt gives you a day without its cut.',
+      fr: 'Ce que le cirque n’a pas, la Criée le vend. Un ordre d’import permanent achète chaque minute, tant que le prix reste sous votre maximum. Vos achats arrivent dans le conteneur du comptoir et n’en sortent que par sa sortie, chacun son tour : tant qu’elle ne mène nulle part, l’ordre attend et rien n’est débité.',
+      en: 'What the cirque lacks, the Crier sells. A standing import order buys every minute, as long as the price stays under your maximum. Your purchases land in the post’s container and leave only by its exit, each in turn: until it leads somewhere, the order waits and nothing is paid.',
     },
     objectives: [
       { k: 'order', item: 'copper_ore' },
     ],
-    reward: { feeFreeMin: 24 * 60 },
+    reward: { hearthLevel: 2 },
     info: 'delivery',
     steps: [
       {
@@ -610,30 +593,7 @@ export const QUESTS = {
     ],
   },
 
-  // ── 10 ── what pays ─────────────────────────────────────────────────────────
-  the_board: {
-    name: { fr: 'Le Tableau', en: 'The Board' },
-    desc: {
-      fr: 'Notre tableau, « Ce qui rapporte », classe vos recettes au prix du jour, par tuile de gisement. Faites passer un flux d’export sur l’une des trois premières.',
-      en: 'Our board, “What pays”, ranks your recipes at today’s prices, per deposit tile. Switch an export stream to one of the top three.',
-    },
-    objectives: [{ k: 'board', top: 3 }],
-    reward: { hearthLevel: 2 },
-    info: 'board',
-    steps: [
-      {
-        hint: { fr: 'Criée (M), « Ce qui rapporte » : les meilleures lignes sont en haut.', en: 'Crier (M), “What pays”: the best lines are at the top.' },
-        target: { k: 'crier', tab: 'board', focus: 'best' },
-        seen: 'board',
-      },
-      {
-        hint: { fr: 'Puis, onglet Échanges : un flux d’export sur l’une des trois premières.', en: 'Then, Trade tab: an export stream on one of the top three.' },
-        target: { k: 'crier', tab: 'trade', focus: 'export' },
-      },
-    ],
-  },
-
-  // ── 11 ── beyond the Crown ──────────────────────────────────────────────────
+  // ── 10 ── beyond the Crown ──────────────────────────────────────────────────
   beyond_crown: {
     name: { fr: 'Au-delà de la Couronne', en: 'Beyond the Crown' },
     reveals: ['brush'],

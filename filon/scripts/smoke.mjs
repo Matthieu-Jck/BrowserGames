@@ -369,7 +369,7 @@ await step('stats: the screen lists what the colony makes', async () => {
 });
 
 // ── M6: the Crier ──────────────────────────────────────────────────────────
-await step('crier: in the Port-Écume shortage, the trade post next to the Hearth sells glass dear; M opens the Crier', async () => {
+await step('crier: in the Port-Écume shortage, glass sells dear through the post (CrierBelt takes a fifth, D64); M opens the Crier', async () => {
   const post = await FL(() => window.FL.tradePost());
   assert(post > 0, 'no trade post in the demo');
   // The scripted first trade: bulbs short at Port-Écume from 20 min after founding, for 2 h,
@@ -381,14 +381,13 @@ await step('crier: in the Port-Écume shortage, the trade post next to the Heart
   console.log(`    bulbs bid ${p.bid.toFixed(2)} ◉ · gazette: ${g.active.join(' | ')}`);
   assert(g.active.some((l) => /Port-Écume/.test(l)), `no shortage in the Gazette: ${JSON.stringify(g)}`);
   assert(p.bid > 4.6, `bulbs not dearer in the shortage: ${p.bid}`);
+  // A spot sale from the Heart's stock (a post's entrance sells only what ribbons bring it, D64).
   const c0 = await FL(() => window.FL.credits());
-  const refused = await FL((id) => window.FL.app.sim.setExport(id, 0, 'glass'), post);
-  assert(refused === null, `export refused: ${refused}`);
-  await FL(() => window.FL.tick(600));
+  const sale = await FL(() => window.FL.app.sim.spotTrade('glass', 'sell', 40));
+  assert(sale && 'cents' in sale, `sale refused: ${JSON.stringify(sale)}`);
   const c1 = await FL(() => window.FL.credits());
   console.log(`    ocelles ${c0.toFixed(0)} → ${c1.toFixed(0)}`);
   assert(c1 > c0 + 100, `the sale did not pay: ${c0} → ${c1}`);
-  await FL((id) => window.FL.app.sim.setExport(id, 0, null), post);
   await page.keyboard.press('m');
   await page.waitForSelector('[data-screen="market"][data-open]', { timeout: 2000 });
   await page.waitForTimeout(900);
@@ -396,7 +395,7 @@ await step('crier: in the Port-Écume shortage, the trade post next to the Heart
   await page.keyboard.press('Escape');
 });
 
-await step('crier: a standing order imports copper ore by the post’s one exit (D62), delivered after the lift and the colony’s delay; the inspector shows its gates', async () => {
+await step('crier: a standing order imports copper ore by the post’s one exit (D62), delivered after the lift and the colony’s delay; the inspector is a recap; a click on the post picks it', async () => {
   const post = await FL(() => window.FL.tradePost());
   // D62: the 5×5 post has one entrance (port 0) and one exit (port 1), each across its scorched
   // apron on a flame-proof ribbon. The exit hands out everything the post bought, in turn: there
@@ -419,24 +418,37 @@ await step('crier: a standing order imports copper ore by the post’s one exit 
   console.log(`    copper ore ${before} → ${after}`);
   assert(after >= before + 10, `nothing delivered: ${before} → ${after}`);
   await page.waitForFunction(() => [...document.querySelectorAll('.toast')].some((n) => /Livraison|Delivered/.test(n.textContent ?? '')), undefined, { timeout: 3000 });
-  // The inspector shows the gates rather than outlet pickers: the entrance with what it sells, the
-  // exit linked, with the ore it hands out.
-  await FL((p) => window.FL.app.sim.setExport(p, 0, 'glass'), post);
+  // The inspector is a recap (D64): its gates (the exit linked), what its container holds and what
+  // it is worth, what is on its way and what it cost, its orders — no outlet or stream pickers.
   await FL((p) => { const e = window.FL.app.sim.ents.get(p); window.FL.lookAt(e.x + 2.5, e.y + 2.5, 1.5); window.FL.selected(p); }, post);
   await page.waitForSelector('.inspector:not([hidden]) [data-gate="out"]', { timeout: 3000 });
   const g = await FL(() => ({
-    outlets: document.querySelectorAll('.inspector [data-outlet]').length,
-    sells: [...document.querySelectorAll('.inspector [data-gate="in"] .insp-chip[data-item]')].map((n) => n.getAttribute('data-item')),
+    pickers: document.querySelectorAll('.inspector [data-outlet], .inspector [data-pick^="stream"]').length,
     linked: !!document.querySelector('.inspector [data-gate="out"][data-gate-linked]'),
-    hands: [...document.querySelectorAll('.inspector [data-gate="out"] .insp-chip[data-item]')].map((n) => n.getAttribute('data-item')),
+    recaps: document.querySelectorAll('.inspector .tp-recap').length,
+    order: !!document.querySelector('.inspector .tr-order[data-item="copper_ore"]'),
+    lines: [...document.querySelectorAll('.inspector .tp-recap .tp-line[data-item]')].map((n) => n.getAttribute('data-item')),
   }));
-  console.log(`    gates: in ${g.sells.join(',')} · out ${g.hands.join(',')}${g.linked ? '' : ' (not linked)'}`);
-  assert(g.outlets === 0, 'the trade post still shows outlet pickers');
-  assert(g.sells.includes('glass'), `the entrance does not show what it sells: ${g.sells}`);
-  assert(g.linked && g.hands.includes('copper_ore'), `the exit does not show the ore it hands out: ${JSON.stringify(g)}`);
+  console.log(`    recap: ${g.lines.join(',') || 'empty'}${g.linked ? '' : ' (exit not linked)'}`);
+  assert(g.pickers === 0, 'the trade post still shows outlet or stream pickers');
+  assert(g.recaps === 2, `no cargo / on-its-way recap: ${g.recaps}`);
+  assert(g.linked && g.order, `the exit or the copper order is not shown: ${JSON.stringify(g)}`);
   await page.waitForTimeout(600);
   await page.screenshot({ path: shot('smoke-m6-post.png') });
-  await FL((p) => { window.FL.app.sim.setExport(p, 0, null); window.FL.selected(0); }, post);
+  // Iso picking: a click on the post's pad or apron picks the post — a flat ribbon in front never
+  // takes it (owner, 2026-10-14: "my cursor was on the trade post, but it selected the ribbon").
+  const pick = await FL((p) => {
+    const pk = window.FL.app.picker, e = window.FL.app.sim.ents.get(p);
+    let hits = 0, n = 0;
+    for (let i = 0; i <= 12; i++) for (let j = 0; j <= 12; j++) {
+      const [sx, sy] = pk.tileToScreen(e.x - 0.4 + (i * 4.8) / 12, e.y - 0.4 + (j * 4.8) / 12);
+      n++; if (pk.entityAt(sx, sy) === p) hits++;
+    }
+    return { hits, n };
+  }, post);
+  console.log(`    picking over the post: ${pick.hits}/${pick.n}`);
+  assert(pick.hits >= 0.95 * pick.n, `clicks on the post pick something else: ${pick.hits}/${pick.n}`);
+  await FL(() => window.FL.selected(0));
   await FL((o) => window.FL.app.sim.cancelImport(o), id);
 });
 
@@ -732,7 +744,7 @@ await step('quests: CrierBelt has the claim named; the log moves on; rewards pay
   const c0 = await FL(() => window.FL.credits());
   assert((await FL(() => window.FL.completeQuest('beyond_crown'))) === null, 'completeQuest refused');
   q = await FL(() => window.FL.quests());
-  assert(q.done.length === 12, `done: ${q.done.length}`);
+  assert(q.done.length === 11, `done: ${q.done.length}`); // the tutorial's eleven quests (the board quest went with the export streams, D64)
   const c1 = await FL(() => window.FL.credits());
   assert(Math.abs(c1 - c0 - 250) < 0.01, `credits ${c0} → ${c1}`);
   await FL(() => window.FL.completeQuest('beyond_crown'));

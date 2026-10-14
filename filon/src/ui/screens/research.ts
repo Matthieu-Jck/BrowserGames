@@ -171,7 +171,7 @@ const EFFECT_ICON: Readonly<Record<string, Icon>> = {
   solarNight: { b: 'sun_bulb' }, accCap: { b: 'accumulator' }, accRate: { b: 'accumulator' }, geoOut: { b: 'fumarole_tap' },
   deepHeat: { b: 'fumarole_tap' }, genOut: { b: 'brazier' },
   tradeFee: { g: 'coin' }, slippage: { g: 'coin' }, forecast: { g: 'coin' }, forwards: { g: 'coin' }, charters: { g: 'coin' },
-  deliveryDelay: { b: 'trade_post' }, streams: { b: 'trade_post' }, tradeL2: { b: 'trade_post' }, tradeL3: { b: 'trade_post' },
+  deliveryDelay: { b: 'trade_post' }, orders: { b: 'trade_post' }, tradeL2: { b: 'trade_post' }, tradeL3: { b: 'trade_post' },
   crierHouse: { b: 'trade_post' }, slots: { b: 'observatory' },
   // The analytics path's readouts (D41), by their flags.
   telemetry: { g: 'telemetry' }, statistics: { g: 'ledger' }, power_log: { g: 'power' }, diagnostics: { g: 'gauge' },

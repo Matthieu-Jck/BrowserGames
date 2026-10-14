@@ -121,15 +121,15 @@ export const RESEARCH = {
   enK: node('en', 9, ['Le Cœur-Soleil', 'The Sunheart'], ['Débloque le Cœur-Soleil ; tous les générateurs +20 %.', 'Unlocks the Sunheart; all generators +20%.'], [mul('genOut', 1200)]),
 
   // ── Commerce — Criée ─────────────────────────────────────────────────────
-  cm1: node('cm', 1, ['Ardoise de courtier', 'Broker’s Slate'], ['Frais 8 → 6 % ; prévision des cours à 6 h.', 'Fees 8 → 6%; 6-hour price forecast.'], [add('tradeFee', -20), flag('forecast')]),
-  cm2: node('cm', 2, ['Ordres permanents', 'Standing Orders'], ['6 flux d’export et 6 ordres d’import.', '6 export streams and 6 import orders.'], [add('streams', 4)]),
-  cm3: node('cm', 3, ['Second quai', 'Second Wharf'], ['Comptoir niveau 2 (240/min) ; un second comptoir autorisé.', 'Trade post level 2 (240/min); a second post allowed.'], [flag('tradeL2'), add('tradeFee', -10)]),
+  cm1: node('cm', 1, ['Ardoise de courtier', 'Broker’s Slate'], ['Prévision des cours à 6 h.', '6-hour price forecast.'], [flag('forecast')]),
+  cm2: node('cm', 2, ['Ordres permanents', 'Standing Orders'], ['6 ordres d’import.', '6 import orders.'], [add('orders', 4)]),
+  cm3: node('cm', 3, ['Second quai', 'Second Wharf'], ['Comptoir niveau 2 (240/min) ; un second comptoir autorisé.', 'Trade post level 2 (240/min); a second post allowed.'], [flag('tradeL2')]),
   cm4: node('cm', 4, ['Contrats à terme', 'Forward Contracts'], ['3 contrats à prix bloqué pendant 24 h.', '3 contracts at a locked price for 24 h.'], [flag('forwards')]),
   cm5: node('cm', 5, ['Coursiers express', 'Express Couriers'], ['Délais de livraison −40 %.', 'Delivery delays −40%.'], [mul('deliveryDelay', 600)]),
   cm6: node('cm', 6, ['Flair', 'Market Sense'], ['Glissement au comptant −30 %.', 'Spot slippage −30%.'], [mul('slippage', 700)]),
   cm7: node('cm', 7, ['Chartes de concession', 'Claim Charters'], ['Contrats de gros des concessions sœurs à +25 %.', 'Sister-claim bulk contracts at +25%.'], [flag('charters')]),
-  cm8: node('cm', 8, ['Grand comptoir', 'Grand Post'], ['Comptoir niveau 3 (480/min), frais 4 %.', 'Trade post level 3 (480/min), 4% fees.'], [flag('tradeL3'), add('tradeFee', -10)]),
-  cmK: node('cm', 9, ['La Maison de Criée', 'The Crier House'], ['Tes propres ordres à cours limite, remplis par les concessions sœurs ; frais 2 %.', 'Your own limit orders, filled by sister claims; 2% fees.'], [flag('crierHouse'), add('tradeFee', -20)]),
+  cm8: node('cm', 8, ['Grand comptoir', 'Grand Post'], ['Comptoir niveau 3 (480/min).', 'Trade post level 3 (480/min).'], [flag('tradeL3')]),
+  cmK: node('cm', 9, ['La Maison de Criée', 'The Crier House'], ['Tes propres ordres à cours limite, remplis par les concessions sœurs.', 'Your own limit orders, filled by sister claims.'], [flag('crierHouse')]),
 } as const satisfies Record<string, ResearchDef>;
 
 export type ResearchId = keyof typeof RESEARCH;

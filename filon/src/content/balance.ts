@@ -73,7 +73,6 @@ export const BAL = {
     /** Centi-ocelles per deposit tile, per point of the ore's value (items.ts), at a richness of 500 (5/min): scaled by the tile's own. */
     depositPerValue: 400,
     growth: 1100, // ‰ on the price per parcel already bought (Land Charter lowers it)
-    hearthDiscount: 50, // ‰ off per Heart level past the first
     rentPermille: 30, // of the price, an hour
     sisterShare: 125, // ‰ of the parcels beyond the starting ring that a sister claim owns
     sisterMarkup: [1600, 1800, 2000, 2200, 2400] as readonly number[], // ‰ on the content price, by claim
@@ -91,12 +90,11 @@ export const BAL = {
   respecCooldownDays: 14,
 
   // ── market (see market/) ─────────────────────────────────────────────────
-  tradeFee: [80, 60, 40], // ‰ by trade-post level
+  tradeFee: 200, // ‰ CrierBelt takes on every trade: it holds the Ring's monopoly, and nothing lowers it (owner, 2026-10-14, D64)
   tradeThroughput: [120, 240, 480], // items/min
   liftDelayMin: [10, 6, 3], // minutes from a purchase to the lift-off, by trade-post level
-  tradeStreams: 2,          // export streams per post and standing import orders (Standing Orders: +4)
+  tradeOrders: 2,           // standing import orders (Standing Orders: +4)
   importHysteresis: 30,     // ‰: an order paused above its max resumes once the ask is 3 % below it
-  tradeHearthReserve: 25,   // items a post next to the Hearth leaves in its stock when it exports
   /**
    * The Crier Ring's NPC market (src/market, design §6). It computes in floats, being
    * authoritative where it runs; only its outputs reach the sim, as integers. Times are minutes

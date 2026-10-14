@@ -135,6 +135,15 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
   const moved = new Set<number>();
   /** The reservoirs a boundary's trade can move (the Hearth, the trade posts' stores), by index in `g.reservoirs`. */
   let tradeRes: number[] = [];
+  /**
+   * A post's deliveries, spread over the epoch after they land (key → whole items, the tick they
+   * landed, how many are in so far). Online they land in a lump at the boundary and its exit hands
+   * them out at once; offline a lump in a store under the margin left the key EMPTY, whose throttle
+   * is its inflow — none — so the exit waited for 40 items (the old known gap, docs/offline.md). As
+   * an inflow over the epoch, item by item, the exit hands them out as they come; whole by the next
+   * boundary (`flushDeliveries`), where the trade sees the same container as online.
+   */
+  const deliveries = new Map<number, { n: number; at: number; done: number }>();
   let lastWeather = '';
   let pendingBuilds: number[] = [];
 
@@ -455,6 +464,7 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
       add(next, ra * N_ITEMS + rt.item, r);
       add(nextIn, rb * N_ITEMS + rt.item, r);
     }
+    for (const [k, d] of deliveries) if (d.n > d.done) add(nextIn, k, (d.n * 1000) / EPOCH);
     for (const [cur, nu] of [[labOut, next], [pIn, nextIn]] as const) {
       for (const k of new Set([...cur.keys(), ...nu.keys()])) {
         if (Math.abs((cur.get(k) ?? 0) - (nu.get(k) ?? 0)) > 1e-12) throttleDirty.add(k);
@@ -535,6 +545,14 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
       sim.advanceJobs(dt, () => 0, (j) => sats.get(j) ?? 0);
     }
     for (const rt of sim.routes) sim.moveFreight(rt, dt, (n) => netModes[n]?.sat ?? 0, false);
+    // The deliveries, whole items at an even pace over their epoch.
+    for (const [k, d] of deliveries) {
+      const due = Math.min(d.n, Math.floor((d.n * (to - d.at)) / EPOCH));
+      if (due <= d.done) continue;
+      const r = g.reservoirs[Math.floor(k / N_ITEMS)]!, i = k % N_ITEMS;
+      r.stock[i] = r.stock[i]! + (due - d.done) * 1000;
+      d.done = due;
+    }
     for (const p of sim.projects) {
       const paid = advanceProject(p, sim.projectStock(p), dt, projSat(p));
       paid.forEach((mu, i) => {
@@ -588,7 +606,38 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
   }
 
   function materializeAll(): void {
+    flushDeliveries(); // the keys go with this graph
     for (const run of runs) if (run.reg && run.cond) materialize(g, run.grp, wctx, run.cond, run.reg, run.start, now - run.start);
+  }
+
+  /** Whatever of the deliveries is still to come lands now (a boundary, a new graph, the end). */
+  function flushDeliveries(): void {
+    for (const [k, d] of deliveries) {
+      const r = g.reservoirs[Math.floor(k / N_ITEMS)]!, i = k % N_ITEMS;
+      if (d.n > d.done) { r.stock[i] = r.stock[i]! + (d.n - d.done) * 1000; moved.add(k); }
+      throttleDirty.add(k);
+    }
+    deliveries.clear();
+  }
+
+  /** The boundary's deliveries (its `delivered` events from `from` on) taken back out of their stores, to come in over the epoch. */
+  function spreadDeliveries(from: number): void {
+    for (let e = from; e < sim.events.length; e++) {
+      const ev = sim.events[e]!;
+      if (ev.k !== 'delivered') continue;
+      const ri = resIndex(ev.post);
+      if (ri < 0 || ev.mu % 1000 !== 0) continue; // a post gone: into the Hearth, at once
+      const k = ri * N_ITEMS + ev.item, r = g.reservoirs[ri]!;
+      // Only into a store that stays under the margin with it (an EMPTY key): above, the lump is
+      // a level like any other, and the regimes take it as online.
+      if (r.stock[ev.item]! >= 2 * margin) continue;
+      r.stock[ev.item] = r.stock[ev.item]! - ev.mu;
+      const d = deliveries.get(k) ?? { n: 0, at: now, done: 0 };
+      d.n += ev.mu / 1000;
+      deliveries.set(k, d);
+      moved.add(k);
+      throttleDirty.add(k);
+    }
   }
 
   // ── main loop ─────────────────────────────────────────────────────────────
@@ -633,11 +682,15 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
       if (finishing) for (const id of sim.finishProjects()) rep.incidents.push({ tick: now, kind: 'researchDone', ref: id });
     }
     // The epoch boundary: trade posts trade and the Crier settles — the same call as online
-    // (reservoir levels and ocelles only: no group needs materializing). Its per-minute events
-    // are folded into the report rather than replayed to the shell.
+    // (reservoir levels and ocelles only: no group needs materializing, unless a post's cargo
+    // changed: its entrance and its exit change with it, D64, a new graph). Its per-minute
+    // events are folded into the report rather than replayed to the shell.
     if (now % EPOCH === 0) {
+      flushDeliveries();
       const before = tradeRes.map((ri) => g.reservoirs[ri]!.stock.slice());
-      sim.tradeEpoch();
+      const ev0 = sim.events.length;
+      if (sim.tradeEpoch()) materializeOnce();
+      else spreadDeliveries(ev0);
       dropTradeEvents(sim);
       tradeRes.forEach((ri, j) => { const r = g.reservoirs[ri]!, b = before[j]!; for (let i = 0; i < N_ITEMS; i++) if (r.stock[i] !== b[i]) moved.add(ri * N_ITEMS + i); });
       // The leases' hour (systems/land.ts), right after, as online: the rent taken (ocelles

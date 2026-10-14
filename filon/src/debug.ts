@@ -128,7 +128,7 @@ export interface FilonDebug {
    */
   quests(): {
     current: string | null; index: number; named: boolean; name: string; done: string[]; titles: string[];
-    feeFreeUntil: number; progress: Array<{ have: number; need: number; met: boolean; measuring?: boolean }>;
+    progress: Array<{ have: number; need: number; met: boolean; measuring?: boolean }>;
     guide: { quest: string | null; step: number; at: string };
   };
   /** Dev: complete every quest up to and including `id`, in order, regardless of objectives (logged `quest` commands, rewards paid). Returns the current quest after. */
@@ -375,7 +375,7 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
       const cur = QUEST_IDS[st.cur] ?? null;
       return {
         current: cur, index: st.cur, named: st.named, name: sim.colonyName, done: [...st.done], titles: [...st.titles],
-        feeFreeUntil: st.feeFreeUntil, progress: questProgress(sim).map((p) => ({ ...p })), guide: app.guide.describe(),
+        progress: questProgress(sim).map((p) => ({ ...p })), guide: app.guide.describe(),
       };
     },
     completeQuest: (id) => {
