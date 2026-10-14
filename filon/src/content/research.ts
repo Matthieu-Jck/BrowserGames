@@ -22,7 +22,7 @@ import { BUILDINGS } from './buildings';
 import type { BuildingDef, Effect, FamilyId, Loc, PlanDef, PlanLane, ResearchDef, ResearchTier } from './types';
 
 /**
- * What a node of each depth uses up as it runs — data files, AI tokens — and its minimum duration
+ * What a node of each depth uses up as it runs — data (`scienceCost`), AI tokens — and its minimum duration
  * (minutes). Depths 1–2 are Tier 1, 3–4 Tier 2, 5–6 Tier 3, 7 and the keystones (9) Tier 4.
  * Tokens cost `BAL.tokenCentsPerK` at CrierBelt's servers (10 ◉ the thousand).
  */
@@ -36,6 +36,19 @@ export const DEPTH_COST: Record<number, { data: number; tokens: number; minutes:
   7: { data: 2880, tokens: 2_000_000, minutes: 720 },
   9: { data: 5760, tokens: 6_000_000, minutes: 1440 },
 };
+
+/**
+ * The kinds of data research uses (owner, 2026-10-14: the different kinds stay, D71), one more
+ * each tier, each a share of the node's data: Survey Data (from the data collectors and the
+ * Core), Mechanics Data from Tier 2 (the test bench), atlases from Tier 3 and codices from Tier 4
+ * (the scriptorium) — so every tier asks the claim for one more production line.
+ */
+export const SCIENCE: ReadonlyArray<readonly [string, number]> = [['journal_1', 1], ['journal_2', 3], ['atlas', 12], ['codex', 40]];
+
+/** A node's data: `data` Survey Data and a share of it in each higher kind its tier uses. */
+export function scienceCost(tier: ResearchTier, data: number): Array<[string, number]> {
+  return SCIENCE.slice(0, tier).map(([item, div]) => [item, Math.max(1, Math.ceil(data / div))] as [string, number]);
+}
 
 /** A depth's tier. */
 export const tierOfDepth = (depth: number): ResearchTier => (depth <= 2 ? 1 : depth <= 4 ? 2 : depth <= 6 ? 3 : 4);
@@ -82,7 +95,7 @@ const flag = (f: string): Effect => ({ k: 'flag', flag: f });
 void mul;
 
 function trunk(depth: number, tier: ResearchTier, prereq: string[], data: number, tokens: number, minutes: number, name: [string, string], desc: [string, string], effects: Effect[] = []): ResearchDef {
-  return { name: { fr: name[0], en: name[1] }, desc: { fr: desc[0], en: desc[1] }, branch: 'trunk', tier, depth, prereq, cost: [['data_file', data]], tokens, minutes, effects };
+  return { name: { fr: name[0], en: name[1] }, desc: { fr: desc[0], en: desc[1] }, branch: 'trunk', tier, depth, prereq, cost: scienceCost(tier, data), tokens, minutes, effects };
 }
 
 /**
@@ -95,7 +108,7 @@ function node(family: FamilyId, spec: string | undefined, depth: number, after: 
   const g = TIER_GATE[tier];
   if (g) prereq.push(g);
   const c = DEPTH_COST[depth]!;
-  return { name: { fr: name[0], en: name[1] }, desc: { fr: desc[0], en: desc[1] }, branch: family, ...(spec ? { spec } : {}), tier, depth, prereq, cost: [['data_file', c.data]], tokens: c.tokens, minutes: c.minutes, effects };
+  return { name: { fr: name[0], en: name[1] }, desc: { fr: desc[0], en: desc[1] }, branch: family, ...(spec ? { spec } : {}), tier, depth, prereq, cost: scienceCost(tier, c.data), tokens: c.tokens, minutes: c.minutes, effects };
 }
 
 export const RESEARCH = {
@@ -105,9 +118,9 @@ export const RESEARCH = {
   tr3: trunk(3, 2, ['tr1'], 120, 60_000, 30, ['Céramique', 'Ceramics'], ['Four à céramique, pompes et conduits ; atelier d’assemblage, batteries vides, accumulateurs.', 'Ceramic oven, pumps and conduits; assembly workshop, empty batteries, accumulators.']),
   tr4: trunk(4, 2, ['tr3'], 240, 120_000, 60, ['Cadastre', 'Land Registry'], ['Baux de parcelles, pylônes ; Cœur niveau 3.', 'Parcel leases, pylons; Core level 3.'], [flag('lease')]),
   tr5: trunk(5, 2, ['tr4'], 480, 200_000, 120, ['Deuxième pupitre', 'Second Desk'], ['Un deuxième emplacement de recherche.', 'A second research slot.'], [{ k: 'slots', add: 1 }]),
-  tr6: trunk(6, 3, ['tr4'], 960, 400_000, 240, ['Cartographie', 'Atlas Lore'], ['Atelier d’optique, Scriptorium, Embarcadère ; lentilles, toiles, cœurs thermiques, atlas ; Cœur niveau 4. Ouvre le Tier 3.', 'Optics workshop, Scriptorium, Skydock; lenses, canvas, thermal cores, atlases; Core level 4. Opens Tier 3.']),
+  tr6: trunk(6, 2, ['tr4'], 960, 400_000, 240, ['Cartographie', 'Atlas Lore'], ['Atelier d’optique, Scriptorium, Embarcadère ; lentilles, toiles, cœurs thermiques, atlas ; Cœur niveau 4. Ouvre le Tier 3.', 'Optics workshop, Scriptorium, Skydock; lenses, canvas, thermal cores, atlases; Core level 4. Opens Tier 3.']),
   tr7: trunk(7, 3, ['tr6'], 2880, 800_000, 720, ['Troisième pupitre', 'Third Desk'], ['Un troisième emplacement de recherche.', 'A third research slot.'], [{ k: 'slots', add: 1 }]),
-  tr8: trunk(8, 4, ['tr6'], 5760, 1_500_000, 1440, ['Codex', 'Codex Lore'], ['Codex, résonateurs, treillis de nacre. Ouvre le Tier 4.', 'Codex, resonators, nacre lattices. Opens Tier 4.']),
+  tr8: trunk(8, 3, ['tr6'], 5760, 1_500_000, 1440, ['Codex', 'Codex Lore'], ['Codex, résonateurs, treillis de nacre. Ouvre le Tier 4.', 'Codex, resonators, nacre lattices. Opens Tier 4.']),
 
   // ── Energy: Power Generation → Power Grid → Renewables | Power Plants ─────
   en_pitch: node('en', undefined, 1, null, ['Éolienne à pas variable', 'Pitch-Control Turbine'], ['Débloque l’Éolienne à pas variable : 200 kW × le vent.', 'Unlocks the Pitch-Control Turbine: 200 kW × the wind.']),
@@ -192,15 +205,12 @@ export type ResearchId = keyof typeof RESEARCH;
 const plan = (lane: PlanDef['lane'], prereq: string[], cost: Array<[string, number]>, more: Partial<PlanDef> = {}): PlanDef =>
   ({ lane, prereq, cost, ...more });
 
-export const PLANS = {
-  // ── production: smelting, crafting, and the research lab that opens research ─
+const PATH_PLANS = {
+  // ── production: smelting and crafting ──────────────────────────────────
   kiln: plan('production', [], [['iron_plate', 10]]),
   sand_collector: plan('production', ['kiln'], [['iron_plate', 5]]), // sand off the bare ground, for glass (2026-10-12)
   workshop: plan('production', ['kiln'], [['iron_plate', 15], ['glass', 2]]),
   wire_mill: plan('production', ['kiln'], [['iron_plate', 15]]),
-  // Research (D68): the data collector makes the files, then the lab runs the research on them.
-  data_collector: plan('production', ['kiln'], [['iron_plate', 10], ['copper_wire', 4]]),
-  observatory: plan('production', ['data_collector'], [['iron_plate', 20], ['copper_wire', 4]]),
 
   // ── logistics: moving and sorting goods, the routing vocabulary (D20), from the router out.
   // Cheap (owner, 2026-10-12: "most of the logistics is too expensive"): a few plates, the
@@ -264,6 +274,14 @@ export const PLANS = {
   // ── survey: the land around the base ───────────────────────────────────────
   beacon: plan('survey', [], [['iron_plate', 8], ['glass', 2]]),
 } as const satisfies Record<string, PlanDef>;
+
+/**
+ * The research lab's plan (D71, owner 2026-10-14): the gate between the plans and research. It
+ * needs every other plan, and brings the lab and the data collector that feeds it.
+ */
+const LAB_GATE = { observatory: plan('gate', Object.keys(PATH_PLANS), [['iron_plate', 40], ['glass', 10], ['copper_wire', 10]]) } as const;
+
+export const PLANS = { ...PATH_PLANS, ...LAB_GATE } as const satisfies Record<string, PlanDef>;
 
 export type PlanId = keyof typeof PLANS;
 /** Plans in declaration order (their effects apply in this order, before research's). */

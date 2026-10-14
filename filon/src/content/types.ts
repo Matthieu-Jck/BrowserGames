@@ -185,7 +185,8 @@ export interface ResearchDef {
  * labelled band — logistics (move and sort), production (smelt and make), energy, analytics
  * (what the base shows you), trade, survey (the land). Order and checks: `PLAN_PATHS` in research.ts.
  */
-export type PlanLane = 'logistics' | 'production' | 'energy' | 'analytics' | 'trade' | 'survey';
+/** A plan path, or `gate`: the research lab's plan, between all the plans and research (D71). */
+export type PlanLane = 'logistics' | 'production' | 'energy' | 'analytics' | 'trade' | 'survey' | 'gate';
 
 /**
  * A plan (D33): an instant unlock of the one tree, paid with materials from the Heart the

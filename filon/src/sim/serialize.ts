@@ -10,7 +10,7 @@ import { LocalMarketService } from '@/market/service';
 import type { MarketSave } from '@/market/types';
 import { Sim, newTokenStats, type TokenStats } from './state';
 import { effectiveCost, projectPermille, tokensDue } from './research/runtime';
-import { BUILDING_KIND, hasResearch, itemIdx } from '@/content/registry';
+import { BUILDING_KIND, hasResearch, itemDef } from '@/content/registry';
 import type { ImportOrder, PostActivity, Shipment, TradeLine } from './trade';
 import { loadQuests, saveQuests, type QuestSave } from './systems/quests';
 import { loadValue, saveValue, type ValueState } from './systems/value';
@@ -257,14 +257,13 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
   }
   for (const [id, v] of d.dataAcc ?? []) sim.dataAcc.set(id, v);
   for (const [lab, id] of d.labQueue ?? []) if (hasResearch(id)) sim.labQueue.set(lab, id);
-  // A lab's store holds data files only (D68): what an older lab held besides (atlases, codices
-  // waiting for research that no longer asks for them) goes to the Heart — nothing vanishes.
-  const data = itemIdx('data_file');
+  // A lab's store holds data only (the science items, D71): anything else an older lab held goes
+  // to the Heart — nothing vanishes.
   for (let i = 0; i < d.ents.length; i += 7) {
     if (BUILDING_KIND[d.ents[i + 1]!] !== 'lab') continue;
     const st = sim.stores.get(d.ents[i]!);
     if (!st) continue;
-    for (let it = 0; it < st.length; it++) if (it !== data && st[it]! > 0) { sim.refund(it, st[it]!); st[it] = 0; }
+    for (let it = 0; it < st.length; it++) if (itemDef(it).kind !== 'science' && st[it]! > 0) { sim.refund(it, st[it]!); st[it] = 0; }
   }
   for (const [t, k] of d.designated ?? []) sim.designated.set(t, k === 1 ? 'dig' : 'fill');
   sim.jobs = (d.jobs ?? []).map((j) => ({ ...j }));

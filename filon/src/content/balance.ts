@@ -81,12 +81,13 @@ export const BAL = {
   // ── research (D69) ───────────────────────────────────────────────────────
   // A node's cost and duration grow with every node owned elsewhere — another family, or the
   // sibling speciality once its family split — and the more so the higher its tier: the tree
-  // pushes a claim to specialise (owner, 2026-10-14). By tier T1..T4, ‰ per node.
-  spreadCostByTier: [50, 120, 250, 500] as readonly number[],
-  spreadTimeByTier: [20, 50, 100, 200] as readonly number[],
+  // pushes a claim to specialise (owner, 2026-10-14). By tier T1..T4, ‰ per node. Tier 1 has
+  // none: it is meant to be completed whole, the specialising starts at Tier 2 (D71).
+  spreadCostByTier: [0, 120, 250, 500] as readonly number[],
+  spreadTimeByTier: [0, 50, 100, 200] as readonly number[],
   depthDiscountPerNode: 40, // ‰ removed per node owned in THIS lineage (max 8)
   masterTimeFactor: 850, // ‰ duration once 6 nodes are owned in the lineage
-  respecRefund: 500, // ‰ of the data files (250 for a keystone)
+  respecRefund: 500, // ‰ of the data (250 for a keystone)
   respecCooldownDays: 14,
   // ── AI tokens (D68): never owned, paid the minute they are used ───────────
   // Research uses tokens as it runs; each minute the claim's servers cover what they can (what

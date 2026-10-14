@@ -356,7 +356,7 @@ export function dataTick(sim: Sim, ticks: number, satOfProject: (p: Project) => 
     sim.produced[data] = sim.produced[data]! + made;
   }
 }
-const DATA_IDX = (): number => itemIdx('data_file');
+const DATA_IDX = (): number => itemIdx('journal_1');
 
 /** Apply every finished project (shared by the online tick and the catch-up). */
 export function finishProjects(sim: Sim): string[] {

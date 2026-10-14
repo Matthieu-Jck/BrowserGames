@@ -18,7 +18,8 @@ export const ITEMS = {
   copper_wire: { name: { fr: 'Fil de cuivre', en: 'Copper Wire' }, tier: 1, kind: 'material', value: 2.2, depth: 300, glyph: 'coil', color: '#c8743a' },
   // Research's one data item (D68): made by data collectors out of power alone, or by the Heart
   // with the Analytics research; never traded (depth 0) — research is paid in data and tokens.
-  data_file: { name: { fr: 'Fichier de données', en: 'Data File' }, tier: 1, kind: 'science', value: 2, depth: 0, glyph: 'file', color: '#7ff7ff' },
+  journal_1: { name: { fr: 'Données d’arpentage', en: 'Survey Data' }, tier: 1, kind: 'science', value: 11, depth: 40, glyph: 'journal', color: '#f2c6a0' },
+  journal_2: { name: { fr: 'Données mécaniques', en: 'Mechanics Data' }, tier: 2, kind: 'science', value: 59, depth: 15, glyph: 'journal2', color: '#9d8cc9' },
 
   // ── tier 2 ────────────────────────────────────────────────────────────────
   gear: { name: { fr: 'Engrenage', en: 'Gear' }, tier: 2, kind: 'part', value: 10, depth: 150, glyph: 'gear', color: '#8d97a8' },

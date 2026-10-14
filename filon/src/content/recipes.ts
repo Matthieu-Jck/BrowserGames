@@ -22,6 +22,8 @@ const ELECTRONICS = ['workshop', 'etcher', 'chip_fab'] as const;
 const ASSEMBLY = ['great_workshop', 'great_workshop_compact', 'tower_workshop'] as const;
 /** Lenses and nacre lattices. */
 const OPTICS = ['optics_workshop'] as const;
+/** Mechanics Data: the base load-tests its own parts and records the results (D71). */
+const TEST = ['test_bench'] as const;
 /** Resin canvas, atlases and codices: the works Verrière's scholars pay most for. */
 const SCRIPTORIUM = ['scriptorium'] as const;
 
@@ -41,6 +43,11 @@ export const RECIPES = {
   gear: {
     name: { fr: 'Engrenage', en: 'Gear' }, machines: PRESSES, seconds: 5,
     ins: [['iron_plate', 3]], outs: [['gear', 1]], unlock: 'tr1',
+  },
+  journal_2: {
+    // No ceramic (unlike before D68): Tier 2 research needs it, and ceramic is a Tier 2 unlock.
+    name: { fr: 'Données mécaniques', en: 'Mechanics Data' }, machines: TEST, seconds: 20,
+    ins: [['gear', 2], ['circuit', 2]], outs: [['journal_2', 1]], unlock: 'tr1',
   },
   circuit: {
     name: { fr: 'Circuit imprimé', en: 'Circuit Board' }, machines: ELECTRONICS, seconds: 6,

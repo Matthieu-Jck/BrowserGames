@@ -10,7 +10,7 @@ export const RENAMED: {
   readonly recipes: Readonly<Record<string, string>>;
 } = {
   // Survey Data and Mechanics Data became the one Data File (D68): a stock of either carries over item for item.
-  items: { journal_1: 'data_file', journal_2: 'data_file' },
+  items: {},
   buildings: {},
   recipes: {},
 };

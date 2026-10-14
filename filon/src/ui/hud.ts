@@ -35,7 +35,7 @@ import { Spotlight, type FocusShot } from './focus';
 import { glyph } from './glyphs';
 
 /** Items shown first when held (the early chain), then anything else in stock. */
-const ORDER = ['iron_ore', 'iron_plate', 'sand', 'glass', 'coal', 'copper_ore', 'copper_wire', 'data_file', 'gear', 'circuit', 'ceramic', 'stone', 'salt'];
+const ORDER = ['iron_ore', 'iron_plate', 'sand', 'glass', 'coal', 'copper_ore', 'copper_wire', 'journal_1', 'journal_2', 'gear', 'circuit', 'ceramic', 'stone', 'salt'];
 
 const compact = (n: number): string => {
   const L = locale();

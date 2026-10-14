@@ -101,7 +101,7 @@ const RUBBLE_IDX = (): number => itemIdx('stone');
 const WATER_IDX = (): number => itemIdx('water');
 /** The Heart's data outlet (D68): its only `out` port, handing out the data files it makes. */
 export const HEART_OUTLET = buildingDef(buildingIdx('hearth')).ports.findIndex((p) => p.io === 'out');
-const DATA_IDX = (): number => itemIdx('data_file');
+const DATA_IDX = (): number => itemIdx('journal_1');
 
 interface PortRef { node: FNode; port: number; dir: Rot }
 

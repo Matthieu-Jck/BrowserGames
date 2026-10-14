@@ -320,14 +320,20 @@ export const BUILDINGS = {
   data_collector: {
     name: { fr: 'Collecteur de données', en: 'Data Collector' },
     desc: { fr: 'Capte et compile des données sur la planète : 2 fichiers de données par minute, n’importe où, de l’électricité seule. Les fichiers sortent à l’avant, pour les laboratoires.', en: 'Picks up and compiles data about the planet: 2 data files a minute, anywhere, from power alone. The files leave at the front, for the labs.' },
-    kind: 'drill', category: 'research', w: 2, h: 2, needsZone: true, unlock: 'data_collector', kw: 120, idleKw: 12,
-    cost: [['iron_plate', 10], ['glass', 4], ['copper_wire', 6]], ports: [P(0, 0, 'N', 'out')], drill: { perMin: 2, anywhere: 'data_file' },
+    kind: 'drill', category: 'research', w: 2, h: 2, needsZone: true, unlock: 'observatory', kw: 120, idleKw: 12,
+    cost: [['iron_plate', 10], ['glass', 4], ['copper_wire', 6]], ports: [P(0, 0, 'N', 'out')], drill: { perMin: 2, anywhere: 'journal_1' },
   },
   server: {
     name: { fr: 'Serveur', en: 'Server' },
     desc: { fr: 'Calcule pour tes recherches : 2 000 tokens d’IA par minute pour 400 kW. Ce que les recherches n’utilisent pas dans la minute est perdu.', en: 'Computes for your research: 2,000 AI tokens a minute for 400 kW. What research does not use within the minute is lost.' },
     kind: 'server', category: 'research', w: 2, h: 2, needsZone: true, unlock: 'an_servers', kw: 400, idleKw: 40,
     cost: [['circuit', 10], ['iron_plate', 20], ['copper_wire', 10]], ports: [], server: { tokensPerMin: 2000 },
+  },
+  test_bench: {
+    name: { fr: 'Banc d’essai', en: 'Test Bench' },
+    desc: { fr: 'Éprouve engrenages et circuits sous charge et en tire des données mécaniques : deux engrenages et deux circuits pour une. Deux entrées.', en: 'Puts gears and circuits through load tests and records Mechanics Data: two gears and two circuits each. Two inputs.' },
+    kind: 'machine', category: 'research', w: 2, h: 2, needsZone: true, unlock: 'tr1', crafts: true, kw: 90, idleKw: 9,
+    cost: [['iron_plate', 20], ['glass', 6], ['copper_wire', 8]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(1, 0, 'N', 'out')],
   },
   press: {
     name: { fr: 'Presse', en: 'Press' },
@@ -450,7 +456,7 @@ export const BUILDINGS = {
     name: { fr: 'Relais de données', en: 'Data Relay' },
     desc: { fr: 'Un collecteur de données en grand : 6 fichiers de données par minute, n’importe où.', en: 'A data collector writ large: 6 data files a minute, anywhere.' },
     kind: 'drill', category: 'research', w: 3, h: 3, needsZone: true, unlock: 'an_relay', kw: 300, idleKw: 30,
-    cost: [['circuit', 10], ['glass', 10], ['iron_plate', 30]], ports: [P(1, 0, 'N', 'out')], drill: { perMin: 6, anywhere: 'data_file' },
+    cost: [['circuit', 10], ['glass', 10], ['iron_plate', 30]], ports: [P(1, 0, 'N', 'out')], drill: { perMin: 6, anywhere: 'journal_1' },
   },
   cooled_server: {
     name: { fr: 'Serveur refroidi', en: 'Cooled Server' },

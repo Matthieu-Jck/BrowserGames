@@ -477,7 +477,7 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     }
     for (const [k, d] of deliveries) if (d.n > d.done) add(nextIn, k, (d.n * 1000) / EPOCH);
     // Data files out of the Heart (Analytics) and the autonomous labs: steady inflows (D68, D70).
-    const data = itemIdx('data_file');
+    const data = itemIdx('journal_1');
     for (const m of dataMakers(sim, projSat)) {
       const ri = m.ent === sim.hearthId ? (g.hearth ? g.reservoirs.indexOf(g.hearth) : -1) : resIndex(m.ent);
       if (ri >= 0 && m.sat > 0) add(nextIn, ri * N_ITEMS + data, (m.rate * m.sat) / (EPOCH * 1000));
@@ -577,7 +577,7 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     }
     // The servers' tokens and the data makers' files, exactly as online over these ticks.
     serverTick(sim, dt, (n) => netModes[n]?.sat ?? 0);
-    const data = itemIdx('data_file'), data0 = sim.produced[data]!;
+    const data = itemIdx('journal_1'), data0 = sim.produced[data]!;
     dataTick(sim, dt, projSat);
     if (sim.produced[data]! !== data0) rep.produced[data] = rep.produced[data]! + sim.produced[data]! - data0;
     // Throttling keeps levels within bounds; guard (and count) what is still short once every
