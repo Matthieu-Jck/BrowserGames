@@ -50,7 +50,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 
 | Français | English | Code | Meaning |
 |---|---|---|---|
-| Cœur | Heart | `hearth` [hearth] | The base's core (code: "Hearth"): depot of the base's stock, pays for construction, drone bay, uplink, small solar array. Placed at founding; grows to level 4, each level past the first making land 5 % cheaper. |
+| Cœur | Core | `hearth` [hearth] | The base's core (code: "Hearth"; older docs say "Heart"): depot of the base's stock, pays for construction, drone bay, uplink, small solar array. Placed at founding; grows to level 4, each level past the first making land 5 % cheaper. Its one outlet (bottom-left) hands out data files once Analytics' « Analyse de l’activité » is researched (D68). |
 | Avant-poste | Waystation | `outpost` (retired, D60) | Gone with the influence zones it extended: a save that still holds one gets it refunded (`RETIRED_COSTS`), its store to the Heart, and the claim keeps the parcels it stood on. |
 | Balise d'arpentage | Survey Beacon | `beacon` [beacon] | Lifts the fog within 40 tiles; can stand off the claim's land and on rock (never on a sister claim's parcel). |
 | Foreuse · Foreuse profonde | Drill · Deep Bore | `drill`, `deep_bore` [drill] | Extract the majority ore beneath them, capped by the tiles' caps. |
@@ -73,10 +73,16 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Embarcadère | Skydock | `skydock` [dock] | Hosts drifters; the end of a freight route. |
 | Fonderie (compacte) | (Compact) Smelter | `kiln`, `kiln_compact` [machine] | Smelts ore and sand by burning coal; needs no grid. |
 | Tréfileuse | Wire Mill | `wire_mill` [machine] | Copper ore → copper wire. |
-| Atelier · Grand atelier (compact) · Atelier-tour | Workshop · (Compact) Great Workshop · Tower Workshop | `workshop`, `great_workshop`, `great_workshop_compact`, `tower_workshop` [machine] | 2-input crafting, 3-input crafting, and 3-input crafting at 4× speed. |
+| Atelier d’électronique · Graveuse · Fonderie de puces | Electronics Workshop · Etcher · Chip Fab | `workshop`, `etcher`, `chip_fab` [machine] | The electronics family: circuits and speed modules (D69: at most three recipes per machine). |
+| Atelier d’assemblage (compact) · Tour d’assemblage | (Compact) Assembly Workshop · Assembly Tower | `great_workshop`, `great_workshop_compact`, `tower_workshop` [machine] | 3-input assembly: batteries, thermal cores, resonators; the tower at 4× speed. |
+| Presse · Presse à forger | Press · Forge Press | `press`, `forge_press` [machine] | Iron plate → gear (the forge press at ×3). |
+| Atelier d’optique · Scriptorium | Optics Workshop · Scriptorium | `optics_workshop`, `scriptorium` [machine] | Lenses and nacre lattice · resin canvas, Atlas, Codex. |
 | Four à céramique | Ceramic Oven | `ceramic_oven` [machine] | Stone + water → ceramic. |
 | Chargeur | Cell Charger | `cell_charger` [machine] | Charges cells: exportable energy. |
-| Observatoire | Observatory | `observatory` [lab] | One research slot, fed with journals. |
+| Laboratoire de recherche | Research Lab | `observatory` [lab] | Where research runs: takes data files on its ribbons (and Atlas, Codex) and holds the research slots (D68). Unlocked by a plan after the data collector. |
+| Collecteur de données · Relais de données | Data Collector · Data Relay | `data_collector`, `data_relay` [machine, `drill.anywhere`] | Powered 1×1 makers of data files, set anywhere (no deposit): 2 and 6 a minute. |
+| Laboratoire autonome | Autonomous Lab | `auto_lab` [lab] | A research lab that also makes 3 data files a minute into its own store (Analytics · Data Mining). |
+| Serveur · Serveur refroidi · Supercalculateur | Server · Cooled Server · Supercomputer | `server`, `cooled_server`, `supercomputer` [server] | The claim's own compute: tokens a minute for its research while powered (2 000, 6 000, 20 000), billed before CrierBelt's (D70). |
 | Poteau | Pole | `mast` [pole] | A pillar: up to 8 wires, each up to 6 tiles long (edge to edge). A new one wires itself to the nearest pillar or Cœur in reach. |
 | Pylône | Pylon | `pylon` [pole] | A long-reach pillar, 2×2 and about three tiles tall (D75): up to 4 wires, 40 tiles long (60 with xp4). The 1×1 pylon of older saves is `pylon_1x1`, retired (refunded) |
 | fil · relier | wire · link | `sim.links` (`PowerLinks`), `link` / `unlink` commands | A power wire: an explicit, saved pair of buildings, one end a pillar or the Cœur, the other a pillar or anything that makes, uses or stores power (D25). Drawn hanging in the air. The « Relier » / Link tool (L) strings and cuts them. |
@@ -103,7 +109,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Verre-spore · Résine céleste · Sel de braise | Sporeglass · Sky Resin · Embersalt | `sporeglass`, `sky_resin`, `embersalt` | T3 uniques: each colony reaches only some of them, so they are traded. |
 | Mousse lumen · Nacre fossile · Quartz chantant | Lumen Moss · Fossil Nacre · Singing Quartz | `lumen_moss`, `fossil_nacre`, `singing_quartz` | T4 uniques. |
 | Lentille · Toile de résine · Cœur thermique · Résonateur · Treillis de nacre | Lens · Resin Canvas · Thermal Core · Resonator · Nacre Lattice | `lens`, `resin_canvas`, `thermal_core`, `resonator`, `nacre_lattice` | T3–T4 parts. |
-| données (Données d’arpentage · Données mécaniques) | data (Survey Data · Mechanics Data) | `journal_1`, `journal_2` | T1 and T2 science: data cartridges the base produces, delivered to observatories (which uplink them). |
+| Fichier de données | Data File | `data_file` | The science item (D68): made by data collectors, by the Core once analysed, by autonomous labs; carried on ribbons to research labs. Old saves' Survey and Mechanics Data (`journal_1`, `journal_2`) became data files. |
 | Atlas · Codex | Atlas · Codex | `atlas`, `codex` | T3 science (needs 2 uniques) and T4 science (needs 5). |
 | Module de vitesse | Speed Module | `pace_bell` | A module fitted into a machine: +30% speed (+50% with dn7), +40% power each. |
 
@@ -118,13 +124,18 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Télémétrie · Registre de production · Relevé d’énergie · Diagnostic | Telemetry · Production Ledger · Power Log · Diagnostics | plans and flags `telemetry`, `statistics`, `power_log`, `diagnostics` (`ANALYTICS`) | The Analytics path (D41): the HUD's rates; the Statistics screen (G) and its chip; its power history; its machines' states. The telemetry was research tr1's, then one plan for the rates and the screen. |
 | révélation | reveal | `Spotlight`, `ANALYTICS_REVEALS`, `FL.focusReveal` | The short « black out » that lifts a newly unlocked readout out of the dimmed base, with CrierBelt's line (D41). |
 | Réserve de relance | Restart reserve | `reserveNeed`, `planBlock` → `reserve`, `BOOTSTRAP` | What the Heart and its buildings must always cover so the base can rebuild its production: the bootstrap (a smelter line, then the copper line) less what an earlier stage makes. A plan never eats into it (D36). |
-| Tronc | Trunk | `tr1`…`tr8` | The spine: gates the branches. It has no spreading penalty. |
-| Taille · Arpentage · Densité · Souffle · Criée | Stonecraft · Wayfinding · Density · Current · Exchange | `ex`, `xp`, `dn`, `en`, `cm` | The five branches, with 9 nodes each (`research.branch.*`). |
-| clé de voûte | keystone | depth 9, id `<branch>K` | A branch's last node. |
-| Initié · Maître · Grand Maître | Initiate · Master · Grand Master | `BRANCH_CORE`, `BAL.initiateBonus`, `masterBonus` | Mastery at 3 and 6 nodes, and the keystone. It boosts the branch's core stat. |
-| emplacement de recherche · pupitre | research slot · desk | `mods.slots` | How many projects can run at once: 1, then 2 (tr5), 3 (tr7), 4 (dnK). |
-| étalement | spread | `penalty()` | Extra cost and time per node owned in other branches. |
-| reconversion | reconversion (respec) | `respec`, `respec:<branch>` | Gives a branch up, deepest node first. Half its science comes back as archive notes after a wait. |
+| Tronc | Trunk | `tr1`…`tr8` | The spine: gates the tiers (T2 after tr1, T3 after tr6, T4 after tr8). It has no spreading penalty. |
+| famille | family | `FamilyId`, `FAMILIES` (`en`, `ex`, `dn`, `cm`, `an`, `xp`) | The six research families (D69): Energy, Extraction, Machines, Commerce, Analytics, Expansion. A family's name changes with the tier (Commerce: Échange · Exchange, Finance, Économie de marché · Market Economy; `familyName`). |
+| palier | tier | `ResearchDef.tier`, `tierOfDepth` | T1–T4: the deeper the tier, the dearer research in other families (`BAL.spreadCostByTier`). |
+| spécialité | speciality | `ResearchDef.spec`, `FAMILIES[f].specs` | From T3 a family splits in two (Machines: Électronique · Electronics or Mécanique · Mechanics); the sibling speciality counts as another family for the spread. |
+| clé de voûte | keystone | depth 9, id `<family>K` | A family's last node. |
+| emplacement de recherche · pupitre | research slot · desk | `mods.slots` | How many projects can run at once: 1, then 2 (tr5), 3 (tr7), 4 (an_slot). |
+| file d’attente | queue | `labQueue`, `queueResearch` | Research waiting for a free slot (Analytics: « File de recherche »). |
+| étalement | spread | `penalty()` | Extra cost and time per node owned in other families, steeper at each tier; ×0.96 per node of the family itself, down to ×0.68 (D69). |
+| token | token | `tokens`, `tokenEpoch`, `BAL.tokenCentsPerK` | AI compute a research uses while it runs (D70). Never owned nor stored: billed each minute for what was used, to the claim's own servers first, then bought from CrierBelt's. Called « token » in French too, never « jeton ». |
+| forfait de calcul | compute plan | `tokenPlan`, `setTokenPlan` | CrierBelt's hourly plan: tokens at half price for a fee an hour. |
+| recherche suspendue | research held | `researchHeld` | Purse in debt after the token bill: every project stops until credits are back above zero. |
+| reconversion | reconversion (respec) | `respec`, `respec:<family>` | Gives a family up, deepest node first. Half its science comes back as archive notes after a wait. |
 | notes d'archive | archive notes | `Sim.notes` | Non-tradable credit (centi-◉ of science value) that pre-pays new research. |
 | en sommeil | dormant | `St.Dormant`, `isDormant` | A building whose unlock was reconverted away, or that needs land and stands off the claim's (a lease lapsed or given up): no flow, grey wash. |
 | ocelle ◉ | ocelli (HUD) | `Sim.credits` in **centi-ocelles** | The currency. `BAL` and the UI speak ◉, the engine ×100. |
@@ -162,7 +173,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | run | A conduit chain's FIFO element `{ item, mu, from, to }`: a quantity and the tick window in which it reaches the head ("parcel" in older text and comments). | chain.ts `Run` |
 | chain tier | The building index of a chain's ribbons (ribbon, swift, express, conduit, skybridge). | chain.ts |
 | routing block | A `ForkNode`: router, sorter, gate, unloader, distributor (kind `fork`); its links come from its surroundings. Side-loading onto a ribbon is a lower-priority incoming edge. | `ForkNode` in nodes.ts; `rim`, `routingPorts`, links in compile.ts |
-| reservoir | A stock node with a capacity: the Hearth, silos, docks, trade posts, observatories, excavators, backfillers. Groups are cut at reservoirs. | `ReservoirNode` in nodes.ts |
+| reservoir | A stock node with a capacity: the Hearth, silos, docks, trade posts, research labs, servers (power only), excavators, backfillers. Groups are cut at reservoirs. | `ReservoirNode` in nodes.ts |
 | unloader port | A reservoir out port handing out one chosen item (`portItems`): skydock outlets, and the virtual ports unloaders add to the stores they touch — never on the Heart, which has no outputs (D34). | nodes.ts, [types.ts](../src/sim/types.ts) |
 | virtual mode | During warm-ups a reservoir behaves by state flags (normal, empty, full) and records flows instead of changing its stock. | `V_NORMAL`/`V_EMPTY`/`V_FULL`, [steady.ts](../src/sim/offline/steady.ts) |
 | rotating allocation · water-filling | Fair splits of capacity among edges, rotating with the tick · a proportional capped split (tested; no flow-engine caller yet). | `allocRotating` in node.ts · `waterfill` in fixed.ts |
@@ -212,12 +223,13 @@ The story behind the names is in [lore.md](lore.md) (D29).
 - **grid**: the tile grid (`Grid`), or a power grid (`Net`).
 - **port**: a building's in/out opening (`PortDef`), or an unloader outlet (`portItems`).
 - **parcel**: a square of land (`PARCEL`, [world/land.ts](../src/sim/world/land.ts)), or, in older text and comments, a conduit's run (`Run`) or a ribbon's item before D57.
-- **Souffle / Criée**: the wind and the exchange, but also the French names of the Energy and Commerce branches (EN Current, Exchange).
+- **Arpentage / Analytique / Commerce**: plan paths (D41), but also the names of research families (Expansion's T1 name, Analytics, Commerce); the families are `FamilyId`s, the paths `PLAN_PATHS`.
+- **Heart / Core / Hearth**: one building, `hearth`: « le Cœur » in French, the Core in English (since D68; older docs say the Heart), the Hearth in code.
 - **Champs de braise**: both the `embers` archetype and the `emberfields` T3 biome.
 - **Content id vs kind vs English name**:
   - `pylon` is the Pylône / Pylon, `mast` the Poteau / Pole;
   - `outpost` was the Waystation (retired, D60), `skydock` has kind `dock`;
-  - `observatory` has kind `lab`, `silo` kind `storage`, the ribbons kind `belt`, `skybridge` kind `bridge`;
+  - `observatory` is the Research Lab (kind `lab`), `hearth` the Core (« le Cœur »), `silo` kind `storage`, the ribbons kind `belt`, `skybridge` kind `bridge`;
   - `accumulator` is the Accumulator;
   - `brazier` and `sunheart` have kind `generator`.
 - **plan**: the plan view, or the design plan document in `~/.claude/plans/`.

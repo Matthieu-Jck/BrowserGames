@@ -534,14 +534,14 @@ export const fr = {
   'debug.level.claim.desc': 'Le tout début du tutoriel\u00a0: la concession a son nom, rien n’est bâti. En cours\u00a0: objectif 2, Premier coup de pioche.',
   'debug.level.smelter': 'La fonderie',
   'debug.level.smelter.desc': 'Objectifs 1 à 3 faits\u00a0: deux foreuses de fer reliées au Cœur, la télémétrie. En cours\u00a0: objectif 4, La fonderie.',
-  'debug.level.survey': 'Données d’arpentage',
-  'debug.level.survey.desc': 'Objectifs 1 à 6 faits\u00a0: la fonderie et son routeur, le charbon, deux éoliennes, l’atelier, la verrerie et ses deux collecteurs de sable. En cours\u00a0: objectif 7, Données d’arpentage.',
+  'debug.level.survey': 'Fichiers de données',
+  'debug.level.survey.desc': 'Objectifs 1 à 6 faits\u00a0: la fonderie et son routeur, le charbon, deux éoliennes, le collecteur de données, la verrerie et ses deux collecteurs de sable. En cours\u00a0: objectif 7, Fichiers de données.',
   'debug.level.tutorial': 'Tutoriel terminé',
-  'debug.level.tutorial.desc': 'Les 12 objectifs faits, toute l’usine du tutoriel en marche\u00a0: données d’arpentage vers l’observatoire (Mécanique lancée), comptoir qui vend du verre, ligne de cuivre, ordre d’import, balise au-delà de la Couronne, plus de vent.',
+  'debug.level.tutorial.desc': 'Les 12 objectifs faits, toute l’usine du tutoriel en marche\u00a0: fichiers de données vers le laboratoire de recherche (Mécanique lancée), comptoir qui vend du verre, ligne de cuivre, ordre d’import, balise au-delà de la Couronne, plus de vent.',
   'debug.level.grown': 'Base développée',
-  'debug.level.grown.desc': 'Plus tard\u00a0: tous les plans de l’arbre, Mécanique, Pales orientables et Tissage appris pour de vrai, un atelier d’engrenages et un silo en plus.',
+  'debug.level.grown.desc': 'Plus tard\u00a0: tous les plans de l’arbre, Mécanique, l’Éolienne à pas variable et le Ruban vif appris pour de vrai, une presse à engrenages et un silo en plus.',
   'debug.level.late': 'Fin de partie',
-  'debug.level.late.desc': 'La base développée, la recherche avancée offerte (Terrassement, Céramique, Cadastre, Cartographie…)\u00a0: Cœur niveau 4 et, sur des parcelles achetées au-delà de la Couronne, les ouvrages extérieurs — second comptoir, foreuse profonde, circuits, Données mécaniques pour un second observatoire, modules de vitesse —, excavatrice sur la roche marquée, embarcadères et Dérivants.',
+  'debug.level.late.desc': 'La base développée, la recherche avancée offerte (Terrassement, Cadastre, Concession lointaine, Graveuse, Salle des serveurs…)\u00a0: Cœur niveau 4 et, sur des parcelles achetées au-delà de la Couronne, les ouvrages extérieurs — second comptoir, foreuse profonde, circuits, un second collecteur de données pour un second laboratoire, modules de vitesse, deux serveurs —, excavatrice sur la roche marquée, embarcadères et Dérivants.',
 
   // ── intro (the opening comic strip, the company's name, the Heart's landing; D31) ──
   // src/ui/screens/intro.ts. Narration in « tu », CrierBelt's letter and register in « vous ».
@@ -697,7 +697,7 @@ export const fr = {
   'quest.or': 'ou',
   'quest.perMin': '{have}/{need} par min',
   'quest.measuring': 'mesure en cours…',
-  'quest.info.vein': 'Un grand atelier de données mécaniques use {need} {item} par minute ; ta base en tire {have}.',
+  'quest.info.vein': 'Un atelier d’électronique sur les circuits use {need} {item} par minute ; ta base en tire {have}.',
   'quest.info.delivery': 'Prochaine livraison dans {d}',
   'quest.info.noDelivery': 'Aucun achat en route pour l’instant',
   'quest.info.price': '{item} : {bid} à la Criée',

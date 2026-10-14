@@ -9,9 +9,9 @@ Content declares *what* exists; *behaviour* is selected by a building's `kind` i
 | File | Holds | Read by |
 |---|---|---|
 | [types.ts](../src/content/types.ts) | `Loc`, `ItemDef`, `ItemKind`, `Glyph`, `RecipeDef`, `PortDef`, `BuildingDef`, `BuildingKind`, `BuildCategory`, `RouterLogic`, `ReplaceGroup`, `ResearchDef`, `Effect`, `ModTarget` | every table |
-| [items.ts](../src/content/items.ts) | `ITEMS` (31 items), `ItemId` | registry, item art, terrain painter, HUD |
-| [recipes.ts](../src/content/recipes.ts) | `RECIPES` (19), `RecipeId`; machine lists `KILNS`, `WORKSHOPS`, `GREAT` | registry (`CRECIPES`), inspector |
-| [buildings.ts](../src/content/buildings.ts) | `BUILDINGS` (44), `BuildingId` | registry, building art, build bar |
+| [items.ts](../src/content/items.ts) | `ITEMS` (30 items), `ItemId` | registry, item art, terrain painter, HUD |
+| [recipes.ts](../src/content/recipes.ts) | `RECIPES` (22), `RecipeId`, `MAX_RECIPES` (3, D70); machine families `KILNS`, `ARC`, `WIRE`, `PRESSES`, `ELECTRONICS`, `ASSEMBLY`, `OPTICS`, `SCRIPTORIUM` | registry (`CRECIPES`), inspector |
+| [buildings.ts](../src/content/buildings.ts) | `BUILDINGS` (71), `BuildingId` | registry, building art, build bar |
 | [research.ts](../src/content/research.ts) | The unlock tree (D33): `PLANS` (22 instant unlocks paid from the Heart, in six paths: D41), `RESEARCH` (8 trunk + 5 × 9 branch nodes), `DEPTH_COST`, `BRANCH_CORE`, `PlanId`, `ResearchId`, `PLAN_IDS`; the paths `PLAN_PATHS`, `pathPlans`, `pathEntries`, `pathProblems`; the analytics flags `ANALYTICS`, `AnalyticsFeature`; tree helpers `isPlan`, `isResearch`, `isTreeNode`, `planDef`, `researchNode`, `treePrereq`, `buildingsUnlockedBy`, `nodeName` | research runtime and modifiers, the research system (`unlockPlan`), the tech tree screen, validation, quests |
 | [reserve.ts](../src/content/reserve.ts) | CrierBelt's restart reserve (D36): `BOOTSTRAP` (the stages that rebuild production from the bare land), `ESSENTIAL`, `RESERVE_PARTS`, `RESERVED`, `reserveNeed(done)`, `stagePlans(s)`, `reserveProblems()` | the reserve system ([systems/reserve.ts](../src/sim/systems/reserve.ts)), validation, the tech tree screen |
 | [quests.ts](../src/content/quests.ts) | `QUESTS` (the tutorial, 0–10 in run order: CrierBelt's message, objectives, reward, guide steps), `QUEST_IDS`, `QUEST_TITLES`, `QUEST_CHECK_TICKS`, `COLONY_NAME_MAX`, `questProblems()` (in `validateContent`) | [systems/quests.ts](../src/sim/systems/quests.ts), the quest log and the guide ([quests.md](quests.md)) |
@@ -57,7 +57,7 @@ wire: {
 
 | Field | Rule |
 |---|---|
-| `machines` | building ids of **kind `machine`**. Use the shared lists `KILNS` (2 inputs), `WORKSHOPS` (2-input crafting and up), `GREAT` (3 inputs). |
+| `machines` | building ids of **kind `machine`**: one family's list (`KILNS`, `ARC`, `WIRE`, `PRESSES`, `ELECTRONICS`, `ASSEMBLY`, `OPTICS`, `SCRIPTORIUM`, or a single machine). No machine may offer more than `MAX_RECIPES` = 3 recipes (D70, validated); an upgraded machine of the tree joins a family's list and runs it faster (`BuildingDef.speed`). |
 | `seconds` | Cycle at speed 1000‰. `round(seconds × 10)` ticks must divide **1 200** (`CYCLE_LCM`), so the allowed whole seconds are 1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 24, 30, 40, 60 and 120. |
 | `ins`, `outs` | `[itemId, qty]`, with at most 3 decimals (`toMu` rounds to milli-items: 0.4 → 400 mu). **Exactly one output in practice**: `MachineNode` only offers `outs[0]`, so a second output would fill its buffer and block the machine. |
 | `unlock` | `'start'` or a node of the unlock tree (a plan or a research id, D33). Mention it in a research node's `desc` by hand (a plan's detail pane lists its recipes itself). |
@@ -115,7 +115,8 @@ What each `kind` means. The graph compiler's switch on `BuildingKind` lives in [
 | `storage` | `silo` | Single-item reservoir (port rate 240/min, hard-coded) | `storageCap` |
 | `dock` | `skydock` | Reservoir (`BAL.dockCap`) with unloader ports; drifters and freight routes | — |
 | `machine` | kilns, `wire_mill`, workshops, `ceramic_oven`, `cell_charger` | `MachineNode` running the recipe stored in `cfg` | listed in recipes' `machines`; `crafts: true` (never read) |
-| `lab` | `observatory` | Reservoir that takes the science its project still owes; one research slot per observatory | — |
+| `lab` | `observatory` (the Research Lab), `auto_lab` | Reservoir that takes the data files its project still owes; one project per lab; `lab.dataPerMin`: files it makes itself (D68) | — |
+| `server` | `server`, `cooled_server`, `supercomputer` | Power only: `server.tokensPerMin` AI tokens a minute at its grid's satisfaction, billed against research each minute (D68) | — |
 | `generator` | `brazier`, `sunheart` | `GeneratorNode`: burns `gen.fuel` ∝ dispatch; output `gen.kw` × `mods.genOut` | `gen.kw`, `gen.fuel`, `gen.fuelPerMin`, an `in` port. Without `fuel`, compilation throws. |
 | `wind` / `solar` / `geothermal` | `wind_flower` / `sun_bulb` / `fumarole_tap` | Grid producers only: `gen.kw` × mods × local wind / sun; geothermal needs every footprint tile on a vent | `gen.kw` |
 | `accumulator` | `accumulator` (the accumulator) | Grid storage: `kwMin × 600` kW·tick × `mods.accCap`, rate `kw × mods.accRate` | `accumulator` |
@@ -130,17 +131,18 @@ Everything a base uses beyond its starting kit is unlocked in **one tree with tw
 
 | | Plans — `PLANS` | Research — `RESEARCH` |
 |---|---|---|
-| Paid with | materials from the Heart, at once (`cost`, whole items) | data, by an observatory, under the allowance, over a minimum time |
-| Taken by | the `unlockPlan` command (one click in the tree) | `startResearch` in an idle observatory |
-| Rows in the tree | `lane`, its path (D41): `production`, `logistics`, `energy`, `analytics`, `trade`, `survey` | `branch`: the trunk, `ex`, `xp`, `dn`, `en`, `cm` |
-| Prerequisites | plan ids (research ids are allowed) | research ids; the branch roots and `tr1` need the observatory's plan |
-| Lost by a reconversion | never | yes, its branch |
+| Paid with | materials from the Heart, at once (`cost`, whole items) | data files and AI tokens as it runs, in a research lab, under the allowance, over a minimum time (D68) |
+| Taken by | the `unlockPlan` command (one click in the tree) | `startResearch` in an idle lab (or the Research Queue) |
+| Rows in the tree | `lane`, its path (D41): `production`, `logistics`, `energy`, `analytics`, `trade`, `survey` | `branch`: the trunk or a family (`en`, `ex`, `dn`, `cm`, `an`, `xp`), and from Tier 3 its `spec` (D69) |
+| Prerequisites | plan ids (research ids are allowed) | the node before it in its lineage and its tier's gate; the family roots and `tr1` need the lab's plan |
+| Lost by a reconversion | never | yes, its family |
 
 ### Plans — `PLANS`
 
 ```ts
 router: plan('logistics', [], [['iron_plate', 5]]),
-observatory: plan('production', ['workshop'], [['iron_plate', 20], ['copper_wire', 4]]),
+data_collector: plan('production', ['kiln'], [['iron_plate', 10], ['copper_wire', 4]]),
+observatory: plan('production', ['data_collector'], [['iron_plate', 20], ['copper_wire', 4]]),
 telemetry: plan('analytics', [], [['iron_plate', 8], ['copper_wire', 2]], { name, desc, effects: [flag('telemetry')] }),
 ```
 
@@ -155,7 +157,7 @@ The plans as built, path by path in the tree's order (← prerequisite):
 
 | Path | Plans and costs (plates · glass · copper wire) |
 |---|---|
-| Production · « Fondre et fabriquer » | Fonderie `kiln` 10 p · Collecteur de sable `sand_collector` ← kiln: 5 p · Atelier `workshop` ← kiln: 15 p, 2 g · Tréfileuse `wire_mill` ← kiln: 15 p · Observatoire `observatory` ← workshop: 20 p, 4 w — research hangs from it |
+| Production · « Fondre et fabriquer » | Fonderie `kiln` 10 p · Collecteur de sable `sand_collector` ← kiln: 5 p · Atelier d’électronique `workshop` ← kiln: 15 p, 2 g · Tréfileuse `wire_mill` ← kiln: 15 p · Collecteur de données `data_collector` ← kiln: 10 p, 4 w · Laboratoire de recherche `observatory` ← data collector: 20 p, 4 w — research hangs from it (D68) |
 | Logistique · « Déplacer et trier » | Routeur `router` 5 p · Croisement `junction` (the crossing) ← router: 5 p · Trieur `sorter` ← router: 6 p, 2 w · Silo `silo` ← router: 8 p, 2 g · Passerelle `bridge` (the skybridge) ← junction: 6 p, 2 w · Trieur inversé `inverted_sorter` ← sorter: 6 p, 2 w · Vanne de trop-plein `overflow_gate` ← sorter: 6 p, 2 w · Déchargeur `unloader` ← silo: 6 p, 2 w (unloaders pull from stores, never from the Heart: D34) · Vanne de sous-débit `underflow_gate` ← overflow gate: 6 p, 2 w. Cheap on purpose (owner, 2026-10-12: "most of the logistics is too expensive") |
 | Énergie · « Produire l’énergie » | Éolienne `wind_flower` 10 p · Générateur à charbon `brazier` ← wind turbine: 15 p, 2 w |
 | Analytique · « Voir ta base » | Télémétrie `telemetry` 8 p, 2 w · Registre de production `statistics` ← telemetry: 10 p, 4 w · Relevé d’énergie `power_log` ← statistics: 12 p, 2 g, 4 w · Diagnostic `diagnostics` ← power log: 15 p, 2 g, 6 w |
@@ -177,23 +179,32 @@ The plans grow in **paths of one theme each** (`PLAN_PATHS`, a plan's `lane`), d
 
 Unlocking one plays its reveal (the base dims around the new readout, CrierBelt says what it is: [ui.md](ui.md#the-spotlight-d41)). Readouts that stay free: the stock amounts, the ◉ and its ◉/h, the power % and its tooltip, the clock, the land mode (I) and the power overlay (P), the inspector and the building card. F (`ovFlow`) is bound to a flow overlay that does not exist yet; when it does, it is a natural next analytics step (a plan, its flag in `ANALYTICS`, a reveal in `ANALYTICS_REVEALS`).
 
-The distributor, the swift and express ribbons, the compact machines, the great workshop, the pylon and everything later stay behind their research.
+The distributor, the swift and express ribbons, the compact machines, the press, the assembly workshop, the pylon and everything later stay behind their research.
 
-### Research — `RESEARCH`
+### Research — `RESEARCH` (D69, D70)
 
-Nodes are built with two helpers:
+Four tiers on the depths (T1 = 1–2, T2 = 3–4, T3 = 5–6, T4 = 7 and the keystones ★, depth 9; `tierOfDepth`). The trunk opens each tier (`TIER_GATE`: T2 needs `tr1`, T3 `tr6`, T4 `tr8`). Six families (`FAMILY_IDS`; `FAMILIES[f]`: a name, one name per tier, and its specialities from Tier 3), the tree's lanes:
+
+| Family | Tier 1 · Tier 2 | Specialities from Tier 3 |
+|---|---|---|
+| `en` Energy | Production d’électricité · Réseau électrique | `r` Renouvelables · `c` Centrales |
+| `ex` Extraction | Extraction · Prospection | `d` Forage · `x` Excavation |
+| `dn` Machines | Machines de précision · Automatisation | `e` Électronique · `m` Mécanique |
+| `cm` Commerce | Échange · Finance | none: Économie de marché at Tiers 3–4 |
+| `an` Analytics | Analytique · Données | `c` Calcul · `m` Exploration de données |
+| `xp` Expansion | Arpentage · Logistique | `t` Transport · `c` Concessions |
 
 ```ts
-dn1: node('dn', 1, ['Tissage', 'Ribbon Weave'], ['Débloque le Ruban vif (120/min).', 'Unlocks the Swift Ribbon (120/min).']),
-tr5: trunk(5, ['tr4'], [['journal_2', 100]], 120, ['Deuxième pupitre', 'Second Desk'], [...], [{ k: 'slots', add: 1 }]),
+en_solarfarm: node('en', 'r', 5, 'en4', ['Ferme solaire', 'Solar Farm'], ['Débloque la Ferme solaire…', 'Unlocks the Solar Farm…']),
+tr5: trunk(5, 2, ['tr4'], 480, '200_000', 120, ['Deuxième pupitre', 'Second Desk'], [...], [{ k: 'slots', add: 1 }]),
 ```
 
-- **`node(branch, depth, name, desc, effects)`** derives everything else. The id must be `<branch><depth>`, or `<branch>K` for the keystone (depth 9). Prerequisites are the previous depth of the branch (8 for the keystone; the observatory's plan for depth 1) plus a trunk gate: depth ≥ 3 needs `tr1`, ≥ 5 `tr6`, ≥ 7 `tr8`. Cost and minimum minutes come from `DEPTH_COST[depth]`: from 25 survey journals and 3 min at depth 1 up to 300 atlases + 150 codex and 24 h for the keystone. Each branch is a straight line of 9 nodes.
-- **`trunk(depth, prereq, cost, minutes, name, desc, effects)`** is fully explicit (`tr1` needs the observatory's plan). The trunk escapes the spreading penalty.
-- **Branches.** `ex`, `xp`, `dn`, `en`, `cm`, plus `trunk`. Display names are i18n keys `research.branch.<b>`. `BRANCH_CORE` names the stat that mastery boosts: +`initiateBonus`‰ at 3 nodes, +`masterBonus`‰ at 6 (`slippage` is lowered instead of raised).
-- **Effects** (`Effect`). `mul` (target ×permille), `add` (target + v), `flag` (a free string the sim tests with `mods.flags.has`) and `slots` (+research slots). They compile into `Mods` in [modifiers.ts](../src/sim/research/modifiers.ts), applied **in `PLAN_IDS` then `RESEARCH_IDS` order with a floor after each step**. The `unlock` effect kind exists in the type but is ignored. Unlocks come only from the `unlock` field of buildings, recipes and `BAL.hearthUpgrades`.
-- **Land research** (D60, [land.md](land.md#research)): `tr4` « Cadastre » / Land Registry (it was Waystations) gives `flag('lease')`, and still opens the Heart's level 3; `xp1` Boundary Stones `mul('landPrice', 850)`; `xp2` Drone Relays halves `remoteBeltCost` and `remoteBuildDelay` (off the claim's land); `xp3` Land Charter `add('landGrowth', -40)` (each parcel bought raises the next one's price 6 % instead of 10 %); `xp7` Federation `mul('landRent', 700)` and `add('landGrowth', -20)`; `xp8` Far Claims `mul('farLand', 700)` (land whose centre lies past `BAL.land.farRadius`) beside `ring3Caps`; `xpK` Caravan City `mul('landRent', 800)` beside `drifterDistance`.
-- **Costs at run time.** `cost = ⌈base × (1 + 0.12·N_others) × (1 − 0.04·min(n_branch, 8))⌉`, `time = D × (1 + 0.05·N_others) × 0.85 if n_branch ≥ 6`, in `effectiveCost` ([runtime.ts](../src/sim/research/runtime.ts)). The knobs are in `BAL`; projects and the allowance are covered in [engine.md](engine.md).
+- **`node(family, spec, depth, after, name, desc, effects)`**: `after` is the node before it in its lineage (null: the family's first node, which needs the lab's plan); the tier's gate is added; its data files, tokens and minutes come from `DEPTH_COST[depth]` (15 files, 10 k tokens and 3 min at depth 1 up to 5 760 files, 6 M tokens and 24 h for a keystone). A split family's lineages share the Tier 1–2 nodes and each runs on from the last of them. Ids: the old short ids where a node kept its meaning (`en2`, `ex4`, `dn4`, `cm3`…), descriptive ones for the rest (`en_pitch`, `an_servers`, `xp_far`…); renamed ids are in `RESEARCH_RENAMED` ([retired.ts](../src/content/retired.ts), save v7).
+- **`trunk(depth, tier, prereq, data, tokens, minutes, name, desc, effects)`** is fully explicit (`tr1` needs the lab's plan). The trunk escapes the penalty.
+- **Every node gives something** (D70; `nodeGives` in validate.ts): the buildings and recipes whose `unlock` is its id, a Heart level, a feature `flag` the sim reads, research `slots`, an `add`. A node that would only multiply a number is refused. The `mul` kind stays for the few research-free multipliers some systems still read.
+- **Effects** (`Effect`). `mul` (target ×permille), `add` (target + v), `flag` (a string the sim tests with `mods.flags.has`) and `slots`. They compile into `Mods` in [modifiers.ts](../src/sim/research/modifiers.ts), applied **in `PLAN_IDS` then `RESEARCH_IDS` order with a floor after each step**. No mastery bonus (D69).
+- **Land research** (D60, D70, [land.md](land.md#research)): `tr4` « Cadastre » / Land Registry gives `flag('lease')` and the Heart's level 3; in Expansion › Concessions, `xp_resell` (sell a bought parcel back, 80 %), `xp_treaties` (ribbons and poles over sister claims' land), `xp_far` (buy a parcel apart from the claim's land: purchases otherwise grow it outward).
+- **Costs at run time.** `cost = ⌈base × (1 + spread[tier]·N_elsewhere) × (1 − 0.04·min(n_lineage, 8))⌉` for the data and the tokens, `time = D × (1 + spreadTime[tier]·N_elsewhere) × 0.85 if n_lineage ≥ 6`, in `effectiveCost` ([runtime.ts](../src/sim/research/runtime.ts)); the knobs are in `BAL` (`spreadCostByTier`, `spreadTimeByTier`, `depthDiscountPerNode`, `masterTimeFactor`, `tokenCentsPerK`). Projects, the allowance and the minute's token bill are in [engine.md](engine.md#research).
 
 ## The restart reserve — `BOOTSTRAP` (D36)
 
@@ -282,8 +293,9 @@ The item ids inside `BAL` (`startStock`, `drifterCost`, `hearthUpgrades`) are ty
 | No dead end (`reserveProblems`, D36): each bootstrap stage makes what it says, with its own machines, on recipes the start or its plans unlock (never research), from the cirque's deposits under its own drills; the reserve keeps only what the bootstrap makes; every plan and the starting kit are paid in those materials; the starting stock covers the reserve, even with the whole first ring of plans bought; a trade post against the Heart leaves at least the reserve (its stream reserve `tradeHearthReserve` plus its own cost); the Heart's core gives power at night (`hearthCoreKw > 0`) | A base can always rebuild its production, so the engine's guard has something to keep. The first ring of plans never meets a refusal. |
 | Every item can be produced from `RAW` (the land: deposits, digging, pumping, unique biomes) through recipes | No dead items and no unbuildable costs. |
 | Every science item that research asks for can be produced | Same reason. |
-| `tiredVeinPerMin() × 2 < wirePerMechanicsWorkshop()`, pinned at 6.75 ore/min → 13.5 wire vs 18 | Design: the cirque's « filon fatigué » cannot feed one mechanics-journal workshop, so copper ore must be imported from T2. |
-| `uniquesNeeded('atlas') ≥ 2`, `uniquesNeeded('codex') === 5` (pinned at 2 and 5; `journal_2` needs 0) | Each colony reaches about two uniques, so T3 and T4 require trade. |
+| `tiredVeinPerMin() × 2 < wirePerElectronicsWorkshop()`, pinned at 6.75 ore/min → 13.5 wire vs 30 | Design: the cirque's « filon fatigué » cannot feed one electronics workshop on circuits, so copper ore must be imported from T2. |
+| `recipesPerMachine()`: none over `MAX_RECIPES`; `nodeGives(id)` non-empty for every research node; a speciality only from Tier 3, a split family's Tier 3–4 nodes with one; each node needs its tier's gate | D69, D70. |
+| `uniquesNeeded('atlas') ≥ 2`, `uniquesNeeded('codex') === 5` (pinned at 2 and 5; `data_file` needs 0) | Each colony reaches about two uniques, so T3 and T4 require trade. |
 
 Not validated, though the engine relies on it: a recipe has exactly one output; recipe `machines` are of kind `machine` and have enough input ports; kind-specific fields are present (`belt`, `pole`, `gen.fuel`…); `RAW` lists every land-sourced item (the list is hand-maintained); descriptions match the actual unlocks and numbers.
 
@@ -312,14 +324,14 @@ Not validated, though the engine relies on it: a recipe has exactly one output; 
 6. Run the content tests. If it changes atlas or codex chains or copper wire, re-check the scarcity pins.
 
 ### Add a recipe
-1. Append to `RECIPES`: `machines` (ids of kind `machine`, usually `KILNS`, `WORKSHOPS` or `GREAT`), `seconds` from the divisor list, one output, quantities with at most 3 decimals, `unlock`.
+1. Append to `RECIPES`: `machines` (ids of kind `machine`: a family's list, three recipes at most per machine), `seconds` from the divisor list, one output, quantities with at most 3 decimals, `unlock`.
 2. If it is gated, name it in the unlocking node's `desc` (fr and en).
 3. That is all. The inspector lists it via `recipesFor`, `setRecipe` checks `machines` and `unlock`, and the art has nothing to do. Append rather than insert: machines store the recipe index in `cfg`.
 
 ### Add a building
 Content side:
 1. Append to `BUILDINGS` with `name`, `desc`, `kind`, `category`, `w`, `h`, ports at rotation 0, `kw`/`idleKw`, `needsZone`, `cost`, `unlock` and the kind-specific fields from the table above. Its tray slot follows its position. A new ribbon tier, routing block, mast or drill also needs the matching `replaceGroup`, so that it can be placed over its kind and its kind over it.
-2. For a machine, add its id to the `machines` of the recipes it runs (the `KILNS` / `WORKSHOPS` / `GREAT` lists).
+2. For a machine, add its id to the `machines` of the recipes it runs (a family's list; three recipes at most, D70).
 3. For a gated building, set `unlock` to the node id and mention it in the node's `desc`.
 4. Numbers that players will tune go to `BAL`.
 
@@ -341,7 +353,7 @@ Other touch points (grep an existing comparable id or kind):
 
 ### Add a research node or an effect
 1. A branch node: `xyN: node('xy', N, [fr, en], [fr, en], effects)` (`xyK` for depth 9). Prerequisites, cost and time follow. A trunk node: `trunk(…)` with explicit values. Append it: application order matters.
-2. Unlocks are set on the unlocked building, recipe or `BAL.hearthUpgrades` entry, never as an effect. Describe them in `desc`. A new effect target or flag also wants an icon in the tree screen's `EFFECT_ICON` ([research.ts screen](../src/ui/screens/research.ts)); without one the node shows the observatory.
+2. Unlocks are set on the unlocked building, recipe or `BAL.hearthUpgrades` entry, never as an effect. Describe them in `desc`. A new effect target or flag also wants an icon in the tree screen's `EFFECT_ICON` ([research.ts screen](../src/ui/screens/research.ts)); without one the node shows the lab.
 3. A new **multiplier or additive target**:
    - add it to the `ModTarget` union in `types.ts`;
    - add it to the `targets` list in `baseMods()` ([modifiers.ts](../src/sim/research/modifiers.ts)): the default is 1000‰, or 0 if listed in `ADDITIVE`; a BAL-based start goes after the defaults, like `tradeFee` and `landGrowth`. Without it the value is `undefined` and turns to `NaN`;
@@ -368,7 +380,7 @@ Other touch points (grep an existing comparable id or kind):
 - **One output per recipe.** `MachineNode` emits `outs[0]` only, and validation does not check it.
 - **Inert fields.** These are declared but not used: `crafts`; `energyKwMin`; the `unlock` effect; `tier` and `depth` outside the M6 market (in progress); archetype and biome names. (`ARCHETYPES.*.copperVein` is now the land's embedded-copper chance, through `MapGen.embedCopper`.) Also unused: `windMesa[1]`, `respecCooldownDays` (14 days and the 7-day grace are hard-coded in the research system and screen), `tradeThroughput`, `liftDelayMin`.
 - **Research effects with no consumer yet.** The flags `tunnels` (ex6), `stormHarvest` (en7) and `deepHeat` (en8); every Commerce flag (`tradeFee` is fixed at CrierBelt's fifth, D64). The Commerce mastery stat (`slippage`) is therefore inert until M6.
-- **Duplicated sources of truth.** The Hearth's `storageCap` and `gen.kw` duplicate `BAL.hearthCap[0]` and `BAL.hearthSolarKw`; the `BAL` values win. `CYCLE_LCM` is redeclared in `validate.ts`. Ticks per second (×10, ×600) is hard-coded in the registry. Hard-coded in the compiler: pump 60/min, silo and dock ports 240/min, excavator outlet 120/min, observatory store 200 items (`LAB_CAP`).
+- **Duplicated sources of truth.** The Hearth's `storageCap` and `gen.kw` duplicate `BAL.hearthCap[0]` and `BAL.hearthSolarKw`; the `BAL` values win. `CYCLE_LCM` is redeclared in `validate.ts`. Ticks per second (×10, ×600) is hard-coded in the registry. Hard-coded in the compiler: silo and dock ports 240/min, excavator outlet 120/min, a lab's store 200 items (`LAB_CAP`) (a pump's rate is its `drill.perMin` since D70).
 - **Validation approximations.** `tiredVeinPerMin` hard-codes the wire recipe's ×2 and ignores mapgen's ±20% per-player richness and 70% edge falloff. The margin still holds at +20% (16.2 < 18). `uniquesNeeded` minimises each input separately, so it is an upper bound.
 - **Inexact fractions.** `sunheart.fuelPerMin: 1/30` becomes 33 mu per epoch.
 - **Lists to keep in sync.** The branch list exists in four places, `ModTarget` in two, and flags are untyped strings.

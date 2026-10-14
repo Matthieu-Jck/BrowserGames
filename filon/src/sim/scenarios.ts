@@ -16,15 +16,15 @@
 //   claim     the claim named, at the very start of the tutorial (quest 1 current), nothing built
 //   smelter   quests 0–2: two iron drills into the Heart, wired, telemetry → at « La fonderie »
 //   survey    quests 0–5: + the smelter (a router splits the second iron line), the coal, two
-//             wind turbines, the workshop, the glass smelter (two sand collectors; a router
-//             shares the coal) → at « Données d'arpentage »
-//   tutorial  all eleven quests: + survey data into the observatory (Mechanics under way), the
+//             wind turbines, the data collector, the glass smelter (two sand collectors; a router
+//             shares the coal) → at « Fichiers de données »
+//   tutorial  all eleven quests: + the collector's data files into the research lab (Mechanics under way), the
 //             trade post (glass led into its entrance for its quest, then the iron ore line
 //             joining it — the post sells whatever comes in, D64 — and its exit laid into the
 //             Heart, fed by a small import order of plates: what the base builds with), the copper line, a beacon past the
 //             Crown, more wind and a coal generator — the whole tutorial factory running
 //   grown     later on: every plan of the tree, Mechanics and a few research nodes learnt for
-//             real, a gear workshop, a silo
+//             real, a gear press, a silo
 //   late      the grown base with most of the tree granted outside the commands (so its log does
 //             not replay to it: `report.granted`), the Heart at level 4, an excavator on marked
 //             rock (its stone line with an overflow gate onto an incinerator), a drill on the

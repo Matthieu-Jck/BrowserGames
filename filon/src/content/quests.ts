@@ -432,7 +432,7 @@ export const QUESTS = {
   field_journal: {
     name: { fr: 'Fichiers de données', en: 'Data Files' },
     desc: {
-      fr: 'La recherche se nourrit de fichiers de données et de tokens d’IA. Ton collecteur fait les fichiers ; un laboratoire de recherche les reçoit par ruban et paie ses tokens à la minute aux serveurs de CrierBelt, sur ta trésorerie. Pose le laboratoire, amène-lui les fichiers, puis lance Mécanique.',
+      fr: 'La recherche se nourrit de fichiers de données et de tokens d’IA. Votre collecteur fait les fichiers ; un laboratoire de recherche les reçoit par ruban et paie ses tokens à la minute aux serveurs de CrierBelt, sur votre trésorerie. Posez le laboratoire, amenez-lui les fichiers, puis lancez Mécanique.',
       en: 'Research feeds on data files and AI tokens. Your collector makes the files; a research lab takes them in by ribbon and pays for its tokens by the minute to CrierBelt’s servers, out of your purse. Place the lab, bring it the files, then start Mechanics.',
     },
     objectives: [

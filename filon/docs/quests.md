@@ -14,7 +14,7 @@ Tests: [sim/systems/quests.test.ts](../src/sim/systems/quests.test.ts). The Fren
 
 ## The quests as built
 
-Two rules shape it (owner, 2026-10-12): **the Heart only takes in** (D34) — every machine is fed by its own production lines, so the tutorial builds lines (a router splits the iron line between the Heart and the smelter, another shares the coal with the glass smelter, routers branch the plate and glass lines into the workshop); and **everything beyond the starting kit is unlocked in the tech tree** (D33) — a quest opens the tree (T, the HUD's tree chip) and unlocks what it needs before using it, starting with telemetry, then the smelter and the router.
+Two rules shape it (owner, 2026-10-12): **the Heart only takes in** (D34) — every machine is fed by its own production lines, so the tutorial builds lines (a router splits the iron line between the Heart and the smelter, another shares the coal with the glass smelter, and a ribbon takes the data collector's files to the research lab); and **everything beyond the starting kit is unlocked in the tech tree** (D33) — a quest opens the tree (T, the HUD's tree chip) and unlocks what it needs before using it, starting with telemetry, then the smelter and the router.
 
 | # | id | Unlocks in the tree | Objectives (all, unless *any*) | Reward |
 |---|---|---|---|---|
@@ -22,9 +22,9 @@ Two rules shape it (owner, 2026-10-12): **the Heart only takes in** (D34) — ev
 | 1 | `first_strike` · Premier coup de pioche | — (the starting kit: drill, ribbon, pole, Link) | a drill built; 10 ore in the Heart | 20 iron plates |
 | 2 | `ribbon_lines` · Le Ruban | Télémétrie (the rates show at once) | telemetry unlocked; two drills wired; 20 more ore mined | 10 glass |
 | 3 | `bloom_kiln` · La fonderie | Fonderie, Routeur | a router built; iron ore and coal reach the smelter by lines (`feeds`); 10 plates made | 30 iron plates |
-| 4 | `first_wind` · Le Souffle | Éolienne, Atelier | 2 wind turbines wired into a grid — the hints send them up onto the Crown, where the wind blows (D44), wired pole by pole; a workshop powered | a coal generator kit (its cost) |
+| 4 | `first_wind` · Le Souffle | Éolienne, Collecteur de données | 2 wind turbines wired into a grid — the hints send them up onto the Crown, where the wind blows (D44), wired pole by pole; a data collector powered (it stands anywhere, D68) | a coal generator kit (its cost) |
 | 5 | `glassworks` · La verrerie | Collecteur de sable (sand is the ground: two collectors by the glass smelter, D38) | sand reaches a smelter; coal reaches both smelters (a router on the coal line); 10 glass made | 20 plates, 20 glass |
-| 6 | `field_journal` · Données d’arpentage | Observatoire | 3 survey data made (the workshop fed plates and glass by routers on their lines, its data on to the observatory); an observatory; Mechanics (tr1) started | 100 ◉ |
+| 6 | `field_journal` · Fichiers de données | Laboratoire de recherche | 3 data files made; a research lab, wired, the collector's files led into it by a ribbon; Mechanics (tr1) started (its tokens billed by the minute, D70) | 100 ◉ |
 | 7 | `crier_calls` · La Criée appelle | Comptoir | a trade post; 3 glass sold — glass led into its entrance by a router on the glass line (a post sells whatever its entrance brings, D64) | 150 ◉ |
 | 8 | `tired_vein` · Le filon fatigué | Tréfileuse | a wire mill; 10 copper wire made (the drill and the mill wired in one step) | 10 circuits |
 | 9 | `first_purchase` · Premier achat | — | a standing import order for copper ore (no wait for the delivery) | the Heart's level-2 materials |

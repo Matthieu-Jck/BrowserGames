@@ -398,7 +398,7 @@ export function learnPlans(sim: Sim, ids: readonly string[] = PLAN_IDS): string[
   return out;
 }
 
-/** A small demo colony in the cirque: drills on the starter deposits, a kiln line, wind. */
+/** A small demo colony in the cirque: drills on the starter deposits, a kiln line, a research lab fed by a data collector, wind. */
 export function buildDemo(sim: Sim, opt: { kiln?: readonly [number, number, Rot] } = {}): Record<string, number> {
   sim.skipTutorial(); // an advanced base: the whole interface, no tutorial
   learnPlans(sim); // and the whole tree's plans (D33), through commands: the demo replays
@@ -438,6 +438,11 @@ export function buildDemo(sim: Sim, opt: { kiln?: readonly [number, number, Rot]
   place('workshop', 'workshop', ...at(-9, -4), 0);
   if (ids.workshop) sim.setRecipe(ids.workshop, 'circuit');
   place('observatory', 'observatory', ...at(-12, 3), 0);
+  // Its data files (D68): a data collector a few tiles south of the lab, facing it (it stands
+  // anywhere, no deposit), its ribbon into one of the lab's south inlets.
+  for (let d = 3; d < 8 && !ids.collector; d++) for (const dx of [0, -1, 1, -2, 2]) {
+    if (!ids.collector && freeSpot(sim, 'data_collector', CENTER - 12 + dx, CENTER + 3 + d, 0)) place('collector', 'data_collector', CENTER - 12 + dx, CENTER + 3 + d, 0);
+  }
   place('silo', 'silo', ...at(9, -9), 0);
   // The trade post against the Hearth's south side, turned half round (its entrance against the
   // Heart, its exit opening south, D62): it sells from the Hearth's stock.
@@ -459,9 +464,10 @@ export function buildDemo(sim: Sim, opt: { kiln?: readonly [number, number, Rot]
     connect(sim, ids.kiln, H);
   }
   if (ids.coal2 && ids.brazier) connect(sim, ids.coal2, ids.brazier);
+  if (ids.collector && ids.observatory) connect(sim, ids.collector, ids.observatory);
   // Power (D25): every building that makes or uses power is wired into the Hearth's grid,
   // through lines of poles where the Hearth's own wires (8 tiles) do not reach.
-  for (const k of ['drillA', 'drillB', 'sand', 'coal', 'coal2', 'workshop', 'observatory', 'trade', 'brazier', 'wind0', 'wind1', 'wind2', 'wind3']) {
+  for (const k of ['drillA', 'drillB', 'sand', 'coal', 'coal2', 'workshop', 'observatory', 'collector', 'trade', 'brazier', 'wind0', 'wind1', 'wind2', 'wind3']) {
     if (ids[k]) powerLine(sim, ids[k]!);
   }
   return ids;

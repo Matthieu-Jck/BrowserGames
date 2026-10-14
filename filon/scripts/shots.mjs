@@ -134,7 +134,7 @@ await page.evaluate(() => {
   const sim = window.FL.app.sim;
   for (const id of ['tr1', 'tr2', 'en1', 'en2', 'en3', 'dn1']) sim.done.add(id);
   sim.rebuildDerived();
-  window.FL.feedLab('journal_1', 80);
+  window.FL.feedLab('data_file', 80);
   window.FL.research('ex1');
   window.FL.tick(400);
 });

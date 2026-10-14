@@ -19,7 +19,7 @@ Read [engine.md](engine.md) first (nodes, phases, reservoirs, the allowance patt
 
 ## The contract
 
-- **Same rules, same functions.** Groups are stepped by `runPhases` exactly as online; research, digs, fills and freight are advanced by the online functions; finishing a project or a job calls the online `finishProjects` / `completeJobs`; each minute boundary calls the online `tradeEpoch` and `landEpoch`.
+- **Same rules, same functions.** Groups are stepped by `runPhases` exactly as online; research, digs, fills and freight are advanced by the online functions; finishing a project or a job calls the online `finishProjects` / `completeJobs`; each minute boundary calls the online `tradeEpoch`, `landEpoch` and `tokenEpoch` (research's AI tokens, D68).
 - **Bit-exact for a steady regime.** If no store crosses a bound and every grid's renewables cover its peak demand (full satisfaction, no fuel dispatch), the catch-up ends with the same stocks and the same `hash()` as ticking (test: "reproduces a single steady regime bit-exactly").
 - **Flagged approximation elsewhere.** Stores at a bound, power shared between regimes, non-periodic groups: approximate, reported through `mode` and incidents ([Exact vs approximate](#exact-vs-approximate)). Not every source of error is flagged yet (*Known gaps*).
 - **Unlimited.** Production never stops because the player was away; it stops only for lack of input or room (back-pressure), as online.
@@ -51,7 +51,7 @@ catchUp(sim, ticks)
 
 ## Groups: why cut at reservoirs
 
-`buildGroups` takes the connected components of the flow graph over edges that do not touch a reservoir. Every non-reservoir node belongs to exactly one group; the edges between a group and a reservoir are its boundary (`resIn`, `resOut`). Reservoirs are the Hearth, silos, trade posts and also every store a long process hangs off: observatories, excavators, backfillers, skydocks.
+`buildGroups` takes the connected components of the flow graph over edges that do not touch a reservoir. Every non-reservoir node belongs to exactly one group; the edges between a group and a reservoir are its boundary (`resIn`, `resOut`). Reservoirs are the Hearth, silos, trade posts and also every store a long process hangs off: research labs, excavators, backfillers, skydocks (and servers, power-only nodes of no group).
 
 The cut is sound because a reservoir item **between its bounds** behaves the same whatever its level: an unloader offers `min(stock, portRate)` = `portRate` and an inlet accepts `cap − stock`, more than any tick's inflow. So the groups on either side of a reservoir evolve independently, the level is just the running sum of their flows, and each group can be warmed up and extrapolated on its own. Groups still interact in two ways, both handled explicitly: through a reservoir item that reaches a bound (states and throttles) and through a shared power grid (power modes).
 
@@ -116,7 +116,7 @@ Regimes are kept in a per-call `Map` keyed by `condKey`: the group's signature, 
 
 ## Power during the catch-up
 
-`computeNetModes` solves each grid per segment from the current regimes rather than per tick: demand `dAvg` and `dMax` summed over the groups on the grid plus what its **reservoir buildings** draw (observatories, excavators, backfillers, skydocks, trade posts: `resKw`, fixed between recompiles; they belong to no group), fuel capacity `F` and effective `Feff` (`outKw × fueled ‰`), renewables `R` from this epoch's weather (the same `weatherAt`, `weatherKey` and `renewableKw` as online — the Heart's solar panel included, so the base's own power follows the sun offline too), accumulator energy, capacity and rate. The grids themselves are the wires' components (D25), compiled by the same `compileGraph`; wires change only through commands, so an absence never rewires anything:
+`computeNetModes` solves each grid per segment from the current regimes rather than per tick: demand `dAvg` and `dMax` summed over the groups on the grid plus what its **reservoir buildings** draw (research labs, servers, excavators, backfillers, skydocks, trade posts: `resKw`, fixed between recompiles; they belong to no group), fuel capacity `F` and effective `Feff` (`outKw × fueled ‰`), renewables `R` from this epoch's weather (the same `weatherAt`, `weatherKey` and `renewableKw` as online — the Heart's solar panel included, so the base's own power follows the sun offline too), accumulator energy, capacity and rate. The grids themselves are the wires' components (D25), compiled by the same `compileGraph`; wires change only through commands, so an absence never rewires anything:
 
 | Case | Satisfaction | Dispatch | Accumulators |
 |---|---|---|---|
@@ -133,10 +133,13 @@ Long processes are not flow nodes: they hang off reservoir stores. `labFlows()` 
 
 | Process | Reservoir | Map | Rate |
 |---|---|---|---|
-| Research project | its observatory | `labOut`, per science item still owed | `cost × sat / (dur·1000)` while `el < dur·1000` |
+| Research project | its lab | `labOut`, per data item still owed | `cost × sat / (dur·1000)` while `el < dur·1000` |
+| Data files out of the Heart / an autonomous lab (D68) | the Heart / the lab | `pIn`, `data_file` | `rate × sat / (600·1000)` (the Heart: sat 1000) |
 | Dig | the excavator's store | `pIn`, stone | `jobRate = mu × sat / (dur·1000)` |
 | Fill | the backfiller's store | `labOut`, stone | `jobRate` |
 | Drifter route | origin / destination skydock | `labOut` / `pIn`, the route's item | `routeRateNow` (0 while a dock is unpowered) |
+
+**AI tokens** (D68) are no flow: a project's tokens follow its `el` (`takeTokens` after `advanceProject`, into `sim.tokenUse`), the servers add `tokensPerMin × sat × dt` to `sim.serverAcc` for the segment (`serverTick`, the grid's satisfaction of the segment), and the boundary's `tokenEpoch` bills them as online. Segments never cross a minute boundary, so the bill is the online one. A purse that goes into the red sets `researchHeld` at that boundary: the projects' satisfaction is 0 from the next segment on (`researchHeld` / `researchResumed` incidents). The same per-segment rule as research's `el` applies: exact while each grid's satisfaction holds within the segment. Data files out of the Heart and the autonomous labs (`dataTick`) are whole milli-items with the remainder carried (`sim.dataAcc`), the same total as online over any split.
 
 Pseudo-flows enter `rateOf` (next events) and the throttle totals, so a store fed by ribbons and drained by research is classified and throttled like any other. The process itself is advanced in `advance(dt)` by the online functions with this segment's satisfaction: `advanceProject(p, store, dt, sat)`, `sim.advanceJobs(dt, …)` (an excavator whose store is FULL gets satisfaction 0, the offline form of "digging pauses at the cap"), `sim.moveFreight(r, dt, …, exactMu = false)`.
 
@@ -151,7 +154,7 @@ A segment ends at the next epoch boundary or the next event, whichever is first 
 | Epoch boundary | every `EPOCH` ticks | **trade** (`sim.tradeEpoch()`, the same call as online: deliveries, orders, sales, the market's settlement; it moves reservoir levels and ocelles only, so no group is materialized; every (reservoir, item) whose level it moved is re-classified at the next `classify` (`moved`), since a key with no flow is not looked at otherwise — a full Hearth that a stream sells down takes its jammed line again, at the same moment as online; its per-minute `trade` / `delivered` / `gazette` events are dropped and the absence's trade lands in the report: `sold`, `bought`, `earned`, `spent`, `creditsDelta`), then **the leases' hour** (`sim.landEpoch()`, the same call as online, right after the trade: rent paid from the ocelles; when a lease would lapse — `lapsing`, the purse short of a rent due — every group is materialized first, since what stands on that parcel goes dormant and the graph is rebuilt; a `leaseLapsed` incident with its `parcel`; the `land` events are dropped like the trade's), then the new sun step (each epoch) and gust window (every 10) → power modes |
 | Reservoir bound | a key's net rate brings its level to m or cap − m (NORMAL), above 2m (EMPTY, rising), below cap − 2m (FULL, falling) | `classify` → new state → throttles, re-warms; `storageFull` / `storageEmpty` incidents for the Hearth |
 | Research done | `el` reaches `dur·1000` at the project's satisfaction | `finishProjects` (unlocks, `Mods`), recompile, `setup()`; `researchDone` incident |
-| Science fully paid | detected after `advance` | the observatory stops accepting it: recompile, `setup()` |
+| Data fully paid | detected after `advance` | the lab stops accepting it (an autonomous lab stops making it): recompile, `setup()` |
 | Tile dug / filled | a job's `el` reaches `dur·1000` | `completeJobs` (terrain, embedded ore, events), re-assign; recompile only if a pump's water or the set of busy machines changed (their draw) |
 | Construction | the earliest pending `builtAt` | `builtAt = 0`, recompile, `setup()`; `built` incident |
 | Accumulators full / empty | `(cap − E)/accRate` or `E/−accRate` | the segment ends there and the grid is marked for a new power mode (`netDirty`) |
@@ -185,7 +188,7 @@ At the edges of approximate regimes `advance()` keeps every store within [0, cap
 | Event timing | level events at least 60 ticks apart; paid-science and construction changes applied at segment ends |
 | Statistics, freight | produced/consumed linearised; freight moved in fractional milli-items |
 
-**The report** (`AwayReport`, ids and numbers only; the UI localises): `fromTick`, `toTick`, `mode` (`direct` / `exact` = every regime periodic / `approx`), `warmups` and `warmTicks` (cost), `produced`, `consumed`, `hearthDelta` per item, `lostMu` (overflow trimmed at a store's cap in `advance`) and `clampedMu` (what a store would have gone below 0 by), the trade of the absence (`sold`, `bought`, `earned`, `spent`, `creditsDelta`), and `incidents` (`storageFull`, `storageEmpty`, `brownout`, `researchDone`, `built`, `leaseLapsed`, with tick and item/entity/ref/parcel). `computeMs` is left for the caller. `lostMu` / `clampedMu` measure the edge error of the approximate cases; the error inside a non-periodic regime is not measured (bounded in practice by the tests below).
+**The report** (`AwayReport`, ids and numbers only; the UI localises): `fromTick`, `toTick`, `mode` (`direct` / `exact` = every regime periodic / `approx`), `warmups` and `warmTicks` (cost), `produced`, `consumed`, `hearthDelta` per item, `lostMu` (overflow trimmed at a store's cap in `advance`) and `clampedMu` (what a store would have gone below 0 by), the trade of the absence (`sold`, `bought`, `earned`, `spent`, `creditsDelta`), and `incidents` (`storageFull`, `storageEmpty`, `brownout`, `researchDone`, `built`, `leaseLapsed`, `researchHeld`, `researchResumed`, with tick and item/entity/ref/parcel). `computeMs` is left for the caller. `lostMu` / `clampedMu` measure the edge error of the approximate cases; the error inside a non-periodic regime is not measured (bounded in practice by the tests below).
 
 ## Tests that guard it
 
@@ -198,7 +201,8 @@ At the edges of approximate regimes `advance()` keeps every store within [0, cap
 | "steady layouts lock into an exact period, jams included" | every group of a mixed base is exact with `p ≤ 2400` |
 | "online ≈ offline on random bases" (12 seeds) | random mixes of lines, grants and warm-ups over 1–4 h: every stock within max(2 items, 0.5 % of its flow). `CATCHUP_REPORT=1` prints the worst gap |
 | "accumulators store and give back the same energy offline as ticking" ([power.test.ts](../src/sim/power/power.test.ts)) | accumulator energy equal after 1 800 ticks of charging (discharge is not covered) |
-| "the offline catch-up completes the same research as ticking" ([research.test.ts](../src/sim/research/research.test.ts)) | research fed by ribbon finishes both ways; science consumed within 1 item |
+| "online ≈ offline: data by ribbon, the Heart's files, servers, the minute's bill" ([research.test.ts](../src/sim/research/research.test.ts)): the same tokens used and bought, the same purse, the same data in the Heart |
+| (before D68) "the offline catch-up completes the same research as ticking" | research fed by ribbon finishes both ways; data consumed within 1 item |
 | "digging offline matches ticking" ([space.test.ts](../src/sim/space.test.ts)) | same tiles dug, stone within 1 item |
 | "a lease lapses in the catch-up at the same hour as online…" ([land.test.ts](../src/sim/land.test.ts)) | a leased kiln over four hours of rent the purse covers for three: the lease lapses both ways, same ocelles, same `hash()`, a `leaseLapsed` incident |
 | perf test ([perf.test.ts](../src/sim/bench/perf.test.ts)) | a week of base20k in < 3 s, every silo full at the end |
