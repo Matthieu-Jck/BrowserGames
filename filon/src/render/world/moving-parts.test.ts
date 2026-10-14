@@ -27,7 +27,7 @@ describe('moving parts: speeds', () => {
   it('a turbine on the mountains outspins one on the cirque floor, in any gust (D44)', () => {
     for (const gust of GUST_LEVELS) {
       const floor = windTurns(BAL.windCirque, gust);
-      for (const ridge of BAL.windRock) expect(windTurns(ridge, gust)).toBeGreaterThan(floor * 2);
+      for (const ridge of BAL.windHeight) expect(windTurns(ridge, gust)).toBeGreaterThan(floor * 2);
     }
   });
 

@@ -60,6 +60,7 @@ import { DX, DY, isFloor, isRock, opposite, T, type Rot } from './types';
 import { inWorld, tileIndex } from './world/grid';
 import { parcelAt } from './world/land';
 import { MapGen } from './world/mapgen';
+import { windSite } from './power/network';
 import { coalPit, copperHome, emberMine, geothermal, emberSite, fabrique, flyRoute, potteries, toward, waitKites } from './scenario-late';
 
 /** The longest the build waits for the Fabrique's first purchases (their quarter hour and the post's lift). */
@@ -726,8 +727,7 @@ function powerUp(b: Builder, cap = 12): void {
     const id = k < 12 ? b.put(role, 'wind_flower', b.crown(k >> 2), { r: 9, onRock: true }) : b.optional(() => b.put(role, 'wind_flower', b.ridge(k - 12), { r: 4, onRock: true }));
     if (!id) { if (k < 12) return; continue; }
     b.wire(role);
-    const e = sim.ents.get(id)!, t = sim.grid.terrain(e.x, e.y);
-    night += Math.floor((kw * (isRock(t) ? BAL.windRock[t - T.Rock1]! : BAL.windCirque)) / PERMILLE);
+    night += Math.floor((kw * windSite(sim.grid, sim.ents.get(id)!).permille) / PERMILLE);
   }
   // The kites land (turbines off the claim's land come by kite; the late base's all stand on it).
   if (cap <= 12 || [...sim.ents.map.values()].some((e) => e.builtAt > sim.tick)) b.run(EPOCH);
