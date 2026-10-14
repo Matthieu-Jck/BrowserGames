@@ -1,5 +1,5 @@
 /* research.css — the research half of the tech tree (D68–D70; ui/screens/research.ts, which
-   imports it): the tier columns and their heads, the trunk and the family lanes (their names per
+   imports it): the research lab's gate between the two blocks (D71), the tier columns and their heads, the trunk and the family lanes (their names per
    tier, the specialities' divider), the research nodes (what they use as they run, their time,
    the specialisation badge, the queue's tag), the header's research strip (slots, labs, the
    token bill, the purse-in-the-red warning, the Compute Plan, the queue) and the detail pane's
@@ -13,6 +13,8 @@
 [data-lane='cm'] { --path: #d8584a; }
 [data-lane='an'] { --path: #23908f; }
 [data-lane='xp'] { --path: #3d72b8; }
+/* The research lab's gate (D71) takes research's lilac. */
+[data-lane='gate'] { --path: var(--c-lilac-d); }
 
 /* Small inked marks in a line of text: a token, the clock, a padlock. */
 .tr-mark { display: inline-block; width: 1.15em; height: 1.15em; flex: none; vertical-align: -0.22em; overflow: visible; }
@@ -28,6 +30,28 @@
 .rs-legend > span { display: inline-flex; align-items: center; gap: 4px; }
 .rs-legend canvas { width: 16px; height: 16px; display: block; }
 .rs-legend .tr-spec { margin: 0; }
+.rs-legend .rs-kind { display: inline-flex; margin-right: -2px; }
+
+/* ── the research lab's gate (D71): its own column between the plans and research ── */
+.tr-gatecap {
+  position: absolute; display: flex; align-items: center; justify-content: center; gap: 8px; height: 40px;
+  border-bottom: 2px dashed var(--path); color: var(--c-ink);
+}
+.tr-gatecap .tr-lanename { font-size: 19px; }
+.tr-gatecap .tr-pathcount { align-self: center; margin: 0; cursor: help; }
+.tr-gatecap[data-full] .tr-pathcount::after { content: ' ✓'; }
+.tree .tr-node[data-lane='gate'] {
+  border-width: 2.5px; box-shadow: 3px 3px 0 var(--c-ink), 0 0 0 5px color-mix(in srgb, var(--c-lilac-l) 55%, transparent);
+  background: color-mix(in srgb, var(--c-lilac-l) 22%, var(--c-paper));
+}
+.tree .tr-node[data-lane='gate'][data-state='done'] { background: #d8f1ec; }
+.rs-gpaths { margin: 4px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; }
+.rs-gpath { display: grid; grid-template-columns: 96px 1fr 38px; align-items: center; gap: 6px; font-size: 12.5px; }
+.rs-gname { font-weight: 600; border-left: 4px solid var(--path); padding-left: 6px; }
+.rs-gpath .rs-pbar > span { background: var(--path); }
+.rs-gpath small { text-align: right; font-variant-numeric: tabular-nums; color: var(--c-ink-soft); }
+.rs-gpath[data-full] small { color: var(--c-turq-d); font-weight: 700; }
+.rs-gate .rs-qnote { margin-top: 6px; }
 
 /* ── tier columns ── */
 .tr-tiercol { position: absolute; border-left: 1.5px dashed rgba(30, 27, 46, 0.2); border-radius: 0 0 0 10px; }
@@ -54,6 +78,7 @@
 .tr-tierhead[data-opens] .tr-gate { outline: 3px solid var(--c-turq); outline-offset: 1px; animation: tr-opens 1.4s ease-in-out infinite; }
 @keyframes tr-opens { 50% { outline-color: rgba(63, 184, 175, 0.35); } }
 .tr-spread { font-size: 11.5px; color: var(--c-coral-d); white-space: nowrap; cursor: help; }
+.tr-spread[data-free] { color: var(--c-turq-d); cursor: default; }
 
 /* ── lanes: the trunk and the families ── */
 .tree .tr-lane[data-kind='research'] { gap: 2px; }
@@ -92,13 +117,17 @@
 .tree .tr-node[data-kind='research'] .tr-name { font-size: 14.5px; line-height: 16px; }
 .tree .tr-node[data-kind='research'][data-long] .tr-name { font-size: 13px; }
 /* What it uses as it runs: data files, tokens, their price at CrierBelt. */
-.tr-rcost { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 12px; line-height: 16px; white-space: nowrap; }
+.tr-rcost { display: flex; align-items: center; gap: 5px; min-width: 0; font-size: 11.5px; line-height: 16px; white-space: nowrap; }
 .tr-rcost .tr-chip { gap: 2px; }
 .tr-rcost .tr-chip canvas, .tr-rcost .tr-mark { width: 14px; height: 14px; }
 .tr-oc { color: var(--c-ink-soft); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; }
 .tr-oc .coin { width: 1em; height: 1em; }
 /* Its minimum time and its specialisation badge. */
-.tr-rfoot { display: flex; align-items: center; gap: 6px; font-size: 11.5px; line-height: 15px; color: var(--c-ink-soft); }
+/* Its tokens, their price at CrierBelt and its minimum time. */
+.tr-rfoot { display: flex; align-items: center; gap: 8px; font-size: 11.5px; line-height: 15px; color: var(--c-ink-soft); white-space: nowrap; }
+.tr-tokbox { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.tr-tokbox .tr-chip { color: var(--c-ink); }
+.tr-rfoot .tr-chip .tr-mark { width: 13px; height: 13px; }
 .tr-rfoot .tr-time { display: inline-flex; align-items: center; gap: 3px; margin-left: 0; }
 .tr-rfoot .tr-mark { width: 13px; height: 13px; }
 .tr-spec {
@@ -109,7 +138,9 @@
 .tr-spec[data-dir='up'] { background: var(--c-coral-d); }
 .tr-spec[data-dir='down'] { background: #3e8e48; }
 .tr-node[data-state='done'] .tr-spec { display: none; }
-.tr-node[data-state='done'] .tr-rcost { opacity: 0.55; }
+.tr-node[data-state='done'] .tr-rcost, .tr-node[data-state='done'] .tr-tokbox { opacity: 0.55; }
+/* On a node the badge hangs off the top edge, right (the ✓ stamp takes that corner once it is done). */
+.tr-node > .tr-spec { position: absolute; right: 18px; top: -9px; margin: 0; z-index: 1; }
 /* Queued in a lab (the Research Queue): a tag on its upper left edge, the lab's number. */
 .tr-qtag {
   position: absolute; left: 14px; top: -10px; display: none; align-items: center; gap: 3px; padding: 0 6px 0 4px;
@@ -183,7 +214,8 @@
 .rs-specnote { display: block; margin-top: 4px; color: var(--c-ink-soft); font-size: 12px; }
 /* A running project: data paid, tokens used, time run — a bar each. */
 .rs-prog { margin-top: 4px; }
-.rs-prow { display: grid; grid-template-columns: 92px 1fr auto; align-items: center; gap: 6px; font-size: 12.5px; margin: 3px 0; }
+.rs-prow { display: grid; grid-template-columns: 118px 1fr auto; align-items: center; gap: 6px; font-size: 12.5px; margin: 3px 0; }
+.rs-plabel { line-height: 1.15; }
 .rs-plabel { display: inline-flex; align-items: center; gap: 4px; }
 .rs-plabel canvas { width: 16px; height: 16px; display: block; }
 .rs-pbar { height: 8px; border: 1.5px solid var(--c-ink); border-radius: 5px; background: var(--c-paper-d); overflow: hidden; }
