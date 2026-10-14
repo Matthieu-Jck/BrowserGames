@@ -1,5 +1,6 @@
-/* screens.css — full-screen panels: the art review board (dev), the tech tree (research + plans, D33;
-   its paths, D41), stats (with the Analytics path's parts). */
+/* screens.css — full-screen panels: the art review board (dev), the tech tree (plans and the shared
+   tree rules, D33; its paths, D41 — research's own rules are in research.css), stats (with the
+   Analytics path's parts). */
 .artboard {
   position: fixed; inset: 0; overflow: auto; z-index: 25; padding: 24px 32px 64px;
   background: var(--c-paper);
@@ -54,21 +55,14 @@
 .tr-legend { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--c-ink-soft); }
 .tr-swatch { display: inline-block; width: 14px; height: 14px; border: 1.5px solid var(--c-ink); border-left-width: 5px; border-radius: 4px; }
 .tr-swatch[data-kind='plan'] { background: var(--c-paper); border-left-color: var(--c-peach-d); }
-.tr-swatch[data-kind='research'] { background: #f4effb; border-left-color: var(--c-lilac-d); border-radius: 8px; }
-/* Paths (D41): every lane has a colour (--path) — a plan path's band, label and node spines; a
-   research branch's band and label (its spines keep their rules below). */
+/* Paths (D41): every lane has a colour (--path) — a plan path's band, label and node spines; the
+   research lanes' colours are in research.css. */
 [data-lane='production'] { --path: #b0683a; }
 [data-lane='logistics'] { --path: #3d72b8; }
 [data-lane='energy'] { --path: #d9a21c; }
 [data-lane='analytics'] { --path: #23908f; }
 [data-lane='trade'] { --path: #d8584a; }
 [data-lane='survey'] { --path: #6e9638; }
-[data-lane='trunk'] { --path: var(--c-coral-d); }
-[data-lane='ex'] { --path: #a8604a; }
-[data-lane='xp'] { --path: var(--c-turq-d); }
-[data-lane='dn'] { --path: var(--c-lilac-d); }
-[data-lane='en'] { --path: var(--c-warn); }
-[data-lane='cm'] { --path: var(--c-coral); }
 /* A lane's band: its rows on a wash of its colour, a soft rim. */
 .tr-band {
   position: absolute; border-radius: 16px 11px 18px 12px / 12px 18px 11px 16px;
@@ -96,13 +90,9 @@
 .tr-link { fill: none; stroke: var(--c-ink); stroke-width: 2; stroke-linecap: round; opacity: 0.8; }
 .tr-link[data-state='open'] { stroke: var(--c-turq-d); stroke-dasharray: 7 5; opacity: 0.9; }
 .tr-link[data-state='locked'] { stroke-dasharray: 2 6; opacity: 0.3; }
-.tr-link[data-gate] { stroke-dasharray: 2 7; opacity: 0.1; }
-.tr-link[data-gate][data-state='done'] { opacity: 0.3; }
 .tr-link[data-hot] { opacity: 1; stroke-width: 3; }
 .tr-link[data-hot][data-state='locked'] { stroke: var(--c-coral-d); }
-/* A trunk gate stays a hint even when its node is selected: it crosses the whole research block. */
-.tr-link[data-gate][data-hot] { stroke: var(--c-lilac-d); stroke-width: 1.8; opacity: 0.55; }
-/* Nodes: a plan is a paper card with a peach spine; research a lilac pill. */
+/* Nodes: a plan is a paper card with a peach spine; research a lilac pill (research.css). */
 .tr-node {
   position: absolute; display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 12px;
   border: 2px solid var(--c-ink); background: var(--c-paper); box-shadow: 2px 2px 0 var(--c-ink);
@@ -110,22 +100,12 @@
   border-radius: 10px 7px 11px 8px / 8px 11px 7px 10px;
 }
 .tr-node::before { content: ''; position: absolute; left: 3px; top: 6px; bottom: 6px; width: 4px; border-radius: 2px; background: var(--path, var(--c-peach-d)); }
-.tr-node[data-kind='research'] { background: #f4effb; border-radius: 20px; }
-.tr-node[data-kind='research']::before { background: var(--c-lilac-d); left: 5px; }
-/* Each research branch keeps its colour on its nodes' spine (its label may be scrolled away). */
-.tr-node[data-lane='trunk']::before { background: var(--c-coral-d); }
-.tr-node[data-lane='ex']::before { background: #a8604a; }
-.tr-node[data-lane='xp']::before { background: var(--c-turq-d); }
-.tr-node[data-lane='en']::before { background: var(--c-warn); }
-.tr-node[data-lane='cm']::before { background: var(--c-coral); }
 .tr-node[data-kind='root'] { background: var(--c-peach-l); border-width: 2.5px; }
 .tr-node[data-kind='root']::before { background: var(--c-coral-d); }
 .tr-node:hover { background: var(--c-peach-l); }
-.tr-node[data-kind='research']:hover { background: #ebe3f8; }
 .tr-node[data-on] { outline: 3px solid var(--c-turq); outline-offset: 2px; }
 .tr-node:focus-visible { outline: 3px dashed var(--c-turq-d); outline-offset: 2px; }
 .tr-node[data-state='done'] { background: #d8f1ec; }
-.tr-node[data-kind='research'][data-state='done'] { background: #dcefee; }
 .tr-node[data-state='locked'] { opacity: 0.5; border-style: dashed; box-shadow: none; }
 .tr-node[data-state='locked']:hover { opacity: 0.75; }
 .tr-node[data-state='waiting'] { opacity: 0.85; }
@@ -190,7 +170,6 @@
 .tr-costs small { margin-left: auto; padding-left: 8px; font-size: 12px; color: var(--c-ink-soft); white-space: nowrap; }
 .tr-costs li[data-poor] b, .tr-costs li[data-poor] small { color: var(--c-coral-d); font-weight: 700; }
 .tr-paid { color: var(--c-ink-soft); }
-.rs-pen { color: var(--c-coral-d); }
 .rs-dur { margin: 6px 0 0; font-size: 13px; }
 .rs-pre { margin: 0; padding-left: 16px; font-size: 13px; }
 .rs-pre li { color: var(--c-coral-d); }
@@ -199,7 +178,6 @@
 .rs-actions { margin-top: 14px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .rs-why { color: var(--c-coral-d); }
 .rs-tag { padding: 3px 10px; border-radius: 999px; background: var(--c-turq-l); font-weight: 600; }
-.rs-mastery { font-size: 12px; color: var(--c-ink-soft); }
 .rs-respec { font: 600 11px var(--f-body); padding: 2px 8px; border: 1.5px solid var(--c-ink); border-radius: 8px; background: var(--c-paper-d); cursor: pointer; }
 .rs-respec[data-armed] { background: var(--c-coral); color: var(--c-paper); }
 .rs-respec[disabled] { opacity: 0.4; cursor: default; }
