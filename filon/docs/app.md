@@ -155,5 +155,5 @@ Most handlers also emit their sound cue on the bus (`sfx`, [audio.md](audio.md))
 ## Known gaps
 
 - The catch-up runs on the main thread (the `late` debug base: 8 h in about 1.3 s, a week in about 16 s since its windy grid and the tile-by-tile ribbons — [offline.md](offline.md#performance)); a Worker comes when a big base makes the resync visible ([persistence.md](persistence.md)).
-- After `setSim` the HUD's Δ/min still compares samples of the colony before for up to a minute (`ui/hud.ts` keeps its own samples; a reset on a new colony, as the build bar does with `knownSim`, would fix it).
+- The HUD's rates start their minute afresh on a new colony (`knownSim`) and after a catch-up (more than `3 × TPS` ticks between two one-second samples), so a resync never shows as a burst.
 - `paused` only stops ticking. There is no pause UI yet.

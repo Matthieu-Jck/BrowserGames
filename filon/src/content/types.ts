@@ -111,10 +111,13 @@ export interface BuildingDef {
   /**
    * A power link point (D25: the pillars and the Hearth): `range` = how far its wires reach
    * (tiles, footprint edge to edge), `slots` = how many wires it holds. `tall`: the Reinforced Pylons
-   * research (`mods.pylonLink`) lengthens its wires. Nothing is powered by proximity: a
-   * building joins a grid only through wires.
+   * research (`mods.pylonLink`) lengthens its wires. `climb` (levels, D78): how far its wires may
+   * climb or come down, and how high above the land they ride — a wire takes its taller end's, its
+   * two ends at most that many levels apart, no tile between them higher than that above the line
+   * joining their grounds (power/links.ts). Nothing is powered by proximity: a building joins a
+   * grid only through wires.
    */
-  readonly pole?: { readonly range: number; readonly slots: number; readonly tall?: boolean };
+  readonly pole?: { readonly range: number; readonly slots: number; readonly climb: number; readonly tall?: boolean };
   /** Generator output (kW) and fuel burn at full output (items/min). */
   readonly gen?: { readonly kw: number; readonly fuel?: string; readonly fuelPerMin?: number };
   /**

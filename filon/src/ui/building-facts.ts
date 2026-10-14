@@ -21,7 +21,7 @@ import { num, pct, rate } from '@/i18n/format';
 import { locale, t, type MsgKey } from '@/i18n/i18n';
 import { EPOCH, TPS } from '@/sim/constants';
 import { LAB_CAP } from '@/sim/graph/compile';
-import { isLinkPoint, linkPoint, linkable } from '@/sim/power/links';
+import { climbOf, isLinkPoint, linkPoint, linkable } from '@/sim/power/links';
 import type { Mods } from '@/sim/research/modifiers';
 import { dockShips } from '@/sim/space';
 import type { Sim } from '@/sim/state';
@@ -227,9 +227,11 @@ function kindRows(def: number, b: BuildingDef, m: Readonly<Mods>): FactRow[] {
       break;
     }
     case 'pole': {
-      // A pillar of the wired grid (D25): how many wires it holds, how far they reach (Reinforced Pylons included).
+      // A pillar of the wired grid (D25): how many wires it holds, how far they reach (Reinforced Pylons included),
+      // and how many terraces they climb and clear (D78).
       const p = linkPoint(def, m);
       if (p) add('wires', t('card.wires'), t('card.wires.v', { n: p.slots, r: p.range }));
+      if (p) add('climb', t('card.climb'), t('card.climb.v', { n: climbOf(def) }));
       break;
     }
     default:

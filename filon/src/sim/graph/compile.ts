@@ -148,7 +148,7 @@ export function compileGraph(inp: CompileInput): Graph {
         node = reuse(e, () => new ReservoirNode(e.id, inp.hearthStock, inp.hearthCap, items, mpt(BAL.hearthPortPerMin), false),
           (o) => o.kind === 'reservoir');
         const r = node as ReservoirNode;
-        r.cap = inp.hearthCap; r.portItems = items; r.stock = inp.hearthStock;
+        r.cap = inp.hearthCap; r.portItems = items; r.stock = inp.hearthStock; r.hearth = true;
         hearth = r;
         break;
       }

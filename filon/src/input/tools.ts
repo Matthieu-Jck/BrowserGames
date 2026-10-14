@@ -3,7 +3,8 @@
 // from press to release, R flips the corner), demolish (a click, or a box dragged with the
 // tool or with the right button), and the pipette (pick the building under the cursor). A
 // placement may go over buildings it replaces (same replace group, wholly inside); a ribbon
-// drag follows the sim's plan (`planBelts`: kept, laid, replaced, auto-junction). The
+// drag follows the sim's plan (`planBelts`: kept, laid, replaced, auto-junction); one laid in
+// part says how many tiles it left out and why (a step without a traction ribbon, D77). The
 // preview tells the ghost what would happen — what it replaces, what it costs net — and why not.
 import { BUILDING_IDS, buildingIdx, costOf, isBeltDef } from '@/content/registry';
 import { footprint, forTiles } from '@/sim/entities';
@@ -39,7 +40,15 @@ export interface Preview {
   cost: Map<number, number>;
 }
 
-export interface ToolResult { placed?: number; removed?: number; refused?: PlaceReason; marked?: number; cleared?: number }
+export interface ToolResult {
+  placed?: number;
+  removed?: number;
+  refused?: PlaceReason;
+  /** A ribbon drag laid in part: how many of its tiles it left out, and why the first one was (D77: a step wants a traction ribbon). */
+  left?: { n: number; reason: PlaceReason };
+  marked?: number;
+  cleared?: number;
+}
 
 /** Footprint origin that puts the cursor tile in the footprint's middle. */
 export function originFor(def: string, rot: Rot, hx: number, hy: number): [number, number] {
@@ -160,11 +169,12 @@ export class Tools {
       s.rot = path[path.length - 1]![2];
       this.lastRot = s.rot;
       const sim = this.sim();
+      // The plan before laying it: the tiles it leaves out (a drag over what is already there leaves none).
+      const out = sim.planBelts(s.def, path).filter((st) => !st.skip && !st.ok);
       const placed = sim.placeBelts(s.def, path);
-      if (placed > 0) return { placed };
-      // Nothing laid: the first refusal of the plan, if any (a drag over what is already there is no refusal).
-      const why = sim.planBelts(s.def, path).find((st) => !st.skip && !st.ok);
-      return why ? { refused: why.reason } : {};
+      if (placed > 0) return out.length ? { placed, left: { n: out.length, reason: out[0]!.reason } } : { placed };
+      // Nothing laid: the first refusal of the plan, if any.
+      return out.length ? { refused: out[0]!.reason } : {};
     }
     if (s.k === 'remove' && s.from) {
       const [ax, ay] = s.from;

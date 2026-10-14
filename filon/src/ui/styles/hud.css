@@ -392,3 +392,6 @@
 .tip-land[data-poor] { color: var(--c-coral-d); }
 .tip-key { display: inline-flex; align-items: center; gap: 4px; margin-top: 3px; font-size: 12px; color: var(--c-ink-soft); }
 .tip-key .bb-key { font-size: 10px; }
+/* A ribbon facing a step (D77): the traction ribbon that takes it, faded while it is still to learn (its key then the tree's). */
+.tip-lift canvas { display: block; }
+.tip-lift[data-locked] canvas { opacity: 0.5; filter: grayscale(1); }

@@ -1,7 +1,8 @@
 // links.test.ts — explicit power wires (D25): the wire rule (range edge to edge, slots, who
 // may be wired), the commands and their replay, grids as the wires' components (nothing by
 // proximity), the new pillar's auto-wire, wires carried over a replacement, the Hearth's solar
-// panel, save → load, and online ≈ offline on a wired grid over a whole day.
+// panel, save → load, online ≈ offline on a wired grid over a whole day, and the land under a
+// wire (D78: how far its ends may stand apart in level, what may rise between them).
 import { describe, it, expect } from 'vitest';
 import { BAL } from '@/content/balance';
 import { WORLD_SEED } from '@/content/world';
@@ -13,11 +14,12 @@ import { catchUp } from '../offline/catchup';
 import { serialize, deserialize } from '../serialize';
 import { Sim } from '../state';
 import { testSim, wire, drillToHearth, line, stockedSilo, IRON, SAND } from '../testkit';
-import { St, type Ent, type Rot } from '../types';
+import { St, T, type Ent, type Rot } from '../types';
 import { MapGen } from '../world/mapgen';
+import { FlatSource } from '../world/grid';
 import { WORLD_EPOCH0 } from '../constants';
 import type { MachineNode } from '../flow/nodes';
-import { PowerLinks, gap2, linkCheck } from './links';
+import { PowerLinks, climbOf, gap2, linkCheck, wireObstacle, wireSteep, type LandLevel } from './links';
 
 /** A loose entity for the pure rule (no colony needed). */
 let nextId = 100;
@@ -314,5 +316,84 @@ describe('power wires in a colony', () => {
     expect(powerLine(sim, ids.drillA!)).toBe(0);
     sim.run(1200);
     expect(sim.produced[IRON()]!).toBeGreaterThan(20_000);
+  });
+});
+
+describe('power wires: the land (D78)', () => {
+  /** Level 0 everywhere but `lv` over columns x0–x1 (and `far` from column `from` on). */
+  const ridge = (x0: number, x1: number, lv: number, from = Infinity, far = 0): LandLevel => (x) => (x >= from ? far : x >= x0 && x <= x1 ? lv : 0);
+  const steep = (a: Ent, b: Ent, land: LandLevel): boolean => wireSteep(a, b, land);
+
+  it('a pole and the Hearth hold their wires one terrace up, a pylon three, any other building none', () => {
+    expect(climbOf(buildingIdx('mast'))).toBe(1);
+    expect(climbOf(buildingIdx('hearth'))).toBe(1);
+    expect(climbOf(buildingIdx('pylon'))).toBe(3);
+    expect(climbOf(buildingIdx('drill'))).toBe(0);
+  });
+
+  it('the ends stand at most the taller end’s climb apart: a pole one terrace, a pylon three', () => {
+    const stepAt = (x0: number, lv: number): LandLevel => (x) => (x >= x0 ? lv : 0);
+    const pole = ent('mast', 500, 500), pole2 = ent('mast', 502, 500), drill = ent('drill', 502, 500);
+    expect(steep(pole, pole2, stepAt(502, 1))).toBe(false);
+    expect(steep(pole, pole2, stepAt(502, 2))).toBe(true);
+    expect(steep(pole, drill, stepAt(502, 1))).toBe(false); // a building on the terrace above a pole
+    expect(steep(pole, drill, stepAt(502, 2))).toBe(true);
+    const py = ent('pylon', 500, 500), py2 = ent('pylon', 520, 500);
+    expect(steep(py, py2, stepAt(520, 3))).toBe(false); // « quelques hauteurs de différence » : the point of a pylon
+    expect(steep(py, py2, stepAt(520, 4))).toBe(true);
+    expect(steep(ent('mast', 500, 500), py2, stepAt(520, 3))).toBe(false); // a pole hangs on a pylon three terraces up
+    expect(linkCheck(pole, pole2, new PowerLinks(), BASE, stepAt(502, 2))).toBe('steep');
+  });
+
+  it('two poles on the floor wire across a one-terrace ridge, not a two-terrace one; the first tile above the wire is named', () => {
+    const a = ent('mast', 500, 500), b = ent('mast', 506, 500), L = new PowerLinks();
+    expect(wireObstacle(a, b, ridge(502, 504, 1))).toBeNull();
+    expect(wireObstacle(a, b, ridge(502, 504, 2))).toEqual([502, 500]);
+    expect(wireObstacle(b, a, ridge(502, 504, 2))).toEqual([504, 500]); // walking from the other end
+    expect(linkCheck(a, b, L, BASE, ridge(502, 504, 2))).toBe('blocked');
+    expect(linkCheck(a, b, L, BASE)).toBe('ok'); // without the land, the land is not read
+    // Touching footprints have no land between them.
+    expect(wireObstacle(a, ent('mast', 501, 500), ridge(502, 504, 5))).toBeNull();
+  });
+
+  it('two pylons on the floor clear a three-terrace hill, never a mountain; the line rides above their grounds', () => {
+    const a = ent('pylon', 500, 500), b = ent('pylon', 530, 500);
+    expect(wireObstacle(a, b, ridge(510, 515, 3))).toBeNull();
+    expect(wireObstacle(a, b, ridge(510, 515, 4))).toEqual([510, 501]); // centre to centre: the row between the pylons' two
+    expect(wireObstacle(b, a, ridge(510, 515, 5))).toEqual([515, 501]);
+    // One end three terraces up: the wire climbs with the land, three above the line between their grounds.
+    expect(wireObstacle(a, b, ridge(520, 520, 4, 530, 3))).toBeNull();
+    expect(wireObstacle(a, b, ridge(520, 520, 5, 530, 3))).toEqual([520, 501]);
+    // A diagonal wire reads the tiles it passes over, not only its ends' rows and columns.
+    const c = ent('pylon', 500, 500), d = ent('pylon', 520, 520);
+    const hump: LandLevel = (x, y) => (x >= 509 && x <= 512 && y >= 509 && y <= 512 ? 4 : 0);
+    expect(wireObstacle(c, d, hump)).not.toBeNull();
+    expect(wireObstacle(c, ent('pylon', 520, 500), hump)).toBeNull(); // the same hill beside the wire
+  });
+
+  it('in a colony: a pole’s wire stops at a two-terrace ridge, a pylon’s at a four-terrace mountain', () => {
+    const land = (lv: number): Sim => {
+      const sim = new Sim({
+        worldSeed: 7, playerSeed: 11, foundingEpoch: WORLD_EPOCH0 + 24,
+        source: new FlatSource([], [{ x: 505, y: 519, w: 4, h: 5, t: T.Rock4, level: lv }]),
+      });
+      sim.done.add('tr4'); sim.rebuildDerived(); // the pylon's research
+      sim.grant('iron_plate', 200); sim.grant('copper_wire', 100); sim.grant('ceramic', 20);
+      return sim;
+    };
+    const pair = (sim: Sim, def: string, ax: number, bx: number, y: number): [number, number] => {
+      const a = sim.place(def, ax, y, 0), b = sim.place(def, bx, y, 0);
+      expect(a.ok, a.reason).toBe(true);
+      expect(b.ok, b.reason).toBe(true);
+      for (const r of [a, b]) sim.links.drop(r.id!); // the reach-out wire each new pillar strung
+      return [a.id!, b.id!];
+    };
+    for (const [lv, pole, pylon] of [[1, 'ok', 'ok'], [2, 'blocked', 'ok'], [3, 'blocked', 'ok'], [4, 'blocked', 'blocked']] as const) {
+      const sim = land(lv);
+      const [m1, m2] = pair(sim, 'mast', 503, 510, 521); // a 6-tile gap, across the ridge
+      expect(sim.canLink(m1, m2).reason, `poles over ${lv}`).toBe(pole);
+      const [p1, p2] = pair(sim, 'pylon', 493, 515, 520); // a 20-tile gap, across it too
+      expect(sim.canLink(p1, p2).reason, `pylons over ${lv}`).toBe(pylon);
+    }
   });
 });

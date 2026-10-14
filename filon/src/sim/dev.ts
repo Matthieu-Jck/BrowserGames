@@ -12,7 +12,8 @@ import { PLAN_IDS, planDef } from '@/content/research';
 import { CIRQUE } from '@/content/world';
 import { CENTER } from './constants';
 import { footprint, forTiles, worldPorts, type WorldPort } from './entities';
-import { gap2, isLinkPoint, linkable, linkPoint } from './power/links';
+import { gap2, isLinkPoint, linkable, linkPoint, wireObstacle, wireSteep } from './power/links';
+import { landOf } from './systems/power';
 import { DX, DY, opposite, isFloor, isRock, type Ent, type Rot } from './types';
 import { inWorld, tileIndex } from './world/grid';
 import type { Sim } from './state';
@@ -210,9 +211,9 @@ export function hearthNetwork(sim: Sim): Set<number> {
 /**
  * Wire a building into the Hearth's grid (D25): straight from the nearest pillar of that grid
  * (or the Hearth) when one reaches it with a free slot; otherwise a line of poles from the
- * pillar nearest to it: the fewest poles, each within the previous one's reach and at most one
- * terrace above or below it (D45: a wire climbs one level), the last one reaching the building
- * — found breadth first over free floor and rock around the two. A pole never stands in front of
+ * pillar nearest to it: the fewest poles, each within the previous one's reach and strung by the
+ * wire rule's land (D45, D78: a pole's wire climbs one terrace and clears a one-terrace rise), the
+ * last one reaching the building — found breadth first over free floor and rock around the two. A pole never stands in front of
  * a port (`portFronts`): the breadth-first scan once dropped the demo's on its trade post's
  * outlet, and no ribbon could take the purchases out to the Heart (D43). Paid, logged placements
  * and `link` commands, like a player's. Returns the masts placed.
@@ -231,30 +232,33 @@ export function powerLine(sim: Sim, targetId: number, maxMasts = 24): number {
   if (!start) return 0;
   const mast = buildingIdx('mast');
   const range = linkPoint(mast, sim.mods)!.range;
-  const lv = (x: number, y: number): number => sim.grid.level(x, y);
-  const tl = lv(t.x, t.y), sl = lv(start.x, start.y);
+  const land = landOf(sim);
   const startReach = Math.max(range, linkPoint(start.def, sim.mods)?.range ?? 0);
   const pad = 2 * range;
   const bx0 = Math.min(start.x, t.x) - pad, bx1 = Math.max(start.x, t.x) + pad;
   const by0 = Math.min(start.y, t.y) - pad, by1 = Math.max(start.y, t.y) + pad;
   const at = (x: number, y: number): Pick<Ent, 'def' | 'x' | 'y' | 'rot'> => ({ def: mast, x, y, rot: 0 as Rot });
-  const reachesTarget = (x: number, y: number): boolean => gap2(at(x, y), t) <= range * range && Math.abs(lv(x, y) - tl) <= 1;
+  // The wire rule's land, as `link` will read it: the ends' levels and the land between (D78).
+  const fits = (a: Pick<Ent, 'def' | 'x' | 'y' | 'rot'>, b: Pick<Ent, 'def' | 'x' | 'y' | 'rot'>): boolean => !wireSteep(a, b, land) && !wireObstacle(a, b, land);
+  const reachesTarget = (x: number, y: number): boolean => gap2(at(x, y), t) <= range * range && fits(at(x, y), t);
   const fronts = portFronts(sim); // poles have no ports: the set holds while the line goes up
   // Breadth first: each layer is one more pole.
   const nodes: Array<{ x: number; y: number; prev: number }> = [];
   const seen = new Set<number>();
   let layer: number[] = [];
-  const visit = (x: number, y: number, prev: number, into: number[]): void => {
+  const visit = (x: number, y: number, prev: number, into: number[], from: Pick<Ent, 'def' | 'x' | 'y' | 'rot'>): void => {
     const k = tileIndex(x, y);
-    if (seen.has(k) || x < bx0 || x > bx1 || y < by0 || y > by1 || fronts.has(k) || !freeSpot(sim, 'mast', x, y, 0)) { seen.add(k); return; }
+    if (seen.has(k)) return;
+    if (x < bx0 || x > bx1 || y < by0 || y > by1 || fronts.has(k) || !freeSpot(sim, 'mast', x, y, 0)) { seen.add(k); return; }
+    if (!fits(from, at(x, y))) return; // the land keeps it from `from`, not from every pole of the layer: it stays unseen
     seen.add(k);
     nodes.push({ x, y, prev });
     into.push(nodes.length - 1);
   };
   for (let y = start.y - startReach - 1; y <= start.y + startReach + 5; y++) {
     for (let x = start.x - startReach - 1; x <= start.x + startReach + 5; x++) {
-      if (gap2(start, at(x, y)) > startReach * startReach || Math.abs(lv(x, y) - sl) > 1) continue;
-      visit(x, y, -1, layer);
+      if (gap2(start, at(x, y)) > startReach * startReach) continue;
+      visit(x, y, -1, layer, start);
     }
   }
   let found = -1;
@@ -263,11 +267,11 @@ export function powerLine(sim: Sim, targetId: number, maxMasts = 24): number {
     for (const i of layer) {
       const n = nodes[i]!;
       if (reachesTarget(n.x, n.y)) { found = i; break; }
-      const nl = lv(n.x, n.y);
+      const from = at(n.x, n.y);
       for (let y = n.y - range; y <= n.y + range; y++) {
         for (let x = n.x - range; x <= n.x + range; x++) {
-          if ((x - n.x) * (x - n.x) + (y - n.y) * (y - n.y) > range * range || Math.abs(lv(x, y) - nl) > 1) continue;
-          visit(x, y, i, next);
+          if ((x - n.x) * (x - n.x) + (y - n.y) * (y - n.y) > range * range) continue;
+          visit(x, y, i, next, from);
         }
       }
     }
@@ -294,8 +298,8 @@ export function powerLine(sim: Sim, targetId: number, maxMasts = 24): number {
 /**
  * Wire a far building into the Heart's grid by pylons (Land Registry, tr4): from the grid's link
  * point nearest it with a free slot, the fewest pylons, each within a pylon's reach of the last
- * (with Reinforced Pylons, 40) and at most a terrace above or below it (D45), the last reaching
- * the building — found breadth first over a lattice of free tiles (every `step` tiles) in a
+ * (with Reinforced Pylons, 60) and strung by the wire rule's land (D78: three terraces up or down,
+ * three above the land between, so the line goes round a mountain), the last reaching the building — found breadth first over a lattice of free tiles (every `step` tiles) in a
  * corridor between the two, off every port's front. Pylons off the claim's land come by kite
  * (their cost ×3, granted by the caller); a sister claim's parcel is refused by placement, so the
  * lattice goes round it. Paid, logged placements and `link` commands. Returns the pylons placed
@@ -308,8 +312,9 @@ export function pylonLine(sim: Sim, targetId: number, step = 4, maxPylons = 30):
   if (net.has(targetId)) return 0;
   const pylon = buildingIdx('pylon');
   const R = linkPoint(pylon, sim.mods)!.range;
-  const lv = (x: number, y: number): number => sim.grid.level(x, y);
+  const land = landOf(sim);
   const at = (x: number, y: number): Pick<Ent, 'def' | 'x' | 'y' | 'rot'> => ({ def: pylon, x, y, rot: 0 as Rot });
+  const fits = (a: Pick<Ent, 'def' | 'x' | 'y' | 'rot'>, b: Pick<Ent, 'def' | 'x' | 'y' | 'rot'>): boolean => !wireSteep(a, b, land) && !wireObstacle(a, b, land);
   const sources = [...net].map((id) => sim.ents.get(id)).filter((e): e is Ent => !!e && isLinkPoint(e.def) && sim.links.degree(e.id) < (linkPoint(e.def, sim.mods)?.slots ?? 0))
     .sort((a, b) => gap2(a, t) - gap2(b, t) || a.id - b.id);
   const src = sources[0];
@@ -319,7 +324,7 @@ export function pylonLine(sim: Sim, targetId: number, step = 4, maxPylons = 30):
   // The corridor: lattice tiles within R of the segment source → target.
   const ax = src.x, ay = src.y, bx = t.x, by = t.y, sx = bx - ax, sy = by - ay, L2 = Math.max(1, sx * sx + sy * sy);
   const fronts = portFronts(sim);
-  const nodes: Array<{ x: number; y: number; l: number }> = [];
+  const nodes: Array<{ x: number; y: number }> = [];
   const x0 = Math.min(ax, bx) - R, x1 = Math.max(ax, bx) + R, y0 = Math.min(ay, by) - R, y1 = Math.max(ay, by) + R;
   for (let y = y0 - (((y0 % step) + step) % step); y <= y1; y += step) {
     for (let x = x0 - (((x0 % step) + step) % step); x <= x1; x += step) {
@@ -328,24 +333,23 @@ export function pylonLine(sim: Sim, targetId: number, step = 4, maxPylons = 30):
       const ex = (x - ax) * L2 - k * sx, ey = (y - ay) * L2 - k * sy;
       if (ex * ex + ey * ey > R * R * L2 * L2) continue;
       if (!inWorld(x, y) || fronts.has(tileIndex(x, y)) || !freeSpot(sim, 'pylon', x, y, 0)) continue;
-      nodes.push({ x, y, l: lv(x, y) });
+      nodes.push({ x, y });
     }
   }
-  // Breadth first from the source: a hop within R and a terrace.
+  // Breadth first from the source: a hop within R that the land lets the wire through.
   const prev = new Int32Array(nodes.length).fill(-2);
   let layer: number[] = [];
-  const sl = lv(src.x, src.y), tl = lv(t.x, t.y);
-  nodes.forEach((n, i) => { if (gap2(src, at(n.x, n.y)) <= R * R && Math.abs(n.l - sl) <= 1) { prev[i] = -1; layer.push(i); } });
+  nodes.forEach((n, i) => { if (gap2(src, at(n.x, n.y)) <= R * R && fits(src, at(n.x, n.y))) { prev[i] = -1; layer.push(i); } });
   let found = -1;
   for (let hop = 0; hop < maxPylons && layer.length && found < 0; hop++) {
     const next: number[] = [];
     for (const i of layer) {
       const n = nodes[i]!;
-      if (gap2(at(n.x, n.y), t) <= R * R && Math.abs(n.l - tl) <= 1) { found = i; break; }
+      if (gap2(at(n.x, n.y), t) <= R * R && fits(at(n.x, n.y), t)) { found = i; break; }
       for (let j = 0; j < nodes.length; j++) {
         if (prev[j] !== -2) continue;
         const m = nodes[j]!, dx = m.x - n.x, dy = m.y - n.y;
-        if (dx * dx + dy * dy > R * R || Math.abs(m.l - n.l) > 1) continue;
+        if (dx * dx + dy * dy > R * R || !fits(at(n.x, n.y), at(m.x, m.y))) continue;
         prev[j] = i;
         next.push(j);
       }

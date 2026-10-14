@@ -177,6 +177,8 @@ export class BuildMode {
     // Off the claim's land (D60): the way to it, the land mode's key, after the reason.
     const land = r.refused === 'outside_zone' || r.refused === 'sister_land' ? ` · ${t('land.keyHint')}` : '';
     if (r.refused) toasts.show('bad', t('toast.refused', { why: t(`reason.${r.refused}` as MsgKey) }) + land);
+    // A drag laid in part: the tiles it left out, and why (D77: a step wants a traction ribbon).
+    if (r.left) toasts.show('bad', tr('toast.left', { n: r.left.n, why: t(`reason.${r.left.reason}` as MsgKey) }));
     if (r.removed) toasts.show('info', tr('toast.removed', { n: r.removed }));
     if (r.marked) toasts.show('info', tr('toast.marked', { n: r.marked }));
     if (r.cleared) toasts.show('info', tr('toast.cleared', { n: r.cleared }));

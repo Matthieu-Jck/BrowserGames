@@ -6,12 +6,14 @@
 // Under them, the tech tree's chip (D33: plans and research, T; a badge counts the plans the
 // Heart can pay for right now), the Statistics chip (G) once the ledger is unlocked, and one chip
 // per research project.
-// What the Analytics path unlocks (D41, ui/analytics.ts) shows here: the stocks' Δ/min with the
+// What the Analytics path unlocks (D41, ui/analytics.ts) shows here: the stocks' rates with the
 // telemetry, the Statistics chip with the ledger. When an analytics plan is taken, the HUD plays
 // its reveal (ui/focus.ts): the base dims and the new readout is lifted out with CrierBelt's line,
 // as soon as no screen covers the HUD (`HudHost.covered`).
-// A stock chip's change reads « +12/min », and its tooltip says it in words (the item, what the
-// Heart holds, the net rate over the last minute).
+// A stock chip's change reads « +12/min »: what the base brought into the Heart over the last
+// minute (`Sim.hearthIn`), so it speaks of the number beside it — never negative, since nothing
+// leaves the Heart by itself (a building's cost is no rate). Its tooltip says it in words (the
+// item, what the Heart holds, what came in over the last minute).
 // Refreshed at 4 Hz; the DOM is only written when something changed.
 import { ITEM_IDS, itemIdx, N_ITEMS } from '@/content/registry';
 import { el, setAttr, setText } from '@/core/dom';
@@ -24,7 +26,7 @@ import { PLAN_IDS, RESEARCH, nodeName, type ResearchId } from '@/content/researc
 import type { ResearchDef } from '@/content/types';
 import { projectPermille } from '@/sim/research/runtime';
 import { dayEpoch, sunPermille } from '@/sim/power/network';
-import { EPOCH, DAY_EPOCHS } from '@/sim/constants';
+import { EPOCH, DAY_EPOCHS, TPS } from '@/sim/constants';
 import { temperatureAt } from '@/sim/world/climate';
 import { revealed } from '@/sim/systems/quests';
 import { duration } from '@/i18n/format';
@@ -35,6 +37,8 @@ import { Spotlight, type FocusShot } from './focus';
 import { glyph } from './glyphs';
 
 /** Items shown first when held (the early chain), then anything else in stock. */
+/** More ticks than this between two one-second samples: a catch-up ran (play runs `TPS` a second). */
+const CATCH_UP_TICKS = 3 * TPS;
 const ORDER = ['iron_ore', 'iron_plate', 'sand', 'glass', 'coal', 'copper_ore', 'copper_wire', 'journal_1', 'gear', 'circuit', 'ceramic', 'stone', 'salt'];
 
 const compact = (n: number): string => {
@@ -134,9 +138,11 @@ export class Hud {
   private researchSig = '';
   /** Chips the shell pins at the end of the research row (the debug base's badge). */
   private readonly pinned: HTMLElement[] = [];
-  /** Stock samples, one per second, for the Δ/min (last 60). */
+  /** The Heart's intake counters (`Sim.hearthIn`), one sample per second, for the rates (last 60). */
   private samples: Float64Array[] = [];
   private lastSample = -1;
+  /** The tick of the last sample: a jump (a catch-up) starts the minute afresh. */
+  private lastTick = -1;
   /** The colony the samples are of (a swap starts them afresh). */
   private knownSim: unknown = null;
 
@@ -252,16 +258,20 @@ export class Hud {
   refresh(nowMs: number): void {
     const sim = this.host.sim();
     // Another colony in play (a debug base, the player's own back): its rates start afresh.
-    if (sim !== this.knownSim) { this.knownSim = sim; this.samples = []; this.lastSample = -1; }
-    // One stock sample per second; Δ/min against the oldest (up to a minute back).
+    if (sim !== this.knownSim) { this.knownSim = sim; this.samples = []; this.lastSample = -1; this.lastTick = -1; }
+    // One sample per second; the rate against the oldest (up to a minute back).
     const sec = Math.floor(nowMs / 1000);
     if (sec !== this.lastSample) {
       this.lastSample = sec;
-      // Net production per item (made − used by machines, research, fuel…), not the stock: what
-      // construction spends is not a production rate (it made a growing stock read −8/min).
-      const net = new Float64Array(N_ITEMS);
-      for (let i = 0; i < N_ITEMS; i++) net[i] = sim.produced[i]! - sim.consumed[i]!;
-      this.samples.push(net);
+      // A catch-up (the tab back, a resync) runs many ticks at once: its intake is no rate of the
+      // last minute, so the window starts afresh (a second of play is 10 ticks).
+      if (this.lastTick >= 0 && (sim.tick < this.lastTick || sim.tick - this.lastTick > CATCH_UP_TICKS)) this.samples = [];
+      this.lastTick = sim.tick;
+      // What came into the Heart (owner, 2026-10-14: "the number of resources should only take
+      // into account what's in the Core, and nothing goes out of it"): not the base's net
+      // production, which a machine eating what was bought, or what waited in a silo or on a
+      // ribbon, made read −5/min beside a Heart stock that never moved.
+      this.samples.push(sim.hearthIn.slice());
       if (this.samples.length > 61) this.samples.shift();
     }
     const old = this.samples[0];
@@ -301,7 +311,7 @@ export class Hud {
       const dv = Math.abs(d) >= 0.5 ? `${d > 0 ? '+' : '−'}${compact(Math.abs(d))}` : '';
       setText(c.delta, dv ? t('hud.perMin', { v: dv }) : '');
       setAttr(c.delta, 'data-sign', d > 0 ? '+' : d < 0 ? '-' : null);
-      // What the chip says, in words: the item, what the Heart holds, and (with the telemetry) its net rate.
+      // What the chip says, in words: the item, what the Heart holds, and (with the telemetry) what came in.
       const n = compact(Math.floor(sim.stock[i]! / 1000));
       setAttr(c.node, 'title', tele ? t('hud.stock.tipRate', { item: nameOf(i), n, rate: t('hud.perMin', { v: dv || '0' }) }) : t('hud.stock.tip', { item: nameOf(i), n }));
     }

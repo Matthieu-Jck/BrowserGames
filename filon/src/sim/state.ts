@@ -163,6 +163,16 @@ export class Sim {
   /** Cumulative statistics (milli-items). */
   readonly produced = new Float64Array(N_ITEMS);
   readonly consumed = new Float64Array(N_ITEMS);
+  /**
+   * What the base brought into the Hearth while ticking (milli-items, cumulative): its ports'
+   * intake, the ore of dug tiles, a lost trade post's deliveries — the HUD's « +12/min » beside
+   * the Heart's stocks. Never what commands put in or take out (a building's cost or refund, a
+   * plan, a sale, a reward): the rate is the base's, and nothing flows out of the Heart by itself,
+   * so it is never negative. Neither saved nor hashed: a statistic of live play (the catch-up's
+   * reservoirs are virtual and leave it alone; an absence has its report, and the HUD starts its
+   * minute afresh after a catch-up).
+   */
+  readonly hearthIn = new Float64Array(N_ITEMS);
 
   constructor(opts: SimOptions, fresh = true) {
     this.worldSeed = opts.worldSeed;
@@ -220,8 +230,8 @@ export class Sim {
       links: this.links,
     });
     const ctx = makeCtx(this.graph, this.graph.nets.length, N_ITEMS);
-    if (this.ctx) { ctx.produced = this.ctx.produced; ctx.consumed = this.ctx.consumed; }
-    else { ctx.produced = this.produced; ctx.consumed = this.consumed; }
+    if (this.ctx) { ctx.produced = this.ctx.produced; ctx.consumed = this.ctx.consumed; ctx.hearthIn = this.ctx.hearthIn; }
+    else { ctx.produced = this.produced; ctx.consumed = this.consumed; ctx.hearthIn = this.hearthIn; }
     this.ctx = ctx;
     this.nodesByNet = this.graph.nets.map(() => []);
     for (const n of this.graph.nodes) if (n.net >= 0) this.nodesByNet[n.net]!.push(n);

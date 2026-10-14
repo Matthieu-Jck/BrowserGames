@@ -259,6 +259,7 @@ export function tradeEpoch(sim: Sim): boolean {
       const p = byId.get(s.post);
       if (!p) {
         sim.stock[s.item] = sim.stock[s.item]! + s.mu;
+        sim.hearthIn[s.item] = sim.hearthIn[s.item]! + s.mu;
         sim.events.push({ k: 'delivered', post: s.post, item: s.item, mu: s.mu });
         continue;
       }

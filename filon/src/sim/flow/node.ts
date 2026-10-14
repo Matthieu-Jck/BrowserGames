@@ -21,6 +21,8 @@ export interface TickCtx {
   /** Item counters for statistics (milli-items). */
   produced: Float64Array;
   consumed: Float64Array;
+  /** What the Hearth took in through its ports (milli-items): the HUD's rates (`Sim.hearthIn`). */
+  hearthIn: Float64Array;
   /** The edge being transferred (phase B, for `give`: a ribbon notes where an item came from). */
   edge?: number;
 }
