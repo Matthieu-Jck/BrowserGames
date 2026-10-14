@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OVERTIME</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=VT323&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --phosphor: #b8c7b4;
+    --dim: #5e6a5c;
+    --blood: #8e1d1d;
+    --amber: #c98a3d;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #000; cursor: default; }
+  canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+  /* ---------------------------------------------------------- overlays */
+  .overlay {
+    position: fixed; inset: 0; display: none;
+    flex-direction: column; align-items: center; justify-content: center;
+    background: #020302; color: var(--phosphor);
+    font-family: 'VT323', monospace; text-align: center;
+    z-index: 10; user-select: none;
+  }
+  .overlay.show { display: flex; }
+  .overlay::after { /* CRT scanlines */
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,0.32) 0 1px, transparent 1px 3px);
+    mix-blend-mode: multiply;
+  }
+  .overlay::before { /* slow phosphor breathing */
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 45%, rgba(110,140,105,0.10), transparent 65%);
+    animation: breathe 6s ease-in-out infinite;
+  }
+  @keyframes breathe { 50% { opacity: 0.4; } }
+
+  h1.title {
+    font-family: 'IM Fell English', serif; font-style: italic;
+    font-size: clamp(3.5rem, 13vw, 9rem);
+    letter-spacing: 0.14em; font-weight: 400;
+    color: #d6ddd2;
+    text-shadow: 0 0 26px rgba(160,190,150,0.35), 0 0 4px rgba(180,210,170,0.6);
+    animation: titleflicker 7s infinite;
+  }
+  @keyframes titleflicker {
+    0%, 100% { opacity: 1; }
+    91% { opacity: 1; } 92% { opacity: 0.25; } 93% { opacity: 0.9; }
+    94% { opacity: 0.3; } 95% { opacity: 1; }
+    51% { opacity: 1; } 52% { opacity: 0.75; } 53% { opacity: 1; }
+  }
+  .tagline {
+    font-family: 'IM Fell English', serif; font-style: italic;
+    font-size: clamp(1rem, 2.6vw, 1.5rem); color: var(--blood);
+    margin-top: 0.6rem; letter-spacing: 0.22em;
+    text-shadow: 0 0 14px rgba(142,29,29,0.5);
+  }
+  .brief {
+    margin-top: 3rem; font-size: 1.35rem; line-height: 1.7; color: var(--dim);
+    max-width: 34rem; padding: 0 1.5rem;
+  }
+  .brief em { color: var(--phosphor); font-style: normal; }
+  .controls {
+    margin-top: 2.2rem; font-size: 1.15rem; color: var(--dim);
+    display: grid; grid-template-columns: auto auto; gap: 0.25rem 1.4rem; text-align: left;
+  }
+  .controls b { color: var(--phosphor); font-weight: 400; }
+  .begin {
+    margin-top: 3rem; font-size: 1.6rem; color: var(--phosphor);
+    letter-spacing: 0.3em; animation: blink 1.4s steps(2) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0.15; } }
+  .headphones { margin-top: 1rem; font-size: 1rem; color: #3c443b; letter-spacing: 0.2em; }
+
+  .overlay h2 {
+    font-family: 'IM Fell English', serif; font-style: italic; font-weight: 400;
+    font-size: clamp(2.5rem, 8vw, 5rem); letter-spacing: 0.1em;
+  }
+  #overlay-dead h2 { color: var(--blood); text-shadow: 0 0 30px rgba(142,29,29,0.6); }
+  #overlay-win h2 { color: #d6ddd2; }
+  .overlay .sub { margin-top: 1.4rem; font-size: 1.3rem; color: var(--dim); line-height: 1.7; }
+  .overlay button {
+    margin-top: 2.6rem; background: none; border: 1px solid var(--dim);
+    color: var(--phosphor); font-family: 'VT323', monospace; font-size: 1.4rem;
+    padding: 0.55rem 2.4rem; letter-spacing: 0.25em; cursor: pointer;
+  }
+  .overlay button:hover { border-color: var(--phosphor); background: rgba(184,199,180,0.07); }
+
+  /* ---------------------------------------------------------- HUD */
+  #hud {
+    position: fixed; inset: 0; pointer-events: none; display: none;
+    font-family: 'VT323', monospace; z-index: 5;
+  }
+  #hud.show { display: block; }
+
+  #objective {
+    position: absolute; top: 1.4rem; left: 50%; transform: translateX(-50%);
+    color: rgba(184,199,180,0.75); font-size: 1.25rem; letter-spacing: 0.18em;
+    text-shadow: 0 0 8px rgba(0,0,0,0.9);
+  }
+  #fuses {
+    position: absolute; top: 3.1rem; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 0.5rem;
+  }
+  #fuses span {
+    width: 0.7rem; height: 1.1rem; border: 1px solid rgba(184,199,180,0.4);
+    background: transparent; transition: background 0.4s, box-shadow 0.4s;
+  }
+  #fuses span.lit { background: var(--amber); box-shadow: 0 0 10px rgba(201,138,61,0.8); }
+
+  .meter {
+    position: absolute; left: 1.6rem; width: 9rem; height: 0.5rem;
+    border: 1px solid rgba(184,199,180,0.35); background: rgba(0,0,0,0.5);
+  }
+  .meter .fill { height: 100%; background: rgba(184,199,180,0.7); transition: width 0.2s linear; }
+  #battery { bottom: 2.6rem; }
+  #battery::before {
+    content: 'TORCH'; position: absolute; top: -1.35rem; left: 0;
+    color: rgba(184,199,180,0.5); font-size: 1rem; letter-spacing: 0.25em;
+  }
+  #battery-fill.low { background: var(--blood); animation: blink 0.8s steps(2) infinite; }
+  #stamina { bottom: 1.4rem; height: 0.25rem; }
+  #stamina .fill { background: rgba(94,106,92,0.8); }
+
+  #prompt {
+    position: absolute; bottom: 22%; left: 50%; transform: translateX(-50%);
+    color: var(--phosphor); font-size: 1.5rem; letter-spacing: 0.2em;
+    text-shadow: 0 0 10px rgba(0,0,0,1); opacity: 0; transition: opacity 0.15s;
+  }
+  #prompt.show { opacity: 1; }
+
+  #subtitle {
+    position: absolute; bottom: 12%; left: 50%; transform: translateX(-50%);
+    font-family: 'IM Fell English', serif; font-style: italic;
+    color: rgba(214,221,210,0.92); font-size: clamp(1.1rem, 2.4vw, 1.5rem);
+    letter-spacing: 0.06em; text-shadow: 0 2px 12px rgba(0,0,0,1);
+    opacity: 0; transition: opacity 0.7s; white-space: nowrap;
+  }
+  #subtitle.show { opacity: 1; }
+
+  #crosshair {
+    position: absolute; top: 50%; left: 50%; width: 3px; height: 3px;
+    transform: translate(-50%, -50%); border-radius: 50%;
+    background: rgba(184,199,180,0.35);
+  }
+
+  /* ---------------------------------------------------------- death & fade */
+  #jumpscare {
+    position: fixed; inset: 0; z-index: 20; display: none;
+    background:
+      radial-gradient(circle at 46% 38%, #cfd8e8 0 6px, transparent 7px),
+      radial-gradient(circle at 54% 38%, #cfd8e8 0 6px, transparent 7px),
+      #000;
+    animation: scare 0.9s steps(8) forwards;
+  }
+  #jumpscare.show { display: block; }
+  @keyframes scare {
+    0% { transform: scale(0.4); filter: brightness(0.4); }
+    60% { transform: scale(2.4); filter: brightness(1.4) contrast(2); }
+    100% { transform: scale(7); filter: brightness(0.1); }
+  }
+  #fade {
+    position: fixed; inset: 0; z-index: 15; background: #000;
+    opacity: 0; pointer-events: none; transition: opacity 2s;
+  }
+  #fade.show { opacity: 1; pointer-events: all; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <div id="objective"></div>
+  <div id="fuses"><span></span><span></span><span></span></div>
+  <div id="battery" class="meter"><div id="battery-fill" class="fill" style="width:100%"></div></div>
+  <div id="stamina" class="meter"><div id="stamina-fill" class="fill" style="width:100%"></div></div>
+  <div id="crosshair"></div>
+  <div id="prompt"></div>
+  <div id="subtitle"></div>
+</div>
+
+<div id="overlay-title" class="overlay show">
+  <h1 class="title">OVERTIME</h1>
+  <div class="tagline">you never clocked out</div>
+  <div class="brief">
+    3:33 am. floor 7 is empty and the elevator is dead.<br>
+    find <em>three fuses</em>, restore the power, and leave —<br>
+    before the lower floors notice you.
+  </div>
+  <div class="controls">
+    <b>WASD</b><span>move</span>
+    <b>MOUSE</b><span>look</span>
+    <b>SHIFT</b><span>run</span>
+    <b>F / RMB</b><span>flashlight — it freezes what it touches</span>
+    <b>E</b><span>interact</span>
+  </div>
+  <div class="begin">CLICK TO CLOCK IN</div>
+  <div class="headphones">headphones recommended · desktop only</div>
+</div>
+
+<div id="overlay-pause" class="overlay">
+  <h2>shift paused</h2>
+  <div class="sub">click to resume. it is still in here with you.</div>
+</div>
+
+<div id="overlay-dead" class="overlay">
+  <h2>found you</h2>
+  <div class="sub">your badge was never returned.<br>the floor below has a new employee.</div>
+  <button id="btn-retry">CLOCK IN AGAIN</button>
+</div>
+
+<div id="overlay-win" class="overlay">
+  <h2>you clocked out</h2>
+  <div class="sub">shift length: <span id="win-time">--:--</span><br>the floor below is still humming.</div>
+  <button id="btn-again">WORK ANOTHER NIGHT</button>
+</div>
+
+<div id="jumpscare"></div>
+<div id="fade"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./lib/three.module.js",
+    "three/addons/": "./lib/jsm/"
+  }
+}
+</script>
+<script>
+  // watchdog: if the game modules never boot, say why instead of a dead click
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      if (window.OT) return;
+      const el = document.querySelector('#overlay-title .begin');
+      if (!el) return;
+      el.style.animation = 'none';
+      el.style.color = '#8e1d1d';
+      el.textContent = location.protocol === 'file:'
+        ? 'CANNOT LOAD GAME FROM file:// — RUN A LOCAL SERVER (SEE README)'
+        : 'GAME FAILED TO LOAD — CHECK THE BROWSER CONSOLE';
+    }, 3000);
+  });
+</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

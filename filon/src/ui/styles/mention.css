@@ -1,0 +1,53 @@
+/* mention.css — an item named in the UI (mention.ts: its icon beside its name, inline) and the item
+   picker (item-picker.ts: the button that shows the chosen item, and its inked list). Imported by
+   mention.ts itself. Sizes are in em: a mention follows the text it sits in, and the UI scale. */
+
+/* ── the mention ─────────────────────────────────────────────────────────── */
+.imention { white-space: nowrap; }
+/* The glyph a little larger than the letters, sitting on the line like a capital; the negative
+   margins keep it from opening the line. */
+.imention-icon {
+  display: inline-block; width: 1.35em; height: 1.35em; object-fit: contain;
+  vertical-align: -0.32em; margin: -0.16em 0.18em -0.16em 0;
+  -webkit-user-drag: none;
+}
+.imention[data-big] .imention-icon { width: 1.7em; height: 1.7em; vertical-align: -0.5em; }
+.imention[data-bare] .imention-icon { margin-right: 0; }
+/* In a flex row (a chip, a list line) it lines up on the centre like everything else. */
+.imention-name { white-space: nowrap; }
+
+/* ── the picker ──────────────────────────────────────────────────────────── */
+.ipick {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%;
+  padding: 2px 6px 2px 6px; cursor: pointer; text-align: left;
+  font: 13px/1.3 var(--f-body); color: var(--c-ink);
+  background: var(--c-paper); border: 1.5px solid var(--c-ink); border-radius: 7px 5px 8px 6px / 6px 8px 5px 7px;
+  box-shadow: 1.5px 1.5px 0 var(--c-ink);
+}
+.ipick:hover { background: var(--c-peach-l); }
+.ipick:focus-visible { outline: 2px solid var(--c-turq); outline-offset: 1px; }
+.ipick[data-open] { background: var(--c-peach-l); }
+.ipick-face { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ipick-caret { margin-left: auto; font-size: 11px; color: var(--c-ink-soft); }
+.ipick-none { color: var(--c-ink-soft); font-style: italic; }
+.ipick[data-none] { background: var(--c-paper-d); }
+.ipick[data-none]:hover, .ipick[data-none][data-open] { background: var(--c-peach-l); }
+
+.ipick-pop {
+  position: fixed; z-index: 45; zoom: var(--ui-scale);
+  overflow-y: auto; overscroll-behavior: contain; padding: 4px;
+  font: 13px/1.3 var(--f-body); box-shadow: 3px 4px 0 var(--c-ink);
+  pointer-events: auto; user-select: none;
+}
+.ipick-opt {
+  display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 6px;
+  cursor: pointer; white-space: nowrap;
+}
+.ipick-opt[data-active] { background: var(--c-peach-l); }
+.ipick-opt[aria-selected='true'] { background: var(--c-turq-l); font-weight: 600; }
+.ipick-opt[aria-selected='true'][data-active] { background: var(--c-turq); color: var(--c-paper); }
+.ipick-opt[aria-selected='true'][data-active] .ipick-none { color: var(--c-paper); }
+.ipick-sep {
+  margin: 6px 6px 2px; padding-top: 5px; border-top: 1.5px dashed rgba(30, 27, 46, 0.35);
+  font-size: 11px; color: var(--c-ink-soft);
+}

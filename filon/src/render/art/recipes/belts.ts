@@ -1,0 +1,197 @@
+// belts.ts — ribbon tiles as inked conveyors: blue-steel side rails with rivets carrying a
+// slatted belt in the tier colour (ribbon turquoise, swift lilac, express coral; conduits are
+// glazed pipes). A straight piece (moving north), a corner piece (entering from the south,
+// leaving east), a side inlet (a line merging in from the west: the rail opens) and a
+// skybridge deck; other orientations are rotations / mirrors at render time. Shadows are
+// symmetric soft halos, so a piece looks the same whichever way it is turned.
+//
+// The traction ribbon is a track, not a belt (owner, 2026-10-13: "the traction ribbon needs to
+// look like a traction thing"): brass grouser plates on a dark rubber band, between heavy rails
+// with sprocket wheels. Where it changes level, its lift up the terrace's wall is drawn apart
+// (art/recipes/lifts.ts).
+import { C, mix } from '../tokens';
+import { ink, flat, type Ctx, type Pt } from '../ink';
+import { light, rivet } from '../shapes';
+
+export const BELT_PX = 64;
+const S = BELT_PX;
+const BAND = 0.6;  // belt width in tiles
+const RAIL = 6;    // rail width in px
+
+export const BELT_TIERS = {
+  ribbon: { fill: C.tealL, slat: C.teal, chevron: C.ice },
+  swift_ribbon: { fill: C.violetL, slat: C.violet, chevron: C.ice },
+  express_ribbon: { fill: C.coral, slat: C.coralD, chevron: C.peachL },
+  traction_ribbon: { fill: mix(C.steelDD, C.inkSoft, 0.45), slat: C.brass, chevron: C.brassL }, // a track: grouser plates (`treadPlates`)
+  conduit: { fill: C.steelL, slat: C.steel, chevron: C.shallow },
+} as const;
+export type BeltTier = keyof typeof BELT_TIERS;
+
+/** Straight piece, motion towards the top. Canvas S×S (seamless top/bottom edges). */
+export function drawStraight(ctx: Ctx, tier: BeltTier, seed: number): void {
+  const t = BELT_TIERS[tier];
+  const x0 = (S * (1 - BAND)) / 2, x1 = S - x0;
+  flat(ctx, [[x0 - RAIL - 2, 0], [x1 + RAIL + 2, 0], [x1 + RAIL + 2, S], [x0 - RAIL - 2, S]], C.ink, 0.12); // soft halo
+  flat(ctx, [[x0, 0], [x1, 0], [x1, S], [x0, S]], t.fill);
+  if (tier === 'conduit') {
+    flat(ctx, [[S / 2 - 6, 0], [S / 2 + 6, 0], [S / 2 + 6, S], [S / 2 - 6, S]], C.deep, 0.95);
+    ink(ctx, [[S / 2 - 3, -2], [S / 2 - 3, S + 2]], { w: 2, color: '#ffffff', alpha: 0.6, shade: false, taper: 0, seed });
+  } else if (tier === 'traction_ribbon') {
+    treadPlates(ctx, x0, x1, seed);
+  } else {
+    // Slats across the belt (the belt "moves" under them).
+    ctx.save();
+    ctx.strokeStyle = t.slat;
+    ctx.lineWidth = 2;
+    for (let y = 4; y < S; y += 8) { ctx.beginPath(); ctx.moveTo(x0 + 1, y); ctx.lineTo(x1 - 1, y); ctx.stroke(); }
+    ctx.restore();
+    ink(ctx, [[S / 2 - 8, S * 0.5 + 5], [S / 2, S * 0.5 - 4], [S / 2 + 8, S * 0.5 + 5]], { w: 3.4, color: t.chevron, shade: false, taper: 0, jitter: 0.2, seed: seed + 9 });
+  }
+  if (tier === 'traction_ribbon') { treadRails(ctx, x0, x1, seed); return; }
+  // Steel rails, inked, running past the tile so neighbours join seamlessly.
+  for (const [xa, xb] of [[x0 - RAIL, x0], [x1, x1 + RAIL]] as const) {
+    flat(ctx, [[xa, -1], [xb, -1], [xb, S + 1], [xa, S + 1]], C.steel);
+    ink(ctx, [[xa + 1.5, -2], [xa + 1.5, S + 2]], { w: 1.4, color: C.steelL, shade: false, taper: 0, jitter: 0, seed: seed + 3 });
+    ink(ctx, [[xa, -2], [xa, S + 2]], { w: 1.8, taper: 0, jitter: 0.2, seed: seed + 1 });
+    ink(ctx, [[xb, -2], [xb, S + 2]], { w: 1.8, taper: 0, jitter: 0.2, seed: seed + 2 });
+    rivet(ctx, (xa + xb) / 2, S * 0.25, 1.5, C.steelL);
+    light(ctx, (xa + xb) / 2, S * 0.75, 1.6, tier === 'express_ribbon' ? C.ledWarm : C.led);
+  }
+}
+
+/**
+ * A track's grouser plates across the band [x0, x1] (straight piece, moving north): brass bars
+ * with a lit leading edge, a cleat ridge across each and dark gaps between, seamless top to
+ * bottom; one inked arrow of brass over them for the way it runs.
+ */
+function treadPlates(ctx: Ctx, x0: number, x1: number, seed: number): void {
+  for (let y = 0; y < S; y += 8) {
+    flat(ctx, [[x0 + 1.5, y + 1], [x1 - 1.5, y + 1], [x1 - 1.5, y + 6.5], [x0 + 1.5, y + 6.5]], C.brass);
+    ink(ctx, [[x0 + 2, y + 1.4], [x1 - 2, y + 1.4]], { w: 1.2, color: C.brassL, shade: false, taper: 0, jitter: 0, seed: seed + y });
+    ink(ctx, [[x0 + 2, y + 4], [x1 - 2, y + 4]], { w: 1.4, color: mix(C.brass, C.ink, 0.45), shade: false, taper: 0, jitter: 0, seed: seed + y + 1 });
+  }
+  ink(ctx, [[S / 2 - 7, S * 0.5 + 5], [S / 2, S * 0.5 - 3], [S / 2 + 7, S * 0.5 + 5]], { w: 3, color: C.ink, alpha: 0.85, shade: false, taper: 0, jitter: 0.2, seed: seed + 9 });
+}
+
+/** A track's rails: heavier and darker than a ribbon's, with sprocket wheels that bite the plates. */
+function treadRails(ctx: Ctx, x0: number, x1: number, seed: number): void {
+  const R = RAIL + 2;
+  for (const [xa, xb] of [[x0 - R, x0], [x1, x1 + R]] as const) {
+    flat(ctx, [[xa, -1], [xb, -1], [xb, S + 1], [xa, S + 1]], C.steelD);
+    ink(ctx, [[xa + 1.5, -2], [xa + 1.5, S + 2]], { w: 1.2, color: C.steel, shade: false, taper: 0, jitter: 0, seed: seed + 3 });
+    ink(ctx, [[xa, -2], [xa, S + 2]], { w: 1.8, taper: 0, jitter: 0.2, seed: seed + 1 });
+    ink(ctx, [[xb, -2], [xb, S + 2]], { w: 1.8, taper: 0, jitter: 0.2, seed: seed + 2 });
+    for (const y of [S * 0.25, S * 0.75]) {
+      const cx = (xa + xb) / 2;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, y, R / 2 + 1.2, 0, Math.PI * 2);
+      ctx.fillStyle = C.steel;
+      ctx.fill();
+      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = C.ink;
+      ctx.stroke();
+      ctx.restore();
+      rivet(ctx, cx, y, 1.6, C.brassL);
+    }
+  }
+}
+
+/** Corner piece: enters through the bottom edge, leaves through the right edge. */
+export function drawCorner(ctx: Ctx, tier: BeltTier, seed: number): void {
+  const t = BELT_TIERS[tier];
+  const rIn = (S * (1 - BAND)) / 2, rOut = S - rIn; // radii around the bottom-right corner (S, S)
+  const arc = (r: number, n = 20): Pt[] => Array.from({ length: n + 1 }, (_, i) => {
+    const a = Math.PI + (i / n) * (Math.PI / 2);
+    return [S + Math.cos(a) * r, S + Math.sin(a) * r] as Pt;
+  });
+  const band = (ra: number, rb: number): Pt[] => [...arc(ra), ...arc(rb).reverse()];
+  flat(ctx, band(Math.max(0, rIn - RAIL - 2), rOut + RAIL + 2), C.ink, 0.12); // soft halo
+  flat(ctx, band(rIn, rOut), t.fill);
+  if (tier === 'conduit') {
+    ink(ctx, arc(S / 2), { w: 12, color: C.deep, shade: false, taper: 0, seed });
+  } else if (tier === 'traction_ribbon') {
+    // Grouser plates fanning round the bend, each a brass bar lit on its leading edge.
+    for (let i = 0; i < 8; i++) {
+      const a = Math.PI + ((i + 0.5) / 8) * (Math.PI / 2), da = 0.07;
+      const pt = (r: number, b: number): Pt => [S + Math.cos(b) * r, S + Math.sin(b) * r];
+      flat(ctx, [pt(rIn + 2, a - da), pt(rOut - 2, a - da * 0.6), pt(rOut - 2, a + da * 0.6), pt(rIn + 2, a + da)], C.brass);
+      ink(ctx, [pt(rIn + 2, a - da), pt(rOut - 2, a - da * 0.6)], { w: 1.2, color: C.brassL, shade: false, taper: 0, jitter: 0, seed: seed + i });
+      ink(ctx, [pt(rIn + 2, a + da), pt(rOut - 2, a + da * 0.6)], { w: 1.2, color: C.ink, alpha: 0.7, shade: false, taper: 0, jitter: 0, seed: seed + 20 + i });
+    }
+  } else {
+    ctx.save();
+    ctx.strokeStyle = t.slat;
+    ctx.lineWidth = 2;
+    for (let i = 1; i < 8; i++) {
+      const a = Math.PI + (i / 8) * (Math.PI / 2);
+      ctx.beginPath();
+      ctx.moveTo(S + Math.cos(a) * (rIn + 1), S + Math.sin(a) * (rIn + 1));
+      ctx.lineTo(S + Math.cos(a) * (rOut - 1), S + Math.sin(a) * (rOut - 1));
+      ctx.stroke();
+    }
+    ctx.restore();
+    const m = arc(S / 2)[10]!;
+    ink(ctx, [[m[0] - 4, m[1] - 8], [m[0] + 5, m[1]], [m[0] - 4, m[1] + 8]], { w: 3.4, color: t.chevron, shade: false, taper: 0, seed: seed + 3 });
+  }
+  const rail = tier === 'traction_ribbon' ? RAIL + 2 : RAIL;
+  for (const [ra, rb] of [[rIn - rail, rIn], [rOut, rOut + rail]] as const) {
+    flat(ctx, band(ra, rb), tier === 'traction_ribbon' ? C.steelD : C.steel);
+    ink(ctx, arc(ra), { w: 1.8, taper: 0, jitter: 0.2, seed: seed + 1 });
+    ink(ctx, arc(rb), { w: 1.8, taper: 0, jitter: 0.2, seed: seed + 2 });
+  }
+}
+
+/**
+ * Side inlet of a straight piece moving north: a line coming in from the west edge. The belt
+ * runs through the west rail (the rail opens), framed by two short rails that continue the
+ * feeder's own. Drawn over the straight piece; mirrored for the east side.
+ */
+export function drawInlet(ctx: Ctx, tier: BeltTier, seed: number): void {
+  const t = BELT_TIERS[tier];
+  const x0 = (S * (1 - BAND)) / 2, x1 = S - x0; // the feeder's band spans y ∈ [x0, x1]
+  const reach = x0 + 2; // just past the opened rail, onto the belt
+  flat(ctx, [[0, x0], [reach, x0], [reach, x1], [0, x1]], t.fill);
+  if (tier === 'conduit') {
+    flat(ctx, [[0, S / 2 - 6], [reach + 4, S / 2 - 6], [reach + 4, S / 2 + 6], [0, S / 2 + 6]], C.deep, 0.95);
+  } else {
+    ctx.save();
+    ctx.strokeStyle = t.slat;
+    ctx.lineWidth = 2;
+    for (let x = 4; x < reach; x += 8) { ctx.beginPath(); ctx.moveTo(x, x0 + 1); ctx.lineTo(x, x1 - 1); ctx.stroke(); }
+    ctx.restore();
+  }
+  for (const [ya, yb] of [[x0 - RAIL, x0], [x1, x1 + RAIL]] as const) {
+    flat(ctx, [[-1, ya], [x0, ya], [x0, yb], [-1, yb]], C.steel);
+    ink(ctx, [[-2, ya], [x0, ya]], { w: 1.8, taper: 0, jitter: 0.2, seed: seed + 1 });
+    ink(ctx, [[-2, yb], [x0, yb]], { w: 1.8, taper: 0, jitter: 0.2, seed: seed + 2 });
+  }
+}
+
+/**
+ * A skybridge deck, one tile long, seamless along its length (moving north): a riveted steel
+ * truss either side of a slatted running surface. The views lift it above the ground in iso.
+ */
+export function drawDeck(ctx: Ctx, seed: number): void {
+  const x0 = (S * (1 - BAND)) / 2, x1 = S - x0;
+  const G = RAIL + 3; // girder width
+  flat(ctx, [[x0, 0], [x1, 0], [x1, S], [x0, S]], C.steelL);
+  ctx.save();
+  ctx.strokeStyle = C.steel;
+  ctx.lineWidth = 2;
+  for (let y = 4; y < S; y += 8) { ctx.beginPath(); ctx.moveTo(x0 + 1, y); ctx.lineTo(x1 - 1, y); ctx.stroke(); }
+  ctx.restore();
+  for (const [xa, xb] of [[x0 - G, x0], [x1, x1 + G]] as const) {
+    flat(ctx, [[xa, -1], [xb, -1], [xb, S + 1], [xa, S + 1]], C.steelD);
+    // Truss bracing: one X per half tile, seamless top to bottom.
+    for (let y = 0; y < S; y += S / 2) {
+      ink(ctx, [[xa + 1, y], [xb - 1, y + S / 2]], { w: 1.1, color: C.steelL, shade: false, taper: 0, jitter: 0, seed: seed + y });
+      ink(ctx, [[xb - 1, y], [xa + 1, y + S / 2]], { w: 1.1, color: C.steelL, shade: false, taper: 0, jitter: 0, seed: seed + y + 1 });
+    }
+    ink(ctx, [[xa, -2], [xa, S + 2]], { w: 1.8, taper: 0, jitter: 0.2, seed: seed + 3 });
+    ink(ctx, [[xb, -2], [xb, S + 2]], { w: 1.8, taper: 0, jitter: 0.2, seed: seed + 4 });
+    rivet(ctx, (xa + xb) / 2, S * 0.25, 1.4, C.steelL);
+    light(ctx, (xa + xb) / 2, S * 0.75, 1.5, C.ledWarm);
+  }
+  void mix;
+}

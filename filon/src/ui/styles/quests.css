@@ -1,0 +1,210 @@
+/* quests.css — the tutorial (D28): the quest log on the left under the HUD (a cartouche with the
+   claim's name on a coral ribbon, CrierBelt's message, the objectives and their inked boxes, the
+   reward chips, the guide's hint), CrierBelt's naming modal, and the guide's inked arrow, pulsing
+   ring and hint bubble. Tokens from base.css; state through attributes (data-met, data-folded,
+   data-flash, data-on, data-round, data-go). */
+
+/* ── the quest log ───────────────────────────────────────────────────────── */
+.qlog {
+  position: fixed; left: 12px; top: 104px; width: 304px;
+  display: flex; flex-direction: column; overflow: hidden;
+  font-size: 13px;
+}
+.qlog[data-flash] { animation: ql-flash 1.4s ease-out; }
+@keyframes ql-flash {
+  0% { box-shadow: var(--shadow-ink), 0 0 0 0 rgba(63, 184, 175, 0.9); }
+  35% { box-shadow: var(--shadow-ink), 0 0 0 9px rgba(63, 184, 175, 0.35); }
+  100% { box-shadow: var(--shadow-ink), 0 0 0 0 rgba(63, 184, 175, 0); }
+}
+.qlog[data-flash]::after {
+  content: '✓'; position: absolute; right: 14px; top: 46px; z-index: 2;
+  font: 700 34px/1 var(--f-title); color: var(--c-turq-d);
+  transform: rotate(-12deg); animation: ql-stamp 1.4s ease-out forwards; pointer-events: none;
+}
+@keyframes ql-stamp {
+  0% { opacity: 0; transform: scale(2.4) rotate(-12deg); }
+  25% { opacity: 1; transform: scale(1) rotate(-12deg); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1) rotate(-12deg); }
+}
+
+.ql-head {
+  position: relative; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 6px;
+  padding: 9px 10px 7px 0; background: var(--c-paper-d); border-bottom: 2px solid var(--c-ink);
+}
+/* The claim's name on a coral ribbon whose tail sticks out of the cartouche. */
+.ql-ribbon { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.ql-name {
+  position: relative; margin-left: -2px; max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 2px 16px 2px 14px; border: 2px solid var(--c-ink); border-left: none;
+  background: var(--c-coral); color: var(--c-paper); font-size: 19px; line-height: 1.15; cursor: pointer;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 9px) 50%, 100% 100%, 0 100%);
+  text-shadow: 1px 1px 0 var(--c-coral-d);
+}
+.ql-name:hover { background: var(--c-coral-d); }
+.ql-name[data-unnamed] { font-style: italic; opacity: 0.85; }
+.ql-titles { font: 600 11px var(--f-body); color: var(--c-turq-d); white-space: nowrap; }
+.ql-titles:empty { display: none; }
+.ql-tools { display: flex; gap: 4px; }
+.ql-icon {
+  width: 24px; height: 24px; padding: 0; cursor: pointer; font-size: 14px; line-height: 1;
+  border: 1.5px solid var(--c-ink); border-radius: 7px 5px 8px 6px / 6px 8px 5px 7px; background: var(--c-paper);
+}
+.ql-icon:hover { background: var(--c-peach-l); }
+.ql-icon[data-on] { background: var(--c-turq); color: var(--c-paper); }
+.ql-sub { grid-column: 1 / -1; padding-left: 12px; font-size: 11.5px; color: var(--c-ink-soft); letter-spacing: 0.01em; }
+
+.ql-body { overflow-y: auto; padding: 8px 12px 2px; min-height: 0; }
+.qlog[data-folded] .ql-body > :not(.ql-cur),
+.qlog[data-folded] .ql-cur > :not(.ql-title) { display: none; }
+.qlog[data-folded] .ql-body { padding-bottom: 6px; }
+
+.ql-title { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-size: 21px; font-weight: 400; line-height: 1.1; }
+.ql-num {
+  flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px;
+  border: 2px solid var(--c-ink); border-radius: 50% 46% 52% 48%; background: var(--c-turq); color: var(--c-paper);
+  font-size: 15px; box-shadow: 1px 2px 0 var(--c-ink);
+}
+
+/* CrierBelt's message: a quoted telegram with a turquoise rule. */
+.ql-msg {
+  margin: 0 0 8px; padding: 2px 0 2px 9px; border-left: 3px solid var(--c-turq);
+  font-size: 12.5px; line-height: 1.4; font-style: italic; color: var(--c-ink-soft);
+}
+.ql-from {
+  display: block; font: 700 10px/1.5 var(--f-body); font-style: normal; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--c-turq-d);
+}
+
+.ql-objs { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.ql-obj { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 1px 7px; }
+.ql-box {
+  width: 15px; height: 15px; border: 2px solid var(--c-ink); border-radius: 3px 5px 3px 4px; background: #fffaf2;
+  position: relative;
+}
+.ql-obj[data-met] .ql-box { background: var(--c-turq-l); }
+.ql-obj[data-met] .ql-box::after {
+  content: ''; position: absolute; left: 3px; top: -4px; width: 5px; height: 11px;
+  border: solid var(--c-ink); border-width: 0 3px 3px 0; transform: rotate(40deg);
+}
+.ql-label { line-height: 1.25; }
+.ql-obj[data-met] .ql-label { color: var(--c-ink-soft); }
+.ql-val { font: 600 12.5px var(--f-body); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ql-obj[data-met] .ql-val { color: var(--c-turq-d); }
+.ql-track { grid-column: 2 / -1; height: 4px; border-radius: 2px; background: rgba(30, 27, 46, 0.12); overflow: hidden; }
+.ql-fill { display: block; height: 100%; width: 0; background: var(--c-turq-d); transition: width 300ms ease; }
+.ql-obj[data-met] .ql-track, .ql-obj[data-one] .ql-track { display: none; }
+.ql-or { list-style: none; padding-left: 25px; font: 700 11px var(--f-title); letter-spacing: 0.08em; color: var(--c-coral-d); text-transform: uppercase; }
+
+.ql-info { margin: 2px 0 6px; padding: 4px 8px; border-radius: 8px; background: var(--c-peach-l); font-size: 12px; line-height: 1.35; }
+.ql-info:empty { display: none; }
+
+.ql-reward { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 4px 0 6px; }
+.ql-rlabel { font: 700 10px var(--f-body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--c-ink-soft); }
+.ql-chip { display: inline-flex; align-items: center; gap: 3px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ql-chip canvas { display: block; width: 18px; height: 18px; }
+.ql-chip .imention-name { font-weight: 400; }
+.ql-kit canvas { width: 22px; height: auto; }
+.ql-coin { color: var(--c-coral-d); }
+.ql-word { font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--c-lilac-l); }
+
+.ql-hint {
+  margin: 2px 0 6px; padding: 5px 8px 5px 26px; position: relative;
+  font: 15px/1.2 var(--f-title); color: var(--c-ink);
+  border: 1.5px dashed var(--c-coral); border-radius: 10px 7px 11px 8px / 8px 11px 7px 10px; background: #fff6ee;
+}
+.ql-hint::before { content: '☞'; position: absolute; left: 7px; top: 4px; color: var(--c-coral-d); font-size: 16px; }
+.ql-hint:empty { display: none; }
+.ql-namebtn { display: block; width: 100%; margin: 2px 0 6px; }
+
+.ql-perk { margin: 0 0 6px; font-size: 12px; color: var(--c-turq-d); font-weight: 600; }
+.ql-perk:empty { display: none; }
+
+.ql-all { margin: 4px 0 8px; font: 17px/1.3 var(--f-title); }
+
+.ql-done { border-top: 1.5px dashed rgba(30, 27, 46, 0.25); padding: 5px 0 2px; }
+.ql-donebtn { border: none; background: none; padding: 0; cursor: pointer; font: 600 12px var(--f-body); color: var(--c-ink-soft); }
+.ql-donebtn:hover { color: var(--c-ink); }
+.ql-donebtn[hidden] { display: none; }
+.ql-donelist { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.ql-doneitem { display: flex; gap: 6px; font-size: 12.5px; color: var(--c-ink-soft); }
+.ql-tick { color: var(--c-turq-d); font-weight: 700; }
+
+/* ── the naming modal (CrierBelt's welcome) ──────────────────────────────── */
+.qn-veil {
+  position: fixed; inset: 0; z-index: 35; display: grid; place-items: center;
+  background: radial-gradient(circle at 50% 45%, rgba(30, 27, 46, 0.18), rgba(30, 27, 46, 0.46));
+}
+.qn-veil[hidden] { display: none; }
+.qn {
+  position: relative; width: min(450px, calc(100vw - 32px)); padding: 22px 24px 16px;
+  animation: qn-in 260ms ease-out;
+}
+@keyframes qn-in { from { opacity: 0; transform: translateY(10px) rotate(-0.6deg); } to { opacity: 1; transform: none; } }
+/* A coral ribbon across the top corner: the partner's letterhead. */
+.qn::before {
+  content: ''; position: absolute; left: -2px; right: -2px; top: -2px; height: 10px;
+  background: var(--c-coral); border: 2px solid var(--c-ink); border-radius: 14px 9px 0 0 / 10px 15px 0 0;
+}
+.qn-from { margin-top: 2px; font: 700 11px var(--f-body); letter-spacing: 0.16em; text-transform: uppercase; color: var(--c-turq-d); }
+.qn-title { margin: 2px 0 6px; font-size: 31px; font-weight: 400; line-height: 1.05; }
+.qn-text { margin: 0 0 14px; font-size: 14px; line-height: 1.45; }
+.qn-label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 600; color: var(--c-ink-soft); }
+.qn-row { display: flex; gap: 8px; align-items: stretch; }
+.qn-input {
+  flex: 1; min-width: 0; font-size: 24px; padding: 3px 12px; color: var(--c-ink); background: #fffaf2;
+  border: 2px solid var(--c-ink); border-radius: 10px 7px 11px 8px / 8px 11px 7px 10px; user-select: text;
+}
+.qn-input:focus { outline: 3px solid var(--c-turq); outline-offset: 1px; }
+.qn-reroll {
+  width: 40px; cursor: pointer; font-size: 20px; border: 2px solid var(--c-ink); background: var(--c-peach-l);
+  border-radius: 10px 7px 11px 8px / 8px 11px 7px 10px; box-shadow: 2px 2px 0 var(--c-ink);
+}
+.qn-reroll:active { transform: translate(2px, 2px); box-shadow: none; }
+.qn-err { min-height: 18px; margin-top: 4px; font-size: 12.5px; font-weight: 600; color: var(--c-coral-d); }
+.qn-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+
+/* ── the guide: inked arrow, ring, hint bubble ───────────────────────────── */
+.guide { position: fixed; inset: 0; z-index: 30; pointer-events: none; }
+.guide[hidden] { display: none; }
+.guide-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.guide-arrow {
+  animation: guide-nod 1.15s ease-in-out infinite;
+  filter: drop-shadow(0 0 1.5px var(--c-paper)) drop-shadow(0 0 1px var(--c-paper));
+}
+@keyframes guide-nod { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(var(--bx, 0px), var(--by, 0px)); } }
+.guide-halo { fill: none; stroke: var(--c-paper); stroke-width: 8; stroke-linecap: round; opacity: 0.85; }
+.guide-line { fill: none; stroke: var(--c-ink); stroke-width: 3.2; stroke-linecap: round; }
+.guide-head { fill: none; stroke: var(--c-ink); stroke-width: 3.6; stroke-linecap: round; stroke-linejoin: round; }
+.guide-ring {
+  position: absolute; border: 3px solid var(--c-coral);
+  border-radius: 14px 9px 16px 10px / 10px 15px 9px 14px;
+  box-shadow: 0 0 0 2px var(--c-ink), 0 0 16px 5px rgba(232, 115, 90, 0.5), inset 0 0 10px rgba(232, 115, 90, 0.35);
+  animation: guide-pulse 1.15s ease-in-out infinite;
+}
+.guide-ring[data-round] { border-radius: 50%; }
+@keyframes guide-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.07); opacity: 0.78; } }
+.guide-bubble {
+  position: absolute; left: 0; top: 0; max-width: 290px; display: flex; gap: 7px; align-items: flex-start;
+  padding: 6px 12px 7px 9px; font-size: 16px; line-height: 1.2; box-shadow: 3px 4px 0 var(--c-ink);
+  background: var(--c-paper); border-color: var(--c-ink);
+}
+.guide-bubble[data-go] { pointer-events: auto; cursor: pointer; }
+.guide-bubble[data-go]:hover { background: var(--c-peach-l); }
+.guide-mark { flex: none; color: var(--c-coral-d); font-size: 18px; line-height: 1; margin-top: 1px; }
+.guide-text { font-family: var(--f-title); }
+
+/* « Passer le tutoriel »: quiet, at the foot of the log. */
+.ql-skip {
+  display: block;
+  margin: 6px 0 0 auto;
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--c-ink-soft, #5b5570);
+  text-decoration: underline dotted;
+  cursor: pointer;
+}
+.ql-skip:hover { color: var(--c-ink); }

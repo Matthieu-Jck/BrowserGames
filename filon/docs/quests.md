@@ -1,0 +1,90 @@
+# Quests: the tutorial
+
+Twelve objectives, 0–11, played in order, one at a time (design plan §8 « Prise en main », decisions D28, D33 and D34 in [decisions.md](decisions.md)). CrierBelt, the player's partner (see [lore.md](lore.md)), sets each objective in a short message and pays a reward when it is met; a guide points at what to use next. The player sees them numbered 1–12; code and content use indices 0–11.
+
+Three parts, one per layer:
+
+| Part | File | Does |
+|---|---|---|
+| Content | [content/quests.ts](../src/content/quests.ts) | `QUESTS` (in run order): name and CrierBelt's message (`{ fr, en }`), objectives, `any`, reward, guide steps, live `info`; `QUEST_TITLES`; `QUEST_CHECK_TICKS`, `COLONY_NAME_MAX`; `questProblems()` (run by `validateContent`) |
+| Engine | [sim/systems/quests.ts](../src/sim/systems/quests.ts) | `QuestState` (on `sim.quests`), objective progress, completion, rewards, the `name` and `quest` commands, rate windows, save and hash |
+| UI | [ui/quest-log.ts](../src/ui/quest-log.ts), [ui/guide.ts](../src/ui/guide.ts), [ui/styles/quests.css](../src/ui/styles/quests.css) | The quest log (left, under the HUD), the completion toast's text, the naming modal, the guide's arrow, ring and hint bubble |
+
+Tests: [sim/systems/quests.test.ts](../src/sim/systems/quests.test.ts). The French halves of `QUESTS` and `QUEST_TITLES` are in the i18n typography test.
+
+## The quests as built
+
+Two rules shape it (owner, 2026-10-12): **the Heart only takes in** (D34) — every machine is fed by its own production lines, so the tutorial builds lines (a router splits the iron line between the Heart and the smelter, another shares the coal with the glass smelter, routers branch the plate and glass lines into the workshop); and **everything beyond the starting kit is unlocked in the tech tree** (D33) — a quest opens the tree (T, the HUD's tree chip) and unlocks what it needs before using it, starting with telemetry, then the smelter and the router.
+
+| # | id | Unlocks in the tree | Objectives (all, unless *any*) | Reward |
+|---|---|---|---|---|
+| 0 | `claim` · Ta concession | — | the claim is named (`name` command) | — (its entry in the register) |
+| 1 | `first_strike` · Premier coup de pioche | — (the starting kit: drill, ribbon, pole, Link) | a drill built; 10 ore in the Heart | 20 iron plates |
+| 2 | `ribbon_lines` · Le Ruban | Télémétrie (the rates show at once) | telemetry unlocked; two drills wired; 20 more ore mined | 10 glass |
+| 3 | `bloom_kiln` · La fonderie | Fonderie, Routeur | a router built; iron ore and coal reach the smelter by lines (`feeds`); 10 plates made | 30 iron plates |
+| 4 | `first_wind` · Le Souffle | Éolienne, Atelier | 2 wind turbines wired into a grid — the hints send them up onto the Crown, where the wind blows (D44), wired pole by pole; a workshop powered | a coal generator kit (its cost) |
+| 5 | `glassworks` · La verrerie | Collecteur de sable (sand is the ground: two collectors by the glass smelter, D38) | sand reaches a smelter; coal reaches both smelters (a router on the coal line); 10 glass made | 20 plates, 20 glass |
+| 6 | `field_journal` · Données d’arpentage | Observatoire | 3 survey data made (the workshop fed plates and glass by routers on their lines, its data on to the observatory); an observatory; Mechanics (tr1) started | 100 ◉ |
+| 7 | `crier_calls` · La Criée appelle | Comptoir | a trade post touching the Heart; 10 glass sold through the Crier | 150 ◉ |
+| 8 | `tired_vein` · Le filon fatigué | Tréfileuse | a wire mill; 10 copper wire made | 10 circuits |
+| 9 | `first_purchase` · Premier achat | — | a standing import order for copper ore (no wait for the delivery) | CrierBelt's cut waived for 24 h |
+| 10 | `the_board` · Le Tableau | — | an export stream sells a top-3 line of « Ce qui rapporte » | the Heart's level-2 materials |
+| 11 | `beyond_crown` · Au-delà de la Couronne | Balise d’arpentage | *any*: 2 tiles dug (title « Perce-Couronne »), or a building 32 tiles or more from the Heart (`CIRQUE.crownOuter`, « Passe-Crête »): the cirque is closed (D45), so the beacon goes over the Crown — the text points at the traction ribbons and terraced poles that cross it | a title in the register |
+
+Targets are small on purpose (owner, 2026-10-12: "the tutorial is too long"): every objective is a minute or two of play, never a wait — the scripted run (`quests.test.ts`, every line laid by hand) finishes all twelve in under nine game minutes, the longest waits about two minutes for plates, glass and data to flow. No tutorial quest waits on an import delivery (≈ 25 min: the lift plus the voyage) or on a rate window (`rate` stays in the engine but the tutorial no longer uses it). The steps are many but each is one action, and each one's `done` reads the base (a step is never shown once the base already does what it asks): unlock a plan, place, wire, set a recipe, lay one line. Output ribbons point at a free input of the Heart (`{ intake: true }`), nearest the newest producer (all its nozzles are inputs now).
+
+Adapted from the plan: ordinary early materials replace the exotic ones (« bulbes » → glass, « tourbe » → coal, « carillonite » → copper ore), power is wired by hand from quest 1 on (D25: the Heart's few wires, poles, the Link tool), and the import target is a standing order rather than a delivery (a delivery takes about 25 minutes). The circuits quest of the first version became the glassworks: circuits need a wire line and a glass line into a workshop, which the tutorial leaves to the player.
+
+## How the engine runs them
+
+- **State** (`sim.quests`, saved, hashed): the ids done and the tick each was, the current index, the current quest's *baselines* (one counter value per objective, captured when it became current), its *rate windows*, `named`, `feeFreeUntil`, `titles`.
+- **Objectives** read the colony as it stands (`build`, `stock`, `linked`, `powered`, `research`, `unlocked`, `post`, `order`, `board`, `dig`, `reach`, `recipe`, `stream`, `delivers`, `feeds`, `name`) or a counter *since the quest began* (`produce` from `sim.produced`, `export` from `trade.soldTotal`, `import` = bought minus in flight). `linked` / `powered` read what the inspector's power row reads (`graph.netOfEnt`, `sim.netPower`): an outcome, whatever the wiring tool looks like (`linked` may name the deposit a drill mines: `item`). `unlocked` counts tree nodes done (`sim.unlocked`: plans and research alike, D33). The line objectives walk the compiled graph through ribbons and routing blocks only (`flows`): `delivers` — a building's output reaches the Heart; `feeds` — a building (on a recipe, if given) receives an item from one of its producers (`producersOf`: drills on its deposit, machines whose recipe makes it), which is how every machine is fed now that the Heart gives nothing (D34). `rate` compares the counter's rise over its window: `(v1 − v0)·EPOCH ≥ perMin·1000·(t1 − t0)`, integers only.
+- **When completion is checked**, at fixed points so a replay meets the same ones:
+  1. every `QUEST_CHECK_TICKS` (10) ticks, at the end of `Sim.step` (`questStep`);
+  2. inside the `name` command (quest 0 completes at once);
+  3. `sim.checkQuests()`, which the shell calls right after an offline catch-up (the catch-up does not run `step`). Without it the next online check, within a second, finds the same thing: an absence cannot skip a quest. Only the current quest can complete during an absence; the next one starts afterwards.
+- **Rate windows**: a window opens when the quest becomes current and closes at the first epoch boundary at least a whole minute later; then one per minute. After a catch-up the open window spans the absence, so its average rate counts.
+- **Completion** (`finish`): logs `{ k: 'quest', id }`, pays the reward into the Heart (items past its cap if need be — nothing vanishes; ◉; `feeFreeUntil`; the title of the objective that completed an `any` quest), records it, makes the next quest current (`activate`: baselines, windows) and pushes the `quest` SimEvent. Then any next quests that already hold complete too.
+- **Replay**: a replay re-runs the same ticks, so automatic completions happen again at the same tick and log themselves; their logged entries are then refused by `exec` (the quest is no longer current) and log nothing. Logs and hashes match; nothing is paid twice. A forced entry (`force: true`, debug) is re-forced.
+- **Fees waived**: `systems/trade.ts` reads `sim.quests.feeFreeUntil` in its fee (`fee()`): 0 ‰ until then, online and offline alike (the epoch boundary runs the same `tradeEpoch`).
+- **Save**: `SaveData.quests` (optional, ids rather than indices); a save without it starts at quest 0; if the quest table changed, the current quest takes fresh baselines.
+
+## The UI
+
+- **Quest log** (`QuestLog`, `[data-screen="quests"]`): the claim's name on a coral ribbon (click: rename), « Partenariat CrierBelt · objectif n sur 12 », the guide switch (☞) and fold (▾). The current objective: number, name, CrierBelt's message (« vous »), objectives with inked boxes and progress, live `info` lines, reward chips, the guide step's hint (« tu », like the rest of the UI); then the objectives met, ticked. Placed under the HUD's left column (it measures it) and kept clear of the build bar. A completion stamps a ✓ on it. Once the tutorial is over the log leaves the screen: 20 s (`DONE_SHOW_TICKS`) after the last objective is met, at once when it was skipped (owner, 2026-10-13).
+- **Toast**: `questToast(id, title?)` — « CrierBelt : objectif atteint — La fonderie · +20 Charbon » (handler in [app/sim-events.ts](../src/app/sim-events.ts)).
+- **Naming modal** (`[data-screen="name"]`): CrierBelt's welcome, a name to start from (↻ for another), « Inscrire la concession » / « Plus tard ». It opens by itself once on an unnamed claim when no full screen is up (the main menu shows first at boot); never under `navigator.webdriver` or `?nomenu`, where the claim stays « Concession sans nom » and quest 0 open until a script names it. Enter registers, Esc defers; the quest log's « Nommer la concession… » reopens it.
+- **Guide** (`Guide`, `[data-screen="guide"]`): the current step is the first whose `done` objective does not hold (counters from the founding) and that was not `seen`. Its target follows the UI: `build` → the tab, the slot, then (in hand) a spot in the world only for the very first drill — after that the hint alone says where (owner, 2026-10-12: a spot worked out from content may already be taken); `unlock` → the HUD's tree chip (`[data-hud-tree]`), then in the tree the first of its nodes still locked, scrolled into view: a plan's « Débloquer » (`[data-unlock="<id>"]`), a research's card and « Lancer »; `branch` → a line to split into a building: while no routing block stands on the line of that item, the router (its tab, its slot, then the line's ribbon tile nearest the building still to feed — it replaces the ribbon, D24), then a ribbon on to that building; `recipe` → the machine still to set (one with no recipe first: a working line is never turned over), then its recipe button once it is the one inspected (« D’abord, pose : … » if none is built); `link` → the Énergie tab, the Link tool (`[data-tool="link"]`), then the building still unwired (a drill on the step's deposit); `research` → the HUD chip, the card, « Lancer »; `crier` → the HUD ◉, the tab, the export slot / order form / best line; `brush`; `name`. When a full screen covers a target out in the world, the arrow points at the screen's ✕ (`.rs-close`) with the step's hint — after an unlock, the tree's ✕. It hides while the modal is up, or when switched off (remembered in localStorage). A world target's bubble glides the camera there on click.
+
+## Add a quest
+
+1. **Content**: add an entry to `QUESTS` where it should run (order is the run order; ids are saved, so they must stay stable). Give it `name` and `desc` (CrierBelt's message, « vous », short — see [lore.md](lore.md)), `objectives`, `reward`, and `steps` (a hint in « tu » each, a target, and a `done` objective when one says the step is over). French typography: U+00A0 before `:`, U+202F before `; ! ? %` (escapes ` ` / ` ` are fine).
+2. **A new objective kind**: add it to `QuestObjective` (content), read it in `objectiveProgress` and give it a log label in `objectiveLabel` (the `never` checks fail to compile until both exist), add an `quest.obj.<kind>` key to `fr.ts` and `en.ts`. A counter that counts *since* the quest began goes in `counter` and `SINCE`. Keep it integer and offline-maintained: state the catch-up keeps exact (stocks, entities, research, trade totals) or `sim.produced`.
+3. **A new guide target**: add it to `GuideTarget` and resolve it in `Guide.target`, preferring stable `data-*` hooks (add one to the component, a tiny edit).
+4. **Unlock before use** (D33): a step that builds something outside the starting kit, sets a recipe or branches a line with a router must come after an `unlock` step (or an `unlocked` objective) for it, in this quest or an earlier one — `questProblems` checks it, so the tutorial never points at a slot the bar does not show.
+5. **A new reward kind**: `QuestReward`, `rewardItems` / `payReward` (engine), `rewardRow` / `rewardText` (UI).
+6. **Check**: `npx vitest run src/sim/systems/quests.test.ts src/content src/i18n`; extend the scripted run in `quests.test.ts` so it completes the new quest with real commands — it starts from a new player's base (`testSim(…, { plans: false })`), unlocks each plan with `unlockPlan`, and asserts the guide's step after each action (`stepNow`); look at it with `FL.completeQuest('<previous id>')` and `FL.unlock(id)`.
+
+## Debug and smoke hooks
+
+`FL.quests()` (current id, index, named, name, done, titles, `feeFreeUntil`, progress, where the guide points — e.g. `hud:tree`, `tree:unlock:kiln`, `line:iron_ore`, `screen:close`), `FL.completeQuest(id)` (forces every quest up to `id`, logged, rewards paid; it unlocks no plan), `FL.unlock(id?)` (a plan and its missing prerequisites through commands, their costs granted first; no id: every plan), `FL.nameColony(name)`, `FL.nameModal(open?)`. Selectors: `[data-hud-tree]`, `.tr-node[data-id="<id>"]`, `[data-unlock="<id>"]`, `[data-screen="quests"]`, `[data-quest="<id>"]`, `[data-quest-obj="<i>"][data-met]`, `[data-quest-name]`, `[data-quest-rename]`, `[data-quest-fold]`, `[data-quest-guide]`, `[data-quest-donebtn]`, `[data-quest-done="<id>"]`, `[data-screen="name"]`, `[data-quest-name-input]`, `[data-quest-name-ok]`, `[data-quest-name-later]`, `[data-screen="guide"]`.
+
+## Known gaps
+
+- The catch-up checks quests only at its end (through the shell): two quests in a row cannot both complete during one absence.
+- The board objective re-ranks « Ce qui rapporte » at each check while quest 10 is current and a stream is set (a float computation in the market, deterministic).
+- The Crier's header and the trade post panel still show the post's fee while it is waived; the quote and the trades themselves use 0.
+- The guide's hints name keys (T, M, L, C, R) by the default bindings.
+- CrierBelt's restart reserve (D36) can hold back a plan a quest asks for. This only happens when the player has first spent the margin above the reserve on other plans: about 80 plates before the first smelter, for example the energy, analytics and survey paths before quest 3's router. The tree says why, and the guide keeps pointing at the plan. Quest rewards and the first plates a smelter makes lift the hold. The smelter's own plan is never held: its whole cost is part of the reserve. The base is never stuck, but that player must feed a smelter without the router to make plates first.
+
+## What the tutorial reveals (D32)
+
+The interface grows with the tutorial (owner, 2026-10-12: nothing on screen before the tutorial uses it). Each quest lists `reveals` — HUD readouts (`credits`, `power`, `clock`, `research`: the tech tree's chip and T), the construction bar as a whole (`build`: its tabs, the Build button, the Link hotkey), screens and tools (`crier`, `stats`, `brush`) and item stocks (`stock:<item>`) — and they appear when that quest becomes current, cumulatively. `revealed(sim)` (in [sim/systems/quests.ts](../src/sim/systems/quests.ts)) returns the set, or `null` for everything once the tutorial is done or **skipped** (« Passer le tutoriel » in the log: the `skipQuests` command; the demo base starts skipped). An item's stock also shows once the base has made some itself. The bar's **tabs** are no tutorial reveal any more: once `build` is revealed, a tab shows as soon as one of its buildings is unlocked (D27, D33) — at the start Extraction, Logistique and Énergie (drill, ribbon, pole), then Distribution with the router, Production with the smelter, Commerce with the trade post, Colonie with the beacon. Skipping the tutorial shows the whole interface, not what is still locked in the tree. Production rates (the HUD's Δ/min) are not a tutorial reveal but a plan: **Télémétrie** (the `telemetry` flag), the first step of the tree's Analytics path (D41), which quest 2 has the player unlock — its reveal plays when the player closes the tree (the base dims around the stocks, CrierBelt says what the rates are). The Statistics screen (G and its HUD chip) is the path's next step, `statistics`, which no quest asks for. The HUD, the build bar (the brush, the Build button) and the hotkeys (T, G, M, C, L) all read what is revealed and unlocked.
+
+| Quest | Reveals |
+|---|---|
+| 1 first_strike | the construction bar; power; plates, glass, copper wire, iron ore |
+| 2 ribbon_lines | the tech tree (its HUD chip, T) |
+| 4 first_wind | the clock (day / night, temperature) |
+| 7 crier_calls | ocelles; the Crier |
+| 11 beyond_crown | the landscaping brush |

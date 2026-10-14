@@ -1,0 +1,9 @@
+{
+  "name": "waterwheel",
+  "version": "1.0.0",
+  "description": "Browser logic-puzzle game: steer falling water (and rising steam) onto waterwheels.",
+  "scripts": {
+    "test": "node test/solve.test.js"
+  },
+  "license": "MIT"
+}

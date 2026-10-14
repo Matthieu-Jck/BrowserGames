@@ -1,0 +1,69 @@
+/* focus.css — the spotlight (ui/focus.ts, D41): the base dims, an iris closes onto one element of
+   the interface, an inked ring stamps around it, CrierBelt's caption says what it is. The dim is
+   the hole's own shadow, spread over the whole window, so everything outside the hole darkens —
+   the world, the HUD, the bars — whatever its stacking. Phases on the root: data-on (dim on),
+   data-phase in / hold / out; data-reduced (prefers-reduced-motion) keeps only a fade. */
+.focus {
+  position: fixed; inset: 0; z-index: 38; cursor: pointer;
+  --focus-dim: rgba(14, 11, 26, 0.78);
+  transition: opacity var(--focus-out, 380ms) ease;
+}
+.focus[data-phase='out'] { opacity: 0; }
+
+/* The iris: a rounded hole whose shadow is the night around it. */
+.focus-hole {
+  position: absolute; border-radius: 16px 11px 17px 12px / 12px 17px 11px 16px;
+  box-shadow: 0 0 0 200vmax rgba(14, 11, 26, 0);
+  transition:
+    left var(--focus-in, 420ms) cubic-bezier(0.2, 0.8, 0.25, 1),
+    top var(--focus-in, 420ms) cubic-bezier(0.2, 0.8, 0.25, 1),
+    width var(--focus-in, 420ms) cubic-bezier(0.2, 0.8, 0.25, 1),
+    height var(--focus-in, 420ms) cubic-bezier(0.2, 0.8, 0.25, 1),
+    box-shadow var(--focus-in, 420ms) ease-out;
+  pointer-events: none;
+}
+.focus[data-on] .focus-hole { box-shadow: 0 0 0 200vmax var(--focus-dim); }
+
+/* The inked ring: stamps in once the iris has closed, then glows twice. */
+.focus-ring {
+  position: absolute; pointer-events: none; box-sizing: border-box;
+  border: 3px solid var(--c-glow-peach); border-radius: 16px 11px 17px 12px / 12px 17px 11px 16px;
+  outline: 2px solid var(--c-ink); outline-offset: 1px;
+  box-shadow: 0 0 0 0 rgba(255, 217, 168, 0.55), 0 0 22px 6px rgba(255, 217, 168, 0.35);
+  opacity: 0; transform: scale(1.35);
+}
+.focus[data-on] .focus-ring {
+  animation:
+    focus-stamp 520ms cubic-bezier(0.2, 1.5, 0.4, 1) calc(var(--focus-in, 420ms) * 0.55) forwards,
+    focus-glow 900ms ease-in-out calc(var(--focus-in, 420ms) + 350ms) 2;
+}
+@keyframes focus-stamp { from { opacity: 0; transform: scale(1.35) rotate(-2deg); } to { opacity: 1; transform: none; } }
+@keyframes focus-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 217, 168, 0.55), 0 0 22px 6px rgba(255, 217, 168, 0.35); }
+  50% { box-shadow: 0 0 0 9px rgba(255, 217, 168, 0), 0 0 30px 10px rgba(255, 217, 168, 0.5); }
+}
+
+/* CrierBelt's caption: a cartouche under (or over) the hole. */
+.focus-cap {
+  position: absolute; max-width: min(440px, calc(100vw - 32px)); padding: 9px 14px 8px;
+  display: flex; flex-direction: column; gap: 4px; cursor: pointer;
+  opacity: 0; transform: translateY(8px);
+  transition: opacity 260ms ease calc(var(--focus-in, 420ms) * 0.6), transform 320ms ease-out calc(var(--focus-in, 420ms) * 0.6);
+}
+.focus[data-on] .focus-cap { opacity: 1; transform: none; }
+.focus-kicker { font: 700 11px/1.2 var(--f-body); letter-spacing: 0.06em; text-transform: uppercase; color: var(--c-turq-d); }
+.focus-line { margin: 0; font-size: 15px; line-height: 1.35; }
+.focus-voice {
+  display: inline-block; margin-right: 6px; padding: 0 7px; border-radius: 6px;
+  font-size: 14px; font-weight: 400; background: var(--c-coral); color: var(--c-paper);
+}
+.focus-hint { font-size: 11.5px; color: var(--c-ink-soft); transition: opacity 300ms ease; }
+/* The hint shows once the hold is over: before it, a click or a key does nothing. */
+.focus:not([data-ready]) .focus-hint { opacity: 0; }
+/* No element to lift: a plain dim, the caption in the middle. */
+.focus[data-empty] .focus-ring { display: none; }
+
+/* Reduced motion: the dim and the words fade; nothing moves, nothing pulses. */
+.focus[data-reduced] .focus-hole { transition: box-shadow var(--focus-in, 150ms) linear; }
+.focus[data-reduced] .focus-ring { animation: none; opacity: 1; transform: none; }
+.focus[data-reduced] .focus-cap { transform: none; transition: opacity var(--focus-in, 150ms) linear; }

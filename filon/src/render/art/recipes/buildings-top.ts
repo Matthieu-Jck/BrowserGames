@@ -1,0 +1,1477 @@
+// buildings-top.ts — the plan-view recipes (build mode, and the build-bar icons): every building
+// seen from straight above, the same object as its iso volume (buildings.ts) — machines purely
+// industrial (derricks from above, hoppers, tank roofs, furnace shafts, sawtooth roofs, crates,
+// drums); nobody lives at the base (D29), so even the Heart is machinery: depot, solar rows, uplink, drone pads.
+// Tall parts cast long shadows down-right (`dropShadow`), so height reads from above. Routing
+// blocks are a plate whose band-wide mouths line up with the ribbons. Recipes draw in the
+// building's own (unrotated) tile frame; the Frame rotates positions only, so light, hatching
+// and cast shadows always fall the same way.
+import { BUILDINGS, type BuildingId } from '@/content/buildings';
+import type { BuildingDef } from '@/content/types';
+import { sideIndex, type Rot } from '@/sim/types';
+import { C, mix } from '../tokens';
+import { castShadow, ellipsePts, flat, hatch, ink, pathOf, shadowCrescent, shape, stipple, type Ctx, type Pt } from '../ink';
+import {
+  Frame, arm, arrowPoly, bucketWheelTop, cable, chevron, crate, decal, dish, dome, drumTop, grille, hatchDoor, hull,
+  ledStrip, light, petals, pipe, plinth, port, rectPts as rr, rivet, spire, stack, tankTop, terminalTop,
+} from '../shapes';
+import { pvPanel } from '../solar';
+import { CHARGER_BUSHING, HEART_MASTS, KIT_K, POLE, PYLON, kitDrawn, onArm, terminalProbe, terminalsOf, turnsArt } from '../terminals';
+import { SAND_WHEEL, TURBINE, bucketFull, vaneAt } from './moving';
+import { JUNCTION, SKY, junctionHump, type SkyPiece } from './buildings';
+
+export const TOP_PX = 64;     // px per tile in the atlas (2× of the 32 plan world px)
+export const TOP_MARGIN = 14; // room for shadows and overhangs
+
+type Recipe = (ctx: Ctx, f: Frame, seed: number) => void;
+
+const LEDS = [C.led, C.led, C.ledGreen, C.led] as const;
+
+// ── machine parts and human places seen from above ───────────────────────────
+
+/** Fired brick and cooling-tower concrete (same tokens as the iso art). */
+const BRICK = mix(C.coralD, C.mesa, 0.45);
+const TOWER = mix(C.ice, C.steelL, 0.35);
+
+/** Screen-space bounds of canvas points. */
+function bounds(pts: readonly Pt[]): [number, number, number, number] {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [x, y] of pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+  return [x0, y0, x1, y1];
+}
+
+/** The shadow of an upright prism: its outline dragged down-right by its height (levels). */
+function dropShadow(ctx: Ctx, f: Frame, pts: readonly Pt[], h: number, alpha = 0.26): void {
+  const d = f.l(0.11 * h);
+  flat(ctx, hull([...pts, ...pts.map(([x, y]) => [x + d * 0.7, y + d] as Pt)]), C.inkSoft, alpha);
+}
+
+/**
+ * A battered block (furnace shaft, bunker, hip roof) from above: the outer outline, the top
+ * inset, the slopes as bands — lit on the top/left of the screen, hatched on the bottom/right.
+ */
+function batter(ctx: Ctx, outer: readonly Pt[], inner: readonly Pt[], side: string, top: string, s: number): void {
+  const [X0, Y0, X1, Y1] = bounds(outer), [x0, y0, x1, y1] = bounds(inner);
+  flat(ctx, outer, mix(side, '#ffffff', 0.08));
+  const right: Pt[] = [[x1, y0], [X1, Y0], [X1, Y1], [x1, y1]], bottom: Pt[] = [[x0, y1], [x1, y1], [X1, Y1], [X0, Y1]];
+  for (const q of [right, bottom]) { flat(ctx, q, mix(side, C.ink, 0.3)); hatch(ctx, q, Math.PI / 4, 3, { alpha: 0.35, seed: s }); }
+  for (const [a, b] of [[[X0, Y0], [x0, y0]], [[X1, Y0], [x1, y0]], [[X1, Y1], [x1, y1]], [[X0, Y1], [x0, y1]]] as const) ink(ctx, [a, b], { w: 1, alpha: 0.6, shade: false, taper: 0, seed: s + 1 });
+  shape(ctx, inner, top, { w: 1.4, seed: s + 2 });
+  ink(ctx, outer, { closed: true, w: 2, seed: s + 3 });
+}
+
+/** A lattice tower from above: legs converging from the base square to the crown, braces, rings. */
+function derrickTop(ctx: Ctx, f: Frame, cx: number, cy: number, w0: number, w1: number, h: number, s: number, legCol: string = C.steelL): void {
+  const K = [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const;
+  const sq = (w: number): Pt[] => K.map(([a, b]) => f.p(cx + a * w, cy + b * w));
+  const base = sq(w0), crown = sq(w1);
+  const d = f.l(0.11 * h);
+  flat(ctx, hull([...base, ...crown.map(([x, y]) => [x + d * 0.7, y + d] as Pt)]), C.inkSoft, 0.2);
+  for (const t of [0.35, 0.68]) ink(ctx, sq(w0 + (w1 - w0) * t), { closed: true, w: 1.2, color: C.steelD, shade: false, taper: 0, seed: s + t * 10 });
+  for (let k = 0; k < 4; k++) {
+    const j = (k + 1) % 4;
+    ink(ctx, [base[k]!, crown[j]!], { w: 1, color: C.steelD, alpha: 0.8, shade: false, taper: 0, seed: s + k });
+    ink(ctx, [base[j]!, crown[k]!], { w: 1, color: C.steelD, alpha: 0.8, shade: false, taper: 0, seed: s + 4 + k });
+  }
+  for (let k = 0; k < 4; k++) {
+    ink(ctx, [base[k]!, crown[k]!], { w: 3.6, color: C.ink, shade: false, taper: 0, seed: s + 10 + k });
+    ink(ctx, [base[k]!, crown[k]!], { w: 2.2, color: legCol, shade: false, taper: 0, seed: s + 20 + k });
+  }
+  shape(ctx, rr(f, cx - w1 - 0.03, cy - w1 - 0.03, cx + w1 + 0.03, cy + w1 + 0.03, 0.01), C.steelD, { w: 1.3, shade: false, seed: s + 30 });
+  light(ctx, ...f.p(cx, cy), f.l(0.04), C.ledWarm);
+}
+
+/** A geared rotary table from above: a brass disc with teeth round its rim and the drill string's hole. */
+function rotaryTop(ctx: Ctx, f: Frame, cx: number, cy: number, r: number, s: number): void {
+  const [x, y] = f.p(cx, cy), R = f.l(r);
+  const pts = ellipsePts(x, y, R, R, s, 0.004, 36);
+  castShadow(ctx, pts, f.l(0.05), 0.3);
+  shape(ctx, pts, C.brass, { w: 1.4, seed: s });
+  for (let i = 0; i < 20; i++) {
+    const a = (i / 20) * Math.PI * 2;
+    ink(ctx, [[x + Math.cos(a) * R * 0.78, y + Math.sin(a) * R * 0.78], [x + Math.cos(a) * R * 0.97, y + Math.sin(a) * R * 0.97]], { w: 1.3, color: C.steelDD, shade: false, taper: 0, jitter: 0, seed: s + i });
+  }
+  flat(ctx, ellipsePts(x, y, R * 0.3, R * 0.3, s + 1, 0, 16), C.steelDD);
+  flat(ctx, ellipsePts(x, y, R * 0.14, R * 0.14, s + 2, 0, 12), C.brassL);
+}
+
+
+
+
+/** A cargo container seen from above, on a local rect; its corrugations run across its long side. */
+function crateAt(ctx: Ctx, f: Frame, x0: number, y0: number, x1: number, y1: number, color: string, s: number, h = 0.7): void {
+  const pts = rr(f, x0, y0, x1, y1, 0.02);
+  const [X0, Y0, X1, Y1] = bounds(pts);
+  crate(ctx, pts, color, s, X1 - X0 >= Y1 - Y0 ? 'x' : 'y', f.l(0.1 * h));
+}
+
+/** A furnace from above: battered brick with courses and straps, a steel cap, a hopper of embers, the mouth's glow. */
+function furnaceTop(ctx: Ctx, f: Frame, x0: number, y0: number, x1: number, y1: number, inset: number, s: number): void {
+  const outer = rr(f, x0, y0, x1, y1, 0.03), inner = rr(f, x0 + inset, y0 + inset, x1 - inset, y1 - inset, 0.02);
+  castShadow(ctx, outer, f.l(0.2), 0.32);
+  // The mouth glows out of the south face onto the ground.
+  const [mx, my] = f.p((x0 + x1) / 2, y1 + 0.04);
+  flat(ctx, ellipsePts(mx, my, f.l(0.2), f.l(0.2), s + 5, 0, 20), C.ledWarm, 0.35);
+  batter(ctx, outer, inner, BRICK, C.steelD, s);
+  for (const t of [0.4, 0.75]) ink(ctx, rr(f, x0 + inset * t, y0 + inset * t, x1 - inset * t, y1 - inset * t, 0.02), { closed: true, w: 2, color: C.steelD, shade: false, taper: 0, seed: s + t * 10 });
+  shape(ctx, rr(f, (x0 + x1) / 2 - 0.08, y1 - 0.06, (x0 + x1) / 2 + 0.08, y1 + 0.02, 0.01), C.warn, { w: 1.1, shade: false, jitter: 0, seed: s + 6 });
+  const hw = Math.min(x1 - x0, y1 - y0) / 2 - inset - 0.06, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  const hop = rr(f, cx - hw, cy - hw, cx + hw, cy + hw, 0.02);
+  shape(ctx, hop, C.steelL, { w: 1.3, seed: s + 7 });
+  const throat = rr(f, cx - hw * 0.6, cy - hw * 0.6, cx + hw * 0.6, cy + hw * 0.6, 0.02);
+  flat(ctx, throat, C.ink);
+  const [hx, hy] = f.p(cx, cy);
+  flat(ctx, ellipsePts(hx, hy, f.l(hw * 0.4), f.l(hw * 0.3), s + 8, 0.2, 14), C.warn);
+  light(ctx, hx, hy, f.l(0.05), C.ledWarm);
+}
+
+/** A sawtooth roof from above: bays along local y, each a lit slope ending in a dark louvred face. */
+function sawRoofTop(ctx: Ctx, f: Frame, x0: number, y0: number, x1: number, y1: number, teeth: number, s: number): void {
+  const hall = rr(f, x0, y0, x1, y1, 0.03);
+  dropShadow(ctx, f, hall, 1.8, 0.3);
+  flat(ctx, hall, C.violet);
+  for (let k = 0; k < teeth; k++) {
+    const ty0 = y0 + ((y1 - y0) * k) / teeth, ty1 = ty0 + (y1 - y0) / teeth;
+    const bay = rr(f, x0 + 0.05, ty0 + 0.02, x1 - 0.05, ty1 - 0.02, 0.01);
+    flat(ctx, bay, C.steelL);
+    flat(ctx, rr(f, x0 + 0.05, ty0 + 0.02, x1 - 0.05, ty0 + (ty1 - ty0) * 0.35, 0.01), mix(C.steelL, C.ink, 0.18));
+    const lv = rr(f, x0 + 0.05, ty1 - 0.12, x1 - 0.05, ty1 - 0.02, 0.01);
+    flat(ctx, lv, C.steelDD);
+    ctx.save();
+    ctx.strokeStyle = C.steelL; ctx.globalAlpha = 0.7; ctx.lineWidth = 1;
+    for (let i = 1; i < 12; i++) {
+      const x = x0 + 0.05 + ((x1 - x0 - 0.1) * i) / 12;
+      const [a, b] = [f.p(x, ty1 - 0.115), f.p(x, ty1 - 0.025)];
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+    }
+    ctx.restore();
+    ink(ctx, bay, { closed: true, w: 1.3, seed: s + k });
+  }
+  ink(ctx, hall, { closed: true, w: 2.2, seed: s + 20 });
+}
+
+/** A gantry crane from above: hazard legs, runway beams, a coral bridge, the trolley, a crate on the hook. */
+function gantryTop(ctx: Ctx, f: Frame, x0: number, y0: number, x1: number, y1: number, s: number): void {
+  const ym = (y0 + y1) / 2, tx = x0 + (x1 - x0) * 0.62;
+  crateAt(ctx, f, tx - 0.22, ym + 0.1, tx + 0.22, ym + 0.38, C.teal, s, 1);
+  for (const x of [x0, x1]) {
+    const beam = rr(f, x - 0.07, y0 - 0.06, x + 0.07, y1 + 0.06, 0.01);
+    dropShadow(ctx, f, beam, 2.0, 0.22);
+    shape(ctx, beam, C.steelL, { w: 1.3, seed: s + 1 + x });
+  }
+  for (const [x, y] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]] as const) shape(ctx, rr(f, x - 0.07, y - 0.07, x + 0.07, y + 0.07, 0.01), C.hazard, { w: 1.2, seed: s + 3 });
+  const bridge = rr(f, x0 - 0.05, ym - 0.08, x1 + 0.05, ym + 0.08, 0.01);
+  dropShadow(ctx, f, bridge, 2.2, 0.25);
+  shape(ctx, bridge, C.coral, { w: 1.5, seed: s + 4 });
+  shape(ctx, rr(f, tx - 0.13, ym - 0.12, tx + 0.13, ym + 0.12, 0.02), C.steelD, { w: 1.3, seed: s + 5 });
+  light(ctx, ...f.p(tx, ym), f.l(0.03), C.ledWarm);
+}
+
+
+/** A steam puff from above: overlapping paper lobes inked as one cloud, its belly hatched. */
+function puffTop(ctx: Ctx, x: number, y: number, r: number, s: number): void {
+  const lobes = [[0, 0, 1], [-0.7, 0.25, 0.7], [0.7, 0.2, 0.75], [-0.25, -0.55, 0.65], [0.4, -0.45, 0.6]] as const;
+  castShadow(ctx, ellipsePts(x, y, r * 1.4, r * 1.2, s, 0.05, 16), r * 1.6, 0.18);
+  for (const [dx, dy, k] of lobes) flat(ctx, ellipsePts(x + dx * r, y + dy * r, r * k + 1.4, r * k + 1.4, s, 0.05, 18), C.ink, 0.75);
+  for (const [dx, dy, k] of lobes) flat(ctx, ellipsePts(x + dx * r, y + dy * r, r * k, r * k, s, 0.05, 18), C.paper);
+  const belly = ellipsePts(x + r * 0.3, y + r * 0.4, r * 0.8, r * 0.35, s + 1, 0.05, 18);
+  hatch(ctx, belly, Math.PI / 4, 2.6, { alpha: 0.28, seed: s });
+}
+
+// ── routing blocks: shared plate and core parts ─────────────────────────────
+
+/** Lip colour of each side's mouths, by local side (N, E, S, W). */
+type Lips = readonly [string, string, string, string];
+const NEUTRAL: Lips = [C.brass, C.brass, C.brass, C.brass];
+/** The chosen item's way (cyan) and the others' (coral), for sorters' lips and lanes. */
+const CHOSEN = C.cyan, OTHERS = C.coral;
+/** Light painted steel of the routing blocks' plates. */
+const PLATE = mix(C.steel, C.steelL, 0.35);
+/** How deep a ribbon mouth cuts into the plate (tiles). */
+const MOUTH_D = 0.12;
+type LRect = readonly [number, number, number, number];
+
+/** Local rect of the mouth of tile i along a side, d tiles deep from the plate's edge. */
+function mouthRect(f: Frame, side: number, i: number, d: number): LRect {
+  switch (side & 3) {
+    case 0: return [i + 0.2, 0.04, i + 0.8, 0.04 + d];
+    case 1: return [f.w - 0.04 - d, i + 0.2, f.w - 0.04, i + 0.8];
+    case 2: return [i + 0.2, f.h - 0.04 - d, i + 0.8, f.h - 0.04];
+    default: return [0.04, i + 0.2, 0.04 + d, i + 0.8];
+  }
+}
+
+/** The point d tiles out of (cx, cy) towards a side. */
+const lanePt = (side: number, cx: number, cy: number, d: number): [number, number] =>
+  [cx + [0, d, 0, -d][side & 3]!, cy + [-d, 0, d, 0][side & 3]!];
+
+/** Local rect of a lane from r0 to r1 tiles out of (cx, cy) towards a side, half-width hw. */
+function laneRect(side: number, cx: number, cy: number, r0: number, r1: number, hw: number): LRect {
+  switch (side & 3) {
+    case 0: return [cx - hw, cy - r1, cx + hw, cy - r0];
+    case 1: return [cx + r0, cy - hw, cx + r1, cy + hw];
+    case 2: return [cx - hw, cy + r0, cx + hw, cy + r1];
+    default: return [cx - r1, cy - hw, cx - r0, cy + hw];
+  }
+}
+
+/**
+ * A routing block's plate: riveted light steel on the whole footprint, each side opening on
+ * ribbon mouths (one per tile, exactly the ribbon's band, so a ribbon at any side plugs straight
+ * in): a dark throat framed by a coloured lip, and a flow chevron pointing `chev[side]` (null: none).
+ */
+function forkPlate(ctx: Ctx, f: Frame, lips: Lips, chev: ReadonlyArray<number | null>, s: number, color: string = PLATE): void {
+  plinth(ctx, f, color, 0.04, s);
+  for (let side = 0; side < 4; side++) {
+    const n = side & 1 ? f.h : f.w;
+    for (let i = 0; i < n; i++) {
+      const m = mouthRect(f, side, i, MOUTH_D);
+      // The lip frames the throat on its three inner sides.
+      const [x0, y0, x1, y1] = m, k = 0.05;
+      const frame: LRect = side === 0 ? [x0 - k, y0, x1 + k, y1 + k] : side === 2 ? [x0 - k, y0 - k, x1 + k, y1] : side === 1 ? [x0 - k, y0 - k, x1, y1 + k] : [x0, y0 - k, x1 + k, y1 + k];
+      shape(ctx, rr(f, ...frame, 0.02), lips[side]!, { w: 1, shade: false, jitter: 0, seed: s + side * 5 + i });
+      flat(ctx, rr(f, ...m, 0.012), C.ink);
+      ctx.save();
+      ctx.strokeStyle = C.steelD; ctx.lineWidth = 1;
+      for (let j = 1; j < 4; j++) {
+        const t = j / 4;
+        const [a, b] = side & 1 ? [f.p(x0, y0 + (y1 - y0) * t), f.p(x1, y0 + (y1 - y0) * t)] : [f.p(x0 + (x1 - x0) * t, y0), f.p(x0 + (x1 - x0) * t, y1)];
+        ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+      }
+      ctx.restore();
+      const d = chev[side];
+      if (d !== null && d !== undefined) chevron(ctx, f, (x0 + x1) / 2, (y0 + y1) / 2, d, 0.065, lips[side] === C.coral ? C.peachL : lips[side] === C.cyan ? C.led : C.ice, 2.2, s + 30 + side * 5 + i);
+    }
+  }
+}
+
+/**
+ * The way in of a directional routing block from above (in from the back, S, only; owner
+ * 2026-10-12): the turquoise hopper mouth flaring out of the plate over the incoming ribbon,
+ * wide outside and narrowing to the mouth, its dark throat inside; it stands taller than the
+ * plate, so it casts a shadow. Drawn last, over the plate's back edge.
+ */
+function intakeTop(ctx: Ctx, f: Frame, s: number): void {
+  const rim: Pt[] = [f.p(0.19, 0.93), f.p(0.81, 0.93), f.p(0.96, 1.14), f.p(0.04, 1.14)];
+  dropShadow(ctx, f, rim, 0.85, 0.3);
+  flat(ctx, rim, C.turq);
+  const throat: Pt[] = [f.p(0.27, 0.955), f.p(0.73, 0.955), f.p(0.86, 1.1), f.p(0.14, 1.1)];
+  flat(ctx, throat, C.ink);
+  // The inner walls: the far (lit) cheek and the near (shaded) one, a strip curtain at the mouth.
+  flat(ctx, [f.p(0.27, 0.955), f.p(0.73, 0.955), f.p(0.7, 0.99), f.p(0.3, 0.99)], C.steelD);
+  ink(ctx, throat, { closed: true, w: 1.1, alpha: 0.8, shade: false, jitter: 0, seed: s + 1 });
+  ink(ctx, [f.p(0.04, 1.14), f.p(0.19, 0.93), f.p(0.81, 0.93)], { w: 1.4, color: C.turqL, shade: false, taper: 0, jitter: 0, seed: s + 2 });
+  ink(ctx, rim, { closed: true, w: 1.6, seed: s + 3 });
+}
+
+/** A flat arrow on the plate (local tiles), filled and inked, with a small drop shadow. */
+function arrowTop(ctx: Ctx, f: Frame, a: Array<[number, number]>, color: string, w: number, s: number): void {
+  const pts = a.map(([x, y]) => f.p(x, y));
+  flat(ctx, pts.map(([x, y]) => [x + 1.5, y + 2] as Pt), C.ink, 0.3);
+  shape(ctx, pts, color, { w, shade: false, jitter: 0, seed: s });
+}
+
+/** The router's turntable hub seen from above: a steel disc, four spokes, a cyan eye. */
+function hub(ctx: Ctx, f: Frame, x: number, y: number, r: number, s: number): void {
+  const [cx, cy] = f.p(x, y);
+  const R = f.l(r);
+  const pts = ellipsePts(cx, cy, R, R, s, 0.004, 32);
+  castShadow(ctx, pts, f.l(0.06), 0.35);
+  shape(ctx, pts, C.steelL, { w: 1.6, seed: s });
+  ink(ctx, ellipsePts(cx, cy, R * 0.72, R * 0.72, s + 1, 0, 28), { closed: true, w: 1.1, color: C.steel, shade: false, seed: s + 1 });
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    ink(ctx, [[cx + Math.cos(a) * R * 0.3, cy + Math.sin(a) * R * 0.3], [cx + Math.cos(a) * R * 0.72, cy + Math.sin(a) * R * 0.72]], { w: 1.6, color: C.steelDD, shade: false, taper: 0, seed: s + 2 + i });
+  }
+  light(ctx, cx, cy, Math.max(1.6, R * 0.24), C.led);
+}
+
+/** A plain glyph window (the game draws the chosen item in it): paper, steel rim, ink frame. */
+function glyphWindow(ctx: Ctx, f: Frame, x: number, y: number, hr: number, s: number): void {
+  shape(ctx, rr(f, x - hr - 0.035, y - hr - 0.035, x + hr + 0.035, y + hr + 0.035, 0.03), C.steelDD, { w: 1.2, shade: false, jitter: 0, seed: s });
+  const w = rr(f, x - hr, y - hr, x + hr, y + hr, 0.02);
+  flat(ctx, w, C.paper);
+  ink(ctx, w, { closed: true, w: 1.2, alpha: 0.85, shade: false, taper: 0, jitter: 0, seed: s + 1 });
+}
+
+/**
+ * Sorter / inverted sorter from above: lanes cross under a plain window (0.4 tile) for the
+ * chosen item's glyph. The chosen item's way is cyan (lane and lips): straight on for the
+ * sorter, to the sides for the inverted one, which also wears a coral bar across the straight lane.
+ */
+function sorterTop(ctx: Ctx, f: Frame, s: number, inverted: boolean): void {
+  const [st, sd] = inverted ? [OTHERS, CHOSEN] : [CHOSEN, OTHERS];
+  forkPlate(ctx, f, [st, sd, C.turq, sd], [0, 1, null, 3], s);
+  shape(ctx, rr(f, 0.18, 0.18, 0.82, 0.82, 0.05), C.steel, { w: 1.5, seed: s + 1 });
+  flat(ctx, rr(f, 0.35, 0.18, 0.65, 0.82, 0.01), mix(st, C.ink, 0.15));
+  flat(ctx, rr(f, 0.18, 0.35, 0.82, 0.65, 0.01), mix(sd, C.ink, 0.15));
+  glyphWindow(ctx, f, 0.5, 0.5, 0.2, s + 2);
+  if (inverted) shape(ctx, rr(f, 0.29, 0.225, 0.71, 0.27, 0.01), C.coral, { w: 1.2, shade: false, jitter: 0, seed: s + 3 });
+  intakeTop(ctx, f, s + 40);
+}
+
+/**
+ * Overflow / underflow gate from above: the open way is a cyan lane with chevrons; the other
+ * way is shut at its mouths by hazard-striped flaps (they swing open when the open way backs up);
+ * a brass valve in the middle.
+ */
+function gateTop(ctx: Ctx, f: Frame, s: number, under: boolean): void {
+  const open = C.cyan, shut = C.hazard;
+  forkPlate(ctx, f, under ? [shut, open, C.turq, open] : [open, shut, C.turq, shut], under ? [null, 1, null, 3] : [0, null, null, null], s);
+  shape(ctx, rr(f, 0.18, 0.18, 0.82, 0.82, 0.05), C.steel, { w: 1.5, seed: s + 1 });
+  const lane = mix(C.steel, C.ink, 0.3), lit = mix(open, C.ink, 0.15);
+  flat(ctx, rr(f, 0.35, 0.18, 0.65, 0.82, 0.01), under ? lane : lit);
+  flat(ctx, rr(f, 0.18, 0.35, 0.82, 0.65, 0.01), under ? lit : lane);
+  flat(ctx, rr(f, 0.35, 0.5, 0.65, 0.82, 0.01), lit);
+  if (under) for (const side of [1, 3]) chevron(ctx, f, side === 1 ? 0.72 : 0.28, 0.5, side, 0.07, C.ice, 2.2, s + 4 + side);
+  else chevron(ctx, f, 0.5, 0.28, 0, 0.07, C.ice, 2.2, s + 4);
+  chevron(ctx, f, 0.5, 0.74, 0, 0.07, C.ice, 2.2, s + 9);
+  const flaps: LRect[] = under ? [[0.2, 0.08, 0.8, 0.17]] : [[0.08, 0.2, 0.17, 0.8], [0.83, 0.2, 0.92, 0.8]];
+  for (const [i, fl] of flaps.entries()) {
+    const p = rr(f, ...fl, 0.015);
+    castShadow(ctx, p, f.l(0.08), 0.35);
+    flat(ctx, p, C.hazard);
+    ctx.save(); ctx.beginPath(); ctx.moveTo(p[0]![0], p[0]![1]); for (const q of p) ctx.lineTo(q[0], q[1]); ctx.closePath(); ctx.clip();
+    hatch(ctx, p, Math.PI / 4, f.l(0.07), { w: f.l(0.03), alpha: 0.85, seed: s + 10 + i });
+    ctx.restore();
+    ink(ctx, p, { closed: true, w: 1.3, seed: s + 12 + i });
+  }
+  const c = f.p(0.5, 0.5);
+  const v = ellipsePts(c[0], c[1], f.l(0.14), f.l(0.14), s + 20, 0, 28);
+  castShadow(ctx, v, f.l(0.05), 0.35);
+  shape(ctx, v, C.brass, { w: 1.5, seed: s + 20 });
+  ink(ctx, [[c[0] - f.l(0.11), c[1]], [c[0] + f.l(0.11), c[1]]], { w: 2.2, color: C.steelD, shade: false, taper: 0, seed: s + 21 });
+  ink(ctx, [[c[0], c[1] - f.l(0.11)], [c[0], c[1] + f.l(0.11)]], { w: 2.2, color: C.steelD, shade: false, taper: 0, seed: s + 22 });
+  rivet(ctx, c[0], c[1], f.l(0.03), C.brassL);
+  intakeTop(ctx, f, s + 40);
+}
+
+/** A roller apron from above (a port's conveyor into a wall): a dark bed, rollers across its run. */
+function apronTop(ctx: Ctx, f: Frame, x0: number, y0: number, x1: number, y1: number, run: 'x' | 'y', s: number): void {
+  shape(ctx, rr(f, x0, y0, x1, y1, 0.01), C.steelDD, { w: 1.2, seed: s });
+  const len = run === 'y' ? y1 - y0 : x1 - x0, n = Math.max(2, Math.round(len / 0.11));
+  for (let i = 1; i < n; i++) {
+    const t = i / n;
+    const a: Pt = run === 'y' ? f.p(x0 + 0.03, y0 + (y1 - y0) * t) : f.p(x0 + (x1 - x0) * t, y0 + 0.03);
+    const b: Pt = run === 'y' ? f.p(x1 - 0.03, y0 + (y1 - y0) * t) : f.p(x0 + (x1 - x0) * t, y1 - 0.03);
+    ink(ctx, [a, b], { w: 1.3, color: C.steelL, shade: false, taper: 0, jitter: 0, seed: s + i });
+  }
+}
+
+/** A construction drone from above: a coral body, four arms, four rotor discs, a status LED. */
+function droneTop(ctx: Ctx, f: Frame, x: number, y: number, r: number, s: number): void {
+  const c = f.p(x, y);
+  for (let k = 0; k < 4; k++) {
+    const a = Math.PI / 4 + (k * Math.PI) / 2;
+    const q: Pt = [c[0] + Math.cos(a) * f.l(r), c[1] + Math.sin(a) * f.l(r)];
+    ink(ctx, [c, q], { w: f.l(0.035), color: C.steelL, shade: false, taper: 0, jitter: 0, seed: s + k });
+    shape(ctx, ellipsePts(q[0], q[1], f.l(r * 0.45), f.l(r * 0.45), s + 10 + k, 0, 16), mix(C.ice, C.steelL, 0.35), { w: 1, seed: s + 10 + k });
+  }
+  const body = rr(f, x - r * 0.38, y - r * 0.38, x + r * 0.38, y + r * 0.38, 0.02);
+  castShadow(ctx, body, f.l(0.06), 0.25);
+  shape(ctx, body, C.coral, { w: 1.2, seed: s + 20 });
+  light(ctx, c[0], c[1], f.l(0.028), C.led);
+}
+
+/** A drone pad from above: a dark disc, a hazard ring, a parked drone (or an H when it is out). */
+function padTop(ctx: Ctx, f: Frame, x: number, y: number, r: number, drone: boolean, s: number): void {
+  const c = f.p(x, y);
+  const pad = ellipsePts(c[0], c[1], f.l(r), f.l(r), s, 0.004, 32);
+  castShadow(ctx, pad, f.l(0.04), 0.25);
+  shape(ctx, pad, C.steelDD, { w: 1.4, seed: s });
+  ink(ctx, ellipsePts(c[0], c[1], f.l(r * 0.78), f.l(r * 0.78), s + 1, 0, 28), { closed: true, w: f.l(0.035), color: C.hazard, shade: false, seed: s + 1 });
+  if (drone) { droneTop(ctx, f, x, y, r * 0.5, s + 3); return; }
+  const h = r * 0.32;
+  for (const dx of [-h, h]) ink(ctx, [f.p(x + dx, y - h), f.p(x + dx, y + h)], { w: f.l(0.04), color: C.ice, shade: false, taper: 0, jitter: 0, seed: s + 5 });
+  ink(ctx, [f.p(x - h, y), f.p(x + h, y)], { w: f.l(0.04), color: C.ice, shade: false, taper: 0, jitter: 0, seed: s + 6 });
+}
+
+// ── desert machines with a moving part (moving.ts): the wind turbine, the sand collector ──────
+
+/** The iso art's desert paints (buildings.ts): weathered ochre, the vanes' sand-white, rust, sifted sand. */
+const OCHRE = mix(C.peachD, C.dune, 0.4);
+const OCHRE_L = mix(OCHRE, C.sand, 0.45);
+const SAIL = mix(C.paperD, C.sand, 0.3);
+const RUST = mix(C.coralD, C.mesa, 0.35);
+const SANDFILL = mix(C.sand, C.dune, 0.4);
+
+/** Local tile points round an axis-aligned local ellipse (it turns with the frame). */
+const ellLocal = (f: Frame, cx: number, cy: number, rx: number, ry: number, n = 36): Pt[] =>
+  Array.from({ length: n }, (_, i) => f.p(cx + Math.cos((i / n) * Math.PI * 2) * rx, cy + Math.sin((i / n) * Math.PI * 2) * ry));
+
+/**
+ * The wind turbine's body from above: the long shadows of the tower and the crown, the battered
+ * ochre foot with its four buttress fins on the diagonals, the generator cabinet (grille, LEDs),
+ * the slatted tower ringed in steel, the bearing collar the crown turns on.
+ */
+function turbineBodyTop(ctx: Ctx, f: Frame, s: number): void {
+  const { cx, cy, r } = TURBINE;
+  const c = f.p(cx, cy);
+  flat(ctx, ellipsePts(c[0] + f.l(0.36), c[1] + f.l(0.5), f.l(r * 0.92), f.l(r * 0.92), s, 0.01, 40), C.inkSoft, 0.16);
+  batter(ctx, rr(f, 0.28, 0.28, 1.72, 1.72, 0.06), rr(f, 0.4, 0.4, 1.6, 1.6, 0.04), OCHRE, OCHRE_L, s + 1);
+  const top = rr(f, 0.4, 0.4, 1.6, 1.6, 0.04), [tx0, ty0] = bounds(top);
+  stipple(ctx, tx0, ty0, f.l(1.2), f.l(1.2), 90, { clip: top, color: C.inkSoft, alpha: 0.3, seed: s + 2, r: 0.75 });
+  for (let i = 0; i < 4; i++) {
+    const a = (i * Math.PI) / 2, ca = Math.cos(a), sa = Math.sin(a), tx = -sa * 0.045, ty = ca * 0.045;
+    const fin: Pt[] = [f.p(cx + ca * 0.16 + tx, cy + sa * 0.16 + ty), f.p(cx + ca * 0.66 + tx * 0.7, cy + sa * 0.66 + ty * 0.7), f.p(cx + ca * 0.66 - tx * 0.7, cy + sa * 0.66 - ty * 0.7), f.p(cx + ca * 0.16 - tx, cy + sa * 0.16 - ty)];
+    dropShadow(ctx, f, fin, 1.2, 0.26);
+    shape(ctx, fin, OCHRE_L, { w: 1.2, seed: s + 3 + i });
+    ink(ctx, [f.p(cx + ca * 0.18, cy + sa * 0.18), f.p(cx + ca * 0.64, cy + sa * 0.64)], { w: 1, color: mix(OCHRE, C.ink, 0.35), alpha: 0.8, shade: false, taper: 0, jitter: 0, seed: s + 8 + i });
+  }
+  const cab = rr(f, 1.24, 1.24, 1.62, 1.62, 0.03);
+  dropShadow(ctx, f, cab, 1.0, 0.28);
+  shape(ctx, cab, OCHRE_L, { w: 1.4, seed: s + 12 });
+  grille(ctx, rr(f, 1.3, 1.3, 1.56, 1.46, 0.01), 3, s + 13);
+  ledStrip(ctx, f.p(1.32, 1.54), f.p(1.54, 1.54), 3, f.l(0.022), [C.led, C.ledGreen, C.led], s + 14);
+  const foot = ellipsePts(c[0], c[1], f.l(0.27), f.l(0.27), s + 15, 0.003, 36);
+  dropShadow(ctx, f, foot, 2.6, 0.24);
+  shape(ctx, foot, OCHRE, { w: 1.6, seed: s + 15 });
+  for (let k = 0; k < 12; k++) {
+    const a = (k / 12) * Math.PI * 2 + 0.13;
+    ink(ctx, [[c[0] + Math.cos(a) * f.l(0.17), c[1] + Math.sin(a) * f.l(0.17)], [c[0] + Math.cos(a) * f.l(0.265), c[1] + Math.sin(a) * f.l(0.265)]], { w: 1.1, color: mix(OCHRE, C.ink, 0.4), shade: false, taper: 0, jitter: 0, seed: s + 16 + k });
+  }
+  ink(ctx, ellipsePts(c[0], c[1], f.l(0.215), f.l(0.215), s + 30, 0, 32), { closed: true, w: 2.2, color: C.steel, shade: false, seed: s + 30 });
+  shape(ctx, ellipsePts(c[0], c[1], f.l(0.17), f.l(0.17), s + 31, 0, 28), C.steel, { w: 1.4, seed: s + 31 });
+  shape(ctx, ellipsePts(c[0], c[1], f.l(0.11), f.l(0.11), s + 32, 0, 24), C.steelL, { w: 1.1, shade: false, seed: s + 32 });
+}
+
+/**
+ * The turbine's crown from above at phase t (a third of a turn per period): the Savonius rotor's
+ * three sail-vanes curling out from the shaft — each the top edge of a curved plate, its hollow
+ * in shade and its tip rust-banded — inside the steel head ring, the hub and its red light.
+ */
+function turbineCrownTop(ctx: Ctx, f: Frame, s: number, t: number): void {
+  const { cx, cy, r, vanes } = TURBINE;
+  const c = f.p(cx, cy);
+  const th = (t * 2 * Math.PI) / vanes;
+  const ring = ellipsePts(c[0], c[1], f.l(r + 0.03), f.l(r + 0.03), s, 0, 48);
+  // The foot ring and the inside of the crown, deep in its own shade.
+  flat(ctx, ring, C.inkSoft, 0.18);
+  const N = 12;
+  for (let i = 0; i < vanes; i++) {
+    const a0 = th + (i / vanes) * Math.PI * 2;
+    const at = (u: number, off: number): Pt => {
+      const v = vaneAt(a0, u), w = vaneAt(a0, Math.min(1, u + 0.02)), q = vaneAt(a0, Math.max(0, u - 0.02));
+      const x = cx + Math.cos(v.a) * v.rho, y = cy + Math.sin(v.a) * v.rho;
+      const dx = Math.cos(w.a) * w.rho - Math.cos(q.a) * q.rho, dy = Math.sin(w.a) * w.rho - Math.sin(q.a) * q.rho, L = Math.hypot(dx, dy) || 1;
+      return f.p(x - (dy / L) * off, y + (dx / L) * off); // off > 0: towards the hollow (it curls towards growing angles)
+    };
+    const us = Array.from({ length: N + 1 }, (_, k) => k / N);
+    const hollow = (u: number): number => 0.022 + 0.07 * Math.pow(Math.sin(Math.PI * Math.min(1, u * 0.9 + 0.1)), 0.7);
+    const shadowSide = [...us.map((u) => at(u, -0.014)), ...us.slice().reverse().map((u) => at(u, hollow(u)))];
+    flat(ctx, shadowSide, mix(SAIL, C.ink, 0.45));
+    const edge = [...us.map((u) => at(u, -0.016)), ...us.slice().reverse().map((u) => at(u, 0.016))];
+    flat(ctx, edge, SAIL);
+    const tip = us.filter((u) => u >= 0.8);
+    flat(ctx, [...tip.map((u) => at(u, -0.016)), ...tip.slice().reverse().map((u) => at(u, hollow(u)))], RUST);
+    ink(ctx, shadowSide, { closed: true, w: 1.3, seed: s + 10 + i });
+    ink(ctx, us.map((u) => at(u, -0.016)), { w: 1.6, shade: false, taper: 0, jitter: 0, seed: s + 14 + i });
+  }
+  ink(ctx, ring, { closed: true, w: f.l(0.055) + 2, color: C.ink, shade: false, seed: s + 20 });
+  ink(ctx, ring, { closed: true, w: f.l(0.055), color: C.steel, shade: false, seed: s + 21 });
+  ink(ctx, ring.filter(([x, y]) => x + y < c[0] + c[1]), { w: 1, color: C.steelL, shade: false, taper: 0.2, seed: s + 22 });
+  shape(ctx, ellipsePts(c[0], c[1], f.l(0.075), f.l(0.075), s + 30, 0, 20), C.steelD, { w: 1.3, seed: s + 30 });
+  light(ctx, c[0], c[1], f.l(0.04), C.ledRed);
+}
+
+/**
+ * The sand collector's body from above (the hopper's side of the split): the steel skid, the
+ * ochre hopper heaped with sifted sand (its outlet is the port at the front), the sieve over its
+ * back, the teal motor house with its grille, motor drum and LEDs.
+ */
+function collectorBodyTop(ctx: Ctx, f: Frame, s: number): void {
+  const { split } = SAND_WHEEL;
+  const skid = rr(f, 0.05, 0.05, 1.95, split - 0.02, 0.06);
+  castShadow(ctx, skid, f.l(0.05), 0.3);
+  shape(ctx, skid, C.steel, { w: 1.6, seed: s });
+  for (const [x, y] of [[0.14, 0.14], [1.86, 0.14], [0.14, split - 0.11], [1.86, split - 0.11]] as const) rivet(ctx, ...f.p(x, y), f.l(0.03), C.steelL);
+  const outer = rr(f, 0.1, 0.08, 1.1, 0.84, 0.03), inner = rr(f, 0.22, 0.2, 0.98, 0.72, 0.02);
+  dropShadow(ctx, f, outer, 1.05, 0.26);
+  flat(ctx, outer, OCHRE_L);
+  const [X0, Y0, X1, Y1] = bounds(outer), [x0, y0, x1, y1] = bounds(inner);
+  flat(ctx, [[X0, Y0], [X1, Y0], [x1, y0], [x0, y0]], mix(OCHRE, C.ink, 0.3));
+  flat(ctx, [[X0, Y0], [x0, y0], [x0, y1], [X0, Y1]], mix(OCHRE, C.ink, 0.2));
+  flat(ctx, inner, C.ink);
+  const hc = f.p(0.6, 0.48);
+  const heap = ellipsePts(hc[0], hc[1], f.l(0.34), f.l(0.22), s + 1, 0.06, 24, f.rot & 1 ? Math.PI / 2 : 0);
+  flat(ctx, heap, SANDFILL);
+  flat(ctx, ellipsePts(hc[0] - f.l(0.07), hc[1] - f.l(0.05), f.l(0.18), f.l(0.11), s + 2, 0.05, 20, f.rot & 1 ? Math.PI / 2 : 0), mix(SANDFILL, '#ffffff', 0.35));
+  stipple(ctx, hc[0] - f.l(0.36), hc[1] - f.l(0.36), f.l(0.72), f.l(0.72), 50, { clip: heap, color: C.inkSoft, alpha: 0.35, seed: s + 3, r: 0.8 });
+  ink(ctx, outer, { closed: true, w: 1.8, seed: s + 4 });
+  ink(ctx, inner, { closed: true, w: 1.1, alpha: 0.7, shade: false, seed: s + 5 });
+  // The sieve: a screen over the hopper's back, on ochre rails.
+  const sv = rr(f, 0.2, 0.42, 1.0, split - 0.03, 0.01);
+  dropShadow(ctx, f, sv, 0.6, 0.22);
+  flat(ctx, sv, mix(SANDFILL, C.ink, 0.1));
+  ctx.save();
+  ctx.strokeStyle = mix(OCHRE, C.ink, 0.55); ctx.lineWidth = 0.8; ctx.globalAlpha = 0.7;
+  for (let i = 1; i < 9; i++) { const x = 0.2 + (0.8 * i) / 9; const [a, b] = [f.p(x, 0.44), f.p(x, split - 0.05)]; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
+  for (let j = 1; j < 4; j++) { const y = 0.42 + ((split - 0.45) * j) / 4; const [a, b] = [f.p(0.22, y), f.p(0.98, y)]; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
+  ctx.restore();
+  for (const [i, x] of [0.38, 0.55, 0.74].entries()) ink(ctx, [f.p(x, split - 0.06), f.p(x + 0.02, 0.6 - 0.05 * i)], { w: f.l(0.035), color: mix(SANDFILL, '#ffffff', 0.3), shade: false, taper: 0.4, seed: s + 6 + i });
+  ink(ctx, sv, { closed: true, w: 1.4, seed: s + 9 });
+  for (const x of [0.2, 1.0]) ink(ctx, [f.p(x, 0.42), f.p(x, split - 0.03)], { w: f.l(0.04), color: C.steelD, shade: false, taper: 0, jitter: 0, seed: s + 10 });
+  const mh = rr(f, 1.26, 0.16, 1.86, 0.84, 0.04);
+  castShadow(ctx, mh, f.l(0.12), 0.3);
+  shape(ctx, mh, C.teal, { w: 1.8, seed: s + 11 });
+  grille(ctx, rr(f, 1.34, 0.24, 1.78, 0.36, 0.02), 3, s + 12);
+  drumTop(ctx, rr(f, 1.43, 0.3, 1.69, 0.72, 0.04), (f.rot & 1) === 0 ? 'y' : 'x', C.steelL, s + 13, 2, f.l(0.06));
+  ledStrip(ctx, f.p(1.36, 0.77), f.p(1.62, 0.77), 3, f.l(0.024), [C.ledGreen, C.led, C.ledWarm], s + 14);
+}
+
+/**
+ * The sand collector's wheel side from above at phase t (an eighth of a turn per period): the pit
+ * in the bare floor with its spoil heaps, the trestles and the axle, the bucket wheel seen
+ * foreshortened as the excavator's cutter is, its chain to the motor house.
+ */
+function collectorWheelTop(ctx: Ctx, f: Frame, s: number, t: number): void {
+  const { cx, cy, r, half, buckets, split } = SAND_WHEEL;
+  for (const [i, dx] of [-0.37, 0.37].entries()) {
+    const heap = ellLocal(f, cx + dx, cy + 0.08, 0.13, 0.3, 24);
+    shape(ctx, heap, mix(C.sand, C.dune, 0.45), { w: 1, alpha: 0.55, shade: false, seed: s + i });
+  }
+  const pit = ellLocal(f, cx, cy, 0.24, 0.5);
+  flat(ctx, pit, mix(C.dug, C.mesa, 0.3));
+  ctx.save(); pathOf(ctx, pit); ctx.clip();
+  flat(ctx, pit.map(([x, y]) => [x + f.l(0.08), y + f.l(0.1)] as Pt), mix(C.dug, C.ink, 0.42));
+  ctx.restore();
+  ink(ctx, pit, { closed: true, w: 1.3, alpha: 0.7, shade: false, seed: s + 3 });
+  for (const k of [-1, 1]) {
+    const x = cx + k * (half + 0.13);
+    pipe(ctx, [f.p(x, cy - 0.32), f.p(x, cy + 0.32)], f.l(0.05), C.steel, s + 4 + k, false);
+  }
+  pipe(ctx, [f.p(cx - half - 0.2, cy), f.p(cx + half + 0.2, cy)], f.l(0.06), C.steelL, s + 7, false);
+  cable(ctx, f.p(cx + half + 0.21, cy), f.p(1.42, split + 0.01), f.l(0.03), 0.12, C.steelDD, s + 8);
+  bucketWheelTop(ctx, f, cx, cy, r, half + 0.06, 'y', buckets, (t * 2 * Math.PI) / buckets, C.steelL, s + 10, { bucket: C.brass, load: SANDFILL, full: bucketFull });
+}
+
+/** Plan recipes of the buildings with a moving part: their body, and the part at phase t (moving.ts). */
+const MOVING_TOP: Partial<Record<BuildingId, { body: Recipe; part: (ctx: Ctx, f: Frame, seed: number, t: number) => void }>> = {
+  wind_flower: { body: turbineBodyTop, part: turbineCrownTop },
+  sand_collector: { body: collectorBodyTop, part: collectorWheelTop },
+};
+
+/** The Heart's solar rows (same rects as its iso art): `n` framed panels along each row. */
+
+const HEART_PV_TOP: ReadonlyArray<readonly [number, number, number, number, number]> = [
+  [1.3, 2.35, 2.0, 2.75, 1],
+  [1.3, 2.95, 3.45, 3.35, 3],
+  [1.3, 3.43, 3.45, 3.83, 3],
+];
+
+// ── poles and link masts from above ─────────────────────────────────────────
+
+/** The poles' weathered steel, their arm, their concrete footing (as in the iso art). */
+const POST = mix(C.steel, C.peachD, 0.25);
+const ARM_STEEL = mix(C.steelL, C.peachD, 0.12);
+const FOOTING = mix(C.salt, C.mesa, 0.3);
+
+/** A crossarm seen from above: the beam along the diagonal through (cx, cy), `half` tiles each side, with its shadow dropped by `h` levels. */
+function crossarmTop(ctx: Ctx, f: Frame, cx: number, cy: number, half: number, h: number, s: number): void {
+  const w = 0.04;
+  const beam = [onArm(cx, cy, -half, -w), onArm(cx, cy, half, -w), onArm(cx, cy, half, w), onArm(cx, cy, -half, w)].map(([x, y]) => f.p(x, y));
+  const d = f.l(0.11 * h);
+  flat(ctx, beam.map(([x, y]) => [x + d * 0.7, y + d] as Pt), C.inkSoft, 0.3);
+  shape(ctx, beam, mix(ARM_STEEL, '#ffffff', 0.15), { w: 1.4, shade: false, jitter: 0, seed: s });
+}
+
+/**
+ * The pole from straight above (it reads by its shadow, like a sundial's): the post's long
+ * shadow and its crossarm's dropped down-right, the concrete footing, the post's cap, the
+ * junction box on its front, the crossarm along the diagonal and its three insulators — the
+ * wires' terminals (art/terminals.ts `POLE`).
+ */
+function poleTop(ctx: Ctx, f: Frame, s: number): void {
+  const { cx, cy, top, arm, half } = POLE;
+  const c = f.p(cx, cy), d = f.l(0.11 * top);
+  ink(ctx, [c, [c[0] + d * 0.7, c[1] + d]], { w: f.l(0.075), color: C.inkSoft, alpha: 0.34, shade: false, taper: 0, jitter: 0, seed: s });
+  shape(ctx, ellipsePts(c[0], c[1], f.l(0.16), f.l(0.16), s + 1, 0, 24), FOOTING, { w: 1.3, shade: false, jitter: 0, seed: s + 1 });
+  const jb = rr(f, cx + 0.035, cy + 0.035, cx + 0.15, cy + 0.15, 0.01);
+  shape(ctx, jb, C.steelL, { w: 1.1, shade: false, jitter: 0, seed: s + 2 });
+  light(ctx, ...f.p(cx + 0.115, cy + 0.115), f.l(0.022), C.ledGreen);
+  crossarmTop(ctx, f, cx, cy, half, arm, s + 3);
+  shape(ctx, ellipsePts(c[0], c[1], f.l(0.06), f.l(0.06), s + 4, 0, 16), POST, { w: 1.2, shade: false, jitter: 0, seed: s + 4 });
+  for (const [i, t] of terminalsOf('mast').entries()) terminalTop(ctx, f, t, s + 10 + i * 4);
+}
+
+/**
+ * The pylon from above: its square lattice narrowing to the head and its long shadow, the four
+ * concrete feet, the crossarm and its two suspension strings' insulators (art/terminals.ts
+ * `PYLON`), the aviation light on the peak.
+ */
+function pylonTop(ctx: Ctx, f: Frame, s: number): void {
+  const { cx, cy, foot, apex, arm, half } = PYLON;
+  const c = f.p(cx, cy), d = f.l(0.11 * apex);
+  const corners = ([[-1, -1], [1, -1], [1, 1], [-1, 1]] as const).map(([a, b]) => f.p(cx + a * foot, cy + b * foot));
+  flat(ctx, hull([...corners, [c[0] + d * 0.7, c[1] + d]]), C.inkSoft, 0.18);
+  for (const [i, p] of corners.entries()) shape(ctx, ellipsePts(p[0], p[1], f.l(0.075), f.l(0.075), s + i, 0, 14), FOOTING, { w: 1.1, shade: false, jitter: 0, seed: s + i });
+  for (const k of [0.66, 0.33]) ink(ctx, ([[-1, -1], [1, -1], [1, 1], [-1, 1]] as const).map(([a, b]) => f.p(cx + a * foot * k, cy + b * foot * k)), { closed: true, w: 1.2, color: C.steelD, alpha: 0.75, shade: false, taper: 0, jitter: 0, seed: s + 4 + k * 10 });
+  for (const p of corners) ink(ctx, [p, c], { w: f.l(0.035), color: C.steelL, shade: false, taper: 0.1, jitter: 0, seed: s + 5 });
+  crossarmTop(ctx, f, cx, cy, half, arm, s + 6);
+  for (const [i, t] of terminalsOf('pylon').entries()) terminalTop(ctx, f, t, s + 10 + i * 4);
+  light(ctx, c[0], c[1], f.l(0.07), C.ledRed);
+}
+
+/** One of the Heart's link masts from above (art/terminals.ts `HEART_MASTS`): its long shadow, its plinth, the coral collar, the big insulator its wires clamp to. */
+function linkMastTop(ctx: Ctx, f: Frame, x: number, y: number, s: number): void {
+  const c = f.p(x, y), d = f.l(0.11 * HEART_MASTS.top);
+  ink(ctx, [c, [c[0] + d * 0.7, c[1] + d]], { w: f.l(0.07), color: C.inkSoft, alpha: 0.28, shade: false, taper: 0, jitter: 0, seed: s });
+  shape(ctx, ellipsePts(c[0], c[1], f.l(0.14), f.l(0.14), s + 1, 0, 20), C.steelD, { w: 1.3, shade: false, jitter: 0, seed: s + 1 });
+  shape(ctx, ellipsePts(c[0], c[1], f.l(0.095), f.l(0.095), s + 2, 0, 18), C.coral, { w: 1.1, shade: false, jitter: 0, seed: s + 2 });
+  terminalTop(ctx, f, { x, y, z: HEART_MASTS.top }, s + 3, 1.35);
+}
+
+/**
+ * The first pole's plan art (until 2026-10-12): insulator petals round a light. Kept, like its
+ * iso drawing (`petalMastIso`), for another building later; nothing wears it yet.
+ */
+export function petalMastTop(ctx: Ctx, f: Frame, s: number): void {
+  const c = f.p(0.5, 0.52);
+  flat(ctx, ellipsePts(c[0] + 4, c[1] + 5, f.l(0.22), f.l(0.13), s), C.ink, 0.25);
+  petals(ctx, c[0], c[1], f.l(0.36), 5, [C.ice, C.violetL], -Math.PI / 2, s, 0.5);
+  light(ctx, c[0], c[1], f.l(0.08), C.led);
+}
+
+const R: Partial<Record<BuildingId, Recipe>> = {
+  hearth(ctx, f, s) {
+    // The base's core from above — the layout of its iso art (recipes/buildings.ts): roller
+    // aprons from every port into the fortified depot; on its roof the solar rows and the uplink
+    // dish (the CrierBelt mark on its face); its two link masts, west and east; drone pads on the
+    // corners, builders parked; status beacons. An automated base: nothing is lit from inside.
+    plinth(ctx, f, C.steel, 0.05, s);
+    for (const [i, p] of (BUILDINGS.hearth as BuildingDef).ports.entries()) {
+      const side = sideIndex[p.side], c = (side & 1 ? p.y : p.x) + 0.5, h = 0.17, k = s + 100 + i * 5;
+      if (side === 0) apronTop(ctx, f, c - h, 0.12, c + h, 1.02, 'y', k);
+      else if (side === 2) apronTop(ctx, f, c - h, 3.98, c + h, 4.88, 'y', k);
+      else if (side === 1) apronTop(ctx, f, 3.98, c - h, 4.88, c + h, 'x', k);
+      else apronTop(ctx, f, 0.12, c - h, 1.02, c + h, 'x', k);
+    }
+    for (const [i, [x, y]] of ([[0.64, 0.64], [4.36, 0.64], [0.64, 4.36], [4.36, 4.36]] as const).entries()) padTop(ctx, f, x, y, 0.4, i !== 1, s + 20 + i * 7);
+    // The depot: battered armour walls round a dark roof, a drone hatch, vents along the edges.
+    const outer = rr(f, 1, 1, 4, 4, 0.05), inner = rr(f, 1.16, 1.16, 3.84, 3.84, 0.04);
+    castShadow(ctx, outer, f.l(0.32), 0.32);
+    batter(ctx, outer, inner, mix(C.steel, C.violet, 0.22), C.steelD, s + 200);
+    for (let i = 1; i < 12; i++) for (const y of [1.08, 3.92]) rivet(ctx, ...f.p(1 + i * 0.25, y), f.l(0.022), C.steelL);
+    hatchDoor(ctx, rr(f, 1.3, 1.3, 1.85, 1.85, 0.02), s + 210);
+    grille(ctx, rr(f, 3.45, 2.1, 3.75, 2.6, 0.01), s + 211);
+    for (const [i, [x0, y0, x1, y1, n]] of HEART_PV_TOP.entries()) {
+      const shadow = rr(f, x0, y0, x1, y1, 0.01);
+      castShadow(ctx, shadow, f.l(0.05), 0.2);
+      pvPanel(ctx, [f.p(x0, y0), f.p(x1, y0), f.p(x1, y1), f.p(x0, y1)], n * 3, 2, s + 400 + i * 20);
+    }
+    // The uplink: a big dish over the depot's north half (no mark on its face: owner, 2026-10-13).
+    const dc = f.p(2.7, 1.72);
+    castShadow(ctx, ellipsePts(dc[0], dc[1], f.l(0.62), f.l(0.62), s + 300, 0, 32), f.l(0.45), 0.25);
+    dish(ctx, dc[0], dc[1], f.l(0.62), s + 300);
+    // The two link masts its wires meet (art/terminals.ts `HEART_MASTS`); status beacons on the roof's corners.
+    for (const [i, [x, y]] of HEART_MASTS.at.entries()) linkMastTop(ctx, f, x, y, s + 10 + i * 7);
+    for (const [x, y, col] of [[3.73, 1.27, C.ledWarm], [1.24, 3.78, C.ledGreen], [3.76, 3.76, C.ledGreen]] as const) light(ctx, ...f.p(x, y), f.l(0.05), col);
+    ledStrip(ctx, f.p(1.7, 4.62), f.p(2.2, 4.62), 3, f.l(0.04), LEDS, s + 5);
+    ledStrip(ctx, f.p(2.8, 0.38), f.p(3.3, 0.38), 3, f.l(0.04), [C.ledWarm, C.led], s + 6);
+    decal(ctx, ...f.p(4.6, 2.25), f.l(0.07), s);
+  },
+  beacon(ctx, f, s) {
+    const c = f.p(0.5, 0.55);
+    for (let i = 0; i < 3; i++) {
+      const a = -Math.PI / 2 + (i * 2 * Math.PI) / 3;
+      pipe(ctx, [c, [c[0] + Math.cos(a) * f.l(0.42), c[1] + Math.sin(a) * f.l(0.42)]], f.l(0.05), C.steelL, s + i, false);
+    }
+    for (let k = 1; k <= 2; k++) ink(ctx, ellipsePts(c[0], c[1], f.l(0.2 + k * 0.1), f.l(0.2 + k * 0.1), s + k, 0.02), { closed: true, w: 1.2, alpha: 0.6, shade: false, color: C.cyan, seed: s + 10 + k });
+    dish(ctx, c[0], c[1], f.l(0.2), s + 5);
+  },
+
+  drill(ctx, f, s) {
+    // A drilling rig: the derrick from above over its geared table, the gearbox and motor, a coral power pack.
+    plinth(ctx, f, C.steel, 0.05, s, true);
+    const gb = rr(f, 0.15, 1.15, 1.85, 1.85, 0.06);
+    castShadow(ctx, gb, f.l(0.1), 0.3);
+    shape(ctx, gb, C.teal, { w: 2, seed: s + 1 });
+    grille(ctx, rr(f, 1.42, 1.28, 1.75, 1.72, 0.02), 3.2, s + 2);
+    drumTop(ctx, rr(f, 0.75, 1.38, 1.55, 1.62, 0.04), (f.rot & 1) === 0 ? 'x' : 'y', C.steelL, s + 3, 3, f.l(0.06));
+    ledStrip(ctx, f.p(0.3, 1.75), f.p(0.65, 1.75), 4, f.l(0.03), LEDS, s + 4);
+    const pack = rr(f, 1.32, 0.2, 1.85, 0.82, 0.05);
+    castShadow(ctx, pack, f.l(0.1), 0.3);
+    shape(ctx, pack, C.coral, { w: 1.8, seed: s + 5 });
+    grille(ctx, rr(f, 1.42, 0.3, 1.75, 0.55, 0.02), 3.2, s + 6);
+    light(ctx, ...f.p(1.58, 0.7), f.l(0.035), C.ledWarm);
+    pipe(ctx, [f.p(0.55, 1.35), f.p(0.7, 0.95)], f.l(0.07), C.steelD, s + 7);
+    rotaryTop(ctx, f, 0.78, 0.68, 0.33, s + 8);
+    derrickTop(ctx, f, 0.78, 0.68, 0.36, 0.08, 2.9, s + 9);
+  },
+  deep_bore(ctx, f, s) {
+    // A heavy rig: the drill floor, the tall derrick over its geared table, a rack of drill pipe,
+    // the power house with its stack.
+    plinth(ctx, f, C.steelD, 0.05, s, true);
+    for (const y of [0.45, 2.05]) for (const x of [2.45, 2.8]) light(ctx, ...f.p(x, y), f.l(0.03), C.steelL);
+    for (const [i, x] of [2.5, 2.56, 2.62, 2.68, 2.74].entries()) {
+      drumTop(ctx, rr(f, x - 0.03, 0.3, x + 0.03, 2.2, 0.02), (f.rot & 1) === 0 ? 'y' : 'x', i % 2 ? C.steelL : C.ice, s + 30 + i, 0, f.l(0.05));
+    }
+    const floor = rr(f, 0.3, 0.45, 2.3, 2.3, 0.04);
+    castShadow(ctx, floor, f.l(0.1), 0.32);
+    shape(ctx, floor, C.steel, { w: 2, seed: s + 1 });
+    shape(ctx, rr(f, 0.34, 2.18, 2.26, 2.26, 0.01), C.hazard, { w: 1, shade: false, jitter: 0, seed: s + 2 });
+    const ph = rr(f, 0.22, 2.38, 1.6, 2.85, 0.04);
+    castShadow(ctx, ph, f.l(0.12), 0.3);
+    shape(ctx, ph, C.coral, { w: 1.8, seed: s + 3 });
+    grille(ctx, rr(f, 0.32, 2.48, 0.85, 2.75, 0.02), 3.2, s + 4);
+    stack(ctx, ...f.p(1.32, 2.62), f.l(0.13), C.steelD, s + 5, C.ledWarm, f.l(0.3));
+    rotaryTop(ctx, f, 1.3, 1.38, 0.36, s + 6);
+    derrickTop(ctx, f, 1.3, 1.38, 0.72, 0.16, 4.6, s + 7);
+  },
+  excavator(ctx, f, s) {
+    // A tracked cutter from above: two crawler tracks, the turret house and its counterweight,
+    // the coral boom arms and the toothed cutter wheel at the front (N).
+    plinth(ctx, f, C.steel, 0.04, s, true);
+    for (const x of [0.47, 2.53]) {
+      const tr = rr(f, x - 0.27, 0.95, x + 0.27, 2.85, 0.06);
+      castShadow(ctx, tr, f.l(0.08), 0.3);
+      shape(ctx, tr, C.steelDD, { w: 1.8, seed: s + x * 10 });
+      ctx.save();
+      ctx.strokeStyle = C.steel; ctx.lineWidth = 1.6;
+      for (let i = 1; i < 14; i++) {
+        const y = 0.95 + (1.9 * i) / 14;
+        const [a, b] = [f.p(x - 0.24, y), f.p(x + 0.24, y)];
+        ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+      }
+      ctx.restore();
+    }
+    const house = rr(f, 0.76, 1.35, 2.24, 2.45, 0.06);
+    castShadow(ctx, house, f.l(0.16), 0.32);
+    shape(ctx, house, C.violet, { w: 2, seed: s + 1 });
+    grille(ctx, rr(f, 1.6, 1.5, 2.1, 1.85, 0.02), 3.2, s + 2);
+    hatchDoor(ctx, rr(f, 0.95, 1.5, 1.3, 1.85, 0.02), s + 3);
+    const cw = rr(f, 0.78, 2.45, 2.22, 2.82, 0.04);
+    castShadow(ctx, cw, f.l(0.14), 0.3);
+    shape(ctx, cw, C.steelD, { w: 1.8, seed: s + 4 });
+    shape(ctx, rr(f, 0.84, 2.7, 2.16, 2.78, 0.01), C.hazard, { w: 1, shade: false, jitter: 0, seed: s + 5 });
+    stack(ctx, ...f.p(2.0, 1.75), f.l(0.09), C.steelD, s + 6, C.ledWarm, f.l(0.2));
+    ledStrip(ctx, f.p(0.9, 2.3), f.p(1.4, 2.3), 5, f.l(0.03), [C.ledWarm, C.ledRed], s + 7);
+    pipe(ctx, [f.p(0.98, 1.45), f.p(1.02, 0.62)], f.l(0.1), C.coral, s + 8);
+    pipe(ctx, [f.p(2.02, 1.45), f.p(1.98, 0.62)], f.l(0.1), C.coral, s + 9);
+    // The cutter wheel stands across the front: seen from above, a toothed disc foreshortened.
+    const wc = f.p(1.5, 0.56);
+    const along = (f.rot & 1) === 0;
+    const rx = f.l(along ? 0.84 : 0.26), ry = f.l(along ? 0.26 : 0.84);
+    const teeth: Pt[] = [];
+    for (let i = 0; i < 28; i++) { const a = (i / 28) * Math.PI * 2, k = i % 2 ? 1 : 0.84; teeth.push([wc[0] + Math.cos(a) * rx * k, wc[1] + Math.sin(a) * ry * k]); }
+    castShadow(ctx, teeth, f.l(0.3), 0.28);
+    shape(ctx, teeth, C.steelL, { w: 1.8, seed: s + 10 });
+    hatch(ctx, teeth, Math.PI / 4, 3, { alpha: 0.35, seed: s + 11 });
+    ink(ctx, ellipsePts(wc[0], wc[1], rx * 0.55, ry * 0.55, s + 12, 0, 32), { closed: true, w: 1.3, color: C.steelD, shade: false, seed: s + 12 });
+    rivet(ctx, wc[0], wc[1], f.l(0.05), C.brassL);
+  },
+  pump(ctx, f, s) {
+    // A standpipe pump from above: the brimming chalice, its motor housing, a coral valve wheel.
+    const c = f.p(0.5, 0.52);
+    shape(ctx, ellipsePts(c[0], c[1], f.l(0.44), f.l(0.44), s), C.steel, { w: 1.8, seed: s });
+    const mot = rr(f, 0.2, 0.66, 0.8, 0.9, 0.04);
+    castShadow(ctx, mot, f.l(0.06), 0.3);
+    shape(ctx, mot, C.teal, { w: 1.5, seed: s + 1 });
+    drumTop(ctx, rr(f, 0.27, 0.71, 0.73, 0.85, 0.03), (f.rot & 1) === 0 ? 'x' : 'y', C.steelL, s + 2, 1, f.l(0.04));
+    const k = f.p(0.5, 0.4);
+    const cup = ellipsePts(k[0], k[1], f.l(0.37), f.l(0.37), s + 3, 0.003, 40);
+    castShadow(ctx, cup, f.l(0.14), 0.3);
+    shape(ctx, cup, C.tealL, { w: 1.8, seed: s + 3 });
+    flat(ctx, ellipsePts(k[0] + 1, k[1] + 1, f.l(0.29), f.l(0.29), s + 4, 0, 36), C.deep);
+    ink(ctx, ellipsePts(k[0] + 2, k[1] + 2, f.l(0.17), f.l(0.17), s + 5, 0.05, 28), { closed: true, w: 1.2, color: C.shallow, shade: false, seed: s + 5 });
+    ink(ctx, ellipsePts(...f.p(0.18, 0.55), f.l(0.07), f.l(0.07), s + 6, 0, 16), { closed: true, w: 2, color: C.coral, shade: false, seed: s + 6 });
+  },
+  backfiller(ctx, f, s) {
+    // A rubble hopper on legs from above: its open mouth heaped with rubble, the incline belt
+    // feeding it from the back, the chute dropping forward.
+    plinth(ctx, f, C.steel, 0.05, s, true);
+    const chute = rr(f, 0.72, 0.02, 1.28, 0.6, 0.03);
+    castShadow(ctx, chute, f.l(0.1), 0.3);
+    shape(ctx, chute, C.violet, { w: 1.5, seed: s + 1 });
+    hatch(ctx, chute, Math.PI / 4, 3, { alpha: 0.3, seed: s + 1 });
+    const outer = rr(f, 0.13, 0.08, 1.87, 1.57, 0.03), inner = rr(f, 0.38, 0.33, 1.62, 1.32, 0.02);
+    dropShadow(ctx, f, outer, 2.3, 0.28);
+    flat(ctx, outer, C.steelL);
+    // Inside the mouth, the walls slope down: the lit far walls, the hatched near ones.
+    const [X0, Y0, X1, Y1] = bounds(outer), [x0, y0, x1, y1] = bounds(inner);
+    flat(ctx, [[X0, Y0], [X1, Y0], [x1, y0], [x0, y0]], mix(C.steelL, C.ink, 0.35));
+    flat(ctx, [[X0, Y0], [x0, y0], [x0, y1], [X0, Y1]], mix(C.steelL, C.ink, 0.25));
+    flat(ctx, inner, C.ink);
+    const [hx, hy] = f.p(1.0, 0.83);
+    const heap = ellipsePts(hx, hy, f.l(0.42), f.l(0.36), s + 2, 0.15, 20);
+    flat(ctx, heap, C.dug);
+    stipple(ctx, hx - f.l(0.45), hy - f.l(0.4), f.l(0.9), f.l(0.8), 70, { clip: heap, color: C.inkSoft, alpha: 0.55, seed: s + 3, r: 1.1 });
+    ink(ctx, outer, { closed: true, w: 2, seed: s + 4 });
+    ink(ctx, inner, { closed: true, w: 1.2, alpha: 0.7, shade: false, seed: s + 5 });
+    const belt = rr(f, 0.28, 1.22, 0.72, 1.98, 0.01);
+    dropShadow(ctx, f, belt, 1.2, 0.25);
+    shape(ctx, belt, C.tealL, { w: 1.5, seed: s + 6 });
+    ctx.save();
+    ctx.strokeStyle = C.teal; ctx.lineWidth = 1.4;
+    for (let i = 1; i < 8; i++) { const y = 1.22 + (0.76 * i) / 8; const [a, b] = [f.p(0.31, y), f.p(0.69, y)]; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
+    ctx.restore();
+    ledStrip(ctx, f.p(1.2, 1.75), f.p(1.6, 1.75), 3, f.l(0.035), [C.ledWarm], s + 7);
+  },
+
+  // Routing blocks: a riveted steel plate whose sides open on band-wide ribbon mouths (dark,
+  // with a coloured lip and a flow chevron); the core says what the block does.
+  router(ctx, f, s) {
+    // Directional (owner, 2026-10-12): in at the back (S) only, out to the front and both sides.
+    // The way in cannot be missed: the turquoise hopper mouth over the incoming ribbon and a big
+    // glowing turquoise arrow from it to the middle; the ways out are coral nozzles with arrows.
+    forkPlate(ctx, f, [C.coral, C.coral, C.turq, C.coral], [null, null, null, null], s);
+    const lid = rr(f, 0.18, 0.18, 0.82, 0.82, 0.06);
+    shape(ctx, lid, C.teal, { w: 1.6, seed: s + 1 });
+    flat(ctx, rr(f, ...laneRect(2, 0.5, 0.5, 0, 0.32, 0.15), 0.01), mix(C.turqD, C.ink, 0.3));
+    for (const side of [0, 1, 3]) flat(ctx, rr(f, ...laneRect(side, 0.5, 0.5, 0.1, 0.32, 0.1), 0.01), mix(C.teal, C.ink, 0.42));
+    for (const side of [0, 1, 3]) {
+      const [ax, ay] = lanePt(side, 0.5, 0.5, 0.2), [bx, by] = lanePt(side, 0.5, 0.5, 0.48);
+      arrowTop(ctx, f, arrowPoly(ax, ay, bx, by, 0.04, 0.11, 0.12), C.coral, 1.3, s + 10 + side);
+    }
+    // The way in glows (an LED token), so it reads at night too.
+    arrowTop(ctx, f, arrowPoly(0.5, 1.0, 0.5, 0.4, 0.085, 0.215, 0.24), C.glowTurq, 1.8, s + 20);
+    light(ctx, ...f.p(0.24, 0.24), f.l(0.025), C.led);
+    intakeTop(ctx, f, s + 40);
+  },
+  incinerator(ctx, f, s) {
+    // Everything goes in by any side (turquoise mouths, inward chevrons); a round grated firebox
+    // glows amber in the middle, a short stack in the north-east corner (D51).
+    forkPlate(ctx, f, [C.turq, C.turq, C.turq, C.turq], [2, 3, 0, 1], s, mix(C.steel, C.ink, 0.2));
+    const c = f.p(0.5, 0.5);
+    flat(ctx, ellipsePts(c[0], c[1], f.l(0.27), f.l(0.27), s + 3, 0, 28), C.steelDD);
+    flat(ctx, ellipsePts(c[0], c[1], f.l(0.2), f.l(0.2), s + 4, 0, 28), C.ledWarm, 0.95);
+    ctx.save();
+    ctx.strokeStyle = C.steelDD; ctx.lineWidth = 1.4;
+    for (const k of [-0.1, 0, 0.1]) { const [a, b] = [f.p(0.32, 0.5 + k), f.p(0.68, 0.5 + k)]; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
+    ctx.restore();
+    light(ctx, c[0], c[1], f.l(0.06), C.ledWarm);
+    stack(ctx, ...f.p(0.8, 0.2), f.l(0.08), C.steelD, s + 6, C.ledWarm, f.l(0.2));
+  },
+  distributor(ctx, f, s) {
+    forkPlate(ctx, f, NEUTRAL, [null, null, null, null], s);
+    const lid = rr(f, 0.18, 0.18, 1.82, 1.82, 0.1);
+    shape(ctx, lid, C.teal, { w: 1.8, seed: s + 1 });
+    for (let side = 0; side < 4; side++) {
+      for (const t of [0.5, 1.5]) {
+        const [cx, cy] = side & 1 ? [1, t] : [t, 1];
+        flat(ctx, rr(f, ...laneRect(side, cx, cy, 0.42, 0.82, 0.1), 0.01), mix(C.teal, C.ink, 0.4));
+        chevron(ctx, f, ...lanePt(side, cx, cy, 0.68), side, 0.07, C.ice, 2.2, s + 10 + side * 3 + t);
+      }
+    }
+    const c = f.p(1, 1);
+    flat(ctx, ellipsePts(c[0], c[1], f.l(0.42), f.l(0.42), s + 3, 0, 40), mix(C.teal, C.ink, 0.4));
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+      light(ctx, c[0] + Math.cos(a) * f.l(0.5), c[1] + Math.sin(a) * f.l(0.5), f.l(0.03), i % 2 ? C.led : C.ledWarm);
+    }
+    hub(ctx, f, 1, 1, 0.26, s + 2);
+  },
+  sorter: (ctx, f, s) => sorterTop(ctx, f, s, false),
+  inverted_sorter: (ctx, f, s) => sorterTop(ctx, f, s, true),
+  overflow_gate: (ctx, f, s) => gateTop(ctx, f, s, false),
+  underflow_gate: (ctx, f, s) => gateTop(ctx, f, s, true),
+  unloader(ctx, f, s) {
+    forkPlate(ctx, f, [C.brassL, C.brassL, C.brassL, C.brassL], [0, 1, 2, 3], s, C.violet);
+    // Clamp jaws on the corners, the suction head (bellows rings) holding a small window.
+    for (const [x, y] of [[0.15, 0.15], [0.85, 0.15], [0.15, 0.85], [0.85, 0.85]] as const) {
+      const jaw = rr(f, x - 0.1, y - 0.1, x + 0.1, y + 0.1, 0.03);
+      castShadow(ctx, jaw, f.l(0.05), 0.3);
+      shape(ctx, jaw, C.brass, { w: 1.3, seed: s + x * 10 + y });
+      flat(ctx, rr(f, x - 0.035, y - 0.035, x + 0.035, y + 0.035, 0.01), C.steelDD);
+    }
+    const c = f.p(0.5, 0.5);
+    const head = ellipsePts(c[0], c[1], f.l(0.33), f.l(0.33), s + 4, 0, 40);
+    castShadow(ctx, head, f.l(0.07), 0.32);
+    shape(ctx, head, C.violetL, { w: 1.6, seed: s + 4 });
+    ink(ctx, ellipsePts(c[0], c[1], f.l(0.3), f.l(0.3), s + 5, 0, 36), { closed: true, w: 1.2, color: C.violet, shade: false, seed: s + 5 });
+    glyphWindow(ctx, f, 0.5, 0.5, 0.2, s + 6);
+  },
+  crossing(ctx, f, s) {
+    // The junction from above: its little bridge (buildings.ts, `junctionIso`). The north–south
+    // line rides the humped deck between two parapet girders; the east–west line runs under it on
+    // the ground, where the items view lays its ribbon — the sprite leaves both sides see-through.
+    const { x0, x1, r0, r1, parapet, deck } = JUNCTION;
+    const N = 48;
+    const ys = Array.from({ length: N + 1 }, (_, i) => i / N);
+    const high = (y: number): number => deck * junctionHump(y) + parapet; // the parapets' top (levels)
+    // Its shadow on the ground east of it, as long as the bridge is high there.
+    const sh: Pt[] = ys.map((y) => { const d = f.l(0.11 * high(y)); const [px, py] = f.p(x1, y); return [px + d * 0.7, py + d]; });
+    flat(ctx, [f.p(x1, 0), ...sh, f.p(x1, 1)], C.inkSoft, 0.26);
+    // The deck: lighter on the north ramp (it leans to the light), darker on the south one, steel
+    // slats across as on a skybridge's deck.
+    flat(ctx, rr(f, r0, 0, r1, 1, 0.004), C.steelL);
+    const steep = Math.max(...ys.slice(1).map((y, i) => (junctionHump(y) - junctionHump(ys[i]!)) * N));
+    for (let i = 0; i < N; i++) {
+      const slope = ((junctionHump(ys[i + 1]!) - junctionHump(ys[i]!)) * N) / steep;
+      if (Math.abs(slope) < 0.05) continue;
+      const band: Pt[] = [f.p(r0, ys[i]!), f.p(r1, ys[i]!), f.p(r1, ys[i + 1]!), f.p(r0, ys[i + 1]!)];
+      if (slope > 0) flat(ctx, band, '#ffffff', 0.16 * slope);
+      else flat(ctx, band, C.ink, -0.2 * slope);
+    }
+    for (let k = 0; k < 8; k++) {
+      const y = (k + 0.5) / 8;
+      ink(ctx, [f.p(r0 + 0.015, y), f.p(r1 - 0.015, y)], { w: 2, color: C.steel, shade: false, taper: 0, jitter: 0, seed: s + 10 + k });
+    }
+    // The crown's ridge, and the deck's edges against the parapets.
+    ink(ctx, rr(f, r0, 0, r1, 1, 0.004), { closed: true, w: 1.2, alpha: 0.8, shade: false, taper: 0, jitter: 0, seed: s + 20 });
+    // The parapet girders: dark steel, a lit top, rivets.
+    for (const [i, [a, b]] of ([[x0, r0], [r1, x1]] as const).entries()) {
+      const g = rr(f, a, 0, b, 1, 0.006);
+      flat(ctx, g, C.steelD);
+      ink(ctx, [f.p((a + b) / 2, 0.03), f.p((a + b) / 2, 0.97)], { w: 1.1, color: mix(C.steelD, '#ffffff', 0.3), shade: false, taper: 0, jitter: 0, seed: s + 21 + i });
+      for (const y of [0.3, 0.5, 0.7]) rivet(ctx, ...f.p((a + b) / 2, y), f.l(0.018), C.steelL);
+      ink(ctx, g, { closed: true, w: 1.6, seed: s + 23 + i });
+    }
+    // A post with a work lamp at each corner.
+    for (const [k, [x, y]] of ([[0.17, 0.045], [0.83, 0.045], [0.17, 0.955], [0.83, 0.955]] as const).entries()) {
+      const p = rr(f, x - 0.055, y - 0.045, x + 0.055, y + 0.045, 0.012);
+      dropShadow(ctx, f, p, parapet + 0.2, 0.28);
+      shape(ctx, p, C.steel, { w: 1.3, shade: false, jitter: 0, seed: s + 30 + k });
+      light(ctx, ...f.p(x, y), f.l(0.03), C.ledWarm);
+    }
+  },
+  skybridge(ctx, f, s) {
+    // A bridge end from above, start or far alike (buildings.ts `SKY`): a riveted footing, the
+    // line's band across it towards the leap (its chevron), the hazard gantry over it. A pair's
+    // ramps and deck are laid over it by the buildings view (`drawSkyPieceTop`).
+    plinth(ctx, f, C.steel, 0.04, s);
+    flat(ctx, rr(f, SKY.r0, 0.04, SKY.r1, 0.96, 0.01), C.tealL);
+    for (let k = 0; k < 8; k++) {
+      const y = (k + 0.5) / 8;
+      ink(ctx, [f.p(SKY.r0 + 0.02, y), f.p(SKY.r1 - 0.02, y)], { w: 1.6, color: C.teal, shade: false, taper: 0, jitter: 0, seed: s + 2 + k });
+    }
+    for (const x of [SKY.r0, SKY.r1]) ink(ctx, [f.p(x, 0.04), f.p(x, 0.96)], { w: 1.4, shade: false, taper: 0, jitter: 0, seed: s + 12 + x * 10 });
+    chevron(ctx, f, 0.5, 0.22, 0, 0.13, C.ice, 3.2, s + 14);
+    skyGantryTop(ctx, f, s + 40);
+  },
+  silo(ctx, f, s) {
+    // A tall store tank from above: the cone roof and its hatch inside the catwalk rail, the long
+    // shadow it casts, a ladder head and the level gauge's light.
+    plinth(ctx, f, C.steel, 0.05, s);
+    const c = f.p(1, 1.02);
+    const rail = ellipsePts(c[0], c[1], f.l(0.86), f.l(0.86), s + 1, 0.002, 48);
+    dropShadow(ctx, f, rail, 2.9, 0.26);
+    shape(ctx, rail, C.steelD, { w: 1.6, seed: s + 1 });
+    tankTop(ctx, c[0], c[1], f.l(0.78), C.ice, s + 2, { shadow: 0, ribs: 12, cone: true });
+    ink(ctx, rail, { closed: true, w: 1.4, color: C.steelL, shade: false, seed: s + 3 });
+    const lad = rr(f, 0.15, 0.94, 0.27, 1.1, 0.01);
+    shape(ctx, lad, C.steelD, { w: 1, shade: false, jitter: 0, seed: s + 4 });
+    light(ctx, ...f.p(1.72, 1.45), f.l(0.04), C.led);
+    light(ctx, ...f.p(1, 1.02), f.l(0.05), C.coral);
+    ledStrip(ctx, f.p(0.25, 1.85), f.p(0.75, 1.85), 3, f.l(0.035), LEDS, s + 5);
+  },
+  skydock(ctx, f, s) {
+    // An automated mooring mast from above: the lit landing ring, the lattice mast under its
+    // brass mooring cup, the winch housing round it, the arm, a drone pad at its foot.
+    plinth(ctx, f, C.steelD, 0.04, s);
+    const c = f.p(1.5, 1.5);
+    const pad = ellipsePts(c[0], c[1], f.l(1.28), f.l(1.28), s + 1, 0.003, 64);
+    castShadow(ctx, pad, f.l(0.06), 0.3);
+    shape(ctx, pad, C.steelDD, { w: 2, seed: s + 1 });
+    ink(ctx, ellipsePts(c[0], c[1], f.l(1.06), f.l(1.06), s + 2), { closed: true, w: f.l(0.07), color: C.cyan, shade: false, seed: s + 2 });
+    for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; light(ctx, c[0] + Math.cos(a) * f.l(1.06), c[1] + Math.sin(a) * f.l(1.06), f.l(0.04), i % 2 ? C.led : C.ledWarm); }
+    padTop(ctx, f, 2.35, 2.35, 0.3, true, s + 3);
+    derrickTop(ctx, f, 1.5, 1.5, 0.3, 0.12, 4.4, s + 4);
+    const winch = rr(f, 1.22, 1.22, 1.78, 1.78, 0.06);
+    castShadow(ctx, winch, f.l(0.6), 0.25);
+    shape(ctx, winch, C.steel, { w: 1.6, seed: s + 5 });
+    grille(ctx, rr(f, 1.3, 1.62, 1.7, 1.72, 0.01), s + 9);
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      light(ctx, c[0] + Math.cos(a) * f.l(0.36), c[1] + Math.sin(a) * f.l(0.36), f.l(0.035), C.ledWarm);
+    }
+    pipe(ctx, [c, f.p(2.35, 1.0)], f.l(0.05), C.steelD, s + 6);
+    light(ctx, ...f.p(2.35, 1.0), f.l(0.045), C.ledWarm);
+    const cup = ellipsePts(c[0], c[1], f.l(0.36), f.l(0.36), s + 7, 0.003, 32);
+    castShadow(ctx, cup, f.l(0.5), 0.25);
+    shape(ctx, cup, C.brass, { w: 1.6, seed: s + 7 });
+    flat(ctx, ellipsePts(c[0], c[1], f.l(0.2), f.l(0.2), s + 8, 0, 24), C.steelDD);
+    light(ctx, c[0], c[1], f.l(0.05), C.ledRed);
+  },
+
+  kiln(ctx, f, s) {
+    // A furnace from above: the battered brick shaft and its strapped steel cap, the charging
+    // hopper of embers, the mouth glowing to the south; two stacks with hot throats.
+    plinth(ctx, f, C.steel, 0.05, s);
+    furnaceTop(ctx, f, 0.2, 0.3, 1.45, 1.62, 0.2, s + 1);
+    pipe(ctx, [f.p(1.3, 0.75), f.p(1.6, 0.6)], f.l(0.08), C.steelL, s + 2);
+    stack(ctx, ...f.p(1.72, 0.48), f.l(0.16), C.steelD, s + 3, C.ledWarm, f.l(0.38));
+    stack(ctx, ...f.p(1.72, 1.3), f.l(0.16), C.steelD, s + 4, C.ledWarm, f.l(0.42));
+    ledStrip(ctx, f.p(1.6, 1.82), f.p(1.85, 1.82), 2, f.l(0.035), [C.led, C.ledWarm], s + 5);
+  },
+  kiln_compact(ctx, f, s) {
+    plinth(ctx, f, C.steel, 0.05, s);
+    furnaceTop(ctx, f, 0.14, 0.68, 0.86, 1.86, 0.13, s + 1);
+    stack(ctx, ...f.p(0.5, 0.38), f.l(0.15), C.steelD, s + 2, C.ledWarm, f.l(0.36));
+  },
+  wire_mill(ctx, f, s) {
+    // Spools and rollers from above: two spools of brass wire between steel flanges on a teal
+    // bed, the wire running between them through the drawing die.
+    plinth(ctx, f, C.steel, 0.05, s);
+    const bed = rr(f, 0.12, 0.14, 0.88, 1.86, 0.05);
+    castShadow(ctx, bed, f.l(0.06), 0.3);
+    shape(ctx, bed, C.teal, { w: 1.8, seed: s + 1 });
+    hatch(ctx, rr(f, 0.6, 0.14, 0.88, 1.86, 0.05), Math.PI / 4, 3, { alpha: 0.25, seed: s + 1 });
+    const along = (f.rot & 1) === 0 ? 'x' : 'y';
+    for (const [i, y] of [0.5, 1.5].entries()) {
+      for (const x of [0.16, 0.84]) light(ctx, ...f.p(x, y), f.l(0.03), C.steelL);
+      drumTop(ctx, rr(f, 0.26, y - 0.19, 0.74, y + 0.19, 0.03), along, C.brass, s + 10 + i, 4, f.l(0.1));
+      for (const x of [0.22, 0.75]) shape(ctx, rr(f, x, y - 0.31, x + 0.04, y + 0.31, 0.01), C.steelL, { w: 1.2, seed: s + 20 + i });
+    }
+    shape(ctx, rr(f, 0.32, 0.92, 0.68, 1.08, 0.02), C.steelD, { w: 1.3, seed: s + 30 });
+    ink(ctx, [f.p(0.5, 0.62), f.p(0.5, 1.38)], { w: 1.6, color: C.brassL, shade: false, taper: 0, seed: s + 31 });
+    ledStrip(ctx, f.p(0.25, 1.95), f.p(0.75, 1.95), 3, f.l(0.03), LEDS, s + 32);
+  },
+  workshop(ctx, f, s) {
+    // A press from above: the crown beam across two violet columns, its cylinder; the bolster
+    // with its hazard edge and coral blank under it; the control cabinet beside.
+    plinth(ctx, f, C.steel, 0.05, s);
+    const cab = rr(f, 0.18, 1.56, 0.72, 1.9, 0.04);
+    castShadow(ctx, cab, f.l(0.1), 0.3);
+    shape(ctx, cab, C.steelL, { w: 1.5, seed: s + 1 });
+    ledStrip(ctx, f.p(0.28, 1.73), f.p(0.62, 1.73), 3, f.l(0.03), LEDS, s + 2);
+    const bol = rr(f, 0.35, 0.62, 1.65, 1.48, 0.03);
+    castShadow(ctx, bol, f.l(0.08), 0.3);
+    shape(ctx, bol, C.steelL, { w: 1.6, seed: s + 3 });
+    shape(ctx, rr(f, 0.38, 1.38, 1.62, 1.45, 0.01), C.hazard, { w: 1, shade: false, jitter: 0, seed: s + 4 });
+    shape(ctx, rr(f, 0.7, 0.72, 1.3, 0.8, 0.01), C.coral, { w: 1.2, seed: s + 5 });
+    shape(ctx, rr(f, 0.7, 1.2, 1.3, 1.3, 0.01), C.coral, { w: 1.2, seed: s + 6 });
+    for (const x of [0.2, 1.52]) {
+      const col = rr(f, x, 0.85, x + 0.28, 1.25, 0.02);
+      castShadow(ctx, col, f.l(0.2), 0.28);
+      shape(ctx, col, C.violet, { w: 1.4, seed: s + 7 + x });
+    }
+    const crown = rr(f, 0.16, 0.79, 1.84, 1.31, 0.04);
+    dropShadow(ctx, f, crown, 2.5, 0.25);
+    shape(ctx, crown, C.violet, { w: 2, seed: s + 9 });
+    grille(ctx, rr(f, 0.26, 0.88, 0.62, 1.22, 0.02), 3.2, s + 10);
+    const cyl = ellipsePts(...f.p(1, 1.05), f.l(0.2), f.l(0.2), s + 11, 0, 28);
+    castShadow(ctx, cyl, f.l(0.06), 0.3);
+    shape(ctx, cyl, C.brass, { w: 1.4, seed: s + 11 });
+    ink(ctx, ellipsePts(...f.p(1, 1.05), f.l(0.12), f.l(0.12), s + 12, 0, 20), { closed: true, w: 1.1, color: C.brassL, shade: false, seed: s + 12 });
+    ledStrip(ctx, f.p(1.25, 0.95), f.p(1.7, 0.95), 3, f.l(0.03), LEDS, s + 13);
+  },
+  great_workshop(ctx, f, s) {
+    // An assembly hall under a sawtooth roof; a gantry crane over the yard in front, a crate on its hook.
+    plinth(ctx, f, C.steel, 0.04, s);
+    shape(ctx, rr(f, 0.3, 0.3, 2.7, 0.95, 0.02), mix(C.steel, C.ink, 0.15), { w: 1, shade: false, seed: s + 1 });
+    ledStrip(ctx, f.p(0.4, 0.22), f.p(1.2, 0.22), 5, f.l(0.03), [C.ledWarm, C.led], s + 2);
+    sawRoofTop(ctx, f, 0.18, 1.15, 2.82, 2.8, 3, s + 3);
+    gantryTop(ctx, f, 0.22, 0.14, 2.78, 1.0, s + 30);
+  },
+  great_workshop_compact(ctx, f, s) {
+    plinth(ctx, f, C.steel, 0.05, s);
+    sawRoofTop(ctx, f, 0.15, 0.85, 1.85, 1.86, 2, s + 1);
+    arm(ctx, f.p(0.62, 0.42), f.p(0.74, 0.7), f.p(1.1, 0.74), f.l(0.06), C.coral, s + 30);
+  },
+  tower_workshop(ctx, f, s) {
+    // A stepped assembly tower from above: four cone-topped feed tanks piping into the violet
+    // core, its upper stage and mast; louvres and LEDs on its roofs.
+    plinth(ctx, f, C.steelD, 0.04, s, true);
+    for (const [i, [x, y]] of ([[0.55, 0.55], [2.45, 0.55], [0.55, 2.45], [2.45, 2.45]] as const).entries()) {
+      pipe(ctx, [f.p(x, y), f.p(1.5, 1.5)], f.l(0.07), C.steelL, s + 40 + i, false);
+      tankTop(ctx, ...f.p(x, y), f.l(0.34), i % 2 ? C.cyan : C.ice, s + 20 + i, { shadow: f.l(0.16), ribs: 8, cone: true });
+    }
+    const a = rr(f, 0.95, 0.95, 2.05, 2.05, 0.04);
+    dropShadow(ctx, f, a, 2.6, 0.28);
+    shape(ctx, a, C.violet, { w: 2, seed: s + 1 });
+    grille(ctx, rr(f, 1.0, 1.0, 1.4, 1.2, 0.02), 3, s + 2);
+    ledStrip(ctx, f.p(1.0, 1.95), f.p(1.6, 1.95), 4, f.l(0.03), LEDS, s + 3);
+    const b = rr(f, 1.12, 1.12, 1.88, 1.88, 0.04);
+    dropShadow(ctx, f, b, 2.0, 0.28);
+    shape(ctx, b, mix(C.violet, '#ffffff', 0.12), { w: 1.8, seed: s + 4 });
+    grille(ctx, rr(f, 1.2, 1.55, 1.8, 1.8, 0.02), 3, s + 5);
+    spire(ctx, ...f.p(1.5, 1.5), f.l(0.28), C.steelD, C.led, s + 6);
+  },
+  ceramic_oven(ctx, f, s) {
+    // A tunnel kiln from above: the long hip roof over brick walls, vent hoods with warm lights
+    // along the ridge, the exhaust stack; the kiln car on its rails at the mouth.
+    plinth(ctx, f, C.steel, 0.05, s);
+    for (const y of [0.24, 0.42]) ink(ctx, [f.p(0.55, y), f.p(1.95, y)], { w: 2, color: C.steelL, shade: false, taper: 0, seed: s + 1 + y * 10 });
+    const car = rr(f, 1.15, 0.18, 1.7, 0.48, 0.02);
+    castShadow(ctx, car, f.l(0.05), 0.3);
+    shape(ctx, car, C.steelD, { w: 1.3, seed: s + 2 });
+    for (const x of [1.25, 1.42, 1.59]) shape(ctx, rr(f, x - 0.06, 0.24, x + 0.06, 0.42, 0.01), C.peachL, { w: 1, shade: false, seed: s + 3 + x });
+    const walls = rr(f, 0.2, 0.57, 1.9, 1.67, 0.03);
+    castShadow(ctx, walls, f.l(0.16), 0.32);
+    flat(ctx, walls, BRICK);
+    ink(ctx, walls, { closed: true, w: 2, seed: s + 4 });
+    // The hip roof: four slopes meeting on a ridge along the kiln, the far-from-light ones hatched.
+    const roof = rr(f, 0.26, 0.63, 1.84, 1.61, 0.01);
+    const [X0, Y0, X1, Y1] = bounds(roof);
+    const wide = X1 - X0 >= Y1 - Y0;
+    const d = wide ? (Y1 - Y0) / 2 : (X1 - X0) / 2;
+    const r0: Pt = wide ? [X0 + d, (Y0 + Y1) / 2] : [(X0 + X1) / 2, Y0 + d], r1: Pt = wide ? [X1 - d, (Y0 + Y1) / 2] : [(X0 + X1) / 2, Y1 - d];
+    const slopes: Array<[Pt[], number]> = wide
+      ? [[[[X0, Y0], [X1, Y0], r1, r0], 0], [[[X0, Y0], r0, [X0, Y1]], 0.1], [[[X0, Y1], r0, r1, [X1, Y1]], 0.32], [[[X1, Y0], [X1, Y1], r1], 0.38]]
+      : [[[[X0, Y0], [X0, Y1], r1, r0], 0.1], [[[X0, Y0], r0, [X1, Y0]], 0], [[[X1, Y0], r0, r1, [X1, Y1]], 0.38], [[[X0, Y1], [X1, Y1], r1], 0.32]];
+    for (const [q, k] of slopes) {
+      flat(ctx, q, mix(C.steel, C.ink, k));
+      if (k > 0.3) hatch(ctx, q, Math.PI / 4, 3, { alpha: 0.35, seed: s + 5 });
+      ink(ctx, q, { closed: true, w: 1.1, alpha: 0.75, shade: false, seed: s + 6 });
+    }
+    for (const x of [0.62, 1.05, 1.48]) {
+      const v = rr(f, x - 0.1, 1.04, x + 0.1, 1.2, 0.02);
+      castShadow(ctx, v, f.l(0.06), 0.3);
+      shape(ctx, v, C.steelL, { w: 1.2, seed: s + 7 + x });
+      light(ctx, ...f.p(x, 1.12), f.l(0.03), C.ledWarm);
+    }
+    stack(ctx, ...f.p(0.3, 0.3), f.l(0.14), C.steelD, s + 8, C.ledWarm, f.l(0.42));
+  },
+  observatory(ctx, f, s) {
+    // An automated observatory: the telescope dome on its instrument drum (status LEDs round
+    // it), the uplink dish on its mast, a sensor rack.
+    plinth(ctx, f, C.steel, 0.05, s);
+    const c = f.p(0.95, 1.05);
+    const drum = ellipsePts(c[0], c[1], f.l(0.8), f.l(0.8), s + 21, 0.003, 48);
+    castShadow(ctx, drum, f.l(0.14), 0.3);
+    shape(ctx, drum, C.ice, { w: 1.8, seed: s + 21 });
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * Math.PI * 2;
+      if (i % 2 === 0) light(ctx, c[0] + Math.cos(a) * f.l(0.76), c[1] + Math.sin(a) * f.l(0.76), f.l(0.03), i % 4 === 0 ? C.led : C.ledGreen);
+    }
+    dome(ctx, c[0], c[1], f.l(0.7), C.violet, s + 1, C.cyan);
+    ink(ctx, [f.p(0.95, 1.05), f.p(0.5, 0.55)], { w: f.l(0.13), color: C.steelDD, shade: false, taper: 0 });
+    pipe(ctx, [f.p(0.95, 1.05), f.p(0.38, 0.45)], f.l(0.1), C.steelL, s + 2);
+    light(ctx, ...f.p(0.38, 0.45), f.l(0.05), C.led);
+    dish(ctx, ...f.p(1.6, 0.48), f.l(0.3), s + 3);
+    shape(ctx, rr(f, 1.5, 1.45, 1.86, 1.86, 0.03), C.steelD, { w: 1.3, seed: s + 5 });
+    ledStrip(ctx, f.p(1.56, 1.6), f.p(1.8, 1.6), 3, f.l(0.03), LEDS, s + 6);
+    ledStrip(ctx, f.p(0.25, 1.82), f.p(0.6, 1.82), 3, f.l(0.035), LEDS, s + 4);
+  },
+
+  mast: poleTop,
+  pylon: pylonTop,
+  brazier(ctx, f, s) {
+    // A fire-tube boiler from above: the firebox under its boiler drum, and at the front the
+    // coal generator — a fire basket crowning the stack, flames licking out.
+    plinth(ctx, f, C.steel, 0.07, s);
+    const fb = rr(f, 0.14, 0.88, 0.86, 1.86, 0.04);
+    castShadow(ctx, fb, f.l(0.1), 0.3);
+    shape(ctx, fb, C.steelD, { w: 1.8, seed: s + 1 });
+    grille(ctx, rr(f, 0.2, 1.62, 0.8, 1.8, 0.02), 3, s + 2);
+    drumTop(ctx, rr(f, 0.28, 0.98, 0.72, 1.76, 0.06), (f.rot & 1) === 0 ? 'y' : 'x', C.steelL, s + 3, 3, f.l(0.12));
+    pipe(ctx, [f.p(0.5, 0.95), f.p(0.5, 0.65)], f.l(0.06), C.brass, s + 4);
+    const c = f.p(0.5, 0.45);
+    const basket = ellipsePts(c[0], c[1], f.l(0.33), f.l(0.33), s + 5, 0.003, 32);
+    castShadow(ctx, basket, f.l(0.36), 0.28);
+    shape(ctx, basket, C.steelD, { w: 1.8, seed: s + 5 });
+    flat(ctx, ellipsePts(c[0], c[1], f.l(0.25), f.l(0.25), s + 6, 0.02, 28), C.warn);
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2 + 0.3, r0 = f.l(0.08), r1 = f.l(0.24 + (i % 2) * 0.06);
+      shape(ctx, [[c[0] + Math.cos(a - 0.3) * r0, c[1] + Math.sin(a - 0.3) * r0], [c[0] + Math.cos(a) * r1, c[1] + Math.sin(a) * r1], [c[0] + Math.cos(a + 0.3) * r0, c[1] + Math.sin(a + 0.3) * r0]], i % 2 ? C.coral : C.glowPeach, { w: 1, shade: false, seed: s + 7 + i });
+    }
+    light(ctx, c[0], c[1], f.l(0.1), C.ledWarm);
+  },
+  sun_bulb(ctx, f, s) {
+    // A dish concentrator from above: the faceted mirror bowl on its pedestal, three struts
+    // holding the glowing receiver — the bulb — at its focus; the control box.
+    plinth(ctx, f, C.steel, 0.05, s);
+    const box = rr(f, 1.45, 1.5, 1.85, 1.85, 0.03);
+    castShadow(ctx, box, f.l(0.07), 0.3);
+    shape(ctx, box, C.teal, { w: 1.4, seed: s + 1 });
+    light(ctx, ...f.p(1.65, 1.62), f.l(0.03), C.ledGreen);
+    const c = f.p(0.92, 0.95), R = f.l(0.84);
+    const rim = ellipsePts(c[0], c[1], R, R * 0.9, s + 2, 0.002, 64, -0.35);
+    dropShadow(ctx, f, rim, 1.6, 0.24);
+    shape(ctx, rim, C.steelD, { w: 1.8, seed: s + 2 });
+    const face = ellipsePts(c[0] - 1, c[1] - 1, R * 0.93, R * 0.83, s + 3, 0.002, 64, -0.35);
+    flat(ctx, face, mix(C.ice, C.ink, 0.2));
+    ctx.save(); pathOf(ctx, face); ctx.clip();
+    flat(ctx, face.map(([x, y]) => [x + R * 0.18, y + R * 0.14] as Pt), C.ice);
+    for (const k of [0.35, 0.68]) ink(ctx, ellipsePts(c[0], c[1], R * 0.93 * k, R * 0.83 * k, s + 4 + k * 10, 0, 48, -0.35), { closed: true, w: 1.1, color: C.steelL, shade: false, seed: s + 5 });
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2;
+      ink(ctx, [[c[0] + Math.cos(a) * R * 0.1, c[1] + Math.sin(a) * R * 0.1], [c[0] + Math.cos(a) * R, c[1] + Math.sin(a) * R]], { w: 1, color: C.steelL, shade: false, taper: 0, seed: s + 6 + i });
+    }
+    ctx.restore();
+    ink(ctx, face, { closed: true, w: 1.6, seed: s + 7 });
+    const fp: Pt = [c[0] - f.l(0.12), c[1] - f.l(0.08)];
+    for (const a of [Math.PI / 2, (7 * Math.PI) / 6, (11 * Math.PI) / 6]) {
+      ink(ctx, [[c[0] + Math.cos(a) * R * 0.88, c[1] + Math.sin(a) * R * 0.8], fp], { w: 2, color: C.steelD, shade: false, taper: 0, seed: s + 20 });
+    }
+    flat(ctx, ellipsePts(fp[0] + f.l(0.3), fp[1] + f.l(0.4), f.l(0.1), f.l(0.07), s + 21, 0, 16), C.inkSoft, 0.25);
+    shape(ctx, ellipsePts(fp[0], fp[1], f.l(0.09), f.l(0.09), s + 22, 0, 20), C.glowPeach, { w: 1.3, seed: s + 22 });
+    light(ctx, fp[0], fp[1], f.l(0.1), C.ledWarm);
+  },
+  accumulator(ctx, f, s) {
+    // A capacitor bank from above: four cells with brass terminals and green charge rings, bus bars
+    // tying them, the charge gauge on the plinth.
+    plinth(ctx, f, C.steel, 0.05, s);
+    const cells = [[0.55, 0.55, C.violet], [1.45, 0.55, C.violetL], [0.55, 1.45, C.violetL], [1.45, 1.45, C.violet]] as const;
+    for (const [i, [x, y, col]] of cells.entries()) {
+      const p = f.p(x, y);
+      tankTop(ctx, p[0], p[1], f.l(0.35), col, s + i * 5, { shadow: f.l(0.18), ribs: 0 });
+      ink(ctx, ellipsePts(p[0], p[1], f.l(0.29), f.l(0.29), s + 20 + i, 0, 32), { closed: true, w: 2.4, color: C.ledGreen, shade: false, seed: s + 20 + i });
+    }
+    for (const [a, b] of [[[0.55, 0.55], [1.45, 0.55]], [[0.55, 1.45], [1.45, 1.45]], [[0.55, 0.55], [0.55, 1.45]], [[1.45, 0.55], [1.45, 1.45]]] as const) {
+      pipe(ctx, [f.p(a[0], a[1]), f.p(b[0], b[1])], f.l(0.04), C.brass, s + 40 + a[0] + b[1], false);
+    }
+    for (const [x, y] of cells) {
+      const p = f.p(x, y);
+      shape(ctx, ellipsePts(p[0], p[1], f.l(0.09), f.l(0.09), s + 50, 0, 16), C.brassL, { w: 1.1, seed: s + 50 });
+      light(ctx, p[0], p[1], f.l(0.03), C.ledGreen);
+    }
+    ledStrip(ctx, f.p(0.25, 1.92), f.p(0.85, 1.92), 5, f.l(0.035), [C.ledGreen, C.ledGreen, C.ledGreen, C.led, C.ledWarm], s + 4);
+  },
+  cell_charger(ctx, f, s) {
+    // A charging bay from above: the finned transformer and its three porcelain bushings, brass
+    // bus bars to the rack where four cells glow green as they fill.
+    plinth(ctx, f, C.steelD, 0.05, s);
+    const tr = rr(f, 0.2, 0.86, 1.15, 1.8, 0.04);
+    castShadow(ctx, tr, f.l(0.14), 0.3);
+    shape(ctx, tr, C.violet, { w: 1.8, seed: s + 1 });
+    const [X0, Y0, X1, Y1] = bounds(tr);
+    ctx.save();
+    ctx.strokeStyle = mix(C.violet, C.ink, 0.45); ctx.lineWidth = 1.6;
+    for (let i = 1; i < 9; i++) {
+      const t = i / 9;
+      for (const [a, b] of [[[X0 + (X1 - X0) * t, Y0], [X0 + (X1 - X0) * t, Y0 + 4]], [[X0 + (X1 - X0) * t, Y1 - 4], [X0 + (X1 - X0) * t, Y1]], [[X0, Y0 + (Y1 - Y0) * t], [X0 + 4, Y0 + (Y1 - Y0) * t]], [[X1 - 4, Y0 + (Y1 - Y0) * t], [X1, Y0 + (Y1 - Y0) * t]]] as const) {
+        ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+      }
+    }
+    ctx.restore();
+    const rack = rr(f, 1.15, 0.15, 1.95, 1.35, 0.04);
+    castShadow(ctx, rack, f.l(0.08), 0.3);
+    shape(ctx, rack, C.steel, { w: 1.6, seed: s + 2 });
+    for (const [i, [x, y, full]] of ([[1.38, 0.45, 1], [1.72, 0.45, 1], [1.38, 1.05, 0], [1.72, 1.05, 1]] as const).entries()) {
+      const p = f.p(x, y);
+      tankTop(ctx, p[0], p[1], f.l(0.14), full ? C.ice : C.violetL, s + 10 + i, { shadow: f.l(0.08), ribs: 0 });
+      ink(ctx, ellipsePts(p[0], p[1], f.l(0.16), f.l(0.16), s + 20 + i, 0, 24), { closed: true, w: 2, color: full ? C.ledGreen : C.violet, shade: false, seed: s + 20 + i });
+    }
+    for (const [i, x] of [0.42, 0.68, 0.94].entries()) {
+      const p = f.p(x, 1.33);
+      const b = ellipsePts(p[0], p[1], f.l(0.11), f.l(0.11), s + 30 + i, 0, 20);
+      castShadow(ctx, b, f.l(0.1), 0.3);
+      shape(ctx, b, C.ice, { w: 1.2, seed: s + 30 + i });
+      ink(ctx, ellipsePts(p[0], p[1], f.l(0.07), f.l(0.07), s + 33 + i, 0, 16), { closed: true, w: 1, color: C.steelL, shade: false, seed: s + 33 + i });
+      flat(ctx, ellipsePts(p[0], p[1], f.l(0.04), f.l(0.04), s + 36 + i, 0, 12), C.brassL);
+    }
+    // The free bushing takes the line in: its cap is the terminal (art/terminals.ts).
+    terminalProbe.fn?.(CHARGER_BUSHING.x, CHARGER_BUSHING.y, CHARGER_BUSHING.z);
+    pipe(ctx, [f.p(0.94, 1.33), f.p(1.4, 1.0), f.p(1.55, 0.75)], f.l(0.045), C.brass, s + 40, false);
+    pipe(ctx, [f.p(0.68, 1.33), f.p(1.2, 1.3), f.p(1.55, 1.05)], f.l(0.045), C.brass, s + 41, false);
+  },
+  fumarole_tap(ctx, f, s) {
+    // A geothermal tap from above: the cooling tower's throat breathing steam, the turbine house
+    // and its generator, the wellhead's valve tree on the vent, steam pipes between them.
+    plinth(ctx, f, C.steelD, 0.04, s, true);
+    const th = rr(f, 0.2, 0.22, 1.15, 1.12, 0.05);
+    castShadow(ctx, th, f.l(0.12), 0.3);
+    shape(ctx, th, C.teal, { w: 1.8, seed: s + 1 });
+    grille(ctx, rr(f, 0.3, 0.9, 0.7, 1.05, 0.02), 3, s + 2);
+    drumTop(ctx, rr(f, 0.5, 0.38, 0.86, 0.96, 0.08), (f.rot & 1) === 0 ? 'y' : 'x', C.steelL, s + 3, 2, f.l(0.1));
+    pipe(ctx, [f.p(0.95, 2.05), f.p(0.95, 1.2), f.p(0.85, 1.05)], f.l(0.07), C.steelL, s + 4);
+    pipe(ctx, [f.p(1.05, 2.05), f.p(1.7, 1.6), f.p(1.7, 1.3)], f.l(0.07), C.steelL, s + 5);
+    const w = f.p(0.95, 2.05);
+    shape(ctx, ellipsePts(w[0], w[1], f.l(0.62), f.l(0.62), s + 6, 0.05), C.mesa, { w: 1.8, seed: s + 6 });
+    stipple(ctx, w[0] - f.l(0.62), w[1] - f.l(0.62), f.l(1.24), f.l(1.24), 60, { clip: ellipsePts(w[0], w[1], f.l(0.6), f.l(0.6), s + 6, 0.05), color: C.inkSoft, alpha: 0.35, seed: s + 7 });
+    const wh = ellipsePts(w[0], w[1], f.l(0.24), f.l(0.24), s + 8, 0, 24);
+    castShadow(ctx, wh, f.l(0.2), 0.3);
+    shape(ctx, wh, C.steel, { w: 1.5, seed: s + 8 });
+    for (const a of [0, Math.PI / 2]) shape(ctx, rr(f, 0.95 - 0.22 * Math.cos(a) - 0.04 * Math.sin(a), 2.05 - 0.22 * Math.sin(a) - 0.04 * Math.cos(a), 0.95 + 0.22 * Math.cos(a) + 0.04 * Math.sin(a), 2.05 + 0.22 * Math.sin(a) + 0.04 * Math.cos(a), 0.01), C.coral, { w: 1.1, seed: s + 9 });
+    shape(ctx, ellipsePts(w[0], w[1], f.l(0.08), f.l(0.08), s + 10, 0, 16), C.coral, { w: 1.1, seed: s + 10 });
+    ink(ctx, ellipsePts(w[0] - f.l(0.26), w[1], f.l(0.06), f.l(0.06), s + 11, 0, 14), { closed: true, w: 1.6, color: C.brassL, shade: false, seed: s + 11 });
+    // The tower: its broad base under the waist, the lip round the dark throat.
+    const t = f.p(2.02, 1.0);
+    const base = ellipsePts(t[0], t[1], f.l(0.84), f.l(0.84), s + 12, 0.003, 48);
+    dropShadow(ctx, f, base, 3.0, 0.24);
+    shape(ctx, base, mix(TOWER, C.ink, 0.15), { w: 1.8, seed: s + 12 });
+    hatch(ctx, shadowCrescent(t[0], t[1], f.l(0.84), 0.3, s), Math.PI / 4, 3, { alpha: 0.35, seed: s + 12 });
+    const lip = ellipsePts(t[0], t[1], f.l(0.62), f.l(0.62), s + 13, 0.003, 48);
+    shape(ctx, lip, TOWER, { w: 1.6, seed: s + 13 });
+    flat(ctx, ellipsePts(t[0] + 1, t[1] + 1, f.l(0.5), f.l(0.5), s + 14, 0, 40), C.ink);
+    for (const [i, [dx, dy, r]] of ([[-0.1, -0.15, 0.22], [0.2, 0.05, 0.18], [-0.25, 0.2, 0.15]] as const).entries()) {
+      const [px, py] = f.p(2.02 + dx, 1.0 + dy);
+      puffTop(ctx, px, py, f.l(r), s + 15 + i);
+    }
+  },
+  sunheart(ctx, f, s) {
+    // A star in a cage, from above: the ringed foundation, the burning core held in its coil
+    // rings, four capacitor towers feeding it through brass conduits.
+    plinth(ctx, f, C.steelDD, 0.04, s, true);
+    const c = f.p(2.5, 2.5);
+    for (const [x, y] of [[0.7, 0.7], [4.3, 0.7], [0.7, 4.3], [4.3, 4.3]] as const) pipe(ctx, [f.p(x, y), f.p(x + (2.5 - x) * 0.42, y + (2.5 - y) * 0.42)], f.l(0.12), C.brass, s + x + y);
+    const base = ellipsePts(c[0], c[1], f.l(1.9), f.l(1.9), s + 1, 0.003, 72);
+    castShadow(ctx, base, f.l(0.14), 0.3);
+    shape(ctx, base, C.steelD, { w: 2.2, seed: s + 1 });
+    ink(ctx, ellipsePts(c[0], c[1], f.l(1.75), f.l(1.75), s + 2, 0, 72), { closed: true, w: 1.2, color: C.steel, shade: false, seed: s + 2 });
+    for (const [x, y] of [[0.7, 0.7], [4.3, 0.7], [0.7, 4.3], [4.3, 4.3]] as const) {
+      const t = rr(f, x - 0.35, y - 0.35, x + 0.35, y + 0.35, 0.04);
+      dropShadow(ctx, f, t, 3.2, 0.26);
+      shape(ctx, t, C.steel, { w: 1.8, seed: s + 3 + x });
+      grille(ctx, rr(f, x - 0.25, y - 0.25, x + 0.25, y + 0.05, 0.02), 3, s + 4);
+      light(ctx, ...f.p(x, y + 0.2), f.l(0.04), C.led);
+    }
+    const ring0 = ellipsePts(c[0], c[1], f.l(1.62), f.l(1.62), s + 5, 0, 72);
+    castShadow(ctx, ring0, f.l(0.4), 0.2);
+    ink(ctx, ring0, { closed: true, w: f.l(0.13), color: C.ink, shade: false, seed: s + 6 });
+    ink(ctx, ring0, { closed: true, w: f.l(0.08), color: C.brass, shade: false, seed: s + 7 });
+    const core = ellipsePts(c[0], c[1], f.l(0.95), f.l(0.95), s + 8, 0.003, 48);
+    castShadow(ctx, core, f.l(0.5), 0.25);
+    flat(ctx, core, C.warn);
+    hatch(ctx, shadowCrescent(c[0], c[1], f.l(0.95), 0.32, s), Math.PI / 4, 3.4, { alpha: 0.45, seed: s + 8 });
+    ink(ctx, ellipsePts(c[0], c[1], f.l(0.62), f.l(0.62), s + 9, 0, 40), { closed: true, w: f.l(0.08), color: C.coral, shade: false, seed: s + 9 });
+    ink(ctx, core, { closed: true, w: 2, seed: s + 10 });
+    light(ctx, c[0] - f.l(0.15), c[1] - f.l(0.2), f.l(0.18), C.ledWarm);
+    // The tilted coil rings cross over the core.
+    for (const [k, rot, rx, ry] of [[0, Math.PI / 4, 1.38, 0.32], [1, -Math.PI / 4, 1.24, 0.62]] as const) {
+      const ring = ellipsePts(c[0], c[1], f.l(rx), f.l(ry), s + 11 + k, 0, 72, rot);
+      ink(ctx, ring, { closed: true, w: f.l(0.12), color: C.ink, shade: false, seed: s + 12 + k });
+      ink(ctx, ring, { closed: true, w: f.l(0.07), color: C.steelL, shade: false, seed: s + 13 + k });
+    }
+  },
+
+  trade_post(ctx, f, s) {
+    // CrierBelt's cargo lift pad, a plain platform (as the iso art, recipes/buildings.ts): a slab
+    // with a hazard edge, the raised round deck (hazard ring, landing lights, the lift's shut iris),
+    // a lamp post on three corners, the power pedestal on the fourth.
+    plinth(ctx, f, C.steel, 0.04, s, true);
+    const c = f.p(1.5, 1.55);
+    const deck = ellipsePts(c[0], c[1], f.l(0.98), f.l(0.98), s + 1, 0.003, 64);
+    castShadow(ctx, deck, f.l(0.1), 0.32);
+    shape(ctx, deck, C.steel, { w: 2, seed: s + 1 });
+    ink(ctx, ellipsePts(c[0], c[1], f.l(0.78), f.l(0.78), s + 2, 0, 56), { closed: true, w: f.l(0.06), color: C.hazard, shade: false, seed: s + 2 });
+    flat(ctx, ellipsePts(c[0], c[1], f.l(0.62), f.l(0.62), s + 3, 0, 48), C.steelDD);
+    for (let i = 0; i < 8; i++) {
+      const a0 = (i / 8) * Math.PI * 2, a1 = ((i + 1) / 8) * Math.PI * 2, r = f.l(0.62);
+      flat(ctx, [[c[0] + Math.cos(a0) * r, c[1] + Math.sin(a0) * r], [c[0] + Math.cos(a1) * r, c[1] + Math.sin(a1) * r], [c[0] + Math.cos(a1 + 0.5) * r * 0.12, c[1] + Math.sin(a1 + 0.5) * r * 0.12]], i % 2 ? C.steel : mix(C.steel, C.steelL, 0.35));
+    }
+    ink(ctx, ellipsePts(c[0], c[1], f.l(0.62), f.l(0.62), s + 4, 0, 48), { closed: true, w: f.l(0.03), shade: false, seed: s + 4 });
+    for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2; light(ctx, c[0] + Math.cos(a) * f.l(0.9), c[1] + Math.sin(a) * f.l(0.9), f.l(0.035), i % 2 ? C.led : C.ledWarm); }
+    for (const [x, y] of [[0.24, 0.24], [0.24, 2.76], [2.76, 2.76]] as const) {
+      shape(ctx, ellipsePts(...f.p(x, y), f.l(0.09), f.l(0.09), s + 5, 0, 16), C.steelD, { w: 1.2, shade: false, seed: s + 5 });
+      light(ctx, ...f.p(x, y), f.l(0.045), C.ledWarm);
+    }
+    const ped = rr(f, 2.38, 0.22, 2.78, 0.62, 0.03);
+    castShadow(ctx, ped, f.l(0.12), 0.3);
+    shape(ctx, ped, C.teal, { w: 1.4, seed: s + 8 });
+    light(ctx, ...f.p(2.47, 0.31), f.l(0.035), C.ledGreen);
+  },
+};
+
+const seedOf = (id: string): number => (id.length * 131 + id.charCodeAt(0) * 17) | 0;
+
+/**
+ * A plan sprite's body: the recipe (or a moving building's body), the ports over it, and its
+ * power terminals of the generic kit (art/terminals.ts), last, where the wires end.
+ */
+function bodyTop(ctx: Ctx, f: Frame, id: BuildingId, def: BuildingDef, seed: number): void {
+  const m = MOVING_TOP[id];
+  if (m) m.body(ctx, f, seed);
+  else (R[id] ?? fallback)(ctx, f, seed);
+  // The incinerator's in-ports are its plate's own ribbon mouths (as a routing block's): no nozzles.
+  if (def.kind !== 'sink') for (const p of def.ports) port(ctx, f, p.x, p.y, sideIndex[p.side], p.io, seed + p.x * 5 + p.y);
+  for (const [i, t] of terminalsOf(id).entries()) if (kitDrawn(t)) terminalTop(ctx, f, t, seed + 900 + i * 7, KIT_K);
+}
+
+/**
+ * Draw a plan-view building sprite (body + ports) for one rotation into a fresh canvas; a
+ * building with a moving part gets it at phase 0, over the body as the world draws it.
+ */
+export function drawBuildingTop(id: BuildingId, rot: Rot, make: (w: number, h: number) => { ctx: Ctx; canvas: unknown }): { canvas: unknown; frame: Frame } {
+  const def = BUILDINGS[id] as BuildingDef;
+  const f = new Frame(TOP_PX, TOP_MARGIN, def.w, def.h, rot);
+  const { ctx, canvas } = make(f.W, f.H);
+  const seed = seedOf(id);
+  bodyTop(ctx, f, id, def, seed);
+  MOVING_TOP[id]?.part(ctx, f, seed, 0);
+  return { canvas, frame: f };
+}
+
+/**
+ * A building with a moving part, drawn apart for the plan view (moving.ts): its body (with its
+ * ports) and its part at `frames` phases of one period, each a canvas the size of the whole
+ * sprite. In plan the part is always over the body. Null for a building without one.
+ */
+export function drawBuildingTopMoving(id: BuildingId, rot: Rot, frames: number, make: (w: number, h: number) => { ctx: Ctx; canvas: unknown }): { body: unknown; parts: unknown[]; frame: Frame } | null {
+  const m = MOVING_TOP[id];
+  if (!m) return null;
+  const def = BUILDINGS[id] as BuildingDef;
+  const f = new Frame(TOP_PX, TOP_MARGIN, def.w, def.h, rot);
+  const seed = seedOf(id);
+  const b = make(f.W, f.H);
+  bodyTop(b.ctx, f, id, def, seed);
+  const parts = Array.from({ length: frames }, (_, k) => {
+    const p = make(f.W, f.H);
+    m.part(p.ctx, f, seed, k / frames);
+    return p.canvas;
+  });
+  return { body: b.canvas, parts, frame: f };
+}
+
+/**
+ * The skybridge's gantry from above (buildings.ts `skyGantry`): the hazard beam across the line,
+ * its shadow, a red lamp at each end over its legs. A ramp piece draws it again over itself, as the
+ * end's own sprite does, so it stays over the ramp.
+ */
+function skyGantryTop(ctx: Ctx, f: Frame, s: number): void {
+  const beam = rr(f, 0.005, 0.44, 0.995, 0.56, 0.015);
+  dropShadow(ctx, f, beam, 1.84, 0.24);
+  flat(ctx, beam, C.hazard);
+  ctx.save(); pathOf(ctx, beam); ctx.clip();
+  hatch(ctx, beam, Math.PI / 4, f.l(0.09), { w: f.l(0.035), alpha: 0.85, seed: s + 6 });
+  ctx.restore();
+  ink(ctx, beam, { closed: true, w: 1.5, seed: s + 7 });
+  for (const x of [0.04, 0.96]) light(ctx, ...f.p(x, 0.5), f.l(0.045), C.ledRed);
+}
+
+/**
+ * A skybridge pair's piece on its square, from above (buildings.ts `drawSkyPiece`): the span's
+ * shadow down-right as long as it is high there (cut at the square, so neighbouring pieces' shadows
+ * never overlap), the dark girders, the slatted running surface — a ramp shaded as it leans, a
+ * hazard toe plate at its foot — and, over a ramp, the end's gantry again. On the end's own frame.
+ */
+export function drawSkyPieceTop(piece: SkyPiece, rot: Rot, make: (w: number, h: number) => { ctx: Ctx; canvas: unknown }): { canvas: unknown; frame: Frame } {
+  const f = new Frame(TOP_PX, TOP_MARGIN, 1, 1, rot);
+  const { ctx, canvas } = make(f.W, f.H);
+  const s = seedOf('skybridge');
+  const { r0, r1, g0, g1, rim, deck } = SKY;
+  const high = (y: number): number => (piece === 'deck' ? deck : deck * (piece === 'up' ? 1 - y : y)) + rim;
+  const E = 0.012;
+  ctx.save();
+  pathOf(ctx, rr(f, -1, 0, 2, 1, 0));
+  ctx.clip();
+  const lay = (x: number, y: number): Pt => { const d = f.l(0.11 * high(y)); const [px, py] = f.p(x, y); return [px + d * 0.7, py + d]; };
+  flat(ctx, hull([f.p(g0, 0), f.p(g1, 0), f.p(g1, 1), f.p(g0, 1), lay(g0, 0), lay(g1, 0), lay(g1, 1), lay(g0, 1)]), C.inkSoft, 0.26);
+  ctx.restore();
+  flat(ctx, rr(f, r0, -E, r1, 1 + E, 0), C.steelL);
+  if (piece !== 'deck') {
+    // Leaning to the light (rising towards the top of the screen) a little lighter, else darker.
+    const [, ya] = f.p(0.5, 0), [, yb] = f.p(0.5, 1);
+    const toLight = (piece === 'up') === (ya < yb);
+    flat(ctx, rr(f, r0, -E, r1, 1 + E, 0), toLight ? '#ffffff' : C.ink, toLight ? 0.12 : 0.14);
+  }
+  for (let k = 0; k < 8; k++) {
+    const y = (k + 0.5) / 8;
+    ink(ctx, [f.p(r0 + 0.02, y), f.p(r1 - 0.02, y)], { w: 2, color: C.steel, shade: false, taper: 0, jitter: 0, seed: s + 10 + k });
+  }
+  for (const [i, [a, b]] of ([[g0, r0], [r1, g1]] as const).entries()) {
+    flat(ctx, rr(f, a, -E, b, 1 + E, 0), C.steelD);
+    ink(ctx, [f.p((a + b) / 2, -E), f.p((a + b) / 2, 1 + E)], { w: 1.1, color: mix(C.steelD, '#ffffff', 0.3), shade: false, taper: 0, jitter: 0, seed: s + 20 + i });
+    for (const y of [0.25, 0.75]) rivet(ctx, ...f.p((a + b) / 2, y), f.l(0.016), C.steelL);
+    for (const x of [a, b]) ink(ctx, [f.p(x, -E), f.p(x, 1 + E)], { w: 1.5, shade: false, taper: 0, jitter: 0, seed: s + 22 + i * 2 + x });
+  }
+  if (piece !== 'deck') {
+    const foot = piece === 'up' ? 1 : 0;
+    const toe = rr(f, g0, Math.min(foot, 0.92), g1, Math.max(foot, 0.08), 0.01);
+    flat(ctx, toe, C.hazard);
+    ctx.save(); pathOf(ctx, toe); ctx.clip();
+    hatch(ctx, toe, Math.PI / 4, f.l(0.07), { w: f.l(0.028), alpha: 0.85, seed: s + 30 });
+    ctx.restore();
+    ink(ctx, toe, { closed: true, w: 1.2, shade: false, taper: 0, jitter: 0, seed: s + 31 });
+    skyGantryTop(ctx, f, s + 40);
+  }
+  return { canvas, frame: f };
+}
+
+function fallback(ctx: Ctx, f: Frame, s: number): void {
+  // No recipe yet: a riveted crate-like machine — a steel housing, a bolted hatch, an intake,
+  // a hazard stripe and LEDs. Never a dome.
+  plinth(ctx, f, C.steel, 0.06, s);
+  const body = rr(f, 0.2, 0.2, f.w - 0.2, f.h - 0.2, 0.06);
+  dropShadow(ctx, f, body, 1.3, 0.3);
+  shape(ctx, body, C.steelL, { w: 2, seed: s + 1 });
+  hatchDoor(ctx, rr(f, f.w / 2 - 0.2, f.h / 2 - 0.2, f.w / 2 + 0.2, f.h / 2 + 0.2, 0.02), s + 2);
+  grille(ctx, rr(f, 0.3, f.h - 0.46, f.w / 2 - 0.08, f.h - 0.3, 0.02), 3, s + 3);
+  shape(ctx, rr(f, f.w / 2 + 0.08, f.h - 0.42, f.w - 0.3, f.h - 0.32, 0.01), C.hazard, { w: 1, shade: false, jitter: 0, seed: s + 4 });
+  ledStrip(ctx, f.p(0.32, 0.32), f.p(Math.min(f.w - 0.32, 0.8), 0.32), 3, f.l(0.03), LEDS, s + 5);
+}
+
+/** Which buildings change shape when rotated in plan (others reuse rot 0 and its ports): the iso art's rule (art/terminals.ts `turnsArt`). */
+export const needsRotationsTop = (id: BuildingId): boolean => turnsArt(id);

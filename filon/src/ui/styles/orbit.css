@@ -1,0 +1,45 @@
+/* orbit.css — the orbital view ("Économie visible") inside the Crier screen: a framed plate
+   of deep lilac space (the canvas fills it, its pixels follow the device ratio) and the
+   hover tip, a small paper cartouche. The Crier screen frames and sizes .orbit (.cr-orbit);
+   the view fills its box. */
+.orbit {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 180px;
+  overflow: hidden;
+  background: #2b294e; /* = paint.ts SKY, shown until the first frame */
+}
+.orbit-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.orbit[data-hover] .orbit-canvas { cursor: pointer; }
+
+.orbit-tip {
+  position: absolute; left: 0; top: 0; z-index: 1; pointer-events: none;
+  max-width: 300px; padding: 6px 10px 8px; font-size: 12px; line-height: 1.3;
+  box-shadow: 2px 3px 0 var(--c-ink);
+}
+.orbit-tip[hidden] { display: none; }
+.orbit-tip-head { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+.orbit-tip-glyph { width: 26px; height: auto; flex: none; }
+.orbit-tip-title { font-size: 17px; line-height: 1.05; }
+.orbit-tip-sub { font-size: 11px; color: var(--c-ink-soft); }
+.orbit-tip-row { display: flex; gap: 6px; align-items: baseline; margin-top: 4px; }
+.orbit-tip-label {
+  flex: none; font-family: var(--f-title); font-size: 13px; padding: 0 5px; border-radius: 6px;
+  border: 1.5px solid var(--c-ink);
+}
+.orbit-tip-row[data-side='supply'] .orbit-tip-label { background: var(--c-turq-l); }
+.orbit-tip-row[data-side='need'] .orbit-tip-label { background: var(--c-peach); }
+.orbit-tip-items { display: flex; flex-wrap: wrap; gap: 2px 8px; }
+.orbit-tip-chip { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
+.orbit-tip-chip canvas { display: block; width: 16px; height: 16px; }
+.orbit-tip-chip[data-unique] { font-weight: 700; color: var(--c-lilac-d); }
+.orbit-tip-trade { display: flex; gap: 12px; margin-top: 5px; font-weight: 700; }
+.orbit-tip-trade [data-side='sell'] { color: var(--c-coral-d); }
+.orbit-tip-trade [data-side='buy'] { color: var(--c-turq-d); }
+.orbit-tip-ev { margin-top: 4px; padding-left: 12px; position: relative; font-size: 11.5px; }
+.orbit-tip-ev::before { content: '◆'; position: absolute; left: 0; top: 0; font-size: 9px; line-height: 15px; }
+.orbit-tip-ev[data-state='active']::before { color: var(--c-coral); }
+.orbit-tip-ev[data-state='announced']::before { color: var(--c-warn); }

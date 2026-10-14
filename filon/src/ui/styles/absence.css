@@ -1,0 +1,50 @@
+/* absence.css — « Pendant ton absence » (ui/screens/absence.ts): a comic page over the base — CrierBelt's
+   header on a cartouche, then inked panels (the Heart, what was made, the Crier, the log), like the intro's strip. */
+.absence { align-items: center; overflow: auto; padding-top: 26px; }
+.ab-page { width: min(1080px, 100%); display: grid; gap: 16px; }
+.ab-head { position: relative; padding: 14px 22px 16px; }
+.ab-head h2 { margin: 2px 0 6px; font-size: 40px; font-weight: 400; }
+.ab-head .rs-close { position: absolute; top: 12px; right: 12px; }
+.ab-from { margin: 0; font-size: 15px; color: var(--c-turq-d); letter-spacing: 0.06em; }
+.ab-lead { margin: 0; font-size: 18px; font-style: italic; color: var(--c-ink-soft); }
+.ab-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.ab-panel {
+  margin: 0; padding: 12px 16px 14px; min-width: 0;
+  border: 3px solid var(--c-ink); border-radius: 7px 5px 8px 6px / 6px 8px 5px 7px;
+  background: var(--c-paper); box-shadow: 4px 5px 0 var(--c-ink);
+}
+.ab-panel[data-absence-panel="log"] { grid-column: 1 / -1; }
+.ab-panel h3 { margin: 0 0 8px; font-size: 22px; font-weight: 400; border-bottom: 1.5px solid var(--c-ink); padding-bottom: 4px; }
+.ab-rows { display: grid; gap: 5px; }
+/* A value too long to sit beside its label (« 101 273 Minerai de fer ») wraps under it, to the right. */
+.ab-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; column-gap: 12px; font-size: 15px; }
+.ab-label { min-width: 0; }
+.ab-value { margin-left: auto; max-width: 100%; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.ab-panel[data-absence-panel="log"] .ab-value { font-weight: 400; color: var(--c-ink-soft); }
+.ab-row[data-tone="up"] .ab-value { color: var(--c-turq-d); }
+.ab-row[data-tone="down"] .ab-value { color: var(--c-coral-d); }
+.ab-none, .ab-more, .ab-lost { margin: 2px 0 0; font-size: 14px; color: var(--c-ink-soft); }
+.ab-lost { color: var(--c-coral-d); }
+.ab-foot { display: flex; align-items: center; gap: 16px; justify-content: flex-end; }
+.ab-approx { margin: 0; margin-right: auto; font-size: 13px; color: var(--c-ink-soft); }
+.ab-ok { font-size: 22px; padding: 6px 26px; }
+.ab-panel[data-absence-panel="changes"] { grid-column: 1 / -1; background: var(--c-peach-l); }
+.ab-panel[data-absence-panel="changes"] p { margin: 2px 0; font-size: 14px; }
+
+/* « Avant de partir » (ui/screens/forecast.ts): a page of the main menu, the same panels, smaller. */
+.menu-page:has(.forecast) { width: min(720px, 100%); }
+.fc-lead { margin: 0 0 4px; font-size: 14px; line-height: 1.45; color: var(--c-ink-soft); }
+.fc-body { display: grid; gap: 12px; margin-top: 6px; min-height: 140px; }
+.fc-body[data-busy] { opacity: 0.6; }
+.fc-busy { margin: 18px 0; font-style: italic; color: var(--c-ink-soft); }
+.fc-head { display: grid; gap: 3px; padding: 10px 14px; border: 2px dashed rgba(30, 27, 46, 0.25); border-radius: var(--radius-ink); background: var(--c-paper); }
+.fc-head p { margin: 0; }
+.fc-stop { font-size: 16px; font-weight: 600; }
+.fc-stop[data-tone="down"] { color: var(--c-coral-d); }
+.fc-stop[data-tone="up"] { color: var(--c-turq-d); }
+.fc-stop[data-tone="warn"] { color: var(--c-ink); }
+.fc-credits { font-size: 14px; }
+.forecast .ab-panels { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.forecast .ab-panel { padding: 9px 12px 11px; border-width: 2px; box-shadow: 3px 4px 0 var(--c-ink); }
+.forecast .ab-panel h3 { font-size: 18px; }
+.forecast .ab-row { font-size: 13.5px; }

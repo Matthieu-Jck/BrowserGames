@@ -1,0 +1,183 @@
+# Ocelle — Architecture
+
+Ocelle is a persistent factory game that runs in the browser: one colony per player, unlimited offline production, a simulated world market. Technically it rests on three ideas:
+
+1. **A deterministic integer engine, apart from everything else.** `src/sim` (with `src/content` and `src/core`) is pure TypeScript: no DOM, no clock, no randomness, integers only. It runs on the main thread today, and can run in a Worker or on a Node server unchanged.
+2. **The same engine online and offline.** A week of absence is computed exactly, not estimated. Ticking and catching up use the same flow graph, and every long process is built so that both give the same result ([docs/offline.md](docs/offline.md)).
+3. **A thin shell that shows one world two ways.** The shell (`src/app`) renders the colony with PixiJS, in an isometric view (to look around) and a top-down plan view (to build) that morph into each other. A DOM UI (cartouches) sits on top and reads the engine at 4 Hz.
+
+The game design (French) lives in the plan: `~/.claude/plans/nous-allons-creer-un-mighty-perlis.md`. The story (who the player is, why the base is unmanned, CrierBelt, the words to use) is in [docs/lore.md](docs/lore.md). The repository is the source of truth for the code structure. This file is the map; the `docs/` folder holds the details.
+
+---
+
+## 1. Layers
+
+```
+            ┌──────────── shell: src/app/ · main.ts · debug.ts · settings.ts ────────────┐
+            │ owns every part, wires them, runs the frame; nothing imports the shell     │
+            └─────┬───────────────┬────────────────┬───────────────┬─────────────────────┘
+                  ▼               ▼                ▼               ▼
+            ui (DOM)        input (keys,     render (Pixi,     persist (saves) · audio (Web
+          cartouches,       pointer, tools)   the two views)    Audio: score, ambience, cues)
+          screens               │                │
+                  │             └──────┬─────────┘
+                  ▼                    ▼
+                i18n             sim (the engine) ───► market (M6: the Crier, pure)
+                  │                    │                  │
+                  └──────────► content (data, BAL) ◄──────┘
+                                       │
+                                     core (pure helpers)
+```
+
+| Layer | Folder | Role | May import (runtime) |
+|---|---|---|---|
+| core | `src/core` | Integer maths (`fixed.ts`), hashing, seeded RNG/noise, the typed event bus, DOM helpers, tweens, shared string unions | — |
+| content | `src/content` | All game data: items, recipes, buildings, research, world template, every tunable number (`BAL`), the registry (ids ⇄ indices), content invariants | core |
+| i18n | `src/i18n` | French source strings, English parity, formatting, typography | core, content |
+| market | `src/market` | The simulated NPC market behind the `MarketService` contract (the Crier) | core, content |
+| sim | `src/sim` | The colony: state, commands, the flow graph, the tick, power, research, space, offline catch-up, save format | core, content, market |
+| render | `src/render` | Pixi stage, projection and camera, layers, terrain and relief, the art kit (generated Moebius-style ink art), the world views | core, content, sim (+ types from input) |
+| input | `src/input` | Keyboard and pointer, key bindings (AZERTY native), tools (build, ribbon drag, demolish, landscaping brush) and their previews | core, content, sim, render |
+| ui | `src/ui` | DOM UI: HUD, build bar, inspector, toasts, tip, full screens, styles | core, content, sim, market, i18n, render's art kit and geometry (+ types from input) |
+| persist | `src/persist` | The base kept (M7): the key-value store (IndexedDB), the envelope (gzip, checksum, export text), the a/b slots and copies, migrations, the one-tab lock, opening a base and paying the time owed | core, content, market, sim |
+| audio | `src/audio` | Generative sound in Web Audio (D30): the score (director, sequencer, instruments), the ambience, the cues' recipes, the mixer; the shell drives it (`app/sound.ts`) and is its only importer | core, content |
+| shell | `src/app`, `src/*.ts` | Boot, the App hub, the frame, the debug handle `window.FL` | anything |
+
+These rules are **enforced** by [src/architecture.test.ts](src/architecture.test.ts). If a change needs a new edge, move the code instead: put the shared type or pure helper in the lower layer. Only widen the table, and update this file with it, when the edge is truly part of the design.
+
+Two further guards protect the engine:
+- [src/sim/tsconfig.json](src/sim/tsconfig.json): sim, market and content type-check **without DOM types**.
+- The **determinism guard** in [src/sim/serialize.test.ts](src/sim/serialize.test.ts) scans `src/sim`, `src/content` and the core helpers the engine imports for `Math.random`, clocks and transcendental functions; `src/market` (floats allowed) is scanned for randomness and clocks.
+
+---
+
+## 2. The non-negotiables
+
+| # | Invariant | Why | Guarded by |
+|---|---|---|---|
+| 1 | The engine is **integer and deterministic**: milli-items (`MU = 1000`), kW, ‰, centi-ocelles; no `Math.random`, `Date`, `sin/exp/log/pow/hypot`; total-order sorts; `isqrt` | Same save + same commands ⇒ same state, on any machine; a future server replays and validates | determinism guard, `hash()` comparisons in tests |
+| 2 | **Online ≡ offline.** Any mechanic that changes state over time must be expressible to the catch-up (flow nodes, or the *pseudo-flow + allowance* pattern) | Offline production is unlimited and must not drift from online play | `catchup.test.ts` (online ≈ offline on random bases), mechanic-specific tests |
+| 3 | **Commands are the only way in.** UI, tools and scripts change a colony only through the Sim's command methods; each validates, applies and logs itself (`sim.log`) | Replay, server validation, future undo | [src/sim/commands.test.ts](src/sim/commands.test.ts) (replay ⇒ same hash) |
+| 4 | **Nothing vanishes** — but into an incinerator, the player's explicit choice (D51). Removal refunds 100 %; orphaned items go back to the Hearth; full stores push back instead of destroying | Players trust a persistent colony | conservation tests in `flow.test.ts`, `space.test.ts` |
+| 5 | **The sim never produces text.** Events and reports carry ids and numbers; the UI translates | FR/EN everywhere, a server speaks no language | `SimEvent` types, i18n parity test |
+| 6 | **The shell is a leaf.** Pixi only in `src/render`, Web Audio only in `src/audio`; the DOM UI never touches the scene graph; nothing imports `src/app` | Keeps the engine portable and the views replaceable | `architecture.test.ts` |
+| 7 | **No silent reset** of a colony (M7): a/b slots with checksums, `prev` and `pre-*` copies, chained migrations, saves re-pointed by content id (D47); a save that does not open stops the boot instead of being replaced | One persistent colony per player | `persist/persist.test.ts`, `sim/save-remap.test.ts`, the smoke's M7 steps |
+| 8 | **Every number lives in content** (`BAL` or the tables), never inline in a system | Balancing without code hunts | review; `validate.ts` invariants |
+
+---
+
+## 3. How it runs
+
+### The frame ([src/app/app.ts](src/app/app.ts))
+
+```
+rAF (main.ts) → App.frame(dt)
+  view.update(dt)            iso ⇄ plan morph: t → te (eased) → projection P
+  input.frame(dt)            keyboard pan, held keys
+  tickSim(dt)                fixed 10 Hz: whole 100 ms ticks, ≤ 8 per frame (longer gaps: the resync's catch-up, app/persistence.ts)
+  drainSimEvents()           SimEvent → toasts, bus, view rebuilds (app/sim-events.ts)
+  dirty chunks               dug / filled tiles repaint terrain + relief
+  drawWorld(dt)              camera → terrain → relief → ghost → overlays → day/night (grade, lights, clouds) → drifters → items → tip → stats sample
+  every 0.25 s               HUD, build bar, inspector, open screen refresh (change-only DOM writes)
+  renderer.render()          one Pixi render of the stage
+  perf                       numbers for the perf overlay (` key)
+```
+
+### The tick ([src/sim/state.ts](src/sim/state.ts))
+
+```
+Sim.step()
+  1 constructions        remote kites that arrived → buildings              systems/build.ts
+  2 ensureCompiled       recompile the flow graph if `dirty`                graph/compile.ts
+  3 power                demands vs sun/wind → satisfaction ‰ per grid      systems/power.ts
+  4 phases A → B → C     offers/accepts → transfers → machines & drills     flow/step.ts
+  5 research             projects pay science under their allowance         systems/research.ts
+  6 landscape            dig / fill jobs advance, tiles turn to floor        systems/landscape.ts
+  7 freight              drifter routes move goods between skydocks         systems/freight.ts
+  8 tick++ · boundary    every 600 ticks (1 game minute): trade posts trade, the Crier settles   systems/trade.ts
+                         then the leases' hour: rent paid, or the lease lapses                   systems/land.ts
+  9 quests               the tutorial: rate windows at boundaries, a completion check every second   systems/quests.ts
+```
+
+### State, commands, events
+
+- **`Sim` is a facade.** It holds the whole state and exposes the API. The rules live in `src/sim/systems/*.ts`, each a set of functions over the Sim (`build`, `configure`, `research`, `landscape`, `land`, `freight`, `power`, `trade`). Formulas that need no state sit beside them (`space.ts`, `research/runtime.ts`, `power/*`).
+- **Commands** ([src/sim/commands.ts](src/sim/commands.ts)): the `Command` union is what a player can do. Command methods log themselves, and `exec` / `replay` re-apply a log. A switch checked for exhaustiveness makes a new command kind fail to compile until it is handled.
+- **Events**: the Sim appends `SimEvent`s, and the shell drains them once per frame through a handler table typed so that every event kind needs a handler ([src/app/sim-events.ts](src/app/sim-events.ts)).
+- **Reads**: views and UI read the Sim directly. They pull at 4 Hz for the DOM, every frame for the views, and rebuild when a `structure` event arrives. They never write to it except through commands.
+- **Derived state** (flow graph, the starting square and the sister claims' parcels, `Mods`, occupancy) is rebuilt, never saved. The save holds only what cannot be recomputed ([src/sim/serialize.ts](src/sim/serialize.ts)).
+
+### Offline
+
+`catchUp(sim, ticks)` ([src/sim/offline/catchup.ts](src/sim/offline/catchup.ts)) cuts the graph into groups at reservoirs. It warms each group up until its state repeats with an exact period, extrapolates whole periods until the next event (a store filling or emptying, a research project done, a tile dug, an epoch, a weather step…), then handles the event and repeats. Research, digs and freight attach to reservoirs as *pseudo-flows*. Because their payments follow a path-independent *allowance*, the catch-up and ticking agree exactly. Details: [docs/offline.md](docs/offline.md).
+
+---
+
+## 4. Where new code goes
+
+| You are adding… | Put it in | And also |
+|---|---|---|
+| A game rule that changes state | `src/sim/systems/<domain>.ts` (new file for a new domain) | A facade method on `Sim`; a `Command` variant + `exec` case; save fields in `serialize.ts` and `hash()`; an online ≈ offline test |
+| A pure formula (rates, costs, curves) | `src/sim/<domain>.ts` or `src/content` | Unit test with the plan's numbers |
+| Numbers, items, recipes, buildings, research | `src/content/*` and `BAL` | `validate.ts` invariants when a rule must hold |
+| A new building kind | see the checklist in [docs/extending.md](docs/extending.md) | content → graph compiler → node → inspector panel → art → i18n → tests |
+| A new SimEvent | `SimEvent` in `src/sim/commands.ts` | A handler in `src/app/sim-events.ts` (compile-enforced) |
+| A new full screen | `src/ui/screens/<name>.ts` (`root` + `refresh()`) | `screens.register(...)` in `app.ts`, a key in `input/bindings.ts` + `app/controls.ts`, i18n keys |
+| An inspector section for a kind | a `Panel` in `src/ui/inspector/<group>.ts` | its entry in `src/ui/inspector/panels.ts` |
+| Something drawn in the world | `src/render/world/<name>-view.ts` | a layer in `render/layers.ts`, a call in `App.drawWorld` |
+| Building / item art | `src/render/art/recipes/*` | atlas keys; `isoHead` for picking; the artboard shows it; a powered building's terminal in `src/render/art/terminals.ts` (where its wires attach) |
+| A debug or test hook | `src/debug.ts` (`window.FL`) | sandbox only: never mutate a colony outside commands except in clearly-named rigs |
+| A tutorial quest | `src/content/quests.ts` | an objective kind in `src/sim/systems/quests.ts`, a guide target in `src/ui/guide.ts`, i18n keys; [docs/quests.md](docs/quests.md) |
+| Market logic | `src/market` (pure) | the sim calls it once per epoch through `MarketService` |
+| A saved field | `SaveData` in `src/sim/serialize.ts` (optional, with a default) | its kind in `FIELDS` (`src/sim/save-remap.ts`); a renamed or removed content id: `src/content/retired.ts`; a new save shape: `MIGRATIONS` (`src/persist/migrate.ts`); [docs/persistence.md](docs/persistence.md) |
+| A sound cue | `SfxCue` in `core/bus.ts`, its row in `CUES` (`audio/cues.ts`) and its recipe in `RECIPES` (`audio/sfx.ts`) | `bus.emit('sfx', { cue })` where it happens (or a mapping in `app/sound.ts`); measure its peak; [docs/audio.md](docs/audio.md) |
+
+---
+
+## 5. Module map
+
+**`src/core`**: `fixed.ts` (`mulDiv`, `ceilDiv`, `isqrt`, carries), `hash.ts` (`hash32`, `StateHasher`), `rng.ts`/`noise.ts` (seeded, quantised), `bus.ts` (typed `GameEvents`), `dom.ts` (`el`, change-only `setText`/`setAttr`), `tween.ts`, `math.ts`, `store.ts` (settings storage), `kinds.ts` (shared unions: `ScreenId`, `ViewMode`, `Locale`…).
+
+**`src/content`**: `items.ts`, `recipes.ts`, `buildings.ts`, `research.ts`, `quests.ts` (the tutorial: objectives, rewards, guide steps), `world.ts` (seed, cirque template), `types.ts`, `registry.ts` (index arrays, `BUILDING_KIND`, `CRECIPES`, `costOf`, `isBeltDef`…), `balance.ts` (`BAL`), `reserve.ts` (the bootstrap and CrierBelt's restart reserve, D36), `retired.ts` (renamed and removed ids, for saves: D47), `validate.ts`. → [docs/content.md](docs/content.md)
+
+**`src/market`** (pure; the sim settles it once per epoch through `systems/trade.ts`): `types.ts` (the `MarketService` contract), `service.ts` (`LocalMarketService`), `engine.ts` (per-epoch state machine), `pricing.ts`, `events.ts`, `colonies.ts`, `board.ts`; content in `content/colonies.ts` and `BAL.market`. → [src/market/README.md](src/market/README.md)
+
+**`src/sim`**: `state.ts` (facade), `commands.ts`, `cfg.ts` (entity `cfg` bit layout), `trade.ts` (trade post rules), `systems/*` (build, configure, research, reserve, landscape, land, freight, power, trade, quests), `entities.ts`, `types.ts`, `constants.ts`, `space.ts`, `graph/` (compile, groups), `flow/` (chains, nodes, phases), `power/` (wires, grids from the wires, solver, weather & generators), `research/` (runtime, modifiers), `world/` (grid, mapgen, land parcels, climate), `offline/` (catch-up, steady regimes, report), `serialize.ts`, `save-remap.ts` (saves re-pointed to today's content, D47), `dev.ts` (demo layout), `scenarios.ts` (the debug bases: ready-made colonies at each stage, built by real commands), `testkit.ts`, `bench/`. → [docs/engine.md](docs/engine.md), [docs/offline.md](docs/offline.md)
+
+**`src/render`**: `stage.ts`, `projection.ts` (`proj(t)`: iso ⇄ plan), `iso.ts`, `camera.ts`/`camera-math.ts`, `layers.ts`, `relief.ts`, `perf-overlay.ts`, `stress.ts`, `daynight.ts` (the time of day's grade), `art/` (tokens, ink, shapes, iso-shapes, rock, terrain (+ worker), atlas, dyn-atlas, solar, recipes incl. `fx.ts`), `world/` (terrain chunks, relief, buildings, items (`item-flow.ts`: items as persistent tokens through every hand-off, no Pixi; `items-view.ts` draws them), ghost, overlays, power wires (+ wire geometry), drifters, lights + cloud shadows). → [docs/render.md](docs/render.md)
+
+**`src/input`**: `input.ts`, `bindings.ts`, `tools.ts`, `link-tool.ts` (the power-wire tool), `belt-path.ts`. → [docs/input.md](docs/input.md)
+
+**`src/ui`**: `hud.ts`, `build-bar.ts` (+ icon helpers), `inspector/` (inspector, kit, panels per group incl. `trade.ts`), `toasts.ts`, `tip.ts`, `stats.ts` (recorder), `gazette.ts`, `trade-view.ts`, `quest-log.ts` (the tutorial's log, naming modal, toast text), `guide.ts` (the tutorial's arrow), `analytics.ts` (what the tree's Analytics path unlocks, its reveals, the machines' states: D41), `focus.ts` (the spotlight: a short black out around a new readout), `mention.ts` (an item named in the UI shows its icon: `itemRef` / `itemMention`), `item-picker.ts` (the item picker that replaces item `<select>`s), `screens/` (the main menu and its settings page, the intro, research, stats, crier, artboard, the absence report, the one-tab conflict panel), `orbit/` (the orbital view), `styles/`. → [docs/ui.md](docs/ui.md)
+
+**`src/persist`**: `kv.ts` (IndexedDB / memory), `envelope.ts`, `slots.ts`, `migrate.ts`, `lock.ts`, `colony.ts` (open, rebuild, time owed, catch-up). → [docs/persistence.md](docs/persistence.md)
+
+**`src/audio`** (Web Audio; the pure parts unit-tested in Node): `theory.ts` (modes on D, chords, voice leading, melody ladders), `director.ts` (the time of day's mood, the activity's pulses, the generative `Score`), `sequencer.ts` (look-ahead clock), `levels.ts` (the mix: taper, bus trims, voice and ambience levels), `cues.ts` (arbitration, rate limits, measured peaks), `buffers.ts` (noises, impulse response, clip curve), `synth.ts` (instruments), `ambience.ts` (wind, machines, ribbons), `sfx.ts` (cue recipes), `engine.ts` (`SoundEngine`: the graph on any audio context), `sound.ts` (`Sound`: the shell's front door). → [docs/audio.md](docs/audio.md)
+
+**`src/app`**: `app.ts` (hub + frame), `view.ts` (morph), `picking.ts`, `build-mode.ts`, `screens.ts`, `intro.ts` (the intro's shell side: when it plays, the Heart's landing, naming the claim), `sim-events.ts`, `controls.ts`, `sound.ts` (what the base sounds like: unlock, world snapshot, cues), `debug-bases.ts` (the menu's debug bases: the player's colony set aside, frozen, and swapped back), `persistence.ts` (boot from the save, autosave, the world clock's resync, export / import / start over); at the root `main.ts` (boot), `debug.ts` (`window.FL`), `settings.ts`. → [docs/app.md](docs/app.md)
+
+**`scripts/`**: `smoke.mjs` (end-to-end in the system Chrome via playwright-core), `shots.mjs` (named screenshots). → [docs/testing.md](docs/testing.md)
+
+---
+
+## 6. Docs
+
+| Doc | For |
+|---|---|
+| [docs/engine.md](docs/engine.md) | The simulation: units, time, world, graph, flow, power, research, space, save, determinism |
+| [docs/offline.md](docs/offline.md) | The exact catch-up and how to keep a new mechanic offline-exact |
+| [docs/land.md](docs/land.md) | The claim's land: parcels, the starting square, prices, buying and leasing (D60) |
+| [docs/persistence.md](docs/persistence.md) | Saves (slots, envelope, migrations, content remap), boot and the time owed, autosave, export / import, one tab at a time |
+| [docs/content.md](docs/content.md) | Data tables, `BAL`, the registry, invariants |
+| [docs/render.md](docs/render.md) | Projection, views, layers, relief, art pipeline |
+| [docs/input.md](docs/input.md) | Bindings, tools, ribbon paths |
+| [docs/ui.md](docs/ui.md) | DOM UI components and patterns |
+| [docs/app.md](docs/app.md) | The shell: boot, frame, controllers |
+| [docs/audio.md](docs/audio.md) | Generative sound: the score, the ambience, the cues, the mix and its measured levels, the knobs, adding a sound |
+| [docs/i18n.md](docs/i18n.md) | Strings, formats, typography |
+| [docs/testing.md](docs/testing.md) | Unit tests, perf, smoke, shots, `window.FL` |
+| [docs/extending.md](docs/extending.md) | Step-by-step recipes (new item, recipe, building kind, research node, mechanic, screen…) |
+| [docs/glossary.md](docs/glossary.md) | Game and engine vocabulary, FR / EN / code |
+| [docs/quests.md](docs/quests.md) | The tutorial: quests 0–11, how they are checked and paid, the quest log and the guide, adding a quest |
+| [docs/decisions.md](docs/decisions.md) | Why things are the way they are (locked decisions) |
+| [docs/roadmap.md](docs/roadmap.md) | Milestone status, what M6–M8 must deliver, open questions |

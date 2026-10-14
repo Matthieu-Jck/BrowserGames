@@ -1,0 +1,274 @@
+/* intro.css — the opening sequence (D31): a comic page on paper (three inked panels filled one
+   after the other, captions typed in cartouches, CrierBelt's holographic contract and its
+   stamp), CrierBelt's register (the company's name), then the frame around the live world while
+   the Heart lands. Tokens from base.css (the art palette as --t-*). State lives in attributes:
+   on .intro, data-stage (story | name | landing) and data-phase (descent | down | out); on each
+   panel, data-state (todo | now | past) and data-beat (the contract's beats, 0–3). Final states
+   are the rules themselves and the keyframes only say where they come `from`, so reduced motion
+   (animations off) still shows everything. */
+
+/* The HUD waits while the intro runs, as behind the main menu. */
+body[data-intro] #ui { opacity: 0; visibility: hidden; transition: opacity 260ms ease, visibility 0s linear 260ms; }
+
+.intro {
+  position: fixed; inset: 0; z-index: 25; overflow: hidden;
+  display: grid; place-items: center;
+}
+.intro[data-stage="story"] { cursor: pointer; }
+.intro-paper {
+  position: absolute; inset: 0; z-index: -1;
+  background: radial-gradient(rgba(30, 27, 46, 0.07) 1px, transparent 1.3px) 0 0 / 14px 14px, var(--c-paper);
+  transition: opacity 1000ms ease;
+}
+
+/* ── the comic page ───────────────────────────────────────────────────────── */
+/* Its proportions are fixed (the drawings are composed for them): the window's short side sizes it. */
+.intro-page {
+  grid-area: 1 / 1; position: relative;
+  width: min(1180px, calc(100vw - 64px), calc((100vh - 116px) * 1180 / 740)); aspect-ratio: 1180 / 740;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 18px;
+  transition: opacity 420ms ease, transform 560ms cubic-bezier(0.3, 0.7, 0.3, 1);
+}
+/* Under the register the strip stays, faded, like a page under a letter; the landing takes it away. */
+.intro:not([data-stage="story"]) .intro-page { pointer-events: none; }
+.intro[data-stage="name"] .intro-page { opacity: 0.18; transform: scale(0.965); filter: blur(1.2px) saturate(0.7); }
+.intro[data-stage="landing"] .intro-page { opacity: 0; transform: scale(0.94); }
+
+.intro-panel {
+  position: relative; margin: 0; overflow: hidden; min-height: 0;
+  border: 3px solid var(--c-ink); border-radius: 7px 5px 8px 6px / 6px 8px 5px 7px;
+  background: var(--c-paper-d); box-shadow: 4px 5px 0 var(--c-ink);
+}
+.intro-panel[data-intro-panel="crierbelt"] { grid-column: 1 / -1; }
+.intro-panel[data-intro-panel="investor"] .intro-cap { max-width: 64%; }
+/* A frame still to draw: a faint dashed box on the page. */
+.intro-panel[data-state="todo"] { border: 2px dashed rgba(30, 27, 46, 0.2); background: transparent; box-shadow: none; }
+.intro-panel[data-state="todo"] > * { visibility: hidden; }
+.intro-panel[data-state="now"] { animation: ip-in 650ms cubic-bezier(0.2, 0.8, 0.3, 1); }
+.intro-panel[data-state="now"] .intro-art { animation: ip-drift 15s ease-out; }
+.intro-panel[data-state="past"] .intro-art { filter: saturate(0.72) brightness(0.97); transition: filter 700ms ease; }
+.intro-art { position: absolute; inset: 0; }
+.intro-art svg { display: block; width: 100%; height: 100%; }
+@keyframes ip-in { from { opacity: 0; transform: scale(0.965) rotate(-0.5deg); } }
+@keyframes ip-drift { from { transform: scale(1.07) translateY(1.5%); } }
+
+/* The narration's cartouche: the full text holds the size, the typed part sits over it. */
+.intro-cap {
+  position: absolute; left: 14px; top: 14px; z-index: 2; margin: 0; max-width: min(72%, 470px);
+  padding: 9px 15px 10px; background: var(--c-paper); color: var(--c-ink);
+  border: 2px solid var(--c-ink); border-radius: var(--radius-ink); box-shadow: 3px 3px 0 var(--c-ink);
+  font-size: clamp(15px, 1.4vw, 21px); line-height: 1.26;
+}
+.ic-ghost { visibility: hidden; }
+.ic-live { position: absolute; inset: 9px 15px 10px; }
+
+/* The drawings' ambient motion (intro-art.ts). */
+.intro .ia-hatch { fill: none; stroke: var(--c-ink); stroke-width: 1.3; stroke-linecap: round; opacity: 0.45; }
+.intro .ia-tw { animation: ia-tw 2.8s ease-in-out infinite; animation-delay: var(--d, 0s); }
+@keyframes ia-tw { 50% { opacity: 0.25; } }
+.intro .ia-glint { stroke-dasharray: 22 978; stroke-linecap: round; animation: ia-glint 9s linear infinite; }
+.intro .ia-glint2 { animation-duration: 14s; animation-direction: reverse; }
+@keyframes ia-glint { from { stroke-dashoffset: 1000; } to { stroke-dashoffset: 0; } }
+.intro .ib-holo { animation: ib-flicker 3.4s steps(1) infinite; }
+@keyframes ib-flicker { 0%, 100% { opacity: 1; } 46% { opacity: 0.78; } 47% { opacity: 1; } 70% { opacity: 0.86; } 71% { opacity: 1; } }
+.intro .ib-bar { transform-box: fill-box; transform-origin: left center; animation: ib-bar 6s ease-in-out infinite; }
+@keyframes ib-bar { 0% { transform: scaleX(0.04); } 72%, 100% { transform: scaleX(1); } }
+.intro .ic-beam { animation: ic-beam 1.1s linear infinite; }
+@keyframes ic-beam { to { stroke-dashoffset: -12; } }
+
+/* ── CrierBelt's contract, on its panel: a hologram from the Ring ──────────── */
+.intro-holo {
+  position: absolute; z-index: 1; left: 51%; top: 8%; bottom: 8%; width: 41%;
+  display: flex; flex-direction: column; padding: 12px 18px 14px; color: var(--c-glow-turq);
+  border: 2px solid var(--c-glow-turq); border-radius: 12px;
+  background: repeating-linear-gradient(0deg, rgba(111, 242, 228, 0.08) 0 2px, transparent 2px 5px), rgba(16, 58, 66, 0.72);
+  box-shadow: 0 0 18px rgba(111, 242, 228, 0.45), inset 0 0 24px rgba(111, 242, 228, 0.2);
+  visibility: hidden;
+}
+.intro-panel:is([data-beat="1"], [data-beat="2"], [data-beat="3"]) .intro-holo { visibility: visible; animation: ih-in 560ms linear; }
+@keyframes ih-in {
+  0% { opacity: 0; transform: scaleY(0.03); }
+  35% { opacity: 1; transform: scaleY(0.03); }
+  65% { opacity: 0.55; transform: scaleY(1); }
+  75% { opacity: 1; }
+  85% { opacity: 0.7; }
+}
+.ih-head { display: flex; align-items: center; gap: 10px; }
+.ih-mark canvas { display: block; filter: drop-shadow(0 0 5px rgba(111, 242, 228, 0.7)); }
+.ih-brand { font-size: 32px; line-height: 1; color: #f4fffd; text-shadow: 0 0 8px rgba(111, 242, 228, 0.9); }
+.ih-from { margin: 6px 0 6px; font: 700 10.5px/1.3 var(--f-body); letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.9; }
+.ih-text { margin: 0 0 8px; font-size: 13.5px; line-height: 1.4; color: #e9fffc; }
+.ih-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.ih-item { display: flex; gap: 9px; align-items: baseline; font: 600 13.5px/1.3 var(--f-body); color: #f2fffd; visibility: hidden; }
+.ih-glyph { flex: none; width: 18px; text-align: center; color: var(--c-glow-turq); font-weight: 700; }
+.intro-panel[data-beat="2"] .ih-item, .intro-panel[data-beat="3"] .ih-item { visibility: visible; animation: ih-item 380ms ease-out backwards; }
+.intro-panel .ih-item:nth-child(2) { animation-delay: 150ms; }
+.intro-panel .ih-item:nth-child(3) { animation-delay: 300ms; }
+@keyframes ih-item { from { opacity: 0; transform: translateX(-10px); } }
+.ih-stamp {
+  position: absolute; right: 7%; bottom: 9%; padding: 2px 16px 3px;
+  font-size: 34px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--c-coral);
+  border: 4px double var(--c-coral); border-radius: 9px; background: rgba(251, 241, 228, 0.12);
+  transform: rotate(-11deg); visibility: hidden; text-shadow: 0 0 1px var(--c-coral-d);
+}
+.intro-panel[data-beat="3"] .ih-stamp { visibility: visible; animation: ih-stamp 440ms cubic-bezier(0.3, 1.5, 0.5, 1); }
+@keyframes ih-stamp { 0% { opacity: 0; transform: rotate(-11deg) scale(2.6); } 60% { opacity: 1; transform: rotate(-11deg) scale(0.93); } }
+
+/* ── CrierBelt's registration form: filled in, signed, stamped ────────────── */
+.intro-register {
+  grid-area: 1 / 1; position: relative; width: min(700px, calc(100vw - 32px)); max-height: calc(100vh - 36px); overflow: auto;
+  padding: 24px 30px 18px; background: #fffaf1;
+  opacity: 0; visibility: hidden; transform: translateX(7vw) rotate(1.2deg);
+  transition: opacity 360ms ease, transform 560ms cubic-bezier(0.2, 0.8, 0.3, 1), visibility 0s linear 560ms;
+  --sig-ink: #22305e;
+}
+.intro[data-stage="name"] .intro-register { opacity: 1; visibility: visible; transform: none; transition-delay: 140ms, 140ms, 0s; }
+/* The partner's letterhead: a coral band across the top. */
+.intro-register::before {
+  content: ''; position: absolute; left: -2px; right: -2px; top: -2px; height: 11px;
+  background: var(--c-coral); border: 2px solid var(--c-ink); border-radius: 14px 9px 0 0 / 10px 15px 0 0;
+}
+.ir-head { display: flex; align-items: center; gap: 14px; padding-bottom: 12px; border-bottom: 2px solid var(--c-ink); }
+.ir-mark canvas { display: block; }
+.ir-heading { flex: 1; min-width: 0; }
+.ir-from { font: 700 10.5px/1.4 var(--f-body); letter-spacing: 0.16em; text-transform: uppercase; color: var(--c-turq-d); }
+.ir-title { margin: 1px 0 2px; font-size: 32px; font-weight: 400; line-height: 1; }
+.ir-sub { font-size: 12.5px; color: var(--c-ink-soft); }
+.ir-ref { align-self: flex-start; text-align: right; font: 600 11px/1.5 ui-monospace, Menlo, monospace; color: var(--c-ink-soft); }
+.ir-form-no { padding: 1px 6px; border: 1.5px solid var(--c-ink-soft); border-radius: 4px; display: inline-block; }
+.ir-file { margin-top: 4px; }
+
+/* Numbered sections, label : typed value, dotted rules between the lines. */
+.ir-sec { margin-top: 10px; }
+.ir-sec-h { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; font: 700 11.5px var(--f-body); letter-spacing: 0.14em; text-transform: uppercase; }
+.ir-num { display: inline-grid; place-items: center; width: 19px; height: 19px; border-radius: 50%; background: var(--c-ink); color: var(--c-paper); font-size: 11px; letter-spacing: 0; }
+.ir-row-f { display: grid; grid-template-columns: 150px minmax(0, 1fr); align-items: baseline; gap: 10px; padding: 3px 0 3px 27px; border-bottom: 1px dotted rgba(30, 27, 46, 0.32); }
+.ir-k { font: 600 12px var(--f-body); color: var(--c-ink-soft); }
+.ir-v { font: 500 13.5px/1.35 ui-monospace, Menlo, monospace; color: #2b2a3a; }
+/* The one blank to fill in: the company's name, written on its line. */
+.ir-name { align-items: center; padding-top: 2px; padding-bottom: 4px; }
+.ir-row { display: flex; gap: 8px; align-items: center; }
+.ir-input {
+  flex: 1; min-width: 0; padding: 0 6px 1px; font-size: 28px; letter-spacing: 0.02em; text-transform: none;
+  color: var(--sig-ink); background: rgba(46, 166, 160, 0.07); user-select: text;
+  border: 0; border-bottom: 2px solid var(--c-ink); border-radius: 4px 4px 0 0;
+}
+.ir-input:focus { outline: 2px solid var(--c-turq); outline-offset: 2px; }
+.ir-input:disabled { background: none; }
+.ir-reroll {
+  width: 38px; height: 34px; cursor: pointer; font-size: 19px; border: 2px solid var(--c-ink); background: var(--c-peach-l);
+  border-radius: 9px 6px 10px 7px / 7px 10px 6px 9px; box-shadow: 2px 2px 0 var(--c-ink);
+}
+.ir-reroll:hover { background: var(--c-peach); }
+.ir-reroll:active { transform: translate(2px, 2px); box-shadow: none; }
+/* The claim's emblem (emblem-designer.ts): its preview, and rows of choices drawn as what they give. */
+.ir-emblem { align-items: center; padding-top: 4px; padding-bottom: 5px; }
+.emb { display: flex; align-items: center; gap: 12px; }
+.emb-preview { flex: none; filter: drop-shadow(2px 2px 0 rgba(30, 27, 46, 0.28)); }
+.emb-rows { display: grid; gap: 3px; }
+.emb-row { display: flex; flex-wrap: wrap; gap: 3px; }
+.emb-pick {
+  display: grid; place-items: center; width: 30px; height: 30px; padding: 0; cursor: pointer;
+  border: 1.5px solid transparent; border-radius: 7px; background: rgba(30, 27, 46, 0.04);
+}
+.emb-pick:hover { background: rgba(46, 166, 160, 0.12); }
+.emb-pick[aria-pressed="true"] { border-color: var(--c-ink); background: var(--c-paper); box-shadow: 1.5px 1.5px 0 var(--c-ink); }
+.emb-pick:focus-visible { outline: 2px dashed var(--c-ink); outline-offset: 1px; }
+.intro-register[data-registered] .emb-pick:not([aria-pressed="true"]) { visibility: hidden; }
+.ir-checks { list-style: none; margin: 0; padding: 0 0 0 27px; display: grid; gap: 3px; }
+.ir-check { display: flex; align-items: baseline; gap: 9px; font: 500 13px/1.35 ui-monospace, Menlo, monospace; color: #2b2a3a; }
+.ir-box { flex: none; display: inline-grid; place-items: center; width: 15px; height: 15px; border: 1.5px solid var(--c-ink); border-radius: 2px; font: 700 12px/1 var(--f-body); color: var(--c-turq-d); transform: translateY(2px); }
+.ir-certify { margin: 12px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--c-ink-soft); font-style: italic; }
+.ir-date { margin: 6px 0 0; font: 500 13px ui-monospace, Menlo, monospace; }
+
+/* The signatures: the holder's box (drawn), CrierBelt's countersignature (printed). */
+.ir-signs { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-top: 8px; }
+.ir-sign { display: flex; flex-direction: column; gap: 3px; }
+.ir-pad { position: relative; width: 300px; height: 86px; border: 1.5px dashed var(--c-ink-soft); border-radius: 6px; background: #fffdf8; }
+.ir-pad::after { content: ''; position: absolute; left: 30px; right: 14px; bottom: 22px; border-bottom: 1.5px solid rgba(30, 27, 46, 0.45); pointer-events: none; }
+.ir-pad-canvas { position: absolute; inset: 0; display: block; cursor: crosshair; touch-action: none; border-radius: 6px; }
+.ir-pad-canvas:focus-visible { outline: 2px solid var(--c-turq); outline-offset: 2px; }
+.ir-pad-x { position: absolute; left: 12px; bottom: 15px; font: 700 14px var(--f-body); color: var(--c-ink-soft); pointer-events: none; }
+.ir-pad-hint { position: absolute; left: 38px; bottom: 28px; font: 600 13px var(--f-title); color: rgba(30, 27, 46, 0.35); pointer-events: none; transition: opacity 200ms ease; }
+.intro-register[data-signed] .ir-pad-hint { opacity: 0; }
+.ir-clear { align-self: flex-start; padding: 0; border: 0; background: none; cursor: pointer; font: 600 12px var(--f-body); color: var(--c-ink-soft); text-decoration: underline; }
+.ir-clear:hover { color: var(--c-ink); }
+.ir-counter { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; color: var(--c-turq-d); }
+.ir-counter .ir-k { align-self: stretch; text-align: right; }
+.ir-counter-sig { width: 150px; height: 54px; border-bottom: 1.5px solid rgba(30, 27, 46, 0.45); }
+.ir-counter-sig svg { display: block; }
+
+.ir-foot { display: flex; align-items: center; justify-content: flex-end; gap: 16px; margin-top: 12px; }
+.ir-err { flex: 1; min-height: 19px; font-size: 13.5px; font-weight: 600; line-height: 1.35; color: var(--c-coral-d); }
+.intro-register[data-bad="name"] .ir-name .ir-row, .intro-register[data-bad="sign"] .ir-pad { animation: ir-shake 380ms ease; }
+.intro-register[data-bad="name"] .ir-input { border-color: var(--c-coral-d); }
+.intro-register[data-bad="sign"] .ir-pad { border-color: var(--c-coral-d); }
+@keyframes ir-shake { 20% { transform: translateX(-7px); } 45% { transform: translateX(6px); } 70% { transform: translateX(-3px); } }
+.ir-ok { padding: 8px 18px; font-size: 20px; box-shadow: 3px 3px 0 var(--c-ink); }
+.ir-ok:focus-visible, .ir-reroll:focus-visible, .ir-clear:focus-visible, .intro-skip:focus-visible { outline: 2px dashed var(--c-ink); outline-offset: 3px; }
+.intro-register[data-registered] .ir-ok, .intro-register[data-registered] .ir-clear, .intro-register[data-registered] .ir-reroll { visibility: hidden; }
+
+/* Filed: CrierBelt's « Enregistré » stamp lands across the signatures. */
+.ir-stamp {
+  position: absolute; right: 64px; bottom: 54px; padding: 2px 16px 3px; pointer-events: none;
+  font-size: 34px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--c-coral);
+  border: 4px double var(--c-coral); border-radius: 9px; background: rgba(255, 250, 241, 0.35);
+  transform: rotate(-9deg); visibility: hidden; text-shadow: 0 0 1px var(--c-coral-d);
+}
+.intro-register[data-registered] .ir-stamp { visibility: visible; animation: ih-stamp 440ms cubic-bezier(0.3, 1.5, 0.5, 1); }
+
+/* Short windows: a tighter sheet (it scrolls if it must). */
+@media (max-height: 820px) {
+  .intro-register { padding: 18px 24px 14px; }
+  .ir-title { font-size: 27px; }
+  .ir-sec { margin-top: 6px; }
+  .ir-row-f { padding-top: 2px; padding-bottom: 2px; }
+  .ir-input { font-size: 24px; }
+  .ir-certify { margin-top: 8px; }
+}
+
+/* ── the landing: the live world framed as the strip's last panel ─────────── */
+.intro[data-stage="landing"] .intro-paper { opacity: 0; }
+.intro-frame {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0;
+  border: 0 solid var(--c-paper); box-shadow: inset 0 0 0 3px var(--c-ink), inset 5px 6px 0 3px rgba(30, 27, 46, 0.16);
+  transition: opacity 600ms ease, border-width 900ms cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+.intro[data-stage="landing"] .intro-frame { opacity: 1; border-width: 22px; }
+.intro[data-phase="out"] .intro-frame { opacity: 0; border-width: 0; transition-duration: 900ms, 900ms; }
+.intro-landcap {
+  position: absolute; left: 48px; bottom: 46px; z-index: 2; max-width: min(540px, calc(100vw - 96px)); padding: 9px 16px 11px;
+  opacity: 0; visibility: hidden; transform: translateY(10px);
+  transition: opacity 420ms ease, transform 420ms ease, visibility 0s linear 420ms;
+}
+.intro[data-stage="landing"] .intro-landcap { opacity: 1; visibility: visible; transform: none; transition-delay: 600ms, 600ms, 0s; }
+.intro[data-phase="out"] .intro-landcap { opacity: 0; transform: translateY(8px); transition-delay: 0s; }
+.il-from { font: 700 11px/1.4 var(--f-body); letter-spacing: 0.16em; text-transform: uppercase; color: var(--c-turq-d); }
+.il-text { position: relative; margin: 2px 0 0; font-size: 23px; line-height: 1.24; }
+.il-text .ic-live { inset: 0; }
+
+/* « Passer » and the reading hint. */
+.intro-skip { position: absolute; top: 16px; right: 20px; z-index: 3; font-size: 18px; transition: opacity 300ms ease; }
+.intro[data-stage="landing"] .intro-skip { top: 38px; right: 42px; }
+.intro[data-stage="name"] .intro-skip, .intro[data-phase="out"] .intro-skip { opacity: 0; pointer-events: none; }
+.intro-hint {
+  position: absolute; left: 0; right: 0; bottom: 12px; margin: 0; text-align: center; pointer-events: none;
+  font-family: var(--f-title); font-size: 16px; color: var(--c-ink-soft); transition: opacity 300ms ease;
+}
+.intro:not([data-stage="story"]) .intro-hint { opacity: 0; }
+
+/* Small windows: one panel at a time, full size; the contract under the caption. */
+@media (max-width: 860px), (max-height: 560px) {
+  .intro-page { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); width: calc(100vw - 32px); height: calc(100vh - 92px); aspect-ratio: auto; }
+  .intro-panel[data-intro-panel="crierbelt"] { grid-column: auto; }
+  .intro-panel:not([data-state="now"]) { display: none; }
+  .intro-holo { left: 6%; width: auto; right: 6%; top: auto; bottom: 5%; min-height: 52%; }
+  .ir-row-f { grid-template-columns: 110px minmax(0, 1fr); padding-left: 0; }
+  .ir-checks { padding-left: 0; }
+  .ir-signs { flex-wrap: wrap; }
+  .ir-pad { width: min(300px, 100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .intro *, .intro *::before { animation: none !important; }
+  .intro-page, .intro-register, .intro-frame, .intro-landcap { transition-duration: 0s !important; }
+}

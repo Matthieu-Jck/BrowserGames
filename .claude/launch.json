@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "filon",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "filon", "run", "dev"],
+      "port": 5183
+    },
+    {
+      "name": "filon-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "filon", "run", "preview"],
+      "port": 5183
+    }
+  ]
+}

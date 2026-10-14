@@ -1,0 +1,165 @@
+/* base.css — friendlier game UI: deep-blue night palette (not black), rounded
+   panels, Rubik for body text, no scanlines/terminal artifacts. */
+:root {
+  --bg: #0c1526;
+  --panel: rgba(20, 32, 54, 0.94);
+  --panel-solid: #16233c;
+  --panel-2: #1c2c48;
+  --line: #2c4163;
+  --line-hi: #41618f;
+  --cyan: #5fd4f5;
+  --cyan-dim: #4a90ad;
+  --text: #cfdded;
+  --dim: #8095ad;
+  --amber: #ffbe5c;
+  --red: #ff6b58;
+  --green: #5fe39a;
+  --violet: #c08aff;
+  --gold: #ffd76a;
+  --font-d: 'Rubik', sans-serif;
+  --font-m: 'Rubik', sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; overflow: hidden; background: var(--bg); }
+body { font-family: var(--font-m); color: var(--text); font-size: 13.5px; }
+canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line-hi); border-radius: 4px; }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  position: relative;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 10px 34px rgba(2, 6, 14, 0.5);
+}
+.ptitle {
+  font-family: var(--font-d); font-weight: 700; font-size: 13px;
+  letter-spacing: 0.06em; color: #f2f7fc;
+  padding: 12px 16px; border-bottom: 1px solid var(--line);
+  display: flex; justify-content: space-between; align-items: center;
+  background: linear-gradient(90deg, rgba(95,212,245,0.1), transparent 65%);
+  border-radius: 13px 13px 0 0;
+}
+.ptitle .tag { color: var(--dim); font-weight: 500; font-size: 11px; letter-spacing: 0.02em; }
+button {
+  font-family: var(--font-d); font-weight: 700; font-size: 12.5px;
+  letter-spacing: 0.05em; text-transform: uppercase;
+  background: linear-gradient(180deg, #2a4470, #20355a);
+  color: #dff0fb;
+  border: 1px solid var(--line-hi); border-radius: 9px;
+  padding: 8px 16px; cursor: pointer;
+  box-shadow: 0 2px 8px rgba(2, 6, 14, 0.35);
+  transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.1s;
+}
+button:hover:not(:disabled) {
+  background: linear-gradient(180deg, #35578c, #28436f);
+  border-color: var(--cyan); transform: translateY(-1px);
+}
+button:disabled { opacity: 0.35; cursor: not-allowed; }
+button.warn { color: #ffe4b3; border-color: #9c7434; background: linear-gradient(180deg, #5e4520, #4a3415); }
+button.warn:hover:not(:disabled) { background: linear-gradient(180deg, #75571f, #5b421b); border-color: var(--amber); }
+button.danger { color: #ffd2ca; border-color: #94463a; background: linear-gradient(180deg, #5e2b22, #471f19); }
+button.danger:hover:not(:disabled) { background: linear-gradient(180deg, #79362a, #5b2820); border-color: var(--red); }
+button.ghost { background: rgba(255,255,255,0.04); border-color: var(--line); color: var(--dim); box-shadow: none; }
+button.ghost:hover:not(:disabled) { color: var(--text); border-color: var(--line-hi); }
+.c-cyan { color: var(--cyan); } .c-amber { color: var(--amber); } .c-red { color: var(--red); }
+.c-green { color: var(--green); } .c-dim { color: var(--dim); } .c-violet { color: var(--violet); }
+.c-gold { color: var(--gold); }
+
+#fade {
+  position: fixed; inset: 0; background: #060b16; opacity: 0; pointer-events: none;
+  transition: opacity 0.5s ease; z-index: 90;
+}
+#fade.show { opacity: 1; pointer-events: all; }
+#fade.white { background: #eaf6f8; }
+#err {
+  position: fixed; left: 10px; bottom: 10px; z-index: 100; display: none;
+  background: #2a1512; border: 1px solid var(--red); border-radius: 8px; color: #ffb3a8;
+  padding: 8px 12px; max-width: 60ch; font-size: 11px; white-space: pre-wrap;
+}
+#grain { display: none; }
+#subtitle {
+  position: fixed; bottom: 13vh; left: 50%; transform: translateX(-50%);
+  width: min(700px, 86vw); text-align: center; font-size: 17px; line-height: 1.75;
+  font-family: var(--font-d); font-weight: 500;
+  color: #eef6fc; text-shadow: 0 1px 6px rgba(0,0,0,0.9), 0 0 22px rgba(0,0,0,0.7);
+  opacity: 0; transition: opacity 0.5s; pointer-events: none; z-index: 85;
+}
+#subtitle.show { opacity: 1; }
+
+/* ---------------- screens framework ---------------- */
+#ui { position: fixed; inset: 0; z-index: 20; pointer-events: none; }
+section[data-screen] {
+  position: absolute; inset: 0; display: none; pointer-events: none;
+}
+section[data-screen].visible { display: block; }
+section[data-screen] > * { pointer-events: auto; }
+
+/* ---------------- HUD ---------------- */
+#hud {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  height: 44px; display: none; align-items: stretch; pointer-events: auto;
+  background: var(--panel);
+  border: 1px solid var(--line); border-radius: 12px;
+  font-size: 12px; z-index: 30; overflow: hidden;
+  box-shadow: 0 6px 20px rgba(2,6,14,0.45);
+}
+#hud.visible { display: flex; }
+.hud-cell { display: flex; align-items: center; gap: 7px; padding: 0 13px; border-right: 1px solid var(--line); white-space: nowrap; }
+.hud-label { color: var(--dim); letter-spacing: 0.08em; font-size: 9.5px; font-weight: 600; }
+#hud-name { font-family: var(--font-d); font-weight: 800; color: #f7fbff; font-size: 14px; }
+.bar { width: 80px; height: 9px; border-radius: 5px; position: relative; background: rgba(8,13,24,0.8); overflow: hidden; outline: 1px solid var(--line); }
+.bar .fill { height: 100%; width: 100%; transition: width 0.25s; background: linear-gradient(90deg, #49c98a, #5fe39a); border-radius: 5px; }
+.bar.low .fill { background: linear-gradient(90deg, #e0543f, #ff6b58); }
+.hud-num { color: var(--text); min-width: 40px; text-align: right; font-weight: 600; }
+#hud-right { margin-left: auto; display: flex; }
+#hud-right button { border: none; border-left: 1px solid var(--line); border-radius: 0; background: none; height: 100%; padding: 0 14px; box-shadow: none; }
+
+/* ---------------- log + floaters ---------------- */
+#log {
+  position: absolute; left: 14px; bottom: 14px; width: 360px; max-height: 180px;
+  overflow: hidden; pointer-events: none; display: flex; flex-direction: column-reverse;
+  font-size: 12px; line-height: 1.55; z-index: 25;
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 38%);
+  mask-image: linear-gradient(180deg, transparent, #000 38%);
+}
+#log .line { color: var(--text); opacity: 0.95; text-shadow: 0 1px 3px rgba(0,0,0,0.9); }
+#log .line.warn { color: var(--amber); } #log .line.bad { color: var(--red); } #log .line.good { color: var(--green); }
+
+.floater {
+  position: fixed; z-index: 70; pointer-events: none;
+  font-family: var(--font-d); font-weight: 800; font-size: 23px;
+  text-shadow: 0 0 10px rgba(0,0,0,0.9), 0 2px 4px rgba(0,0,0,0.9);
+  animation: floatUp 0.9s ease-out forwards;
+}
+@keyframes floatUp {
+  0% { transform: translate(-50%, 0) scale(1.15); opacity: 1; }
+  100% { transform: translate(-50%, -56px) scale(1); opacity: 0; }
+}
+
+/* ---------------- shared modal ---------------- */
+#modal-root, .overlay {
+  position: fixed; inset: 0; z-index: 60; display: none;
+  background: rgba(6, 11, 22, 0.66); align-items: center; justify-content: center;
+  backdrop-filter: blur(3px); pointer-events: auto;
+}
+#modal-root.visible, .overlay.visible { display: flex; }
+.modal-box { width: min(640px, 94vw); max-height: 88vh; display: flex; flex-direction: column; }
+.modal-body { padding: 16px 20px; font-size: 13.5px; line-height: 1.75; overflow-y: auto; }
+.modal-body em { color: var(--cyan); font-style: normal; font-weight: 600; }
+.modal-choices { padding: 4px 18px 18px; display: flex; flex-direction: column; gap: 9px; }
+.modal-choices button { text-align: left; padding: 11px 15px; font-size: 12px; line-height: 1.5; }
+.modal-choices button .sub { display: block; font-weight: 400; font-size: 11px; color: var(--dim); text-transform: none; letter-spacing: 0; margin-top: 3px; }
+
+/* ---------------- tooltip ---------------- */
+#tooltip {
+  position: fixed; z-index: 75; display: none; max-width: 290px;
+  background: var(--panel-solid); border: 1px solid var(--line-hi); border-radius: 10px;
+  padding: 9px 12px; font-size: 12px; line-height: 1.6; pointer-events: none;
+  box-shadow: 0 8px 22px rgba(2,6,14,0.6);
+}
+#tooltip .tt-name { color: var(--cyan); font-family: var(--font-d); font-weight: 700; font-size: 12px; margin-bottom: 3px; }
+.kw { color: var(--amber); border-bottom: 1px dotted var(--amber); cursor: help; font-weight: 600; }

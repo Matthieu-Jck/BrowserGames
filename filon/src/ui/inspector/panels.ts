@@ -1,0 +1,30 @@
+// panels.ts — which panels the inspector shows for each building kind, in order (between the
+// header + status and the power row + Demolish). A new kind gets its panels here; a kind
+// without an entry shows only the common parts.
+import type { BuildingKind } from '@/content/types';
+import { hearthPanel, landscapePanel } from './colony';
+import type { Panel } from './kit';
+import { dockPanel, forkPanel, outletsPanel, ribbonPanel, storePanel } from './logistics';
+import { drillPanel, generatorPanel, labPanel, machinePanel, modulesPanel } from './production';
+import { tradePanel } from './trade';
+import { chargePanel, outputPanel } from './power';
+
+export const PANELS: Partial<Record<BuildingKind, readonly Panel[]>> = {
+  machine: [machinePanel, modulesPanel],
+  drill: [drillPanel],
+  generator: [outputPanel, generatorPanel],
+  wind: [outputPanel],
+  solar: [outputPanel],
+  geothermal: [outputPanel],
+  accumulator: [chargePanel],
+  lab: [labPanel],
+  belt: [ribbonPanel],
+  conduit: [ribbonPanel],
+  fork: [forkPanel],
+  hearth: [hearthPanel], // no outlets: the Heart takes, it never gives
+  storage: [storePanel],
+  dock: [storePanel, outletsPanel, dockPanel],
+  excavator: [landscapePanel],
+  backfiller: [landscapePanel],
+  trade: [tradePanel, outletsPanel],
+};

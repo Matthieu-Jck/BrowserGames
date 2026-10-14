@@ -1,0 +1,16 @@
+✘ [ERROR] Could not resolve "/Users/matthieujacques/Desktop/BrowserGames/filon/vite.dn.config.mjs"
+
+failed to load config from /Users/matthieujacques/Desktop/BrowserGames/filon/vite.dn.config.mjs
+error when starting dev server:
+Error: Build failed with 1 error:
+error: Could not resolve "/Users/matthieujacques/Desktop/BrowserGames/filon/vite.dn.config.mjs"
+    at failureErrorWithLog (/Users/matthieujacques/Desktop/BrowserGames/filon/node_modules/esbuild/lib/main.js:1472:15)
+    at /Users/matthieujacques/Desktop/BrowserGames/filon/node_modules/esbuild/lib/main.js:945:25
+    at runOnEndCallbacks (/Users/matthieujacques/Desktop/BrowserGames/filon/node_modules/esbuild/lib/main.js:1315:45)
+    at buildResponseToResult (/Users/matthieujacques/Desktop/BrowserGames/filon/node_modules/esbuild/lib/main.js:943:7)
+    at /Users/matthieujacques/Desktop/BrowserGames/filon/node_modules/esbuild/lib/main.js:970:16
+    at responseCallbacks.<computed> (/Users/matthieujacques/Desktop/BrowserGames/filon/node_modules/esbuild/lib/main.js:622:9)
+    at handleIncomingPacket (/Users/matthieujacques/Desktop/BrowserGames/filon/node_modules/esbuild/lib/main.js:677:12)
+    at Socket.readFromStdout (/Users/matthieujacques/Desktop/BrowserGames/filon/node_modules/esbuild/lib/main.js:600:7)
+    at Socket.emit (node:events:509:20)
+    at addChunk (node:internal/streams/readable:564:12)

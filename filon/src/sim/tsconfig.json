@@ -1,0 +1,12 @@
+{
+  "//": "Purity guard: the engine, the market and the content tables must compile without DOM types, so they can run in a Worker today and on a Node server tomorrow.",
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": [],
+    "baseUrl": "../..",
+    "paths": { "@/*": ["src/*"] }
+  },
+  "include": ["./**/*.ts", "../market/**/*.ts", "../content/**/*.ts"],
+  "exclude": ["../**/*.test.ts", "../**/*.bench.ts", "../**/*.worker.ts"]
+}

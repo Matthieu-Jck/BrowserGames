@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Waterwheel — a flow puzzle</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>&#x1F4A7;</text></svg>">
+</head>
+<body>
+  <header>
+    <h1>&#x1F4A7; Waterwheel</h1>
+    <nav id="level-bar" aria-label="Levels"></nav>
+  </header>
+
+  <section id="level-info">
+    <h2 id="level-name"></h2>
+    <p id="level-hint"></p>
+    <p id="status"></p>
+  </section>
+
+  <main id="stage">
+    <canvas id="game"></canvas>
+    <div id="win-overlay" class="hidden">
+      <div id="win-card">
+        <div id="win-title">The wheel turns!</div>
+        <button id="btn-next">Next level &#x25B8;</button>
+        <button id="btn-replay" class="secondary">Replay</button>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <button id="btn-reset" class="secondary">&#x21BA; Reset level</button>
+    <span id="legend">drag the wooden lines &mdash; up, down, left or right</span>
+  </footer>
+
+  <script src="js/levels.js"></script>
+  <script src="js/simulation.js"></script>
+  <script src="js/renderer.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+# Root ignores for the browser games (each game keeps its own .gitignore too).
+.DS_Store
+node_modules/
+dist/
+# Claude Code: local settings and other sessions' git worktrees stay out of the repo.
+.claude/settings.local.json
+.claude/worktrees/

@@ -1,0 +1,254 @@
+/* screens.css — full-screen panels: the art review board (dev), the tech tree (research + plans, D33;
+   its paths, D41), stats (with the Analytics path's parts). */
+.artboard {
+  position: fixed; inset: 0; overflow: auto; z-index: 25; padding: 24px 32px 64px;
+  background: var(--c-paper);
+  background-image: radial-gradient(rgba(30, 27, 46, 0.07) 1px, transparent 1px);
+  background-size: 14px 14px;
+}
+.artboard .art-head { display: flex; justify-content: space-between; align-items: center; }
+.artboard h1 { font-size: 36px; margin: 0 0 8px; }
+.artboard h2 { font-size: 24px; margin: 28px 0 12px; border-bottom: 2px solid var(--c-ink); display: inline-block; }
+.art-grid { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+.art-card {
+  margin: 0; padding: 10px; background: #fffaf2; border: 2px solid var(--c-ink);
+  border-radius: var(--radius-ink); box-shadow: var(--shadow-ink); display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+.art-card figcaption { font-family: var(--f-title); font-size: 16px; text-align: center; }
+.art-card small { display: block; font-family: var(--f-body); font-size: 11px; color: var(--c-ink-soft); }
+.art-rots { display: flex; gap: 6px; }
+.art-grid.small .art-card { padding: 6px; }
+.art-grid.small figcaption { font-size: 13px; max-width: 90px; }
+.art-grid.terrain canvas { width: 512px; height: auto; border: 1.5px solid var(--c-ink); border-radius: 6px; }
+
+/* ── shared full screens (research, stats) ─────────────────────────────────── */
+.screen {
+  position: fixed; inset: 0; z-index: 25; display: flex; flex-direction: column; gap: 10px;
+  padding: 18px 22px; background: rgba(251, 241, 228, 0.94); backdrop-filter: blur(2px);
+  overflow: hidden;
+}
+.rs-head { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; }
+.rs-head h1 { margin: 0; font-size: 34px; }
+.rs-head > span { font-size: 14px; color: var(--c-ink-soft); }
+.rs-close { margin-left: auto; }
+
+/* ── the tech tree (D33): plans and research in one tree ────────────────────── */
+.rs-body { display: flex; gap: 14px; min-height: 0; flex: 1; }
+.tr-drag { color: var(--c-ink-soft); font-size: 12px; }
+.tr-view {
+  position: relative; flex: 1; min-width: 0; overflow: auto; cursor: grab; touch-action: none;
+  border: 2px solid var(--c-ink); border-radius: var(--radius-ink); box-shadow: var(--shadow-ink);
+  background-color: #fcf5ea;
+  background-image: radial-gradient(rgba(30, 27, 46, 0.08) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+.tr-view[data-drag] { cursor: grabbing; }
+.tr-view[data-drag] * { pointer-events: none; }
+.tr-canvas { position: relative; }
+/* The two parts: plans warm (paid from the Heart), research cool (data, time). */
+.tr-block { position: absolute; border-radius: 22px 16px 24px 18px / 18px 24px 16px 22px; border: 1.5px dashed rgba(30, 27, 46, 0.22); }
+.tr-block[data-kind='plan'] { background: rgba(242, 198, 160, 0.16); }
+.tr-block[data-kind='research'] { background: rgba(157, 140, 201, 0.13); }
+.tr-blockhead { position: absolute; left: 14px; top: 6px; display: flex; align-items: baseline; gap: 12px; white-space: nowrap; }
+.tr-blockhead h2 { margin: 0; font-size: 24px; }
+.tr-legend { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--c-ink-soft); }
+.tr-swatch { display: inline-block; width: 14px; height: 14px; border: 1.5px solid var(--c-ink); border-left-width: 5px; border-radius: 4px; }
+.tr-swatch[data-kind='plan'] { background: var(--c-paper); border-left-color: var(--c-peach-d); }
+.tr-swatch[data-kind='research'] { background: #f4effb; border-left-color: var(--c-lilac-d); border-radius: 8px; }
+/* Paths (D41): every lane has a colour (--path) — a plan path's band, label and node spines; a
+   research branch's band and label (its spines keep their rules below). */
+[data-lane='production'] { --path: #b0683a; }
+[data-lane='logistics'] { --path: #3d72b8; }
+[data-lane='energy'] { --path: #d9a21c; }
+[data-lane='analytics'] { --path: #23908f; }
+[data-lane='trade'] { --path: #d8584a; }
+[data-lane='survey'] { --path: #6e9638; }
+[data-lane='trunk'] { --path: var(--c-coral-d); }
+[data-lane='ex'] { --path: #a8604a; }
+[data-lane='xp'] { --path: var(--c-turq-d); }
+[data-lane='dn'] { --path: var(--c-lilac-d); }
+[data-lane='en'] { --path: var(--c-warn); }
+[data-lane='cm'] { --path: var(--c-coral); }
+/* A lane's band: its rows on a wash of its colour, a soft rim. */
+.tr-band {
+  position: absolute; border-radius: 16px 11px 18px 12px / 12px 18px 11px 16px;
+  background: color-mix(in srgb, var(--path) 9%, transparent);
+  border: 1.5px solid color-mix(in srgb, var(--path) 30%, transparent);
+}
+.tr-band[data-kind='research'] { background: color-mix(in srgb, var(--path) 6%, transparent); border-style: dashed; }
+/* Its label, as tall as the band: a tab of the same colour with the path's name. */
+.tr-lane {
+  position: absolute; display: flex; flex-direction: column; justify-content: center; gap: 3px;
+  padding: 4px 6px 4px 10px; border-left: 4px solid var(--path, var(--c-peach-d));
+  border-radius: 4px 12px 14px 4px / 4px 14px 12px 4px;
+  background: color-mix(in srgb, var(--path, var(--c-peach-d)) 13%, transparent);
+}
+.tr-lanename { font-size: 18px; line-height: 1; }
+.tr-paththeme { font-size: 11px; line-height: 1.15; color: var(--c-ink-soft); }
+.tr-pathcount {
+  align-self: flex-start; margin-top: 1px; padding: 0 6px; border-radius: 999px;
+  font: 700 11px/16px var(--f-body); color: var(--c-paper); background: var(--path);
+}
+.tr-lane[data-full] .tr-pathcount::after { content: ' ✓'; }
+.tr-lane .rs-respec { align-self: flex-start; }
+/* Links, from a prerequisite's right edge to what it opens. */
+.tr-links { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+.tr-link { fill: none; stroke: var(--c-ink); stroke-width: 2; stroke-linecap: round; opacity: 0.8; }
+.tr-link[data-state='open'] { stroke: var(--c-turq-d); stroke-dasharray: 7 5; opacity: 0.9; }
+.tr-link[data-state='locked'] { stroke-dasharray: 2 6; opacity: 0.3; }
+.tr-link[data-gate] { stroke-dasharray: 2 7; opacity: 0.1; }
+.tr-link[data-gate][data-state='done'] { opacity: 0.3; }
+.tr-link[data-hot] { opacity: 1; stroke-width: 3; }
+.tr-link[data-hot][data-state='locked'] { stroke: var(--c-coral-d); }
+/* A trunk gate stays a hint even when its node is selected: it crosses the whole research block. */
+.tr-link[data-gate][data-hot] { stroke: var(--c-lilac-d); stroke-width: 1.8; opacity: 0.55; }
+/* Nodes: a plan is a paper card with a peach spine; research a lilac pill. */
+.tr-node {
+  position: absolute; display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 12px;
+  border: 2px solid var(--c-ink); background: var(--c-paper); box-shadow: 2px 2px 0 var(--c-ink);
+  cursor: pointer; overflow: visible; outline: none;
+  border-radius: 10px 7px 11px 8px / 8px 11px 7px 10px;
+}
+.tr-node::before { content: ''; position: absolute; left: 3px; top: 6px; bottom: 6px; width: 4px; border-radius: 2px; background: var(--path, var(--c-peach-d)); }
+.tr-node[data-kind='research'] { background: #f4effb; border-radius: 20px; }
+.tr-node[data-kind='research']::before { background: var(--c-lilac-d); left: 5px; }
+/* Each research branch keeps its colour on its nodes' spine (its label may be scrolled away). */
+.tr-node[data-lane='trunk']::before { background: var(--c-coral-d); }
+.tr-node[data-lane='ex']::before { background: #a8604a; }
+.tr-node[data-lane='xp']::before { background: var(--c-turq-d); }
+.tr-node[data-lane='en']::before { background: var(--c-warn); }
+.tr-node[data-lane='cm']::before { background: var(--c-coral); }
+.tr-node[data-kind='root'] { background: var(--c-peach-l); border-width: 2.5px; }
+.tr-node[data-kind='root']::before { background: var(--c-coral-d); }
+.tr-node:hover { background: var(--c-peach-l); }
+.tr-node[data-kind='research']:hover { background: #ebe3f8; }
+.tr-node[data-on] { outline: 3px solid var(--c-turq); outline-offset: 2px; }
+.tr-node:focus-visible { outline: 3px dashed var(--c-turq-d); outline-offset: 2px; }
+.tr-node[data-state='done'] { background: #d8f1ec; }
+.tr-node[data-kind='research'][data-state='done'] { background: #dcefee; }
+.tr-node[data-state='locked'] { opacity: 0.5; border-style: dashed; box-shadow: none; }
+.tr-node[data-state='locked']:hover { opacity: 0.75; }
+.tr-node[data-state='waiting'] { opacity: 0.85; }
+.tr-node[data-state='active'] { background: #fff6c9; }
+.tr-node[data-state='ready'] { animation: tr-ready 2.4s ease-in-out infinite; }
+@keyframes tr-ready { 0%, 100% { box-shadow: 2px 2px 0 var(--c-ink); } 50% { box-shadow: 2px 2px 0 var(--c-ink), 0 0 0 4px rgba(63, 184, 175, 0.35); } }
+.tr-icons { position: relative; flex: none; width: 42px; height: 42px; display: grid; place-items: center; }
+.tr-icons > :first-child { width: 36px; height: 36px; display: block; }
+.tr-icons > :nth-child(n + 2) {
+  position: absolute; width: 20px; height: 20px; padding: 1px; display: block;
+  background-color: var(--c-paper); border: 1.5px solid var(--c-ink); border-radius: 6px;
+}
+.tr-icons > :nth-child(2) { right: -6px; bottom: -6px; }
+.tr-icons > :nth-child(3) { left: -6px; bottom: -6px; }
+.tr-icons > .coin:first-child { width: 32px; height: 32px; }
+.tr-icons > .coin:nth-child(n + 2) { background-origin: content-box; background-size: contain; }
+.tr-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.tr-name { font-size: 15px; line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tr-node[data-long] .tr-name { font-size: 13px; letter-spacing: 0; }
+.tr-line { display: flex; align-items: center; gap: 6px; font-size: 12px; min-height: 22px; }
+.tr-cost { display: inline-flex; gap: 6px; color: var(--c-ink-soft); }
+.tr-chip { display: inline-flex; align-items: center; gap: 2px; font-weight: 600; }
+.tr-chip canvas { width: 14px; height: 14px; display: block; }
+.tr-chip[data-poor] { color: var(--c-coral-d); }
+.tr-time { color: var(--c-ink-soft); white-space: nowrap; margin-left: auto; }
+/* « Débloquer » hangs off the card's lower edge like a tab: the costs keep their line. */
+.tr-unlock {
+  position: absolute; right: 10px; bottom: -11px; z-index: 1; padding: 1px 9px;
+  font: 700 11.5px/1.25 var(--f-body); box-shadow: 1.5px 1.5px 0 var(--c-ink); border-width: 1.5px;
+}
+.tr-unlock[disabled] { opacity: 1; background: var(--c-paper-d); color: var(--c-ink-soft); }
+.tr-node:not([data-state='ready']):not([data-state='poor']) .tr-unlock { display: none; }
+.tr-track { position: absolute; left: 14px; right: 14px; bottom: 3px; height: 3px; border-radius: 2px; background: rgba(30, 27, 46, 0.12); overflow: hidden; }
+.tr-node:not([data-state='active']) .tr-track { display: none; }
+.tr-bar { display: block; height: 100%; width: 0; background: var(--c-turq-d); }
+.tr-stamp {
+  position: absolute; right: -9px; top: -10px; width: 22px; height: 22px; display: none; place-items: center;
+  font: 700 14px var(--f-body); color: var(--c-paper); background: var(--c-turq-d);
+  border: 2px solid var(--c-ink); border-radius: 50%;
+}
+.tr-node[data-state='done'] .tr-stamp { display: grid; }
+.tr-node[data-kind='root'] .tr-stamp { display: none; }
+.tr-node[data-just] .tr-stamp { animation: tr-stamp 0.6s cubic-bezier(0.2, 1.6, 0.4, 1); }
+@keyframes tr-stamp { from { transform: scale(2.4) rotate(-20deg); opacity: 0; } to { transform: none; opacity: 1; } }
+/* The detail pane. */
+.rs-detail { width: 300px; flex: none; padding: 12px 14px; overflow: auto; align-self: flex-start; max-height: 100%; }
+.tr-kind { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--c-peach-l); border: 1.5px solid var(--c-peach-d); }
+.tr-kind[data-kind='research'] { background: #ebe3f8; border-color: var(--c-lilac-d); }
+.tr-kind[data-kind='root'] { background: var(--c-peach); border-color: var(--c-coral-d); }
+.rs-detail h3 { margin: 6px 0 4px; font-size: 24px; }
+.rs-detail h4 { margin: 12px 0 4px; font-size: 16px; }
+.rs-desc { margin: 0; font-size: 13px; line-height: 1.4; }
+.tr-unlocks { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.tr-unlocks li { display: flex; align-items: center; gap: 8px; }
+.tr-unlocks canvas { width: 24px; height: 24px; display: block; }
+.rs-chips { display: flex; gap: 10px; font-size: 15px; }
+.rs-chips .tr-chip canvas { width: 20px; height: 20px; }
+/* The detail pane's cost: one item a line — how many, the item, what the Heart holds (coral when short). */
+.tr-costs { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; font-size: 14px; }
+.tr-costs li { display: flex; align-items: center; gap: 6px; }
+.tr-costs b { min-width: 2em; text-align: right; font-variant-numeric: tabular-nums; }
+.tr-costs small { margin-left: auto; padding-left: 8px; font-size: 12px; color: var(--c-ink-soft); white-space: nowrap; }
+.tr-costs li[data-poor] b, .tr-costs li[data-poor] small { color: var(--c-coral-d); font-weight: 700; }
+.tr-paid { color: var(--c-ink-soft); }
+.rs-pen { color: var(--c-coral-d); }
+.rs-dur { margin: 6px 0 0; font-size: 13px; }
+.rs-pre { margin: 0; padding-left: 16px; font-size: 13px; }
+.rs-pre li { color: var(--c-coral-d); }
+.rs-pre li[data-ok] { color: var(--c-turq-d); }
+.rs-live { margin-top: 10px; font-weight: 600; }
+.rs-actions { margin-top: 14px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.rs-why { color: var(--c-coral-d); }
+.rs-tag { padding: 3px 10px; border-radius: 999px; background: var(--c-turq-l); font-weight: 600; }
+.rs-mastery { font-size: 12px; color: var(--c-ink-soft); }
+.rs-respec { font: 600 11px var(--f-body); padding: 2px 8px; border: 1.5px solid var(--c-ink); border-radius: 8px; background: var(--c-paper-d); cursor: pointer; }
+.rs-respec[data-armed] { background: var(--c-coral); color: var(--c-paper); }
+.rs-respec[disabled] { opacity: 0.4; cursor: default; }
+
+/* ── stats ─────────────────────────────────────────────────────────────────── */
+.st-tabs { display: flex; gap: 6px; }
+.st-tab[data-on] { background: var(--c-turq); color: var(--c-paper); }
+.st-body { padding: 12px 16px; overflow: auto; max-width: 820px; }
+.st-row { display: grid; grid-template-columns: 1.8fr 0.8fr 0.8fr 0.8fr 130px; align-items: center; gap: 8px; padding: 3px 0; border-bottom: 1px dashed rgba(30, 27, 46, 0.15); font-size: 13px; }
+.st-headrow { font-weight: 700; border-bottom: 2px solid var(--c-ink); }
+.st-item { display: inline-flex; align-items: center; gap: 6px; }
+.st-item canvas { width: 18px; height: 18px; display: block; }
+.st-num { text-align: right; font-variant-numeric: tabular-nums; }
+.st-num[data-sign='+'] { color: var(--c-turq-d); font-weight: 600; }
+.st-num[data-sign='-'] { color: var(--c-coral-d); font-weight: 600; }
+.st-spark { width: 120px; height: 24px; }
+.st-empty:empty { display: none; }
+.st-body h2 { font-size: 20px; margin: 16px 0 6px; }
+.st-power { width: 640px; height: 120px; border: 1.5px solid var(--c-ink); border-radius: 8px; display: block; }
+.st-legend { display: flex; gap: 16px; font-size: 13px; margin-top: 4px; color: var(--c-ink-soft); }
+/* Each line of the power history named in its own colour. */
+.st-leg { display: inline-flex; align-items: center; gap: 6px; }
+.st-leg::before { content: ''; width: 18px; height: 3px; border-radius: 2px; background: var(--c-coral-d); }
+.st-leg[data-tone='supply']::before { background: var(--c-turq-d); }
+.st-leg:empty { display: none; }
+/* What the numbers are, under each part's title. */
+.st-note { margin: 0 0 8px; font-size: 12.5px; line-height: 1.35; color: var(--c-ink-soft); }
+.st-part[data-st-part='ledger'] h2 { margin-top: 0; }
+.st-part[data-st-part='machines'] + .st-part[data-st-part='ledger'] h2 { margin-top: 16px; }
+.st-empty { margin: 10px 0; padding: 8px 10px; border-radius: 8px; background: var(--c-peach-l); color: var(--c-ink); }
+/* The Analytics path's parts of the stats (D41): shown once their plan is taken. */
+.st-part[hidden] { display: none; }
+.st-part[data-st-part='machines'] { margin-bottom: 12px; }
+.st-part[data-st-part='machines'] h2 { margin-top: 0; }
+.st-states { display: flex; flex-wrap: wrap; gap: 6px; }
+.st-state {
+  display: inline-flex; align-items: baseline; gap: 6px; padding: 2px 10px; border-radius: 999px;
+  font-size: 13px; font-weight: 600; border: 1.5px solid var(--c-ink); cursor: help;
+}
+.st-state b { font: 400 17px/1 var(--f-title); }
+.st-state[data-tone='good'] { background: var(--c-turq-l); }
+.st-state[data-tone='warn'] { background: var(--c-peach); }
+.st-state[data-tone='bad'] { background: var(--c-coral); color: var(--c-paper); }
+.st-state[data-tone='idle'] { background: var(--c-paper-d); }
+.st-none { color: var(--c-ink-soft); font-size: 13px; }
+
+/* One tab at a time (ui/screens/conflict.ts): over the boot veil, or over the world in the tab that stepped aside. */
+.conflict { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: rgba(242, 198, 160, 0.55); backdrop-filter: blur(3px); }
+.conflict-box { max-width: min(460px, calc(100vw - 32px)); padding: 22px 26px 20px; display: grid; gap: 12px; }
+.conflict-box h2 { margin: 0; font-size: 28px; font-weight: 400; }
+.conflict-box p { margin: 0; line-height: 1.4; }
+.conflict-take { justify-self: start; font-size: 20px; }

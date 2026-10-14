@@ -1,0 +1,126 @@
+// commands.ts — the colony's API vocabulary. A Command is something the player (a script, or
+// a future server replaying a log) does to a colony: each Sim command method validates it,
+// applies it and appends it to `sim.log` with its tick. A SimEvent is what the colony reports
+// back to the shell — ids and numbers, never text (the UI translates).
+// `exec` applies one logged command; `replay` re-runs a whole log on a fresh colony founded
+// with the same seeds: same log ⇒ same state hash (tested in commands.test.ts). Anything that
+// mutates a colony outside these commands (sandbox helpers of window.FL) breaks replay.
+import type { Emblem } from '@/content/emblem';
+import type { MarketEvent } from '@/market/types';
+import type { BranchId } from './research/runtime';
+import type { Sim } from './state';
+import type { Rot } from './types';
+
+export type Command =
+  | { k: 'place'; def: string; x: number; y: number; rot: Rot; cfg?: number }
+  | { k: 'remove'; x: number; y: number }
+  | { k: 'recipe'; id: number; recipe: string | null }
+  | { k: 'portItem'; id: number; port: number; item: string | null }
+  | { k: 'forkFilter'; id: number; side: Rot; item: string | null }
+  | { k: 'module'; id: number; add: boolean }
+  | { k: 'grant'; item: string; n: number }
+  | { k: 'credits'; cents: number }
+  | { k: 'research'; id: string; lab: number }
+  /** Unlock a plan of the tree (D33): paid from the Heart, at once. */
+  | { k: 'unlockPlan'; id: string }
+  | { k: 'cancelResearch'; id: string }
+  | { k: 'respec'; branch: string }
+  | { k: 'designate'; tiles: number[]; on: boolean }
+  | { k: 'hearthUp' }
+  | { k: 'drifter'; dock: number }
+  | { k: 'route'; from: number; to: number; item: string; ships: number }
+  | { k: 'unroute'; id: number }
+  | { k: 'exportItem'; post: number; slot: number; item: string | null }
+  | { k: 'importOrder'; post: number; item: string; perMin: number; maxCents: number }
+  | { k: 'cancelOrder'; id: number }
+  | { k: 'spot'; item: string; side: 'sell' | 'buy'; n: number }
+  /** Power wires (D25): `a` is the end the player started from (a pillar or the Hearth, usually). */
+  | { k: 'link'; a: number; b: number }
+  | { k: 'unlink'; a: number; b: number }
+  /** Name (or rename) the claim (quest 0). */
+  | { k: 'name'; name: string }
+  /** The claim's emblem (the register; the Heart's flag). */
+  | { k: 'emblem'; e: Emblem }
+  /** A quest completed (systems/quests.ts): logged by the colony itself, or forced (debug). A
+   * replay completes the unforced ones again on its own and refuses their entries. */
+  | { k: 'quest'; id: string; force?: boolean }
+  | { k: 'skipQuests' }
+  /** Land (docs/land.md): buy a parcel, lease one by the hour, give a lease up. */
+  | { k: 'buyLand'; p: number }
+  | { k: 'rentLand'; p: number }
+  | { k: 'endLease'; p: number };
+
+export type CommandKind = Command['k'];
+
+export type SimEvent =
+  /** Something was placed, removed or reconfigured: views rebuild, the UI refreshes. */
+  | { k: 'structure' }
+  /** A game minute ended (absolute world epoch). */
+  | { k: 'epoch'; epoch: number }
+  /** A research project (or a reconversion, id `respec:<branch>`) completed. */
+  | { k: 'research'; id: string }
+  /** A plan of the tree was unlocked (D33): what it unlocks can be built now. */
+  | { k: 'plan'; id: string }
+  /** A rock tile was dug out (and the embedded ore it gave up). */
+  | { k: 'dug'; tile: number; ore: Array<{ item: number; mu: number }> }
+  /** A water / salt tile was filled. */
+  | { k: 'filled'; tile: number }
+  /** A trade post lifted cargo at an epoch boundary (mu sold / bought, net centi-◉; `from`: the colonies its imports come from). */
+  | { k: 'trade'; post: number; soldMu: number; boughtMu: number; cents: number; from: number[] }
+  /** Imported goods arrived at a post (or in the Hearth next to it). */
+  | { k: 'delivered'; post: number; item: number; mu: number }
+  /** The Crier's Gazette: events announced, started, ended at this boundary (ids and numbers). */
+  | { k: 'gazette'; started: MarketEvent[]; ended: MarketEvent[]; announced: MarketEvent[] }
+  /** A tutorial quest completed; its reward is in the Hearth (content/quests.ts ids; `title`: the one it granted). */
+  | { k: 'quest'; id: string; title?: string }
+  /** A parcel changed hands, or a lease's hour was paid (centi-◉): bought, leased, rent, lapsed (the purse could not pay), ended. */
+  | { k: 'land'; p: number; what: 'bought' | 'leased' | 'rent' | 'lapsed' | 'ended'; cents: number };
+
+/** Apply one command (as logged). Returns whether the colony accepted it. */
+export function exec(sim: Sim, cmd: Command): boolean {
+  switch (cmd.k) {
+    case 'place': return sim.place(cmd.def, cmd.x, cmd.y, cmd.rot, cmd.cfg ?? 0).ok;
+    case 'remove': return sim.remove(cmd.x, cmd.y);
+    case 'recipe': return sim.setRecipe(cmd.id, cmd.recipe);
+    case 'portItem': return sim.setPortItem(cmd.id, cmd.port, cmd.item);
+    case 'forkFilter': return sim.setForkFilter(cmd.id, cmd.side, cmd.item);
+    case 'module': return sim.setModule(cmd.id, cmd.add);
+    case 'grant': sim.grant(cmd.item, cmd.n); return true;
+    case 'credits': sim.grantCredits(cmd.cents); return true;
+    case 'research': return sim.startResearch(cmd.id, cmd.lab).ok;
+    case 'unlockPlan': return sim.unlockPlan(cmd.id).ok;
+    case 'cancelResearch': return sim.cancelResearch(cmd.id);
+    case 'respec': return sim.respec(cmd.branch as BranchId);
+    case 'designate': return sim.designate(cmd.tiles, cmd.on) > 0;
+    case 'hearthUp': return sim.upgradeHearth().ok;
+    case 'drifter': return sim.buyDrifter(cmd.dock);
+    case 'route': return sim.addRoute(cmd.from, cmd.to, cmd.item, cmd.ships) > 0;
+    case 'unroute': return sim.removeRoute(cmd.id);
+    case 'exportItem': return sim.setExport(cmd.post, cmd.slot, cmd.item) === null;
+    case 'importOrder': return typeof sim.addImport(cmd.post, cmd.item, cmd.perMin, cmd.maxCents) === 'number';
+    case 'cancelOrder': return sim.cancelImport(cmd.id);
+    case 'spot': return 'cents' in sim.spotTrade(cmd.item, cmd.side, cmd.n);
+    case 'link': return sim.link(cmd.a, cmd.b).ok;
+    case 'unlink': return sim.unlink(cmd.a, cmd.b);
+    case 'name': return sim.nameColony(cmd.name);
+    case 'emblem': return sim.setEmblem(cmd.e);
+    case 'quest': return sim.completeQuest(cmd.id, cmd.force ?? false);
+    case 'skipQuests': return sim.skipTutorial();
+    case 'buyLand': return sim.buyLand(cmd.p) === null;
+    case 'rentLand': return sim.rentLand(cmd.p) === null;
+    case 'endLease': return sim.endLease(cmd.p) === null;
+    default: { const never: never = cmd; return never; } // a new Command kind must be handled here
+  }
+}
+
+/**
+ * Re-run a command log on a colony (normally fresh, same seeds): tick up to each command's
+ * tick, apply it, and finally run on to `toTick` when given.
+ */
+export function replay(sim: Sim, log: ReadonlyArray<{ tick: number; cmd: Command }>, toTick?: number): void {
+  for (const { tick, cmd } of log) {
+    if (tick > sim.tick) sim.run(tick - sim.tick);
+    exec(sim, cmd);
+  }
+  if (toTick !== undefined && toTick > sim.tick) sim.run(toTick - sim.tick);
+}

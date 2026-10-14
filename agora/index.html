@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>AGORA — feel the market</title>
+    <meta name="description" content="An interactive on the laws of markets: supply, demand, the invisible hand, and where it fails." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='10' fill='%235fe39a'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Space+Mono&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <!-- Back to front: ambient field · active scene · foreground fx · DOM ui -->
+    <canvas id="bg"></canvas>
+    <canvas id="scene"></canvas>
+    <canvas id="fx"></canvas>
+    <div id="ui"></div>
+    <div id="err" hidden></div>
+
+    <script type="module" src="/src/main.ts"></script>
+    <script>
+      // Surface fatal errors on screen — the smoke test and humans both want to see them.
+      window.addEventListener('error', (e) => {
+        const err = document.getElementById('err');
+        if (err) { err.hidden = false; err.textContent = 'Error: ' + (e.message || e.error); }
+      });
+    </script>
+  </body>
+</html>

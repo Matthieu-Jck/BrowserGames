@@ -1,0 +1,194 @@
+// types.ts — content definition shapes. Content is plain typed data keyed by string id;
+// registry.ts compiles ids to dense indices for the engine. Names are inline {fr, en}.
+
+export interface Loc { readonly fr: string; readonly en: string }
+
+export type Tier = 1 | 2 | 3 | 4;
+export type Side = 'N' | 'E' | 'S' | 'W';
+
+export type ItemKind =
+  | 'ore' | 'fuel' | 'fluid' | 'material' | 'part' | 'science' | 'unique' | 'energy' | 'module' | 'rubble';
+
+/** Glyph shapes the art pipeline knows how to ink (render/art/recipes/items.ts). */
+export type Glyph =
+  | 'pebble' | 'grain' | 'coal' | 'copper' | 'crystal' | 'rubble' | 'drop' | 'salt' | 'plate' | 'pane'
+  | 'coil' | 'journal' | 'gear' | 'module' | 'chip' | 'tile' | 'cell' | 'cellCharged' | 'journal2' | 'shard'
+  | 'resin' | 'ember' | 'lens' | 'canvas' | 'core' | 'atlas' | 'moss' | 'nacre' | 'quartz' | 'resonator'
+  | 'lattice' | 'codex';
+
+export interface ItemDef {
+  readonly name: Loc;
+  readonly tier: Tier;
+  readonly kind: ItemKind;
+  /** Reference value V in ocelles (the market anchors on it). Computed for crafted items. */
+  readonly value?: number;
+  /** NPC market depth Q (items/min); 0 = not tradable. */
+  readonly depth: number;
+  readonly glyph: Glyph;
+  /** Fill colour token for the glyph. */
+  readonly color: string;
+}
+
+export interface RecipeDef {
+  readonly name: Loc;
+  /** Building ids that can run it. */
+  readonly machines: readonly string[];
+  /** Cycle in seconds at speed 1 (cycle ticks must divide 1200). */
+  readonly seconds: number;
+  readonly ins: ReadonlyArray<readonly [string, number]>;
+  readonly outs: ReadonlyArray<readonly [string, number]>;
+  /** Extra electrical energy per craft (kW·min), e.g. the cell charger. */
+  readonly energyKwMin?: number;
+  /** Research id that unlocks it, or 'start'. */
+  readonly unlock: string;
+}
+
+export interface PortDef {
+  /** Tile within the unrotated footprint. */
+  readonly x: number;
+  readonly y: number;
+  /** Edge of that tile the port opens on (unrotated; rot 0 = front faces N). */
+  readonly side: Side;
+  readonly io: 'in' | 'out';
+}
+
+export type BuildingKind =
+  | 'hearth' | 'drill' | 'belt' | 'fork' | 'crossing' | 'bridge' | 'pole' | 'beacon'
+  | 'machine' | 'lab' | 'generator' | 'wind' | 'solar' | 'geothermal' | 'storage' | 'trade'
+  | 'excavator' | 'pump' | 'conduit' | 'accumulator' | 'dock' | 'backfiller' | 'sink';
+
+export type BuildCategory = 'extraction' | 'logistics' | 'distribution' | 'production' | 'energy' | 'colony' | 'commerce';
+
+/**
+ * How a routing block (kind `fork`) hands items on. `router`: every side, round-robin, to
+ * ribbons, machines and stores alike. Directional ones (placed with a rotation: in from the
+ * back): `sorter` (the chosen item straight on, others to the sides), `inverted` (the chosen
+ * item to the sides, others straight on), `overflow` (straight on, the sides when it is full),
+ * `underflow` (the sides, straight on when they are full). `unloader`: pulls the chosen item
+ * (or anything) out of an adjacent store and hands it to every other side.
+ */
+export type RouterLogic = 'router' | 'distributor' | 'sorter' | 'inverted' | 'overflow' | 'underflow' | 'unloader';
+
+/**
+ * Replacement, the Mindustry way: a building may be placed over buildings of its own group
+ * that lie wholly inside its footprint; they are taken down (fully refunded) first. A router
+ * over a ribbon, a swift ribbon over a ribbon, a distributor over four routers, a pylon
+ * over a pole, a deep bore over a drill. `transport`: ribbons of every tier, routing
+ * blocks, the junction and the bridge; `fluid`: conduits; `power`: masts; `drill`: drills.
+ * No group: never replaces, never replaced (machines, stores, the Hearth…).
+ */
+export type ReplaceGroup = 'transport' | 'fluid' | 'power' | 'drill';
+
+export interface BuildingDef {
+  readonly name: Loc;
+  readonly kind: BuildingKind;
+  readonly category: BuildCategory;
+  readonly w: number;
+  readonly h: number;
+  readonly ports: readonly PortDef[];
+  /** Electrical draw while working / idle (kW). */
+  readonly kw?: number;
+  readonly idleKw?: number;
+  /** Production buildings stand on the claim's land (its parcels, D60); infrastructure may cross other land. */
+  readonly needsZone: boolean;
+  /**
+   * May stand on the mountains (D44): its whole footprint on rock, or its whole footprint on the
+   * floor, as any building (on the claim's land when it `needsZone`, D60).
+   */
+  readonly onRock?: boolean;
+  readonly cost: ReadonlyArray<readonly [string, number]>;
+  readonly unlock: string;
+  /** Recipes this machine can run (machines only). */
+  readonly crafts?: boolean;
+  /**
+   * Belt-like: `perMin`, its pace — a ribbon moves its items one tile a step, perMin steps a minute
+   * (D57: one item per tile, so also its throughput); `ticksPerTile`, a conduit's water travel time
+   * (ribbons ignore it).
+   */
+  readonly belt?: { readonly ticksPerTile: number; readonly perMin: number };
+  /** A traction ribbon (D45): it hands on to the tile ahead one level up or down — the only way a line changes level. */
+  readonly lift?: boolean;
+  /**
+   * A power link point (D25: the pillars and the Hearth): `range` = how far its wires reach
+   * (tiles, footprint edge to edge), `slots` = how many wires it holds. `tall`: the Reinforced Pylons
+   * research (`mods.pylonLink`) lengthens its wires. Nothing is powered by proximity: a
+   * building joins a grid only through wires.
+   */
+  readonly pole?: { readonly range: number; readonly slots: number; readonly tall?: boolean };
+  /** Generator output (kW) and fuel burn at full output (items/min). */
+  readonly gen?: { readonly kw: number; readonly fuel?: string; readonly fuelPerMin?: number };
+  /**
+   * An extractor (kind `drill`): `perMin` at most. A drill mines the deposit under it (bounded by its
+   * tiles' caps); with `ground`, it collects that item off the bare ground instead — every tile of
+   * its footprint plain sand, no deposit — at a steady `perMin` (the sand collector: sand is the
+   * desert floor itself, owner 2026-10-12).
+   */
+  readonly drill?: { readonly perMin: number; readonly capMult?: number; readonly ground?: string };
+  readonly storageCap?: number;
+  readonly reveal?: number;
+  readonly accumulator?: { readonly kwMin: number; readonly kw: number };
+  /** Routing blocks (kind `fork`): how they hand items on. */
+  readonly logic?: RouterLogic;
+  /** What it may be placed over, and what may be placed over it (same group only). */
+  readonly replaceGroup?: ReplaceGroup;
+  /**
+   * What it is for and how to hook it up, in one or two plain sentences (shown as is: the
+   * building card, the inspector, and the first sentence alone in the build tip). The card
+   * derives its figures from the other fields; quote here only the numbers that matter.
+   */
+  readonly desc: Loc;
+}
+
+export interface ResearchDef {
+  readonly name: Loc;
+  readonly desc: Loc;
+  readonly branch: 'trunk' | 'ex' | 'xp' | 'dn' | 'en' | 'cm';
+  /** Depth within its branch (1..8, 9 = keystone); trunk nodes use their order. */
+  readonly depth: number;
+  /** Tree nodes it needs: research ids, or a plan id (the branch roots need the observatory's plan). */
+  readonly prereq: readonly string[];
+  readonly cost: ReadonlyArray<readonly [string, number]>;
+  readonly minutes: number;
+  readonly effects: readonly Effect[];
+}
+
+/**
+ * The path a plan belongs to in the unlock tree (D33, D41): one theme each, drawn as its own
+ * labelled band — logistics (move and sort), production (smelt and make), energy, analytics
+ * (what the base shows you), trade, survey (the land). Order and checks: `PLAN_PATHS` in research.ts.
+ */
+export type PlanLane = 'logistics' | 'production' | 'energy' | 'analytics' | 'trade' | 'survey';
+
+/**
+ * A plan (D33): an instant unlock of the one tree, paid with materials from the Heart the
+ * moment it is taken, Mindustry-style — no observatory, no data, no time. What it unlocks is
+ * read from content (the buildings and recipes whose `unlock` is its id) plus its own
+ * `effects` (a feature such as telemetry). Research nodes are the tree's advanced part.
+ */
+export interface PlanDef {
+  /** Shown name. Omitted: the name of the (first) building it unlocks. */
+  readonly name?: Loc;
+  /** What it brings, in a sentence. Omitted: the description of the building it unlocks. */
+  readonly desc?: Loc;
+  /** Its path (the tree's band it is drawn in). */
+  readonly lane: PlanLane;
+  /** Tree nodes it needs first (plan ids, or research ids). */
+  readonly prereq: readonly string[];
+  /** Paid from the Heart's stock when it is unlocked (whole items). */
+  readonly cost: ReadonlyArray<readonly [string, number]>;
+  readonly effects?: readonly Effect[];
+}
+
+export type Effect =
+  | { readonly k: 'unlock'; readonly id: string }
+  | { readonly k: 'slots'; readonly add: number }
+  | { readonly k: 'mul'; readonly target: ModTarget; readonly permille: number }
+  | { readonly k: 'add'; readonly target: ModTarget; readonly v: number }
+  | { readonly k: 'flag'; readonly flag: string };
+
+export type ModTarget =
+  | 'digSpeed' | 'rubbleYield' | 'embeddedOre' | 'windOut' | 'solarOut' | 'solarNight' | 'geoOut'
+  | 'accCap' | 'accRate' | 'genOut' | 'craftSpeed' | 'tradeFee' | 'deliveryDelay' | 'slippage'
+  | 'landPrice' | 'landRent' | 'landGrowth' | 'farLand' | 'remoteBeltCost' | 'remoteBuildDelay'
+  | 'pylonLink' | 'dockShips' | 'shipCap' | 'shipSpeed' | 'ring3Caps'
+  | 'bridgeSpan' | 'streams' | 'excavatedSpeed' | 'gustVariance' | 'drifterDistance';
