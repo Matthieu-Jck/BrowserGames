@@ -91,7 +91,7 @@ describe('the land’s levels (D45)', () => {
 
   it('a line piece facing a step it cannot take is refused (D77)', () => {
     const sim = ridgeSim();
-    sim.done.add('dn1'); sim.done.add('tr3'); // swift ribbons and conduits (research): granted outside the commands
+    sim.done.add('xp_swift'); sim.done.add('tr3'); // swift ribbons and conduits (research): granted outside the commands
     // Facing the wall from the floor, and facing the drop from the ridge's top: only a traction ribbon.
     expect(sim.canPlace('ribbon', 512, 502, 2).reason).toBe('needs_lift');
     expect(sim.canPlace('ribbon', 512, 504, 2).reason).toBe('needs_lift');
