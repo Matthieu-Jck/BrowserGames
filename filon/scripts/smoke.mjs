@@ -687,7 +687,7 @@ await step('debug bases: the menu page plays a ready-made base; the player’s b
   await page.click('[data-debug-load="survey"]');
   await page.waitForSelector('[data-debug-badge]:not([hidden])', { timeout: 10000 });
   const s = await FL(() => ({ menu: window.FL.menu(), cur: window.FL.debugSaves().current, q: window.FL.quests().current }));
-  assert(!s.menu && s.cur === 'survey' && s.q === 'field_journal', `after load: ${JSON.stringify(s)}`);
+  assert(!s.menu && s.cur === 'survey' && s.q === 'crier_calls', `after load: ${JSON.stringify(s)}`);
   await FL(() => window.FL.resume());
   await page.waitForTimeout(1500);
   assert((await FL(() => window.FL.debugSaves().realHash)) === own, 'the player’s base moved while aside');
@@ -764,12 +764,12 @@ await step('quests: CrierBelt has the claim named; the log moves on; rewards pay
   assert(seen, `no CrierBelt notice: ${JSON.stringify(await FL(() => window.FL.toasts()))}`);
   await page.screenshot({ path: shot('smoke-quests.png') });
   const c0 = await FL(() => window.FL.credits());
-  assert((await FL(() => window.FL.completeQuest('beyond_crown'))) === null, 'completeQuest refused');
+  assert((await FL(() => window.FL.completeQuest('field_journal'))) === null, 'completeQuest refused'); // the last quest (D71)
   q = await FL(() => window.FL.quests());
   assert(q.done.length === 11, `done: ${q.done.length}`); // the tutorial's eleven quests (the board quest went with the export streams, D64)
   const c1 = await FL(() => window.FL.credits());
   assert(Math.abs(c1 - c0 - 250) < 0.01, `credits ${c0} → ${c1}`);
-  await FL(() => window.FL.completeQuest('beyond_crown'));
+  await FL(() => window.FL.completeQuest('field_journal'));
   assert(Math.abs((await FL(() => window.FL.credits())) - c1) < 0.01, 'paid twice');
 });
 
