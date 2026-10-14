@@ -78,7 +78,7 @@ describe('replacement', () => {
 
   it('a swift ribbon dragged over a ribbon line upgrades it in place (refund + pay), and the line still delivers', () => {
     const sim = testSim();
-    unlock(sim, 'dn1');
+    unlock(sim, 'xp_swift');
     sim.grant('gear', 20);
     drillToHearth(sim);
     sim.run(600);
@@ -104,7 +104,7 @@ describe('replacement', () => {
 
   it('a distributor placed over a 2×2 of ribbons and routers replaces all four', () => {
     const sim = testSim();
-    unlock(sim, 'dn5');
+    unlock(sim, 'xp_distrib');
     sim.grant('gear', 10);
     const ids = [
       sim.place('router', 520, 520, 0).id!,
@@ -141,7 +141,7 @@ describe('replacement', () => {
 
   it('refused: another group, a partial overlap, the very same building, and the Hearth — always occupied', () => {
     const sim = testSim();
-    unlock(sim, 'dn5', 'tr3');
+    unlock(sim, 'xp_distrib', 'tr3');
     sim.grant('gear', 10);
     sim.grant('ceramic', 10);
     // Another group: a kiln, a mast or a conduit over a ribbon.
@@ -177,7 +177,7 @@ describe('replacement', () => {
 
   it('affordability counts the refund: a stock too low on its own, plus what is replaced, is enough', () => {
     const sim = testSim();
-    unlock(sim, 'dn5');
+    unlock(sim, 'xp_distrib');
     // A 2×2 of routers (a plate each, refunded when replaced) under a distributor (4 plates, 2 wires).
     const rts = [[520, 520], [521, 520], [520, 521], [521, 521]].map(([x, y]) => sim.place('router', x!, y!, 0).id!).sort((a, b) => a - b);
     sim.stock[PLATE()] = 0;
@@ -194,7 +194,7 @@ describe('replacement', () => {
 
   it('a drag shares one budget: its plan runs out of materials exactly where laying it does', () => {
     const sim = testSim();
-    unlock(sim, 'dn1');
+    unlock(sim, 'xp_swift');
     sim.placeBelts('ribbon', line(520, 520, 1, 5));
     sim.grant('gear', 3); // a swift ribbon costs a plate and a gear; each plain one gives its plate back
     const plan = sim.planBelts('swift_ribbon', line(520, 520, 1, 5));
@@ -206,7 +206,7 @@ describe('replacement', () => {
 
   it('a ribbon drag through routing blocks, a junction and a bridge keeps them; a one-tile click replaces a router', () => {
     const sim = testSim();
-    unlock(sim, 'dn5');
+    unlock(sim, 'xp_distrib');
     sim.grant('gear', 10);
     const router = sim.place('router', 517, 520, 0).id!;
     const kept = [router, sim.place('crossing', 519, 520, 0).id!, sim.place('sorter', 521, 520, 1).id!, sim.place('skybridge', 523, 520, 1).id!, sim.place('distributor', 525, 520, 0).id!];

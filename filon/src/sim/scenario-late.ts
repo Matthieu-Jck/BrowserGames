@@ -45,12 +45,11 @@ import { MapGen } from './world/mapgen';
  *   sorter (I) sends the plates aside, down to the gear workshop (G), the glass on along a glass
  *   bus (row 2) whose routers drop it, across the copper bus on junctions, into the circuit
  *   workshops' other inputs (C, c); each mill hands its wire straight into its workshop below;
- * - circuits and gears down to a router each, dealing them to the tower workshop (T: speed
- *   modules, the great workshop's recipes four times as fast), to the compact great workshop (J:
- *   Mechanics Data, its surplus aside, the rest into the observatory O), to the great workshop (K:
- *   thermal cores);
+ * - circuits and gears down to a router each, dealing them to the etcher (T: speed modules,
+ *   three times as fast as an electronics workshop) and to the assembly workshop (K: thermal
+ *   cores); a data collector (J, D68) hands its files straight down into the research lab O;
  * - the skydock (D) receives the ceramic flown from the potteries and the embersalt flown from
- *   the Ember Fields: ceramic down to J and K, embersalt to K (the rest sold).
+ *   the Ember Fields: ceramic to K, embersalt to K, the rest down to the sell line.
  * Without an Ember Fields mine (`E` dropped) K and its lines go, junctions turned back to ribbons.
  * Checked on a flat world in all four turns: every port fed, no line ending nowhere.
  */
@@ -69,16 +68,16 @@ export const FABRIQUE: PlanSpec = {
     '↑<<<<<<+<<<+<<<<<%.v',
     '↑<<<<<<+<<<%.    v v',
     '↑      v   v     v v',
-    '↑     .R>v v     v v',
-    '↑     v+<+<R>v   v v',
-    '↑     vv v v v . v v',
-    '↑     vv v vv+<R<+<<',
-    '↑     vv >vvv>vvv<',
-    '↑    TTT  JJ< KKK',
-    '↑    TTT  JJ  KKK',
-    '↑    TTTv<%.  KKK',
-    '↑     v v OO   v',
-    '↑     v v OO   v',
+    '↑     .R.  v     v v',
+    '↑     v+<<<R>v   v v',
+    '↑     vv   . v . v v',
+    '↑     vv    v+<R<+<<',
+    '↑     vv    v>vvv<',
+    '↑    TTT  JJv KKK',
+    '↑    TTT  JJv KKK',
+    '↑    TTT   vv KKK',
+    '↑     v   OOv  v',
+    '↑     v   OOv  v',
     '↑<<<<<<<<<<<<<<<',
   ],
   mask: [
@@ -108,9 +107,9 @@ export const FABRIQUE: PlanSpec = {
     N: { role: 'mill3', def: 'wire_mill', recipe: 'copper_wire' },
     C: { role: 'circuits', def: 'workshop', recipe: 'circuit' },
     c: { role: 'circuits2', def: 'workshop', recipe: 'circuit' },
-    G: { role: 'gears2', def: 'workshop', recipe: 'gear' },
-    T: { role: 'bells', def: 'tower_workshop', recipe: 'pace_bell' },
-    J: { role: 'journal2', def: 'great_workshop_compact', recipe: 'journal_2' },
+    G: { role: 'gears2', def: 'press', recipe: 'gear' },
+    T: { role: 'bells', def: 'etcher', recipe: 'pace_bell' },
+    J: { role: 'data2', def: 'data_collector' },
     O: { role: 'observatory2', def: 'observatory' },
     K: { role: 'cores', def: 'great_workshop', recipe: 'thermal_core' },
     I: { role: 'sorter2', def: 'inverted_sorter', filter: 'iron_plate' },
@@ -443,7 +442,7 @@ export function fabrique(b: Builder, ember: boolean): boolean {
   if (ember && !sim.setPortItem(laid.ids.dockW!, DOCK_OUT.embersalt, 'embersalt')) b.skip('dockW:embersalt');
   // Power: a pylon line over the Crown to the post, then masts to the rest.
   wireFar(b, 'post2');
-  b.wire('boreCu', 'dockW', 'mill2', 'mill3', 'circuits', 'circuits2', 'gears2', 'bells', 'journal2', 'observatory2', 'cores');
+  b.wire('boreCu', 'dockW', 'mill2', 'mill3', 'circuits', 'circuits2', 'gears2', 'bells', 'data2', 'observatory2', 'cores');
   // Speed modules (Pace, Pace II) in the circuit workshops: the wire mills outrun them.
   for (const r of ['circuits', 'circuits2']) {
     b.afford([['pace_bell', 1]]);

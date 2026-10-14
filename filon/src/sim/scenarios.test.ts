@@ -27,16 +27,16 @@ const AT: Record<ScenarioId, string | null> = { claim: 'first_strike', smelter: 
 const BUILT: Record<ScenarioId, readonly string[]> = {
   claim: [],
   smelter: ['iron1', 'iron2'],
-  survey: ['iron1', 'iron2', 'kiln1', 'coal', 'wind1', 'wind2', 'workshop', 'kiln2', 'sand1', 'sand2'],
-  tutorial: ['post', 'kiln1', 'kiln2', 'workshop', 'observatory', 'mill', 'copper', 'beacon', 'wind3', 'wind4'],
-  grown: ['post', 'kiln1', 'kiln2', 'workshop', 'observatory', 'mill', 'copper'],
+  survey: ['iron1', 'iron2', 'kiln1', 'coal', 'wind1', 'wind2', 'collector', 'kiln2', 'sand1', 'sand2'],
+  tutorial: ['post', 'kiln1', 'kiln2', 'collector', 'observatory', 'mill', 'copper', 'beacon', 'wind3', 'wind4'],
+  grown: ['post', 'kiln1', 'kiln2', 'collector', 'observatory', 'mill', 'copper'],
   // The late base's works (scenario-late.ts): the potteries on the tarn's peak, the Fabrique on
   // the copper field — on every land (the Ember Fields mine and its thermal cores where the land has
   // that site: checked below).
   late: [
-    'post', 'kiln1', 'workshop', 'observatory',
+    'post', 'kiln1', 'collector', 'observatory',
     'oven', 'pump', 'dockT', 'digger1',
-    'boreCu', 'post2', 'dockW', 'mill2', 'mill3', 'circuits', 'circuits2', 'gears2', 'bells', 'journal2', 'observatory2', 'sorter2',
+    'boreCu', 'post2', 'dockW', 'mill2', 'mill3', 'circuits', 'circuits2', 'gears2', 'bells', 'data2', 'observatory2', 'sorter2',
   ],
 };
 
@@ -68,11 +68,11 @@ describe('debug bases (scenarios)', () => {
       const dead = sim.graph.chains.filter((c) => !c.outE.length).map((c) => { const t = c.tiles[c.tiles.length - 1]!; return `${t % 1024},${(t - (t % 1024)) / 1024}`; });
       expect(dead, `${id}: lines that end nowhere`).toEqual([]);
       if (id === 'late') {
-        expect(report.granted).toEqual(expect.arrayContaining(['tr2', 'tr4', 'tr6', 'tr8', 'ex8', 'dnK', 'enK', 'cm3']));
+        expect(report.granted).toEqual(expect.arrayContaining(['tr2', 'tr4', 'tr6', 'tr8', 'ex5', 'ex8', 'xp_far', 'dn_etcher', 'dn8', 'enK', 'cm3', 'an_servers']));
         expect(sim.hearthLevel).toBe(4);
-        // Most of the tree done (D66: 39 of 53), Drone Relays and Forward Contracts researched for real.
-        expect(Object.keys(RESEARCH).filter((r) => sim.done.has(r)).length, 'late: research done').toBeGreaterThanOrEqual(38);
-        expect(sim.projects.map((p) => p.id).sort(), 'late: research under way').toEqual(['cm4', 'xp2']);
+        // Over half the tree done (D66, D69: 44 of 77), the Research Queue and the Compute Plan researched for real.
+        expect(Object.keys(RESEARCH).filter((r) => sim.done.has(r)).length, 'late: research done').toBeGreaterThanOrEqual(44);
+        expect(sim.projects.map((p) => p.id).sort(), 'late: research under way').toEqual(['an_queue', 'cm_plan']);
         // The Ember Fields mine where the land has the site, its embersalt flown to the Fabrique's thermal cores.
         if (report.ids.boreE) for (const role of ['dockE', 'cores']) expect(report.ids[role], `late: ${role}`).toBeGreaterThan(0);
         // Nothing the map refused (each part of the works is laid whole, or skipped by name) but the
@@ -87,13 +87,13 @@ describe('debug bases (scenarios)', () => {
       }
       expect(report.granted, `${id}: nothing outside the commands`).toEqual([]);
       if (id === 'tutorial') {
-        // The whole factory runs: plates, glass, survey data, copper wire all made.
-        for (const it of ['iron_plate', 'glass', 'journal_1', 'copper_wire']) expect(sim.produced[itemIdx(it)], it).toBeGreaterThan(0);
-        expect(sim.projects.map((p) => p.id)).toEqual(['tr1']); // Mechanics under way
+        // The whole factory runs: plates, glass, data files, copper wire all made.
+        for (const it of ['iron_plate', 'glass', 'data_file', 'copper_wire']) expect(sim.produced[itemIdx(it)], it).toBeGreaterThan(0);
+        expect(sim.done.has('tr1') || sim.projects.some((p) => p.id === 'tr1'), 'Mechanics learnt or under way').toBe(true);
       }
       if (id === 'grown') {
         expect(PLAN_IDS.every((p) => sim.done.has(p))).toBe(true);
-        for (const r of ['tr1', 'en1', 'dn1']) expect(sim.done.has(r), `learnt ${r}`).toBe(true);
+        for (const r of ['tr1', 'en_pitch', 'xp_swift']) expect(sim.done.has(r), `learnt ${r}`).toBe(true);
       }
     }
     if (process.env.SCENARIO_REPORT) console.log(`player ${seed}: ${times.join(' · ')}`);
@@ -117,9 +117,9 @@ describe('debug bases (scenarios)', () => {
       expect(sim.credits - credits0, `${id}: ocelles earned over a day`).toBeGreaterThan(20_000);
       if (id === 'late') {
         // The late base's chains run over the day (D66): the Fabrique's wire, circuits, gears, speed
-        // modules and Mechanics Data, the potteries' ceramic, the thermal cores where embersalt comes.
+        // modules and data files, the potteries' ceramic, the thermal cores where embersalt comes.
         const made = (it: string): number => sim.produced[itemIdx(it)]! - produced0[itemIdx(it)]!;
-        for (const it of ['copper_wire', 'circuit', 'gear', 'pace_bell', 'journal_2', 'ceramic', ...(report.ids.cores ? ['thermal_core'] : [])]) expect(made(it), `late: ${it} made over a day`).toBeGreaterThan(0);
+        for (const it of ['copper_wire', 'circuit', 'gear', 'pace_bell', 'data_file', 'ceramic', ...(report.ids.cores ? ['thermal_core'] : [])]) expect(made(it), `late: ${it} made over a day`).toBeGreaterThan(0);
         // Far more than its way: its sales of what it makes, after what it buys.
         expect(sim.credits - credits0, 'late: ocelles earned over a day').toBeGreaterThan(100_000);
       }

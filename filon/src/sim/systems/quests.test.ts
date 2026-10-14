@@ -73,8 +73,8 @@ function replayBase(): Sim {
  * The factory (east of the Hearth, 510..514 × 510..514): two iron drills north into its north
  * inputs; a router on the second iron line feeds the plate smelter; a coal drill on the extra
  * deposit feeds it too, and a router on the coal line feeds the glass smelter, beside the sand;
- * the smelters' lines run into the Hearth's east inputs, and routers on them feed the workshop,
- * whose data rides one ribbon into the observatory; copper comes from the south.
+ * the smelters' lines run into the Hearth's east inputs; a data collector's files ride one ribbon
+ * into the research lab; copper comes from the south.
  */
 function play(sim: Sim, last: QuestId = 'beyond_crown'): Record<string, number> {
   const ids: Record<string, number> = {};
@@ -146,21 +146,21 @@ function play(sim: Sim, last: QuestId = 'beyond_crown'): Record<string, number> 
   until(sim, 'bloom_kiln', 6 * EPOCH);
   if (stop('bloom_kiln')) return ids;
 
-  // 4 — wind turbines on a pole west of the Hearth, a workshop beside the smelter (poles came
-  // with the coal, quest 3: this quest no longer asks for one).
+  // 4 — wind turbines on a pole west of the Hearth, a data collector beside the smelter (poles
+  // came with the coal, quest 3: this quest no longer asks for one).
   at('first_wind', 0);
-  unlock('wind_flower', 'workshop');
+  unlock('wind_flower', 'data_collector');
   at('first_wind', 1);
   place('wind1', 'wind_flower', 501, 503);
   place('wind2', 'wind_flower', 504, 500);
   at('first_wind', 2);
   place('mastW', 'mast', 507, 505);
   expect(sim.links.has(sim.hearthId, ids.mastW!)).toBe(true);
-  place('workshop', 'workshop', 519, 508); // inputs south at (519|520, 510), output north at (519, 507)
+  place('collector', 'data_collector', 519, 508); // its output north at (519, 507)
   at('first_wind', 3);
   wire(sim, [ids.wind1!, ids.wind2!], ids.mastW);
   at('first_wind', 4);
-  wire(sim, ids.workshop!, ids.mastC);
+  wire(sim, ids.collector!, ids.mastC);
   until(sim, 'first_wind', EPOCH);
   if (stop('first_wind')) return ids;
 
@@ -193,27 +193,19 @@ function play(sim: Sim, last: QuestId = 'beyond_crown'): Record<string, number> 
   until(sim, 'glassworks', 6 * EPOCH);
   if (stop('glassworks')) return ids;
 
-  // 6 — survey data: routers on the plate and glass lines feed the workshop; one ribbon carries
-  // its data up into the observatory; Mechanics starts.
+  // 6 — data files (D68): the research lab above the collector, wired; one ribbon carries the
+  // files up into it; Mechanics starts, its tokens paid by the minute.
   at('field_journal', 0);
   unlock('observatory');
   at('field_journal', 1);
-  expect(sim.setRecipe(ids.workshop!, 'journal_1')).toBe(true);
-  at('field_journal', 2);
-  place('routerPlates', 'router', 517, 510);
-  lay([[518, 510, 1], [519, 510, 0]]);
-  at('field_journal', 3);
-  place('routerGlass', 'router', 521, 510);
-  lay([[520, 510, 0]]);
-  at('field_journal', 4);
   place('observatory', 'observatory', 518, 505); // inputs south at (518|519, 507)
-  at('field_journal', 5);
+  at('field_journal', 2);
   wire(sim, ids.observatory!, ids.mastC);
-  at('field_journal', 6);
-  lay([[519, 507, 0]]); // the workshop's output faces it, it points into the observatory
-  at('field_journal', 7);
+  at('field_journal', 3);
+  lay([[519, 507, 0]]); // the collector's output faces it, it points into the lab
+  at('field_journal', 4);
   expect(sim.startResearch('tr1').ok).toBe(true);
-  at('field_journal', 8);
+  at('field_journal', 5);
   until(sim, 'field_journal', 8 * EPOCH);
   if (stop('field_journal')) return ids;
 
@@ -291,11 +283,11 @@ describe('quests', () => {
     expect(logged(sim, 'quest')).toEqual(QUEST_IDS.map((id) => ({ k: 'quest', id })));
     // The tree: every plan the tutorial asked for, unlocked through the logged command.
     expect(logged(sim, 'unlockPlan').map((c) => (c as { id: string }).id)).toEqual([
-      'telemetry', 'kiln', 'router', 'wind_flower', 'workshop', 'sand_collector', 'observatory', 'trade_post', 'wire_mill', 'beacon',
+      'telemetry', 'kiln', 'router', 'wind_flower', 'data_collector', 'sand_collector', 'observatory', 'trade_post', 'wire_mill', 'beacon',
     ]);
-    // Ocelles: quests 6 and 7 pay 100 + 150 ◉ (on top of the trade).
+    // Ocelles: quests 6 and 7 pay 100 + 150 ◉ (on top of the trade, less the research's tokens, D68).
     const t = sim.trade;
-    expect(sim.credits - credits0 - (t.earned - t.spent)).toBe((100 + 150) * 100);
+    expect(sim.credits - credits0 - (t.earned - t.spent) + sim.tokenStats.totalCents).toBe((100 + 150) * 100);
     // The title of the path taken (a beacon: the passes).
     expect(sim.quests.titles).toEqual(['arpentage']);
     // Nothing is left to complete, and nothing more is paid.

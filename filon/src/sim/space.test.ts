@@ -72,14 +72,14 @@ describe('space', () => {
     sim.designate([obsidian]);
     sim.run(100);
     expect(sim.jobs.filter((j) => !j.quarry)).toEqual([]); // the mark waits (it may quarry softer rock meanwhile)
-    for (const id of ['ex1', 'ex2', 'ex3', 'ex4']) sim.done.add(id);
+    for (const id of ['ex_sifter', 'ex3', 'ex4']) sim.done.add(id);
     sim.rebuildDerived();
     sim.run(700);
     expect(sim.jobs.filter((j) => !j.quarry && j.tile === obsidian).length).toBe(1);
   });
 
   it('land rules: production stands on the claim\'s land, infrastructure may leave it (paid ribbons cost ×3 out there)', () => {
-    const sim = spaceSim(['tr1', 'tr2', 'tr3', 'tr4', 'dn1']);
+    const sim = spaceSim(['tr1', 'tr2', 'tr3', 'tr4', 'xp_swift']);
     const far = 512 + 40; // the first parcel past the starting square (5×5 parcels round the Heart)
     expect(sim.canPlace('kiln', far, 512, 0).reason).toBe('outside_zone');
     expect(sim.canPlace('kiln', far - 2, 512, 0).reason).not.toBe('outside_zone');
@@ -149,7 +149,7 @@ describe('space', () => {
   });
 
   it('a backfiller fills a pond tile with 40 stone: new floor', () => {
-    const sim = spaceSim(['tr1', 'tr2', 'tr3', 'ex1', 'ex2', 'ex3']);
+    const sim = spaceSim(['tr1', 'tr2', 'tr3', 'ex_sifter', 'ex3']);
     const bf = sim.place('backfiller', 512, 521, 0);
     expect(bf.ok, bf.reason).toBe(true);
     wire(sim, bf.id!);
@@ -162,7 +162,7 @@ describe('space', () => {
   });
 
   it('crossings let two lines pass; skybridges leap over rock', () => {
-    const sim = spaceSim(['tr1', 'dn1', 'dn2', 'dn3', 'dn4', 'dn5']);
+    const sim = spaceSim(['tr1', 'xp_swift', 'xp_bridges', 'dn3', 'dn4', 'xp_distrib']);
     sim.grant('gear', 50);
     // A crossing at (520, 520): a W→E line and an N→S line both pass straight through.
     expect(sim.place('crossing', 520, 520, 0).ok).toBe(true);
@@ -195,11 +195,11 @@ describe('space', () => {
   });
 
   it('a speed module speeds a machine up (and draws more power)', () => {
-    const sim = spaceSim(['tr1', 'dn1', 'dn2', 'dn3', 'dn4']);
+    const sim = spaceSim(['tr1', 'xp_swift', 'xp_bridges', 'dn3', 'dn4']);
     sim.grant('pace_bell', 2);
     const k = sim.place('workshop', 516, 504, 0);
     expect(k.ok).toBe(true);
-    sim.setRecipe(k.id!, 'journal_1');
+    sim.setRecipe(k.id!, 'circuit');
     sim.ensureCompiled();
     const m0 = sim.graph.nodeByEnt.get(k.id!) as unknown as { speed: number; kw: number };
     const [s0, kw0] = [m0.speed, m0.kw];
@@ -237,7 +237,8 @@ describe('space', () => {
 
   it('a dig that research unlocks during an absence starts offline as online', () => {
     const make = (): Sim => {
-      const sim = spaceSim(['tr1', 'tr2', 'tr3', 'ex1', 'ex2', 'ex3']);
+      const sim = spaceSim(['tr1', 'tr2', 'tr3', 'ex_sifter', 'ex3']);
+      sim.grantCredits(10_000_000); // the research's tokens, bought by the minute (D68)
       const lab = sim.place('observatory', 503, 512, 0);
       expect(lab.ok, lab.reason).toBe(true);
       const ex = sim.place('excavator', 527, 510, 0);
@@ -248,7 +249,7 @@ describe('space', () => {
       expect(connect(sim, ex.id!, sim.hearthId)).toBeGreaterThan(0);
       expect(sim.designate([tileIndex(530, 511)])).toBe(1); // obsidian: needs Basalt Bits (ex4)
       sim.ensureCompiled();
-      sim.stores.get(lab.id!)![itemIdx('journal_2')] = 400 * 1000;
+      sim.stores.get(lab.id!)![itemIdx('data_file')] = 400 * 1000;
       expect(sim.startResearch('ex4').ok).toBe(true);
       return sim;
     };

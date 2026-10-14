@@ -417,8 +417,8 @@ describe('market: service contract', () => {
     // Bought inputs cost the ask and use no tiles; the machine's power costs kW × c_E.
     const [joint] = svc.board(['gear'], 0.04, { home: new Set<string>() });
     expect(joint!.inputs).toBeCloseTo(12 * 3 * ask('iron_plate'), 9);
-    expect(joint!.energy).toBeCloseTo(120 * 0.04, 9);
-    expect(joint!.margin).toBeCloseTo(12 * bid('gear') - 36 * ask('iron_plate') - 4.8, 9);
+    expect(joint!.energy).toBeCloseTo(60 * 0.04, 9); // the press (D70: gears are its one recipe)
+    expect(joint!.margin).toBeCloseTo(12 * bid('gear') - 36 * ask('iron_plate') - 2.4, 9);
     expect(joint!.tiles).toBe(0);
     expect(joint!.perTile).toBeNull();
     // The cell charger's 600 kW·min per craft is its 300 kW, counted once.
@@ -428,7 +428,7 @@ describe('market: service contract', () => {
     for (const d of CIRQUE.deposits) if (d.item !== 'copper_ore') expect(caps[d.item], d.item).toBe(d.rich / 100);
     for (const u of Object.values(UNIQUE_BIOMES)) expect(caps[u.item], u.item).toBe(1);
     // Rows come sorted by ◉ per raw tile-minute.
-    const rows = svc.board(['iron_plate', 'glass', 'copper_wire', 'journal_1', 'gear', 'circuit', 'ceramic', 'atlas'], 0.04);
+    const rows = svc.board(['iron_plate', 'glass', 'copper_wire', 'gear', 'circuit', 'ceramic', 'atlas'], 0.04);
     const per = rows.filter((r) => r.perTile !== null).map((r) => r.perTile!);
     expect(per).toEqual([...per].sort((x, y) => y - x));
   });

@@ -27,7 +27,7 @@ describe('content invariants', () => {
   it('an atlas needs two different uniques, a codex five', () => {
     expect(uniquesNeeded('atlas').size).toBe(2);
     expect(uniquesNeeded('codex').size).toBe(5);
-    expect(uniquesNeeded('journal_2').size).toBe(0);
+    expect(uniquesNeeded('data_file').size).toBe(0);
   });
 
   it('one unlock tree (D33): the starting kit is the drill, the ribbon and the pole; everything else is in the tree', () => {

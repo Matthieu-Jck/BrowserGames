@@ -94,12 +94,12 @@ describe('building facts', () => {
     const plate = kiln.find((r) => r.name === 'Iron Plate')!;
     expect(plate.ins).toEqual([{ item: itemIdx('iron_ore'), perMin: 15 }, { item: itemIdx('coal'), perMin: 15 }]);
     expect(plate.outs).toEqual([{ item: itemIdx('iron_plate'), perMin: 15 }]);
-    // Gears need Mechanics (tr1): not on a new colony's workshop, there once researched.
-    expect(buildingFacts('workshop', fresh).recipes!.map((r) => r.name)).not.toContain('Gear');
-    expect(buildingFacts('workshop', all).recipes!.map((r) => r.name)).toContain('Gear');
-    // The tower works four times as fast (and research speed applies to every machine).
-    const tower = buildingFacts('tower_workshop', { ...all, mods: baseMods() }).recipes!.find((r) => r.name === 'Gear')!;
-    expect(tower.outs[0]!.perMin).toBe(48);
+    // Speed modules need Pace (dn4): not on a new colony's electronics workshop, there once researched.
+    expect(buildingFacts('workshop', fresh).recipes!.map((r) => r.name)).not.toContain('Speed Module');
+    expect(buildingFacts('workshop', all).recipes!.map((r) => r.name)).toContain('Speed Module');
+    // The tree's upgraded machines run their family's recipes faster (D70): the forging press ×3.
+    const forge = buildingFacts('forge_press', { ...all, mods: baseMods() }).recipes!.find((r) => r.name === 'Gear')!;
+    expect(forge.outs[0]!.perMin).toBe(36);
   });
 
   it('draws the routing rule of each block, Mindustry-style', () => {

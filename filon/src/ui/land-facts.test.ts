@@ -24,7 +24,7 @@ describe('land facts', () => {
     expect(parcelLabel(parcelAt(CENTER - 2 * PARCEL, CENTER - PARCEL))).toBe('1 N · 2 O');
     setLocale('en');
     expect(parcelLabel(parcelAt(CENTER - 2 * PARCEL, CENTER + PARCEL))).toBe('1 S · 2 W');
-    expect(parcelLabel(HOME)).toBe('Heart');
+    expect(parcelLabel(HOME)).toBe('Core');
   });
 
   it('says who holds a parcel: the starting square, bought, leased, or for sale', () => {

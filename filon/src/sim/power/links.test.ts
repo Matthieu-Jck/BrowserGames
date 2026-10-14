@@ -23,7 +23,7 @@ import { PowerLinks, gap2, linkCheck } from './links';
 let nextId = 100;
 const ent = (def: string, x: number, y: number, rot: Rot = 0): Ent => ({ id: nextId++, def: buildingIdx(def), x, y, rot, cfg: 0, builtAt: 0 });
 const BASE = computeMods(new Set());
-const XP4 = computeMods(new Set(['xp1', 'xp2', 'xp3', 'xp4']));
+const XP4 = computeMods(new Set(['xp_swift', 'xp_bigsilo', 'xp_bridges', 'xp4']));
 
 /** The grid of an entity in the compiled graph (undefined: none). */
 const gridOf = (sim: Sim, id: number): number | undefined => { sim.ensureCompiled(); return sim.graph.netOfEnt.get(id); };
@@ -123,17 +123,17 @@ describe('power wires in a colony', () => {
     // Each new mast wired itself to the nearest pillar or Hearth in reach: Hearth – m1 – m2.
     expect(sim.linksOf(sim.hearthId)).toEqual([m1.id]);
     expect(sim.linksOf(m2.id!)).toEqual([m1.id]);
-    sim.setRecipe(w.id!, 'journal_1');
+    sim.setRecipe(w.id!, 'circuit');
     sim.ensureCompiled();
     const node = sim.graph.nodeByEnt.get(w.id!) as MachineNode;
-    node.inBuf[0] = 4000; node.inBuf[1] = 2000; // two crafts' worth (sandbox write)
+    node.inBuf[0] = 6000; node.inBuf[1] = 2000; // two crafts' worth: copper wire, glass (sandbox write)
     sim.run(50);
     expect(node.status).toBe(St.Unpowered);
-    expect(sim.produced[itemIdx('journal_1')]).toBe(0);
+    expect(sim.produced[itemIdx('circuit')]).toBe(0);
     expect(sim.link(m2.id!, w.id!).ok).toBe(true);
     sim.run(300);
     expect(gridOf(sim, w.id!)).toBe(gridOf(sim, sim.hearthId));
-    expect(sim.produced[itemIdx('journal_1')]).toBe(2000);
+    expect(sim.produced[itemIdx('circuit')]).toBe(2000);
     // Take m1 down: its wires go with it; m2 and the workshop are a grid of their own, unpowered.
     expect(sim.remove(520, 512)).toBe(true);
     expect(sim.linksOf(sim.hearthId)).toEqual([]);
@@ -231,18 +231,18 @@ describe('power wires in a colony', () => {
     expect(sim.netPower[g]!.renew).toBe(core);
     sim.run(12 * 600); // epoch 48 = day epoch 12: first light, 150 ‰
     expect(sim.netPower[g]!.renew).toBe(36 + core);
-    // Lens Arrays (en6): solar +60 % and a 20 % night floor — the Hearth's panel included (and the
-    // Energy mastery's generator bonus, six nodes in: like a solar panel).
-    const lens = testSim();
-    for (const id of ['en1', 'en2', 'en3', 'en4', 'en5', 'en6']) lens.done.add(id);
-    lens.rebuildDerived();
-    const peak = Math.floor((240 * lens.mods.solarOut * lens.mods.genOut) / 1e6);
-    expect(peak).toBeGreaterThan(384);
-    lens.run(1);
-    const lensCore = Math.floor((BAL.hearthCoreKw * lens.mods.genOut) / 1000);
-    expect(lens.netPower[gridOf(lens, lens.hearthId)!]!.renew).toBe(peak + lensCore);
-    lens.run(12 * 600);
-    expect(lens.netPower[gridOf(lens, lens.hearthId)!]!.renew).toBe(Math.floor((peak * 200) / 1000) + lensCore);
+    // A Solar Farm (en_solarfarm, D70): 600 kW in full sun, and 20 % of it at night (its own share).
+    const farm = testSim();
+    farm.done.add('en_solarfarm');
+    farm.rebuildDerived();
+    farm.grant('glass', 40); farm.grant('circuit', 4); farm.grant('copper_wire', 12);
+    const f = farm.place('solar_farm', 516, 504, 0);
+    expect(f.ok, f.reason).toBe(true);
+    expect(farm.link(farm.hearthId, f.id!).ok).toBe(true);
+    farm.run(1);
+    expect(farm.netPower[gridOf(farm, farm.hearthId)!]!.renew).toBe(240 + 600 + core);
+    farm.run(12 * 600);
+    expect(farm.netPower[gridOf(farm, farm.hearthId)!]!.renew).toBe(120 + core);
   });
 
   it('save → load keeps the wires (and the colony continues bit for bit)', () => {

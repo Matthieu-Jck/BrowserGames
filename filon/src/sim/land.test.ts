@@ -132,6 +132,11 @@ describe('land in parcels', () => {
     const { x0, y0 } = parcelRect(p);
     sim.explored.push([x0 + 8, y0 + 8, 12]); // surveyed
     expect(sim.canPlace('mast', x0 + 4, y0 + 4, 0).reason).toBe('sister_land');
+    // A purchase grows the claim outward (D70): a parcel apart from its land needs the Far Claim.
+    if (!sim.land.touches(p)) {
+      expect(sim.buyLand(p)).toBe('far');
+      sim.done.add('xp_far'); sim.rebuildDerived();
+    }
     expect(sim.buyLand(p)).toBe(null);
     expect(sim.land.sister(p)).toBe(-1);
     expect(sim.canPlace('mast', x0 + 4, y0 + 4, 0).reason).toBe('ok');

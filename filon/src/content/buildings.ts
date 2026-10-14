@@ -9,7 +9,7 @@ export const BUILDINGS = {
   // ── colony ────────────────────────────────────────────────────────────────
   hearth: {
     name: { fr: 'Cœur', en: 'Core' },
-    desc: { fr: 'Le cœur de ta base : il reçoit sans jamais rendre son stock, qui paie tes constructions. Son noyau isotopique donne 90 kW jour et nuit, son panneau solaire jusqu’à 240 kW de plus en plein soleil ; il tend 6 fils jusqu’à 8 tuiles. Avec la recherche Analytique, sa sortie de données donne les fichiers qu’il produit.', en: 'The heart of your base: it takes and never gives back its stock, which pays for your construction. Its isotope reactor gives 90 kW day and night, its solar panel up to 240 kW more in full sun; it holds 6 wires up to 8 tiles long. With the Analytics research, its data outlet hands out the data files it makes.' },
+    desc: { fr: 'Le cœur de ta base : il reçoit sans jamais rendre son stock, qui paie tes constructions. Son noyau isotopique donne 90 kW jour et nuit, son panneau solaire jusqu’à 240 kW de plus en plein soleil, il tend 6 fils jusqu’à 8 tuiles et, avec la recherche Analytique, sa sortie de données donne les fichiers qu’il produit.', en: 'The heart of your base: it takes and never gives back its stock, which pays for your construction. Its isotope reactor gives 90 kW day and night, its solar panel up to 240 kW more in full sun, it holds 6 wires up to 8 tiles long and, with the Analytics research, its data outlet hands out the data files it makes.' },
     kind: 'hearth', category: 'colony', w: 5, h: 5, needsZone: false, cost: [], unlock: 'never',
     ports: [
       // Inputs only: the Heart takes, it never gives (owner, 2026-10-12) — machines are fed by
@@ -426,7 +426,7 @@ export const BUILDINGS = {
     name: { fr: 'Graveuse', en: 'Etcher' },
     desc: { fr: 'Circuits imprimés et modules de vitesse, trois fois plus vite que l’atelier d’électronique.', en: 'Circuit boards and speed modules, three times as fast as the electronics workshop.' },
     kind: 'machine', category: 'production', w: 3, h: 3, needsZone: true, unlock: 'dn_etcher', crafts: true, kw: 500, idleKw: 50, speed: 3000,
-    cost: [['circuit', 20], ['gear', 10], ['iron_plate', 40]], ports: [P(0, 2, 'S', 'in'), P(2, 2, 'S', 'in'), P(1, 0, 'N', 'out')],
+    cost: [['circuit', 20], ['gear', 10], ['iron_plate', 40]], ports: [P(0, 2, 'S', 'in'), P(1, 2, 'S', 'in'), P(2, 2, 'S', 'in'), P(1, 0, 'N', 'out')],
   },
   chip_fab: {
     name: { fr: 'Usine de puces', en: 'Chip Fab' },
