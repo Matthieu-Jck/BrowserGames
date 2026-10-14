@@ -45,7 +45,7 @@ export const BUILDINGS = {
   },
   excavator: {
     name: { fr: 'Excavatrice', en: 'Excavator' },
-    desc: { fr: 'Creuse la roche marquée avec Aménager, jusqu’à 18 tuiles d’elle : du terrain à bâtir. La pierre sort à l’arrière, le minerai enfoui file au Cœur.', en: 'Digs the rock you mark with Landscape, up to 18 tiles away: new land to build on. Stone leaves at the back; ore buried in the rock goes to the Heart.' },
+    desc: { fr: 'Creuse la roche marquée avec Aménager à 3 tuiles d’elle au plus, et sans marque à portée exploite la roche voisine en carrière, sans l’entamer. La pierre sort à l’arrière, le minerai enfoui file au Cœur.', en: 'Digs the rock you mark with Landscape up to 3 tiles from it, and with no mark in reach quarries the rock beside it without wearing it away. Stone leaves at the back; ore buried in the rock goes to the Heart.' },
     kind: 'excavator', category: 'extraction', w: 3, h: 3, needsZone: true, unlock: 'tr2', kw: 240, idleKw: 24,
     cost: [['iron_plate', 30], ['gear', 10], ['circuit', 4]], ports: [P(1, 2, 'S', 'out')],
   },
@@ -231,9 +231,9 @@ export const BUILDINGS = {
   },
   pylon: {
     name: { fr: 'Pylône', en: 'Pylon' },
-    desc: { fr: 'Un poteau de longue portée : 4 fils jusqu’à 24 tuiles (40 avec Pylônes renforcés).', en: 'A long-reach pole: 4 wires up to 24 tiles long (40 with Reinforced Pylons).' },
-    kind: 'pole', replaceGroup: 'power', category: 'energy', w: 1, h: 1, needsZone: false, onRock: true, unlock: 'tr4',
-    cost: [['iron_plate', 8], ['copper_wire', 6], ['ceramic', 2]], ports: [], pole: { range: 24, slots: 4, tall: true },
+    desc: { fr: 'Un grand pylône de 2×2 qui porte loin : 4 fils jusqu’à 40 tuiles (60 avec Pylônes renforcés).', en: 'A big 2×2 pylon that carries far: 4 wires up to 40 tiles long (60 with Reinforced Pylons).' },
+    kind: 'pole', replaceGroup: 'power', category: 'energy', w: 2, h: 2, needsZone: false, onRock: true, unlock: 'tr4', // 2×2 and twice as tall since D75 (owner, 2026-10-14)
+    cost: [['iron_plate', 20], ['copper_wire', 10], ['ceramic', 4]], ports: [], pole: { range: 40, slots: 4, tall: true },
   },
   brazier: {
     name: { fr: 'Générateur à charbon', en: 'Coal Generator' },

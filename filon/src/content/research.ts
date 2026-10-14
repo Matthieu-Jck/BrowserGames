@@ -91,7 +91,7 @@ export const RESEARCH = {
   xp1: node('xp', 1, ['Bornage', 'Boundary Stones'], ['Terrain −15 %.', 'Land −15%.'], [mul('landPrice', 850)]),
   xp2: node('xp', 2, ['Relais de drones', 'Drone Relays'], ['Rubans hors de vos terres ×1,5 au lieu de ×3 ; chantiers lointains 2× plus rapides.', 'Ribbons off your land ×1.5 instead of ×3; remote building 2× faster.'], [mul('remoteBeltCost', 500), mul('remoteBuildDelay', 500)]),
   xp3: node('xp', 3, ['Charte foncière', 'Land Charter'], ['Chaque parcelle achetée renchérit la suivante de 6 % au lieu de 10 %.', 'Each parcel bought raises the next one’s price 6% instead of 10%.'], [add('landGrowth', -40)]),
-  xp4: node('xp', 4, ['Pylônes renforcés', 'Reinforced Pylons'], ['Portée des pylônes 40.', 'Pylon reach 40.'], [add('pylonLink', 16)]),
+  xp4: node('xp', 4, ['Pylônes renforcés', 'Reinforced Pylons'], ['Portée des pylônes 60.', 'Pylon reach 60.'], [add('pylonLink', 20)]),
   xp5: node('xp', 5, ['Embarcadères II', 'Docks II'], ['+2 Dérivants par embarcadère, capacité +50 %.', '+2 Drifters per dock, capacity +50%.'], [add('dockShips', 2), mul('shipCap', 1500)]),
   xp6: node('xp', 6, ['Pilotes du Souffle', 'Sough Pilots'], ['Vitesse des Dérivants +40 %.', 'Drifter speed +40%.'], [mul('shipSpeed', 1400)]),
   xp7: node('xp', 7, ['Fédération', 'Federation'], ['Loyers −30 % ; chaque parcelle achetée renchérit la suivante de 4 %.', 'Rent −30%; each parcel bought raises the next one’s price 4%.'], [mul('landRent', 700), add('landGrowth', -20)]),

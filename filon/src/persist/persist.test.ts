@@ -182,6 +182,23 @@ describe('migrations', () => {
     expect(back.cargoOf(post.id)).toEqual([plates, glass, copper].sort((a, b) => a - b));
   });
 
+  it('5 → 6 (D75): the 1×1 pylons come down, refunded, their wires with them', () => {
+    const { sim } = foundScenario('late', { playerSeed: 1, near: WORLD_EPOCH0 + 1000, name: 'Essai' });
+    const pylons = [...sim.ents.sorted()].filter((e) => BUILDING_IDS[e.def] === 'pylon');
+    expect(pylons.length).toBeGreaterThan(0);
+    const plates = itemIdx('iron_plate');
+    const d = { ...JSON.parse(JSON.stringify(serialize(sim))), v: 5 };
+    const { data } = migrate(d);
+    expect(data.content!.buildings).toContain('pylon_1x1');
+    expect(data.content!.buildings).not.toContain('pylon');
+    const r = remapSave(data);
+    expect(r.note?.removed).toEqual([{ id: 'pylon_1x1', n: pylons.length, refunded: true }]);
+    const back = deserialize(r.data, sim.grid.source);
+    expect([...back.ents.sorted()].some((e) => BUILDING_IDS[e.def] === 'pylon')).toBe(false);
+    for (const p of pylons) expect(back.linksOf(p.id)).toEqual([]);
+    expect(back.stock[plates]).toBeGreaterThanOrEqual(sim.stock[plates]! + 8_000 * pylons.length); // 8 plates each back
+  });
+
   it('a save from a newer build is refused, a missing step too', () => {
     expect(() => migrate({ v: SAVE_VERSION + 1 })).toThrow(SaveTooNew);
     expect(() => migrate({ v: 1 }, 3, {})).toThrow(/no migration/);

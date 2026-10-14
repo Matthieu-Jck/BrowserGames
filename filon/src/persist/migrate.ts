@@ -113,7 +113,19 @@ export function streamsToCargo(d: Record<string, unknown>): Record<string, unkno
   };
 }
 
-export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo };
+/**
+ * 5 → 6, the big pylon (D75, owner 2026-10-14: "le pylon est trop petit… qu'il fasse 2x2 de large
+ * et 2 voir 3 de haut"): the 1×1 pylons cannot grow in place over what stands round them. Their
+ * content id becomes `pylon_1x1`, retired: the remap takes them down, refunded at their cost, and
+ * their wires go with them (the player rebuilds the line with the new pylons, which reach 40).
+ */
+export function pylonsToTowers(d: Record<string, unknown>): Record<string, unknown> {
+  const content = d.content as { buildings?: string[] } | undefined;
+  if (!content?.buildings?.includes('pylon')) return d;
+  return { ...d, content: { ...content, buildings: content.buildings.map((id) => (id === 'pylon' ? 'pylon_1x1' : id)) } };
+}
+
+export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsToTowers };
 
 export class SaveTooNew extends Error {
   constructor(readonly version: number) { super(`save version ${version} is newer than this build (${SAVE_VERSION})`); }

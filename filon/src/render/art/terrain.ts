@@ -15,8 +15,8 @@ import { ITEM_IDS } from '@/content/registry';
 import { hash32, hashUnit } from '@/core/hash';
 import { T } from '@/sim/types';
 import { C, mix, rgba } from './tokens';
-import { columnShadow, drawColumn, type Proj, type TopLook } from './rock';
-import { isRockT, isWaterT, levelOf, maskAt, MAX_LEVEL, MAX_TERRACE, SHIFT, SMOOTH, STEP_LEVELS } from '../relief';
+import { columnShadow, drawColumn, topColor, type Proj, type TopLook } from './rock';
+import { isRockT, isWaterT, levelOf, maskAt, masksAt, MAX_LEVEL, MAX_TERRACE, SHIFT, slabOutline, SMOOTH, STEP_LEVELS } from '../relief';
 
 type Ctx2 = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D;
 
@@ -72,7 +72,6 @@ const GROUND: Record<number, string> = {
   [T.Dug]: C.dug, [T.Filled]: C.filled, [T.Shallow]: C.shallow, [T.Deep]: C.deep,
   [T.Rock1]: C.rock1, [T.Rock2]: C.rock2, [T.Rock3]: C.rock3, [T.Rock4]: C.rock4,
 };
-const ROCK_FILL = [C.rock1, C.rock2, C.rock3, C.rock4];
 const BIOME_TINT: Record<number, string> = { 1: C.turqL, 2: C.warn, 3: C.coralL, 4: C.inkSoft, 5: C.lilacL, 6: C.lilac, 7: C.cirque };
 
 const hex = (h: string): [number, number, number] => {
@@ -288,55 +287,72 @@ export function paintChunk(ctx: Ctx2, d: PaintData, ppt: number, scratch: (w: nu
     }
   }
 
-  // ── 4. rock, as a map: cast shadow, fills by hardness, contours, hachures ──
+  // ── 4. rock, as a map of its LEVELS (owner, 2026-10-14: « les montagnes sont différentes en 2d
+  //    et en 2d isométriques… difficile de construire dessus correctement »): the very terraces the
+  //    iso columns stand on (the sim's level per tile, `levelOf`), each filled with the colour its
+  //    columns' tops wear in iso (`topColor`: hardness and height), each step inked where it drops
+  //    and casting a short shadow on the terrace below it. No contour or hatching from the smoothed
+  //    height field any more: they drew a relief the land does not have. ─────────────────────────
+  const lvAt = (i: number, j: number): number => levelOf(t(i, j), d.level[at(i, j)]!);
+  // The relief level of a window tile as the iso columns read it (rock only; 0 off the window).
+  const rl = (i: number, j: number): number => (i < 0 || j < 0 || i >= WIN || j >= WIN || !isRockT(t(i, j)) ? 0 : lvAt(i, j));
   const rock = march((i, j) => isRockT(t(i, j)), ppt);
   if (rock.polys.length) {
+    // The rock's own shadow on the floor (soft, under everything).
     ctx.save();
     ctx.globalAlpha = 0.3;
     fillPolys(ctx, rock.polys, C.inkSoft, 4 * k, 6 * k);
     ctx.restore();
-    for (let lvl = 0; lvl < 4; lvl++) {
-      const m = march((i, j) => { const tt = t(i, j); return isRockT(tt) && tt - T.Rock1 >= lvl; }, ppt);
-      if (!m.polys.length) continue;
-      fillPolys(ctx, m.polys, ROCK_FILL[lvl]!);
-      if (lvl > 0) strokeSegs(ctx, m.segs, C.ink, 1.1 * k, 0.45);
+    // Each tile's terrace slabs, outlined as the iso columns are (relief.ts `slabOutline`: the
+    // tile, its corners chamfered by its neighbours), step by step from the foot up across the
+    // window: a step's shadow on the terrace below, its fill (`topColor`), its silhouette inked.
+    const tiles: Array<{ i: number; j: number; cls: number; masks: number[] }> = [];
+    let steps = 0;
+    for (let j = B - 1; j <= B + 32; j++) for (let i = B - 1; i <= B + 32; i++) {
+      if (!isRockT(t(i, j))) continue;
+      const masks = masksAt(rl, i, j);
+      if (masks.length > steps) steps = masks.length;
+      tiles.push({ i, j, cls: t(i, j) - T.Rock1, masks });
     }
-    if (ppt >= 16) {
-      // Contour lines on the height field.
-      for (let level = 140; level <= 240; level += 14) {
-        const c = march((i, j) => isRockT(t(i, j)) && d.height[at(i, j)]! >= level, ppt);
-        strokeSegs(ctx, c.segs, C.ink, 1.1 * k, 0.5);
+    const path = (pts: ReadonlyArray<{ u: number; v: number }>, i: number, j: number, dx = 0, dy = 0): void => {
+      pts.forEach((p, n) => { const x = (i - B + p.u) * ppt + dx, y = (j - B + p.v) * ppt + dy; if (n) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+      ctx.closePath();
+    };
+    for (let s = 0; s < steps; s++) {
+      const here = tiles.filter((q) => q.masks.length > s);
+      if (s > 0) {
+        ctx.save();
+        ctx.globalAlpha = 0.3;
+        ctx.fillStyle = C.inkSoft;
+        ctx.beginPath();
+        for (const q of here) path(slabOutline(q.masks, s), q.i, q.j, 3 * k, 4.5 * k);
+        ctx.fill();
+        ctx.restore();
       }
-      // Pen hatching on slopes that face away from the top-left light: diagonal strokes whose
-      // density follows the slope — Moebius' relief.
+      for (const q of here) {
+        ctx.fillStyle = topColor(q.cls, (s + 1) * STEP_LEVELS);
+        ctx.beginPath();
+        path(slabOutline(q.masks, s), q.i, q.j);
+        ctx.fill();
+      }
       ctx.save();
       ctx.strokeStyle = C.ink;
       ctx.lineCap = 'round';
-      for (let j = B; j < B + 32; j++) for (let i = B; i < B + 32; i++) {
-        if (!isRockT(t(i, j))) continue;
-        const gx = d.height[at(i + 1, j)]! - d.height[at(i - 1, j)]!;
-        const gy = d.height[at(i, j + 1)]! - d.height[at(i, j - 1)]!;
-        const shade = -(gx * -0.6 + gy * -0.8); // > 0: descends towards the lower right, in shadow
-        const wx = wx0 + i, wy = wy0 + j;
-        const n = shade > 18 ? 4 : shade > 9 ? 3 : shade > 3 ? 2 : hashUnit(wx, wy, 0xa9) < 0.25 ? 1 : 0;
-        if (!n) continue;
-        ctx.globalAlpha = 0.34 + Math.min(0.34, shade / 70);
-        ctx.lineWidth = 0.95 * k;
-        const px = (i - B) * ppt, py = (j - B) * ppt;
-        for (let q = 0; q < n; q++) {
-          const off = ((q + 0.5) / n) * ppt + (hashUnit(wx, wy, 0xb0 + q) - 0.5) * ppt * 0.15;
-          const len = ppt * (0.35 + hashUnit(wx, wy, 0xc0 + q) * 0.4);
-          const cx = px + off, cy = py + ppt * (0.2 + 0.6 * hashUnit(wx, wy, 0xd8 + q));
-          ctx.beginPath();
-          ctx.moveTo(cx - len * 0.5, cy - len * 0.5);
-          ctx.lineTo(cx + len * 0.5, cy + len * 0.5);
-          ctx.stroke();
-        }
+      ctx.lineWidth = (s === 0 ? 2.7 : 1.9) * k;
+      ctx.globalAlpha = s === 0 ? 1 : 0.85;
+      ctx.beginPath();
+      for (const q of here) {
+        const pts = slabOutline(q.masks, s);
+        pts.forEach((p, n) => {
+          if (!p.sil) return;
+          const r = pts[(n + 1) % pts.length]!;
+          ctx.moveTo((q.i - B + p.u) * ppt, (q.j - B + p.v) * ppt);
+          ctx.lineTo((q.i - B + r.u) * ppt, (q.j - B + r.v) * ppt);
+        });
       }
+      ctx.stroke();
       ctx.restore();
     }
-    // The cliff edge: a bold inked line.
-    strokeSegs(ctx, rock.segs, C.ink, 2.7 * k, 1);
   }
 
   // ── 5. vents, deposits, biome decor ───────────────────────────────────────

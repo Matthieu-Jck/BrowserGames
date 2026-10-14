@@ -53,7 +53,7 @@ const SZ = 0.3;
  */
 export const POLE = { cx: 0.5, cy: 0.5, top: 2.9, arm: 2.56, armH: 0.075, half: 0.4, pin: 0.3 } as const;
 /** The pylon: a lattice from feet `foot` tiles out to its head at `arm`, a peak up to `apex`, a crossarm `half` tiles each side; suspension strings `string` levels long hang `pin` tiles out. */
-export const PYLON = { cx: 0.5, cy: 0.5, foot: 0.33, apex: 3.62, arm: 3.05, armH: 0.1, half: 0.5, pin: 0.42, string: 0.4 } as const;
+export const PYLON = { cx: 1, cy: 1, foot: 0.7, apex: 6.2, arm: 5.3, armH: 0.14, half: 0.95, pin: 0.8, string: 0.6 } as const; // 2×2, about three tiles tall (D75)
 /** The Heart's two link masts (local tiles): west, between its west ribbons, and east, point-symmetric; their insulator's clamp at `top`. */
 export const HEART_MASTS = { top: 3.4, at: [[0.5, 2.0], [4.5, 3.0]] as ReadonlyArray<readonly [number, number]> } as const;
 /** The charger's free bushing (the one with no bus bar to the rack), where its line comes in. */

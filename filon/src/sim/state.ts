@@ -468,7 +468,7 @@ export class Sim {
     h.int(this.notes).int(this.respecs).int(this.lastRespec);
     for (const p of this.projects) { h.str(p.id).int(p.lab).int(p.dur).int(p.el).ints(p.paid); }
     for (const [t, k] of this.designated) h.int(t).int(k === 'dig' ? 1 : 2);
-    for (const j of this.jobs) h.int(j.ent).int(j.tile).int(j.dur).int(j.el).int(j.mu).int(j.moved);
+    for (const j of this.jobs) h.int(j.ent).int(j.tile).int(j.dur).int(j.el).int(j.mu).int(j.moved).int(j.quarry ? 1 : 0);
     for (const [d, n] of [...this.fleet].sort((a, b) => a[0] - b[0])) h.int(d).int(n);
     for (const r of this.routes) h.int(r.id).int(r.from).int(r.to).int(r.item).int(r.ships).int(Math.floor(r.carry * 1e6));
     h.int(this.nextRouteId);

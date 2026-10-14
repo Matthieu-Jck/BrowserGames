@@ -18,4 +18,5 @@ export const RETIRED_COSTS: Readonly<Record<string, ReadonlyArray<readonly [stri
   // The 3×3 trade post with four inlets and two outlets, before its flame apron (D62): taken down
   // by save v4 (`postsToPads`), refunded, its container handed to the Heart; the claim builds the 5×5 pad.
   trade_post_3x3: [['iron_plate', 40], ['glass', 10], ['copper_wire', 10]],
+  pylon_1x1: [['iron_plate', 8], ['copper_wire', 6], ['ceramic', 2]], // the 1×1 pylon before D75 (save v6: refunded, its wires dropped)
 };

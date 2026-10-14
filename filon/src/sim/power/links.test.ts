@@ -37,7 +37,7 @@ describe('power wires: the rule', () => {
     expect(gap2(ent('drill', 0, 0), ent('drill', 2, 0))).toBe(0); // touching
   });
 
-  it('a pole reaches 6 tiles, the Hearth 8, a pylon 24 (40 with Reinforced Pylons); the longer end decides', () => {
+  it('a pole reaches 6 tiles, the Hearth 8, a 2×2 pylon 40 (60 with Reinforced Pylons, D75); the longer end decides', () => {
     const L = new PowerLinks();
     const m = ent('mast', 500, 500);
     expect(linkCheck(m, ent('mast', 507, 500), L, BASE)).toBe('ok');
@@ -49,12 +49,12 @@ describe('power wires: the rule', () => {
     const h = ent('hearth', 510, 510);
     expect(linkCheck(h, ent('workshop', 523, 510), L, BASE)).toBe('ok'); // 515 → 523: 8
     expect(linkCheck(h, ent('workshop', 524, 510), L, BASE)).toBe('range');
-    const p = ent('pylon', 600, 600);
-    expect(linkCheck(p, ent('mast', 625, 600), L, BASE)).toBe('ok'); // a pole hangs on a pylon's 24
-    expect(linkCheck(ent('mast', 625, 600), p, L, BASE)).toBe('ok'); // either end reaching is enough
-    expect(linkCheck(p, ent('mast', 626, 600), L, BASE)).toBe('range');
-    expect(linkCheck(p, ent('pylon', 641, 600), L, XP4)).toBe('ok'); // 40 with xp4
-    expect(linkCheck(p, ent('pylon', 642, 600), L, XP4)).toBe('range');
+    const p = ent('pylon', 600, 600); // 2×2: 600–601
+    expect(linkCheck(p, ent('mast', 642, 600), L, BASE)).toBe('ok'); // a pole hangs on a pylon's 40 (edge to edge: 602 → 642)
+    expect(linkCheck(ent('mast', 642, 600), p, L, BASE)).toBe('ok'); // either end reaching is enough
+    expect(linkCheck(p, ent('mast', 643, 600), L, BASE)).toBe('range');
+    expect(linkCheck(p, ent('pylon', 662, 600), L, XP4)).toBe('ok'); // 60 with xp4
+    expect(linkCheck(p, ent('pylon', 663, 600), L, XP4)).toBe('range');
   });
 
   it('who may be wired: one end a pillar or the Hearth, the other anything that makes, uses or stores power', () => {

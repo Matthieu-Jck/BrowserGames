@@ -29,6 +29,12 @@ export interface Job {
   /** Stone the tile yields (dig) or needs (fill), and how much has moved so far (mu). */
   mu: number;
   moved: number;
+  /**
+   * A quarry: an excavator with no marked rock in reach works the nearest rock it can dig, for its
+   * stone, and leaves it standing (owner, 2026-10-14: « pour l'instant, fait en sorte que
+   * l'excavatrice ne consomme pas réellement la pierre »). Absent: a real dig (marked tiles).
+   */
+  quarry?: true;
 }
 
 export interface Route {

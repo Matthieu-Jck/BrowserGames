@@ -78,7 +78,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Chargeur | Cell Charger | `cell_charger` [machine] | Charges cells: exportable energy. |
 | Observatoire | Observatory | `observatory` [lab] | One research slot, fed with journals. |
 | Poteau | Pole | `mast` [pole] | A pillar: up to 8 wires, each up to 6 tiles long (edge to edge). A new one wires itself to the nearest pillar or Cœur in reach. |
-| Pylône | Pylon | `pylon` [pole] | A long-reach pillar: up to 4 wires, 24 tiles long (40 with xp4). |
+| Pylône | Pylon | `pylon` [pole] | A long-reach pillar, 2×2 and about three tiles tall (D75): up to 4 wires, 40 tiles long (60 with xp4). The 1×1 pylon of older saves is `pylon_1x1`, retired (refunded) |
 | fil · relier | wire · link | `sim.links` (`PowerLinks`), `link` / `unlink` commands | A power wire: an explicit, saved pair of buildings, one end a pillar or the Cœur, the other a pillar or anything that makes, uses or stores power (D25). Drawn hanging in the air. The « Relier » / Link tool (L) strings and cuts them. |
 | pilier | pillar | content `pole` (`mast`, `pylon`, and the Cœur) | A link point: a building that carries wires — its `range` (how far, edge to edge) and `slots` (how many). |
 | réseau | grid | `Net` | The buildings joined by wires: one satisfaction for all; « hors réseau » = on no wire. |
