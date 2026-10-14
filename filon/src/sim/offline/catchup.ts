@@ -462,10 +462,18 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     }
     for (const rt of sim.routes) {
       const ra = resIndex(rt.from), rb = resIndex(rt.to);
-      const r = sim.routeRateNow(rt, (n) => netModes[n]?.sat ?? 0);
+      let r = sim.routeRateNow(rt, (n) => netModes[n]?.sat ?? 0);
       if (ra < 0 || rb < 0 || r <= 0) continue;
-      add(next, ra * N_ITEMS + rt.item, r);
-      add(nextIn, rb * N_ITEMS + rt.item, r);
+      const ka = ra * N_ITEMS + rt.item, kb = rb * N_ITEMS + rt.item;
+      // What the drifters really carry: an empty source dock hands on only what flows into it, a
+      // full destination takes only what flows out of it (`moveFreight` moves no more online).
+      // Counted at the ships' full rate, an empty source fed the destination's consumers through
+      // its EMPTY throttle with freight that never came: they made several times their output.
+      if (resState[ra]![rt.item] === V_EMPTY) r = Math.min(r, (curIn.get(ka) ?? 0) + (pIn.get(ka) ?? 0));
+      if (resState[rb]![rt.item] === V_FULL) r = Math.min(r, (curOut.get(kb) ?? 0) + (labOut.get(kb) ?? 0));
+      if (r <= 0) continue;
+      add(next, ka, r);
+      add(nextIn, kb, r);
     }
     for (const [k, d] of deliveries) if (d.n > d.done) add(nextIn, k, (d.n * 1000) / EPOCH);
     // Data files out of the Heart (Analytics) and the autonomous labs: steady inflows (D68, D70).
@@ -521,6 +529,8 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
   function advance(to: number): void {
     const dt = to - now;
     if (dt <= 0) return;
+    /** Keys a regime drew below zero: settled once this step's pseudo inflows are in (below). */
+    const short: number[] = [];
     for (const run of runs) {
       const reg = run.reg;
       if (!reg) continue;
@@ -532,8 +542,11 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
         const ri = Math.floor(k / N_ITEMS), i = k % N_ITEMS;
         const res = g.reservoirs[ri]!;
         res.stock[i] = res.stock[i]! + d;
-        // Throttling keeps levels within bounds; guard (and count) the averaging error at the edges.
-        if (res.stock[i]! < 0) { rep.clampedMu[i] = rep.clampedMu[i]! - res.stock[i]!; res.stock[i] = 0; }
+        // An EMPTY key's consumers draw its throttle — its inflow, which may be a pseudo inflow
+        // (freight, a dig's rubble, a post's deliveries) credited only below: the level may dip
+        // under zero until then. Clamped right here, those items were lost AND credited again: the
+        // consumers made them twice (a drifter-fed workshop made half again its output offline).
+        if (res.stock[i]! < 0) short.push(k);
         if (res.stock[i]! > res.cap && d > 0) {
           const over = res.stock[i]! - Math.max(res.cap, res.stock[i]! - d);
           rep.lostMu[i] = rep.lostMu[i]! + over;
@@ -567,6 +580,12 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     const data = itemIdx('data_file'), data0 = sim.produced[data]!;
     dataTick(sim, dt, projSat);
     if (sim.produced[data]! !== data0) rep.produced[data] = rep.produced[data]! + sim.produced[data]! - data0;
+    // Throttling keeps levels within bounds; guard (and count) what is still short once every
+    // inflow of the step is in: the averaging error at the edges.
+    for (const k of short) {
+      const res = g.reservoirs[Math.floor(k / N_ITEMS)]!, i = k % N_ITEMS;
+      if (res.stock[i]! < 0) { rep.clampedMu[i] = rep.clampedMu[i]! - res.stock[i]!; res.stock[i] = 0; }
+    }
     for (const p of sim.projects) {
       const paid = advanceProject(p, sim.projectStock(p), dt, projSat(p));
       paid.forEach((mu, i) => {

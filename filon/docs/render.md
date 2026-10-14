@@ -278,8 +278,14 @@ touching its chunk changes (discs only grow).
 
 **`paintChunk` passes:** (1) a smoothly upscaled pastel field with biome tints and height
 whitening; (2) world-hashed stipple; (2b) hardpan plateaus; (3) water with an inked shore; (4) rock
-as a map: fills by hardness, contours, slope hatching, a bold cliff edge; (5) vents, ore deposits,
-biome decor. Ripples, crackle, contours, hatching and decor need ≥ 16 px/tile. Edges use marching
+as a map of its **levels** (owner, 2026-10-14: the mountains looked different in plan and in iso, and
+were hard to build on): each rock tile's terrace slabs outlined exactly as the iso columns are
+(relief.ts `masksAt` / `slabOutline`: the tile, its corners chamfered by its neighbours), step by
+step from the foot up — the step's shadow on the terrace below, its fill in the colour its columns'
+tops wear in iso (`topColor`: hardness, lighter by 0.075 a relief level so the plan, which sees only
+tops, tells the levels apart), its silhouette inked (bold at the floor) — over the rock's soft cast
+shadow; the old contours and hatching drawn from the smoothed height field are gone; (5) vents, ore
+deposits, biome decor. Ripples, crackle and decor need ≥ 16 px/tile. Edges use marching
 squares over a smoothed field read from the border window, and every random choice is hashed from
 **world** coordinates, so seams match without coordination.
 

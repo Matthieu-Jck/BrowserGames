@@ -26,7 +26,8 @@ export const ROCK: readonly RockLook[] = [
 ];
 
 /** Top colour: higher terraces read a touch lighter (aerial perspective). */
-export const topColor = (cls: number, level: number): string => mix(ROCK[cls]!.top, '#ffffff', (level - 2) * 0.03);
+/** A terrace top's colour: its hardness, lighter a step higher (clearly enough that the plan view, which sees only tops, tells the levels apart: owner, 2026-10-14). */
+export const topColor = (cls: number, level: number): string => mix(ROCK[cls]!.top, '#ffffff', Math.min(0.45, (level - 2) * 0.075));
 export const wallColor = (cls: number, shade: number): string => mix(ROCK[cls]!.lit, ROCK[cls]!.dark, shade);
 
 function poly(ctx: Ctx, pts: readonly Pt[]): void {

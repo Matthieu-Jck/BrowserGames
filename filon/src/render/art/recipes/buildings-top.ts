@@ -608,7 +608,7 @@ function pylonTop(ctx: Ctx, f: Frame, s: number): void {
   const c = f.p(cx, cy), d = f.l(0.11 * apex);
   const corners = ([[-1, -1], [1, -1], [1, 1], [-1, 1]] as const).map(([a, b]) => f.p(cx + a * foot, cy + b * foot));
   flat(ctx, hull([...corners, [c[0] + d * 0.7, c[1] + d]]), C.inkSoft, 0.18);
-  for (const [i, p] of corners.entries()) shape(ctx, ellipsePts(p[0], p[1], f.l(0.075), f.l(0.075), s + i, 0, 14), FOOTING, { w: 1.1, shade: false, jitter: 0, seed: s + i });
+  for (const [i, p] of corners.entries()) shape(ctx, ellipsePts(p[0], p[1], f.l(0.14), f.l(0.14), s + i, 0, 14), FOOTING, { w: 1.1, shade: false, jitter: 0, seed: s + i });
   for (const k of [0.66, 0.33]) ink(ctx, ([[-1, -1], [1, -1], [1, 1], [-1, 1]] as const).map(([a, b]) => f.p(cx + a * foot * k, cy + b * foot * k)), { closed: true, w: 1.2, color: C.steelD, alpha: 0.75, shade: false, taper: 0, jitter: 0, seed: s + 4 + k * 10 });
   for (const p of corners) ink(ctx, [p, c], { w: f.l(0.035), color: C.steelL, shade: false, taper: 0.1, jitter: 0, seed: s + 5 });
   crossarmTop(ctx, f, cx, cy, half, arm, s + 6);

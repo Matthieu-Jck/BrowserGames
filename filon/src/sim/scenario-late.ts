@@ -325,11 +325,10 @@ function pottery(b: Builder, x: number, y: number, rot: Rot, tarn: Tarn): boolea
     if (!line) { sim.remove(ex, ey); continue; }
     if (!stone) stone = line;
     stones.push(line);
-    // Its rock claimed now, so the next excavator's reach counts only what is left; marked for
-    // digging when the base opens (the build's hours would dig it out before).
-    const tiles = rockInReach(sim, ex, ey, er, keep);
-    for (const t of tiles) claimed.add(t);
-    b.later.push(() => { if (!sim.designate(tiles, true)) b.skip('designate:potteries'); });
+    // Its rock claimed now, so the next excavator's reach counts only what is left. Nothing is
+    // marked: with no mark in reach an excavator quarries, its rock left standing (owner,
+    // 2026-10-14: the stone must not run out), so the Crown's foot keeps its shape.
+    for (const t of rockInReach(sim, ex, ey, er, keep)) claimed.add(t);
     diggers.push(r.id!);
     b.ids[`digger${diggers.length}`] = r.id!;
     b.lines[`stone${diggers.length}`] = line;

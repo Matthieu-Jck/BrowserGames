@@ -18,10 +18,10 @@
 //   survey    quests 0–5: + the smelter (a router splits the second iron line), the coal, two
 //             wind turbines, the workshop, the glass smelter (two sand collectors; a router
 //             shares the coal) → at « Données d'arpentage »
-//   tutorial  all twelve quests: + survey data into the observatory (Mechanics under way), the
-//             trade post (glass for its quest, then an iron ore line in: its stream; and an
-//             outlet set to iron plates, a short ribbon from it into the Heart, fed by a small
-//             import order: what the base builds with), the copper line, a beacon past the
+//   tutorial  all eleven quests: + survey data into the observatory (Mechanics under way), the
+//             trade post (glass led into its entrance for its quest, then the iron ore line
+//             joining it — the post sells whatever comes in, D64 — and its exit laid into the
+//             Heart, fed by a small import order of plates: what the base builds with), the copper line, a beacon past the
 //             Crown, more wind and a coal generator — the whole tutorial factory running
 //   grown     later on: every plan of the tree, Mechanics and a few research nodes learnt for
 //             real, a gear workshop, a silo
@@ -802,6 +802,15 @@ function late(b: Builder): void {
   // The purse topped up for its purchases (a late base has the ocelles to buy with; the land bought
   // for the works left it bare), before the first lift: its orders buy in full.
   if (sim.credits < LATE_PURSE) sim.grantCredits(LATE_PURSE - sim.credits);
+  // On until its first purchases land (the rest is built after, on a smaller base to run): the
+  // base opens with its works running.
+  const post = b.ids.post2;
+  if (post) {
+    const due = (): number => Math.min(...sim.trade.inflight.filter((f) => f.post === post).map((f) => f.arrive));
+    if (!Number.isFinite(due())) b.run(EPOCH); // its first lift
+    const at = due();
+    if (Number.isFinite(at)) b.run(Math.min(Math.max(0, at - sim.tick), FABRIQUE_WARM_MAX));
+  }
   excavate(b);
   b.optional(() => surplus(b));
   // The deposit nearest past the Crown, its parcels bought (when the starting square does not
@@ -852,15 +861,6 @@ function advanced(b: Builder): void {
   // The land bought for the other works paid, the purse topped up again.
   if (sim.credits < LATE_PURSE) sim.grantCredits(LATE_PURSE - sim.credits);
   waitKites(b);
-  // On until the Fabrique's first purchases (ordered at the start of the late part) land: the base
-  // opens with its works running.
-  const post = b.ids.post2;
-  if (post) {
-    const due = (): number => Math.min(...sim.trade.inflight.filter((f) => f.post === post).map((f) => f.arrive));
-    if (!Number.isFinite(due())) b.run(EPOCH); // its first lift
-    const at = due();
-    if (Number.isFinite(at)) b.run(Math.min(Math.max(0, at - sim.tick), FABRIQUE_WARM_MAX) + EPOCH);
-  }
   // The base opens: the potteries dig.
   for (const f of b.later.splice(0)) f();
 }

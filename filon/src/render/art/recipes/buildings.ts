@@ -1479,14 +1479,15 @@ function poleIso(ctx: Ctx, f: IsoFrame, s: number): void {
 function pylonIso(ctx: Ctx, f: IsoFrame, s: number): void {
   const { cx, cy, apex, arm, armH, half, foot } = PYLON;
   const feet = ([[-1, -1], [1, -1], [-1, 1], [1, 1]] as const).map(([a, b]) => [cx + a * foot, cy + b * foot] as const).sort((a, b) => f.depth(a[0], a[1]) - f.depth(b[0], b[1]));
-  for (const [i, [x, y]] of feet.entries()) latheIso(ctx, f, x, y, [[0, 0.085], [0.12, 0.065]], FOOTING, s + i, { top: mix(FOOTING, '#ffffff', 0.25), seams: false, shadow: false });
-  trussIso(ctx, f, cx, cy, foot, 0.06, 0.1, arm + armH, 6, C.steelL, s + 5, 2.6);
+  // 2×2 and about three tiles tall since D75: broad concrete feet, a lattice of nine bays narrowing to a wide head.
+  for (const [i, [x, y]] of feet.entries()) latheIso(ctx, f, x, y, [[0, 0.16], [0.2, 0.12]], FOOTING, s + i, { top: mix(FOOTING, '#ffffff', 0.25), seams: false, shadow: false });
+  trussIso(ctx, f, cx, cy, foot, 0.15, 0.1, arm + armH, 9, C.steelL, s + 5, 3);
   for (const [i, [a, b]] of ([[-1, -1], [1, 1]] as const).entries()) {
-    pipeIso(ctx, f, [[cx + a * 0.06, cy + b * 0.06, arm + armH], [cx, cy, apex]], 2.2, C.steelL, s + 8 + i, false);
+    pipeIso(ctx, f, [[cx + a * 0.15, cy + b * 0.15, arm + armH], [cx, cy, apex]], 2.6, C.steelL, s + 8 + i, false);
   }
   crossarmIso(ctx, f, cx, cy, half, arm, armH, ARM_STEEL, s + 20);
   for (const [i, t] of terminalsOf('pylon').entries()) terminalIso(ctx, f, t, s + 30 + i * 4);
-  light(ctx, ...f.p(cx, cy, apex + 0.04), 2.6, C.ledRed);
+  light(ctx, ...f.p(cx, cy, apex + 0.04), 3.2, C.ledRed);
 }
 
 /**

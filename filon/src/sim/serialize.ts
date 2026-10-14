@@ -24,7 +24,7 @@ import { packRuns } from './flow/chain';
 /**
  * 2: ribbons save their cells, one item per tile (the tile-by-tile ribbons, D57); conduits their
  * runs. 3: land in parcels (D60). 4: the 5 × 5 trade post (D62). 5: a post's cargo instead of its
- * export streams (D64). 6: the 2 × 2 pylon (D75, the main checkout's step). 7: research on data
+ * export streams (D64). 6: the 2×2 pylon (D75: the 1×1 ones retired). 7: research on data
  * files and AI tokens, the tiered tree (D68–D70): research ids renamed (`RESEARCH_RENAMED`),
  * projects with their tokens.
  */
@@ -85,7 +85,7 @@ export interface SaveData {
   lastRespec?: number;
   /** Space: marked tiles ([tile, 1 dig | 2 fill]), running jobs, drifters, routes. */
   designated?: Array<[number, number]>;
-  jobs?: Array<{ ent: number; kind: 'dig' | 'fill'; tile: number; dur: number; el: number; mu: number; moved: number }>;
+  jobs?: Array<{ ent: number; kind: 'dig' | 'fill'; tile: number; dur: number; el: number; mu: number; moved: number; quarry?: true }>;
   fleet?: Array<[number, number]>;
   routes?: Array<{ id: number; from: number; to: number; item: number; ships: number; carry?: number }>;
   nextRouteId?: number;

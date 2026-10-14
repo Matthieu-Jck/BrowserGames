@@ -56,13 +56,15 @@ export function inReach(e: Pick<Ent, 'def' | 'x' | 'y' | 'rot'>, x: number, y: n
 
 /**
  * Give idle excavators / backfillers the nearest workable marked tile in reach (ids in order,
- * squared distances on doubled centres: integers only).
+ * squared distances on doubled centres: integers only). An excavator with no marked rock in reach
+ * quarries instead: the nearest rock it can dig, for its stone, left standing (`Job.quarry`).
  */
 export function assignJobs(sim: Sim): void {
   sim.jobsDirty = false;
-  if (!sim.designated.size) return;
-  const taken = new Set(sim.jobs.map((j) => j.tile));
-  const busy = new Set(sim.jobs.map((j) => j.ent));
+  const taken = new Set(sim.jobs.filter((j) => !j.quarry).map((j) => j.tile));
+  // A quarry gives way to marked rock (a mark made, or research letting it dig harder rock).
+  const busy = new Set(sim.jobs.filter((j) => !j.quarry).map((j) => j.ent));
+  const quarrying = new Set(sim.jobs.filter((j) => j.quarry).map((j) => j.ent));
   for (const e of sim.ents.sorted()) {
     const k = BUILDING_KIND[e.def];
     if ((k !== 'excavator' && k !== 'backfiller') || e.builtAt !== 0 || busy.has(e.id) || sim.isDormant(e)) continue;
@@ -79,17 +81,44 @@ export function assignJobs(sim: Sim): void {
       if (want === 'dig' ? !canDig(tt, sim.mods) : fillCost(tt, sim.mods) === null) continue;
       best = t; bd = d;
     }
+    const quarry = best < 0 && want === 'dig';
+    if (quarry) {
+      if (quarrying.has(e.id)) continue; // at it already
+      // Only with room in its store: a full one would hold the job (and its power) for nothing.
+      const st = sim.graph?.nodeByEnt.get(e.id);
+      if (st instanceof ReservoirNode && st.stock[RUBBLE()]! >= BAL.excavatorCap * 1000) continue;
+      best = quarryTile(sim, e);
+    } else if (quarrying.has(e.id)) {
+      sim.jobs.splice(sim.jobs.findIndex((j) => j.ent === e.id && j.quarry), 1); // the mark comes first
+    }
     if (best < 0) continue;
     const bx = best % 1024, by = (best - bx) / 1024;
     const tt = sim.grid.terrain(bx, by);
     const job: Job = want === 'dig'
-      ? { ent: e.id, kind: 'dig', tile: best, dur: digTicks(tt, sim.mods, buildingDef(e.def).excavator?.speed ?? 1000), el: 0, mu: digRubble(tt, sim.mods), moved: 0 }
+      ? { ent: e.id, kind: 'dig', tile: best, dur: digTicks(tt, sim.mods, buildingDef(e.def).excavator?.speed ?? 1000), el: 0, mu: digRubble(tt, sim.mods), moved: 0, ...(quarry ? { quarry: true as const } : {}) }
       : { ent: e.id, kind: 'fill', tile: best, dur: fillTicks(), el: 0, mu: fillCost(tt, sim.mods)!, moved: 0 };
     sim.jobs.push(job);
     sim.jobs.sort((a, b) => a.ent - b.ent);
-    taken.add(best);
+    if (!quarry) taken.add(best);
     sim.dirty = true; // the machine now draws full power
   }
+}
+
+/** The rock nearest an excavator's centre that it reaches and can dig, unbuilt (−1: none): what it quarries. */
+function quarryTile(sim: Sim, e: Ent): number {
+  const [w, h] = footprint(e.def, e.rot);
+  const r = reachOf(e), cx2 = 2 * e.x + w - 1, cy2 = 2 * e.y + h - 1;
+  let best = -1, bd = Infinity;
+  for (let y = e.y - r; y < e.y + h + r; y++) {
+    for (let x = e.x - r; x < e.x + w + r; x++) {
+      if (x < 0 || y < 0 || x >= 1024 || y >= 1024 || !inReach(e, x, y)) continue;
+      const tt = sim.grid.terrain(x, y), t = y * 1024 + x;
+      if (!isRock(tt) || !canDig(tt, sim.mods) || sim.grid.occ[t] !== 0) continue;
+      const d = (2 * x - cx2) ** 2 + (2 * y - cy2) ** 2;
+      if (d < bd) { best = t; bd = d; }
+    }
+  }
+  return best;
 }
 
 /** The store a job moves rubble in/out of (its machine's reservoir), or null. */
@@ -132,6 +161,8 @@ export function completeJobs(sim: Sim): boolean {
   let recompile = false;
   for (const j of sim.jobs.filter(jobDone)) {
     sim.jobs.splice(sim.jobs.indexOf(j), 1);
+    // A quarry's stone is in its store; the rock stands as it was: the next one starts at once.
+    if (j.quarry) { sim.jobsDirty = true; continue; }
     const x = j.tile % 1024, y = (j.tile - x) / 1024;
     sim.designated.delete(j.tile);
     if (j.kind === 'dig') {

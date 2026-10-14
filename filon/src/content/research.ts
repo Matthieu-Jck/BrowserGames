@@ -171,7 +171,7 @@ export const RESEARCH = {
   xp_swift: node('xp', undefined, 1, null, ['Ruban vif', 'Swift Ribbon'], ['Débloque le Ruban vif (120/min).', 'Unlocks the Swift Ribbon (120/min).']),
   xp_bigsilo: node('xp', undefined, 2, 'xp_swift', ['Grand silo', 'Great Silo'], ['Débloque le Grand silo : 5 000 objets.', 'Unlocks the Great Silo: 5,000 items.']),
   xp_bridges: node('xp', undefined, 3, 'xp_bigsilo', ['Passerelles longues', 'Long Bridges'], ['Les passerelles portent à 8 tuiles.', 'Bridges reach 8 tiles.'], [add('bridgeSpan', 4)]),
-  xp4: node('xp', undefined, 4, 'xp_bridges', ['Pylônes renforcés', 'Reinforced Pylons'], ['Les pylônes portent à 40 tuiles.', 'Pylons reach 40 tiles.'], [add('pylonLink', 16)]),
+  xp4: node('xp', undefined, 4, 'xp_bridges', ['Pylônes renforcés', 'Reinforced Pylons'], ['Les pylônes portent à 60 tuiles.', 'Pylons reach 60 tiles.'], [add('pylonLink', 20)]),
   xp_distrib: node('xp', 't', 5, 'xp4', ['Distributeurs', 'Distributors'], ['Débloque le Distributeur (routeur 2×2).', 'Unlocks the Distributor (a 2×2 router).']),
   xp_express: node('xp', 't', 6, 'xp_distrib', ['Ruban express', 'Express Ribbon'], ['Débloque le Ruban express (240/min).', 'Unlocks the Express Ribbon (240/min).']),
   xp_bigdock: node('xp', 't', 9, 'xp_express', ['Grand embarcadère', 'Great Skydock'], ['Débloque le Grand embarcadère : 8 Dérivants, deux fois plus de fret.', 'Unlocks the Great Skydock: 8 Drifters, twice the freight.']),
