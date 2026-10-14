@@ -166,16 +166,6 @@ export function reserveProblems(): string[] {
     const left = start(it) - (spent.get(it) ?? 0);
     if (left < n) out.push(`the first ring of plans leaves ${left} ${it}, the reserve ${n}`);
   }
-  // A trade post set against the Heart sells its stock down to BAL.tradeHearthReserve, and the
-  // post itself would refund its cost: together they must cover the reserve, so an export stream
-  // can never eat into it (spot sales need their own guard: docs/engine.md, D36).
-  for (const [id, b] of Object.entries(BUILDINGS) as Array<[string, BuildingDef]>) {
-    if (b.kind !== 'trade') continue;
-    for (const [it, n] of reserveNeed(() => false)) {
-      const kept = BAL.tradeHearthReserve + (b.cost.find(([c]) => c === it)?.[1] ?? 0);
-      if (kept < n) out.push(`a ${id} against the Heart leaves ${kept} ${it} (its stream reserve and its own cost), the reserve ${n}`);
-    }
-  }
   // Power: drills and the wire mill run on the Heart's steady core, even through the night.
   if (!(BAL.hearthCoreKw > 0)) out.push('the Heart needs a steady core (BAL.hearthCoreKw > 0): a bootstrap built at night must run');
   return out;

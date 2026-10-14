@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest';
-import { BAL } from '@/content/balance';
 import { itemIdx } from '@/content/registry';
 import { Sim } from './state';
 import { testSource, line, steadyPower, wire, learnPlans } from './testkit';
@@ -11,6 +10,9 @@ import { routePerMin } from './space';
 import { computeMods } from './research/modifiers';
 import { serialize, deserialize } from './serialize';
 import { catchUp } from './offline/catchup';
+import { connect } from './dev';
+import { worldPorts } from './entities';
+import { BAL } from '@/content/balance';
 
 const RUB = (): number => itemIdx('stone');
 
@@ -49,31 +51,35 @@ describe('space', () => {
     sim.run(5 * 60 * 10 + 5);
     expect(sim.grid.terrain(530, 507)).toBe(T.Dug);
     expect(sim.designated.has(tile)).toBe(false);
-    // Exactly the tile's stone went into the excavator's store (some may already be leaving).
-    expect(sim.produced[RUB()]).toBe(10_000);
+    // The tile's stone went into the excavator's store; with nothing left marked it quarries the
+    // rock beside it (its stone on top, the rock left standing).
+    expect(sim.produced[RUB()]).toBeGreaterThanOrEqual(10_000);
     const ore = sim.stock.map((v, i) => v - stock0[i]!);
     expect(ore[itemIdx('iron_ore')]! % 20_000 === 0 || ore[itemIdx('iron_ore')]! >= 0).toBe(true);
     // Floor now: marking it again does nothing, and it can be built on.
     expect(sim.designate([tile])).toBe(0);
+    const dug = sim.grid.terrainDiff.size, made = sim.produced[RUB()]!;
     sim.run(4000);
-    expect(sim.produced[RUB()]).toBe(10_000);
+    expect(sim.produced[RUB()]).toBeGreaterThan(made); // quarrying
+    expect(sim.grid.terrainDiff.size).toBe(dug); // and nothing more dug out
     expect(sim.canPlace('mast', 530, 507, 0).reason).not.toBe('terrain');
   });
 
   it('hard rock waits for its research: obsidian only with Basalt Bits', () => {
     const sim = spaceSim();
     sim.place('excavator', 527, 510, 0);
-    sim.designate([tileIndex(530, 511)]);
+    const obsidian = tileIndex(530, 511);
+    sim.designate([obsidian]);
     sim.run(100);
-    expect(sim.jobs.length).toBe(0);
-    for (const id of ['ex1', 'ex2', 'ex3', 'ex4']) sim.done.add(id);
+    expect(sim.jobs.filter((j) => !j.quarry)).toEqual([]); // the mark waits (it may quarry softer rock meanwhile)
+    for (const id of ['ex_sifter', 'ex3', 'ex4']) sim.done.add(id);
     sim.rebuildDerived();
     sim.run(700);
-    expect(sim.jobs.length).toBe(1);
+    expect(sim.jobs.filter((j) => !j.quarry && j.tile === obsidian).length).toBe(1);
   });
 
   it('land rules: production stands on the claim\'s land, infrastructure may leave it (paid ribbons cost ×3 out there)', () => {
-    const sim = spaceSim(['tr1', 'tr2', 'tr3', 'tr4', 'dn1']);
+    const sim = spaceSim(['tr1', 'tr2', 'tr3', 'tr4', 'xp_swift']);
     const far = 512 + 40; // the first parcel past the starting square (5×5 parcels round the Heart)
     expect(sim.canPlace('kiln', far, 512, 0).reason).toBe('outside_zone');
     expect(sim.canPlace('kiln', far - 2, 512, 0).reason).not.toBe('outside_zone');
@@ -110,8 +116,40 @@ describe('space', () => {
     expect(Math.abs(got - want)).toBeLessThan(1);
   });
 
+  it('a freight route carries only what its source dock gets, offline as online', () => {
+    // A drill feeds dock A slowly; two drifters could carry far more to dock B, which hands the ore
+    // into the Hearth. Offline the route used to count at the ships' full rate even with A empty:
+    // B's line was fed freight that never came (owner's late base: 395 thermal cores for 63).
+    const make = (): Sim => {
+      const sim = spaceSim(['tr1', 'tr2', 'tr3', 'tr4', 'tr6']);
+      sim.grant('lens', 40); sim.grant('resin_canvas', 60);
+      steadyPower(sim);
+      const d = sim.place('drill', 511, 502, 1);
+      wire(sim, d.id!);
+      const a = sim.place('skydock', 517, 500, 0), b = sim.place('skydock', 502, 516, 0);
+      expect(a.ok && b.ok, `${a.reason} ${b.reason}`).toBe(true);
+      wire(sim, [a.id!, b.id!]);
+      expect(connect(sim, d.id!, a.id!)).toBeGreaterThan(0);
+      const out = worldPorts(sim.ents.get(b.id!)!).filter((p) => p.io === 'out')[0]!;
+      expect(sim.setPortItem(b.id!, out.idx, 'iron_ore')).toBe(true);
+      expect(connect(sim, b.id!, sim.hearthId, 0)).toBeGreaterThan(0);
+      for (const [it, n] of Object.entries(BAL.drifterCost)) sim.grant(it, n * 2);
+      expect(sim.buyDrifter(a.id!) && sim.buyDrifter(a.id!)).toBe(true);
+      sim.ensureCompiled();
+      expect(sim.addRoute(a.id!, b.id!, 'iron_ore', 2)).toBeGreaterThan(0);
+      sim.run(30);
+      return sim;
+    };
+    const on = make(), off = make(), I = itemIdx('iron_ore'), h0 = on.stock[I]!;
+    on.run(3 * 36_000);
+    const rep = catchUp(off, 3 * 36_000, { noDirect: true });
+    expect(on.stock[I]! - h0).toBeGreaterThan(1_000_000); // the line delivers
+    expect(Math.abs(off.stock[I]! - on.stock[I]!)).toBeLessThanOrEqual(10_000);
+    expect(rep.clampedMu[I]!).toBeLessThanOrEqual(50_000); // no freight invented at an empty dock
+  });
+
   it('a backfiller fills a pond tile with 40 stone: new floor', () => {
-    const sim = spaceSim(['tr1', 'tr2', 'tr3', 'ex1', 'ex2', 'ex3']);
+    const sim = spaceSim(['tr1', 'tr2', 'tr3', 'ex_sifter', 'ex3']);
     const bf = sim.place('backfiller', 512, 521, 0);
     expect(bf.ok, bf.reason).toBe(true);
     wire(sim, bf.id!);
@@ -124,7 +162,7 @@ describe('space', () => {
   });
 
   it('crossings let two lines pass; skybridges leap over rock', () => {
-    const sim = spaceSim(['tr1', 'dn1', 'dn2', 'dn3', 'dn4', 'dn5']);
+    const sim = spaceSim(['tr1', 'xp_swift', 'xp_bridges', 'dn3', 'dn4', 'xp_distrib']);
     sim.grant('gear', 50);
     // A crossing at (520, 520): a W→E line and an N→S line both pass straight through.
     expect(sim.place('crossing', 520, 520, 0).ok).toBe(true);
@@ -147,21 +185,21 @@ describe('space', () => {
     expect(entry === exit || g.nodes[g.eDst[entry.outE[0]!]!] === exit).toBe(true);
   });
 
-  it('the Hearth grows a level with Mechanics and its materials: land comes cheaper', () => {
+  it('the Hearth grows a level with Mechanics and its materials: the land keeps its price', () => {
     const sim = spaceSim(['tr1']);
     const p = parcelAt(512 + 64, 512), before = sim.landPrice(p);
     expect(sim.upgradeHearth().ok).toBe(true);
     expect(sim.hearthLevel).toBe(2);
-    expect(sim.landPrice(p)).toBe(Math.floor((before * (1000 - BAL.land.hearthDiscount)) / 1000));
+    expect(sim.landPrice(p)).toBe(before); // owner, 2026-10-14: the Heart's level does not lower it
     expect(sim.upgradeHearth().reason).toBe('locked');
   });
 
   it('a speed module speeds a machine up (and draws more power)', () => {
-    const sim = spaceSim(['tr1', 'dn1', 'dn2', 'dn3', 'dn4']);
+    const sim = spaceSim(['tr1', 'xp_swift', 'xp_bridges', 'dn3', 'dn4']);
     sim.grant('pace_bell', 2);
     const k = sim.place('workshop', 516, 504, 0);
     expect(k.ok).toBe(true);
-    sim.setRecipe(k.id!, 'journal_1');
+    sim.setRecipe(k.id!, 'circuit');
     sim.ensureCompiled();
     const m0 = sim.graph.nodeByEnt.get(k.id!) as unknown as { speed: number; kw: number };
     const [s0, kw0] = [m0.speed, m0.kw];
@@ -199,15 +237,20 @@ describe('space', () => {
 
   it('a dig that research unlocks during an absence starts offline as online', () => {
     const make = (): Sim => {
-      const sim = spaceSim(['tr1', 'tr2', 'tr3', 'ex1', 'ex2', 'ex3']);
+      const sim = spaceSim(['tr1', 'tr2', 'tr3', 'ex_sifter', 'ex3']);
+      sim.grantCredits(10_000_000); // the research's tokens, bought by the minute (D68)
       const lab = sim.place('observatory', 503, 512, 0);
       expect(lab.ok, lab.reason).toBe(true);
       const ex = sim.place('excavator', 527, 510, 0);
       expect(ex.ok).toBe(true);
       wire(sim, lab.id!);
       wireByRock(sim, ex.id!);
+      // Its stone goes to the Heart: meanwhile it quarries the softer rock, and a full store would hold the dig.
+      expect(connect(sim, ex.id!, sim.hearthId)).toBeGreaterThan(0);
       expect(sim.designate([tileIndex(530, 511)])).toBe(1); // obsidian: needs Basalt Bits (ex4)
       sim.ensureCompiled();
+      // A Tier 2 node: Survey Data and Mechanics Data (D71).
+      sim.stores.get(lab.id!)![itemIdx('journal_1')] = 400 * 1000;
       sim.stores.get(lab.id!)![itemIdx('journal_2')] = 400 * 1000;
       expect(sim.startResearch('ex4').ok).toBe(true);
       return sim;
@@ -220,6 +263,26 @@ describe('space', () => {
       expect(s.done.has('ex4')).toBe(true);
       expect(s.grid.terrain(530, 511)).toBe(T.Dug);
     }
+  });
+
+  it('an excavator with nothing marked quarries: stone without end, the rock left standing, offline as online', () => {
+    const make = (): Sim => {
+      const sim = spaceSim();
+      steadyPower(sim);
+      const ex = sim.place('excavator', 527, 507, 0);
+      expect(ex.ok, ex.reason).toBe(true);
+      wireByRock(sim, ex.id!);
+      expect(connect(sim, ex.id!, sim.hearthId)).toBeGreaterThan(0);
+      sim.run(30);
+      return sim;
+    };
+    const on = make(), off = make(), S = RUB(), s0 = on.stock[S]!;
+    on.run(2 * 36_000);
+    catchUp(off, 2 * 36_000, { noDirect: true });
+    expect(on.stock[S]! - s0).toBeGreaterThan(50_000); // well past one tile's 10 stone
+    expect(on.grid.terrainDiff.size).toBe(0); // nothing dug out
+    expect(Math.abs(off.stock[S]! - on.stock[S]!)).toBeLessThanOrEqual(2_000);
+    expect(off.grid.terrainDiff.size).toBe(0);
   });
 
   it('digging offline matches ticking', () => {

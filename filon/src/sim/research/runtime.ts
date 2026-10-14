@@ -1,27 +1,29 @@
-// runtime.ts — research as the engine runs it. A project sits in an observatory (one per
-// observatory, as many as the research slots allow); journals reach the observatory by
-// ribbon and pile up in its store; the project draws from that store under an ALLOWANCE:
-// by elapsed powered time e (milli-ticks), it may have paid at most ⌊cost·e / (dur·1000)⌋ of
-// each science item. So it can never finish before its minimum duration, takes longer when
-// science runs short, and — being a function of e only — pays exactly the same online and in
-// the offline catch-up whenever science is plentiful. Costs follow the specialisation rule:
-//   cost = ⌈base × (1 + 0.12·N_others) × (1 − 0.04·min(n_branch, 8))⌉
-//   time = D × (1 + 0.05·N_others) × (0.85 if n_branch ≥ 6)
-// (the trunk escapes both). Integer maths throughout.
+// runtime.ts — research as the engine runs it. A project sits in a research lab (one per lab,
+// as many as the research slots allow); data files reach the lab by ribbon and pile up in its
+// store; the project draws from that store under an ALLOWANCE: by elapsed powered time e
+// (milli-ticks), it may have paid at most ⌊cost·e / (dur·1000)⌋ of each item. So it can never
+// finish before its minimum duration, takes longer when data runs short, and — being a function
+// of e only — pays exactly the same online and in the offline catch-up whenever data is
+// plentiful. Its AI tokens follow the same allowance (D68): ⌊tokens·e / (dur·1000)⌋ are used by
+// e, billed at each minute boundary (systems/research.ts `tokenEpoch`) — the claim's servers
+// first, CrierBelt's the rest. A node costs what its table says, whatever else the claim owns:
+// the spread penalty and the lineage discount of D69 are gone (owner, 2026-10-15, D72), so no
+// family is dearer for researching another. Integer maths throughout.
 import { BAL } from '@/content/balance';
-import { RESEARCH, type ResearchId } from '@/content/research';
+import { FAMILY_IDS, RESEARCH, researchNode, type ResearchId } from '@/content/research';
 import { RESEARCH_IDS, itemDef, itemIdx } from '@/content/registry';
-import type { ResearchDef } from '@/content/types';
-import { ceilDiv, mulDiv } from '@/core/fixed';
+import type { FamilyId, ResearchDef } from '@/content/types';
+import { mulDiv } from '@/core/fixed';
 import { TPS } from '../constants';
 
-export type BranchId = 'ex' | 'xp' | 'dn' | 'en' | 'cm';
-export const BRANCHES: readonly BranchId[] = ['ex', 'xp', 'dn', 'en', 'cm'];
+/** A research family (D69); `BranchId` is its old name, kept for the reconversion's command. */
+export type BranchId = FamilyId;
+export const BRANCHES: readonly BranchId[] = FAMILY_IDS;
 
 export interface Project {
-  /** Research id, or `respec:<branch>` for a reconversion in progress. */
+  /** Research id, or `respec:<family>` for a reconversion in progress. */
   id: string;
-  /** Observatory entity (0 for a reconversion: it holds a slot but no observatory). */
+  /** Lab entity (0 for a reconversion: it holds a slot but no lab). */
   lab: number;
   cost: Array<{ item: number; mu: number }>;
   paid: number[];
@@ -31,45 +33,48 @@ export interface Project {
   el: number;
   /** Reconversion: archive notes granted when it completes. */
   notes?: number;
+  /** AI tokens the whole project uses (D68), and those already counted as used (billed at the minute). */
+  tokens?: number;
+  tokUsed?: number;
 }
 
 export const def = (id: string): ResearchDef => RESEARCH[id as ResearchId] as ResearchDef;
 
-/** Nodes owned per branch (trunk excluded). */
+/** Nodes owned per family (trunk excluded). */
 export function branchCounts(done: ReadonlySet<string>): Record<BranchId, number> {
-  const c: Record<BranchId, number> = { ex: 0, xp: 0, dn: 0, en: 0, cm: 0 };
+  const c: Record<BranchId, number> = { en: 0, ex: 0, dn: 0, cm: 0, an: 0, xp: 0 };
   for (const id of done) {
-    const r = RESEARCH[id as ResearchId] as ResearchDef | undefined;
+    const r = researchNode(id);
     if (r && r.branch !== 'trunk') c[r.branch] += 1;
   }
   return c;
 }
 
-/** Cost multiplier (‰) and duration multiplier (‰) for a node given what is owned. */
-export function penalty(id: string, done: ReadonlySet<string>): { cost: number; time: number } {
+/** A node's cost (milli-items, whole items), AI tokens and minimum duration (ticks): its table's, whatever the claim owns (D72). */
+export function effectiveCost(id: string): { cost: Array<{ item: number; mu: number }>; tokens: number; ticks: number } {
   const r = def(id);
-  if (r.branch === 'trunk') return { cost: 1000, time: 1000 };
-  const counts = branchCounts(done);
-  const nb = counts[r.branch];
-  let others = 0;
-  for (const b of BRANCHES) if (b !== r.branch) others += counts[b];
-  const cost = Math.floor(((1000 + BAL.spreadCostPerNode * others) * (1000 - BAL.depthDiscountPerNode * Math.min(nb, 8))) / 1000);
-  let time = 1000 + BAL.spreadTimePerNode * others;
-  if (nb >= 6) time = Math.floor((time * BAL.masterTimeFactor) / 1000);
-  return { cost, time };
+  return { cost: r.cost.map(([it, q]) => ({ item: itemIdx(it), mu: q * 1000 })), tokens: r.tokens, ticks: r.minutes * 60 * TPS };
 }
 
-/** Effective cost (milli-items, whole items) and minimum duration (ticks) of a node. */
-export function effectiveCost(id: string, done: ReadonlySet<string>): { cost: Array<{ item: number; mu: number }>; ticks: number } {
-  const r = def(id);
-  const p = penalty(id, done);
-  const cost = r.cost.map(([it, q]) => ({ item: itemIdx(it), mu: ceilDiv(q * p.cost, 1000) * 1000 }));
-  const ticks = mulDiv(r.minutes * 60 * TPS, p.time, 1000);
-  return { cost, ticks };
+/** AI tokens a project has used by its elapsed time (the allowance, D68). */
+export function tokensDue(p: Project): number {
+  const t = p.tokens ?? 0;
+  const cap = p.dur * 1000;
+  if (t <= 0) return 0;
+  if (cap <= 0) return t;
+  return mulDiv(t, Math.min(p.el, cap), cap);
+}
+
+/** Tokens used since they were last counted (and counts them): what the minute's bill takes. */
+export function takeTokens(p: Project): number {
+  const due = tokensDue(p);
+  const d = due - (p.tokUsed ?? 0);
+  p.tokUsed = due;
+  return d > 0 ? d : 0;
 }
 
 /** Why a node cannot start right now (null = it can). */
-export type StartBlock = 'done' | 'active' | 'prereq' | 'slots' | 'no_lab' | 'unknown';
+export type StartBlock = 'done' | 'active' | 'prereq' | 'slots' | 'no_lab' | 'unknown' | 'debt';
 
 export function prereqsMet(id: string, done: ReadonlySet<string>): boolean {
   return def(id).prereq.every((p) => done.has(p));
@@ -134,27 +139,24 @@ export function owedItems(p: Project): number[] {
   return p.cost.filter((c, i) => p.paid[i]! < c.mu).map((c) => c.item);
 }
 
-/** The deepest owned nodes of a branch, deepest first (the order a reconversion removes them). */
+/** The deepest owned nodes of a family, deepest first (the order a reconversion removes them). */
 export function respecOrder(branch: BranchId, done: ReadonlySet<string>): string[] {
-  return RESEARCH_IDS.filter((id) => done.has(id) && def(id).branch === branch).sort((a, b) => def(b).depth - def(a).depth);
+  return RESEARCH_IDS.filter((id) => done.has(id) && def(id).branch === branch).sort((a, b) => def(b).depth - def(a).depth || (a < b ? 1 : a > b ? -1 : 0));
 }
 
 /** Ticks a reconversion holds a slot: 25 % of the removed nodes' durations, at most 48 h. */
-export function respecTicks(removed: readonly string[], done: ReadonlySet<string>): number {
+export function respecTicks(removed: readonly string[]): number {
   let t = 0;
-  const after = new Set(done);
-  for (const id of removed) { after.delete(id); t += effectiveCost(id, after).ticks; }
+  for (const id of removed) t += effectiveCost(id).ticks;
   return Math.min(Math.floor(t / 4), 48 * 3600 * TPS);
 }
 
-/** Archive notes refunded for removed nodes: 50 % of their science value (25 % keystones). */
-export function respecRefund(removed: readonly string[], done: ReadonlySet<string>): number {
+/** Archive notes refunded for removed nodes: 50 % of their data files' value (25 % keystones); tokens are spent compute, never refunded. */
+export function respecRefund(removed: readonly string[]): number {
   let notes = 0;
-  const after = new Set(done);
   for (const id of removed) {
-    after.delete(id);
     const share = def(id).depth === 9 ? BAL.respecRefund / 2 : BAL.respecRefund;
-    for (const c of effectiveCost(id, after).cost) notes += Math.floor((noteValue(c.item, c.mu) * share) / 1000);
+    for (const c of effectiveCost(id).cost) notes += Math.floor((noteValue(c.item, c.mu) * share) / 1000);
   }
   return notes;
 }

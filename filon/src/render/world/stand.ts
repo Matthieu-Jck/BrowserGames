@@ -78,6 +78,13 @@ export const beltZ = (x: number, y: number): number => 8 * (x + y) + 0.5;
  */
 export const liftZ = (lowX: number, lowY: number): number => 8 * (lowX + lowY) + 0.7;
 
+/**
+ * The plan layer's bands (`plan` is sorted too; a building's sprites at 0, in the order laid): the
+ * plan copies of ribbons on rock (and of junctions' passages), the elevators' marks over them, the
+ * items riding them over those (items-view.ts) — all under the plan buildings, as on the floor.
+ */
+export const PLAN_Z = { belt: -2, mark: -1.5, items: -1 } as const;
+
 /** The level a building of `def` would stand at, its rotated footprint's origin at (x, y): the build ghost's lift. */
 export function standLevel(land: ReliefLand, def: number, x: number, y: number, rot: Rot): number {
   if (flat(def)) return 0;

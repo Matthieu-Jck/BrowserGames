@@ -15,8 +15,14 @@ import { PARCEL_COLS, parcelCentre, parcelRect } from '../world/land';
 /** A lease's hour, in ticks. */
 export const LEASE_TICKS = 60 * EPOCH;
 
-/** Why the land would not change hands (null: it did). */
-export type LandRefusal = 'none' | 'held' | 'credits' | 'locked' | 'not_leased';
+/**
+ * Why the land would not change hands (null: it did). `far`: the parcel does not touch the
+ * claim's land (Far Claim lifts it, D70); `not_bought`: only a bought parcel sells back.
+ */
+export type LandRefusal = 'none' | 'held' | 'credits' | 'locked' | 'not_leased' | 'far' | 'not_bought';
+
+/** May the claim take this parcel: next to its land, or anywhere with the Far Claim research (D70)? */
+const reachable = (sim: Sim, p: number): boolean => sim.mods.flags.has('farClaims') || sim.land.touches(p);
 
 /** An item's value in centi-ocelles (items.ts: ocelles, to two places). */
 const VALUE = ITEM_IDS.map((id) => Math.round(ITEMS[id].value * 100));
@@ -50,7 +56,6 @@ export function landPrice(sim: Sim, p: number): number {
   // Each parcel bought makes the next dearer.
   for (let i = 0; i < sim.land.bought.size; i++) cents = Math.floor((cents * m.landGrowth) / 1000);
   cents = Math.floor((cents * m.landPrice) / 1000);
-  cents = Math.floor((cents * (1000 - L.hearthDiscount * (sim.hearthLevel - 1))) / 1000);
   const [cx, cy] = parcelCentre(p), dx = cx - CENTER, dy = cy - CENTER;
   if (dx * dx + dy * dy > L.farRadius * L.farRadius) cents = Math.floor((cents * m.farLand) / 1000);
   const owner = sim.land.sister(p);
@@ -66,15 +71,41 @@ export function landRent(sim: Sim, p: number): number {
 /** Can the claim lease land yet (Land Registry)? */
 export const canLease = (sim: Sim): boolean => sim.mods.flags.has('lease');
 
-/** Buy a parcel outright (a leased one too: its lease ends). */
-export function buyLand(sim: Sim, p: number): LandRefusal | null {
+// The refusals, apart from the deeds: the land panel greys a button out with its reason before the
+// click, and the deed checks the same thing.
+
+/** Why buying parcel `p` would be refused now (null: it would go through). */
+export function buyBlock(sim: Sim, p: number): LandRefusal | null {
   if (!valid(p)) return 'none';
   if (sim.land.inStart(p) || sim.land.bought.has(p) || sim.land.granted.has(p)) return 'held';
+  if (!sim.land.leases.has(p) && !reachable(sim, p)) return 'far';
+  return sim.credits < landPrice(sim, p) ? 'credits' : null;
+}
+
+/** Why leasing parcel `p` would be refused now (null: it would go through). */
+export function leaseBlock(sim: Sim, p: number): LandRefusal | null {
+  if (!valid(p)) return 'none';
+  if (!canLease(sim)) return 'locked';
+  if (sim.land.holds(p)) return 'held';
+  if (!reachable(sim, p)) return 'far';
+  return sim.credits < landRent(sim, p) ? 'credits' : null;
+}
+
+/** Why selling parcel `p` back would be refused now (null: it would go through). */
+export function sellBlock(sim: Sim, p: number): LandRefusal | null {
+  if (!sim.mods.flags.has('landResale')) return 'locked';
+  return sim.land.bought.has(p) ? null : 'not_bought';
+}
+
+/** Buy a parcel outright (a leased one too: its lease ends). */
+export function buyLand(sim: Sim, p: number): LandRefusal | null {
+  const r = buyBlock(sim, p);
+  if (r) return r;
   const cents = landPrice(sim, p);
-  if (sim.credits < cents) return 'credits';
   sim.credits -= cents;
   sim.land.leases.delete(p);
   sim.land.bought.add(p);
+  sim.land.paid.set(p, cents);
   held(sim, p);
   sim.log.push({ tick: sim.tick, cmd: { k: 'buyLand', p } });
   sim.events.push({ k: 'land', p, what: 'bought', cents });
@@ -83,11 +114,9 @@ export function buyLand(sim: Sim, p: number): LandRefusal | null {
 
 /** Lease a parcel: the first hour paid now, the rent fixed for the lease's life. */
 export function rentLand(sim: Sim, p: number): LandRefusal | null {
-  if (!valid(p)) return 'none';
-  if (!canLease(sim)) return 'locked';
-  if (sim.land.holds(p)) return 'held';
+  const r = leaseBlock(sim, p);
+  if (r) return r;
   const cents = landRent(sim, p);
-  if (sim.credits < cents) return 'credits';
   sim.credits -= cents;
   sim.land.leases.set(p, { next: sim.tick + LEASE_TICKS, cents });
   held(sim, p);
@@ -103,6 +132,29 @@ export function endLease(sim: Sim, p: number): LandRefusal | null {
   sim.log.push({ tick: sim.tick, cmd: { k: 'endLease', p } });
   sim.events.push({ k: 'land', p, what: 'ended', cents: 0 });
   return null;
+}
+
+/**
+ * Parcel Resale (xp_resell): a bought parcel goes back to CrierBelt for a share of what it cost
+ * (of what it holds today, for one bought before prices were kept); what stands on it goes
+ * dormant, nothing lost; the next purchase is cheaper by one parcel's growth.
+ */
+export function sellLand(sim: Sim, p: number): LandRefusal | null {
+  const r = sellBlock(sim, p);
+  if (r) return r;
+  const cents = resalePrice(sim, p);
+  sim.land.bought.delete(p);
+  sim.land.paid.delete(p);
+  sim.credits += cents;
+  sim.dirty = true;
+  sim.log.push({ tick: sim.tick, cmd: { k: 'sellLand', p } });
+  sim.events.push({ k: 'land', p, what: 'sold', cents });
+  return null;
+}
+
+/** What selling a bought parcel back would give now (centi-ocelles). */
+export function resalePrice(sim: Sim, p: number): number {
+  return Math.floor(((sim.land.paid.get(p) ?? landContent(sim, p)) * BAL.landResale) / 1000);
 }
 
 /** Land newly held: its fog lifts, and what stands on it wakes (the graph is rebuilt). */

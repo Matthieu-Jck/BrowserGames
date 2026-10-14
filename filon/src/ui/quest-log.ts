@@ -18,7 +18,7 @@ import { RECIPES } from '@/content/recipes';
 import { RESEARCH, nodeName } from '@/content/research';
 import { ITEM_IDS, buildingDef, buildingIdx, itemDef, itemIdx } from '@/content/registry';
 import type { BuildingDef, Loc, RecipeDef, ResearchDef } from '@/content/types';
-import { wirePerMechanicsWorkshop } from '@/content/validate';
+import { wirePerElectronicsWorkshop } from '@/content/validate';
 import { el, setAttr, setStyle, setText } from '@/core/dom';
 import { makeStore } from '@/core/store';
 import { duration, num } from '@/i18n/format';
@@ -26,10 +26,10 @@ import { locale, t } from '@/i18n/i18n';
 import type { Atlas } from '@/render/art/atlas';
 import { EPOCH, TPS } from '@/sim/constants';
 import type { Sim } from '@/sim/state';
-import { boardTop, currentQuest, feeWaived, questProgress, rewardItems, type ObjectiveProgress } from '@/sim/systems/quests';
+import { currentQuest, questProgress, rewardItems, type ObjectiveProgress } from '@/sim/systems/quests';
 import { buildingIcon } from './build-bar';
 import type { GuideStep } from './guide';
-import { itemList, itemMention, itemRef, markItems } from './mention';
+import { itemMention, itemRef, markItems } from './mention';
 import { nameVerdict, refusalText, registerOf } from './screens/intro-name';
 import { oc, secondsTo } from './trade-view';
 
@@ -59,7 +59,6 @@ const L = (loc: Loc): string => loc[locale()];
 const buildingName = (id: string): string => buildingDef(buildingIdx(id)).name[locale()];
 const recipeName = (id: string): string => (RECIPES as Record<string, RecipeDef>)[id]?.name[locale()] ?? id;
 const researchName = (id: string): string => (RESEARCH as Record<string, ResearchDef>)[id]?.name[locale()] ?? id;
-const hours = (min: number): string => (min % 60 === 0 ? t('quest.hours', { n: min / 60 }) : duration(min * 60));
 /** Items as « A / B », each with its icon (mention.ts). */
 const refs = (ids: readonly string[]): string => ids.map((id) => itemRef(id)).join(' / ');
 /** Names as one list in the current language (« A et B »). */
@@ -100,13 +99,11 @@ export function objectiveLabel(o: QuestObjective): string {
     case 'export': return t('quest.obj.export', { name: refs(o.items) });
     case 'order': return t('quest.obj.order', { name: itemRef(o.item) });
     case 'import': return t('quest.obj.import', { name: refs(o.items) });
-    case 'board': return t('quest.obj.board', { n: o.top });
     case 'dig': return t('quest.obj.dig');
     case 'reach': return t('quest.obj.reach', { r: o.r });
     case 'recipe': return t('quest.obj.recipe', { machine: buildingName(o.defs[0]!), recipe: recipeName(o.recipe) });
-    case 'stream': return t('quest.obj.stream', { name: itemRef(o.item) });
     case 'delivers': return t('quest.obj.delivers', { name: buildingName(o.defs[0]!) });
-    case 'unlocked': return t('quest.obj.unlocked', { name: listOf(o.ids.map((id) => nodeName(id)[locale()])) });
+    case 'unlocked': return o.label ? o.label[locale()] : t('quest.obj.unlocked', { name: listOf(o.ids.map((id) => nodeName(id)[locale()])) });
     case 'feeds': return t('quest.obj.feeds', { item: itemRef(o.item), name: buildingName(o.to[0]!) });
     default: { const never: never = o; return never; }
   }
@@ -127,7 +124,6 @@ export function rewardText(r: QuestReward, title?: string): string {
   else if (r.hearthLevel) parts.push(t('quest.reward.hearth', { n: r.hearthLevel }));
   else for (const { item, mu } of rewardItems(r)) parts.push(`+${num(mu / 1000)} ${itemRef(item)}`);
   if (r.credits) parts.push(`+${oc(r.credits * 100)}`);
-  if (r.feeFreeMin) parts.push(t('quest.reward.fees', { d: hours(r.feeFreeMin) }));
   if (r.title) parts.push(title && QUEST_TITLES[title] ? t('quest.reward.titled', { title: L(QUEST_TITLES[title]!) }) : t('quest.reward.title'));
   return parts.join(' · ');
 }
@@ -153,7 +149,6 @@ export class QuestLog {
   private readonly guideBtn: HTMLButtonElement;
   private readonly foldBtn: HTMLButtonElement;
   private readonly cur: HTMLElement;
-  private readonly perk: HTMLElement;
   private readonly doneBtn: HTMLButtonElement;
   private readonly doneList: HTMLElement;
   private sig = '';
@@ -186,7 +181,6 @@ export class QuestLog {
     this.guideBtn = el<'button'>('button.ql-icon', { 'data-quest-guide': '', onclick: () => { this.host.guide.enabled = !this.host.guide.enabled; this.refresh(); } }, '☞');
     this.foldBtn = el<'button'>('button.ql-icon', { 'data-quest-fold': '', onclick: () => this.fold(!this.folded) }, '▾');
     this.cur = el('section.ql-cur');
-    this.perk = el('div.ql-perk');
     this.doneBtn = el<'button'>('button.ql-donebtn', { 'data-quest-donebtn': '', onclick: () => { this.doneOpen = !this.doneOpen; this.save(); this.refresh(); } });
     this.doneList = el('ol.ql-donelist');
     this.root = el('aside.qlog.cartouche', { 'data-screen': 'quests' }, [
@@ -195,7 +189,7 @@ export class QuestLog {
         el('div.ql-tools', {}, [this.guideBtn, this.foldBtn]),
         this.subEl,
       ]),
-      el('div.ql-body', {}, [this.cur, this.perk, el('div.ql-done', {}, [this.doneBtn, this.doneList]),
+      el('div.ql-body', {}, [this.cur, el('div.ql-done', {}, [this.doneBtn, this.doneList]),
         el('button.ql-skip', { 'data-quest-skip': '', onclick: () => { if (window.confirm(t('quest.skip.confirm'))) { this.host.sim().skipTutorial(); this.refresh(); } } }, t('quest.skip'))]),
     ]);
 
@@ -348,9 +342,6 @@ export class QuestLog {
       for (const lv of this.lives) lv.update(sim);
     }
 
-    // Rewards still running: Crier fees waived.
-    setText(this.perk, feeWaived(sim) ? t('quest.info.fees', { d: duration((st.feeFreeUntil - sim.tick) / TPS) }) : '');
-
     // Objectives already met.
     const doneSig = `${st.done.join(',')}|${locale()}|${this.doneOpen ? 1 : 0}`;
     if (doneSig !== this.doneSig) {
@@ -421,13 +412,12 @@ export class QuestLog {
     }
     for (const [it, n] of r.items ?? []) chips.push(itemChip(itemIdx(it), n * 1000));
     if (r.credits) chips.push(el('span.ql-chip.ql-coin', {}, oc(r.credits * 100)));
-    if (r.feeFreeMin) chips.push(el('span.ql-chip.ql-word', {}, t('quest.reward.fees', { d: hours(r.feeFreeMin) })));
     if (r.title) chips.push(el('span.ql-chip.ql-word', {}, t('quest.reward.title')));
     if (!chips.length) chips.push(el('span.ql-chip.ql-word', {}, t('quest.reward.none')));
     return el('div.ql-reward', {}, [el('span.ql-rlabel', {}, t('quest.reward')), ...chips]);
   }
 
-  /** Live lines (content `info`): the vein's shortfall, the next delivery, the price, the board. */
+  /** Live lines (content `info`): the vein's shortfall, the next delivery, the price. */
   private infoLines(sim: Sim, def: QuestDef): HTMLElement[] {
     const node = el('p.ql-info');
     const live = (update: (sim: Sim) => string): HTMLElement[] => {
@@ -436,7 +426,7 @@ export class QuestLog {
       return [node];
     };
     switch (def.info) {
-      case 'vein': return live((s) => t('quest.info.vein', { need: num(wirePerMechanicsWorkshop()), have: num(this.ratePerMin(s, 'copper_wire')), item: itemRef('copper_wire') }));
+      case 'vein': return live((s) => t('quest.info.vein', { need: num(wirePerElectronicsWorkshop()), have: num(this.ratePerMin(s, 'copper_wire')), item: itemRef('copper_wire') }));
       case 'delivery': {
         const o = def.objectives.find((x) => x.k === 'import');
         const items = o && o.k === 'import' ? o.items.map((i) => itemIdx(i)) : [];
@@ -450,14 +440,6 @@ export class QuestLog {
         const o = def.objectives.find((x) => x.k === 'export');
         const it = o && o.k === 'export' ? itemIdx(o.items[0]!) : itemIdx('glass');
         return live((s) => t('quest.info.price', { item: itemRef(it), bid: oc(s.prices.bid[it] ?? 0) }));
-      }
-      case 'board': {
-        let key = -1, text = '';
-        return live((s) => {
-          // The board moves only at an epoch boundary (prices) — recompute then.
-          if (s.prices.epoch !== key) { key = s.prices.epoch; text = itemList(boardTop(s, 3)); }
-          return t('quest.info.board', { list: text });
-        });
       }
       default: return [];
     }

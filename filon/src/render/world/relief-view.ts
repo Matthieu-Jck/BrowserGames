@@ -5,7 +5,8 @@
 // screen but the line work. Sprites are baked on demand (class × level × mask × variant)
 // in a dynamic atlas under a per-frame time budget; blocks of 8×8 tiles stream with the view.
 // A building standing on a column (D44) sorts after it and every column under its footprint
-// (world/stand.ts), so the rock it stands on never covers it.
+// (world/stand.ts), so the rock it stands on never covers it. Water up on the rock (the Crown's
+// tarn, D63) is a column like the rock round it, topped by its pool (terrain.ts `columnLook`).
 //
 // The sun's shadows on the rock (owner, 2026-10-13: "high ground needs to be doing way bigger
 // shadows… proportionate to the place of the sun"): the floor's are painted (terrain-chunks.ts,
@@ -16,10 +17,9 @@
 import { Container, Sprite } from 'pixi.js';
 import { CHUNK, CHUNKS } from '@/sim/constants';
 import type { Grid } from '@/sim/world/grid';
-import { T } from '@/sim/types';
 import { hash32 } from '@/core/hash';
-import { buildWindow, BORDER, tileMasks, WIN, windowLevels } from '../art/terrain';
-import { drawColumn } from '../art/rock';
+import { buildWindow, BORDER, columnLook, tileMasks, WIN, windowLevels } from '../art/terrain';
+import { drawColumn, topKey, type TopLook } from '../art/rock';
 import { DynAtlas } from '../art/dyn-atlas';
 import { IS, IH, ILH } from '../art/iso-shapes';
 import { screenToWorld, type CamState } from '../camera-math';
@@ -40,7 +40,8 @@ const SHADE = mix(C.ink, C.lilacD, 0.3);
 /** Sorting key shared with the buildings (world/stand.ts holds them all): 4 × (2 × depth) + kind. */
 export { rockZ };
 
-interface ChunkRelief { lv: Uint8Array; masks: Uint8Array[]; terr: Uint8Array }
+/** A chunk's columns: relief level, per-step masks, rock class, and the top of a column that is not rock (null: rock). */
+interface ChunkRelief { lv: Uint8Array; masks: Uint8Array[]; cls: Uint8Array; top: Array<TopLook | null> }
 
 export class ReliefView {
   readonly atlas = new DynAtlas();
@@ -86,11 +87,15 @@ export class ReliefView {
     if (!c) {
       const d = buildWindow((x, y) => this.grid.chunkAt(x, y), cx, cy, CHUNKS * CHUNK);
       const { lv, masks } = windowLevels(d);
-      c = { lv: new Uint8Array(CHUNK * CHUNK), masks: Array.from({ length: MAX_TERRACE }, () => new Uint8Array(CHUNK * CHUNK)), terr: new Uint8Array(CHUNK * CHUNK) };
+      c = {
+        lv: new Uint8Array(CHUNK * CHUNK), masks: Array.from({ length: MAX_TERRACE }, () => new Uint8Array(CHUNK * CHUNK)),
+        cls: new Uint8Array(CHUNK * CHUNK), top: new Array<TopLook | null>(CHUNK * CHUNK).fill(null),
+      };
       for (let j = 0; j < CHUNK; j++) {
         for (let i = 0; i < CHUNK; i++) {
           const o = (j + BORDER) * WIN + i + BORDER, k = j * CHUNK + i;
-          c.lv[k] = lv[o]!; c.terr[k] = d.terrain[o]!;
+          c.lv[k] = lv[o]!;
+          if (lv[o]) { const look = columnLook(d, lv, o); c.cls[k] = look.cls; c.top[k] = look.top; }
           for (let t = 0; t < MAX_TERRACE; t++) c.masks[t]![k] = masks[t]![o]!;
         }
       }
@@ -100,15 +105,15 @@ export class ReliefView {
   }
 
   /** The baked frame for a column look, or undefined when over this frame's budget. */
-  private frame(cls: number, L: number, masks: readonly number[], variant: number): ReturnType<DynAtlas['get']> {
-    const key = `${cls}:${masks.join('.')}:${variant}`;
+  private frame(cls: number, L: number, masks: readonly number[], variant: number, top: TopLook | null): ReturnType<DynAtlas['get']> {
+    const key = `${cls}:${masks.join('.')}:${variant}:${topKey(top)}`;
     const f = this.atlas.get(key);
     if (f || this.atlas.spent > BUDGET_MS) return f;
     const w = 2 * IS + 2 * M, h = 2 * IH + L * ILH + 2 * M;
     const ox = M + IS, oy = M + L * ILH;
     const seed = hash32(cls, L, masks[masks.length - 1]!, variant + 0x51);
     return this.atlas.add(key, w, h, ox, oy, (ctx) => {
-      drawColumn(ctx, (u, v, z) => [ox + (u - v) * IS, oy + (u + v) * IH - z * ILH], cls, masks, { detail: 2, seed, k: 1 });
+      drawColumn(ctx, (u, v, z) => [ox + (u - v) * IS, oy + (u + v) * IH - z * ILH], cls, masks, { detail: 2, seed, k: 1, top });
     });
   }
 
@@ -155,8 +160,7 @@ export class ReliefView {
         const k = (y - cy * CHUNK) * CHUNK + (x - cx * CHUNK);
         const L = c.lv[k]!;
         if (!L) continue;
-        const cls = c.terr[k]! - T.Rock1;
-        const f = this.frame(cls, L, tileMasks(c.lv, c.masks, k), hash32(x, y, 0x77) & 1);
+        const f = this.frame(c.cls[k]!, L, tileMasks(c.lv, c.masks, k), hash32(x, y, 0x77) & 1, c.top[k]!);
         if (!f) { complete = false; this.pending++; continue; }
         const s = new Sprite(f.tex);
         s.scale.set(0.5);

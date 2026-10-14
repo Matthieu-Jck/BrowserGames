@@ -37,8 +37,8 @@ or water filled):
 - plus, per deposit tile, the ore's value × the tile's richness (`BAL.land.depositPerValue`);
 - × the growth: each parcel the claim has bought makes the next one dearer (`BAL.land.growth`,
   ‰ per parcel; research lowers it);
-- × the discounts: the Heart's level (`BAL.land.hearthDiscount` per level past the first) and
-  research (`landPrice`);
+- × the research discounts (`landPrice`). The Heart's level does not change it (owner,
+  2026-10-14);
 - × the owner's markup on a sister claim's parcel.
 
 ## Buying and leasing
@@ -51,7 +51,7 @@ or water filled):
   catch-up, the same call (`Sim.landEpoch`). When the purse cannot pay, the lease **lapses**: the
   parcel goes back to its owner, and what stands on it goes dormant (nothing vanishes; leasing
   or buying it again wakes it up). `endLease` gives a lease up.
-- Selling bought land back is not offered.
+- Selling bought land back needs Parcel Resale (`xp_resell`): CrierBelt takes it back at 80 % of what it cost (`BAL.landResale`; `sellLand`, the land panel's « Revendre »), what stands on it goes dormant.
 
 ## Saves
 
@@ -64,6 +64,8 @@ no harm), so no base loses a machine to the change. A granted parcel is held: it
 ## Research
 
 - Land Registry (`tr4`, was Waystations): leases.
-- Boundary Stones (`xp1`): land −15 %. Land Charter (`xp3`): each parcel bought raises the next
-  one's price less. Federation (`xp7`): rent −30 %. Far Claims (`xp8`): land beyond r 320 −30 %.
-- Drone Relays (`xp2`) still halves the remote cost and delay outside the claim's land.
+- Parcel Resale (`xp_resell`): sell a bought parcel back (above). Neighbour Treaties
+  (`xp_treaties`): ribbons and poles cross the sister claims' parcels. Far Claim (`xp_far`): buy a
+  parcel that does not touch the claim's land (without it: `far`).
+- Since D70 no node changes a land price by a percentage: the `landPrice`, `landRent`,
+  `landGrowth` and `farLand` modifiers stay at their base.

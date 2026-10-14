@@ -3,7 +3,7 @@
 // per ship), only while both docks are powered, never past the destination's capacity. Online
 // it moves whole milli-items with a carry; the offline catch-up treats it as a pseudo-flow.
 import { BAL } from '@/content/balance';
-import { BUILDING_KIND, itemIdx } from '@/content/registry';
+import { BUILDING_KIND, buildingDef, itemIdx } from '@/content/registry';
 import { ReservoirNode } from '../flow/nodes';
 import { dockShips, routeDistance, routeRate, type Route } from '../space';
 import type { Sim } from '../state';
@@ -20,7 +20,7 @@ export function routeRateNow(sim: Sim, r: Route, satOf: (net: number) => number)
   if (!a || !b) return 0;
   if ((a.net < 0 ? 0 : satOf(a.net)) <= 0 || (b.net < 0 ? 0 : satOf(b.net)) <= 0) return 0;
   const ea = sim.ents.get(r.from)!, eb = sim.ents.get(r.to)!;
-  return routeRate(r.ships, routeDistance(ea.x + 1, ea.y + 1, eb.x + 1, eb.y + 1, sim.mods), sim.mods);
+  return routeRate(r.ships, routeDistance(ea.x + 1, ea.y + 1, eb.x + 1, eb.y + 1, sim.mods), sim.mods, buildingDef(ea.def).dock?.capMult ?? 1000);
 }
 
 /** Move a route's freight for `ticks` (online: whole mu with a carry). Returns the mu moved. */
@@ -43,7 +43,7 @@ export function moveFreight(sim: Sim, r: Route, ticks: number, satOf: (net: numb
 export function buyDrifter(sim: Sim, dock: number): boolean {
   const e = sim.ents.get(dock);
   if (!e || BUILDING_KIND[e.def] !== 'dock' || e.builtAt !== 0) return false;
-  if ((sim.fleet.get(dock) ?? 0) >= dockShips(sim.mods)) return false;
+  if ((sim.fleet.get(dock) ?? 0) >= dockShips(sim.mods, buildingDef(e.def).dock)) return false;
   const cost = Object.entries(BAL.drifterCost).map(([it, n]) => ({ item: itemIdx(it), mu: n * 1000 }));
   if (cost.some((c) => sim.stock[c.item]! < c.mu)) return false;
   for (const c of cost) sim.stock[c.item] = sim.stock[c.item]! - c.mu;

@@ -4,7 +4,10 @@
 // `grid.level`), the very one placement, ribbons and wires obey — so what is drawn is what the
 // rules read (owner, 2026-10-13: buildings on the mountains did not sit on their rock: the relief
 // was drawn from a smoothed height of its own that only roughly agreed with the levels). Only
-// the +x and +y walls ever face the camera. Pure maths: no DOM, no Pixi.
+// the +x and +y walls ever face the camera. Water up on the rock (the Crown's tarn, D63) and the
+// ground reclaimed from it stand as columns too, at their level: their walls are the rock round
+// them, their top the water's (art/rock.ts `drawColumn`'s `top`), never a hole down to the floor.
+// Pure maths: no DOM, no Pixi.
 import { T } from '@/sim/types';
 import { LH, TH } from './iso';
 
@@ -21,14 +24,19 @@ export const SHIFT = LEVEL_PX / TH;
 export const SMOOTH = 2;
 
 export const isRockT = (t: number): boolean => t >= T.Rock1 && t <= T.Rock4;
+export const isWaterT = (t: number): boolean => t === T.Shallow || t === T.Deep;
+/** Does a tile of this class stand at its level when it lies above the floor (water up on the rock, ground reclaimed from it)? */
+const liftsT = (t: number): boolean => isWaterT(t) || t === T.Filled;
 
 /**
- * Relief level of a tile (0 = floor or water; rock: one terrace — `STEP_LEVELS` levels — per
- * level of the land, at least one): from its terrain class and the land's level there.
+ * Relief level of a tile (0 = the floor's level; rock: one terrace — `STEP_LEVELS` levels — per
+ * level of the land, at least one; water and reclaimed ground up on the rock, the Crown's tarn
+ * (D63): one terrace per level too): from its terrain class and the land's level there.
  */
 export function levelOf(terrain: number, level: number): number {
-  if (!isRockT(terrain)) return 0;
-  return (level < 1 ? 1 : level > MAX_TERRACE ? MAX_TERRACE : level) * STEP_LEVELS;
+  if (isRockT(terrain)) return (level < 1 ? 1 : level > MAX_TERRACE ? MAX_TERRACE : level) * STEP_LEVELS;
+  if (level < 1 || !liftsT(terrain)) return 0;
+  return (level > MAX_TERRACE ? MAX_TERRACE : level) * STEP_LEVELS;
 }
 
 /** What the relief reads of the land (a Grid, or a test field): terrain and level per tile. */

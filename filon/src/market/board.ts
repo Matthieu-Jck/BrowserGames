@@ -11,6 +11,7 @@
 // from digging and pumps, not from tiles).
 // Each row also says what the player's own export flow does to the output's price:
 // r(x)/r(0) − 1, the « at your 120/min the price is −14 % » line. Floats in ◉: display only.
+import { ITEMS } from '@/content/items';
 import { tileCapsPerMin } from '@/content/world';
 import { BUILDINGS } from '@/content/buildings';
 import { RECIPES } from '@/content/recipes';
@@ -24,7 +25,11 @@ const recipeDefs = RECIPES as Record<string, RecipeDef>;
 
 /** The first recipe making each item: how a home-made input is assumed to be produced. */
 const PRIMARY = new Map<string, RecipeDef>();
-for (const r of Object.values(recipeDefs)) for (const [o] of r.outs) if (!PRIMARY.has(o)) PRIMARY.set(o, r);
+/** Mined from the land: an ore the sifter also gets out of stone (D70) still counts as mined. */
+const MINED = new Set(['ore', 'fuel', 'rubble', 'fluid', 'unique']);
+for (const r of Object.values(recipeDefs)) {
+  for (const [o] of r.outs) if (!PRIMARY.has(o) && !MINED.has((ITEMS as Record<string, { kind: string }>)[o]?.kind ?? '')) PRIMARY.set(o, r);
+}
 
 /** Energy one machine running the recipe draws (kW): its building's draw, or the recipe's own energy per craft. */
 function recipeKw(r: RecipeDef, cyclesPerMin: number): number {

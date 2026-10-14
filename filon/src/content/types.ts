@@ -55,9 +55,11 @@ export interface PortDef {
 export type BuildingKind =
   | 'hearth' | 'drill' | 'belt' | 'fork' | 'crossing' | 'bridge' | 'pole' | 'beacon'
   | 'machine' | 'lab' | 'generator' | 'wind' | 'solar' | 'geothermal' | 'storage' | 'trade'
-  | 'excavator' | 'pump' | 'conduit' | 'accumulator' | 'dock' | 'backfiller' | 'sink';
+  | 'excavator' | 'pump' | 'conduit' | 'accumulator' | 'dock' | 'backfiller' | 'sink'
+  // Mints AI tokens from power (D68): research uses them as it runs, its own servers' first.
+  | 'server';
 
-export type BuildCategory = 'extraction' | 'logistics' | 'distribution' | 'production' | 'energy' | 'colony' | 'commerce';
+export type BuildCategory = 'extraction' | 'logistics' | 'distribution' | 'production' | 'research' | 'energy' | 'colony' | 'commerce';
 
 /**
  * How a routing block (kind `fork`) hands items on. `router`: every side, round-robin, to
@@ -77,7 +79,7 @@ export type RouterLogic = 'router' | 'distributor' | 'sorter' | 'inverted' | 'ov
  * blocks, the junction and the bridge; `fluid`: conduits; `power`: masts; `drill`: drills.
  * No group: never replaces, never replaced (machines, stores, the Hearth…).
  */
-export type ReplaceGroup = 'transport' | 'fluid' | 'power' | 'drill';
+export type ReplaceGroup = 'transport' | 'fluid' | 'power' | 'drill' | 'wind';
 
 export interface BuildingDef {
   readonly name: Loc;
@@ -111,19 +113,36 @@ export interface BuildingDef {
   /**
    * A power link point (D25: the pillars and the Hearth): `range` = how far its wires reach
    * (tiles, footprint edge to edge), `slots` = how many wires it holds. `tall`: the Reinforced Pylons
-   * research (`mods.pylonLink`) lengthens its wires. Nothing is powered by proximity: a
-   * building joins a grid only through wires.
+   * research (`mods.pylonLink`) lengthens its wires. `climb` (levels, D78): how far its wires may
+   * climb or come down, and how high above the land they ride — a wire takes its taller end's, its
+   * two ends at most that many levels apart, no tile between them higher than that above the line
+   * joining their grounds (power/links.ts). Nothing is powered by proximity: a building joins a
+   * grid only through wires.
    */
-  readonly pole?: { readonly range: number; readonly slots: number; readonly tall?: boolean };
-  /** Generator output (kW) and fuel burn at full output (items/min). */
+  readonly pole?: { readonly range: number; readonly slots: number; readonly climb: number; readonly tall?: boolean };
+  /**
+   * Generator output (kW) and fuel burn at full output (items/min). A solar plant gives
+   * nothing at night (owner, 2026-10-14: « la nuit les panneaux sont à 0 »).
+   */
   readonly gen?: { readonly kw: number; readonly fuel?: string; readonly fuelPerMin?: number };
   /**
    * An extractor (kind `drill`): `perMin` at most. A drill mines the deposit under it (bounded by its
    * tiles' caps); with `ground`, it collects that item off the bare ground instead — every tile of
    * its footprint plain sand, no deposit — at a steady `perMin` (the sand collector: sand is the
-   * desert floor itself, owner 2026-10-12).
+   * desert floor itself, owner 2026-10-12). With `anywhere`, it makes that item out of nothing but
+   * power, on any ground (the data collectors, D68). A pump's `perMin` is its water a minute.
    */
-  readonly drill?: { readonly perMin: number; readonly capMult?: number; readonly ground?: string };
+  readonly drill?: { readonly perMin: number; readonly capMult?: number; readonly ground?: string; readonly anywhere?: string };
+  /** A machine's crafting speed, ‰ of the recipe's own (the upgraded machines of the tree, D70). */
+  readonly speed?: number;
+  /** A server (kind `server`): AI tokens a minute at full power (D68). */
+  readonly server?: { readonly tokensPerMin: number };
+  /** An excavator's reach (tiles from its footprint) and digging speed (‰). */
+  readonly excavator?: { readonly reach: number; readonly speed: number };
+  /** A skydock's drifters and the share of the base capacity each carries (‰). */
+  readonly dock?: { readonly ships: number; readonly capMult: number };
+  /** A research lab that makes its own data files (kind `lab`): files a minute at full power (D70). */
+  readonly lab?: { readonly dataPerMin: number };
   readonly storageCap?: number;
   readonly reveal?: number;
   readonly accumulator?: { readonly kwMin: number; readonly kw: number };
@@ -139,15 +158,27 @@ export interface BuildingDef {
   readonly desc: Loc;
 }
 
+/** The research families (D69): each a lineage named anew at every tier, most splitting in two at Tier 3. */
+export type FamilyId = 'en' | 'ex' | 'dn' | 'cm' | 'an' | 'xp';
+export type ResearchTier = 1 | 2 | 3 | 4;
+
 export interface ResearchDef {
   readonly name: Loc;
   readonly desc: Loc;
-  readonly branch: 'trunk' | 'ex' | 'xp' | 'dn' | 'en' | 'cm';
-  /** Depth within its branch (1..8, 9 = keystone); trunk nodes use their order. */
+  /** Its family, or the trunk (the Foundations that open each tier). */
+  readonly branch: 'trunk' | FamilyId;
+  /** Its speciality within the family from Tier 3 on (a key of the family's `specs`); none before the split. */
+  readonly spec?: string;
+  /** Its tier (D69): the column it stands in, and the kinds of data it uses (D71). */
+  readonly tier: ResearchTier;
+  /** Depth: the cost band (`DEPTH_COST`; 9 = a keystone ★); trunk nodes use their order. */
   readonly depth: number;
-  /** Tree nodes it needs: research ids, or a plan id (the branch roots need the observatory's plan). */
+  /** Tree nodes it needs: research ids, or a plan id (the family roots need the lab's plan). */
   readonly prereq: readonly string[];
+  /** Items it uses up as it runs (data files), whole items. */
   readonly cost: ReadonlyArray<readonly [string, number]>;
+  /** AI tokens it uses up as it runs (D68): paid at the minute, to the claim's servers first, then to CrierBelt's. */
+  readonly tokens: number;
   readonly minutes: number;
   readonly effects: readonly Effect[];
 }
@@ -157,7 +188,8 @@ export interface ResearchDef {
  * labelled band — logistics (move and sort), production (smelt and make), energy, analytics
  * (what the base shows you), trade, survey (the land). Order and checks: `PLAN_PATHS` in research.ts.
  */
-export type PlanLane = 'logistics' | 'production' | 'energy' | 'analytics' | 'trade' | 'survey';
+/** A plan path, or `gate`: the research lab's plan, between all the plans and research (D71). */
+export type PlanLane = 'logistics' | 'production' | 'energy' | 'analytics' | 'trade' | 'survey' | 'gate';
 
 /**
  * A plan (D33): an instant unlock of the one tree, paid with materials from the Heart the
@@ -187,8 +219,10 @@ export type Effect =
   | { readonly k: 'flag'; readonly flag: string };
 
 export type ModTarget =
-  | 'digSpeed' | 'rubbleYield' | 'embeddedOre' | 'windOut' | 'solarOut' | 'solarNight' | 'geoOut'
+  | 'digSpeed' | 'rubbleYield' | 'embeddedOre' | 'windOut' | 'solarOut' | 'geoOut'
   | 'accCap' | 'accRate' | 'genOut' | 'craftSpeed' | 'tradeFee' | 'deliveryDelay' | 'slippage'
   | 'landPrice' | 'landRent' | 'landGrowth' | 'farLand' | 'remoteBeltCost' | 'remoteBuildDelay'
   | 'pylonLink' | 'dockShips' | 'shipCap' | 'shipSpeed' | 'ring3Caps'
-  | 'bridgeSpan' | 'streams' | 'excavatedSpeed' | 'gustVariance' | 'drifterDistance';
+  | 'bridgeSpan' | 'orders' | 'excavatedSpeed' | 'gustVariance' | 'drifterDistance'
+  // Data files a minute out of the Heart's data outlet (D68), ×1000.
+  | 'heartData';

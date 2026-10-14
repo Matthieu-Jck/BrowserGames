@@ -10,7 +10,7 @@
 // · the Heart only takes in (D34): it pays for construction and sells next to a trade post, it
 //   never feeds a machine — every machine is fed by its own production lines, so the tutorial
 //   builds lines: a router splits the iron line between the Heart and the smelter, another
-//   shares the coal, routers branch the plate and glass lines into the workshop;
+//   shares the coal, and at the end a data collector feeds the research lab (D68, D71);
 // · everything beyond the starting kit (drill, ribbon, pole, the Link tool) is unlocked in
 //   the tech tree (D33): a quest opens the tree and unlocks what it needs before using it — the
 //   telemetry first, then the smelter and the router, the junction once lines cross…
@@ -19,7 +19,7 @@
 // · objectives: what it asks, read by the engine (src/sim/systems/quests.ts) from the base's
 //   state and counters (`any`: one of them is enough);
 // · reward: what it gives, paid into the Heart when it completes (items, ◉, a building's
-//   materials, a Heart level's materials, waived Crier fees, a title in the register);
+//   materials, a Heart level's materials, a title in the register);
 // · steps: how the guide shows the way (src/ui/guide.ts) — each a UI target and a one-line
 //   hint; the first step whose `done` objective does not hold yet is the current one, so a step
 //   is never shown once the base already does what it asks.
@@ -29,7 +29,7 @@ import { BAL } from './balance';
 import { BUILDINGS } from './buildings';
 import { ITEMS } from './items';
 import { RECIPES } from './recipes';
-import { RESEARCH, isTreeNode } from './research';
+import { PLAN_IDS, PLANS, RESEARCH, isTreeNode } from './research';
 import type { BuildCategory, BuildingDef, Loc, RecipeDef } from './types';
 import { CIRQUE } from './world';
 
@@ -61,25 +61,21 @@ export type QuestObjective = (
   /** A research node started (or already learnt). */
   | { readonly k: 'research'; readonly id: string }
   /** These nodes of the tech tree unlocked: plans taken, research learnt (D33). */
-  | { readonly k: 'unlocked'; readonly ids: readonly string[] }
-  /** A trade post touching the Hearth (it sells from, and delivers into, its stock). */
+  | { readonly k: 'unlocked'; readonly ids: readonly string[]; readonly label?: Loc }
+  /** A trade post built. */
   | { readonly k: 'post' }
-  /** n of these items sold through the Crier (streams and spot sales), *since*. */
+  /** n of these items sold through the Crier (by a post's entrance, or spot sales), *since*. */
   | { readonly k: 'export'; readonly items: readonly string[]; readonly n: number }
   /** A standing import order for this item. */
   | { readonly k: 'order'; readonly item: string }
   /** n of these items delivered by imports (bought and arrived), *since*. */
   | { readonly k: 'import'; readonly items: readonly string[]; readonly n: number }
-  /** An export stream sells the output of one of the `top` first lines of « Ce qui rapporte ». */
-  | { readonly k: 'board'; readonly top: number }
   /** n tiles dug out of rock (the colony's total). */
   | { readonly k: 'dig'; readonly n: number }
   /** A built building whose centre lies `r` tiles or more from the Hearth's. */
   | { readonly k: 'reach'; readonly r: number }
   /** n buildings among `defs` set to this recipe. */
   | { readonly k: 'recipe'; readonly defs: readonly string[]; readonly recipe: string; readonly n: number }
-  /** An export stream of this item, on any post. */
-  | { readonly k: 'stream'; readonly item: string }
   /** n built buildings among `defs` (drills on a deposit of `item`, if given) whose output reaches the Heart through ribbons and routing blocks. */
   | { readonly k: 'delivers'; readonly defs: readonly string[]; readonly item?: string; readonly n: number }
   /**
@@ -101,8 +97,6 @@ export interface QuestReward {
   readonly kit?: string;
   /** The materials of a Hearth level (2–4, from BAL.hearthUpgrades). */
   readonly hearthLevel?: number;
-  /** The Crier's fees are waived for this many game minutes. */
-  readonly feeFreeMin?: number;
   /** The title of the objective that completed the quest (`any` quests). */
   readonly title?: boolean;
 }
@@ -135,8 +129,8 @@ export type GuideTarget =
   | { readonly k: 'unlock'; readonly ids: readonly string[] }
   /** The research screen (the HUD chip), the node's card, its start button. */
   | { readonly k: 'research'; readonly id: string }
-  /** The Crier (the HUD ◉), a tab, then a control (export stream, order form, best line). */
-  | { readonly k: 'crier'; readonly tab: 'prices' | 'trade' | 'board'; readonly focus?: 'export' | 'order' | 'best' }
+  /** The Crier (the HUD ◉), a tab, then a control (the order form). */
+  | { readonly k: 'crier'; readonly tab: 'prices' | 'trade' | 'board'; readonly focus?: 'order' }
   /** The landscaping brush. */
   | { readonly k: 'brush' }
   /** The quest log's naming button. */
@@ -149,12 +143,10 @@ export interface QuestStep {
   readonly target: GuideTarget;
   /** The step is over once this holds (counters count from the founding). Omitted: it lasts until the quest ends. */
   readonly done?: QuestObjective;
-  /** UI-only: the step is over once the player has looked at this (the Crier's board). */
-  readonly seen?: 'board';
 }
 
 /** Extra live lines the quest log shows for a quest. */
-export type QuestInfo = 'vein' | 'delivery' | 'shortage' | 'board';
+export type QuestInfo = 'vein' | 'delivery' | 'shortage';
 
 /**
  * A piece of the interface the tutorial reveals (owner, 2026-10-12: nothing on screen before
@@ -182,11 +174,12 @@ export interface QuestDef {
 const ORES = ['iron_ore', 'copper_ore'] as const;
 const DRILLS = ['drill', 'deep_bore'] as const;
 const KILNS = ['kiln', 'kiln_compact'] as const;
-const WORKSHOPS = ['workshop', 'great_workshop', 'great_workshop_compact', 'tower_workshop'] as const;
 const MASTS = ['mast', 'pylon'] as const;
 const NEAR_HEART = { hearth: true } as const;
 /** Where an output ribbon must end: a free input of the Heart (its teal nozzles). */
 const INTAKE = { intake: true } as const;
+/** The plans of the six paths: all of them open the research lab's plan (D71). */
+const PATH_PLANS = PLAN_IDS.filter((id) => PLANS[id].lane !== 'gate');
 
 export const QUESTS = {
   // ── 0 ── the name ───────────────────────────────────────────────────────────
@@ -194,7 +187,7 @@ export const QUESTS = {
     name: { fr: 'Ta concession', en: 'Your Claim' },
     desc: {
       fr: 'Bienvenue dans le partenariat. Vos drones ont posé le Cœur de votre base au fond du cirque de Bonne-Veine ; elle travaille seule, vous la pilotez depuis Verrière. Donnez un nom à votre concession, que nous l’inscrivions au registre de la Criée.',
-      en: 'Welcome to the partnership. Your drones have set your base’s Heart down in the Bonne-Veine cirque; it works by itself, and you steer it from Verrière. Give your claim a name, and we will enter it in the Crier’s register.',
+      en: 'Welcome to the partnership. Your drones have set your base’s Core down in the Bonne-Veine cirque; it works by itself, and you steer it from Verrière. Give your claim a name, and we will enter it in the Crier’s register.',
     },
     objectives: [{ k: 'name' }],
     reward: {},
@@ -209,30 +202,29 @@ export const QUESTS = {
     reveals: ['build', 'power', 'stock:iron_plate', 'stock:glass', 'stock:copper_wire', 'stock:iron_ore'],
     desc: {
       fr: 'Première étape : extraire. Posez une foreuse sur le gisement de fer, reliez-la au Cœur pour l’énergie, et tracez un ruban pour le minerai.',
-      en: 'Step one: extract. Put a drill on the iron deposit, wire it to the Heart for power, and lay a ribbon for the ore.',
+      en: 'Step one: extract. Put a drill on the iron deposit, wire it to the Core for power, and lay a ribbon for the ore.',
     },
     objectives: [
       { k: 'build', defs: DRILLS, n: 1 },
-      { k: 'stock', items: ORES, n: 10, label: { fr: 'Minerai au Cœur', en: 'Ore in the Heart' } },
+      { k: 'stock', items: ORES, n: 10, label: { fr: 'Minerai au Cœur', en: 'Ore in the Core' } },
     ],
     reward: { items: [['iron_plate', 20]] },
     steps: [
       {
-        hint: { fr: 'Pose une foreuse sur le gisement de fer, au nord du Cœur (R : tourner).', en: 'Place a drill on the iron deposit, north of the Heart (R: rotate).' },
+        hint: { fr: 'Pose une foreuse sur le gisement de fer, au nord du Cœur (R : tourner).', en: 'Place a drill on the iron deposit, north of the Core (R: rotate).' },
         target: { k: 'build', def: 'drill', at: { deposit: 'iron_ore' } },
         done: { k: 'build', defs: DRILLS, n: 1 },
       },
       {
-        hint: { fr: 'Relie-la au Cœur : outil Relier, clique le Cœur puis la foreuse. Trop loin (plus de 8 tuiles) ? Pose un poteau entre les deux.', en: 'Wire it to the Heart: Link tool, click the Heart, then the drill. Too far (over 8 tiles)? Place a pole between them.' },
+        hint: { fr: 'Relie-la au Cœur : outil Relier, clique le Cœur puis la foreuse. Trop loin (plus de 8 tuiles) ? Pose un poteau entre les deux.', en: 'Wire it to the Core: Link tool, click the Core, then the drill. Too far (over 8 tiles)? Place a pole between them.' },
         target: { k: 'link' },
         done: { k: 'linked', defs: DRILLS, n: 1 },
       },
       {
-        hint: { fr: 'Trace un ruban depuis la sortie de la foreuse jusqu’à une entrée du Cœur (ses buses turquoise).', en: 'Lay a ribbon from the drill’s output to an input of the Heart (its teal nozzles).' },
+        hint: { fr: 'Trace un ruban depuis la sortie de la foreuse jusqu’à une entrée du Cœur (ses buses turquoise).', en: 'Lay a ribbon from the drill’s output to an input of the Core (its teal nozzles).' },
         target: { k: 'build', def: 'ribbon', at: INTAKE },
         done: { k: 'delivers', defs: DRILLS, n: 1 },
       },
-      { hint: { fr: 'Le minerai arrive : laisse-le s’entasser jusqu’à 10.', en: 'The ore is coming in: let it pile up to 10.' }, target: { k: 'none' } },
     ],
   },
 
@@ -242,7 +234,7 @@ export const QUESTS = {
     reveals: ['research'],
     desc: {
       fr: 'Une foreuse donne 20 minerais par minute, pas plus. Doublez-la. Et pour suivre vos débits, débloquez la Télémétrie dans l’arbre des techniques : un plan se paie en matériaux du Cœur et sert aussitôt.',
-      en: 'A drill gives 20 ore a minute, no more. Double it. And to follow your rates, unlock Telemetry in the tech tree: a plan is paid with materials from the Heart and works at once.',
+      en: 'A drill gives 20 ore a minute, no more. Double it. And to follow your rates, unlock Telemetry in the tech tree: a plan is paid with materials from the Core and works at once.',
     },
     objectives: [
       { k: 'unlocked', ids: ['telemetry'] },
@@ -262,12 +254,12 @@ export const QUESTS = {
         done: { k: 'build', defs: DRILLS, n: 2 },
       },
       {
-        hint: { fr: 'Relie-la elle aussi au Cœur (outil Relier).', en: 'Wire it to the Heart too (Link tool).' },
+        hint: { fr: 'Relie-la elle aussi au Cœur (outil Relier).', en: 'Wire it to the Core too (Link tool).' },
         target: { k: 'link' },
         done: { k: 'linked', defs: DRILLS, n: 2 },
       },
       {
-        hint: { fr: 'Un ruban de sa sortie jusqu’à une entrée du Cœur, ou dans le ruban de la première foreuse.', en: 'A ribbon from its output to an input of the Heart, or into the first drill’s ribbon.' },
+        hint: { fr: 'Un ruban de sa sortie jusqu’à une entrée du Cœur, ou dans le ruban de la première foreuse.', en: 'A ribbon from its output to an input of the Core, or into the first drill’s ribbon.' },
         target: { k: 'build', def: 'ribbon', at: INTAKE },
         done: { k: 'delivers', defs: DRILLS, n: 2 },
       },
@@ -280,7 +272,7 @@ export const QUESTS = {
     name: { fr: 'La fonderie', en: 'The Smelter' },
     desc: {
       fr: 'Le minerai brut se vend mal, et le Cœur ne fait que recevoir : une fonderie se nourrit à même vos lignes. Le routeur partage la ligne de fer entre le Cœur et elle ; le charbon vient tout droit de sa foreuse.',
-      en: 'Raw ore sells poorly, and the Heart only takes in: a smelter feeds straight from your lines. A router shares the iron line between the Heart and the smelter; the coal comes straight from its drill.',
+      en: 'Raw ore sells poorly, and the Core only takes in: a smelter feeds straight from your lines. A router shares the iron line between the Core and the smelter; the coal comes straight from its drill.',
     },
     objectives: [
       { k: 'build', defs: ['router'], n: 1 },
@@ -296,12 +288,12 @@ export const QUESTS = {
         done: { k: 'unlocked', ids: ['kiln', 'router'] },
       },
       {
-        hint: { fr: 'Pose une foreuse sur le gisement de charbon, à l’ouest du Cœur.', en: 'Place a drill on the coal deposit, west of the Heart.' },
+        hint: { fr: 'Pose une foreuse sur le gisement de charbon, à l’ouest du Cœur.', en: 'Place a drill on the coal deposit, west of the Core.' },
         target: { k: 'build', def: 'drill', at: { deposit: 'coal' } },
         done: { k: 'build', defs: DRILLS, item: 'coal', n: 1 },
       },
       {
-        hint: { fr: 'Le charbon est trop loin du Cœur pour un fil direct (8 tuiles au plus) : pose un poteau à mi-chemin (onglet Énergie). Il se relie tout seul au Cœur.', en: 'The coal is too far from the Heart for a direct wire (8 tiles at most): place a pole halfway (Energy tab). It wires itself to the Heart.' },
+        hint: { fr: 'Le charbon est trop loin du Cœur pour un fil direct (8 tuiles au plus) : pose un poteau à mi-chemin (onglet Énergie). Il se relie tout seul au Cœur.', en: 'The coal is too far from the Core for a direct wire (8 tiles at most): place a pole halfway (Energy tab). It wires itself to the Core.' },
         target: { k: 'build', def: 'mast', at: { between: 'coal' } },
         done: { k: 'build', defs: MASTS, n: 1 },
       },
@@ -311,7 +303,7 @@ export const QUESTS = {
         done: { k: 'linked', defs: DRILLS, item: 'coal', n: 1 },
       },
       {
-        hint: { fr: 'Pose une fonderie entre le Cœur et le charbon : ses deux entrées sont à l’arrière (R : tourner).', en: 'Place a smelter between the Heart and the coal: its two inputs are at the back (R: rotate).' },
+        hint: { fr: 'Pose une fonderie entre le Cœur et le charbon : ses deux entrées sont à l’arrière (R : tourner).', en: 'Place a smelter between the Core and the coal: its two inputs are at the back (R: rotate).' },
         target: { k: 'build', def: 'kiln', at: { between: 'coal' } },
         done: { k: 'build', defs: KILNS, n: 1 },
       },
@@ -331,7 +323,7 @@ export const QUESTS = {
         done: { k: 'feeds', item: 'coal', to: KILNS, n: 1 },
       },
       {
-        hint: { fr: 'Et un ruban de sa sortie jusqu’à une entrée du Cœur.', en: 'And a ribbon from its output to an input of the Heart.' },
+        hint: { fr: 'Et un ruban de sa sortie jusqu’à une entrée du Cœur.', en: 'And a ribbon from its output to an input of the Core.' },
         target: { k: 'build', def: 'ribbon', at: INTAKE },
         done: { k: 'delivers', defs: KILNS, n: 1 },
       },
@@ -339,24 +331,23 @@ export const QUESTS = {
     ],
   },
 
-  // ── 4 ── power: wind turbines on the grid, a powered workshop ───────────────
+  // ── 4 ── power: wind turbines on the grid ────────────────────────────────────
   first_wind: {
     name: { fr: 'Le Souffle', en: 'The Sough' },
     reveals: ['clock'],
     desc: {
-      fr: 'Le panneau du Cœur s’éteint la nuit, et ses fils sont comptés. Le Souffle ne porte qu’en hauteur : plantez deux éoliennes sur la Couronne, les montagnes autour du cirque, reliez-les au réseau de poteau en poteau, et alimentez un atelier.',
-      en: 'The Heart’s panel goes dark at night, and its wires are few. The Sough only blows up high: plant two wind turbines on the Crown, the mountains round the cirque, wire them to the grid pole by pole, and power a workshop.',
+      fr: 'Le panneau du Cœur s’éteint la nuit, et ses fils sont comptés. Le Souffle ne porte qu’en hauteur : plantez deux éoliennes sur la Couronne, les montagnes autour du cirque, et reliez-les au réseau de poteau en poteau.',
+      en: 'The Core’s panel goes dark at night, and its wires are few. The Sough only blows up high: plant two wind turbines on the Crown, the mountains round the cirque, and wire them to the grid pole by pole.',
     },
     objectives: [
       { k: 'linked', defs: ['wind_flower'], n: 2 },
-      { k: 'powered', defs: WORKSHOPS, n: 1 },
     ],
     reward: { kit: 'brazier' },
     steps: [
       {
-        hint: { fr: 'Arbre des techniques : débloque l’Éolienne et l’Atelier.', en: 'Tech tree: unlock the Wind Turbine and the Workshop.' },
-        target: { k: 'unlock', ids: ['wind_flower', 'workshop'] },
-        done: { k: 'unlocked', ids: ['wind_flower', 'workshop'] },
+        hint: { fr: 'Arbre des techniques : débloque l’Éolienne.', en: 'Tech tree: unlock the Wind Turbine.' },
+        target: { k: 'unlock', ids: ['wind_flower'] },
+        done: { k: 'unlocked', ids: ['wind_flower'] },
       },
       {
         hint: { fr: 'Plante deux éoliennes sur la Couronne, les montagnes autour du cirque (onglet Énergie) : au fond du cirque, abrité, le vent ne donne presque rien.', en: 'Plant two wind turbines on the Crown, the mountains round the cirque (Energy tab): down in the sheltered cirque the wind gives next to nothing.' },
@@ -364,19 +355,9 @@ export const QUESTS = {
         done: { k: 'build', defs: ['wind_flower'], n: 2 },
       },
       {
-        hint: { fr: 'Pose un atelier près de la fonderie : il recevra ses plaques.', en: 'Place a workshop near the smelter: it will take its plates.' },
-        target: { k: 'build', def: 'workshop', at: { entity: 'kiln' } },
-        done: { k: 'build', defs: WORKSHOPS, n: 1 },
-      },
-      {
-        hint: { fr: 'Outil Relier : du Cœur, de poteau en poteau (ils se posent aussi sur la roche), jusqu’à chaque éolienne.', en: 'Link tool: from the Heart, pole to pole (they stand on rock too), to each turbine.' },
+        hint: { fr: 'Outil Relier : du Cœur, de poteau en poteau (ils se posent aussi sur la roche), jusqu’à chaque éolienne.', en: 'Link tool: from the Core, pole to pole (they stand on rock too), to each turbine.' },
         target: { k: 'link' },
         done: { k: 'linked', defs: ['wind_flower'], n: 2 },
-      },
-      {
-        hint: { fr: 'Puis relie l’atelier, lui aussi.', en: 'Then wire the workshop too.' },
-        target: { k: 'link' },
-        done: { k: 'powered', defs: WORKSHOPS, n: 1 },
       },
     ],
   },
@@ -431,83 +412,24 @@ export const QUESTS = {
         done: { k: 'feeds', item: 'sand', to: KILNS, n: 1 },
       },
       {
-        hint: { fr: 'Le verre au Cœur : un ruban de sa sortie jusqu’à une entrée du Cœur.', en: 'The glass to the Heart: a ribbon from its output to an input of the Heart.' },
+        hint: { fr: 'Le verre au Cœur : un ruban de sa sortie jusqu’à une entrée du Cœur.', en: 'The glass to the Core: a ribbon from its output to an input of the Core.' },
         target: { k: 'build', def: 'ribbon', at: INTAKE },
         done: { k: 'delivers', defs: KILNS, n: 2 },
       },
-      { hint: { fr: 'Le verre coule : dix en tout.', en: 'The glass is flowing: ten in all.' }, target: { k: 'none' } },
     ],
   },
 
-  // ── 6 ── survey data and research ───────────────────────────────────────────
-  field_journal: {
-    name: { fr: 'Données d’arpentage', en: 'Survey Data' },
-    desc: {
-      fr: 'La recherche se nourrit de données d’arpentage : un atelier les compile (deux plaques et un verre par paquet), un observatoire les transmet aux laboratoires de Verrière. Branchez l’atelier sur vos lignes de plaques et de verre, puis lancez Mécanique.',
-      en: 'Research feeds on survey data: a workshop compiles it (two plates and a glass a package), an observatory uplinks it to Verrière’s labs. Plug the workshop into your plate and glass lines, then start Mechanics.',
-    },
-    objectives: [
-      { k: 'produce', items: ['journal_1'], n: 3 },
-      { k: 'build', defs: ['observatory'], n: 1 },
-      { k: 'research', id: 'tr1' },
-    ],
-    reward: { credits: 100 },
-    steps: [
-      {
-        hint: { fr: 'Arbre des techniques : débloque l’Observatoire, qui ouvre la recherche.', en: 'Tech tree: unlock the Observatory, which opens research.' },
-        target: { k: 'unlock', ids: ['observatory'] },
-        done: { k: 'unlocked', ids: ['observatory'] },
-      },
-      {
-        hint: { fr: 'Clique l’atelier et choisis Données d’arpentage.', en: 'Click the workshop and pick Survey Data.' },
-        target: { k: 'recipe', defs: WORKSHOPS, recipe: 'journal_1' },
-        done: { k: 'recipe', defs: WORKSHOPS, recipe: 'journal_1', n: 1 },
-      },
-      {
-        hint: { fr: 'Des plaques pour l’atelier : un routeur sur le ruban des plaques, puis un ruban du routeur jusqu’à l’atelier.', en: 'Plates for the workshop: a router on the plate ribbon, then a ribbon from the router to the workshop.' },
-        target: { k: 'branch', item: 'iron_plate', to: WORKSHOPS },
-        done: { k: 'feeds', item: 'iron_plate', to: WORKSHOPS, n: 1 },
-      },
-      {
-        hint: { fr: 'Et du verre : un routeur sur le ruban du verre, puis un ruban jusqu’à l’autre entrée de l’atelier.', en: 'And glass: a router on the glass ribbon, then a ribbon to the workshop’s other input.' },
-        target: { k: 'branch', item: 'glass', to: WORKSHOPS },
-        done: { k: 'feeds', item: 'glass', to: WORKSHOPS, n: 1 },
-      },
-      {
-        hint: { fr: 'Pose un observatoire près de l’atelier.', en: 'Place an observatory near the workshop.' },
-        target: { k: 'build', def: 'observatory', at: { entity: 'workshop' } },
-        done: { k: 'build', defs: ['observatory'], n: 1 },
-      },
-      {
-        hint: { fr: 'Relie l’observatoire au réseau.', en: 'Wire the observatory into the grid.' },
-        target: { k: 'link' },
-        done: { k: 'linked', defs: ['observatory'], n: 1 },
-      },
-      {
-        hint: { fr: 'Un ruban de la sortie de l’atelier jusqu’à l’observatoire : les données y montent.', en: 'A ribbon from the workshop’s output to the observatory: the data goes up from there.' },
-        target: { k: 'build', def: 'ribbon', at: { entity: 'observatory' } },
-        done: { k: 'feeds', item: 'journal_1', to: ['observatory'], n: 1 },
-      },
-      {
-        hint: { fr: 'Dans l’arbre (T), lance Mécanique.', en: 'In the tree (T), start Mechanics.' },
-        target: { k: 'research', id: 'tr1' },
-        done: { k: 'research', id: 'tr1' },
-      },
-      { hint: { fr: 'Les paquets arrivent : trois en tout. La recherche les consomme à mesure.', en: 'The packages are coming: three in all. Research uses them up as they arrive.' }, target: { k: 'none' } },
-    ],
-  },
-
-  // ── 7 ── the first trade ────────────────────────────────────────────────────
+  // ── 6 ── the first trade ────────────────────────────────────────────────────
   crier_calls: {
     name: { fr: 'La Criée appelle', en: 'The Crier Calls' },
     reveals: ['credits', 'crier'],
     desc: {
-      fr: 'Port-Écume manque de verre et paie cher. Un comptoir collé au Cœur vend depuis son stock, à chaque levée : nos cargos montent, nous prenons notre part, le reste est à vous.',
-      en: 'Port-Écume is short of glass and pays well. A trade post against the Heart sells from its stock at every lift: our cargo craft go up, we take our cut, the rest is yours.',
+      fr: 'Port-Écume manque de verre et paie cher. Un comptoir vend chaque minute tout ce que son entrée lui apporte : nos cargos montent, nous prenons notre part, un cinquième, le reste est à vous.',
+      en: 'Port-Écume is short of glass and pays well. A trade post sells, every minute, whatever its entrance brings: our cargo craft go up, we take our cut, a fifth, the rest is yours.',
     },
     objectives: [
-      { k: 'post', label: { fr: 'Un comptoir collé au Cœur', en: 'A trade post against the Heart' } },
-      { k: 'export', items: ['glass'], n: 10 },
+      { k: 'post', label: { fr: 'Un comptoir', en: 'A trade post' } },
+      { k: 'export', items: ['glass'], n: 3 },
     ],
     reward: { credits: 150 },
     info: 'shortage',
@@ -518,20 +440,19 @@ export const QUESTS = {
         done: { k: 'unlocked', ids: ['trade_post'] },
       },
       {
-        hint: { fr: 'Pose un comptoir collé au Cœur (onglet Commerce).', en: 'Place a trade post against the Heart (Commerce tab).' },
-        target: { k: 'build', def: 'trade_post', at: NEAR_HEART },
+        hint: { fr: 'Pose un comptoir près de la fonderie à verre (onglet Commerce) : rien ne se construit dans l’anneau brûlé par ses drones.', en: 'Place a trade post near the glass smelter (Commerce tab): nothing is built in the ring its drones scorch.' },
+        target: { k: 'build', def: 'trade_post', at: { newest: 'kiln' } },
         done: { k: 'post' },
       },
       {
-        hint: { fr: 'Ouvre la Criée (M), onglet Échanges : un flux d’export de verre.', en: 'Open the Crier (M), Trade tab: an export stream of glass.' },
-        target: { k: 'crier', tab: 'trade', focus: 'export' },
-        done: { k: 'stream', item: 'glass' },
+        hint: { fr: 'Du verre à son entrée : un routeur sur le ruban du verre, puis un ruban jusqu’à l’entrée du comptoir (sa rampe turquoise).', en: 'Glass to its entrance: a router on the glass ribbon, then a ribbon to the post’s entrance (its teal ramp).' },
+        target: { k: 'branch', item: 'glass', to: ['trade_post'] },
+        done: { k: 'feeds', item: 'glass', to: ['trade_post'], n: 1 },
       },
-      { hint: { fr: 'Chaque minute, le comptoir vend le verre que le Cœur a en trop (il en garde 25).', en: 'Every minute the post sells the glass the Heart has to spare (it keeps 25).' }, target: { k: 'none' } },
     ],
   },
 
-  // ── 8 ── the tired vein ─────────────────────────────────────────────────────
+  // ── 7 ── the tired vein ─────────────────────────────────────────────────────
   tired_vein: {
     name: { fr: 'Le filon fatigué', en: 'The Tired Vein' },
     desc: {
@@ -551,7 +472,7 @@ export const QUESTS = {
         done: { k: 'unlocked', ids: ['wire_mill'] },
       },
       {
-        hint: { fr: 'Pose une foreuse sur le filon de cuivre, au sud du Cœur.', en: 'Place a drill on the copper vein, south of the Heart.' },
+        hint: { fr: 'Pose une foreuse sur le filon de cuivre, au sud du Cœur.', en: 'Place a drill on the copper vein, south of the Core.' },
         target: { k: 'build', def: 'drill', at: { deposit: 'copper_ore' } },
         done: { k: 'build', defs: DRILLS, item: 'copper_ore', n: 1 },
       },
@@ -566,12 +487,7 @@ export const QUESTS = {
         done: { k: 'recipe', defs: ['wire_mill'], recipe: 'copper_wire', n: 1 },
       },
       {
-        hint: { fr: 'Relie la foreuse de cuivre au réseau (des poteaux portent les fils jusque-là).', en: 'Wire the copper drill into the grid (poles carry the wires out there).' },
-        target: { k: 'link' },
-        done: { k: 'linked', defs: DRILLS, item: 'copper_ore', n: 1 },
-      },
-      {
-        hint: { fr: 'Puis la tréfileuse.', en: 'Then the wire mill.' },
+        hint: { fr: 'Relie la foreuse de cuivre et la tréfileuse au réseau (des poteaux portent les fils jusque-là).', en: 'Wire the copper drill and the wire mill into the grid (poles carry the wires out there).' },
         target: { k: 'link' },
         done: { k: 'powered', defs: ['wire_mill'], n: 1 },
       },
@@ -581,25 +497,24 @@ export const QUESTS = {
         done: { k: 'feeds', item: 'copper_ore', to: ['wire_mill'], n: 1 },
       },
       {
-        hint: { fr: 'Et un de la tréfileuse jusqu’à une entrée du Cœur.', en: 'And one from the wire mill to an input of the Heart.' },
+        hint: { fr: 'Et un de la tréfileuse jusqu’à une entrée du Cœur.', en: 'And one from the wire mill to an input of the Core.' },
         target: { k: 'build', def: 'ribbon', at: INTAKE },
         done: { k: 'delivers', defs: ['wire_mill'], n: 1 },
       },
-      { hint: { fr: 'Compte le fil : le filon ne suffira pas longtemps.', en: 'Count the wire: the vein will not last you long.' }, target: { k: 'none' } },
     ],
   },
 
-  // ── 9 ── buying ─────────────────────────────────────────────────────────────
+  // ── 8 ── buying ─────────────────────────────────────────────────────────────
   first_purchase: {
     name: { fr: 'Premier achat', en: 'First Purchase' },
     desc: {
-      fr: 'Ce que le cirque n’a pas, la Criée le vend. Un ordre d’import permanent achète chaque minute, tant que le prix reste sous votre maximum. Vos achats arrivent dans le conteneur du comptoir et n’en sortent que par sa sortie, chacun son tour : tant qu’elle ne mène nulle part, l’ordre attend et rien n’est débité. Pour ce premier achat, CrierBelt vous offre une journée sans commission.',
-      en: 'What the cirque lacks, the Crier sells. A standing import order buys every minute, as long as the price stays under your maximum. Your purchases land in the post’s container and leave only by its exit, each in turn: until it leads somewhere, the order waits and nothing is paid. For this first purchase, CrierBelt gives you a day without its cut.',
+      fr: 'Ce que le cirque n’a pas, la Criée le vend. Un ordre d’import permanent achète chaque minute, tant que le prix reste sous votre maximum. Vos achats arrivent dans le conteneur du comptoir et n’en sortent que par sa sortie, chacun son tour : tant qu’elle ne mène nulle part, l’ordre attend et rien n’est débité.',
+      en: 'What the cirque lacks, the Crier sells. A standing import order buys every minute, as long as the price stays under your maximum. Your purchases land in the post’s container and leave only by its exit, each in turn: until it leads somewhere, the order waits and nothing is paid.',
     },
     objectives: [
       { k: 'order', item: 'copper_ore' },
     ],
-    reward: { feeFreeMin: 24 * 60 },
+    reward: { hearthLevel: 2 },
     info: 'delivery',
     steps: [
       {
@@ -610,30 +525,7 @@ export const QUESTS = {
     ],
   },
 
-  // ── 10 ── what pays ─────────────────────────────────────────────────────────
-  the_board: {
-    name: { fr: 'Le Tableau', en: 'The Board' },
-    desc: {
-      fr: 'Notre tableau, « Ce qui rapporte », classe vos recettes au prix du jour, par tuile de gisement. Faites passer un flux d’export sur l’une des trois premières.',
-      en: 'Our board, “What pays”, ranks your recipes at today’s prices, per deposit tile. Switch an export stream to one of the top three.',
-    },
-    objectives: [{ k: 'board', top: 3 }],
-    reward: { hearthLevel: 2 },
-    info: 'board',
-    steps: [
-      {
-        hint: { fr: 'Criée (M), « Ce qui rapporte » : les meilleures lignes sont en haut.', en: 'Crier (M), “What pays”: the best lines are at the top.' },
-        target: { k: 'crier', tab: 'board', focus: 'best' },
-        seen: 'board',
-      },
-      {
-        hint: { fr: 'Puis, onglet Échanges : un flux d’export sur l’une des trois premières.', en: 'Then, Trade tab: an export stream on one of the top three.' },
-        target: { k: 'crier', tab: 'trade', focus: 'export' },
-      },
-    ],
-  },
-
-  // ── 11 ── beyond the Crown ──────────────────────────────────────────────────
+  // ── 9 ── beyond the Crown ──────────────────────────────────────────────────
   beyond_crown: {
     name: { fr: 'Au-delà de la Couronne', en: 'Beyond the Crown' },
     reveals: ['brush'],
@@ -659,6 +551,67 @@ export const QUESTS = {
       },
     ],
   },
+
+  // ── 10 ── research: every plan, then the lab and its Survey Data (D71) ─────
+  // The research lab is the gate between the plans and research (owner, 2026-10-14): it needs
+  // every plan, so the tutorial ends here, the whole kit in hand.
+  field_journal: {
+    name: { fr: 'Données d’arpentage', en: 'Survey Data' },
+    desc: {
+      fr: 'La recherche se nourrit de données et de tokens d’IA. Quand tous les plans sont pris, le laboratoire de recherche s’ouvre, avec le collecteur qui tire des données d’arpentage de l’électricité. Le laboratoire les reçoit par ruban et paie ses tokens à la minute aux serveurs de CrierBelt, sur votre trésorerie. Prenez les derniers plans, posez le laboratoire et son collecteur, puis lancez Mécanique.',
+      en: 'Research feeds on data and AI tokens. Once every plan is taken, the research lab opens, with the data collector that makes Survey Data out of power. The lab takes the data in by ribbon and pays for its tokens by the minute to CrierBelt’s servers, out of your purse. Take the last plans, place the lab and its collector, then start Mechanics.',
+    },
+    objectives: [
+      { k: 'unlocked', ids: PLAN_IDS, label: { fr: 'Tous les plans débloqués', en: 'Every plan unlocked' } },
+      { k: 'produce', items: ['journal_1'], n: 3 },
+      { k: 'build', defs: ['observatory'], n: 1 },
+      { k: 'research', id: 'tr1' },
+    ],
+    reward: { credits: 100 },
+    steps: [
+      {
+        hint: { fr: 'Arbre des techniques : débloque les plans qui te manquent encore, l’un après l’autre.', en: 'Tech tree: unlock the plans you are still missing, one after the other.' },
+        target: { k: 'unlock', ids: PATH_PLANS },
+        done: { k: 'unlocked', ids: PATH_PLANS },
+      },
+      {
+        hint: { fr: 'Tous les plans sont pris : débloque le Laboratoire de recherche, au bout des plans.', en: 'Every plan is taken: unlock the Research Lab, at the end of the plans.' },
+        target: { k: 'unlock', ids: ['observatory'] },
+        done: { k: 'unlocked', ids: ['observatory'] },
+      },
+      {
+        hint: { fr: 'Pose le laboratoire près du Cœur (onglet Recherche).', en: 'Place the lab near the Core (Research tab).' },
+        target: { k: 'build', def: 'observatory', at: NEAR_HEART },
+        done: { k: 'build', defs: ['observatory'], n: 1 },
+      },
+      {
+        hint: { fr: 'Pose un collecteur de données à côté : il tire des données d’arpentage de l’électricité, n’importe où.', en: 'Place a data collector beside it: it makes Survey Data out of power, anywhere.' },
+        target: { k: 'build', def: 'data_collector', at: { entity: 'observatory' } },
+        done: { k: 'build', defs: ['data_collector'], n: 1 },
+      },
+      {
+        hint: { fr: 'Relie le laboratoire au réseau.', en: 'Wire the lab into the grid.' },
+        target: { k: 'link' },
+        done: { k: 'linked', defs: ['observatory'], n: 1 },
+      },
+      {
+        hint: { fr: 'Puis le collecteur.', en: 'Then the collector.' },
+        target: { k: 'link' },
+        done: { k: 'powered', defs: ['data_collector'], n: 1 },
+      },
+      {
+        hint: { fr: 'Un ruban de la sortie du collecteur jusqu’à une entrée du laboratoire : les données y montent.', en: 'A ribbon from the collector’s output to one of the lab’s inputs: the data goes up from there.' },
+        target: { k: 'build', def: 'ribbon', at: { entity: 'observatory' } },
+        done: { k: 'feeds', item: 'journal_1', to: ['observatory'], n: 1 },
+      },
+      {
+        hint: { fr: 'Dans l’arbre (T), lance Mécanique : ses tokens se paient à la minute, quelques ocelles.', en: 'In the tree (T), start Mechanics: its tokens are paid by the minute, a few ocelles.' },
+        target: { k: 'research', id: 'tr1' },
+        done: { k: 'research', id: 'tr1' },
+      },
+      { hint: { fr: 'Les données arrivent : trois en tout. La recherche les consomme à mesure.', en: 'The data is coming: three in all. Research uses it up as it arrives.' }, target: { k: 'none' } },
+    ],
+  },
 } as const satisfies Record<string, QuestDef>;
 
 export type QuestId = keyof typeof QUESTS;
@@ -677,7 +630,7 @@ export const questDef = (id: string): QuestDef | undefined => (QUESTS as Record<
 // ── validation (run by content/validate.ts) ─────────────────────────────────
 
 const has = (table: object, id: string): boolean => Object.prototype.hasOwnProperty.call(table, id);
-const CATEGORIES: readonly BuildCategory[] = ['extraction', 'logistics', 'distribution', 'production', 'energy', 'colony', 'commerce'];
+const CATEGORIES: readonly BuildCategory[] = ['extraction', 'logistics', 'distribution', 'production', 'research', 'energy', 'colony', 'commerce'];
 const recipeOf = (id: string): RecipeDef | undefined => (has(RECIPES, id) ? (RECIPES as Record<string, RecipeDef>)[id] : undefined);
 const buildingOf = (id: string): BuildingDef | undefined => (has(BUILDINGS, id) ? (BUILDINGS as Record<string, BuildingDef>)[id] : undefined);
 

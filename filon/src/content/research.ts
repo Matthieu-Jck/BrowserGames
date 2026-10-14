@@ -1,143 +1,198 @@
 // research.ts — the one unlock tree (D33): everything the base uses beyond its starting kit
 // (drill, ribbon, pole and the Link tool) is unlocked here, in two kinds of node.
-//   · PLANS: instant unlocks paid with materials from the Heart, Mindustry-style — no
-//     observatory, no time. Cheap near the root (the starting stock affords every root plan),
-//     dearer deeper; six paths of one theme each (D41: production, logistics, energy,
-//     analytics, trade, survey — `PLAN_PATHS`), each growing from one entry. Unlocking one is
-//     the `unlockPlan` command (src/sim/systems/research.ts).
-//   · RESEARCH: the tree's advanced part, unchanged in its rules — a trunk and five branches
-//     (Excavation, Expansion, Density, Energy, Commerce), 8 nodes + a keystone each, paid in data
-//     by observatories over a minimum time. Its roots hang under the observatory's plan.
+//   · PLANS: instant unlocks paid with materials from the Heart, Mindustry-style — no lab, no
+//     time. Cheap near the root (the starting stock affords every root plan), dearer deeper; six
+//     paths of one theme each (D41: production, logistics, energy, analytics, trade, survey —
+//     `PLAN_PATHS`), each growing from one entry. Unlocking one is the `unlockPlan` command
+//     (src/sim/systems/research.ts).
+//   · RESEARCH (D69): the tree's advanced part, run by research labs over a minimum time and paid
+//     as it runs in data (items, by ribbon: `SCIENCE`, one more kind each tier) and AI tokens (D68: bought by the minute, the
+//     claim's own servers first). It reads in four tiers. The trunk (the Foundations) opens each
+//     tier; six families grow beside it, each named anew at every tier (Commerce: Exchange, then
+//     Finance, then Market Economy) and most splitting in two specialities at Tier 3 (Precision
+//     Machines: Electronics or Mechanics). A node costs its table's price whatever else the
+//     claim owns: the spread penalty of D69 is gone (owner, 2026-10-15, D72).
+//   · Every node unlocks something: a building (its `unlock` field names the node) or a feature
+//     (a flag the engine reads, a research slot, a Heart output); never a bare boost (owner,
+//     2026-10-14, D70).
 // What a node unlocks is derived from the `unlock` field of buildings and recipes (and BAL's
 // Heart levels); plan and research ids share one namespace and one `sim.done` set.
 import { BUILDINGS } from './buildings';
-import type { BuildingDef, Effect, Loc, PlanDef, PlanLane, ResearchDef } from './types';
+import type { BuildingDef, Effect, FamilyId, Loc, PlanDef, PlanLane, ResearchDef, ResearchTier } from './types';
 
-type Cost = ReadonlyArray<readonly [string, number]>;
-
-/** Base science cost and minimum duration (minutes) by branch depth (9 = keystone). */
-export const DEPTH_COST: Record<number, { cost: Cost; minutes: number }> = {
-  1: { cost: [['journal_1', 25]], minutes: 3 },
-  2: { cost: [['journal_1', 80]], minutes: 15 },
-  3: { cost: [['journal_1', 60], ['journal_2', 40]], minutes: 45 },
-  4: { cost: [['journal_2', 150]], minutes: 120 },
-  5: { cost: [['journal_2', 100], ['atlas', 40]], minutes: 240 },
-  6: { cost: [['atlas', 150]], minutes: 480 },
-  7: { cost: [['atlas', 150], ['codex', 20]], minutes: 720 },
-  8: { cost: [['codex', 80]], minutes: 1080 },
-  9: { cost: [['atlas', 300], ['codex', 150]], minutes: 1440 },
+/**
+ * What a node of each depth uses up as it runs — data (`scienceCost`), AI tokens — and its minimum duration
+ * (minutes). Depths 1–2 are Tier 1, 3–4 Tier 2, 5–6 Tier 3, 7 and the keystones (9) Tier 4.
+ * Tokens cost `BAL.tokenCentsPerK` at CrierBelt's servers (10 ◉ the thousand).
+ */
+export const DEPTH_COST: Record<number, { data: number; tokens: number; minutes: number }> = {
+  1: { data: 15, tokens: 10_000, minutes: 3 },
+  2: { data: 60, tokens: 30_000, minutes: 15 },
+  3: { data: 180, tokens: 100_000, minutes: 45 },
+  4: { data: 480, tokens: 300_000, minutes: 120 },
+  5: { data: 960, tokens: 600_000, minutes: 240 },
+  6: { data: 1920, tokens: 1_200_000, minutes: 480 },
+  7: { data: 2880, tokens: 2_000_000, minutes: 720 },
+  9: { data: 5760, tokens: 6_000_000, minutes: 1440 },
 };
 
-/** Trunk gate required by a branch node of this depth. */
-const gate = (depth: number): string | null => (depth >= 7 ? 'tr8' : depth >= 5 ? 'tr6' : depth >= 3 ? 'tr1' : null);
+/**
+ * The kinds of data research uses (owner, 2026-10-14: the different kinds stay, D71), one more
+ * each tier, each a share of the node's data: Survey Data (from the data collectors and the
+ * Core), Mechanics Data from Tier 2 (the test bench), atlases from Tier 3 and codices from Tier 4
+ * (the scriptorium) — so every tier asks the claim for one more production line.
+ */
+export const SCIENCE: ReadonlyArray<readonly [string, number]> = [['journal_1', 1], ['journal_2', 3], ['atlas', 12], ['codex', 40]];
 
-type Branch = 'ex' | 'xp' | 'dn' | 'en' | 'cm';
-
-/** The plan research hangs from: no observatory, no research (D33). */
-const OBSERVATORY = 'observatory';
-
-function node(
-  branch: Branch, depth: number,
-  name: [string, string], desc: [string, string], effects: Effect[] = [],
-): ResearchDef {
-  const prereq: string[] = [];
-  if (depth > 1) prereq.push(`${branch}${depth === 9 ? 8 : depth - 1}`);
-  else prereq.push(OBSERVATORY); // a branch root: research starts with the observatory's plan
-  const g = gate(depth);
-  if (g) prereq.push(g);
-  const base = DEPTH_COST[depth]!;
-  return { name: { fr: name[0], en: name[1] }, desc: { fr: desc[0], en: desc[1] }, branch, depth, prereq, cost: base.cost, minutes: base.minutes, effects };
+/** A node's data: `data` Survey Data and a share of it in each higher kind its tier uses. */
+export function scienceCost(tier: ResearchTier, data: number): Array<[string, number]> {
+  return SCIENCE.slice(0, tier).map(([item, div]) => [item, Math.max(1, Math.ceil(data / div))] as [string, number]);
 }
 
-function trunk(depth: number, prereq: string[], cost: Cost, minutes: number, name: [string, string], desc: [string, string], effects: Effect[] = []): ResearchDef {
-  return { name: { fr: name[0], en: name[1] }, desc: { fr: desc[0], en: desc[1] }, branch: 'trunk', depth, prereq, cost, minutes, effects };
+/** A depth's tier. */
+export const tierOfDepth = (depth: number): ResearchTier => (depth <= 2 ? 1 : depth <= 4 ? 2 : depth <= 6 ? 3 : 4);
+
+/** The trunk node a family node of each tier needs (Tier 1 needs none: the lab's plan). */
+export const TIER_GATE: Record<ResearchTier, string | null> = { 1: null, 2: 'tr1', 3: 'tr6', 4: 'tr8' };
+
+/** The plan research hangs from: no lab, no research (D33). */
+const LAB_PLAN = 'observatory';
+
+/** The families, in the tree's order (top to bottom under the trunk). */
+export const FAMILY_IDS: readonly FamilyId[] = ['en', 'ex', 'dn', 'cm', 'an', 'xp'];
+
+/**
+ * A family's names (D69): one per tier for its shared lineage (Tiers 1–2, and 3–4 when it does not
+ * split), and its specialities from Tier 3 on, by key.
+ */
+export interface FamilyDef {
+  readonly name: Loc;
+  readonly tiers: readonly [Loc, Loc, Loc, Loc];
+  readonly specs?: Readonly<Record<string, Loc>>;
+}
+
+const L = (fr: string, en: string): Loc => ({ fr, en });
+
+export const FAMILIES: Readonly<Record<FamilyId, FamilyDef>> = {
+  en: { name: L('Énergie', 'Energy'), tiers: [L('Production d’électricité', 'Power Generation'), L('Réseau électrique', 'Power Grid'), L('Énergie', 'Energy'), L('Énergie', 'Energy')], specs: { r: L('Renouvelables', 'Renewables'), c: L('Centrales', 'Power Plants') } },
+  ex: { name: L('Extraction', 'Extraction'), tiers: [L('Extraction', 'Extraction'), L('Prospection', 'Prospecting'), L('Extraction', 'Extraction'), L('Extraction', 'Extraction')], specs: { d: L('Forage', 'Drilling'), x: L('Excavation', 'Excavation') } },
+  dn: { name: L('Machines', 'Machines'), tiers: [L('Machines de précision', 'Precision Machines'), L('Automatisation', 'Automation'), L('Machines', 'Machines'), L('Machines', 'Machines')], specs: { e: L('Électronique', 'Electronics'), m: L('Mécanique', 'Mechanics') } },
+  cm: { name: L('Commerce', 'Commerce'), tiers: [L('Échange', 'Exchange'), L('Finance', 'Finance'), L('Économie de marché', 'Market Economy'), L('Économie de marché', 'Market Economy')] },
+  an: { name: L('Analytique', 'Analytics'), tiers: [L('Analytique', 'Analytics'), L('Données', 'Data'), L('Analytique', 'Analytics'), L('Analytique', 'Analytics')], specs: { c: L('Calcul', 'Computing'), m: L('Exploration de données', 'Data Mining') } },
+  xp: { name: L('Expansion', 'Expansion'), tiers: [L('Arpentage', 'Surveying'), L('Logistique', 'Logistics'), L('Expansion', 'Expansion'), L('Expansion', 'Expansion')], specs: { t: L('Transport', 'Transport'), c: L('Concessions', 'Claims') } },
+};
+
+/** What a family is called where a node stands: its speciality from the split on, else its tier's name. */
+export function familyName(family: FamilyId, tier: ResearchTier, spec?: string): Loc {
+  const f = FAMILIES[family];
+  return (spec ? f.specs?.[spec] : undefined) ?? f.tiers[tier - 1]!;
 }
 
 const mul = (target: Extract<Effect, { k: 'mul' }>['target'], permille: number): Effect => ({ k: 'mul', target, permille });
 const add = (target: Extract<Effect, { k: 'add' }>['target'], v: number): Effect => ({ k: 'add', target, v });
 const flag = (f: string): Effect => ({ k: 'flag', flag: f });
+void mul;
+
+function trunk(depth: number, tier: ResearchTier, prereq: string[], data: number, tokens: number, minutes: number, name: [string, string], desc: [string, string], effects: Effect[] = []): ResearchDef {
+  return { name: { fr: name[0], en: name[1] }, desc: { fr: desc[0], en: desc[1] }, branch: 'trunk', tier, depth, prereq, cost: scienceCost(tier, data), tokens, minutes, effects };
+}
+
+/**
+ * A family node: its cost from its depth, its prerequisites — the node before it in its lineage
+ * (`after`; none for a family's first node, which needs the lab's plan) and its tier's gate.
+ */
+function node(family: FamilyId, spec: string | undefined, depth: number, after: string | null, name: [string, string], desc: [string, string], effects: Effect[] = []): ResearchDef {
+  const tier = tierOfDepth(depth);
+  const prereq: string[] = [after ?? LAB_PLAN];
+  const g = TIER_GATE[tier];
+  if (g) prereq.push(g);
+  const c = DEPTH_COST[depth]!;
+  return { name: { fr: name[0], en: name[1] }, desc: { fr: desc[0], en: desc[1] }, branch: family, ...(spec ? { spec } : {}), tier, depth, prereq, cost: scienceCost(tier, c.data), tokens: c.tokens, minutes: c.minutes, effects };
+}
 
 export const RESEARCH = {
-  // ── trunk ────────────────────────────────────────────────────────────────
-  tr1: trunk(1, [OBSERVATORY], [['journal_1', 30]], 5, ['Mécanique', 'Mechanics'],
-    ['Grand atelier, engrenages, données mécaniques ; Cœur niveau 2.', 'Great workshop, gears, mechanics data; Heart level 2.']),
-  tr2: trunk(2, ['tr1'], [['journal_1', 40]], 10, ['Terrassement', 'Earthworks'],
-    ['Excavatrice : creuser le grès et le basalte (H1–H2).', 'Excavator: dig sandstone and basalt (H1–H2).']),
-  tr3: trunk(3, ['tr1'], [['journal_2', 30]], 30, ['Céramique', 'Ceramics'],
-    ['Four à céramique, pompes et conduits, batteries vides, accumulateurs.', 'Ceramic oven, pumps and conduits, empty batteries, accumulators.']),
-  tr4: trunk(4, ['tr3'], [['journal_2', 60]], 60, ['Cadastre', 'Land Registry'],
-    ['Baux de parcelles, pylônes ; Cœur niveau 3.', 'Parcel leases, pylons; Heart level 3.'], [flag('lease')]),
-  tr5: trunk(5, ['tr4'], [['journal_2', 100]], 120, ['Deuxième pupitre', 'Second Desk'],
-    ['Un deuxième emplacement de recherche.', 'A second research slot.'], [{ k: 'slots', add: 1 }]),
-  tr6: trunk(6, ['tr4'], [['journal_2', 150]], 240, ['Cartographie', 'Atlas Lore'],
-    ['Atlas, lentilles, toiles, cœurs thermiques, Embarcadère ; Cœur niveau 4.', 'Atlases, lenses, canvas, thermal cores, Skydock; Heart level 4.']),
-  tr7: trunk(7, ['tr6'], [['atlas', 80]], 720, ['Troisième pupitre', 'Third Desk'],
-    ['Un troisième emplacement de recherche.', 'A third research slot.'], [{ k: 'slots', add: 1 }]),
-  tr8: trunk(8, ['tr6'], [['atlas', 150]], 1440, ['Codex', 'Codex Lore'],
-    ['Codex, résonateurs, treillis de nacre.', 'Codex, resonators, nacre lattices.']),
+  // ── the trunk: the Foundations, which open each tier ─────────────────────
+  tr1: trunk(1, 1, ['observatory'], 20, 8_000, 5, ['Mécanique', 'Mechanics'], ['Presse et engrenages ; Cœur niveau 2. Ouvre le Tier 2.', 'Press and gears; Core level 2. Opens Tier 2.']),
+  tr2: trunk(2, 2, ['tr1'], 40, 15_000, 10, ['Terrassement', 'Earthworks'], ['Excavatrice : creuser le grès et le basalte (H1–H2).', 'Excavator: dig sandstone and basalt (H1–H2).']),
+  tr3: trunk(3, 2, ['tr1'], 120, 60_000, 30, ['Céramique', 'Ceramics'], ['Four à céramique, pompes et conduits ; atelier d’assemblage, batteries vides, accumulateurs.', 'Ceramic oven, pumps and conduits; assembly workshop, empty batteries, accumulators.']),
+  tr4: trunk(4, 2, ['tr3'], 240, 120_000, 60, ['Cadastre', 'Land Registry'], ['Baux de parcelles, pylônes ; Cœur niveau 3.', 'Parcel leases, pylons; Core level 3.'], [flag('lease')]),
+  tr5: trunk(5, 2, ['tr4'], 480, 200_000, 120, ['Deuxième pupitre', 'Second Desk'], ['Un deuxième emplacement de recherche.', 'A second research slot.'], [{ k: 'slots', add: 1 }]),
+  tr6: trunk(6, 2, ['tr4'], 960, 400_000, 240, ['Cartographie', 'Atlas Lore'], ['Atelier d’optique, Scriptorium, Embarcadère ; lentilles, toiles, cœurs thermiques, atlas ; Cœur niveau 4. Ouvre le Tier 3.', 'Optics workshop, Scriptorium, Skydock; lenses, canvas, thermal cores, atlases; Core level 4. Opens Tier 3.']),
+  tr7: trunk(7, 3, ['tr6'], 2880, 800_000, 720, ['Troisième pupitre', 'Third Desk'], ['Un troisième emplacement de recherche.', 'A third research slot.'], [{ k: 'slots', add: 1 }]),
+  tr8: trunk(8, 3, ['tr6'], 5760, 1_500_000, 1440, ['Codex', 'Codex Lore'], ['Codex, résonateurs, treillis de nacre. Ouvre le Tier 4.', 'Codex, resonators, nacre lattices. Opens Tier 4.']),
 
-  // ── Excavation — Taille ──────────────────────────────────────────────────
-  ex1: node('ex', 1, ['Pics trempés', 'Tempered Picks'], ['Creusage +25 %, pierre +20 %.', 'Digging +25%, stone +20%.'], [mul('digSpeed', 1250), mul('rubbleYield', 1200)]),
-  ex2: node('ex', 2, ['Tamisage', 'Sifting'], ['Minerai enchâssé +50 %.', 'Embedded ore +50%.'], [mul('embeddedOre', 1500)]),
-  ex3: node('ex', 3, ['Remblai', 'Backfill'], ['Débloque la Remblayeuse.', 'Unlocks the Backfiller.']),
-  ex4: node('ex', 4, ['Forets à basalte', 'Basalt Bits'], ['Obsidienne (H3) creusable ; basalte +50 %.', 'Obsidian (H3) diggable; basalt +50%.'], [flag('digH3'), flag('basaltBits')]),
-  ex5: node('ex', 5, ['Puits profond', 'Deep Bore'], ['Débloque la Foreuse profonde.', 'Unlocks the Deep Bore.']),
-  ex6: node('ex', 6, ['Galeries', 'Tunnels'], ['Tunnels d’une tuile 4× plus rapides (rubans et conduits).', 'One-tile tunnels 4× faster (ribbons and conduits).'], [flag('tunnels')]),
-  ex7: node('ex', 7, ['Taille-cœur', 'Heartrock Cutters'], ['Cœur-de-roche (H4) creusable ; creusage +50 %.', 'Heartrock (H4) diggable; digging +50%.'], [flag('digH4'), mul('digSpeed', 1500)]),
-  ex8: node('ex', 8, ['Remblai profond', 'Deep Fill'], ['Remblai en eau profonde (120 pierres/tuile).', 'Backfill deep water (120 stone/tile).'], [flag('deepFill')]),
-  exK: node('ex', 9, ['Le Grand Évidement', 'The Great Hollowing'], ['Creusage ×2 ; bâtiments sur sol creusé +20 % de vitesse.', 'Digging ×2; buildings on dug floor +20% speed.'], [mul('digSpeed', 2000), mul('excavatedSpeed', 1200)]),
+  // ── Energy: Power Generation → Power Grid → Renewables | Power Plants ─────
+  en_pitch: node('en', undefined, 1, null, ['Éolienne à pas variable', 'Pitch-Control Turbine'], ['Débloque l’Éolienne à pas variable : 200 kW × le vent.', 'Unlocks the Pitch-Control Turbine: 200 kW × the wind.']),
+  en2: node('en', undefined, 2, 'en_pitch', ['Panneaux solaires', 'Solar Panels'], ['Débloque le Panneau solaire.', 'Unlocks the Solar Panel.']),
+  en_heavyacc: node('en', undefined, 3, 'en2', ['Accumulateur lourd', 'Heavy Accumulator'], ['Débloque l’Accumulateur lourd : 4 000 kW·min.', 'Unlocks the Heavy Accumulator: 4,000 kW·min.']),
+  en4: node('en', undefined, 4, 'en_heavyacc', ['Chargeur', 'Battery Charging'], ['Débloque le Chargeur et les batteries chargées.', 'Unlocks the Battery Charger and charged batteries.']),
+  en_solarfarm: node('en', 'r', 5, 'en4', ['Ferme solaire', 'Solar Farm'], ['Débloque la Ferme solaire : 600 kW en plein soleil.', 'Unlocks the Solar Farm: 600 kW in full sun.']),
+  en_bigwind: node('en', 'r', 6, 'en_solarfarm', ['Grande éolienne', 'Great Turbine'], ['Débloque la Grande éolienne : 500 kW × le vent.', 'Unlocks the Great Turbine: 500 kW × the wind.']),
+  en_tower: node('en', 'r', 9, 'en_bigwind', ['Tour solaire', 'Solar Tower'], ['Débloque la Tour solaire : 3 MW en plein soleil.', 'Unlocks the Solar Tower: 3 MW in full sun.']),
+  en5: node('en', 'c', 5, 'en4', ['Géothermie', 'Geothermal Power'], ['Débloque la Centrale géothermique, sur les évents.', 'Unlocks the Geothermal Plant, on vents.']),
+  en_cellgen: node('en', 'c', 6, 'en5', ['Générateur à batteries', 'Battery Generator'], ['Débloque le Générateur à batteries : 600 kW par batterie chargée.', 'Unlocks the Battery Generator: 600 kW per charged battery.']),
+  enK: node('en', 'c', 9, 'en_cellgen', ['Le Cœur-Soleil', 'The Sunheart'], ['Débloque le Cœur-Soleil : 20 MW pour un résonateur toutes les 30 minutes.', 'Unlocks the Sunheart: 20 MW for one resonator every 30 minutes.']),
 
-  // ── Expansion — Arpentage ────────────────────────────────────────────────
-  xp1: node('xp', 1, ['Bornage', 'Boundary Stones'], ['Terrain −15 %.', 'Land −15%.'], [mul('landPrice', 850)]),
-  xp2: node('xp', 2, ['Relais de drones', 'Drone Relays'], ['Rubans hors de vos terres ×1,5 au lieu de ×3 ; chantiers lointains 2× plus rapides.', 'Ribbons off your land ×1.5 instead of ×3; remote building 2× faster.'], [mul('remoteBeltCost', 500), mul('remoteBuildDelay', 500)]),
-  xp3: node('xp', 3, ['Charte foncière', 'Land Charter'], ['Chaque parcelle achetée renchérit la suivante de 6 % au lieu de 10 %.', 'Each parcel bought raises the next one’s price 6% instead of 10%.'], [add('landGrowth', -40)]),
-  xp4: node('xp', 4, ['Pylônes renforcés', 'Reinforced Pylons'], ['Portée des pylônes 40.', 'Pylon reach 40.'], [add('pylonLink', 16)]),
-  xp5: node('xp', 5, ['Embarcadères II', 'Docks II'], ['+2 Dérivants par embarcadère, capacité +50 %.', '+2 Drifters per dock, capacity +50%.'], [add('dockShips', 2), mul('shipCap', 1500)]),
-  xp6: node('xp', 6, ['Pilotes du Souffle', 'Sough Pilots'], ['Vitesse des Dérivants +40 %.', 'Drifter speed +40%.'], [mul('shipSpeed', 1400)]),
-  xp7: node('xp', 7, ['Fédération', 'Federation'], ['Loyers −30 % ; chaque parcelle achetée renchérit la suivante de 4 %.', 'Rent −30%; each parcel bought raises the next one’s price 4%.'], [mul('landRent', 700), add('landGrowth', -20)]),
-  xp8: node('xp', 8, ['Concessions lointaines', 'Far Claims'], ['Plafonds au-delà de r 320 +30 % ; terrain lointain −30 %.', 'Caps beyond r 320 +30%; far land −30%.'], [mul('ring3Caps', 1300), mul('farLand', 700)]),
-  xpK: node('xp', 9, ['La Ville-Caravane', 'Caravan City'], ['Routes de Dérivants comptées à mi-distance ; loyers −20 %.', 'Drifter routes count half distance; rent −20%.'], [mul('drifterDistance', 500), mul('landRent', 800)]),
+  // ── Extraction: Extraction → Prospecting → Drilling | Excavation ─────────
+  ex_sifter: node('ex', undefined, 1, null, ['Tamiseur', 'Sifter'], ['Débloque le Tamiseur : sable, fer ou cuivre tirés de la pierre.', 'Unlocks the Sifter: sand, iron or copper out of stone.']),
+  ex3: node('ex', undefined, 2, 'ex_sifter', ['Remblai', 'Backfill'], ['Débloque la Remblayeuse.', 'Unlocks the Backfiller.']),
+  ex4: node('ex', undefined, 3, 'ex3', ['Forets à basalte', 'Basalt Bits'], ['L’obsidienne (H3) devient creusable ; le basalte se creuse plus vite.', 'Obsidian (H3) becomes diggable; basalt digs faster.'], [flag('digH3'), flag('basaltBits')]),
+  ex_fastdrill: node('ex', undefined, 4, 'ex4', ['Foreuse rapide', 'Fast Drill'], ['Débloque la Foreuse rapide : 35/min.', 'Unlocks the Fast Drill: 35/min.']),
+  ex5: node('ex', 'd', 5, 'ex_fastdrill', ['Puits profond', 'Deep Bore'], ['Débloque la Foreuse profonde.', 'Unlocks the Deep Bore.']),
+  ex_hppump: node('ex', 'd', 6, 'ex5', ['Pompe haute pression', 'High-Pressure Pump'], ['Débloque la Pompe haute pression : 240 eau/min.', 'Unlocks the High-Pressure Pump: 240 water/min.']),
+  ex_giant: node('ex', 'd', 9, 'ex_hppump', ['Foreuse géante', 'Giant Drill'], ['Débloque la Foreuse géante : 90/min, plafonds ×2.', 'Unlocks the Giant Drill: 90/min, caps ×2.']),
+  ex7: node('ex', 'x', 5, 'ex_fastdrill', ['Taille-cœur', 'Heartrock Cutters'], ['Le cœur-de-roche (H4) devient creusable.', 'Heartrock (H4) becomes diggable.'], [flag('digH4')]),
+  ex_heavyexc: node('ex', 'x', 6, 'ex7', ['Excavatrice lourde', 'Heavy Excavator'], ['Débloque l’Excavatrice lourde : deux fois plus vite, 6 tuiles de portée.', 'Unlocks the Heavy Excavator: twice as fast, 6 tiles of reach.']),
+  ex8: node('ex', 'x', 9, 'ex_heavyexc', ['Remblai profond', 'Deep Fill'], ['La Remblayeuse comble aussi l’eau profonde (120 pierres par tuile).', 'The Backfiller also fills deep water (120 stone a tile).'], [flag('deepFill')]),
 
-  // ── Density — Densité ────────────────────────────────────────────────────
-  dn1: node('dn', 1, ['Tissage', 'Ribbon Weave'], ['Débloque le Ruban vif (120/min).', 'Unlocks the Swift Ribbon (120/min).']),
-  dn2: node('dn', 2, ['Passerelles longues', 'Long Bridges'], ['Passerelles : portée 8.', 'Bridges reach 8.'], [add('bridgeSpan', 4), flag('forkFilters')]),
-  dn3: node('dn', 3, ['Machines compactes', 'Compact Machines'], ['Grand atelier 2×2, fonderie 1×2.', 'Great workshop 2×2, smelter 1×2.']),
-  dn4: node('dn', 4, ['Allure', 'Pace'], ['1 emplacement de module : un module de vitesse donne +30 % de vitesse, +40 % d’énergie.', '1 module slot: a speed module gives +30% speed, +40% power.'], [flag('modules1')]),
-  dn5: node('dn', 5, ['Distributeurs', 'Distributors'], ['Débloque le Distributeur (routeur 2×2).', 'Unlocks the Distributor (a 2×2 router).']),
-  dn6: node('dn', 6, ['Ruban express', 'Express Ribbon'], ['Débloque le Ruban express (240/min).', 'Unlocks the Express Ribbon (240/min).']),
-  dn7: node('dn', 7, ['Allure II', 'Pace II'], ['2 emplacements de module, +50 % chacun.', '2 module slots, +50% each.'], [flag('modules2')]),
-  dn8: node('dn', 8, ['Atelier-tour', 'Tower Workshop'], ['Débloque l’Atelier-tour.', 'Unlocks the Tower Workshop.']),
-  dnK: node('dn', 9, ['La Cité-Ruche', 'Hive City'], ['Fabrication +25 % ; +1 emplacement de recherche.', 'Crafting +25%; +1 research slot.'], [mul('craftSpeed', 1250), { k: 'slots', add: 1 }]),
+  // ── Machines: Precision Machines → Automation → Electronics | Mechanics ───
+  dn3: node('dn', undefined, 1, null, ['Machines compactes', 'Compact Machines'], ['Débloque la Fonderie compacte (1×2).', 'Unlocks the Compact Smelter (1×2).']),
+  dn_wiremill: node('dn', undefined, 2, 'dn3', ['Tréfileuse double', 'Twin Wire Mill'], ['Débloque la Tréfileuse double : le fil deux fois plus vite.', 'Unlocks the Twin Wire Mill: wire twice as fast.']),
+  dn4: node('dn', undefined, 3, 'dn_wiremill', ['Allure', 'Pace'], ['Un emplacement de module par machine, et la recette du module de vitesse (+30 % de vitesse, +40 % d’énergie).', 'One module slot per machine, and the speed module’s recipe (+30% speed, +40% power).'], [flag('modules1')]),
+  dn_compact: node('dn', undefined, 4, 'dn4', ['Atelier d’assemblage compact', 'Compact Assembly'], ['Débloque l’Atelier d’assemblage compact (2×2).', 'Unlocks the Compact Assembly Workshop (2×2).']),
+  dn_etcher: node('dn', 'e', 5, 'dn_compact', ['Graveuse', 'Etcher'], ['Débloque la Graveuse : circuits et modules trois fois plus vite.', 'Unlocks the Etcher: circuits and modules three times as fast.']),
+  dn7: node('dn', 'e', 6, 'dn_etcher', ['Allure II', 'Pace II'], ['Deux emplacements de module par machine, +50 % chacun.', 'Two module slots per machine, +50% each.'], [flag('modules2')]),
+  dn_chipfab: node('dn', 'e', 9, 'dn7', ['Usine de puces', 'Chip Fab'], ['Débloque l’Usine de puces : circuits et modules six fois plus vite.', 'Unlocks the Chip Fab: circuits and modules six times as fast.']),
+  dn_forge: node('dn', 'm', 5, 'dn_compact', ['Presse à forger', 'Forging Press'], ['Débloque la Presse à forger : les engrenages trois fois plus vite.', 'Unlocks the Forging Press: gears three times as fast.']),
+  dn_arc: node('dn', 'm', 6, 'dn_forge', ['Fonderie à arc', 'Arc Furnace'], ['Débloque la Fonderie à arc : plaques et verre sans charbon.', 'Unlocks the Arc Furnace: plates and glass without coal.']),
+  dn8: node('dn', 'm', 9, 'dn_arc', ['Tour d’assemblage', 'Assembly Tower'], ['Débloque la Tour d’assemblage : l’assemblage quatre fois plus vite.', 'Unlocks the Assembly Tower: assembly four times as fast.']),
 
-  // ── Energy — Souffle ─────────────────────────────────────────────────────
-  en1: node('en', 1, ['Pales orientables', 'Blade Pitch'], ['Éolien +30 %.', 'Wind +30%.'], [mul('windOut', 1300)]),
-  en2: node('en', 2, ['Panneaux solaires', 'Solar Panels'], ['Débloque le Panneau solaire.', 'Unlocks the Solar Panel.']),
-  en3: node('en', 3, ['Accumulateurs doubles', 'Double Accumulators'], ['Capacité des accumulateurs ×2, débit 500 kW.', 'Accumulator capacity ×2, 500 kW rate.'], [mul('accCap', 2000), mul('accRate', 1667)]),
-  en4: node('en', 4, ['Chargeur', 'Battery Charging'], ['Débloque le Chargeur et la batterie chargée.', 'Unlocks the Battery Charger and charged batteries.']),
-  en5: node('en', 5, ['Géothermie', 'Geothermal Power'], ['Débloque la Centrale géothermique, sur les évents.', 'Unlocks the Geothermal Plant, on vents.']),
-  en6: node('en', 6, ['Réseaux de lentilles', 'Lens Arrays'], ['Solaire +60 %, 20 % de production la nuit.', 'Solar +60%, 20% output at night.'], [mul('solarOut', 1600), add('solarNight', 200)]),
-  en7: node('en', 7, ['Moisson d’orage', 'Storm Harvest'], ['Éolien +50 % sur les plateaux ; rafales deux fois moins irrégulières.', 'Wind +50% on plateaus; gusts half as erratic.'], [flag('stormHarvest'), mul('gustVariance', 500)]),
-  en8: node('en', 8, ['Chaleur profonde', 'Deep Heat'], ['Géothermie +50 % ; évents dormants utilisables.', 'Geothermal +50%; dormant vents usable.'], [mul('geoOut', 1500), flag('deepHeat')]),
-  enK: node('en', 9, ['Le Cœur-Soleil', 'The Sunheart'], ['Débloque le Cœur-Soleil ; tous les générateurs +20 %.', 'Unlocks the Sunheart; all generators +20%.'], [mul('genOut', 1200)]),
+  // ── Commerce: Exchange → Finance → Market Economy (one lineage) ─────────
+  cm2: node('cm', undefined, 1, null, ['Ordres permanents', 'Standing Orders'], ['Jusqu’à 6 ordres d’import.', 'Up to 6 import orders.'], [add('orders', 4)]),
+  cm_floor: node('cm', undefined, 2, 'cm2', ['Prix plancher', 'Floor Prices'], ['Un prix minimum par objet : le comptoir garde ce qui se vendrait moins cher.', 'A minimum price per item: the post holds back what would sell for less.'], [flag('floorPrices')]),
+  cm3: node('cm', undefined, 3, 'cm_floor', ['Second quai', 'Second Wharf'], ['Comptoir niveau 2 (240/min) ; un second comptoir.', 'Trade post level 2 (240/min); a second post.'], [flag('tradeL2')]),
+  cm_plan: node('cm', undefined, 4, 'cm3', ['Forfait de calcul', 'Compute Plan'], ['Un forfait CrierBelt : les tokens à moitié prix, contre un montant fixe par heure.', 'A CrierBelt plan: tokens at half price, for a fixed fee an hour.'], [flag('tokenPlan')]),
+  cm8: node('cm', undefined, 5, 'cm_plan', ['Grand comptoir', 'Grand Post'], ['Comptoir niveau 3 (480/min).', 'Trade post level 3 (480/min).'], [flag('tradeL3')]),
+  cm_express: node('cm', undefined, 6, 'cm8', ['Fret express', 'Express Freight'], ['Un ordre peut partir en express : deux fois plus vite, 25 % plus cher.', 'An order can ship express: twice as fast, 25% dearer.'], [flag('expressFreight')]),
+  cm_rent: node('cm', undefined, 7, 'cm_express', ['Location de serveurs', 'Server Rental'], ['CrierBelt rachète, à moitié prix, les tokens que tes serveurs n’utilisent pas.', 'CrierBelt buys the tokens your servers do not use, at half price.'], [flag('serverRental')]),
+  cmK: node('cm', undefined, 9, 'cm_rent', ['La Maison de Criée', 'The Crier House'], ['Un troisième comptoir.', 'A third trade post.'], [flag('post3')]),
 
-  // ── Commerce — Criée ─────────────────────────────────────────────────────
-  cm1: node('cm', 1, ['Ardoise de courtier', 'Broker’s Slate'], ['Frais 8 → 6 % ; prévision des cours à 6 h.', 'Fees 8 → 6%; 6-hour price forecast.'], [add('tradeFee', -20), flag('forecast')]),
-  cm2: node('cm', 2, ['Ordres permanents', 'Standing Orders'], ['6 flux d’export et 6 ordres d’import.', '6 export streams and 6 import orders.'], [add('streams', 4)]),
-  cm3: node('cm', 3, ['Second quai', 'Second Wharf'], ['Comptoir niveau 2 (240/min) ; un second comptoir autorisé.', 'Trade post level 2 (240/min); a second post allowed.'], [flag('tradeL2'), add('tradeFee', -10)]),
-  cm4: node('cm', 4, ['Contrats à terme', 'Forward Contracts'], ['3 contrats à prix bloqué pendant 24 h.', '3 contracts at a locked price for 24 h.'], [flag('forwards')]),
-  cm5: node('cm', 5, ['Coursiers express', 'Express Couriers'], ['Délais de livraison −40 %.', 'Delivery delays −40%.'], [mul('deliveryDelay', 600)]),
-  cm6: node('cm', 6, ['Flair', 'Market Sense'], ['Glissement au comptant −30 %.', 'Spot slippage −30%.'], [mul('slippage', 700)]),
-  cm7: node('cm', 7, ['Chartes de concession', 'Claim Charters'], ['Contrats de gros des concessions sœurs à +25 %.', 'Sister-claim bulk contracts at +25%.'], [flag('charters')]),
-  cm8: node('cm', 8, ['Grand comptoir', 'Grand Post'], ['Comptoir niveau 3 (480/min), frais 4 %.', 'Trade post level 3 (480/min), 4% fees.'], [flag('tradeL3'), add('tradeFee', -10)]),
-  cmK: node('cm', 9, ['La Maison de Criée', 'The Crier House'], ['Tes propres ordres à cours limite, remplis par les concessions sœurs ; frais 2 %.', 'Your own limit orders, filled by sister claims; 2% fees.'], [flag('crierHouse'), add('tradeFee', -20)]),
+  // ── Analytics: Analytics → Data → Computing | Data Mining ────────────────
+  an_data: node('an', undefined, 1, null, ['Traitement des données', 'Data Processing'], ['Le Cœur traite l’activité de la base : 1 donnée d’arpentage par minute, par sa sortie de données.', 'The Core processes the base’s activity: 1 Survey Data a minute, out of its data outlet.'], [add('heartData', 1000)]),
+  an_relay: node('an', undefined, 2, 'an_data', ['Relais de données', 'Data Relay'], ['Débloque le Relais de données : 6 données d’arpentage par minute.', 'Unlocks the Data Relay: 6 Survey Data a minute.']),
+  an_servers: node('an', undefined, 3, 'an_relay', ['Salle des serveurs', 'Server Room'], ['Débloque le Serveur : tes propres tokens d’IA, de l’électricité.', 'Unlocks the Server: your own AI tokens, from power.']),
+  an_queue: node('an', undefined, 4, 'an_servers', ['File de recherche', 'Research Queue'], ['Chaque laboratoire enchaîne la recherche que tu lui as préparée.', 'Each lab moves on to the research you queued for it.'], [flag('researchQueue')]),
+  an_cooled: node('an', 'c', 5, 'an_queue', ['Serveur refroidi', 'Cooled Server'], ['Débloque le Serveur refroidi : 6 000 tokens par minute.', 'Unlocks the Cooled Server: 6,000 tokens a minute.']),
+  an_slot: node('an', 'c', 6, 'an_cooled', ['Calcul partagé', 'Shared Computing'], ['Un emplacement de recherche de plus.', 'One more research slot.'], [{ k: 'slots', add: 1 }]),
+  an_super: node('an', 'c', 9, 'an_slot', ['Supercalculateur', 'Supercomputer'], ['Débloque le Supercalculateur : 20 000 tokens par minute.', 'Unlocks the Supercomputer: 20,000 tokens a minute.']),
+  an_mining: node('an', 'm', 5, 'an_queue', ['Fouille de données', 'Data Mining'], ['Le Cœur produit 2 données d’arpentage de plus par minute.', 'The Core makes 2 more Survey Data a minute.'], [add('heartData', 2000)]),
+  an_forecast: node('an', 'm', 6, 'an_mining', ['Prévision des cours', 'Price Forecast'], ['La Criée montre où va chaque cours dans l’heure.', 'The Crier shows where each price is heading within the hour.'], [flag('forecast')]),
+  an_autolab: node('an', 'm', 9, 'an_forecast', ['Laboratoire autonome', 'Autonomous Lab'], ['Débloque le Laboratoire autonome : 3 données d’arpentage par minute, sur place.', 'Unlocks the Autonomous Lab: 3 Survey Data a minute, on site.']),
+
+  // ── Expansion: Surveying → Logistics → Transport | Claims ───────────────
+  xp_swift: node('xp', undefined, 1, null, ['Ruban vif', 'Swift Ribbon'], ['Débloque le Ruban vif (120/min).', 'Unlocks the Swift Ribbon (120/min).']),
+  xp_bigsilo: node('xp', undefined, 2, 'xp_swift', ['Grand silo', 'Great Silo'], ['Débloque le Grand silo : 5 000 objets.', 'Unlocks the Great Silo: 5,000 items.']),
+  xp_bridges: node('xp', undefined, 3, 'xp_bigsilo', ['Passerelles longues', 'Long Bridges'], ['Les passerelles portent à 8 tuiles.', 'Bridges reach 8 tiles.'], [add('bridgeSpan', 4)]),
+  xp4: node('xp', undefined, 4, 'xp_bridges', ['Pylônes renforcés', 'Reinforced Pylons'], ['Les pylônes portent à 60 tuiles.', 'Pylons reach 60 tiles.'], [add('pylonLink', 20)]),
+  xp_distrib: node('xp', 't', 5, 'xp4', ['Distributeurs', 'Distributors'], ['Débloque le Distributeur (routeur 2×2).', 'Unlocks the Distributor (a 2×2 router).']),
+  xp_express: node('xp', 't', 6, 'xp_distrib', ['Ruban express', 'Express Ribbon'], ['Débloque le Ruban express (240/min).', 'Unlocks the Express Ribbon (240/min).']),
+  xp_bigdock: node('xp', 't', 9, 'xp_express', ['Grand embarcadère', 'Great Skydock'], ['Débloque le Grand embarcadère : 8 Dérivants, deux fois plus de fret.', 'Unlocks the Great Skydock: 8 Drifters, twice the freight.']),
+  xp_resell: node('xp', 'c', 5, 'xp4', ['Revente de parcelles', 'Parcel Resale'], ['Revendre une parcelle achetée, à 80 % de son prix.', 'Sell a bought parcel back, at 80% of its price.'], [flag('landResale')]),
+  xp_treaties: node('xp', 'c', 6, 'xp_resell', ['Traités de voisinage', 'Neighbour Treaties'], ['Tes rubans et poteaux traversent les parcelles des concessions sœurs.', 'Your ribbons and poles cross the sister claims’ parcels.'], [flag('sisterCrossing')]),
+  xp_far: node('xp', 'c', 9, 'xp_treaties', ['Concession lointaine', 'Far Claim'], ['Acheter une parcelle qui ne touche pas tes terres.', 'Buy a parcel that does not touch your land.'], [flag('farClaims')]),
 } as const satisfies Record<string, ResearchDef>;
 
 export type ResearchId = keyof typeof RESEARCH;
-
-/** Each branch's "core stat" that mastery tiers boost. */
-export const BRANCH_CORE: Record<Branch, Extract<Effect, { k: 'mul' }>['target']> = {
-  ex: 'digSpeed', xp: 'shipSpeed', dn: 'craftSpeed', en: 'genOut', cm: 'slippage',
-};
 
 // ── plans (D33) ─────────────────────────────────────────────────────────────
 // Instant unlocks paid from the Heart. Each id names the plan; by default a plan is named after
@@ -149,13 +204,12 @@ export const BRANCH_CORE: Record<Branch, Extract<Effect, { k: 'mul' }>['target']
 const plan = (lane: PlanDef['lane'], prereq: string[], cost: Array<[string, number]>, more: Partial<PlanDef> = {}): PlanDef =>
   ({ lane, prereq, cost, ...more });
 
-export const PLANS = {
-  // ── production: smelting, crafting, and the observatory that opens research ─
+const PATH_PLANS = {
+  // ── production: smelting and crafting ──────────────────────────────────
   kiln: plan('production', [], [['iron_plate', 10]]),
   sand_collector: plan('production', ['kiln'], [['iron_plate', 5]]), // sand off the bare ground, for glass (2026-10-12)
   workshop: plan('production', ['kiln'], [['iron_plate', 15], ['glass', 2]]),
   wire_mill: plan('production', ['kiln'], [['iron_plate', 15]]),
-  observatory: plan('production', ['workshop'], [['iron_plate', 20], ['copper_wire', 4]]),
 
   // ── logistics: moving and sorting goods, the routing vocabulary (D20), from the router out.
   // Cheap (owner, 2026-10-12: "most of the logistics is too expensive"): a few plates, the
@@ -183,8 +237,8 @@ export const PLANS = {
   telemetry: plan('analytics', [], [['iron_plate', 8], ['copper_wire', 2]], {
     name: { fr: 'Télémétrie', en: 'Telemetry' },
     desc: {
-      fr: 'Les débits de ta base au HUD : ce que le Cœur gagne ou perd par minute, à côté de chaque stock.',
-      en: 'Your base’s rates in the HUD: what the Heart gains or loses per minute, beside each stock.',
+      fr: 'Les débits de ta base au HUD : ce qui entre au Cœur chaque minute, à côté de chaque stock.',
+      en: 'Your base’s rates in the HUD: what comes into the Core each minute, beside each stock.',
     },
     effects: [flag('telemetry')],
   }),
@@ -219,6 +273,14 @@ export const PLANS = {
   // ── survey: the land around the base ───────────────────────────────────────
   beacon: plan('survey', [], [['iron_plate', 8], ['glass', 2]]),
 } as const satisfies Record<string, PlanDef>;
+
+/**
+ * The research lab's plan (D71, owner 2026-10-14): the gate between the plans and research. It
+ * needs every other plan, and brings the lab and the data collector that feeds it.
+ */
+const LAB_GATE = { observatory: plan('gate', Object.keys(PATH_PLANS), [['iron_plate', 40], ['glass', 10], ['copper_wire', 10]]) } as const;
+
+export const PLANS = { ...PATH_PLANS, ...LAB_GATE } as const satisfies Record<string, PlanDef>;
 
 export type PlanId = keyof typeof PLANS;
 /** Plans in declaration order (their effects apply in this order, before research's). */
@@ -263,7 +325,7 @@ export const PLAN_PATHS: readonly PlanLane[] = ['production', 'logistics', 'ener
  * The HUD, the stats screen and the hotkeys read these (src/ui/analytics.ts), never a bare string.
  */
 export const ANALYTICS = {
-  /** The Heart's Δ/min beside each stock, in the HUD. */
+  /** What comes into the Heart each minute, beside each stock in the HUD. */
   rates: 'telemetry',
   /** The Statistics screen (G) and its chip in the HUD. */
   ledger: 'statistics',
@@ -289,7 +351,11 @@ export const pathEntries = (lane: PlanLane): PlanId[] =>
  */
 export function pathProblems(): string[] {
   const errs: string[] = [];
-  for (const id of PLAN_IDS) if (!PLAN_PATHS.includes(PLANS[id].lane)) errs.push(`plan ${id}: path ${PLANS[id].lane} is not in PLAN_PATHS`);
+  for (const id of PLAN_IDS) if (PLANS[id].lane !== 'gate' && !PLAN_PATHS.includes(PLANS[id].lane)) errs.push(`plan ${id}: path ${PLANS[id].lane} is not in PLAN_PATHS`);
+  // The gate (D71): one plan, the research lab's, after every plan of the paths; research hangs from it.
+  const gates = PLAN_IDS.filter((id) => PLANS[id].lane === 'gate');
+  if (gates.length !== 1 || gates[0] !== LAB_PLAN) errs.push(`the gate must be the one plan ${LAB_PLAN} (found ${gates.join(', ') || 'none'})`);
+  for (const id of PLAN_IDS) if (PLANS[id].lane !== 'gate' && !PLANS[LAB_PLAN].prereq.includes(id)) errs.push(`plan ${LAB_PLAN}: does not need ${id} (the gate needs every plan)`);
   if (new Set(PLAN_PATHS).size !== PLAN_PATHS.length) errs.push('PLAN_PATHS lists a path twice');
   for (const lane of PLAN_PATHS) {
     const mine = pathPlans(lane);

@@ -5,18 +5,25 @@
 // integers at once; geometry uses d² and an integer trig table — identical on every engine.
 //
 // The land has levels (D45), 0 … MAX_LEVEL: the cirque's floor at 0, closed all round by the
-// Crown's terraces (one level up every `CIRQUE.terrace` tiles to the crest, then down the same
-// way), and mountains up to 5 beyond. A level comes in two steps. `classify` gives the raw level
-// the shapes say; `settle` then evens the slopes out, lowering a tile until it stands at most
-// one level above each neighbour (two above its east neighbour far out: an east-facing cliff).
-// Settling only lowers, and never to 0, so it changes neither what is rock nor the floor's rim:
-// the ring stays closed, and every line or wire can climb the Crown anywhere, one level a step.
-// Rock and only rock stands above level 0; its hardness follows its level.
+// Crown's terraces (one level up every `terrace` tiles to its top, then down the same way), and
+// mountains up to 5 beyond. A level comes in two steps. `classify` gives the raw level the shapes
+// say; `settle` then evens the slopes out, lowering a tile until it stands at most one level above
+// each neighbour (two above its east neighbour far out: an east-facing cliff). Settling only
+// lowers, and never to 0, so it changes neither what is rock nor the floor's rim: the ring stays
+// closed, and every line or wire can climb the Crown anywhere, one level a step. Rock stands above
+// level 0, and the one water up there, the Crown's tarn (map 2); rock's hardness follows its level.
+//
+// Map versions (D63): a land is made by the parameters of one version (content `MAPS`: the cirque
+// template, the archetypes' Crown foot, the mountains' hardness), passed in and saved with the
+// base (`mapV`), so a base reopens on the land it was founded on. Version 1 is the Crown of D45
+// (three levels all round, the lake on the floor); version 2 a thinner ridge rising into a few
+// peaks, one holding the tarn. Code shared by both reads only the template's fields, and a field
+// version 1 lacks (`ridge`, `shoulders`, `lake.onCrest`) leaves its land as it was.
 import { BAL } from '@/content/balance';
 import { itemIdx } from '@/content/registry';
 import {
-  ARCHETYPES, ARCHETYPE_IDS, CIRQUE, COMMON_DEPOSITS, COS64, DEPOSIT_CHANCE, MOUNTAINS, RICH_MULT, RINGS, SHADE, SIN64,
-  T3_UNIQUES, T4_UNIQUES, UNIQUE_BIOMES, type ArchetypeId, type UniqueBiomeId,
+  ARCHETYPES, ARCHETYPE_IDS, COMMON_DEPOSITS, COS64, DEPOSIT_CHANCE, MAP_VERSION, MAPS, MOUNTAINS, RICH_MULT, RINGS, SHADE, SIN64,
+  T3_UNIQUES, T4_UNIQUES, UNIQUE_BIOMES, type ArchetypeId, type CirqueTemplate, type MapParams, type UniqueBiomeId,
 } from '@/content/world';
 import { hash32 } from '@/core/hash';
 import { isqrt } from '@/core/fixed';
@@ -39,6 +46,7 @@ const CROWN = 8; //      the Crown's terraces
 const FLOOR = 16; //     the cirque's floor
 const GROUND = 5; //     bits 5–8: the ground class (a T) of a level-0 tile, when asked for
 const HEIGHT = 9; //     bits 9–16: the land's height field (outside the cirque)
+const WET = 1 << 17; //  the Crown's tarn: water at its level, its class in the GROUND bits
 /** How far settling reaches: a tile comes down only for a lower one at most this many steps away. */
 const REACH = MAX_LEVEL - 1;
 
@@ -55,6 +63,13 @@ export class MapGen implements TerrainSource {
   /** The Crown's foot on this land (the archetype's `crownOuter`) and the farthest radius its terraces can reach. */
   readonly crownFoot: number;
   readonly crownReach: number;
+  /** The cirque template's own Crown foot, whatever the archetype (the cirque's wind shelter, D44). */
+  readonly crownOuter: number;
+  /** The Crown's tarn (map 2): its centre tile and the level of its water; null on map 1 (the lake is on the floor). */
+  readonly tarn: { readonly x: number; readonly y: number; readonly level: number } | null;
+  /** The cirque template and the mountains' hardness of this map version. */
+  private readonly C: CirqueTemplate;
+  private readonly hard: MapParams['hardness'];
   private readonly hW: Noise2;
   private readonly hP: Noise2;
   private readonly mW: Noise2;
@@ -64,13 +79,21 @@ export class MapGen implements TerrainSource {
   private readonly jit: Noise2;
   private readonly cirqueBlobs: Blob[] = [];
   private readonly clearings: Clearing[] = [];
-  private readonly lake: { cx: number; cy: number; r2: number; r2deep: number };
+  /** The cirque's water: the floor's lake (map 1) or the tarn up on the crest (map 2, with its centre's radius and mound). */
+  private readonly lake: { cx: number; cy: number; r2: number; r2deep: number } | null;
+  private readonly tarnAt: { cx: number; cy: number; r2: number; r2deep: number; rc: number; mound: number } | null;
   /** The archetypes' biases ×3 (primary twice, secondary once), faded by `fade`. */
   private readonly dH3: number;
   private readonly dM3: number;
   private readonly dE3: number;
 
-  constructor(readonly worldSeed: number, readonly playerSeed: number) {
+  /** `mapV`: the map version (content `MAPS`); a new base takes today's, a saved one its own. */
+  constructor(readonly worldSeed: number, readonly playerSeed: number, readonly mapV: number = MAP_VERSION) {
+    const P = MAPS[mapV];
+    // A version this build does not know is a newer build's land: never open it on another.
+    if (!P) throw new Error(`Ocelle: map version ${mapV} is unknown to this build`);
+    const C = (this.C = P.cirque);
+    this.hard = P.hardness;
     const ps = playerSeed >>> 0;
     this.archetype = ARCHETYPE_IDS[hash32(ps, 1) % ARCHETYPE_IDS.length]!;
     let sec = ARCHETYPE_IDS[hash32(ps, 2) % ARCHETYPE_IDS.length]!;
@@ -88,19 +111,26 @@ export class MapGen implements TerrainSource {
     this.dH3 = arch.dHeight * 2 + B.dHeight;
     this.dM3 = arch.dMoist * 2 + B.dMoist;
     this.dE3 = arch.mountains * 2 + B.mountains;
-    this.crownFoot = arch.crownOuter;
-    // The crest's outer edge is at most max(rim + climb + minCrest, foot − climb + jitter), the
-    // rim and the jitter at their highest (amp − 1); the foot lies `climb` tiles past it.
-    const C = CIRQUE, climb = (C.crest - 1) * C.terrace;
-    this.crownReach = Math.max(C.floorRadius + C.rimJitter.floor + climb + C.minCrest, arch.crownOuter - climb + C.rimJitter.outer) + climb;
+    this.crownFoot = P.crownOuter[this.archetype] ?? C.crownOuter;
+    this.crownOuter = C.crownOuter;
+    const L = C.lake;
+    const water = { cx: CENTER + L.dx, cy: CENTER + L.dy, r2: L.radius * L.radius, r2deep: L.deep * L.deep };
+    this.lake = L.onCrest ? null : water;
+    this.tarnAt = L.onCrest ? { ...water, rc: isqrt(L.dx * L.dx + L.dy * L.dy), mound: L.mound ?? 0 } : null;
+    this.tarn = L.onCrest ? { x: water.cx, y: water.cy, level: C.crest } : null;
+    // The top's outer edge is at most max(rim + lift + minCrest, foot − lift + jitter), the rim
+    // and the jitter at their highest (amp − 1), plus the widest shoulder, or the tarn's mound;
+    // the foot lies `climb` tiles past it (the way down from the crest, the deepest).
+    const climb = (C.crest - 1) * C.terrace, lift = ((C.ridge ?? C.crest) - 1) * C.terrace;
+    const S = C.shoulders, widest = S ? ((255 - S.from) * S.gain) >> 7 : 0;
+    const edge = Math.max(C.floorRadius + C.rimJitter.floor + lift + C.minCrest, this.crownFoot - lift + C.rimJitter.outer) + widest;
+    this.crownReach = Math.max(edge, this.tarnAt ? this.tarnAt.rc + this.tarnAt.mound : 0) + climb;
     // Cirque deposits: shared template, ±1 tile and ±20 % richness per player.
-    CIRQUE.deposits.forEach((d, i) => {
+    C.deposits.forEach((d, i) => {
       const jx = (hash32(ps, 30 + i) % 3) - 1, jy = (hash32(ps, 40 + i) % 3) - 1;
       const rich = Math.floor((d.rich * (800 + (hash32(ps, 50 + i) % 401))) / 1000);
       this.cirqueBlobs.push({ cx: CENTER + d.dx + jx, cy: CENTER + d.dy + jy, r2: d.radius * d.radius, item: itemIdx(d.item), rich, onRock: false });
     });
-    const L = CIRQUE.lake;
-    this.lake = { cx: CENTER + L.dx, cy: CENTER + L.dy, r2: L.radius * L.radius, r2deep: (L.radius - 1.6) * (L.radius - 1.6) };
     // Guaranteed copper field in the near belt.
     const cd = hash32(ps, 60) % 64, cr = 70 + (hash32(ps, 61) % 41);
     this.copperField = { cx: CENTER + ((COS64[cd]! * cr) >> 10), cy: CENTER + ((SIN64[cd]! * cr) >> 10) };
@@ -174,23 +204,74 @@ export class MapGen implements TerrainSource {
 
   /**
    * The Crown at a tile: −1 on the cirque's floor, 0 past its foot, else its raw level — one more
-   * every `CIRQUE.terrace` tiles from the floor's rim up to the crest, which runs out at least
-   * `minCrest` tiles to the foot less the way down, then one less every `terrace` tiles. The rim
-   * and the crest's outer edge wobble with the shared noise. Every tile between r = rim and the
-   * foot is at 1 or more, and the rim is at most floorRadius + 1 while the foot is at least
-   * `climb` × 2 + `minCrest` tiles past it: no level-0 path crosses the ring.
+   * every `terrace` tiles from the floor's rim up to its top, which runs out at least `minCrest`
+   * tiles to the foot less the way down, then one less every `terrace` tiles. The rim and the
+   * top's outer edge wobble with the shared noise. Its top is the `ridge` (map 2; map 1: the
+   * crest), the crest wherever the edge leaves it room for
+   * `minCrest` tiles: on the shoulders (`shoulder`), round the tarn (its `mound`, a tile lower a
+   * tile away), all round a Closed Cirque. Every tile between r = rim and the foot is at 1 or
+   * more, and the rim is at most floorRadius + 1 while the foot is at least (ridge − 1) × terrace
+   * × 2 + `minCrest` tiles past it: no level-0 path crosses the ring.
    */
   private crown(x: number, y: number, r: number): number {
-    const C = CIRQUE;
-    const rim = C.floorRadius + this.jitter(x, y, C.rimJitter.floor);
+    const C = this.C, T = C.terrace;
+    // The shared noise at the tile (map 1), or at its bearing on the `jitterAt` circle (map 2) —
+    // the point itself, not a tile, so a ray out of the cirque reads one value all along (the
+    // noise takes any point; IEEE division is the same on every engine).
+    const B = C.jitterAt;
+    const [jx, jy] = B && r > 0 ? this.bearing(x, y, r, B.radius) : [x, y];
+    const rim = C.floorRadius + this.jitter(jx, jy, C.rimJitter.floor, B ? B.scale : 6);
     if (r < rim) return -1;
-    const climb = (C.crest - 1) * C.terrace;
-    const up = Math.min(C.crest, 1 + Math.floor((r - rim) / C.terrace));
+    const ridge = C.ridge ?? C.crest, lift = (ridge - 1) * T;
     // The outer edge wobbles twice as slowly as the rim: a step of one tile at most, so the way
     // down never leaves a lone rock tile past the foot.
-    const edge = Math.max(rim + climb + C.minCrest, this.crownFoot - climb + this.jitter(x + 97, y - 31, C.rimJitter.outer, 12));
-    if (r < edge) return up;
-    return Math.min(up, Math.max(0, C.crest - 1 - Math.floor((r - edge) / C.terrace)));
+    const s = this.shoulder(x, y, r);
+    let edge = Math.max(rim + lift + C.minCrest, this.crownFoot - lift + this.jitter(jx + 97, jy - 31, C.rimJitter.outer, 12)) + s;
+    const t = this.tarnAt;
+    let mound = 0;
+    if (t && r > 0) {
+      // Round the tarn: its bearing's point on the tarn's circle, so the mound is a function of the
+      // bearing too (a top's edge that sank outwards would squeeze the way down into one-tile steps).
+      const [px, py] = this.bearing(x, y, r, t.rc);
+      const d2 = Math.floor((px - t.cx) * (px - t.cx) + (py - t.cy) * (py - t.cy));
+      if (d2 < 16 * t.mound * t.mound) edge = Math.max(edge, (mound = t.rc + t.mound - Math.max(0, isqrt(d2) - t.mound)));
+    }
+    // A peak where the top's edge for the template's own rim leaves the crest room: decided by
+    // the bearing (the shoulder, the archetype's foot, the tarn), not the tile's rim, so a peak's
+    // outline is clean; its crest then keeps `minCrest` tiles past this tile's rim.
+    let top = ridge;
+    if (ridge < C.crest && Math.max(Math.max(C.floorRadius + lift + C.minCrest, this.crownFoot - lift) + s, mound) - C.floorRadius - (C.crest - 1) * T >= C.minCrest) {
+      top = C.crest;
+      edge = Math.max(edge, rim + (C.crest - 1) * T + C.minCrest);
+    }
+    const up = Math.min(top, 1 + Math.floor((r - rim) / T));
+    return r < edge ? up : Math.min(up, Math.max(0, top - 1 - Math.floor((r - edge) / T)));
+  }
+
+  /**
+   * How far the Crown's top shoulders out at a tile (tiles, 0 on map 1): the shared noise read on
+   * a circle round the cirque at the tile's bearing, past `shoulders.from`. A function of the
+   * bearing alone, so a shoulder spans the Crown from its rim to its foot.
+   */
+  private shoulder(x: number, y: number, r: number): number {
+    const S = this.C.shoulders;
+    if (!S || r <= 0) return 0;
+    const [bx, by] = this.bearing(x, y, r, S.radius);
+    const n = qfbm(this.jit, bx + 211, by - 157, S.scale, 2);
+    return n > S.from ? ((n - S.from) * S.gain) >> 7 : 0;
+  }
+
+  /** The point of a tile's bearing on the circle of `radius` round the cirque (r > 0: the tile's own radius): not a tile, any point. */
+  private bearing(x: number, y: number, r: number, radius: number): [number, number] {
+    return [CENTER + ((x - CENTER) * radius) / r, CENTER + ((y - CENTER) * radius) / r];
+  }
+
+  /** The tarn's water at a tile (map 2): its class, deep at its heart; 0 off it. */
+  private tarnWater(x: number, y: number): number {
+    const t = this.tarnAt;
+    if (!t) return 0;
+    const d2 = (x - t.cx) * (x - t.cx) + (y - t.cy) * (y - t.cy);
+    return d2 <= t.r2deep ? T.Deep : d2 <= t.r2 ? T.Shallow : 0;
   }
 
   /** The mountains' raw level at a tile outside the Crown (0: none): its elevation cut into terraces (`MOUNTAINS`). */
@@ -225,7 +306,10 @@ export class MapGen implements TerrainSource {
       if (c > 0) {
         // A mountain at the Crown's foot (a Closed Cirque's) may rise over its outer terraces.
         const m = r >= MOUNTAINS.from ? this.mountain(x, y, r, this.heightAt(x, y, r)) : 0;
-        return m > c ? m : c | CROWN;
+        if (m > c) return m;
+        // The tarn: water at the crest's level (its class whether or not `ground` is asked: it is cheap).
+        const w = c === this.C.crest ? this.tarnWater(x, y) : 0;
+        return w ? c | CROWN | WET | (w << GROUND) : c | CROWN;
       }
     }
     const h = this.heightAt(x, y, r), hb = h << HEIGHT;
@@ -242,20 +326,22 @@ export class MapGen implements TerrainSource {
     return hb | (plainGround(h, this.moistAt(x, y, r)) << GROUND);
   }
 
-  /** The cirque's floor: the lake, else sand. */
+  /** The cirque's floor: the lake (map 1), else sand. */
   private floorGround(x: number, y: number): number {
     const L = this.lake;
+    if (!L) return T.Sand;
     const ld = (x - L.cx) * (x - L.cx) + (y - L.cy) * (y - L.cy);
     return ld <= L.r2deep ? T.Deep : ld <= L.r2 ? T.Shallow : T.Sand;
   }
 
-  /** The rock class of a raised tile: its hardness follows its level (the Crown's table on the Crown, the ring's beyond). */
+  /** The rock class of a raised tile: its hardness follows its level (the Crown's table on the Crown, the ring's beyond, by map version). */
   private rockOf(c: number, level: number, x: number, y: number): number {
     let hard: number;
-    if (c & CROWN) hard = CIRQUE.hardness[Math.min(level, CIRQUE.hardness.length) - 1]!;
+    const C = this.C;
+    if (c & CROWN) hard = C.hardness[Math.min(level, C.hardness.length) - 1]!;
     else {
       const dx = x - CENTER, dy = y - CENTER, r2 = dx * dx + dy * dy;
-      const H = MOUNTAINS.hardness;
+      const H = this.hard;
       hard = (r2 < RINGS.near * RINGS.near ? H.near : r2 < RINGS.reaches * RINGS.reaches ? H.reaches : H.far)[level - 1]!;
     }
     return T.Rock1 + hard - 1;
@@ -279,7 +365,7 @@ export class MapGen implements TerrainSource {
   /** Base terrain class of a tile (before deposits), as `fill` writes it. */
   terrainAt(x: number, y: number): number {
     const c = this.classify(x, y, true), raw = c & LV;
-    if (raw === 0) return (c >> GROUND) & 15;
+    if (raw === 0 || c & WET) return (c >> GROUND) & 15;
     return this.rockOf(c, raw <= 1 ? raw : this.settled(x, y, raw), x, y);
   }
 
@@ -299,7 +385,7 @@ export class MapGen implements TerrainSource {
         const bx = nx * CHUNK + 8 + (hash32(ps, nx, ny, 1) % 16), by = ny * CHUNK + 8 + (hash32(ps, nx, ny, 2) % 16);
         const dx = bx - CENTER, dy = by - CENTER;
         const r = isqrt(dx * dx + dy * dy);
-        if (r <= CIRQUE.crownOuter + 4 || r > RINGS.far) continue; // the cirque's deposits are the template's
+        if (r <= this.C.crownOuter + 4 || r > RINGS.far) continue; // the cirque's deposits are the template's
         const ring = r < RINGS.near ? 'near' : r < RINGS.reaches ? 'reaches' : 'far';
         const roll = hash32(ps, nx, ny, 3) % 1000;
         const c = this.classify(bx, by, true); // rock or not does not depend on settling
@@ -346,7 +432,7 @@ export class MapGen implements TerrainSource {
         const w = (ly + REACH) * W + lx + REACH, k = ly * CHUNK + lx;
         const c = cls[w]!, L = lv[w]!;
         const x = x0 + lx, y = y0 + ly;
-        terrain[k] = L > 0 ? this.rockOf(c, L, x, y) : (c >> GROUND) & 15;
+        terrain[k] = L > 0 && !(c & WET) ? this.rockOf(c, L, x, y) : (c >> GROUND) & 15;
         if (level) level[k] = L;
         if (height) {
           // Shading height: rock by its level, the floor low, the land outside by its height field.

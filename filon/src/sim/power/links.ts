@@ -6,10 +6,18 @@
 //
 // Here: the wire table (`PowerLinks`, adjacency kept sorted so every walk is in id order), the
 // geometry (footprint edge to edge, integer squared distances) and the one rule that says
-// whether two buildings may be wired (`linkCheck`: range, free slots…). The commands that use
-// them (link, unlink, the new pillar's auto-link, wires carried over on replacement) are in
-// systems/power.ts.
+// whether two buildings may be wired (`linkCheck`: range, the land, free slots…). The commands
+// that use them (link, unlink, the new pillar's auto-link, wires carried over on replacement)
+// are in systems/power.ts.
+//
+// The land (D45, D78): a wire is as tolerant as its taller end (content `pole.climb`: a pole and
+// the Hearth 1 level, a pylon 3; any other building 0). Its two ends may stand at most that many
+// levels apart (`wireSteep`), and it rides that many levels above the straight line joining their
+// grounds, so no tile it passes over may rise above that (`wireObstacle`): two poles on the floor
+// may wire across a one-terrace ridge but not a two-terrace one; two pylons on the floor clear
+// three terraces, never a mountain.
 import { buildingDef } from '@/content/registry';
+import { fdiv } from '@/core/fixed';
 import { footprint } from '../entities';
 import type { Mods } from '../research/modifiers';
 import type { Ent } from '../types';
@@ -20,10 +28,10 @@ import type { Ent } from '../types';
  */
 export type LinkReason =
   | 'ok' | 'missing' | 'self' | 'not_linkable' | 'needs_pillar' | 'already' | 'not_linked'
-  | 'range' | 'steep' | 'slots' | 'slots_other';
+  | 'range' | 'steep' | 'blocked' | 'slots' | 'slots_other';
 
-/** The most two wired ends' levels may differ (D45: a wire climbs one terrace at a time). */
-export const WIRE_CLIMB = 1;
+/** The land's level of a tile (`grid.level`): the wire rule reads the land through it. */
+export type LandLevel = (x: number, y: number) => number;
 
 const NONE: readonly number[] = [];
 
@@ -137,6 +145,43 @@ export function linkable(def: number): boolean {
   return !!b.pole || (b.kw ?? 0) > 0 || (b.idleKw ?? 0) > 0 || !!b.gen || !!b.accumulator;
 }
 
+/** How many levels a wire from this building may climb, and rides above the land (content `pole.climb`; 0 off the pillars). */
+export const climbOf = (def: number): number => buildingDef(def).pole?.climb ?? 0;
+
+/** A wire's tolerance (levels): its taller end's, as its reach is its longer end's. */
+export const wireClimb = (a: Pick<Ent, 'def'>, b: Pick<Ent, 'def'>): number => Math.max(climbOf(a.def), climbOf(b.def));
+
+/** Do a wire's ends stand further apart in level than it tolerates? (A footprint is level ground: its first tile's level, D45.) */
+export function wireSteep(a: Pick<Ent, 'def' | 'x' | 'y'>, b: Pick<Ent, 'def' | 'x' | 'y'>, level: LandLevel): boolean {
+  return Math.abs(level(a.x, a.y) - level(b.x, b.y)) > wireClimb(a, b);
+}
+
+/** Is tile (x, y) under a footprint? */
+const under = (e: Pick<Ent, 'x' | 'y'>, w: number, h: number, x: number, y: number): boolean => x >= e.x && x < e.x + w && y >= e.y && y < e.y + h;
+
+/**
+ * The first tile, walking from `a`, that rises above the wire `a`–`b` (null: none): the wire runs
+ * straight from footprint centre to footprint centre, `wireClimb` levels above the line joining
+ * the two ends' grounds, and a tile it passes over (outside both footprints) may stand as high as
+ * the wire there, no higher. Integers only: centres in half tiles, a sample every quarter tile
+ * along the longer axis, the wire's height at sample i of N compared times N.
+ */
+export function wireObstacle(a: Pick<Ent, 'def' | 'x' | 'y' | 'rot'>, b: Pick<Ent, 'def' | 'x' | 'y' | 'rot'>, level: LandLevel): [number, number] | null {
+  const [aw, ah] = footprint(a.def, a.rot), [bw, bh] = footprint(b.def, b.rot);
+  const ax = 2 * a.x + aw, ay = 2 * a.y + ah, dx = 2 * b.x + bw - ax, dy = 2 * b.y + bh - ay;
+  const n = 2 * Math.max(Math.abs(dx), Math.abs(dy));
+  if (n === 0) return null;
+  const la = level(a.x, a.y), lb = level(b.x, b.y), top = (la + wireClimb(a, b)) * n;
+  let px = -1, py = -1;
+  for (let i = 1; i < n; i++) {
+    const x = fdiv(ax * n + dx * i, 2 * n), y = fdiv(ay * n + dy * i, 2 * n);
+    if ((x === px && y === py) || under(a, aw, ah, x, y) || under(b, bw, bh, x, y)) continue;
+    px = x; py = y;
+    if (level(x, y) * n > top + (lb - la) * i) return [x, y];
+  }
+  return null;
+}
+
 /** Squared gap between two footprints, edge to edge, in tiles (0 when they touch or overlap). */
 export function gap2(a: Pick<Ent, 'def' | 'x' | 'y' | 'rot'>, b: Pick<Ent, 'def' | 'x' | 'y' | 'rot'>): number {
   const [aw, ah] = footprint(a.def, a.rot), [bw, bh] = footprint(b.def, b.rot);
@@ -151,10 +196,10 @@ export const wireReach = (a: LinkPoint | null, b: LinkPoint | null): number => M
 /**
  * May `a` and `b` be wired now? 'ok', or the first reason not, in this order: an end is
  * missing, the same building, an end takes no part in power, neither end is a link point,
- * already wired, out of reach, more than a terrace apart (`level`: the land's level a building
- * stands on, D45), `a` full, `b` full.
+ * already wired, out of reach, its ends too many levels apart, the land rising above it in
+ * between (`level`: the land, D45/D78; without it the land is not read), `a` full, `b` full.
  */
-export function linkCheck(a: Ent | undefined, b: Ent | undefined, links: PowerLinks, mods: Pick<Mods, 'pylonLink'>, level?: (e: Ent) => number): LinkReason {
+export function linkCheck(a: Ent | undefined, b: Ent | undefined, links: PowerLinks, mods: Pick<Mods, 'pylonLink'>, level?: LandLevel): LinkReason {
   if (!a || !b) return 'missing';
   if (a.id === b.id) return 'self';
   if (!linkable(a.def) || !linkable(b.def)) return 'not_linkable';
@@ -163,7 +208,8 @@ export function linkCheck(a: Ent | undefined, b: Ent | undefined, links: PowerLi
   if (links.has(a.id, b.id)) return 'already';
   const r = wireReach(pa, pb);
   if (gap2(a, b) > r * r) return 'range';
-  if (level && Math.abs(level(a) - level(b)) > WIRE_CLIMB) return 'steep';
+  if (level && wireSteep(a, b, level)) return 'steep';
+  if (level && wireObstacle(a, b, level)) return 'blocked';
   if (pa && links.degree(a.id) >= pa.slots) return 'slots';
   if (pb && links.degree(b.id) >= pb.slots) return 'slots_other';
   return 'ok';

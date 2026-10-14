@@ -241,6 +241,51 @@
 .tr-gate .tr-gate-items { margin-left: 2px; text-align: left; gap: 3px 10px; }
 .tr-gate .glyph[data-glyph='noLink'] { margin-left: auto; width: 1.35em; height: 1.35em; }
 .tr-gate:not([data-gate-linked])[data-gate='out'] .insp-label { color: var(--c-coral-d); font-weight: 600; }
+/* The trade post's recap (D64): separate inked cards on grids that keep their columns — an icon,
+   a middle that shrinks with an ellipsis, a value that never breaks; two lines only where meant. */
+.tp-facts { display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0 6px; }
+.tp-fact {
+  display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; font-size: 12px; font-variant-numeric: tabular-nums;
+  padding: 1px 7px; border: 1.5px solid var(--c-ink); border-radius: 9px 7px 10px 8px / 8px 10px 7px 9px; background: var(--c-paper);
+}
+.tp-fact .glyph { width: 1.15em; height: 1.15em; }
+.tp-gates { display: flex; flex-direction: column; gap: 2px; margin: 0 0 4px; }
+.tp-gate { display: grid; grid-template-columns: 1.45em auto minmax(0, 1fr) auto; align-items: center; gap: 6px; font-size: 12.5px; min-height: 22px; }
+.tp-gate > .glyph:first-child { width: 1.45em; height: 1.45em; }
+.tp-gate-name { font-weight: 600; white-space: nowrap; }
+.tp-gate-what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-ink-soft); font-size: 12px; }
+.tp-gate-marks { display: inline-flex; gap: 3px; }
+.tp-gate-marks .glyph { width: 1.3em; height: 1.3em; }
+.tr-gate.tp-gate:not([data-gate-linked])[data-gate='out'] .tp-gate-name { color: var(--c-coral-d); }
+.tp-card {
+  margin: 8px 0 0; padding: 4px 8px 6px; border: 1.5px solid var(--c-ink);
+  border-radius: 10px 8px 11px 9px / 9px 11px 8px 10px; background: color-mix(in srgb, var(--c-paper-d) 45%, var(--c-paper));
+}
+.tp-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
+.inspector .tp-head h4 { margin: 2px 0 3px; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tp-total { font-family: var(--f-title); font-size: 15px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tp-recap { display: flex; flex-direction: column; }
+.tp-line, .tp-order { display: grid; align-items: center; column-gap: 6px; font-size: 12.5px; }
+.tp-line { grid-template-columns: 22px minmax(0, 1fr) auto; min-height: 22px; }
+.tp-line + .tp-line, .tp-order + .tp-order { border-top: 1px dashed color-mix(in srgb, var(--c-ink) 22%, transparent); }
+.tp-icon { display: inline-flex; justify-content: center; }
+.tp-mid { display: flex; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; }
+.tp-n { font-weight: 600; font-variant-numeric: tabular-nums; }
+.tp-when { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--c-ink-soft); font-size: 11px; }
+.tp-v { white-space: nowrap; font-variant-numeric: tabular-nums; text-align: right; }
+.tp-fill { display: flex; flex-direction: column; gap: 2px; margin: 4px 0 0; }
+.tp-fill-n { font-size: 11px; color: var(--c-ink-soft); }
+.tp-fill-n[data-full] { color: var(--c-coral-d); font-weight: 600; }
+/* An order: « icon · rate · cost a minute · ✕ » then « state · cap » under the rate. */
+.tp-order { grid-template-columns: 22px minmax(0, 1fr) auto 20px; grid-template-areas: 'icon rate cost x' 'icon sub sub x'; row-gap: 1px; padding: 3px 0; }
+.tp-order > .tp-icon { grid-area: icon; align-self: center; }
+.tp-rate { grid-area: rate; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tp-cost { grid-area: cost; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tp-x { grid-area: x; justify-self: end; margin: 0; font-size: 14px; }
+.tp-sub { grid-area: sub; display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
+.tp-sub .tr-state { flex: none; margin: 0; }
+.tp-cap { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--c-ink-soft); font-size: 11px; }
+.tp-crier { margin-top: 8px; }
 
 /* ── HUD: the ocelles chip opens the Crier ─────────────────────────────────── */
 .hud-credits[data-hud-crier] { cursor: pointer; margin: -2px -6px; padding: 2px 6px; border-radius: 8px; transition: background 120ms; }

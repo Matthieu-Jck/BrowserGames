@@ -2,8 +2,10 @@
 // must fail loudly: an unreachable item, a research loop, a recipe whose cycle does not
 // divide the engine's 1 200-tick period (the offline catch-up needs it), a port off its
 // building's edge. It also pins the design's intentional scarcities: the cirque's « tired
-// vein » cannot feed one mechanics-journal workshop, an atlas needs two different unique
-// resources and a codex five — so every colony must trade. The unlock tree (D33) is one DAG over
+// vein » cannot feed one electronics workshop, an atlas needs two different unique resources and
+// a codex five — so every colony must trade. Machines are specialised: none offers more than
+// `MAX_RECIPES` recipes (D70); every research node unlocks a building, a recipe or a feature,
+// never a bare multiplier (D70). The unlock tree (D33) is one DAG over
 // plans and research: no loop, every node reachable from the start, every building with it. And
 // a base can always rebuild its production (D36): the bootstrap and CrierBelt's restart reserve
 // hold together (`reserveProblems`, content/reserve.ts). The plans' paths (D41) each read as one
@@ -12,16 +14,19 @@ import { BAL } from './balance';
 import { BUILDINGS } from './buildings';
 import { ITEMS } from './items';
 import { questProblems } from './quests';
-import { RECIPES } from './recipes';
+import { MAX_RECIPES, RECIPES } from './recipes';
 import { reserveProblems } from './reserve';
-import { PLANS, RESEARCH, buildingsUnlockedBy, isPlan, isResearch, isTreeNode, pathProblems, treePrereq } from './research';
+import { FAMILIES, PLANS, RESEARCH, TIER_GATE, buildingsUnlockedBy, isPlan, isResearch, isTreeNode, pathProblems, treePrereq } from './research';
 import { CIRQUE, UNIQUE_BIOMES } from './world';
 import type { BuildingDef, ItemDef, PlanDef, RecipeDef, ResearchDef } from './types';
 
 const CYCLE_LCM = 1200;
 
-/** Items mined straight from the land (deposits, unique biomes, digging, pumping). */
-export const RAW: readonly string[] = ['iron_ore', 'sand', 'coal', 'copper_ore', 'salt', 'stone', 'water', ...Object.values(UNIQUE_BIOMES).map((u) => u.item)];
+/** Items mined straight from the land (deposits, unique biomes, digging, pumping), and those collectors make from power alone (data files, D68). */
+export const RAW: readonly string[] = [
+  'iron_ore', 'sand', 'coal', 'copper_ore', 'salt', 'stone', 'water', ...Object.values(UNIQUE_BIOMES).map((u) => u.item),
+  ...new Set((Object.values(BUILDINGS) as BuildingDef[]).flatMap((b) => (b.drill?.anywhere ? [b.drill.anywhere] : []))),
+];
 
 const recipes = Object.entries(RECIPES) as Array<[string, RecipeDef]>;
 const research = Object.entries(RESEARCH) as Array<[string, ResearchDef]>;
@@ -42,6 +47,33 @@ export function reachableItems(): Set<string> {
     }
   }
   return have;
+}
+
+/**
+ * The items a base can make knowing these tree nodes (and the starting kit): what comes from the
+ * land — but for what a building makes from power alone (the data collectors), which needs that
+ * building — and the outputs of the recipes known, run by a machine known, from inputs it can make.
+ */
+export function makeableWith(known: ReadonlySet<string>): Set<string> {
+  const has = (unlock: string): boolean => unlock === 'start' || known.has(unlock);
+  const fromPower = new Map<string, boolean>();
+  for (const [, b] of buildings) if (b.drill?.anywhere) fromPower.set(b.drill.anywhere, (fromPower.get(b.drill.anywhere) ?? false) || has(b.unlock));
+  const have = new Set(RAW.filter((it) => fromPower.get(it) ?? true));
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const [, r] of recipes) {
+      if (!has(r.unlock) || !r.machines.some((m) => has((BUILDINGS as Record<string, BuildingDef>)[m]!.unlock))) continue;
+      if (!r.ins.every(([it]) => have.has(it))) continue;
+      for (const [o] of r.outs) if (!have.has(o)) { have.add(o); changed = true; }
+    }
+  }
+  return have;
+}
+
+/** Every tree node a node needs, its prerequisites' prerequisites included. */
+export function ancestors(id: string, out = new Set<string>()): Set<string> {
+  for (const p of treePrereq(id)) if (!out.has(p)) { out.add(p); ancestors(p, out); }
+  return out;
 }
 
 /** Tree nodes (plans and research) reachable from the start: their prerequisites all reachable. */
@@ -87,11 +119,33 @@ export function tiredVeinPerMin(): number {
   return (tiles * d.rich) / 100;
 }
 
-/** Copper wire per minute one great workshop on mechanics journals consumes. */
-export function wirePerMechanicsWorkshop(): number {
-  const j = RECIPES.journal_2, c = RECIPES.circuit;
-  const circuitsPerMin = (j.ins.find(([it]) => it === 'circuit')![1] * 60) / j.seconds;
-  return circuitsPerMin * c.ins.find(([it]) => it === 'copper_wire')![1];
+/** Copper wire per minute one electronics workshop on circuit boards consumes. */
+export function wirePerElectronicsWorkshop(): number {
+  const c = RECIPES.circuit;
+  return (c.ins.find(([it]) => it === 'copper_wire')![1] * 60) / c.seconds;
+}
+
+/** Each machine's recipes (D70: never more than `MAX_RECIPES`). */
+export function recipesPerMachine(): Map<string, string[]> {
+  const m = new Map<string, string[]>();
+  for (const [id, r] of recipes) for (const b of r.machines) m.set(b, [...(m.get(b) ?? []), id]);
+  return m;
+}
+
+/**
+ * What a research node gives (D70): the buildings and recipes it unlocks, a Heart level, its
+ * features (flags), research slots, additions; empty when it would only multiply a number.
+ */
+export function nodeGives(id: string): string[] {
+  const out: string[] = [...buildingsUnlockedBy(id)];
+  for (const [rid, r] of recipes) if (r.unlock === id) out.push(`recipe:${rid}`);
+  if (BAL.hearthUpgrades.some((u) => u.unlock === id)) out.push('heart');
+  for (const e of (RESEARCH as Record<string, ResearchDef>)[id]?.effects ?? []) {
+    if (e.k === 'flag') out.push(`flag:${e.flag}`);
+    else if (e.k === 'slots') out.push('slot');
+    else if (e.k === 'add') out.push(`add:${e.target}`);
+  }
+  return out;
 }
 
 export function validateContent(): string[] {
@@ -162,9 +216,33 @@ export function validateContent(): string[] {
   for (const it of items) if (!reach.has(it)) errs.push(`item ${it}: cannot be produced`);
   for (const [id, r] of research) for (const [it] of r.cost) if (!reach.has(it)) errs.push(`research ${id}: ${it} cannot be produced`);
   for (const [id, p] of plans) for (const [it] of p.cost) if (!reach.has(it)) errs.push(`plan ${id}: ${it} cannot be produced`);
+  // …and in time (D71): a plan only costs what the plans alone let a base make — every plan is
+  // taken before the research lab's, and nothing research brings can be in hand by then; a
+  // research node only costs what its prerequisites and the plans let a base make (Tier 2's
+  // Mechanics Data needs the test bench Mechanics brings; Atlas Lore cannot ask for atlases).
+  const planIds = new Set(plans.map(([id]) => id));
+  const withPlans = makeableWith(planIds);
+  for (const [id, p] of plans) for (const [it] of p.cost) if (reach.has(it) && !withPlans.has(it)) errs.push(`plan ${id}: ${it} cannot be made with the plans alone`);
+  for (const [id, r] of research) {
+    const known = makeableWith(new Set([...planIds, ...ancestors(id)]));
+    for (const [it] of r.cost) if (reach.has(it) && !known.has(it)) errs.push(`research ${id}: ${it} cannot be made before it (its prerequisites and the plans)`);
+  }
+
+  // Machines are specialised (D70); research nodes unlock things (D70); the tree's shape (D69).
+  for (const [b, rs] of recipesPerMachine()) if (rs.length > MAX_RECIPES) errs.push(`machine ${b}: ${rs.length} recipes (${rs.join(', ')}), at most ${MAX_RECIPES}`);
+  for (const [id, r] of research) {
+    if (!nodeGives(id).length) errs.push(`research ${id}: unlocks nothing (a node must give a building, a recipe or a feature)`);
+    if (r.branch === 'trunk') continue;
+    const fam = FAMILIES[r.branch];
+    if (r.spec && !fam.specs?.[r.spec]) errs.push(`research ${id}: unknown speciality ${r.spec} of ${r.branch}`);
+    if (r.spec && r.tier < 3) errs.push(`research ${id}: a speciality starts at Tier 3`);
+    if (!r.spec && r.tier >= 3 && fam.specs) errs.push(`research ${id}: ${r.branch} splits at Tier 3, the node needs a speciality`);
+    const gate = TIER_GATE[r.tier];
+    if (gate && !r.prereq.includes(gate)) errs.push(`research ${id}: a Tier ${r.tier} node needs ${gate}`);
+  }
 
   // Designed scarcity and the need to trade.
-  if (tiredVeinPerMin() * 2 >= wirePerMechanicsWorkshop()) errs.push('the tired vein must not feed one mechanics workshop');
+  if (tiredVeinPerMin() * 2 >= wirePerElectronicsWorkshop()) errs.push('the tired vein must not feed one electronics workshop');
   if (uniquesNeeded('atlas').size < 2) errs.push('an atlas must need ≥ 2 distinct uniques');
   if (uniquesNeeded('codex').size !== 5) errs.push('a codex must need 5 distinct uniques');
 

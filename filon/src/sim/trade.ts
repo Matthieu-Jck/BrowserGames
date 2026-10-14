@@ -1,13 +1,14 @@
 // trade.ts — the trade post's rules, as data and pure functions (the system that applies them
 // is systems/trade.ts). A trade post (Comptoir) is the colony's dock at the Crier Ring:
-// · export streams: items that ribbons bring in are sold at each epoch boundary (once per game
-//   minute) at that epoch's bid, minus the post's fee, up to its throughput; a post next to the
-//   Hearth also sells from the Hearth's stock (keeping a small reserve);
+// · sales: whatever its one entrance brings (any tradable item but its cargo, below) is sold at
+//   each epoch boundary (once per game minute) at that epoch's bid, minus CrierBelt's fee, up to
+//   its throughput (D64: no export streams to choose — one way in, one way out);
 // · standing import orders (item, items/min, max price): filled at each boundary while the ask
 //   stays under the max (with hysteresis) and the ocelles suffice; the goods arrive after the
 //   post's lift delay plus the supplying colony's delay, into the post's container (its store),
-//   which its outlets set to that item empty (D43). An order buys only what an outlet takes out,
-//   and nothing while the container is full (a container's load: the post's throughput);
+//   which its one exit hands out, each item in turn (D43, D62). An order buys only while the exit
+//   leads somewhere, and nothing while the container is full (a container's load: the post's
+//   throughput). The post's **cargo** is what it bought and holds or awaits;
 // · spot trades: a stock sold or bought at once along the market's depth (slippage).
 // Everything here is integer: milli-items, centi-ocelles, ticks.
 import { BAL } from '@/content/balance';
@@ -27,6 +28,8 @@ export interface ImportOrder {
   maxCents: number;
   /** Hysteresis state: an order pauses above its max and resumes 3 % below it. */
   active: boolean;
+  /** Express Freight (cm_express): half the delay, a quarter dearer. */
+  express?: boolean;
 }
 
 export interface Shipment {
@@ -37,6 +40,8 @@ export interface Shipment {
   arrive: number;
   /** Supplying colony (index in the market's colonies), for the views. */
   colony: number;
+  /** What it cost, CrierBelt's cut included (centi-◉; for the views: the post's panel). Absent in saves before D64. */
+  cents?: number;
 }
 
 /** One line of the ledger: what was traded, when, for how much (a server can re-check it). */
@@ -55,19 +60,18 @@ export interface TradeLine {
 export interface PostActivity { epoch: number; soldMu: number; boughtMu: number; cents: number }
 
 /** Why a trade command was refused (null = accepted). */
-export type TradeRefusal = 'no_post' | 'not_tradable' | 'slots' | 'unaffordable' | 'stock' | 'exporting' | 'importing' | 'bad_amount' | 'reserve'
+export type TradeRefusal = 'no_express' | 'no_post' | 'not_tradable' | 'slots' | 'unaffordable' | 'stock' | 'bad_amount' | 'reserve'
   /** A purchase no outlet of any post takes out; more than one container's load; a full container (D43). */
   | 'no_outlet' | 'container' | 'full';
 
 /** The trade post level from research: 1, 2 (Second Wharf), 3 (Grand Post). */
 export const tradeLevel = (mods: Mods): number => (mods.flags.has('tradeL3') ? 3 : mods.flags.has('tradeL2') ? 2 : 1);
 
-/** Export streams per post, and standing import orders in all (Standing Orders: 6 and 6). */
-export const streamSlots = (mods: Mods): number => BAL.tradeStreams + mods.streams;
-export const orderSlots = (mods: Mods): number => BAL.tradeStreams + mods.streams;
+/** Standing import orders in all (Standing Orders: 6). */
+export const orderSlots = (mods: Mods): number => BAL.tradeOrders + mods.orders;
 
 /** Trade posts the colony may build (Second Wharf allows a second one). */
-export const maxPosts = (mods: Mods): number => (mods.flags.has('tradeL2') ? 2 : 1);
+export const maxPosts = (mods: Mods): number => (mods.flags.has('post3') ? 3 : mods.flags.has('tradeL2') ? 2 : 1);
 
 /** What one post lifts per epoch, imports and exports together (mu). */
 export const throughputMu = (level: number): number => BAL.tradeThroughput[Math.min(3, level) - 1]! * 1000;
@@ -93,18 +97,25 @@ export const LEDGER_MAX = 2000;
 
 /** Everything the colony's trade holds between boundaries (saved, hashed). */
 export interface TradeState {
-  /** Per post: the item of each export stream slot (-1 = empty). */
-  exports: Map<number, number[]>;
+  /**
+   * Per post, its cargo (D64): the items it bought and holds or awaits — on order, on their way,
+   * or still in its container — sorted, once each. Its exit hands these out in turn; its entrance
+   * takes every other tradable item, to sell. An item leaves the cargo at the boundary when no
+   * order wants it, none is on its way and not one is left in the container (systems/trade.ts).
+   */
+  cargo: Map<number, number[]>;
   orders: ImportOrder[];
   nextOrderId: number;
   /** Imports bought and on their way. */
   inflight: Shipment[];
-  /** mu sold by streams / bought by orders at the coming boundary's settlement (zeroed after it). */
+  /** mu sold / bought by the posts at the coming boundary's settlement (zeroed after it). */
   sold: Float64Array;
   bought: Float64Array;
   ledger: TradeLine[];
   /** Per post: its last epoch with trade. */
   activity: Map<number, PostActivity>;
+  /** Floor Prices (cm_floor): per item, the bid (centi-◉ an item) under which the posts hold it back. */
+  floors: Map<number, number>;
   /** Lifetime ocelles earned and spent through the Crier (centi-◉), and mu sold / bought per item. */
   earned: number;
   spent: number;
@@ -114,9 +125,9 @@ export interface TradeState {
 
 export function newTradeState(nItems: number): TradeState {
   return {
-    exports: new Map(), orders: [], nextOrderId: 1, inflight: [],
+    cargo: new Map(), orders: [], nextOrderId: 1, inflight: [],
     sold: new Float64Array(nItems), bought: new Float64Array(nItems),
-    ledger: [], activity: new Map(), earned: 0, spent: 0,
+    ledger: [], activity: new Map(), floors: new Map(), earned: 0, spent: 0,
     soldTotal: new Float64Array(nItems), boughtTotal: new Float64Array(nItems),
   };
 }

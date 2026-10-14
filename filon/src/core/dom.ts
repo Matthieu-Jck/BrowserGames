@@ -3,6 +3,19 @@
 
 type Child = Node | string | null | undefined | false;
 
+/**
+ * Text as the screen shows it. French typography puts a narrow no-break space (U+202F) before
+ * « ; ! ? », but the UI font (Atkinson Hyperlegible Next) has no glyph for it: the browser falls
+ * back to the system font, which draws it 0.14 em wide, and before « ; » it read as no space at
+ * all (owner, 2026-10-14). A font face cannot fix it (Chrome takes this space from the primary
+ * font and ignores a size-adjusted face for it), so on screen it becomes a full no-break space
+ * (U+00A0). The source strings keep U+202F (i18n.test.ts checks them); before « % » and between
+ * thousands the narrow space reads well and stays.
+ */
+export function screenText(s: string): string {
+  return s.includes(' ') ? s.replace(/ (?=[;!?])/g, ' ') : s;
+}
+
 export function el<K extends keyof HTMLElementTagNameMap>(
   tag: K | string,
   attrs: Record<string, unknown> = {},
@@ -28,7 +41,7 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   const kids = Array.isArray(children) ? children : [children];
   for (const c of kids) {
     if (c == null || c === false) continue;
-    node.append(typeof c === 'string' ? document.createTextNode(c) : c);
+    node.append(typeof c === 'string' ? document.createTextNode(screenText(c)) : c);
   }
   return node;
 }
@@ -49,11 +62,11 @@ export function qsa<T extends Element = HTMLElement>(sel: string, root: ParentNo
 
 const lastText = new WeakMap<Node, string>();
 
-/** Write textContent only when it changed. */
+/** Write textContent only when it changed (as the screen shows it: `screenText`). */
 export function setText(node: Element, text: string): void {
   if (lastText.get(node) === text) return;
   lastText.set(node, text);
-  node.textContent = text;
+  node.textContent = screenText(text);
 }
 
 const lastAttr = new WeakMap<Element, Map<string, string | null>>();

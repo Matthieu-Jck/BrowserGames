@@ -1,23 +1,32 @@
 // mapgen.test.ts — Ysmère's land on the real generator: deterministic; the same cirque for every
-// player, closed all round by the Crown's terraces (D45) and crossed one level per step; the
-// tutorial's distances; mountains up to 5 around it, terraced and climbable; the deposits on the
-// floor; the unique sites, the copper field and the archetypes where they belong.
+// player, closed all round by the Crown's terraces (D45) and crossed one level per step, each
+// terrace deep enough for a traction ribbon's elevator and its flat tile; the tarn up on the
+// crest (D63); the tutorial's distances; mountains up to 5 around it, terraced and climbable, the
+// lilac rock on their tops; the deposits on the floor; the unique sites, the copper field and the
+// archetypes where they belong; and map version 1, the land of the bases founded before D63, kept
+// tile for tile.
 import { describe, it, expect } from 'vitest';
 import { BUILDINGS } from '@/content/buildings';
-import { CIRQUE, COS64, MOUNTAINS, SIN64, WORLD_SEED, UNIQUE_BIOMES } from '@/content/world';
-import { buildingIdx, itemIdx } from '@/content/registry';
+import { CIRQUE, CIRQUE_V1, COS64, MAP_VERSION, MOUNTAINS, RINGS, SIN64, WORLD_SEED, UNIQUE_BIOMES } from '@/content/world';
+import { buildingDef, buildingIdx, itemIdx } from '@/content/registry';
 import { isqrt } from '@/core/fixed';
-import { CENTER, CHUNK, WORLD } from '../constants';
+import { CENTER, CHUNK, WORLD, WORLD_EPOCH0 } from '../constants';
+import { Sim } from '../state';
 import { gap2 } from '../power/links';
-import { T, isRock } from '../types';
+import { T, isRock, isWater } from '../types';
 import { BIOME, MapGen } from './mapgen';
 import { Grid, MAX_LEVEL } from './grid';
 
-const SEEDS = Array.from({ length: 16 }, (_, i) => 1000 + i * 7919);
-const world = (seed: number): { gen: MapGen; g: Grid } => {
-  const gen = new MapGen(WORLD_SEED, seed);
+/** Sixteen lands, and seed 8's Closed Cirque (none of the sixteen draws one). */
+const SEEDS = [...Array.from({ length: 16 }, (_, i) => 1000 + i * 7919), 8];
+const world = (seed: number, v = MAP_VERSION): { gen: MapGen; g: Grid } => {
+  const gen = new MapGen(WORLD_SEED, seed, v);
   return { gen, g: new Grid(gen) };
 };
+/** The level the Crown keeps all round, and how far its climb to it runs past the rim. */
+const RIDGE = CIRQUE.ridge ?? CIRQUE.crest, LIFT = (RIDGE - 1) * CIRQUE.terrace;
+/** Is (x, y) one of the tarn's tiles (the cirque's water on today's map)? */
+const inTarn = (x: number, y: number): boolean => (x - CENTER - CIRQUE.lake.dx) ** 2 + (y - CENTER - CIRQUE.lake.dy) ** 2 <= CIRQUE.lake.radius ** 2;
 const d2c = (x: number, y: number): number => (x - CENTER) * (x - CENTER) + (y - CENTER) * (y - CENTER);
 const biomeAt = (g: Grid, x: number, y: number): number => g.chunkAt(x >> 5, y >> 5).biome[(y & 31) * CHUNK + (x & 31)]!;
 const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
@@ -50,6 +59,33 @@ function flood(
 /** A climb: one level at most per step. */
 const climb = (g: Grid) => (ax: number, ay: number, bx: number, by: number): boolean => Math.abs(g.level(ax, ay) - g.level(bx, by)) <= 1;
 
+/**
+ * Can a line of ribbons go from `start` to a tile `goal` accepts, inside `within`, one level per
+ * step and never two steps on consecutive tiles (a traction ribbon's elevator takes the step's
+ * tile and a flat one in front: every terrace on its way two tiles deep at least)? Breadth-first
+ * over (tile, did the last step climb).
+ */
+function lineWay(g: Grid, start: readonly [number, number], within: (x: number, y: number) => boolean, goal: (x: number, y: number) => boolean): boolean {
+  const seen = new Set<number>([(start[1] * WORLD + start[0]) * 2]);
+  const todo: Array<readonly [number, number, number]> = [[start[0], start[1], 0]];
+  for (let i = 0; i < todo.length; i++) {
+    const [x, y, stepped] = todo[i]!;
+    if (goal(x, y)) return true;
+    const l = g.level(x, y);
+    for (const [dx, dy] of N4) {
+      const u = x + dx, v = y + dy;
+      if (!within(u, v)) continue;
+      const d = Math.abs(g.level(u, v) - l);
+      if (d > 1 || (d === 1 && stepped)) continue;
+      const k = (v * WORLD + u) * 2 + d;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      todo.push([u, v, d]);
+    }
+  }
+  return false;
+}
+
 describe('map generation', () => {
   it('is deterministic: the same seeds give the same tiles and levels', () => {
     const a = world(42).g, b = world(42).g;
@@ -73,7 +109,7 @@ describe('map generation', () => {
         for (let y = -2; y <= 2; y++) for (let x = -2; x <= 2; x++) if (g.ore(CENTER + d.dx + x, CENTER + d.dy + y) === itemIdx(d.item)) found++;
         expect(found, `seed ${seed} ${d.item}`).toBeGreaterThan(5);
       }
-      expect(g.terrain(CENTER + CIRQUE.lake.dx, CENTER + CIRQUE.lake.dy)).toBe(T.Deep);
+      expect(g.terrain(CENTER + CIRQUE.lake.dx, CENTER + CIRQUE.lake.dy)).toBe(T.Deep); // the tarn's heart
       // The Crown: rock all around at r 26 (past the floor's rim, short of the thinnest Crown's
       // foot) — no pass any more (D45).
       let rock = 0;
@@ -99,21 +135,24 @@ describe('map generation', () => {
     expect((max - min) / max).toBeLessThan(0.03);
   });
 
-  it('the floor and the Crown\'s climb to its crest are the same land for every player, tile for tile', () => {
-    // Out to r 26 everything is the shared template: the floor, the lake, the terraces up to the
-    // crest (only the crest's outer edge and the way down follow the archetype).
+  it('the floor and the Crown\'s climb to its ridge are the same land for every player, tile for tile', () => {
+    // Out to the ridge's first tile from the lowest rim (r 24; map 1: the crest's, r 26)
+    // everything is the shared template: the floor, the terraces up to the top (only the top's
+    // outer edge, whether it rises to the crest, and the way down follow the archetype).
+    const R = CIRQUE.floorRadius - CIRQUE.rimJitter.floor + LIFT + 1;
+    expect(R).toBe(24);
     const ref = world(SEEDS[0]!).g;
     for (const seed of SEEDS.slice(1)) {
       const { g } = world(seed);
       let diff = 0;
-      for (let y = CENTER - 26; y <= CENTER + 26; y++) for (let x = CENTER - 26; x <= CENTER + 26; x++) {
-        if (d2c(x, y) <= 26 * 26 && (g.level(x, y) !== ref.level(x, y) || g.terrain(x, y) !== ref.terrain(x, y))) diff++;
+      for (let y = CENTER - R; y <= CENTER + R; y++) for (let x = CENTER - R; x <= CENTER + R; x++) {
+        if (d2c(x, y) <= R * R && (g.level(x, y) !== ref.level(x, y) || g.terrain(x, y) !== ref.terrain(x, y))) diff++;
       }
       expect(diff, `seed ${seed}`).toBe(0);
     }
   });
 
-  it('the Crown closes the cirque: no level-0 path leads out of the floor, and every way out climbs to the crest', () => {
+  it('the Crown closes the cirque: no level-0 path leads out of the floor, and every way out climbs to its ridge', () => {
     for (const seed of SEEDS) {
       const { gen, g } = world(seed);
       const near = (x: number, y: number): boolean => d2c(x, y) <= 80 * 80;
@@ -125,15 +164,15 @@ describe('map generation', () => {
       const rimMax = CIRQUE.floorRadius + CIRQUE.rimJitter.floor - 1;
       expect(isqrt(far), `seed ${seed}: the floor's level reaches r ${isqrt(far)}`).toBeLessThan(rimMax);
       for (const d of CIRQUE.deposits) expect(floor.seen.has((CENTER + d.dy) * WORLD + CENTER + d.dx), `seed ${seed} ${d.item} on the floor`).toBe(true);
-      // Below the crest: still shut in. The crest stands at its level all round.
-      const below = flood([CENTER, CENTER], (_ax, _ay, bx, by) => g.level(bx, by) < CIRQUE.crest, near);
+      // Below the ridge: still shut in. The ridge stands at its level all round (the peaks higher).
+      const below = flood([CENTER, CENTER], (_ax, _ay, bx, by) => g.level(bx, by) < RIDGE, near);
       let out = 0;
       for (const k of below.seen) out = Math.max(out, d2c(k % WORLD, Math.floor(k / WORLD)));
-      expect(isqrt(out), `seed ${seed} ${gen.archetype}: under the crest out to r ${isqrt(out)}`).toBeLessThan(rimMax + (CIRQUE.crest - 1) * CIRQUE.terrace);
+      expect(isqrt(out), `seed ${seed} ${gen.archetype}: under the ridge out to r ${isqrt(out)}`).toBeLessThan(rimMax + LIFT);
     }
   });
 
-  it('on the Crown and around it, neighbours are never more than one level apart; rock, and only rock, stands above level 0', () => {
+  it('on the Crown and around it, neighbours are never more than one level apart; rock, and only rock but the tarn, stands above level 0', () => {
     for (const seed of SEEDS) {
       const { gen, g } = world(seed);
       const R = MOUNTAINS.cliffFrom - 1;
@@ -143,10 +182,11 @@ describe('map generation', () => {
           if (d2c(x, y) > R * R) continue;
           const l = g.level(x, y), t = g.terrain(x, y);
           if (Math.abs(l - g.level(x + 1, y)) > 1 || Math.abs(l - g.level(x, y + 1)) > 1) steep++;
-          if (l < 0 || l > MAX_LEVEL || isRock(t) !== l > 0) wrong++;
-          if (biomeAt(g, x, y) === BIOME.crown) {
+          const tarn = isWater(t) && l === CIRQUE.crest && inTarn(x, y);
+          if (l < 0 || l > MAX_LEVEL || (isRock(t) || tarn) !== l > 0) wrong++;
+          if (biomeAt(g, x, y) === BIOME.crown && !tarn) {
             crown++;
-            // Hardness follows height: H1 on the lower terraces, H2 on the crest.
+            // Hardness follows height: H1 on the lower terraces and the ridge, H2 on the peaks' crest.
             if (l < 1 || l > CIRQUE.crest || t !== T.Rock1 + CIRQUE.hardness[l - 1]! - 1) wrong++;
           }
         }
@@ -157,11 +197,11 @@ describe('map generation', () => {
     }
   });
 
-  it('a line climbs from the floor over the crest and down to the land outside in every direction, one level per step', () => {
+  it('a line climbs from the floor over the Crown and down to the land outside in every direction, one level per step, an elevator and a flat tile a terrace', () => {
     for (const seed of SEEDS) {
       const { gen, g } = world(seed);
       const R = gen.crownFoot + 30;
-      for (let d = 0; d < 64; d += 8) {
+      for (let d = 0; d < 64; d += 4) {
         // A corridor 7 tiles wide from the Heart outwards (×1024: the trig table's scale).
         const ux = COS64[d]!, uy = SIN64[d]!;
         const inWedge = (x: number, y: number): boolean => {
@@ -169,8 +209,7 @@ describe('map generation', () => {
           return dx * ux + dy * uy >= -1024 && Math.abs(dx * uy - dy * ux) <= 3 * 1024 && d2c(x, y) <= R * R;
         };
         const outside = (x: number, y: number): boolean => g.level(x, y) === 0 && d2c(x, y) >= (gen.crownFoot + 1) ** 2;
-        const way = flood([CENTER, CENTER], climb(g), inWedge, outside);
-        expect(way.found, `seed ${seed} ${gen.archetype}: over the Crown towards ${d}/64`).toBe(true);
+        expect(lineWay(g, [CENTER, CENTER], inWedge, outside), `seed ${seed} ${gen.archetype}: over the Crown towards ${d}/64`).toBe(true);
       }
     }
   });
@@ -266,6 +305,7 @@ describe('map generation', () => {
         for (let k = 0; k < 24; k++) tiles.push([cx + ((k * 13) % 32), cy + ((k * 7) % 32)]);
       }
       for (let k = 0; k < 64; k++) for (const r of [22, 25, 28, 31, 34, 40, 44]) tiles.push([CENTER + ((COS64[k]! * r) >> 10), CENTER + ((SIN64[k]! * r) >> 10)]);
+      for (let y = -4; y <= 4; y++) for (let x = -4; x <= 4; x++) tiles.push([CENTER + CIRQUE.lake.dx + x, CENTER + CIRQUE.lake.dy + y]); // the tarn and its rim
       let diff = 0;
       for (const [x, y] of tiles) if (gen.levelAt(x, y) !== g.level(x, y) || gen.terrainAt(x, y) !== g.terrain(x, y)) diff++;
       expect(diff, `seed ${seed}`).toBe(0);
@@ -344,5 +384,147 @@ describe('map generation', () => {
     }
     const avg = (a: number[]): number => a.reduce((x, y) => x + y, 0) / a.length;
     expect(avg(lag)).toBeGreaterThan(avg(mes) * 1.5);
+  });
+});
+
+/** A fingerprint of a land's terrain, levels and where its ore lies, over the cirque's chunks and one far out (content indices left out). */
+function fingerprint(gen: MapGen): number {
+  let h = 0x811c9dc5;
+  const mix = (v: number): void => { h = Math.imul(h ^ v, 16777619) >>> 0; };
+  const N = CHUNK * CHUNK;
+  for (const [cx, cy] of [[15, 15], [16, 15], [15, 16], [16, 16], [14, 15], [17, 16], [16, 14], [15, 17], [20, 9]] as const) {
+    const t = new Uint8Array(N), o = new Uint8Array(N), r = new Uint16Array(N), hh = new Uint8Array(N), b = new Uint8Array(N), l = new Uint8Array(N);
+    gen.fill(cx, cy, t, o, r, hh, b, l);
+    for (let i = 0; i < N; i++) { mix(t[i]!); mix(l[i]!); mix(o[i]! > 0 ? 1 : 0); }
+  }
+  return h;
+}
+
+describe('map versions (D63)', () => {
+  it('map 1 is the land the bases founded before D63 stand on, tile for tile (saves are sacred)', () => {
+    // Pinned from the generator as it was before map versions (seeds: lagoons, steppe, mesas, closed).
+    const pinned: Record<number, number> = { 1: 0xd443c4a6, 42: 0x8fe9aa81, 8919: 0x41478c03, 8: 0x39dc2ff4 };
+    for (const [seed, h] of Object.entries(pinned)) expect(fingerprint(new MapGen(WORLD_SEED, Number(seed), 1)).toString(16), `seed ${seed}`).toBe(h.toString(16));
+    const { gen, g } = world(1, 1);
+    expect(gen.mapV).toBe(1);
+    expect(gen.tarn).toBeNull();
+    expect(gen.crownReach).toBe(36);
+    expect(g.terrain(CENTER + CIRQUE_V1.lake.dx, CENTER + CIRQUE_V1.lake.dy)).toBe(T.Deep); // the lake on the floor
+    expect(g.level(CENTER + CIRQUE_V1.lake.dx, CENTER + CIRQUE_V1.lake.dy)).toBe(0);
+    // Its crest all round at level 3, its mountains lilac from their first terrace.
+    let low = 0;
+    for (let k = 0; k < 64; k++) {
+      const x = CENTER + ((COS64[k]! * 28) >> 10), y = CENTER + ((SIN64[k]! * 28) >> 10);
+      if (g.level(x, y) < 2) low++;
+    }
+    expect(low).toBe(0);
+    expect(new MapGen(WORLD_SEED, 1).mapV).toBe(MAP_VERSION); // a new base: today's map
+  });
+
+  it('a map version this build does not know does not open (a newer build\'s land)', () => {
+    expect(() => new MapGen(WORLD_SEED, 1, MAP_VERSION + 1)).toThrow(/map version/);
+  });
+
+  it('the tarn: up on the crest, its water at the crest\'s level, ringed by rock of that level, the same for every player', () => {
+    for (const seed of SEEDS) {
+      const { gen, g } = world(seed);
+      expect(gen.tarn, `seed ${seed}`).toEqual({ x: CENTER + CIRQUE.lake.dx, y: CENTER + CIRQUE.lake.dy, level: CIRQUE.crest });
+      let water = 0, deep = 0, ringBad = 0;
+      for (let y = -4; y <= 4; y++) for (let x = -4; x <= 4; x++) {
+        const tx = gen.tarn!.x + x, ty = gen.tarn!.y + y, t = g.terrain(tx, ty);
+        if (!isWater(t)) continue;
+        water++;
+        if (t === T.Deep) deep++;
+        expect(g.level(tx, ty), `seed ${seed}: water at (${tx}, ${ty})`).toBe(CIRQUE.crest);
+        // Every tile round it: the tarn's own water, or rock at its level (a pump stands there).
+        for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+          const u = tx + i, v = ty + j, n = g.terrain(u, v);
+          if (!(isWater(n) && inTarn(u, v)) && !(isRock(n) && g.level(u, v) === CIRQUE.crest)) ringBad++;
+        }
+      }
+      expect(water, `seed ${seed}`).toBe(21);
+      expect(deep, `seed ${seed}`).toBe(9);
+      expect(ringBad, `seed ${seed}`).toBe(0);
+      // No water left on the floor: the cirque's water is the tarn's.
+      let floorWater = 0;
+      for (let y = CENTER - 22; y <= CENTER + 22; y++) for (let x = CENTER - 22; x <= CENTER + 22; x++) if (d2c(x, y) <= 21 * 21 && isWater(g.terrain(x, y))) floorWater++;
+      expect(floorWater, `seed ${seed}`).toBe(0);
+    }
+  });
+
+  it('a thinner Crown (owner, 2026-10-14: "the circus moutain is too large"): its ridge 7–8 tiles across on most bearings, a few wider peaks, the lilac rock only on them', () => {
+    const widths: number[] = [];
+    for (const seed of SEEDS) {
+      const { gen, g } = world(seed);
+      if (gen.archetype === 'closed') continue; // « une Couronne épaisse »: three levels all round
+      let peaks = 0;
+      for (let k = 0; k < 64; k++) {
+        // The Crown's width along the bearing: its tiles between r 18 and 50.
+        let w = 0, top = 0;
+        for (let r = 18; r < 50; r++) {
+          const x = CENTER + ((COS64[k]! * r) >> 10), y = CENTER + ((SIN64[k]! * r) >> 10);
+          if (biomeAt(g, x, y) !== BIOME.crown) continue;
+          w++;
+          top = Math.max(top, g.level(x, y));
+          const t = g.terrain(x, y);
+          // Lilac (H2 and harder) only on the crest's level: the peaks.
+          if (isRock(t) && t !== T.Rock1) expect(g.level(x, y), `seed ${seed} lilac at (${x}, ${y})`).toBe(CIRQUE.crest);
+        }
+        widths.push(w);
+        if (top === CIRQUE.crest) peaks++;
+      }
+      // A few peaks round the ring, not all of it (the tarn's among them).
+      expect(peaks, `seed ${seed} ${gen.archetype}: bearings over a peak`).toBeGreaterThan(4);
+      expect(peaks, `seed ${seed} ${gen.archetype}: bearings over a peak`).toBeLessThan(40);
+    }
+    widths.sort((a, b) => a - b);
+    // Map 1: 9–12 tiles on every bearing.
+    expect(widths[Math.floor(widths.length / 2)], 'median width').toBeLessThanOrEqual(8);
+    expect(widths[Math.floor(widths.length * 0.6)], 'most bearings').toBeLessThanOrEqual(8);
+    expect(widths[0], 'the thinnest').toBeGreaterThanOrEqual(2 * LIFT + CIRQUE.minCrest - 1);
+  });
+
+  it('the mountains\' lilac rock is their high tops: sandstone on their first two terraces near the cirque (map 1: lilac from the first)', () => {
+    for (const v of [1, MAP_VERSION]) {
+      const { g } = world(SEEDS[0]!, v);
+      let low = 0, lowLilac = 0, high = 0, highLilac = 0;
+      for (let y = CENTER - RINGS.near; y <= CENTER + RINGS.near; y += 2) for (let x = CENTER - RINGS.near; x <= CENTER + RINGS.near; x += 2) {
+        if (d2c(x, y) < 60 * 60 || d2c(x, y) >= RINGS.near * RINGS.near || biomeAt(g, x, y) === BIOME.crown) continue;
+        const t = g.terrain(x, y), l = g.level(x, y);
+        if (!isRock(t) || l === 0) continue;
+        if (l <= 2) { low++; if (t !== T.Rock1) lowLilac++; } else { high++; if (t !== T.Rock1) highLilac++; }
+      }
+      expect(low + high, `map ${v}: mountains near the cirque`).toBeGreaterThan(100);
+      if (v === 1) expect(lowLilac).toBe(low);
+      else {
+        expect(lowLilac, 'map 2: lilac on the low terraces').toBe(0);
+        expect(highLilac, 'map 2: lilac on the high tops').toBe(high);
+      }
+    }
+  });
+
+  it('water at a level in play: a pump stands by the tarn on its own level, a backfiller marks it, the floor\'s lake stays a floor pump\'s (map 1)', () => {
+    const at = (v: number): Sim => {
+      const sim = new Sim({ worldSeed: WORLD_SEED, playerSeed: SEEDS[0]!, source: new MapGen(WORLD_SEED, SEEDS[0]!, v), foundingEpoch: WORLD_EPOCH0 + 24 });
+      sim.done.add('tr3'); // pumps, conduits, the ceramic oven
+      sim.rebuildDerived();
+      sim.grant('iron_plate', 50); sim.grant('glass', 20);
+      return sim;
+    };
+    const sim = at(MAP_VERSION), t = sim.grid.source.tarn!;
+    // On the tarn's shallows (its west tip): the pump's tile is the tarn's level.
+    expect(sim.grid.terrain(t.x - 2, t.y)).toBe(T.Shallow);
+    expect(sim.canPlace('pump', t.x - 2, t.y, 0).reason).toBe('ok');
+    // On the rock round it, at the tarn's level: the water is there; whether a pump stands on rock is its content's (`onRock`).
+    expect(sim.grid.level(t.x - 3, t.y)).toBe(t.level);
+    expect(sim.canPlace('pump', t.x - 3, t.y, 0).reason).toBe(buildingDef(buildingIdx('pump')).onRock ? 'ok' : 'terrain');
+    // A tile of the tarn marked for filling (a backfiller's job): it will be ground at the tarn's level.
+    expect(sim.designate([t.y * WORLD + t.x - 2])).toBe(1);
+    expect(sim.designated.get(t.y * WORLD + t.x - 2)).toBe('fill');
+    // Map 1: the lake on the floor, a pump on its shore (level 0, the water's level).
+    const old = at(1), L = CIRQUE_V1.lake, lx = CENTER + L.dx - 4, ly = CENTER + L.dy;
+    expect(old.grid.terrain(lx, ly)).toBe(T.Sand);
+    expect(isWater(old.grid.terrain(lx + 1, ly))).toBe(true);
+    expect(old.canPlace('pump', lx, ly, 0).reason).toBe('ok');
   });
 });

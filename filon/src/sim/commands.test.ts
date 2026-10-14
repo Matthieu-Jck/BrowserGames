@@ -6,16 +6,32 @@ import { buildDemo } from './dev';
 import { Sim } from './state';
 import { MapGen } from './world/mapgen';
 import { tileIndex } from './world/grid';
+import { CRECIPES } from '@/content/registry';
+import { recipeOf } from './cfg';
 
 const found = (): Sim => new Sim({ worldSeed: WORLD_SEED, playerSeed: 1, source: new MapGen(WORLD_SEED, 1), foundingEpoch: WORLD_EPOCH0 + 24 });
 
 describe('commands', () => {
+  it('a recipe changed and changed back leaves the same state whether the graph compiled in between or not (looking at the sim never changes it)', () => {
+    const make = (): Sim => { const s = found(); buildDemo(s); s.run(900); return s; };
+    const a = make(), b = make();
+    const m = a.ents.sorted().find((e) => (a.graph.nodeByEnt.get(e.id) as { inBuf?: Float64Array } | undefined)?.inBuf?.some((v) => v > 0));
+    expect(m).toBeDefined();
+    const id = m!.id, other = CRECIPES.find((r) => r.machines.has(m!.def) && r.id !== CRECIPES[recipeOf(m!.cfg) - 1]!.id)!;
+    const back = CRECIPES[recipeOf(m!.cfg) - 1]!.id;
+    for (const [s, look] of [[a, true], [b, false]] as const) {
+      expect(s.setRecipe(id, other.id)).toBe(true);
+      if (look) s.ensureCompiled();
+      expect(s.setRecipe(id, back)).toBe(true);
+    }
+    expect(b.hash()).toBe(a.hash());
+  });
+
   it('replaying a colony\'s command log on a fresh colony reproduces its state hash', () => {
     const a = found();
     const ids = buildDemo(a);
     a.run(900);
-    // Trade: a stream, a standing order, a spot sale (the market's state is part of the hash).
-    expect(a.setExport(ids.trade!, 0, 'glass')).toBeNull();
+    // Trade: a standing order, a spot sale (the market's state is part of the hash).
     expect(typeof a.addImport(ids.trade!, 'copper_ore', 2, 100_000)).toBe('number');
     expect('cents' in a.spotTrade('iron_plate', 'sell', 5)).toBe(true);
     // A few more commands mid-game: a recipe change, marks, a removal, a grant.

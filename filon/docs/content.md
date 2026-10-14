@@ -9,14 +9,14 @@ Content declares *what* exists; *behaviour* is selected by a building's `kind` i
 | File | Holds | Read by |
 |---|---|---|
 | [types.ts](../src/content/types.ts) | `Loc`, `ItemDef`, `ItemKind`, `Glyph`, `RecipeDef`, `PortDef`, `BuildingDef`, `BuildingKind`, `BuildCategory`, `RouterLogic`, `ReplaceGroup`, `ResearchDef`, `Effect`, `ModTarget` | every table |
-| [items.ts](../src/content/items.ts) | `ITEMS` (31 items), `ItemId` | registry, item art, terrain painter, HUD |
-| [recipes.ts](../src/content/recipes.ts) | `RECIPES` (19), `RecipeId`; machine lists `KILNS`, `WORKSHOPS`, `GREAT` | registry (`CRECIPES`), inspector |
-| [buildings.ts](../src/content/buildings.ts) | `BUILDINGS` (44), `BuildingId` | registry, building art, build bar |
+| [items.ts](../src/content/items.ts) | `ITEMS` (30 items), `ItemId` | registry, item art, terrain painter, HUD |
+| [recipes.ts](../src/content/recipes.ts) | `RECIPES` (22), `RecipeId`, `MAX_RECIPES` (3, D70); machine families `KILNS`, `ARC`, `WIRE`, `PRESSES`, `ELECTRONICS`, `ASSEMBLY`, `OPTICS`, `SCRIPTORIUM` | registry (`CRECIPES`), inspector |
+| [buildings.ts](../src/content/buildings.ts) | `BUILDINGS` (71), `BuildingId` | registry, building art, build bar |
 | [research.ts](../src/content/research.ts) | The unlock tree (D33): `PLANS` (22 instant unlocks paid from the Heart, in six paths: D41), `RESEARCH` (8 trunk + 5 × 9 branch nodes), `DEPTH_COST`, `BRANCH_CORE`, `PlanId`, `ResearchId`, `PLAN_IDS`; the paths `PLAN_PATHS`, `pathPlans`, `pathEntries`, `pathProblems`; the analytics flags `ANALYTICS`, `AnalyticsFeature`; tree helpers `isPlan`, `isResearch`, `isTreeNode`, `planDef`, `researchNode`, `treePrereq`, `buildingsUnlockedBy`, `nodeName` | research runtime and modifiers, the research system (`unlockPlan`), the tech tree screen, validation, quests |
 | [reserve.ts](../src/content/reserve.ts) | CrierBelt's restart reserve (D36): `BOOTSTRAP` (the stages that rebuild production from the bare land), `ESSENTIAL`, `RESERVE_PARTS`, `RESERVED`, `reserveNeed(done)`, `stagePlans(s)`, `reserveProblems()` | the reserve system ([systems/reserve.ts](../src/sim/systems/reserve.ts)), validation, the tech tree screen |
-| [quests.ts](../src/content/quests.ts) | `QUESTS` (the tutorial, 0–11 in run order: CrierBelt's message, objectives, reward, guide steps), `QUEST_IDS`, `QUEST_TITLES`, `QUEST_CHECK_TICKS`, `COLONY_NAME_MAX`, `questProblems()` (in `validateContent`) | [systems/quests.ts](../src/sim/systems/quests.ts), the quest log and the guide ([quests.md](quests.md)) |
+| [quests.ts](../src/content/quests.ts) | `QUESTS` (the tutorial, 0–10 in run order: CrierBelt's message, objectives, reward, guide steps), `QUEST_IDS`, `QUEST_TITLES`, `QUEST_CHECK_TICKS`, `COLONY_NAME_MAX`, `questProblems()` (in `validateContent`) | [systems/quests.ts](../src/sim/systems/quests.ts), the quest log and the guide ([quests.md](quests.md)) |
 | [emblem.ts](../src/content/emblem.ts) | The claim's emblem (D58): `EMBLEM_SHAPES`, `EMBLEM_SYMBOLS`, `EMBLEM_COLORS` (art tokens by name), `isEmblem` (known parts, a symbol unlike its field), `defaultEmblem(seed)`, `emblemKey` | `Sim.setEmblem`, the register's designer, the Heart's flag ([art/emblem.ts](../src/render/art/emblem.ts)) |
-| [world.ts](../src/content/world.ts) | `WORLD_SEED`, `CIRQUE`, `RINGS`, `ARCHETYPES`, `UNIQUE_BIOMES`, `T3_UNIQUES`/`T4_UNIQUES`, `COMMON_DEPOSITS`, `DEPOSIT_CHANCE`, `RICH_MULT`, `COS64`/`SIN64` | [mapgen.ts](../src/sim/world/mapgen.ts), validation, dev helpers |
+| [world.ts](../src/content/world.ts) | `WORLD_SEED`, `CIRQUE` / `CIRQUE_V1`, `MAPS` / `MAP_VERSION`, `RINGS`, `MOUNTAINS`, `SHADE`, `ARCHETYPES`, `UNIQUE_BIOMES`, `T3_UNIQUES`/`T4_UNIQUES`, `COMMON_DEPOSITS`, `DEPOSIT_CHANCE`, `RICH_MULT`, `COS64`/`SIN64` | [mapgen.ts](../src/sim/world/mapgen.ts), validation, dev helpers |
 | [balance.ts](../src/content/balance.ts) | `BAL`, every tuning constant | sim systems, a few views and panels |
 | [registry.ts](../src/content/registry.ts) | id ↔ index maps, `CRECIPES`, `BUILDING_KIND`, `costOf`, `recipesFor`, `toMu` | sim hot paths, render, UI |
 | [validate.ts](../src/content/validate.ts), [validate.test.ts](../src/content/validate.test.ts) | content invariants and designed scarcities | vitest |
@@ -57,7 +57,7 @@ wire: {
 
 | Field | Rule |
 |---|---|
-| `machines` | building ids of **kind `machine`**. Use the shared lists `KILNS` (2 inputs), `WORKSHOPS` (2-input crafting and up), `GREAT` (3 inputs). |
+| `machines` | building ids of **kind `machine`**: one family's list (`KILNS`, `ARC`, `WIRE`, `PRESSES`, `ELECTRONICS`, `ASSEMBLY`, `OPTICS`, `SCRIPTORIUM`, or a single machine). No machine may offer more than `MAX_RECIPES` = 3 recipes (D70, validated); an upgraded machine of the tree joins a family's list and runs it faster (`BuildingDef.speed`). |
 | `seconds` | Cycle at speed 1000‰. `round(seconds × 10)` ticks must divide **1 200** (`CYCLE_LCM`), so the allowed whole seconds are 1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 24, 30, 40, 60 and 120. |
 | `ins`, `outs` | `[itemId, qty]`, with at most 3 decimals (`toMu` rounds to milli-items: 0.4 → 400 mu). **Exactly one output in practice**: `MachineNode` only offers `outs[0]`, so a second output would fill its buffer and block the machine. |
 | `unlock` | `'start'` or a node of the unlock tree (a plan or a research id, D33). Mention it in a research node's `desc` by hand (a plan's detail pane lists its recipes itself). |
@@ -78,9 +78,9 @@ wire_mill: {
 
 - **Geometry.** `w × h` and `ports` are given at rotation 0, front facing north. A port is `P(x, y, side, io)`: a tile of the unrotated footprint, the edge of that tile it opens on, and `in` or `out`. [entities.ts](../src/sim/entities.ts) rotates ports with integer index swaps. An `out` port pushes into the tile it faces. An `in` port takes from a ribbon whose head points at it. Forks have `ports: []`: their ports come from the ribbons around them.
 - **`kw` / `idleKw`.** Draw while working and while idle. A *machine* without `kw` runs off-grid: the smelter (`kiln`) burns coal as a recipe input instead. Drills and pumps produce nothing unless they are on a grid. A building with `kw`, `idleKw`, `gen` or `accumulator` takes part in power (`linkable`): it joins a grid only once the player wires it to a pillar or the Hearth (D25, [engine.md](engine.md#power)); one with none of them is never wired.
-- **`pole: { range, slots, tall? }`.** A link point (D25): `range` = how far its wires reach, in tiles, footprint edge to footprint edge (a wire takes the longer range of its two ends); `slots` = how many wires it holds; `tall: true` adds `mods.pylonLink` (Reinforced Pylons, xp4) to the range. Pole 6 / 8, pylon 24 / 4 (`tall`), the Hearth 8 / 6.
+- **`pole: { range, slots, climb, tall? }`.** A link point (D25): `range` = how far its wires reach, in tiles, footprint edge to footprint edge (a wire takes the longer range of its two ends); `slots` = how many wires it holds; `climb` (levels, D78) = how far its wires climb or come down and how high above the land they ride (a wire takes the larger climb of its two ends; any other building is 0: power/links.ts `wireSteep`, `wireObstacle`); `tall: true` adds `mods.pylonLink` (Reinforced Pylons, xp4) to the range. Pole 6 / 8 / 1, pylon 40 / 4 / 3 (`tall`; 2×2 and about three tiles tall since D75), the Hearth 8 / 6 / 1.
 - **`lift`** (D45). A `belt` that hands on to the tile ahead one level up or down: the traction ribbon (`traction_ribbon`, 30/min, plan `traction` after the router). The only way a line changes level.
-- **`onRock`** (D44). The building may stand on the mountains: its whole footprint on rock (`T.Rock1`–`Rock4`), never astride a cliff (or, like any building, its whole footprint on the floor). It is a terrain rule only: since D60 a building that `needsZone` needs its parcel on rock too (the Crown lies in the starting square; a turbine on a far mountain waits for its parcel). Set on the wind turbine, the pole, the pylon, the survey beacon, the ribbons, the router, the junction, the skybridge and the incinerator. A turbine's wind there is `BAL.windRock[hardness]` (1.4–2.0), against `BAL.windCirque` (0.25) on the cirque's floor.
+- **`onRock`** (D44). The building may stand on the mountains: its whole footprint on rock (`T.Rock1`–`Rock4`), never astride a cliff (or, like any building, its whole footprint on the floor). It is a terrain rule only: since D60 a building that `needsZone` needs its parcel on rock too (the Crown lies in the starting square; a turbine on a far mountain waits for its parcel). Set on the wind turbine, the pole, the pylon, the survey beacon, the ribbons, the router, the junction, the skybridge, the incinerator, and (D63: a ceramic works by the tarn up on the Crown) the pump, the conduit and the ceramic oven. A pump draws only from water on its own level. A turbine's wind there is `BAL.windHeight[level − 1]` by the height it stands at (1.4 on level 1 to 2.0 on level 4 and above, whatever the rock; D76), against `BAL.windCirque` (0.25) on the cirque's floor (`windSite` in [network.ts](../src/sim/power/network.ts)).
 - **`needsZone`** (the name is the zones'; since D60 it means *on the claim's land*, [land.md](land.md)). Production, power and stores must stand wholly on parcels the claim holds (the starting square, bought, granted or leased), refusal `outside_zone`. Infrastructure may leave it: ribbons, conduits, skybridges, junctions, routing blocks, masts, pylons, beacons, the incinerator. A ribbon or conduit not wholly on the claim's land costs ×`BAL.remoteBeltCostMult` (×`mods.remoteBeltCost`). Off the claim's land construction completes after a delay that grows with the distance from the Heart's tile (`remoteBuildTilesPerSec`, `mods.remoteBuildDelay`). Nothing at all may touch a sister claim's parcel the claim does not hold (`sister_land`).
 - **`cost`** is paid from the Hearth stock and refunded in full on removal. `costOf` gives the base. The placement system adds the remote multiplier (never refunded, so it must leave the restart reserve whole: D36).
 - **`unlock`.** `'start'` — only the starting kit: the drill, the ribbon and the pole (D33) —, `'never'` (the Hearth, placed at founding), or a node of the unlock tree: a plan id (most early buildings; the plan usually bears the building's id, `junction` and `bridge` for the crossing and the skybridge) or a research id. A building whose unlock is reconverted away stands **dormant**: no flow node, a grey wash (plans are never lost).
@@ -101,7 +101,7 @@ What each `kind` means. The graph compiler's switch on `BuildingKind` lives in [
 
 | `kind` | ids | Engine behaviour | Kind-specific fields |
 |---|---|---|---|
-| `hearth` | `hearth` | Reservoir holding the base's stock (cap `BAL.hearthCap[level]`), **inputs only** (it takes, it never gives: no outlets, and unloaders against it pull nothing — D34), a built-in solar panel (`BAL.hearthSolarKw` × sun ‰ × the solar research), an isotope core (`BAL.hearthCoreKw`, day and night), and a link point (8 tiles, 6 wires); not buildable. Each level past the first lowers the land's price (`BAL.land.hearthDiscount`) | `pole`, `gen`, ports (`storageCap` is not used) |
+| `hearth` | `hearth` | Reservoir holding the base's stock (cap `BAL.hearthCap[level]`), **inputs only** (it takes, it never gives: no outlets, and unloaders against it pull nothing — D34), a built-in solar panel (`BAL.hearthSolarKw` × sun ‰ × the solar research), an isotope core (`BAL.hearthCoreKw`, day and night), and a link point (8 tiles, 6 wires); not buildable. | `pole`, `gen`, ports (`storageCap` is not used) |
 | `beacon` | `beacon` | No node: lifts the fog within `reveal` | `reveal` |
 | `drill` | `drill`, `deep_bore`, `sand_collector` | `DrillNode`: majority ore under the footprint, rate = min(`perMin`, Σ tile caps × `capMult`‰ × ring-3 bonus); needs a deposit. With `drill.ground` (the sand collector, D38): that item off the bare ground at a steady `perMin`; needs bare sand (terrain Sand, no ore) under every tile (`needs_sand`) | `drill.perMin`, `drill.capMult`, `drill.ground` |
 | `pump` | `pump` | `DrillNode` of water, 60/min (hard-coded) while on or beside water | — |
@@ -115,12 +115,13 @@ What each `kind` means. The graph compiler's switch on `BuildingKind` lives in [
 | `storage` | `silo` | Single-item reservoir (port rate 240/min, hard-coded) | `storageCap` |
 | `dock` | `skydock` | Reservoir (`BAL.dockCap`) with unloader ports; drifters and freight routes | — |
 | `machine` | kilns, `wire_mill`, workshops, `ceramic_oven`, `cell_charger` | `MachineNode` running the recipe stored in `cfg` | listed in recipes' `machines`; `crafts: true` (never read) |
-| `lab` | `observatory` | Reservoir that takes the science its project still owes; one research slot per observatory | — |
+| `lab` | `observatory` (the Research Lab), `auto_lab` | Reservoir that takes the data its project still owes (any kind of science item); one project per lab; `lab.dataPerMin`: Survey Data it makes itself (D68) | — |
+| `server` | `server`, `cooled_server`, `supercomputer` | Power only: `server.tokensPerMin` AI tokens a minute at its grid's satisfaction, billed against research each minute (D68) | — |
 | `generator` | `brazier`, `sunheart` | `GeneratorNode`: burns `gen.fuel` ∝ dispatch; output `gen.kw` × `mods.genOut` | `gen.kw`, `gen.fuel`, `gen.fuelPerMin`, an `in` port. Without `fuel`, compilation throws. |
 | `wind` / `solar` / `geothermal` | `wind_flower` / `sun_bulb` / `fumarole_tap` | Grid producers only: `gen.kw` × mods × local wind / sun; geothermal needs every footprint tile on a vent | `gen.kw` |
 | `accumulator` | `accumulator` (the accumulator) | Grid storage: `kwMin × 600` kW·tick × `mods.accCap`, rate `kw × mods.accRate` | `accumulator` |
-| `pole` | `mast`, `pylon` | Pillars: link points the player wires to each other, to the Hearth and to buildings (grids = the wires' components, D25); a new one wires itself to the nearest pillar or Hearth in reach with a free slot | `pole.range`, `pole.slots`, `pole.tall` |
-| `trade` | `trade_post` | 5×5: pad and flame apron (D62); a `ReservoirNode` store whose one entrance takes its export streams and whose one exit hands out what it bought, in turn | `ports` (one `in`, one `out`) |
+| `pole` | `mast`, `pylon` | Pillars: link points the player wires to each other, to the Hearth and to buildings (grids = the wires' components, D25); a new one wires itself to the nearest pillar or Hearth in reach with a free slot | `pole.range`, `pole.slots`, `pole.climb`, `pole.tall` |
+| `trade` | `trade_post` | 5×5: pad and flame apron (D62); a `ReservoirNode` store whose one entrance takes, and sells, every tradable item but its cargo (D64: no export streams) and whose one exit hands out what it bought, in turn | `ports` (one `in`, one `out`) |
 
 Ids special-cased in code: `hearth` (founding), `tower_workshop` (×`BAL.towerSpeed`), `drill` and `excavator` (rotation variants in art), and the items `stone`, `water`, `pace_bell`, `iron_ore` and `copper_ore` in the sim. Map generation keeps a per-item base richness, and the HUD keeps an `ORDER` list. The ribbon drag's auto-junction lays the building of kind `crossing`, found by kind, not by id (`planBelts` in [systems/build.ts](../src/sim/systems/build.ts)). The waystation (`outpost`, its own kind) was retired with the influence zones (D60): its id lives on only in `RETIRED_COSTS` and the save v3 migration (`zonesToParcels`). The 3×3 trade post's likewise as `trade_post_3x3` (D62, save v4 `postsToPads`).
 
@@ -130,17 +131,18 @@ Everything a base uses beyond its starting kit is unlocked in **one tree with tw
 
 | | Plans — `PLANS` | Research — `RESEARCH` |
 |---|---|---|
-| Paid with | materials from the Heart, at once (`cost`, whole items) | data, by an observatory, under the allowance, over a minimum time |
-| Taken by | the `unlockPlan` command (one click in the tree) | `startResearch` in an idle observatory |
-| Rows in the tree | `lane`, its path (D41): `production`, `logistics`, `energy`, `analytics`, `trade`, `survey` | `branch`: the trunk, `ex`, `xp`, `dn`, `en`, `cm` |
-| Prerequisites | plan ids (research ids are allowed) | research ids; the branch roots and `tr1` need the observatory's plan |
-| Lost by a reconversion | never | yes, its branch |
+| Paid with | materials from the Heart, at once (`cost`, whole items) | data (one more kind each tier: `SCIENCE`, D71) and AI tokens as it runs, in a research lab, under the allowance, over a minimum time (D68) |
+| Taken by | the `unlockPlan` command (one click in the tree) | `startResearch` in an idle lab (or the Research Queue) |
+| Rows in the tree | `lane`, its path (D41): `production`, `logistics`, `energy`, `analytics`, `trade`, `survey` | `branch`: the trunk or a family (`en`, `ex`, `dn`, `cm`, `an`, `xp`), and from Tier 3 its `spec` (D69) |
+| Prerequisites | plan ids (research ids are allowed) | the node before it in its lineage and its tier's gate; the family roots and `tr1` need the lab's plan |
+| Lost by a reconversion | never | yes, its family |
 
 ### Plans — `PLANS`
 
 ```ts
 router: plan('logistics', [], [['iron_plate', 5]]),
-observatory: plan('production', ['workshop'], [['iron_plate', 20], ['copper_wire', 4]]),
+data_collector: plan('production', ['kiln'], [['iron_plate', 10], ['copper_wire', 4]]),
+observatory: plan('production', ['data_collector'], [['iron_plate', 20], ['copper_wire', 4]]),
 telemetry: plan('analytics', [], [['iron_plate', 8], ['copper_wire', 2]], { name, desc, effects: [flag('telemetry')] }),
 ```
 
@@ -155,7 +157,7 @@ The plans as built, path by path in the tree's order (← prerequisite):
 
 | Path | Plans and costs (plates · glass · copper wire) |
 |---|---|
-| Production · « Fondre et fabriquer » | Fonderie `kiln` 10 p · Collecteur de sable `sand_collector` ← kiln: 5 p · Atelier `workshop` ← kiln: 15 p, 2 g · Tréfileuse `wire_mill` ← kiln: 15 p · Observatoire `observatory` ← workshop: 20 p, 4 w — research hangs from it |
+| Production · « Fondre et fabriquer » | Fonderie `kiln` 10 p · Collecteur de sable `sand_collector` ← kiln: 5 p · Atelier d’électronique `workshop` ← kiln: 15 p, 2 g · Tréfileuse `wire_mill` ← kiln: 15 p · Collecteur de données `data_collector` ← kiln: 10 p, 4 w · Laboratoire de recherche `observatory` ← data collector: 20 p, 4 w — research hangs from it (D68) |
 | Logistique · « Déplacer et trier » | Routeur `router` 5 p · Croisement `junction` (the crossing) ← router: 5 p · Trieur `sorter` ← router: 6 p, 2 w · Silo `silo` ← router: 8 p, 2 g · Passerelle `bridge` (the skybridge) ← junction: 6 p, 2 w · Trieur inversé `inverted_sorter` ← sorter: 6 p, 2 w · Vanne de trop-plein `overflow_gate` ← sorter: 6 p, 2 w · Déchargeur `unloader` ← silo: 6 p, 2 w (unloaders pull from stores, never from the Heart: D34) · Vanne de sous-débit `underflow_gate` ← overflow gate: 6 p, 2 w. Cheap on purpose (owner, 2026-10-12: "most of the logistics is too expensive") |
 | Énergie · « Produire l’énergie » | Éolienne `wind_flower` 10 p · Générateur à charbon `brazier` ← wind turbine: 15 p, 2 w |
 | Analytique · « Voir ta base » | Télémétrie `telemetry` 8 p, 2 w · Registre de production `statistics` ← telemetry: 10 p, 4 w · Relevé d’énergie `power_log` ← statistics: 12 p, 2 g, 4 w · Diagnostic `diagnostics` ← power log: 15 p, 2 g, 6 w |
@@ -170,30 +172,39 @@ The plans grow in **paths of one theme each** (`PLAN_PATHS`, a plan's `lane`), d
 
 | Step | Flag (`ANALYTICS` key) | Turns on |
 |---|---|---|
-| Télémétrie | `telemetry` (`rates`) | the Δ/min beside each stock in the HUD. The id is kept: saves hold it, and the tutorial's quest 2 asks for it |
+| Télémétrie | `telemetry` (`rates`) | what comes into the Heart each minute, beside each stock in the HUD (D79). The id is kept: saves hold it, and the tutorial's quest 2 asks for it |
 | Registre de production | `statistics` (`ledger`) | the Statistics screen (G) and its chip in the HUD |
 | Relevé d’énergie | `power_log` (`power`) | the power history in the Statistics: demand against what is available |
 | Diagnostic | `diagnostics` (`machines`) | the machines' states in the Statistics: how many run, wait for inputs, are blocked, unpowered or unwired, and which (`machineStates`) |
 
 Unlocking one plays its reveal (the base dims around the new readout, CrierBelt says what it is: [ui.md](ui.md#the-spotlight-d41)). Readouts that stay free: the stock amounts, the ◉ and its ◉/h, the power % and its tooltip, the clock, the land mode (I) and the power overlay (P), the inspector and the building card. F (`ovFlow`) is bound to a flow overlay that does not exist yet; when it does, it is a natural next analytics step (a plan, its flag in `ANALYTICS`, a reveal in `ANALYTICS_REVEALS`).
 
-The distributor, the swift and express ribbons, the compact machines, the great workshop, the pylon and everything later stay behind their research.
+The distributor, the swift and express ribbons, the compact machines, the press, the assembly workshop, the pylon and everything later stay behind their research.
 
-### Research — `RESEARCH`
+### Research — `RESEARCH` (D69, D70)
 
-Nodes are built with two helpers:
+Four tiers on the depths (T1 = 1–2, T2 = 3–4, T3 = 5–6, T4 = 7 and the keystones ★, depth 9; `tierOfDepth`). The trunk opens each tier (`TIER_GATE`: T2 needs `tr1`, T3 `tr6`, T4 `tr8`). Six families (`FAMILY_IDS`; `FAMILIES[f]`: a name, one name per tier, and its specialities from Tier 3), the tree's lanes:
+
+| Family | Tier 1 · Tier 2 | Specialities from Tier 3 |
+|---|---|---|
+| `en` Energy | Production d’électricité · Réseau électrique | `r` Renouvelables · `c` Centrales |
+| `ex` Extraction | Extraction · Prospection | `d` Forage · `x` Excavation |
+| `dn` Machines | Machines de précision · Automatisation | `e` Électronique · `m` Mécanique |
+| `cm` Commerce | Échange · Finance | none: Économie de marché at Tiers 3–4 |
+| `an` Analytics | Analytique · Données | `c` Calcul · `m` Exploration de données |
+| `xp` Expansion | Arpentage · Logistique | `t` Transport · `c` Concessions |
 
 ```ts
-dn1: node('dn', 1, ['Tissage', 'Ribbon Weave'], ['Débloque le Ruban vif (120/min).', 'Unlocks the Swift Ribbon (120/min).']),
-tr5: trunk(5, ['tr4'], [['journal_2', 100]], 120, ['Deuxième pupitre', 'Second Desk'], [...], [{ k: 'slots', add: 1 }]),
+en_solarfarm: node('en', 'r', 5, 'en4', ['Ferme solaire', 'Solar Farm'], ['Débloque la Ferme solaire…', 'Unlocks the Solar Farm…']),
+tr5: trunk(5, 2, ['tr4'], 480, '200_000', 120, ['Deuxième pupitre', 'Second Desk'], [...], [{ k: 'slots', add: 1 }]),
 ```
 
-- **`node(branch, depth, name, desc, effects)`** derives everything else. The id must be `<branch><depth>`, or `<branch>K` for the keystone (depth 9). Prerequisites are the previous depth of the branch (8 for the keystone; the observatory's plan for depth 1) plus a trunk gate: depth ≥ 3 needs `tr1`, ≥ 5 `tr6`, ≥ 7 `tr8`. Cost and minimum minutes come from `DEPTH_COST[depth]`: from 25 survey journals and 3 min at depth 1 up to 300 atlases + 150 codex and 24 h for the keystone. Each branch is a straight line of 9 nodes.
-- **`trunk(depth, prereq, cost, minutes, name, desc, effects)`** is fully explicit (`tr1` needs the observatory's plan). The trunk escapes the spreading penalty.
-- **Branches.** `ex`, `xp`, `dn`, `en`, `cm`, plus `trunk`. Display names are i18n keys `research.branch.<b>`. `BRANCH_CORE` names the stat that mastery boosts: +`initiateBonus`‰ at 3 nodes, +`masterBonus`‰ at 6 (`slippage` is lowered instead of raised).
-- **Effects** (`Effect`). `mul` (target ×permille), `add` (target + v), `flag` (a free string the sim tests with `mods.flags.has`) and `slots` (+research slots). They compile into `Mods` in [modifiers.ts](../src/sim/research/modifiers.ts), applied **in `PLAN_IDS` then `RESEARCH_IDS` order with a floor after each step**. The `unlock` effect kind exists in the type but is ignored. Unlocks come only from the `unlock` field of buildings, recipes and `BAL.hearthUpgrades`.
-- **Land research** (D60, [land.md](land.md#research)): `tr4` « Cadastre » / Land Registry (it was Waystations) gives `flag('lease')`, and still opens the Heart's level 3; `xp1` Boundary Stones `mul('landPrice', 850)`; `xp2` Drone Relays halves `remoteBeltCost` and `remoteBuildDelay` (off the claim's land); `xp3` Land Charter `add('landGrowth', -40)` (each parcel bought raises the next one's price 6 % instead of 10 %); `xp7` Federation `mul('landRent', 700)` and `add('landGrowth', -20)`; `xp8` Far Claims `mul('farLand', 700)` (land whose centre lies past `BAL.land.farRadius`) beside `ring3Caps`; `xpK` Caravan City `mul('landRent', 800)` beside `drifterDistance`.
-- **Costs at run time.** `cost = ⌈base × (1 + 0.12·N_others) × (1 − 0.04·min(n_branch, 8))⌉`, `time = D × (1 + 0.05·N_others) × 0.85 if n_branch ≥ 6`, in `effectiveCost` ([runtime.ts](../src/sim/research/runtime.ts)). The knobs are in `BAL`; projects and the allowance are covered in [engine.md](engine.md).
+- **`node(family, spec, depth, after, name, desc, effects)`**: `after` is the node before it in its lineage (null: the family's first node, which needs the lab's plan); the tier's gate is added; its tokens and minutes come from `DEPTH_COST[depth]` (10 k tokens and 3 min at depth 1 up to 6 M tokens and 24 h for a keystone), its data from `scienceCost(tier, DEPTH_COST[depth].data)` (D71): that much Survey Data (15 at depth 1, 5 760 for a keystone) and, from Tier 2, a third as much Mechanics Data, from Tier 3 a twelfth as many atlases, at Tier 4 a fortieth as many codices. A trunk node that opens a tier sits in the tier before it (tr1 in T1, tr6 in T2, tr8 in T3), so it never asks for the kind it brings. A split family's lineages share the Tier 1–2 nodes and each runs on from the last of them. Ids: the old short ids where a node kept its meaning (`en2`, `ex4`, `dn4`, `cm3`…), descriptive ones for the rest (`en_pitch`, `an_servers`, `xp_far`…); renamed ids are in `RESEARCH_RENAMED` ([retired.ts](../src/content/retired.ts), save v7).
+- **`trunk(depth, tier, prereq, data, tokens, minutes, name, desc, effects)`** is fully explicit (`tr1` needs the lab's plan).
+- **Every node gives something** (D70; `nodeGives` in validate.ts): the buildings and recipes whose `unlock` is its id, a Heart level, a feature `flag` the sim reads, research `slots`, an `add`. A node that would only multiply a number is refused. The `mul` kind stays for the few research-free multipliers some systems still read.
+- **Effects** (`Effect`). `mul` (target ×permille), `add` (target + v), `flag` (a string the sim tests with `mods.flags.has`) and `slots`. They compile into `Mods` in [modifiers.ts](../src/sim/research/modifiers.ts), applied **in `PLAN_IDS` then `RESEARCH_IDS` order with a floor after each step**. No mastery bonus (D69).
+- **Land research** (D60, D70, [land.md](land.md#research)): `tr4` « Cadastre » / Land Registry gives `flag('lease')` and the Heart's level 3; in Expansion › Concessions, `xp_resell` (sell a bought parcel back, 80 %), `xp_treaties` (ribbons and poles over sister claims' land), `xp_far` (buy a parcel apart from the claim's land: purchases otherwise grow it outward).
+- **Costs at run time.** A node costs its table's data, tokens and minutes, whatever else the claim owns (`effectiveCost`, [runtime.ts](../src/sim/research/runtime.ts); D72 removed D69's spread penalty and lineage discount); the token price is `BAL.tokenCentsPerK`. Projects, the allowance and the minute's token bill are in [engine.md](engine.md#research).
 
 ## The restart reserve — `BOOTSTRAP` (D36)
 
@@ -214,7 +225,7 @@ export const BOOTSTRAP: readonly BootStage[] = [
 
 ## World — `world.ts`
 
-Pure data that [mapgen.ts](../src/sim/world/mapgen.ts) turns into tiles. `WORLD_SEED` is shared by every colony. `CIRQUE` is the common basin (D40: a third of its first area): floor radius 23, the Crown to 32 (H1 to 28, H3 from 37), the rim's jitter, the pass directions in 64ths of a turn, the four starting deposits (`rich` = per-tile cap in 10 mu per epoch, so 75 → 0.75 ore/min; sand is the ground, not a deposit) and the lake. Moving a deposit: the coal must stay beyond the Heart's 8-tile wire (quest 3's pole) and a whole coal and copper drill spot within r 18 of the Heart (the early reach the tutorial expects, well inside the starting square); `mapgen.test.ts` checks both on the real map, and `reserve.test.ts` the poles each bootstrap stage needs. `RINGS` gives the ring radii and the blend zone between world noise and player noise. `ARCHETYPES` holds the five per-player environments, each with `{ fr, en }` name and description. `UNIQUE_BIOMES` holds the six unique-resource sites; their `item` is automatically a raw item for validation. `COMMON_DEPOSITS` weights the deposit blobs beyond the Crown, and `DEPOSIT_CHANCE` and `RICH_MULT` scale them by ring. `COS64`/`SIN64` is an integer trig table, so map generation stays transcendental-free. Archetype and biome names are not displayed yet.
+Pure data that [mapgen.ts](../src/sim/world/mapgen.ts) turns into tiles. `WORLD_SEED` is shared by every colony. **Map versions** (D63): `MAPS[v]` is what a land of version `v` reads — its cirque template, the archetypes' Crown foot (`crownOuter`), the mountains' hardness by ring and level — and `MAP_VERSION` (2) the version a new base is founded on; a saved base keeps its own (persistence.md). Never edit an old version's numbers (a base stands on them): add a version. `CIRQUE` (map 2) and `CIRQUE_V1` (map 1) are the common basin (`CirqueTemplate`; D40: a third of its first area): floor radius 23 and its rim's jitter, the Crown's `terrace` (2 tiles a level: a traction ribbon's elevator needs a flat tile in front of it), its `crest` (3) and, on map 2, its `ridge` (2: the level it keeps all round, rising to the crest only on the `shoulders`, the shared noise read round a circle, and round the tarn), `minCrest`, the foot (`crownOuter`: 29 on map 2, 34 on map 1; Closed Cirque 31 / 44, Wide Steppe 27 / 32), the hardness by level (`[1, 1, 2]`: the lilac rock on the crest, which map 2 has on its peaks only), `jitterAt` (map 2: the noise read at the bearing, so the terraces run as rings), the four starting deposits (the same on both maps; `rich` = per-tile cap in 10 mu per epoch, so 75 → 0.75 ore/min; sand is the ground, not a deposit) and the cirque's water: map 1's lake on the floor at (14, 8), map 2's tarn up on the crest at (27, 13), 21 tiles at level 3 (`onCrest`, `mound`: how far round it the crest stays). `MOUNTAINS.hardness` is map 2's (H1 on the first two terraces near the cirque, the lilac rock on the high tops); map 1's is in `MAPS[1]`. Moving a deposit: the coal must stay beyond the Heart's 8-tile wire (quest 3's pole) and a whole coal and copper drill spot within r 18 of the Heart (the early reach the tutorial expects, well inside the starting square); `mapgen.test.ts` checks both on the real map, and `reserve.test.ts` the poles each bootstrap stage needs. `RINGS` gives the ring radii and the blend zone between world noise and player noise. `ARCHETYPES` holds the five per-player environments, each with `{ fr, en }` name and description. `UNIQUE_BIOMES` holds the six unique-resource sites; their `item` is automatically a raw item for validation. `COMMON_DEPOSITS` weights the deposit blobs beyond the Crown, and `DEPOSIT_CHANCE` and `RICH_MULT` scale them by ring. `COS64`/`SIN64` is an integer trig table, so map generation stays transcendental-free. Archetype and biome names are not displayed yet.
 
 ## Registry — ids and indices
 
@@ -254,10 +265,10 @@ One object, so balancing is one diff. The values are engine-facing integers (‰
 | Hearth and stores | `hearthCap[level]`, `hearthSolarKw` (its solar panel's peak, 240 kW: two drills and a wire mill by day, nothing at night), `hearthCoreKw`, `hearthPortPerMin` (the trade posts' outlets; the Hearth has none), `hearthUpgrades` (unlock and cost of levels 2–4) | colony stock cap; graph compiler; [systems/build.ts](../src/sim/systems/build.ts) and the Hearth inspector panel |
 | Machines and buffers | `inBufCrafts`, `outBufCrafts`, `drillBufItems`, `forkBufItems`, `towerSpeed` | [nodes.ts](../src/sim/flow/nodes.ts); graph compiler |
 | Ribbons | `beltDensity`, `runSpanTicks`, `remoteBeltCostMult` | [chain.ts](../src/sim/flow/chain.ts), graph compiler, items view; placement |
-| Power | `windCirque`, `windPlain`, `windMesa` (only `[0]` is read) | graph compiler (local wind) |
-| Land and remote building (D60, [land.md](land.md)) | `land`: `parcel` (16 tiles a side), `base` and `tile` (centi-◉: every parcel, then per tile by ground), `depositPerValue` (per deposit tile and point of ore value, at richness 500), `growth` (‰ per parcel bought: the base of `mods.landGrowth`), `hearthDiscount` (‰ off per Heart level past the first), `rentPermille` (of the price, an hour), `sisterShare` (‰ of the parcels past the starting ring a sister claim owns), `sisterMarkup` (‰ by claim), `farRadius` (Far Claims); `landReveal` (fog lifted round a parcel newly held), `remoteBuildTilesPerSec` | [world/land.ts](../src/sim/world/land.ts), [systems/land.ts](../src/sim/systems/land.ts); placement; [modifiers.ts](../src/sim/research/modifiers.ts) |
-| Research | `spreadCostPerNode`, `depthDiscountPerNode`, `spreadTimePerNode`, `masterTimeFactor`, `respecRefund`; `initiateBonus`, `masterBonus`; `respecCooldownDays` (not read) | [runtime.ts](../src/sim/research/runtime.ts); [modifiers.ts](../src/sim/research/modifiers.ts) |
-| Market | `tradeFee` (`[0]` is the base of `mods.tradeFee`), `tradeThroughput`, `liftDelayMin` (not read until the trade post is wired, M6); `BAL.market` (floats by design, read by `src/market/`) | modifiers; the market |
+| Power | `windCirque`, `windPlain`, `windMesa` (only `[0]` is read), `windHeight` (by level, D76) | `windSite` (power/network.ts): the graph compiler's local wind, the inspector's grid module, the building card |
+| Land and remote building (D60, [land.md](land.md)) | `land`: `parcel` (16 tiles a side), `base` and `tile` (centi-◉: every parcel, then per tile by ground), `depositPerValue` (per deposit tile and point of ore value, at richness 500), `growth` (‰ per parcel bought: the base of `mods.landGrowth`), `rentPermille` (of the price, an hour), `sisterShare` (‰ of the parcels past the starting ring a sister claim owns), `sisterMarkup` (‰ by claim), `farRadius` (Far Claims); `landReveal` (fog lifted round a parcel newly held), `remoteBuildTilesPerSec` | [world/land.ts](../src/sim/world/land.ts), [systems/land.ts](../src/sim/systems/land.ts); placement; [modifiers.ts](../src/sim/research/modifiers.ts) |
+| Research | `respecRefund`; `respecCooldownDays` (not read) | [runtime.ts](../src/sim/research/runtime.ts); [modifiers.ts](../src/sim/research/modifiers.ts) |
+| Market | `tradeFee` (200 ‰: CrierBelt's fifth, the base of `mods.tradeFee`; no research lowers it, D64), `tradeOrders` (standing orders; Standing Orders +4), `tradeThroughput`, `liftDelayMin`; `BAL.market` (floats by design, read by `src/market/`) | modifiers; the market |
 | Digging and landfill | `digMinutes`, `digRubble`, `embedIron`(`Items`), `embedCopper`(`Items`), `fillSeconds`, `fillRubble`, `digReach`, `fillReach`, `excavatorCap`, `backfillerCap` | [space.ts](../src/sim/space.ts), [systems/landscape.ts](../src/sim/systems/landscape.ts), graph compiler (caps), the reach rings in overlays, build mode and inspector |
 | Drifters | `dockShips`, `dockCap`, `drifterCap`, `drifterTilesPerMin`, `drifterLoadMin`, `drifterCost` | space.ts, graph compiler, [systems/freight.ts](../src/sim/systems/freight.ts) (purchase) and placement (refunds), drifters view, dock panel |
 | Offline | `reservoirMargin` | [catchup.ts](../src/sim/offline/catchup.ts) |
@@ -282,8 +293,9 @@ The item ids inside `BAL` (`startStock`, `drifterCost`, `hearthUpgrades`) are ty
 | No dead end (`reserveProblems`, D36): each bootstrap stage makes what it says, with its own machines, on recipes the start or its plans unlock (never research), from the cirque's deposits under its own drills; the reserve keeps only what the bootstrap makes; every plan and the starting kit are paid in those materials; the starting stock covers the reserve, even with the whole first ring of plans bought; a trade post against the Heart leaves at least the reserve (its stream reserve `tradeHearthReserve` plus its own cost); the Heart's core gives power at night (`hearthCoreKw > 0`) | A base can always rebuild its production, so the engine's guard has something to keep. The first ring of plans never meets a refusal. |
 | Every item can be produced from `RAW` (the land: deposits, digging, pumping, unique biomes) through recipes | No dead items and no unbuildable costs. |
 | Every science item that research asks for can be produced | Same reason. |
-| `tiredVeinPerMin() × 2 < wirePerMechanicsWorkshop()`, pinned at 6.75 ore/min → 13.5 wire vs 18 | Design: the cirque's « filon fatigué » cannot feed one mechanics-journal workshop, so copper ore must be imported from T2. |
-| `uniquesNeeded('atlas') ≥ 2`, `uniquesNeeded('codex') === 5` (pinned at 2 and 5; `journal_2` needs 0) | Each colony reaches about two uniques, so T3 and T4 require trade. |
+| `tiredVeinPerMin() × 2 < wirePerElectronicsWorkshop()`, pinned at 6.75 ore/min → 13.5 wire vs 30 | Design: the cirque's « filon fatigué » cannot feed one electronics workshop on circuits, so copper ore must be imported from T2. |
+| `recipesPerMachine()`: none over `MAX_RECIPES`; `nodeGives(id)` non-empty for every research node; a speciality only from Tier 3, a split family's Tier 3–4 nodes with one; each node needs its tier's gate | D69, D70. |
+| `uniquesNeeded('atlas') ≥ 2`, `uniquesNeeded('codex') === 5` (pinned at 2 and 5; Survey Data needs 0) | Each colony reaches about two uniques, so T3 and T4 require trade. |
 
 Not validated, though the engine relies on it: a recipe has exactly one output; recipe `machines` are of kind `machine` and have enough input ports; kind-specific fields are present (`belt`, `pole`, `gen.fuel`…); `RAW` lists every land-sourced item (the list is hand-maintained); descriptions match the actual unlocks and numbers.
 
@@ -312,14 +324,14 @@ Not validated, though the engine relies on it: a recipe has exactly one output; 
 6. Run the content tests. If it changes atlas or codex chains or copper wire, re-check the scarcity pins.
 
 ### Add a recipe
-1. Append to `RECIPES`: `machines` (ids of kind `machine`, usually `KILNS`, `WORKSHOPS` or `GREAT`), `seconds` from the divisor list, one output, quantities with at most 3 decimals, `unlock`.
+1. Append to `RECIPES`: `machines` (ids of kind `machine`: a family's list, three recipes at most per machine), `seconds` from the divisor list, one output, quantities with at most 3 decimals, `unlock`.
 2. If it is gated, name it in the unlocking node's `desc` (fr and en).
 3. That is all. The inspector lists it via `recipesFor`, `setRecipe` checks `machines` and `unlock`, and the art has nothing to do. Append rather than insert: machines store the recipe index in `cfg`.
 
 ### Add a building
 Content side:
 1. Append to `BUILDINGS` with `name`, `desc`, `kind`, `category`, `w`, `h`, ports at rotation 0, `kw`/`idleKw`, `needsZone`, `cost`, `unlock` and the kind-specific fields from the table above. Its tray slot follows its position. A new ribbon tier, routing block, mast or drill also needs the matching `replaceGroup`, so that it can be placed over its kind and its kind over it.
-2. For a machine, add its id to the `machines` of the recipes it runs (the `KILNS` / `WORKSHOPS` / `GREAT` lists).
+2. For a machine, add its id to the `machines` of the recipes it runs (a family's list; three recipes at most, D70).
 3. For a gated building, set `unlock` to the node id and mention it in the node's `desc`.
 4. Numbers that players will tune go to `BAL`.
 
@@ -341,14 +353,14 @@ Other touch points (grep an existing comparable id or kind):
 
 ### Add a research node or an effect
 1. A branch node: `xyN: node('xy', N, [fr, en], [fr, en], effects)` (`xyK` for depth 9). Prerequisites, cost and time follow. A trunk node: `trunk(…)` with explicit values. Append it: application order matters.
-2. Unlocks are set on the unlocked building, recipe or `BAL.hearthUpgrades` entry, never as an effect. Describe them in `desc`. A new effect target or flag also wants an icon in the tree screen's `EFFECT_ICON` ([research.ts screen](../src/ui/screens/research.ts)); without one the node shows the observatory.
+2. Unlocks are set on the unlocked building, recipe or `BAL.hearthUpgrades` entry, never as an effect. Describe them in `desc`. A new effect target or flag also wants an icon in the tree screen's `EFFECT_ICON` ([research.ts screen](../src/ui/screens/research.ts)); without one the node shows the lab.
 3. A new **multiplier or additive target**:
    - add it to the `ModTarget` union in `types.ts`;
    - add it to the `targets` list in `baseMods()` ([modifiers.ts](../src/sim/research/modifiers.ts)): the default is 1000‰, or 0 if listed in `ADDITIVE`; a BAL-based start goes after the defaults, like `tradeFee` and `landGrowth`. Without it the value is `undefined` and turns to `NaN`;
    - read `sim.mods.<target>` where the behaviour lives. Research completion recomputes `Mods` and recompiles the graph (`rebuildDerived`).
 4. A new **flag** is a free string. Test it with `mods.flags.has('…')` in the consumer; a typo is a silent no-op.
 5. A new **branch** touches the `branch` union (`types.ts`), `Branch` and `BRANCH_CORE` (`research.ts`), `BranchId`, `BRANCHES` and `branchCounts` ([runtime.ts](../src/sim/research/runtime.ts)), `perBranch` (`modifiers.ts`) and a `research.branch.<b>` key. The tech tree screen builds its research lanes from `BRANCHES` (a lane colour in `screens.css`).
-6. Tests: validation (prereqs, loops, reachability, producible costs) and [research.test.ts](../src/sim/research/research.test.ts), which pins `DEPTH_COST[7]` and the spreading knobs through the en7 example.
+6. Tests: validation (prereqs, loops, reachability, producible costs) and [research.test.ts](../src/sim/research/research.test.ts), which pins the table's costs (D72: the same whatever the claim owns).
 
 ### Add a plan
 1. Add it to `PLANS` (in [research.ts](../src/content/research.ts)) among its path's plans: `plan(lane, prereq, cost, more?)`, the lane being its path (D41); it must hang from a plan of the same path unless it is the path's entry (validated). Give its building `unlock: '<plan id>'` (usually the building's own id). A feature plan (no building) needs `name`, `desc` and `effects`; its consumer tests the flag (`mods.flags.has`), and its icon goes into the tree screen's `EFFECT_ICON`. An analytics step: its flag is its id, listed in `ANALYTICS`, read through `analyticsOn`, with a reveal in `ANALYTICS_REVEALS` (ui/analytics.ts) and a `focus.<id>` caption.
@@ -360,15 +372,15 @@ Other touch points (grep an existing comparable id or kind):
 1. Find it. Knobs live in `BAL`; per-thing numbers live in the tables (`cost`, `kw`, `perMin`, `seconds`, `DEPTH_COST`, `CIRQUE`…). Some are still hard-coded: see the pitfalls below.
 2. Keep the units: integers where `BAL` says ‰, ticks or items; table quantities with at most 3 decimals; recipe seconds from the divisor list.
 3. Update the descriptions that quote the number. Building and research `desc` strings repeat values by hand ("20/min", "rayon de 40 tuiles", "Stocke 1 200 kW·min", the land research's 6 % and −30 %).
-4. Run `npm test`. These tests pin content numbers: `validate.test.ts` (6.75 / 18 / 2 / 5; the restart reserve 59 / 6 / 4, D36); `research.test.ts` (en7: 114 + 16 vs 224 + 30); `space.test.ts` (40 stone per pond tile, ribbons ×3 off the claim's land, drifter formula, Hearth level 2 and its land discount); `land.test.ts` (a bare parcel at `base` + 256 floor tiles, the growth, the rent per mille, the starting square's reach 2 on the template); `power.test.ts` (sun table, Lens Arrays floor); `flow.test.ts` (drill rate, ribbon transit); `mapgen.test.ts` (cirque layout); `catchup.test.ts`.
+4. Run `npm test`. These tests pin content numbers: `validate.test.ts` (6.75 / 18 / 2 / 5; the restart reserve 59 / 6 / 4, D36); `research.test.ts` (en7: 114 + 16 vs 224 + 30); `space.test.ts` (40 stone per pond tile, ribbons ×3 off the claim's land, drifter formula, Hearth level 2 and its land discount); `land.test.ts` (a bare parcel at `base` + 256 floor tiles, the growth, the rent per mille, the starting square's reach 2 on the template); `power.test.ts` (sun table: nothing at night); `flow.test.ts` (drill rate, ribbon transit); `mapgen.test.ts` (cirque layout); `catchup.test.ts`.
 5. Changing a number changes state hashes, so recorded command logs replay differently. Saves stay loadable unless indices move.
 
 ## Known gaps and pitfalls
 
 - **One output per recipe.** `MachineNode` emits `outs[0]` only, and validation does not check it.
 - **Inert fields.** These are declared but not used: `crafts`; `energyKwMin`; the `unlock` effect; `tier` and `depth` outside the M6 market (in progress); archetype and biome names. (`ARCHETYPES.*.copperVein` is now the land's embedded-copper chance, through `MapGen.embedCopper`.) Also unused: `windMesa[1]`, `respecCooldownDays` (14 days and the 7-day grace are hard-coded in the research system and screen), `tradeThroughput`, `liftDelayMin`.
-- **Research effects with no consumer yet.** The flags `tunnels` (ex6), `stormHarvest` (en7) and `deepHeat` (en8); every Commerce target and flag (`tradeFee` is only computed). The Commerce mastery stat (`slippage`) is therefore inert until M6.
-- **Duplicated sources of truth.** The Hearth's `storageCap` and `gen.kw` duplicate `BAL.hearthCap[0]` and `BAL.hearthSolarKw`; the `BAL` values win. `CYCLE_LCM` is redeclared in `validate.ts`. Ticks per second (×10, ×600) is hard-coded in the registry. Hard-coded in the compiler: pump 60/min, silo and dock ports 240/min, excavator outlet 120/min, observatory store 200 items (`LAB_CAP`).
+- **Research effects with no consumer yet.** The flags `tunnels` (ex6), `stormHarvest` (en7) and `deepHeat` (en8); every Commerce flag (`tradeFee` is fixed at CrierBelt's fifth, D64). The Commerce mastery stat (`slippage`) is therefore inert until M6.
+- **Duplicated sources of truth.** The Hearth's `storageCap` and `gen.kw` duplicate `BAL.hearthCap[0]` and `BAL.hearthSolarKw`; the `BAL` values win. `CYCLE_LCM` is redeclared in `validate.ts`. Ticks per second (×10, ×600) is hard-coded in the registry. Hard-coded in the compiler: silo and dock ports 240/min, excavator outlet 120/min, a lab's store 200 items (`LAB_CAP`) (a pump's rate is its `drill.perMin` since D70).
 - **Validation approximations.** `tiredVeinPerMin` hard-codes the wire recipe's ×2 and ignores mapgen's ±20% per-player richness and 70% edge falloff. The margin still holds at +20% (16.2 < 18). `uniquesNeeded` minimises each input separately, so it is an upper bound.
 - **Inexact fractions.** `sunheart.fuelPerMin: 1/30` becomes 33 mu per epoch.
 - **Lists to keep in sync.** The branch list exists in four places, `ModTarget` in two, and flags are untyped strings.

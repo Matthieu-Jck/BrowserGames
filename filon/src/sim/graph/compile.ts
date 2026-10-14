@@ -15,17 +15,15 @@ import {
 import { filterOf, modulesOf, recipeOf } from '../cfg';
 import { MU, WORLD } from '../constants';
 import { footprint, worldPorts, forTiles, type Entities, type WorldPort } from '../entities';
-import { DX, DY, T, isRock, opposite, type Ent, type Rot } from '../types';
+import { DX, DY, T, opposite, type Ent, type Rot } from '../types';
 import type { RouterLogic } from '@/content/types';
 import type { Grid } from '../world/grid';
 import { tileIndex } from '../world/grid';
-import { CIRQUE } from '@/content/world';
-import { CENTER } from '../constants';
 import { Chain, VIA_NONE } from '../flow/chain';
 import type { FNode } from '../flow/node';
 import { DrillNode, ForkNode, GeneratorNode, MachineNode, ReservoirNode, SinkNode } from '../flow/nodes';
 import type { Mods } from '../research/modifiers';
-import { buildGrids, type Acc, type Net, type Producer, type WireSource } from '../power/network';
+import { buildGrids, producerOf, type Acc, type Net, type Producer, type WireSource } from '../power/network';
 import { isLinkPoint, linkable } from '../power/links';
 
 export interface Graph {
@@ -44,6 +42,8 @@ export interface Graph {
   netOfEnt: Map<number, number>;
   reservoirs: ReservoirNode[];
   hearth: ReservoirNode | null;
+  /** The servers (D68): each one's entity and its AI tokens a minute at full power; their grid's satisfaction scales it. */
+  servers: Array<{ ent: number; net: number; tpm: number }>;
   /** Per ribbon tile: a mask (bit = side, 0 N … 3 W) of where it is fed from — what the views draw. */
   feedDirs: Map<number, number>;
   /**
@@ -88,14 +88,18 @@ export interface CompileInput {
 
 const NO_WIRES: WireSource = { of: () => [] };
 
-/** An observatory's store: enough journals for a while (milli-items per item). */
+/** A research lab's store: enough data files for a while (milli-items per item). */
 export const LAB_CAP = 200 * 1000;
 const NOTHING: ReadonlySet<number> = new Set();
+/** A server's store: it holds nothing (its node only draws the grid's power). */
+const NO_STOCK = new Float64Array(0);
 
 const isBeltKind = (k: string): boolean => k === 'belt' || k === 'conduit' || k === 'bridge';
 const RUBBLE_IDX = (): number => itemIdx('stone');
 const WATER_IDX = (): number => itemIdx('water');
-const TOWER = buildingIdx('tower_workshop');
+/** The Heart's data outlet (D68): its only `out` port, handing out the data files it makes. */
+export const HEART_OUTLET = buildingDef(buildingIdx('hearth')).ports.findIndex((p) => p.io === 'out');
+const DATA_IDX = (): number => itemIdx('journal_1');
 
 interface PortRef { node: FNode; port: number; dir: Rot }
 
@@ -146,11 +150,15 @@ export function compileGraph(inp: CompileInput): Graph {
     let node: FNode | null = null;
     switch (kind) {
       case 'hearth': {
+        // Its ports are inlets, but for its data outlet: the data files it makes, once the
+        // Analytics research has it make some (D68) — never anything else of its stock.
         const items = (e.portItems ?? []).slice();
+        while (items.length < b.ports.length) items.push(-1);
+        if (HEART_OUTLET >= 0) items[HEART_OUTLET] = mods.heartData > 0 ? DATA_IDX() : -1;
         node = reuse(e, () => new ReservoirNode(e.id, inp.hearthStock, inp.hearthCap, items, mpt(BAL.hearthPortPerMin), false),
           (o) => o.kind === 'reservoir');
         const r = node as ReservoirNode;
-        r.cap = inp.hearthCap; r.portItems = items; r.stock = inp.hearthStock;
+        r.cap = inp.hearthCap; r.portItems = items; r.stock = inp.hearthStock; r.hearth = true;
         hearth = r;
         break;
       }
@@ -171,7 +179,7 @@ export function compileGraph(inp: CompileInput): Graph {
         const m = node as MachineNode;
         m.kw = kw;
         let speed = Math.floor((mods.craftSpeed * (1000 + (mods.flags.has('modules2') ? 500 : 300) * bells)) / 1000);
-        if (e.def === TOWER) speed = Math.floor((speed * BAL.towerSpeed) / 1000);
+        if (b.speed) speed = Math.floor((speed * b.speed) / 1000); // the tree's upgraded machines (D70)
         if (onDugFloor(grid, e)) speed = Math.floor((speed * mods.excavatedSpeed) / 1000);
         m.speed = speed;
         break;
@@ -208,7 +216,7 @@ export function compileGraph(inp: CompileInput): Graph {
         node = reuse(e, () => new ReservoirNode(e.id, st!, LAB_CAP, [], 0, false, b.kw ?? 0), (o) => o.kind === 'reservoir');
         const r = node as ReservoirNode;
         r.accepts = accepts ?? NOTHING;
-        // An idle observatory only keeps its lights on.
+        // An idle lab only keeps its lights on.
         r.kw = accepts ? b.kw ?? 0 : b.idleKw ?? 0;
         r.idleKw = r.kw;
         break;
@@ -244,10 +252,20 @@ export function compileGraph(inp: CompileInput): Graph {
         break;
       }
       case 'pump': {
-        // 60 water/min while it stands by water.
-        const wet = touchesWater(grid, e);
-        node = reuse(e, () => new DrillNode(e.id, WATER_IDX(), wet ? 60000 : 0, b.kw ?? 0, b.idleKw ?? 0), (o) => o.kind === 'drill');
-        (node as DrillNode).rateEp = wet ? 60000 : 0;
+        // Its water a minute while it stands by water.
+        const rate = touchesWater(grid, e) ? (b.drill?.perMin ?? 60) * 1000 : 0;
+        node = reuse(e, () => new DrillNode(e.id, WATER_IDX(), rate, b.kw ?? 0, b.idleKw ?? 0), (o) => o.kind === 'drill');
+        (node as DrillNode).rateEp = rate;
+        break;
+      }
+      case 'server': {
+        // A server (D68) only draws its power: the tokens it makes are counted at the sim level
+        // (systems/research.ts), from its grid's satisfaction. Like a lab, it belongs to no group.
+        node = reuse(e, () => new ReservoirNode(e.id, NO_STOCK, 0, [], 0, false, b.kw ?? 0), (o) => o.kind === 'reservoir');
+        const r = node as ReservoirNode;
+        r.accepts = NOTHING;
+        r.kw = b.kw ?? 0;
+        r.idleKw = r.kw;
         break;
       }
       case 'trade': {
@@ -628,35 +646,40 @@ export function compileGraph(inp: CompileInput): Graph {
     if (node) node.net = g;
     const b = buildingDef(e.def);
     const net = nets[g]!;
-    // The Hearth's built-in solar panel: a solar panel's rules (solar research, all-generator bonus).
-    if (b.kind === 'hearth') net.producers.push({ ent: e.id, kind: 'hearth', kw: Math.floor((BAL.hearthSolarKw * mods.solarOut * mods.genOut) / 1e6), local: 1000, base: Math.floor((BAL.hearthCoreKw * mods.genOut) / 1000) });
-    else if (b.kind === 'wind') net.producers.push({ ent: e.id, kind: 'wind', kw: Math.floor((b.gen!.kw * mods.windOut * mods.genOut) / 1e6), local: windLocal(grid, e) });
-    else if (b.kind === 'solar') net.producers.push({ ent: e.id, kind: 'solar', kw: Math.floor((b.gen!.kw * mods.solarOut * mods.genOut) / 1e6), local: 1000 });
-    else if (b.kind === 'geothermal') net.producers.push({ ent: e.id, kind: 'geo', kw: Math.floor((b.gen!.kw * mods.geoOut * mods.genOut) / 1e6), local: 1000 });
-    else if (b.kind === 'accumulator') {
+    // A producer (the Hearth's own panel and core, a turbine, a panel, a geothermal well): `producerOf`.
+    const prod = producerOf(e, b, grid, mods);
+    if (prod) net.producers.push(prod);
+    if (b.kind === 'accumulator') {
       const a = b.accumulator!;
       net.accs.push({ ent: e.id, cap: Math.floor((a.kwMin * 600 * mods.accCap) / 1000), rate: Math.floor((a.kw * mods.accRate) / 1000) } satisfies Acc);
     }
   }
   for (const n of nets) n.producers.sort((a: Producer, b: Producer) => a.ent - b.ent);
+  const servers: Graph['servers'] = [];
+  for (const e of sorted) {
+    if (BUILDING_KIND[e.def] !== 'server' || !nodeByEnt.has(e.id)) continue;
+    const net = netOfEnt.get(e.id);
+    if (net !== undefined) servers.push({ ent: e.id, net, tpm: buildingDef(e.def).server!.tokensPerMin });
+  }
 
   const nE = src.length;
   return {
     version: (inp.old?.version ?? 0) + 1,
     nodes, chains, nE,
     eSrc: Int32Array.from(src), eDst: Int32Array.from(dst), eSrcPort: Int32Array.from(sp), eDstPort: Int32Array.from(dp),
-    nodeByEnt, chainByTile, nets, netOfEnt, reservoirs, hearth, feedDirs, jumps, accOrder,
+    nodeByEnt, chainByTile, nets, netOfEnt, reservoirs, hearth, servers, feedDirs, jumps, accOrder,
   };
 }
 
 /** Milli-items per tick for a per-minute rate (60/min → 100). */
 export const mpt = (perMin: number): number => Math.round((perMin * 1000) / 600);
 
-/** Does a pump stand by water (on or next to a water tile)? */
+/** Does a pump stand by water (on or next to a water tile) on its own level (a tarn up on the Crown, D63, is not the floor's)? */
 function touchesWater(grid: Grid, e: Ent): boolean {
+  const lv = grid.level(e.x, e.y);
   for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
     const t = grid.terrain(e.x + dx, e.y + dy);
-    if (t === T.Shallow || t === T.Deep) return true;
+    if ((t === T.Shallow || t === T.Deep) && grid.level(e.x + dx, e.y + dy) === lv) return true;
   }
   return false;
 }
@@ -672,6 +695,8 @@ export function drillRate(grid: Grid, e: Ent, mods: Mods): { item: number; rateE
   const b = buildingDef(e.def);
   // A ground collector: a steady rate off the bare ground (its placement checked the sand).
   if (b.drill?.ground) return { item: itemIdx(b.drill.ground), rateEp: b.drill.perMin * 1000 };
+  // A data collector (D68): its item out of power alone, anywhere.
+  if (b.drill?.anywhere) return { item: itemIdx(b.drill.anywhere), rateEp: b.drill.perMin * 1000 };
   const counts = new Map<number, number>();
   const caps = new Map<number, number>();
   forTiles(e, (x, y) => {
@@ -689,18 +714,6 @@ export function drillRate(grid: Grid, e: Ent, mods: Mods): { item: number; rateE
   const ring3 = cx * cx + cy * cy > 320 * 320 ? mods.ring3Caps : 1000;
   const cap = Math.floor((Math.floor((caps.get(item)! * capMult) / 1000) * ring3) / 1000);
   return { item, rateEp: Math.min(b.drill!.perMin * 1000, cap) };
-}
-
-/** Local wind factor ‰ at a building: on the mountains the Sough blows (D44), the cirque's floor is sheltered, plateaus are windy. */
-function windLocal(grid: Grid, e: Ent): number {
-  const t = grid.terrain(e.x, e.y);
-  if (isRock(t)) return BAL.windRock[t - T.Rock1] ?? BAL.windRock[0]!;
-  const [w, h] = footprint(e.def, e.rot);
-  const dx = e.x + w / 2 - CENTER, dy = e.y + h / 2 - CENTER;
-  const r2 = dx * dx + dy * dy;
-  if (r2 < CIRQUE.crownOuter * CIRQUE.crownOuter) return BAL.windCirque; // sheltered inside the Crown
-  // Mesas (hardpan plateaus) are windy; the rest of the outside is plain.
-  return grid.terrain(e.x, e.y) === T.Hardpan ? BAL.windMesa[0] : BAL.windPlain;
 }
 
 /** May a routing block take items in from / hand them out towards outward side d? */

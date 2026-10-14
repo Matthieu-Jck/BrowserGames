@@ -141,7 +141,7 @@ export const dockPanel: Panel = ({ sim, e, host, live }) => {
     heading(t('insp.dock.routes')),
     el('div.insp-row', {}, [el('span.insp-label', {}, t('insp.dock.ships.label')), el('span.insp-value.insp-gv', {}, [count, buy])]),
   ];
-  live(() => setText(count, `${sim.fleet.get(e.id) ?? 0}/${dockShips(sim.mods)}`));
+  live(() => setText(count, `${sim.fleet.get(e.id) ?? 0}/${dockShips(sim.mods, buildingDef(e.def).dock)}`));
   const list = el('div.insp-routes');
   out.push(list);
   live(() => {

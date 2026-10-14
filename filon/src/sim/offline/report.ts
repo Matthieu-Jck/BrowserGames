@@ -4,7 +4,9 @@ import { N_ITEMS } from '@/content/registry';
 
 export type IncidentKind =
   | 'storageFull' | 'storageEmpty' | 'storageOk' | 'brownout' | 'accEmpty' | 'accFull'
-  | 'researchDone' | 'built' | 'orderPaused' | 'orderResumed' | 'leaseLapsed';
+  | 'researchDone' | 'built' | 'orderPaused' | 'orderResumed' | 'leaseLapsed'
+  // The purse went into the red (research held: its tokens could not be paid, D68), or back out.
+  | 'researchHeld' | 'researchResumed';
 
 /** `parcel`: a lease that lapsed (the purse could not pay its hour; docs/land.md). */
 export interface Incident { tick: number; kind: IncidentKind; item?: number; ent?: number; ref?: string; parcel?: number }

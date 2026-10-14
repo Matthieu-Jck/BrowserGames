@@ -10,7 +10,7 @@ import type { Sim } from './state';
  */
 function swiftLine(bridged: boolean): Sim {
   const sim = testSim();
-  sim.done.add('dn1'); // swift ribbons (a research): granted outside the commands, as steadyPower's
+  sim.done.add('xp_swift'); // swift ribbons (a research): granted outside the commands, as steadyPower's
   sim.rebuildDerived();
   sim.grant('gear', 50); // their cost
   stockedSilo(sim, 500, 520, 0, 'sand', 1000);

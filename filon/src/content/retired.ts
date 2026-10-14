@@ -8,7 +8,26 @@ export const RENAMED: {
   readonly items: Readonly<Record<string, string>>;
   readonly buildings: Readonly<Record<string, string>>;
   readonly recipes: Readonly<Record<string, string>>;
-} = { items: {}, buildings: {}, recipes: {} };
+} = {
+  items: {},
+  buildings: {},
+  recipes: {},
+};
+
+/**
+ * Research nodes renamed or reshaped by the tiered tree (D69, D70): an old id a save still holds
+ * → the node(s) that stand for it today (a node gone without a successor is dropped: it unlocked
+ * no building). Plans gained in the same change: holding the old prerequisite grants them.
+ */
+export const RESEARCH_RENAMED: Readonly<Record<string, readonly string[]>> = {
+  en1: ['en_pitch'], en3: ['en_heavyacc'], en6: ['en_solarfarm'], en7: ['en_bigwind'], en8: ['en_cellgen'],
+  ex1: ['ex_fastdrill'], ex2: ['ex_sifter'], ex6: ['ex_hppump'], exK: ['ex_giant'],
+  dn1: ['xp_swift'], dn2: ['xp_bridges'], dn3: ['dn3', 'dn_compact'], dn5: ['xp_distrib'], dn6: ['xp_express'], dnK: ['dn_chipfab'],
+  cm1: ['cm_floor'], cm4: ['cm_plan'], cm5: ['cm_express'], cm6: ['cm_rent'],
+  xp1: ['xp_resell'], xp2: ['xp_bigsilo'], xp3: ['xp_treaties'], xp5: ['xp_bigdock'], xp8: ['xp_far'],
+  // The research lab's plan now hangs from the data collector's (D68).
+  observatory: ['observatory', 'data_collector'],
+};
 
 /** Buildings taken out of the game: what each cost ([item id, items]), refunded to the Heart when a save still holds one. */
 export const RETIRED_COSTS: Readonly<Record<string, ReadonlyArray<readonly [string, number]>>> = {
@@ -18,4 +37,5 @@ export const RETIRED_COSTS: Readonly<Record<string, ReadonlyArray<readonly [stri
   // The 3×3 trade post with four inlets and two outlets, before its flame apron (D62): taken down
   // by save v4 (`postsToPads`), refunded, its container handed to the Heart; the claim builds the 5×5 pad.
   trade_post_3x3: [['iron_plate', 40], ['glass', 10], ['copper_wire', 10]],
+  pylon_1x1: [['iron_plate', 8], ['copper_wire', 6], ['ceramic', 2]], // the 1×1 pylon before D75 (save v6: refunded, its wires dropped)
 };

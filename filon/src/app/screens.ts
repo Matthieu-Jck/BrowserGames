@@ -167,7 +167,7 @@ export function installMenu(app: App, auto: boolean, debug = debugOffered()): Me
   }, settingsPage);
   if (debugHost) {
     badge = new DebugBadge(debugHost);
-    document.body.append(badge.root);
+    app.hud.pin(badge.root);
     badge.refresh();
     onLocale(() => badge?.refresh());
   }

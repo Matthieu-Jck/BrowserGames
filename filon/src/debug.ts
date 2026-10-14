@@ -128,7 +128,7 @@ export interface FilonDebug {
    */
   quests(): {
     current: string | null; index: number; named: boolean; name: string; done: string[]; titles: string[];
-    feeFreeUntil: number; progress: Array<{ have: number; need: number; met: boolean; measuring?: boolean }>;
+    progress: Array<{ have: number; need: number; met: boolean; measuring?: boolean }>;
     guide: { quest: string | null; step: number; at: string };
   };
   /** Dev: complete every quest up to and including `id`, in order, regardless of objectives (logged `quest` commands, rewards paid). Returns the current quest after. */
@@ -276,9 +276,11 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
     },
     ribbonField: (x, y, rows, cols) => {
       // Sandbox rig: lift the fog over the field, grant the plates, lay a dense serpentine
-      // (rows one tile apart, U-turns at the ends).
+      // (rows one tile apart, U-turns at the ends). Where the land steps (D77: a ribbon never
+      // faces another level), a traction ribbon takes the step, as a player would lay it.
       app.sim.explored.push([x + (cols >> 1), y + (rows >> 1), Math.ceil(Math.hypot(cols, rows) / 2) + 2]);
       app.sim.grant('iron_plate', rows * cols * 4);
+      app.sim.grant('copper_wire', rows * cols);
       const path: Array<[number, number, Rot]> = [];
       for (let r = 0; r < rows; r++) {
         const ltr = r % 2 === 0;
@@ -287,7 +289,9 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
           path.push([ltr ? x + c : x + cols - 1 - c, y + r, (last ? 2 : ltr ? 1 : 3) as Rot]);
         }
       }
-      const n = app.sim.placeBelts('ribbon', path);
+      const steps = app.sim.planBelts('ribbon', path).filter((s) => s.reason === 'needs_lift');
+      let n = app.sim.placeBelts('ribbon', path);
+      for (const s of steps) if (app.sim.place('traction_ribbon', s.x, s.y, s.rot).ok) n++;
       // Off the claim's land the kites would take a while: finish the rig at once.
       for (const e of app.sim.ents.map.values()) if (e.builtAt !== 0) e.builtAt = 0;
       app.sim.markDirty();
@@ -375,7 +379,7 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
       const cur = QUEST_IDS[st.cur] ?? null;
       return {
         current: cur, index: st.cur, named: st.named, name: sim.colonyName, done: [...st.done], titles: [...st.titles],
-        feeFreeUntil: st.feeFreeUntil, progress: questProgress(sim).map((p) => ({ ...p })), guide: app.guide.describe(),
+        progress: questProgress(sim).map((p) => ({ ...p })), guide: app.guide.describe(),
       };
     },
     completeQuest: (id) => {

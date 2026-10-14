@@ -21,6 +21,9 @@ import { parcelUnder } from '@/ui/land-facts';
 const shows = (app: { sim: import('@/sim/state').Sim }, r: Reveal): boolean => { const rv = revealed(app.sim); return !rv || rv.has(r); };
 import type { App } from './app';
 
+/** Keys that only move or look at the world: they keep the interface hidden (U). */
+const LOOK: ReadonlySet<Action> = new Set<Action>(['panUp', 'panDown', 'panLeft', 'panRight', 'fast', 'zoomIn', 'zoomOut', 'home', 'ovPower', 'ovFlow', 'perf', 'hideUi']);
+
 export class Controls {
   /** The last pointer state seen (screen px, over the canvas or not). */
   pointer: PointerInfo | null = null;
@@ -68,7 +71,14 @@ export class Controls {
     const app = this.app;
     const { w, h } = { w: app.stage.width, h: app.stage.height };
     if (app.screens.modal && a !== 'cancel' && a !== 'perf') return; // the main menu is up
+    // The interface hidden (U): looking around keeps it hidden; Escape, or any key that opens a
+    // tool or a screen, brings it back first.
+    if (document.body.hasAttribute('data-noui') && !LOOK.has(a)) {
+      document.body.removeAttribute('data-noui');
+      if (a === 'cancel') return;
+    }
     switch (a) {
+      case 'hideUi': document.body.toggleAttribute('data-noui'); break;
       case 'perf': app.perf.toggle(); break;
       case 'home': app.camera.glideTo(CENTER + 0.5, CENTER + 0.5); break;
       case 'build': app.build.toggle(); break;

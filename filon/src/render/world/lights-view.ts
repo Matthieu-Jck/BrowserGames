@@ -12,7 +12,8 @@
 //   has its lights lifted with it, onto the rock top (world/stand.ts). One iso container (under
 //   M, faded with the volumes) and one plan container (under P, fainter). Built on structural changes only,
 //   from pooled sprites; per frame only the layer's alpha (the night factor: one render-group
-//   uniform), the beacon's pulse and, during a morph, two transforms.
+//   uniform), the beacon's pulse, the incinerators' fire (a glow over each pit and up its flame,
+//   bright as an item burns: world/pits.ts) and, during a morph, two transforms.
 // - **Solar states**: solar panels wear an overlay above their sprite (iso: in `objects`, depth-
 //   sorted just above the bulb; plan: on `plan`): a closed bud at night, half-open petals at
 //   dawn and dusk, nothing when open, a sheen in full sun. Any solar cells drawn in `PV` (the
@@ -42,6 +43,8 @@ import type { Grade } from '../daynight';
 import { tileToIso } from '../iso';
 import { isoToView, type Lin } from '../projection';
 import { buildingZ, standOf } from './stand';
+import { pitFire } from './pits';
+import { PIT } from '../art/recipes/buildings';
 
 // ── the fx sheet ─────────────────────────────────────────────────────────────────
 
@@ -231,6 +234,9 @@ export class LightsView {
   private overlays: Overlay[] = [];
   /** Beacons (pulsing): their sprites and base strength. */
   private beacons: Array<{ s: Sprite; a: number }> = [];
+  /** The incinerators' fire: each pit's glows and their full strength (× the fire's heat); the colony they burn in. */
+  private pits: Array<{ ent: number; glows: Array<{ s: Sprite; a: number }> }> = [];
+  private sim: Sim | null = null;
   private te = -1;
   private stage = -1;
   /** Entities left dark (no glows, no solar overlay) from the next rebuild on: the intro's Heart until it lands (D31). */
@@ -264,6 +270,8 @@ export class LightsView {
     this.nIso = 0;
     this.nPlan = 0;
     this.beacons = [];
+    this.pits = [];
+    this.sim = sim;
     for (const o of this.overlays) o.s.destroy();
     this.overlays = [];
     for (const e of sim.ents.sorted()) {
@@ -360,6 +368,18 @@ export class LightsView {
       this.beacons.push({ s: core, a: 1 }, { s: halo, a: rig.beacon.alpha * 0.6 });
       this.glow('p', 'glow', e.x + w / 2, e.y + h / 2, rig.beacon.d * 0.5, rig.beacon.d * 0.5, BEACON, 0.8);
     }
+    // An incinerator's fire: a warm glow on its throat and up its flame, as strong as the fire (`update`).
+    if (def.kind === 'sink') {
+      const [X, Y] = tileToIso(e.x + 0.5, e.y + 0.5, lv + PIT.zr);
+      const [FX, FY] = tileToIso(e.x + 0.5, e.y + 0.5, lv + 1.1);
+      const glows = [
+        { s: this.glow('i', 'soft', X, Y, 1.7 * Math.SQRT2 * 64, 1.7 * Math.SQRT2 * 32, POOL_WARM, 0), a: 0.55 },
+        { s: this.glow('i', 'soft', FX, FY, 44, 84, AMBER, 0), a: 0.8 },
+        { s: this.glow('i', 'glow', X, Y - 4, 30, 18, AMBER, 0), a: 1 },
+        { s: this.glow('p', 'soft', e.x + 0.5, e.y + 0.5, 1.8, 1.8, POOL_WARM, 0), a: 0.7 },
+      ];
+      this.pits.push({ ent: e.id, glows });
+    }
     // Solar states over the sprites: the bulb's petals, any cells drawn in PV.
     const z = (st ? st.z : buildingZ(e.x, e.y, w, h)) + 0.25;
     if (bulb) {
@@ -395,6 +415,14 @@ export class LightsView {
     if (this.layer.visible && this.beacons.length) {
       const pulse = 1 - PULSE + PULSE * (0.5 + 0.5 * Math.sin((seconds * 2 * Math.PI) / PULSE_S));
       for (const b of this.beacons) b.s.alpha = b.a * pulse;
+    }
+    if (this.layer.visible && this.pits.length && this.sim) {
+      // The fire as the buildings view last stepped it (the frame before): a smoulder, then the flare.
+      const fire = pitFire(this.sim);
+      for (const p of this.pits) {
+        const k = 0.12 + 0.88 * fire.heat(p.ent);
+        for (const g of p.glows) g.s.alpha = g.a * k;
+      }
     }
     if (te !== this.te) {
       this.te = te;

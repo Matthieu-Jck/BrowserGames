@@ -14,11 +14,10 @@
 // wires (`removed`). Generators and consumers are wired by the player.
 import { GeneratorNode } from '../flow/nodes';
 import type { FNode } from '../flow/node';
-import { gap2, isLinkPoint, linkCheck, type LinkReason } from '../power/links';
+import { gap2, isLinkPoint, linkCheck, type LandLevel, type LinkReason } from '../power/links';
 import { renewableKw, weatherAt } from '../power/network';
 import { solvePower } from '../power/solve';
 import type { Sim } from '../state';
-import type { Ent } from '../types';
 
 export function powerTick(sim: Sim): void {
   const g = sim.graph;
@@ -64,15 +63,15 @@ function spreadAcc(sim: Sim, accs: ReadonlyArray<{ ent: number; cap: number }>, 
 
 // ── the wires ──────────────────────────────────────────────────────────────
 
-/** The land's level a building stands on (its footprint is level ground: its first tile's, D45). */
-export const levelOf = (sim: Sim) => (e: Ent): number => sim.grid.level(e.x, e.y);
+/** The land's level of a tile, as the wire rule reads it (D45, D78: the ends' levels and the land between). */
+export const landOf = (sim: Sim): LandLevel => (x, y) => sim.grid.level(x, y);
 
 /** A wire command's answer: done, or why not. */
 export interface LinkCheck { ok: boolean; reason: LinkReason }
 
 /** May `a` (the end the player starts from) and `b` be wired now? */
 export function canLink(sim: Sim, a: number, b: number): LinkCheck {
-  const reason = linkCheck(sim.ents.get(a), sim.ents.get(b), sim.links, sim.mods, levelOf(sim));
+  const reason = linkCheck(sim.ents.get(a), sim.ents.get(b), sim.links, sim.mods, landOf(sim));
   return { ok: reason === 'ok', reason };
 }
 
@@ -104,7 +103,7 @@ export function nearestPoint(sim: Sim, id: number): number {
   let best = 0, bestD = Infinity;
   for (const o of sim.ents.sorted()) {
     if (o.id === id || !isLinkPoint(o.def)) continue;
-    if (linkCheck(e, o, sim.links, sim.mods, levelOf(sim)) !== 'ok') continue;
+    if (linkCheck(e, o, sim.links, sim.mods, landOf(sim)) !== 'ok') continue;
     const d = gap2(e, o);
     if (d < bestD) { bestD = d; best = o.id; }
   }
@@ -123,7 +122,7 @@ export function placed(sim: Sim, id: number, replaced: readonly number[]): void 
   for (const old of replaced) {
     const ends = sim.links.drop(old).filter((o) => sim.ents.get(o));
     const order = [...ends.filter((o) => isLinkPoint(sim.ents.get(o)!.def)), ...ends.filter((o) => !isLinkPoint(sim.ents.get(o)!.def))];
-    for (const o of order) if (linkCheck(e, sim.ents.get(o), sim.links, sim.mods, levelOf(sim)) === 'ok') sim.links.add(id, o);
+    for (const o of order) if (linkCheck(e, sim.ents.get(o), sim.links, sim.mods, landOf(sim)) === 'ok') sim.links.add(id, o);
   }
   if (isLinkPoint(e.def) && sim.links.degree(id) === 0) {
     const to = nearestPoint(sim, id);

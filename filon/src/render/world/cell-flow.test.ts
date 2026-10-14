@@ -61,7 +61,7 @@ function watch(sim: Sim, ticks: number, sources: Array<[number, number]>, sinks:
 describe('items drawn from the cells (D57)', () => {
   it('a line through a junction, a skybridge and onto a swift ribbon: smooth, over the junction’s hump', () => {
     const sim = testSim();
-    sim.done.add('dn1'); // swift ribbons
+    sim.done.add('xp_swift'); // swift ribbons
     sim.rebuildDerived();
     sim.grant('gear', 50);
     stockedSilo(sim, 500, 520, 0, 'iron_ore', 400); // out at (500,519) going north

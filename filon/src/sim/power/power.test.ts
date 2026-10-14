@@ -50,11 +50,10 @@ describe('power', () => {
     expect(b.accEnergy.get(gourd)).toBe(a.accEnergy.get(gourd));
   });
 
-  it('the sun: a third of the day is night, the dawn and dusk ramp, Lens Arrays keep a floor', () => {
+  it('the sun: a third of the day is night (nothing at all), the dawn and dusk ramp', () => {
     const day = Array.from({ length: DAY_EPOCHS }, (_, i) => sunPermille(WORLD_EPOCH0 + i));
     expect(day.filter((s) => s === 0).length).toBe(12);
     expect(Math.max(...day)).toBe(1000);
     expect(day.some((s) => s > 0 && s < 1000)).toBe(true);
-    for (let i = 0; i < DAY_EPOCHS; i++) expect(sunPermille(WORLD_EPOCH0 + i, 200)).toBeGreaterThanOrEqual(200);
   });
 });

@@ -8,7 +8,7 @@ export type Action =
   | 'zoomIn' | 'zoomOut'
   | 'ovPower' | 'ovFlow'
   | 'scrResearch' | 'scrMarket' | 'scrStats' | 'home' | 'perf' | 'build' | 'mark'
-  | 'link' | 'land';
+  | 'link' | 'land' | 'hideUi';
 
 interface Binding { codes?: readonly string[]; keys?: readonly string[] }
 
@@ -40,6 +40,9 @@ export const BINDINGS: Record<Action, Binding> = {
   // The land mode (D60): buy or lease parcels. I — « immobilier » — was the zones' overlay, the
   // map of where one may build that the parcels replace; KeyI on both layouts.
   land: { keys: ['i'] },
+  // Hide the interface to look at the base (owner, 2026-10-12: « the menus and explanations
+  // sometimes hide the game too much »); KeyU on both layouts.
+  hideUi: { keys: ['u'] },
 };
 
 /** Which action does this key event trigger (first match, codes before keys)? */

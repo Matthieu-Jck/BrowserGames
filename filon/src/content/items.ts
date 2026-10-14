@@ -16,7 +16,10 @@ export const ITEMS = {
   iron_plate: { name: { fr: 'Plaque de fer', en: 'Iron Plate' }, tier: 1, kind: 'material', value: 2.7, depth: 600, glyph: 'plate', color: '#a7b0bf' },
   glass: { name: { fr: 'Verre', en: 'Glass' }, tier: 1, kind: 'material', value: 4.1, depth: 200, glyph: 'pane', color: '#a9e3dc' },
   copper_wire: { name: { fr: 'Fil de cuivre', en: 'Copper Wire' }, tier: 1, kind: 'material', value: 2.2, depth: 300, glyph: 'coil', color: '#c8743a' },
+  // Research's one data item (D68): made by data collectors out of power alone, or by the Heart
+  // with the Analytics research; never traded (depth 0) — research is paid in data and tokens.
   journal_1: { name: { fr: 'Données d’arpentage', en: 'Survey Data' }, tier: 1, kind: 'science', value: 11, depth: 40, glyph: 'journal', color: '#f2c6a0' },
+  journal_2: { name: { fr: 'Données mécaniques', en: 'Mechanics Data' }, tier: 2, kind: 'science', value: 59, depth: 15, glyph: 'journal2', color: '#9d8cc9' },
 
   // ── tier 2 ────────────────────────────────────────────────────────────────
   gear: { name: { fr: 'Engrenage', en: 'Gear' }, tier: 2, kind: 'part', value: 10, depth: 150, glyph: 'gear', color: '#8d97a8' },
@@ -24,7 +27,6 @@ export const ITEMS = {
   ceramic: { name: { fr: 'Céramique', en: 'Ceramic' }, tier: 2, kind: 'material', value: 1.7, depth: 300, glyph: 'tile', color: '#f8dfc6' },
   empty_cell: { name: { fr: 'Batterie vide', en: 'Empty Battery' }, tier: 2, kind: 'part', value: 12, depth: 60, glyph: 'cell', color: '#c9bee6' },
   charged_cell: { name: { fr: 'Batterie chargée', en: 'Charged Battery' }, tier: 2, kind: 'energy', value: 29, depth: 60, glyph: 'cellCharged', color: '#6ff2e4' },
-  journal_2: { name: { fr: 'Données mécaniques', en: 'Mechanics Data' }, tier: 2, kind: 'science', value: 59, depth: 15, glyph: 'journal2', color: '#9d8cc9' },
   pace_bell: { name: { fr: 'Module de vitesse', en: 'Speed Module' }, tier: 2, kind: 'module', value: 86, depth: 3, glyph: 'module', color: '#f0a04b' },
 
   // ── tier 3 (uniques + products) ───────────────────────────────────────────

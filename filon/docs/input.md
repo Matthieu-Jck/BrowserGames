@@ -128,6 +128,7 @@ There are two kinds of binding:
 | `mark` | `c` | key | Toggles the dig/fill brush |
 | `link` | `l` | key | Toggles the Link tool (« Relier » / Link: power wires, §4b) — KeyL on both layouts |
 | `land` | `i` | key | Toggles the land mode (« Terrain » / Land: the parcels, buy or lease, §4c) — « immobilier »; the key the zones' overlay had, the map of where one may build that the parcels replace (D60). KeyI on both layouts |
+| `hideUi` | `u` | key | Hides the interface to look at the base (`body[data-noui]`; owner, 2026-10-12: the menus hide the game). Panning, zoom, `home` and the overlays keep it hidden; Escape or any other action brings it back first — KeyU on both layouts |
 | *(slots)* | Digit1 … Digit0 | code (`slotOf`) | Tray slot; Shift+digit = category |
 
 Space (pan modifier) is hard-coded in `input.ts`, not in the table.
@@ -150,7 +151,7 @@ Space (pan modifier) is hard-coded in `input.ts`, not in the table.
 | Tool | Left press | Left release | Right press | Right release |
 |---|---|---|---|---|
 | `build` | Places at `originFor` immediately (over what it replaces) → `{placed: 1}` or `{refused}` | — | Puts the tool away | — |
-| `belt` | `from` = tile | Lays the sim's plan of `beltPath(from → tile)` (`placeBelts`) → `{placed: n}`, or the plan's first refusal (none when the drag only runs over what is already there) | Drops the drag, else puts the tool away | — |
+| `belt` | `from` = tile | Lays the sim's plan of `beltPath(from → tile)` (`placeBelts`) → `{placed: n}` (with `left: {n, reason}` when the plan left tiles out: their count, the first one's reason), or the plan's first refusal (none when the drag only runs over what is already there) | Drops the drag, else puts the tool away | — |
 | `remove` | `from` = tile | Removes the box → `{removed}` | Starts a right box | Removes the box → `{removed}` |
 | `mark` | `from`, `clear = false` | `designate(box, true)` → `{marked}` | `from`, `clear = true` | `designate(box, false)` → `{cleared}` |
 | none | (Input pans or selects) | — | Starts a right box | Removes the box → `{removed}` |
@@ -172,7 +173,10 @@ Space (pan modifier) is hard-coded in `input.ts`, not in the table.
     perpendicular to it (not at the drag's first or last tile, not at its bend), a junction
     (`crossing`) is laid instead, so both lines keep flowing;
   - the tiles share one budget in path order, so a drag that runs short turns `unaffordable` from
-    the tile where it would stop.
+    the tile where it would stop;
+  - a tile facing a step its piece cannot take is left out (D77: `needs_lift` for a ribbon, `steep`
+    for a traction ribbon two terraces away, `cliff` for a conduit); the rest is laid, the toast
+    counts what was left out, and the gaps take traction ribbons.
 - **Rotation.** `rotate(dir)` flips the bend during a ribbon drag, turns a build or ribbon tool
   otherwise (remembered in `lastRot` for the next pick), and does nothing for remove and mark.
   After a drag, the ribbon tool keeps the last tile's direction.
@@ -199,8 +203,9 @@ the remove tool's `from ?? hover`), then a mark box, then build or ribbon pieces
 
 GhostView draws it, keying its redraw on `pieces`, `box`, `doomed`, `mark` and the hover
 ([render.md](render.md#10-world-views)). The tip shows the cost, the refusal and the mark count.
-`ToolResult {placed?, removed?, refused?, marked?, cleared?}` becomes toasts in the app's build
-mode: a refusal shows its `reason.*` string, and removals and marks get info toasts.
+`ToolResult {placed?, removed?, refused?, left?, marked?, cleared?}` becomes toasts in the app's build
+mode: a refusal shows its `reason.*` string, a drag laid in part how many tiles it left out and why
+(`toast.left`, D77), and removals and marks get info toasts.
 
 ## 4b. `link-tool.ts`: the « Relier » tool (D25)
 
@@ -219,14 +224,23 @@ The shell resolves the building under the cursor with `picker.entityAt` (volume 
 the tile's occupant in plan) and hands its id to `click(id, shift)`; each frame it sets `hover`
 the same way. `verdict(id)` says what a click would do (`pick`, `drop`, `link`, `unlink` or the
 refusal), so the views can preview it. `LinkToolResult {picked?, dropped?, linked?, unlinked?,
-refused?}` → `BuildMode.reportLink`: a refusal is a toast (`link.reason.*`), a new source is
-selected.
+refused?, asleep?}` → `BuildMode.reportLink`: a refusal is a toast (`link.reason.*`), a new source is
+selected, a wire to a sleeping building (`asleep`: `Sim.dormancy`, D80) an info toast saying why it
+stays dashed (`link.asleep.land` / `.research`).
 
 **`LinkPreview`** (`preview()`, cached; `sig` changes whenever anything in it does): `source`,
-`ring` (its footprint and range, for the reach outline), `targets` (what a click would wire now:
-`canLink` ok — pylons farther than the source's own range included, a wire taking the longer
-reach), `linked` (its wires), `points` (no source yet: every pillar and the Heart), `hover` and its
-`verdict`. The overlays draw the ring and marks, the wires view the preview wire
+`ring` (its footprint and range, for the reach outline — before a source is picked, the hovered
+pillar's), `targets` (what a click would wire now and is on no grid yet, D80: `canLink` ok — pylons
+farther than the source's own range included, a wire taking the longer reach — and either a
+building on no grid or a pillar of another grid; what else is in reach is wired by a click all the
+same, unmarked), `loose` (with a ring: built, awake, non-pillar buildings on no grid beyond the
+reach, waiting for a wire), `linked` (its wires), `points` (no source yet: every pillar and the Heart), `hover` and its
+`verdict`, and `block`: when the verdict is `blocked` (D78), the first tile from the source that
+rises above the wire (`wireObstacle`), which the overlays mark. **`ghost(def, x, y, rot)`**: the
+same preview for a pole or a pylon held to be placed (null for any other building) — its ring where
+it would stand and the buildings on no grid a wire from it could reach (`linkCheck` with the ghost
+as an end: reach, height, the land between), `loose` the rest; the shell hands it to the overlays
+while the build tool holds a pillar. The overlays draw the ring and marks, the wires view the preview wire
 ([render.md](render.md#10-world-views)). The build bar's hint line reads `build.hint.link` (no
 source) or `build.hint.linkFrom`.
 

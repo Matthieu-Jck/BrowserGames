@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { QUEST_CHECK_TICKS, QUEST_IDS, QUESTS, questProblems, type QuestDef, type QuestId } from '@/content/quests';
 import { ITEM_IDS, itemIdx } from '@/content/registry';
+import { PLAN_IDS, PLANS } from '@/content/research';
 import { replay, type Command } from '../commands';
 import { CENTER, EPOCH } from '../constants';
 import { powerLine } from '../dev';
@@ -9,7 +10,7 @@ import { deserialize, serialize } from '../serialize';
 import { heldIn, type Sim } from '../state';
 import type { Rot } from '../types';
 import { COAL, drillToHearth, line, steadyPower, testSim, testSource, wire } from '../testkit';
-import { boardTop, cleanName, currentQuest, objectiveProgress, questProgress, rewardItems } from './quests';
+import { cleanName, currentQuest, objectiveProgress, questProgress, rewardItems } from './quests';
 
 const idx = (id: QuestId): number => QUEST_IDS.indexOf(id);
 
@@ -73,10 +74,10 @@ function replayBase(): Sim {
  * The factory (east of the Hearth, 510..514 × 510..514): two iron drills north into its north
  * inputs; a router on the second iron line feeds the plate smelter; a coal drill on the extra
  * deposit feeds it too, and a router on the coal line feeds the glass smelter, beside the sand;
- * the smelters' lines run into the Hearth's east inputs, and routers on them feed the workshop,
- * whose data rides one ribbon into the observatory; copper comes from the south.
+ * the smelters' lines run into the Hearth's east inputs; copper comes from the south; at the end,
+ * every plan taken, a data collector's Survey Data rides one ribbon into the research lab.
  */
-function play(sim: Sim, last: QuestId = 'beyond_crown'): Record<string, number> {
+function play(sim: Sim, last: QuestId = 'field_journal'): Record<string, number> {
   const ids: Record<string, number> = {};
   const stop = (id: QuestId): boolean => idx(id) >= idx(last);
   const place = (name: string, def: string, x: number, y: number, rot: Rot = 0): number => {
@@ -96,7 +97,7 @@ function play(sim: Sim, last: QuestId = 'beyond_crown'): Record<string, number> 
   // 1 — the starting kit: a drill on iron, wired, a ribbon into the Hearth's north input: 10 ore in.
   at('first_strike', 0);
   ids.drill1 = drillToHearth(sim);
-  at('first_strike', 3);
+  at('first_strike', 2);
   until(sim, 'first_strike', 8 * EPOCH);
   if (stop('first_strike')) return ids;
 
@@ -146,21 +147,17 @@ function play(sim: Sim, last: QuestId = 'beyond_crown'): Record<string, number> 
   until(sim, 'bloom_kiln', 6 * EPOCH);
   if (stop('bloom_kiln')) return ids;
 
-  // 4 — wind turbines on a pole west of the Hearth, a workshop beside the smelter (poles came
-  // with the coal, quest 3: this quest no longer asks for one).
+  // 4 — wind turbines on a pole west of the Hearth (poles came with the coal, quest 3: this
+  // quest no longer asks for one).
   at('first_wind', 0);
-  unlock('wind_flower', 'workshop');
+  unlock('wind_flower');
   at('first_wind', 1);
   place('wind1', 'wind_flower', 501, 503);
   place('wind2', 'wind_flower', 504, 500);
   at('first_wind', 2);
   place('mastW', 'mast', 507, 505);
   expect(sim.links.has(sim.hearthId, ids.mastW!)).toBe(true);
-  place('workshop', 'workshop', 519, 508); // inputs south at (519|520, 510), output north at (519, 507)
-  at('first_wind', 3);
   wire(sim, [ids.wind1!, ids.wind2!], ids.mastW);
-  at('first_wind', 4);
-  wire(sim, ids.workshop!, ids.mastC);
   until(sim, 'first_wind', EPOCH);
   if (stop('first_wind')) return ids;
 
@@ -189,46 +186,25 @@ function play(sim: Sim, last: QuestId = 'beyond_crown'): Record<string, number> 
   lay([[524, 504, 3], [523, 504, 3]]); // the second collector's line runs into the first's
   at('glassworks', 7);
   lay([...line(521, 507, 2, 6), ...line(521, 513, 3, 7)]);
-  at('glassworks', 8);
+  at('glassworks', 7);
   until(sim, 'glassworks', 6 * EPOCH);
   if (stop('glassworks')) return ids;
 
-  // 6 — survey data: routers on the plate and glass lines feed the workshop; one ribbon carries
-  // its data up into the observatory; Mechanics starts.
-  at('field_journal', 0);
-  unlock('observatory');
-  at('field_journal', 1);
-  expect(sim.setRecipe(ids.workshop!, 'journal_1')).toBe(true);
-  at('field_journal', 2);
-  place('routerPlates', 'router', 517, 510);
-  lay([[518, 510, 1], [519, 510, 0]]);
-  at('field_journal', 3);
-  place('routerGlass', 'router', 521, 510);
-  lay([[520, 510, 0]]);
-  at('field_journal', 4);
-  place('observatory', 'observatory', 518, 505); // inputs south at (518|519, 507)
-  at('field_journal', 5);
-  wire(sim, ids.observatory!, ids.mastC);
-  at('field_journal', 6);
-  lay([[519, 507, 0]]); // the workshop's output faces it, it points into the observatory
-  at('field_journal', 7);
-  expect(sim.startResearch('tr1').ok).toBe(true);
-  at('field_journal', 8);
-  until(sim, 'field_journal', 8 * EPOCH);
-  if (stop('field_journal')) return ids;
-
-  // 7 — the trade post (its 5×5 pad and apron, D62) against the Hearth's west side, an export stream of glass.
+  // 6 — the trade post (its 5×5 pad and apron, D62) east of the glass line, glass led into its
+  // entrance by a router (it sells whatever comes in, D64).
   at('crier_calls', 0);
   unlock('trade_post');
   at('crier_calls', 1);
-  place('post', 'trade_post', 505, 510);
+  place('post', 'trade_post', 524, 509); // its entrance at (526, 513), fed from (526, 514)
   at('crier_calls', 2);
-  expect(sim.setExport(ids.post!, 0, 'glass')).toBeNull();
-  at('crier_calls', 3);
-  until(sim, 'crier_calls', 3 * EPOCH);
+  sim.grant('iron_plate', 2);
+  place('routerSale', 'router', 521, 512); // over the glass line going south: its east side out
+  lay([[522, 512, 1], [523, 512, 2], [523, 513, 2], [523, 514, 1], [524, 514, 1], [525, 514, 1], [526, 514, 0]]);
+  at('crier_calls', 2);
+  until(sim, 'crier_calls', 6 * EPOCH);
   if (stop('crier_calls')) return ids;
 
-  // 8 — the copper vein: a drill, a wire mill fed by it through one ribbon, the wire to the
+  // 7 — the copper vein: a drill, a wire mill fed by it through one ribbon, the wire to the
   // Hearth's south input.
   at('tired_vein', 0);
   unlock('wire_mill');
@@ -240,36 +216,57 @@ function play(sim: Sim, last: QuestId = 'beyond_crown'): Record<string, number> 
   expect(sim.setRecipe(ids.mill!, 'copper_wire')).toBe(true);
   at('tired_vein', 4);
   powerLine(sim, ids.copper!);
-  at('tired_vein', 5);
+  at('tired_vein', 4); // the drill and the mill wired: one step
   powerLine(sim, ids.mill!);
-  at('tired_vein', 6);
+  at('tired_vein', 5);
   lay([[516, 521, 0]]);
-  at('tired_vein', 7);
+  at('tired_vein', 6);
   lay([...line(516, 518, 3, 3), ...line(513, 518, 0, 4)]);
-  at('tired_vein', 8);
+  at('tired_vein', 6);
   until(sim, 'tired_vein', 4 * EPOCH);
   if (stop('tired_vein')) return ids;
 
-  // 9 — a standing import order of copper ore (delivered into the Hearth: the post touches it).
+  // 8 — a standing import order of copper ore (its goods would leave by the post's exit).
   at('first_purchase', 0);
   const ask = sim.prices.ask[itemIdx('copper_ore')]!;
   expect(typeof sim.addImport(ids.post!, 'copper_ore', 10, 2 * ask)).toBe('number');
   until(sim, 'first_purchase', QUEST_CHECK_TICKS);
   if (stop('first_purchase')) return ids;
 
-  // 10 — an export stream on one of the three best lines of « Ce qui rapporte ».
-  const top = boardTop(sim, 3);
-  expect(top.length).toBe(3);
-  expect(sim.setExport(ids.post!, 1, ITEM_IDS[top[0]!]!)).toBeNull();
-  until(sim, 'the_board', QUEST_CHECK_TICKS);
-  if (stop('the_board')) return ids;
-
-  // 11 — the survey beacon's plan, then a beacon through the Crown (the flat test world has no rock to dig).
+  // 9 — the survey beacon's plan, then a beacon through the Crown (the flat test world has no rock to dig).
   at('beyond_crown', 0);
   unlock('beacon');
   at('beyond_crown', 1);
   place('beacon', 'beacon', CENTER + 34, CENTER); // past the Crown's edge (r 32), inside the land revealed at founding (r 44)
   until(sim, 'beyond_crown', 2 * EPOCH);
+  if (stop('beyond_crown')) return ids;
+
+  // 10 — Survey Data (D71): every plan left, each as soon as the Hearth can pay for it, then the
+  // research lab's (the gate) and the data collector it brings; the lab between the smelters, the
+  // collector below it, both wired; one ribbon carries the data up into the lab; Mechanics starts,
+  // its tokens paid by the minute.
+  at('field_journal', 0);
+  const take = (p: string): void => {
+    for (let t = 0; t < 30 * EPOCH && !sim.done.has(p) && !sim.unlockPlan(p).ok; t += EPOCH) sim.run(EPOCH);
+    expect(sim.done.has(p), p).toBe(true);
+  };
+  for (const p of PLAN_IDS) if (PLANS[p].lane !== 'gate') take(p);
+  at('field_journal', 1);
+  take('observatory');
+  at('field_journal', 2);
+  place('observatory', 'observatory', 518, 505); // inputs south at (518|519, 507)
+  at('field_journal', 3);
+  place('collector', 'data_collector', 519, 508); // its output north at (519, 507)
+  at('field_journal', 4);
+  wire(sim, ids.observatory!, ids.mastC);
+  at('field_journal', 5);
+  wire(sim, ids.collector!, ids.mastC);
+  at('field_journal', 6);
+  lay([[519, 507, 0]]); // the collector's output faces it, it points into the lab
+  at('field_journal', 7);
+  expect(sim.startResearch('tr1').ok).toBe(true);
+  at('field_journal', 8);
+  until(sim, 'field_journal', 8 * EPOCH);
   return ids;
 }
 
@@ -279,11 +276,11 @@ const logged = (sim: Sim, k: Command['k']): Command[] => sim.log.filter((l) => l
 describe('quests', () => {
   it('the quest table holds together (the tutorial unlocks before it uses), and checks fall on every epoch boundary', () => {
     expect(questProblems()).toEqual([]);
-    expect(QUEST_IDS.length).toBe(12);
+    expect(QUEST_IDS.length).toBe(11);
     expect(EPOCH % QUEST_CHECK_TICKS).toBe(0);
   });
 
-  it('a scripted colony completes quests 0–11 in order, each once, each paid once', () => {
+  it('a scripted colony completes quests 0–10 in order, each once, each paid once', () => {
     const sim = colony();
     const credits0 = sim.credits;
     play(sim);
@@ -295,18 +292,19 @@ describe('quests', () => {
     expect(logged(sim, 'quest')).toEqual(QUEST_IDS.map((id) => ({ k: 'quest', id })));
     // The tree: every plan the tutorial asked for, unlocked through the logged command.
     expect(logged(sim, 'unlockPlan').map((c) => (c as { id: string }).id)).toEqual([
-      'telemetry', 'kiln', 'router', 'wind_flower', 'workshop', 'sand_collector', 'observatory', 'trade_post', 'wire_mill', 'beacon',
+      'telemetry', 'kiln', 'router', 'wind_flower', 'sand_collector', 'trade_post', 'wire_mill', 'beacon',
+      ...PLAN_IDS.filter((p) => !['telemetry', 'kiln', 'router', 'wind_flower', 'sand_collector', 'trade_post', 'wire_mill', 'beacon', 'observatory'].includes(p)),
+      'observatory',
     ]);
-    // Ocelles: quests 6 and 7 pay 100 + 150 ◉ (on top of the trade).
+    // Ocelles: quests 6 and 10 pay 150 + 100 ◉ (on top of the trade, less the research's tokens, D68).
     const t = sim.trade;
-    expect(sim.credits - credits0 - (t.earned - t.spent)).toBe((100 + 150) * 100);
-    // Fees waived for 24 h from quest 9; the title of the path taken (a beacon: the passes).
-    expect(sim.quests.feeFreeUntil).toBe(sim.quests.doneAt[idx('first_purchase')]! + 24 * 60 * EPOCH);
+    expect(sim.credits - credits0 - (t.earned - t.spent) + sim.tokenStats.totalCents).toBe((100 + 150) * 100);
+    // The title of the path taken (a beacon: the passes).
     expect(sim.quests.titles).toEqual(['arpentage']);
     // Nothing is left to complete, and nothing more is paid.
     const before = sim.hash();
     expect(sim.checkQuests()).toEqual([]);
-    expect(sim.completeQuest('beyond_crown')).toBe(false);
+    expect(sim.completeQuest('field_journal')).toBe(false);
     expect(sim.hash()).toBe(before);
   }, 60_000);
 
@@ -324,9 +322,9 @@ describe('quests', () => {
       expect(sim.completeQuest(id, true)).toBe(false);
     }
     expect(sim.quests.done).toEqual(QUEST_IDS);
-    // The kits are the buildings' own costs; the board's prize is the Hearth's level-2 materials.
+    // The kits are the buildings' own costs; the first purchase's prize is the Hearth's level-2 materials.
     expect(rewardItems(QUESTS.first_wind.reward).map((c) => [ITEM_IDS[c.item], c.mu / 1000])).toEqual([['iron_plate', 20], ['copper_wire', 4]]);
-    expect(rewardItems(QUESTS.the_board.reward).map((c) => [ITEM_IDS[c.item], c.mu / 1000])).toEqual([['iron_plate', 200], ['gear', 50]]);
+    expect(rewardItems(QUESTS.first_purchase.reward).map((c) => [ITEM_IDS[c.item], c.mu / 1000])).toEqual([['iron_plate', 200], ['gear', 50]]);
     // A forced `any` quest takes its first objective's title.
     expect(sim.quests.titles).toEqual(['taille']);
   });
@@ -504,17 +502,14 @@ describe('quests', () => {
     expect(objectiveProgress(sim, { k: 'unlocked', ids: ['tr1'] }).met).toBe(false);
   });
 
-  it('fees are waived while the First Purchase reward lasts', () => {
+  it('CrierBelt takes a fifth of every trade, and nothing lowers it (D64)', () => {
     const sim = testSim();
     sim.grant('iron_plate', 200); sim.grant('glass', 50); sim.grant('copper_wire', 50);
-    const post = sim.place('trade_post', 505, 510, 0);
-    expect(post.ok).toBe(true);
+    expect(sim.place('trade_post', 505, 510, 0).ok).toBe(true);
     const plate = itemIdx('iron_plate');
+    expect(sim.mods.tradeFee).toBe(200);
     const paid = sim.quoteSpot(plate, 'sell', 50).cents;
-    for (const id of QUEST_IDS.slice(0, idx('first_purchase') + 1)) sim.completeQuest(id, true);
-    const free = sim.quoteSpot(plate, 'sell', 50).cents;
-    expect(free).toBeGreaterThan(paid);
-    sim.tick = sim.quests.feeFreeUntil; // a day later (a test shortcut: no command moves time)
+    for (const id of QUEST_IDS) sim.completeQuest(id, true);
     expect(sim.quoteSpot(plate, 'sell', 50).cents).toBe(paid);
   });
 });

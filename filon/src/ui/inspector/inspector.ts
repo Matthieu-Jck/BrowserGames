@@ -22,7 +22,7 @@ import { firstSentence } from '../building-facts';
 import { itemList, itemRef } from '../mention';
 import { STATUS_TONE, type InspectorHost, type PanelCtx } from './kit';
 import { PANELS } from './panels';
-import { powerRows } from './power';
+import { gridCard } from './power';
 import { tradeSig } from '../trade-view';
 
 export type { InspectorHost } from './kit';
@@ -40,7 +40,7 @@ const TONE = STATUS_TONE;
  * waits for, the one its full output holds, the fuel it lacks, as icons with their names; else a
  * few words of what to do. Null when the status says it all.
  */
-function why(node: FNode | undefined, kind: BuildingKind, st: number, unwired: boolean): string | null {
+function why(node: FNode | undefined, kind: BuildingKind, st: number, unwired: boolean, asleep: 'research' | 'land' | null): string | null {
   const m = node?.kind === 'machine' ? (node as MachineNode) : null;
   switch (st) {
     case St.Starved: {
@@ -60,6 +60,9 @@ function why(node: FNode | undefined, kind: BuildingKind, st: number, unwired: b
       const g = node?.kind === 'generator' ? (node as GeneratorNode) : null;
       return g ? itemRef(g.fuelItem) : null;
     }
+    // Asleep, it is cut from its grid: the way to wake it, not a wire (owner, 2026-10-14: "I cannot
+    // wire the solar panels here… it just puts a dot line and tells me the solar panels aren't wired").
+    case St.Dormant: return asleep === 'land' ? t('insp.why.dormantLand') : asleep === 'research' ? t('insp.why.dormant') : null;
     default: return null;
   }
 }
@@ -96,12 +99,13 @@ export class Inspector {
     const status = el('div.insp-status');
     const whyEl = el('p.insp-why');
     this.live.push(() => {
-      const st = e.builtAt !== 0 ? St.Building : sim.isDormant(e) ? St.Dormant : node ? node.status : St.Ok;
+      const asleep = e.builtAt !== 0 ? null : sim.dormancy(e);
+      const st = e.builtAt !== 0 ? St.Building : asleep ? St.Dormant : node ? node.status : St.Ok;
       // Unpowered because no wire reaches it (D25) says so: the fix is a wire, not more power.
       const unwired = st === St.Unpowered && sim.graph?.netOfEnt.get(e.id) === undefined;
-      setText(status, t(unwired ? 'insp.status.unlinked' : STATUS[st] ?? 'insp.status.ok'));
+      setText(status, t(unwired ? 'insp.status.unlinked' : asleep === 'land' ? 'insp.status.dormantLand' : STATUS[st] ?? 'insp.status.ok'));
       setAttr(status, 'data-tone', TONE[st] ?? 'good');
-      const w = why(node, kind, st, unwired);
+      const w = why(node, kind, st, unwired, asleep);
       setText(whyEl, w ?? '');
       setAttr(whyEl, 'hidden', w ? null : '');
       setAttr(whyEl, 'data-tone', TONE[st] ?? 'good');
@@ -117,13 +121,13 @@ export class Inspector {
         ]),
         el('button.insp-x', { title: t('insp.close'), 'aria-label': t('insp.close'), onclick: () => this.host.select(0) }, '✕'),
       ]),
-      // What it is for, in words, only when nothing below shows it — no panel, no power row (its card in the tray says the rest).
+      // What it is for, in words, only when nothing below shows it — no panel, no grid module (its card in the tray says the rest).
       (PANELS[kind] ?? []).length || linkable(e.def) ? null : el('p.insp-desc', {}, firstSentence(b.desc[L])),
       el('div.insp-state', {}, [status, whyEl]),
       ...(PANELS[kind] ?? []).flatMap((panel) => panel(ctx)),
     ];
-    // The grid it is wired into and its wires (nothing for a building outside power).
-    parts.push(...powerRows(ctx));
+    // The grid module: its grid, its own part in it, its wires (nothing for a building outside power).
+    parts.push(...gridCard(ctx));
     if (kind !== 'hearth') parts.push(el('footer.insp-foot', {}, [el('button.btn.danger', { onclick: () => this.host.remove(e.id) }, t('insp.remove'))]));
     this.body.replaceChildren(...parts.filter((p): p is HTMLElement => !!p));
     if (had) this.body.querySelector<HTMLElement>(`[data-pick="${CSS.escape(had)}"]`)?.focus();

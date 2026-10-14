@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { BAL } from '@/content/balance';
-import { itemIdx, N_ITEMS } from '@/content/registry';
+import { buildingIdx, costOf, itemIdx, N_ITEMS } from '@/content/registry';
 import { testSim, drillToHearth, line, wire, stockedSilo, IRON, COPPER } from '../testkit';
 import { runPhases } from './step';
 import { St } from '../types';
@@ -19,6 +19,23 @@ describe('flow engine', () => {
     expect(got).toBeGreaterThan(195);
     expect(got).toBeLessThanOrEqual(200);
     expect(sim.produced[IRON()]! / 1000).toBeCloseTo(200, 0);
+  });
+
+  it('the Heart’s intake counts what its ports take in, never what commands spend (the HUD’s rates)', () => {
+    const sim = testSim();
+    drillToHearth(sim);
+    const ore = IRON(), s0 = sim.stock[ore]!;
+    sim.run(1200);
+    expect(sim.hearthIn[ore]!).toBeGreaterThan(30000);
+    expect(sim.hearthIn[ore]!).toBe(sim.stock[ore]! - s0); // nothing else came in, nothing went out
+    // A building paid from the Heart lowers its stock, not its intake; taking it down refunds, not counted either.
+    const cost = costOf(buildingIdx('silo'));
+    expect(cost.length).toBeGreaterThan(0);
+    const before = sim.hearthIn.slice();
+    const r = sim.place('silo', 504, 520, 0);
+    expect(r.ok, r.reason).toBe(true);
+    expect(sim.remove(504, 520)).toBe(true);
+    for (const c of cost) expect(sim.hearthIn[c.item]).toBe(before[c.item]);
   });
 
   it('conserves items exactly: Δheld = produced − consumed', () => {

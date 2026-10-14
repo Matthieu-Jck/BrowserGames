@@ -1,0 +1,222 @@
+/* research.css — the research half of the tech tree (D68–D70; ui/screens/research.ts, which
+   imports it): the research lab's gate between the two blocks (D71), the tier columns and their heads, the trunk and the family lanes (their names per
+   tier, the specialities' divider), the research nodes (what they use as they run, their time,
+   the specialisation badge, the queue's tag), the header's research strip (slots, labs, the
+   token bill, the purse-in-the-red warning, the Compute Plan, the queue) and the detail pane's
+   research parts. The plans' half and the shared tree rules stay in screens.css. */
+
+/* Research lanes' colours (--path): the trunk a plum ink, each family its own. */
+[data-lane='trunk'] { --path: #6a5a86; }
+[data-lane='en'] { --path: #d9a21c; }
+[data-lane='ex'] { --path: #a8604a; }
+[data-lane='dn'] { --path: var(--c-lilac-d); }
+[data-lane='cm'] { --path: #d8584a; }
+[data-lane='an'] { --path: #23908f; }
+[data-lane='xp'] { --path: #3d72b8; }
+/* The research lab's gate (D71) takes research's lilac. */
+[data-lane='gate'] { --path: var(--c-lilac-d); }
+
+/* Small inked marks in a line of text: a token, the clock, a padlock. */
+.tr-mark { display: inline-block; width: 1.15em; height: 1.15em; flex: none; vertical-align: -0.22em; overflow: visible; }
+.tr-mark .m-hex { fill: var(--c-lilac-l); stroke: var(--c-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.tr-mark .m-spark { fill: var(--c-lilac-d); }
+.tr-mark .m-face { fill: var(--c-paper); stroke: var(--c-ink); stroke-width: 1.4; }
+.tr-mark .m-hand { fill: none; stroke: var(--c-ink); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.tr-mark .m-shackle { fill: none; stroke: var(--c-ink-soft); stroke-width: 1.6; }
+.tr-mark .m-body { fill: var(--c-coral); stroke: var(--c-ink); stroke-width: 1.2; }
+
+/* The research block's legend, in its own marks. */
+.rs-legend { gap: 12px; }
+.rs-legend > span { display: inline-flex; align-items: center; gap: 4px; }
+.rs-legend canvas { width: 16px; height: 16px; display: block; }
+.rs-legend .rs-kind { display: inline-flex; margin-right: -2px; }
+
+/* ── the research lab's gate (D71): its own column between the plans and research ── */
+.tr-gatecap {
+  position: absolute; display: flex; align-items: center; justify-content: center; gap: 8px; height: 40px;
+  border-bottom: 2px dashed var(--path); color: var(--c-ink);
+}
+.tr-gatecap .tr-lanename { font-size: 19px; }
+.tr-gatecap .tr-pathcount { align-self: center; margin: 0; cursor: help; }
+.tr-gatecap[data-full] .tr-pathcount::after { content: ' ✓'; }
+.tree .tr-node[data-lane='gate'] {
+  border-width: 2.5px; box-shadow: 3px 3px 0 var(--c-ink), 0 0 0 5px color-mix(in srgb, var(--c-lilac-l) 55%, transparent);
+  background: color-mix(in srgb, var(--c-lilac-l) 22%, var(--c-paper));
+}
+.tree .tr-node[data-lane='gate'][data-state='done'] { background: #d8f1ec; }
+.rs-gpaths { margin: 4px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; }
+.rs-gpath { display: grid; grid-template-columns: 96px 1fr 38px; align-items: center; gap: 6px; font-size: 12.5px; }
+.rs-gname { font-weight: 600; border-left: 4px solid var(--path); padding-left: 6px; }
+.rs-gpath .rs-pbar > span { background: var(--path); }
+.rs-gpath small { text-align: right; font-variant-numeric: tabular-nums; color: var(--c-ink-soft); }
+.rs-gpath[data-full] small { color: var(--c-turq-d); font-weight: 700; }
+.rs-gate .rs-qnote { margin-top: 6px; }
+
+/* ── tier columns ── */
+.tr-tiercol { position: absolute; border-left: 1.5px dashed rgba(30, 27, 46, 0.2); border-radius: 0 0 0 10px; }
+.tr-tiercol[data-tier='2'], .tr-tiercol[data-tier='4'] { background: rgba(157, 140, 201, 0.09); }
+.tr-tierhead {
+  position: absolute; z-index: 1; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto;
+  column-gap: 12px; align-items: center; padding: 4px 12px 0;
+}
+.tr-tiername { grid-row: 1 / 3; font-size: 26px; line-height: 1; color: var(--c-ink-soft); }
+.tr-tierhead[data-open] .tr-tiername { color: var(--c-ink); }
+.tr-tierhead[data-on] .tr-tiername { text-decoration: underline 3px var(--c-turq); text-underline-offset: 4px; }
+.tr-opens { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--c-ink-soft); }
+.tr-gate {
+  display: inline-flex; align-items: center; gap: 4px; min-width: 0; padding: 1px 8px 1px 5px; cursor: pointer;
+  font: 600 12px/16px var(--f-body); color: var(--c-ink); white-space: nowrap;
+  border: 1.5px dashed var(--c-coral-d); border-radius: 999px; background: var(--c-paper);
+}
+.tr-gate:hover { background: var(--c-peach-l); }
+.tr-gatecheck { display: none; color: var(--c-turq-d); font-weight: 700; }
+.tr-tierhead[data-open] .tr-gate { border-style: solid; border-color: var(--c-turq-d); background: color-mix(in srgb, var(--c-turq-l) 45%, var(--c-paper)); }
+.tr-tierhead[data-open] .tr-gate .tr-mark { display: none; }
+.tr-tierhead[data-open] .tr-gatecheck { display: inline; }
+/* The selected node opens this tier: its gate pill lights up. */
+.tr-tierhead[data-opens] .tr-gate { outline: 3px solid var(--c-turq); outline-offset: 1px; animation: tr-opens 1.4s ease-in-out infinite; }
+@keyframes tr-opens { 50% { outline-color: rgba(63, 184, 175, 0.35); } }
+
+/* ── lanes: the trunk and the families ── */
+.tree .tr-lane[data-kind='research'] { gap: 2px; }
+.tree .tr-lane[data-kind='research'] .tr-lanename { font-size: 19px; }
+.tr-lane[data-kind='research'] .tr-paththeme { font-size: 10.5px; }
+.tr-lane[data-kind='research'] .rs-respec { margin-top: 2px; }
+/* A family's name over each tier column (its speciality's from Tier 3), on the band's edge. */
+.tr-ttag {
+  position: absolute; z-index: 2; transform: translateY(-50%); pointer-events: none; white-space: nowrap;
+  padding: 0 8px; border-radius: 999px; font: 700 11px/15px var(--f-body); color: var(--c-ink);
+  background: color-mix(in srgb, var(--path) 20%, var(--c-paper));
+  border: 1.5px solid color-mix(in srgb, var(--path) 60%, transparent);
+}
+.tr-ttag[data-spec] { pointer-events: auto; cursor: help; border-style: dashed; font-style: italic; }
+.tr-ttag[data-spec]::before { content: '⑂ '; font-style: normal; color: color-mix(in srgb, var(--path) 85%, var(--c-ink)); }
+/* The divider between a family's two specialities. */
+.tr-split { position: absolute; height: 0; border-top: 2px dashed color-mix(in srgb, var(--path) 45%, transparent); }
+
+/* Links: a trunk gate shows only while its node is selected (the tier heads say what opens a tier). */
+.tree .tr-link[data-gate] { display: none; }
+.tree .tr-link[data-gate][data-hot] { display: inline; stroke: var(--c-lilac-d); stroke-width: 1.8; opacity: 0.6; stroke-dasharray: 3 6; }
+
+/* ── research nodes: a lilac pill, its spine in its lane's colour ── */
+.tree .tr-node[data-kind='research'] { background: #f4effb; border-radius: 18px; padding: 3px 9px 3px 13px; gap: 7px; }
+.tree .tr-node[data-kind='research']::before { left: 5px; background: var(--path, var(--c-lilac-d)); }
+.tree .tr-node[data-kind='research']:hover { background: #ebe3f8; }
+.tree .tr-node[data-kind='research'][data-state='done'] { background: #dcefee; }
+.tree .tr-node[data-kind='research'][data-state='active'] { background: #fff6c9; }
+.tree .tr-node[data-kind='research'][data-held] { background: #fde0d6; }
+.tree .tr-node[data-kind='research'][data-keystone] { border-width: 2.5px; box-shadow: 3px 3px 0 var(--c-ink); }
+.tree .tr-node[data-kind='research'][data-keystone] .tr-name::after { content: ' ★'; color: var(--c-warn); }
+.tree .tr-node[data-kind='research'] .tr-icons { width: 38px; height: 38px; }
+.tree .tr-node[data-kind='research'] .tr-icons > :first-child { width: 34px; height: 34px; }
+.tree .tr-node[data-kind='research'] .tr-icons > :nth-child(n + 2) { width: 19px; height: 19px; }
+.tree .tr-node[data-kind='research'] .tr-main { gap: 1px; }
+.tree .tr-node[data-kind='research'] .tr-name { font-size: 14.5px; line-height: 16px; }
+.tree .tr-node[data-kind='research'][data-long] .tr-name { font-size: 13px; }
+/* What it uses as it runs: data files, tokens, their price at CrierBelt. */
+.tr-rcost { display: flex; align-items: center; gap: 5px; min-width: 0; font-size: 11.5px; line-height: 16px; white-space: nowrap; }
+.tr-rcost .tr-chip { gap: 2px; }
+.tr-rcost .tr-chip canvas, .tr-rcost .tr-mark { width: 14px; height: 14px; }
+.tr-oc { color: var(--c-ink-soft); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; }
+.tr-oc .coin { width: 1em; height: 1em; }
+/* Its minimum time and its specialisation badge. */
+/* Its tokens, their price at CrierBelt and its minimum time. */
+.tr-rfoot { display: flex; align-items: center; gap: 8px; font-size: 11.5px; line-height: 15px; color: var(--c-ink-soft); white-space: nowrap; }
+.tr-tokbox { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.tr-tokbox .tr-chip { color: var(--c-ink); }
+.tr-rfoot .tr-chip .tr-mark { width: 13px; height: 13px; }
+.tr-rfoot .tr-time { display: inline-flex; align-items: center; gap: 3px; margin-left: 0; }
+.tr-rfoot .tr-mark { width: 13px; height: 13px; }
+.tr-node[data-state='done'] .tr-rcost, .tr-node[data-state='done'] .tr-tokbox { opacity: 0.55; }
+/* Queued in a lab (the Research Queue): a tag on its upper left edge, the lab's number. */
+.tr-qtag {
+  position: absolute; left: 14px; top: -10px; display: none; align-items: center; gap: 3px; padding: 0 6px 0 4px;
+  font: 700 11px/16px var(--f-body); color: var(--c-paper); background: var(--c-lilac-d); border: 1.5px solid var(--c-ink); border-radius: 8px;
+}
+.tr-qtag::before { content: ''; width: 9px; height: 8px; background: linear-gradient(var(--c-paper) 0 2px, transparent 2px 3px, var(--c-paper) 3px 5px, transparent 5px 6px, var(--c-paper) 6px 8px); }
+.tr-node[data-queued] .tr-qtag { display: inline-flex; }
+.tree .tr-node[data-kind='research'] .tr-track { left: 16px; right: 16px; bottom: 2px; }
+.tr-node[data-held] .tr-bar { background: var(--c-coral-d); }
+
+/* ── the header's research strip ── */
+.tree .rs-head { row-gap: 6px; align-items: center; }
+.rs-slots, .rs-labs, .rs-bill, .rs-qhead { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--c-ink); }
+.rs-slots small, .rs-bill > small, .rs-qhead > small { color: var(--c-ink-soft); font-size: 12px; }
+.rs-pip { display: inline-block; width: 11px; height: 11px; border: 1.5px solid var(--c-ink); border-radius: 50%; background: var(--c-paper); }
+.rs-pip[data-on] { background: var(--c-turq); }
+.rs-labs canvas { width: 18px; height: 18px; display: block; }
+.rs-labs[data-tone='busy'] { color: var(--c-ink-soft); }
+.rs-labs[data-tone='bad'] { color: var(--c-coral-d); font-weight: 600; }
+.rs-bill { padding: 1px 8px; border: 1.5px solid rgba(30, 27, 46, 0.25); border-radius: 999px; background: rgba(255, 255, 255, 0.4); cursor: help; }
+.rs-bchip { display: inline-flex; align-items: center; gap: 2px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rs-bchip canvas { width: 16px; height: 16px; display: block; }
+.rs-bchip .glyph { width: 15px; height: 15px; }
+.rs-beq { color: var(--c-ink-soft); }
+.rs-bcost { font-weight: 700; }
+.rs-bcost[data-tone='bad'] { color: var(--c-coral-d); }
+.rs-brent { font-weight: 700; color: #3e8e48; }
+.rs-brent:empty { display: none; }
+.rs-held {
+  display: inline-flex; align-items: center; padding: 2px 10px; border-radius: 8px; cursor: help;
+  font: 700 13px var(--f-body); color: var(--c-paper); background: var(--c-coral-d); border: 2px solid var(--c-ink);
+  animation: rs-held 1.6s ease-in-out infinite;
+}
+@keyframes rs-held { 50% { box-shadow: 0 0 0 4px rgba(196, 83, 60, 0.3); } }
+.rs-plan {
+  display: inline-flex; align-items: center; gap: 6px; padding: 1px 10px 1px 4px; cursor: pointer;
+  font: 600 13px var(--f-body); color: var(--c-ink); background: var(--c-paper-d); border: 1.5px solid var(--c-ink); border-radius: 999px;
+}
+.rs-plan canvas { width: 18px; height: 18px; display: block; }
+.rs-plan b { padding: 0 6px; border-radius: 999px; font-size: 11.5px; background: var(--c-paper); border: 1px solid var(--c-ink-soft); }
+.rs-plan[aria-pressed='true'] { background: color-mix(in srgb, var(--c-turq-l) 60%, var(--c-paper)); }
+.rs-plan[aria-pressed='true'] b { background: var(--c-turq-d); color: var(--c-paper); border-color: var(--c-ink); }
+.rs-qchip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 4px 1px 8px; border-radius: 999px; background: #ebe3f8; border: 1.5px solid var(--c-lilac-d); font-size: 12px; }
+.rs-qname { padding: 0; border: none; background: none; font: 600 12px var(--f-body); color: var(--c-ink); cursor: pointer; text-decoration: underline dotted; }
+.rs-qx { width: 20px; height: 20px; padding: 0; border: 1.5px solid var(--c-ink); border-radius: 50%; background: var(--c-paper); font: 700 11px/1 var(--f-body); cursor: pointer; }
+.rs-qx:hover { background: var(--c-coral); color: var(--c-paper); }
+
+/* ── the detail pane's research parts ── */
+.tree .rs-detail { width: 320px; }
+.tr-kind[data-lane] { border-color: var(--path); background: color-mix(in srgb, var(--path) 16%, var(--c-paper)); }
+.rs-feat { align-items: flex-start !important; }
+.rs-feat > span { display: flex; flex-direction: column; gap: 1px; }
+.rs-feat small { color: var(--c-ink-soft); font-size: 12px; line-height: 1.3; }
+.rs-costhead { display: flex; align-items: center; gap: 8px; }
+.rs-rcosts li { flex-wrap: wrap; }
+.rs-rcosts b { min-width: 3.4em; white-space: nowrap; }
+.rs-rcosts .tr-mark { width: 18px; height: 18px; }
+.rs-cl { display: inline-flex; align-items: center; gap: 5px; }
+.rs-rcosts .rs-price { flex-basis: 100%; padding-left: calc(3.4em + 6px); color: var(--c-ink); font-weight: 600; margin: -2px 0 2px; }
+/* A running project: data paid, tokens used, time run — a bar each. */
+.rs-prog { margin-top: 4px; }
+.rs-prow { display: grid; grid-template-columns: 118px 1fr auto; align-items: center; gap: 6px; font-size: 12.5px; margin: 3px 0; }
+.rs-plabel { line-height: 1.15; }
+.rs-plabel { display: inline-flex; align-items: center; gap: 4px; }
+.rs-plabel canvas { width: 16px; height: 16px; display: block; }
+.rs-pbar { height: 8px; border: 1.5px solid var(--c-ink); border-radius: 5px; background: var(--c-paper-d); overflow: hidden; }
+.rs-pbar > span { display: block; height: 100%; width: 0; background: var(--c-turq); }
+.rs-prow small { font-variant-numeric: tabular-nums; color: var(--c-ink-soft); white-space: nowrap; }
+.rs-heldnote { margin-top: 6px; padding: 4px 8px; border-radius: 6px; background: var(--c-coral-d); color: var(--c-paper); font-weight: 700; font-size: 12.5px; }
+/* The Research Queue: one line per lab. */
+.rs-queue h4 { display: flex; align-items: center; gap: 6px; }
+.rs-queue h4 canvas { width: 18px; height: 18px; }
+.rs-qnote { display: block; color: var(--c-ink-soft); font-size: 12px; line-height: 1.3; }
+.rs-qlabs { margin: 6px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
+.rs-qlab { display: flex; align-items: center; gap: 7px; padding: 4px 6px; border: 1.5px solid rgba(30, 27, 46, 0.25); border-radius: 8px; }
+.rs-qlab[data-here] { border-color: var(--c-lilac-d); background: #f4effb; }
+.rs-qlab canvas { width: 26px; height: 26px; display: block; flex: none; }
+.rs-qinfo { display: flex; flex-direction: column; min-width: 0; flex: 1; font-size: 12.5px; }
+.rs-qinfo small { color: var(--c-ink-soft); font-size: 11.5px; line-height: 1.3; }
+.rs-qnext { color: var(--c-lilac-d) !important; font-weight: 600; }
+.rs-qput { flex: none; font-size: 13px; padding: 2px 7px; }
+/* The family's reconversion. */
+.rs-famrow { display: flex; align-items: center; gap: 8px; }
+.rs-famname { font-size: 18px; }
+.rs-famrow .tr-pathcount { align-self: center; margin: 0; cursor: help; }
+.rs-famrow .rs-respec { margin-left: auto; }
+.rs-fam .rs-qnote { margin-top: 4px; }
+
+/* Reduced motion: the warnings and highlights hold still. */
+@media (prefers-reduced-motion: reduce) {
+  .rs-held, .tr-tierhead[data-opens] .tr-gate { animation: none; }
+}

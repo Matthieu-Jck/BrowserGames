@@ -48,16 +48,16 @@ describe('the mountains (D44)', () => {
     expect(sim.canPlace('wind_flower', 560, 505, 0).reason).toBe('ok');
   });
 
-  it('the Sough: a turbine on the Crown gives several times what one down on the cirque floor does, more on harder rock', () => {
+  it('the Sough: a turbine on the Crown gives several times what one down on the cirque floor does, more higher up', () => {
     const sim = mountainSim();
     const floor = sim.place('wind_flower', 516, 518, 0), soft = sim.place('wind_flower', 534, 505, 0), hard = sim.place('wind_flower', 540, 505, 0);
     for (const r of [floor, soft, hard]) expect(r.ok, r.reason).toBe(true);
     for (const r of [floor, soft, hard]) { powerLine(sim, r.id!); expect(sim.linksOf(r.id!).length).toBeGreaterThan(0); }
     sim.run(1200); // what stands out of the zone comes by kite
     expect(windOf(sim, floor.id!)).toBe(BAL.windCirque);
-    expect(windOf(sim, soft.id!)).toBe(BAL.windRock[0]);
-    expect(windOf(sim, hard.id!)).toBe(BAL.windRock[2]);
-    expect(BAL.windRock[0]! / BAL.windCirque).toBeGreaterThanOrEqual(5);
+    expect(windOf(sim, soft.id!)).toBe(BAL.windHeight[0]); // level 1
+    expect(windOf(sim, hard.id!)).toBe(BAL.windHeight[1]); // level 2: by height, whatever the rock
+    expect(BAL.windHeight[0]! / BAL.windCirque).toBeGreaterThanOrEqual(5);
   });
 
   it('rock with a building on it is never marked for digging', () => {

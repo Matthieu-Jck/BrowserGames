@@ -23,7 +23,7 @@
 // renames every such mention on the page (`onLocale`). Before `installMentions` (node tests) a
 // mention is its name alone. See docs/i18n.md (« Naming an item ») and docs/ui.md.
 import { ITEM_IDS, itemDef, itemIdx } from '@/content/registry';
-import { el } from '@/core/dom';
+import { el, screenText } from '@/core/dom';
 import { locale, onLocale } from '@/i18n/i18n';
 import { frameCanvas, iKey, type Atlas } from '@/render/art/atlas';
 import './styles/mention.css';
@@ -202,7 +202,7 @@ function rename(root: ParentNode): void {
     const id = m.dataset.item!;
     const name = nameOf(id);
     const label = m.querySelector('.imention-name');
-    if (label) { if (label.textContent !== name) label.textContent = name; } else {
+    if (label) { const shown = screenText(name); if (label.textContent !== shown) label.textContent = shown; } else {
       m.setAttribute('title', name);
       m.setAttribute('aria-label', name);
     }

@@ -53,7 +53,7 @@ const SZ = 0.3;
  */
 export const POLE = { cx: 0.5, cy: 0.5, top: 2.9, arm: 2.56, armH: 0.075, half: 0.4, pin: 0.3 } as const;
 /** The pylon: a lattice from feet `foot` tiles out to its head at `arm`, a peak up to `apex`, a crossarm `half` tiles each side; suspension strings `string` levels long hang `pin` tiles out. */
-export const PYLON = { cx: 0.5, cy: 0.5, foot: 0.33, apex: 3.62, arm: 3.05, armH: 0.1, half: 0.5, pin: 0.42, string: 0.4 } as const;
+export const PYLON = { cx: 1, cy: 1, foot: 0.7, apex: 6.2, arm: 5.3, armH: 0.14, half: 0.95, pin: 0.8, string: 0.6 } as const; // 2×2, about three tiles tall (D75)
 /** The Heart's two link masts (local tiles): west, between its west ribbons, and east, point-symmetric; their insulator's clamp at `top`. */
 export const HEART_MASTS = { top: 3.4, at: [[0.5, 2.0], [4.5, 3.0]] as ReadonlyArray<readonly [number, number]> } as const;
 /** The charger's free bushing (the one with no bus bar to the rack), where its line comes in. */
@@ -76,12 +76,13 @@ export const TERMINALS: Readonly<Partial<Record<BuildingId, readonly Terminal[]>
   sand_collector: [roof(1.76, 0.26, 0.9)],
   skydock: [roof(1.74, 2.02, 1.02)],
   wire_mill: [roof(0.8, 1.0, 0.55, 0.4)],
-  workshop: [roof(0.3, 1.74, 1.05)],
+  workshop: [roof(1.72, 0.3, 1.0)], // on the electronics line's control cabinet
+  press: [roof(0.3, 1.74, 1.05)],
   great_workshop: [roof(2.72, 1.25, 1.31, 0.3)],
   great_workshop_compact: [roof(1.75, 0.92, 1.18, 0.3)],
   tower_workshop: [roof(2.0, 2.0, 2.6)],
   ceramic_oven: [roof(1.6, 1.35, 1.45)],
-  observatory: [roof(0.32, 1.72, SZ, 0.55)],
+  observatory: [roof(1.7, 1.08, 1.12, 0.22)], // the research lab: on its low instrument cabinet
   mast: [
     { x: POLE.cx, y: POLE.cy, z: POLE.top + INSULATOR, bias: 0.14 },
     ...[-POLE.pin, POLE.pin].map((k) => { const [x, y] = onArm(POLE.cx, POLE.cy, k); return { x, y, z: POLE.arm + POLE.armH + INSULATOR }; }),
@@ -95,6 +96,33 @@ export const TERMINALS: Readonly<Partial<Record<BuildingId, readonly Terminal[]>
   fumarole_tap: [roof(0.35, 0.95, 1.0, 0.3)],
   sunheart: [roof(4.3, 4.3, 3.2)],
   trade_post: [roof(3.58, 1.42, 0.66, 0.25)], // on its power pedestal, a corner of its pad (recipes/buildings.ts `TP_PED`)
+  // The research redesign and the second tier: on a cabinet, a power pack or a motor house.
+  test_bench: [roof(1.66, 1.16, 1.25, 0.22)], // on the instrument rack
+  data_collector: [roof(0.37, 1.7, 1.22, 0.22)],
+  data_relay: [roof(2.62, 2.62, 1.0)],
+  server: [roof(1.76, 1.62, 1.72, 0.2)],
+  cooled_server: [roof(2.55, 2.58, 1.3, 0.22)],
+  supercomputer: [roof(2.9, 1.1, 1.65, 0.3)],
+  auto_lab: [roof(2.57, 1.95, 1.25, 0.22)],
+  optics_workshop: [roof(1.74, 1.38, 1.6, 0.2)],
+  scriptorium: [roof(2.7, 0.5, 1.0)],
+  sifter: [roof(1.34, 1.07, 1.52, 0.2)],
+  arc_furnace: [roof(1.76, 0.26, 1.15, 0.22)],
+  wire_mill_double: [roof(1.0, 1.72, 0.95, 0.25)],
+  forge_press: [roof(2.74, 2.3, 1.05)],
+  etcher: [roof(2.67, 1.2, 1.15)],
+  chip_fab: [roof(2.85, 3.2, 2.05, 0.25)],
+  fast_drill: [roof(1.74, 1.7, 1.0)],
+  giant_drill: [roof(2.55, 3.7, 1.35)],
+  hp_pump: [roof(0.76, 1.76, 0.9, 0.3)],
+  heavy_excavator: [roof(1.0, 2.2, 1.82)],
+  big_dock: [roof(2.32, 2.6, 1.12)],
+  pitch_turbine: [roof(1.43, 1.43, 1.0, 0.22)],
+  big_turbine: [roof(2.12, 2.12, 1.45, 0.22)],
+  heavy_accumulator: [roof(1.0, 1.0, 1.9, 0.2)],
+  solar_farm: [roof(2.58, 2.56, 0.95)],
+  solar_tower: [roof(2.36, 2.36, 0.9, 0.3)],
+  cell_generator: [roof(1.71, 0.3, 1.2)],
 };
 
 /** The fallback art's terminal (a powered building with none of its own): a mast on its roof hatch. */

@@ -1,27 +1,24 @@
 // panels.ts — which panels the inspector shows for each building kind, in order (between the
-// header + status and the power row + Demolish). A new kind gets its panels here; a kind
-// without an entry shows only the common parts.
+// header + status and the grid module + Demolish). A new kind gets its panels here; a kind
+// without an entry shows only the common parts. What a building makes, draws or stores of power is
+// the grid module's (power.ts `gridCard`, D76), the same card for every kind.
 import type { BuildingKind } from '@/content/types';
 import { hearthPanel, landscapePanel } from './colony';
 import type { Panel } from './kit';
 import { dockPanel, forkPanel, outletsPanel, ribbonPanel, storePanel } from './logistics';
-import { drillPanel, generatorPanel, labPanel, machinePanel, modulesPanel } from './production';
+import { drillPanel, generatorPanel, labPanel, machinePanel, modulesPanel, serverPanel } from './production';
 import { tradePanel } from './trade';
-import { chargePanel, outputPanel } from './power';
 
 export const PANELS: Partial<Record<BuildingKind, readonly Panel[]>> = {
   machine: [machinePanel, modulesPanel],
   drill: [drillPanel],
-  generator: [outputPanel, generatorPanel],
-  wind: [outputPanel],
-  solar: [outputPanel],
-  geothermal: [outputPanel],
-  accumulator: [chargePanel],
+  generator: [generatorPanel], // its fuel; its output is the grid module's
   lab: [labPanel],
+  server: [serverPanel],
   belt: [ribbonPanel],
   conduit: [ribbonPanel],
   fork: [forkPanel],
-  hearth: [hearthPanel], // no outlets: the Heart takes, it never gives
+  hearth: [hearthPanel], // no outlets to set: the Heart takes, it never gives (but its data outlet, D68)
   storage: [storePanel],
   dock: [storePanel, outletsPanel, dockPanel],
   excavator: [landscapePanel],

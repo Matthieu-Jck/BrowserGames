@@ -7,7 +7,7 @@
 // When a full screen covers what comes next out in the world, the arrow points at its ✕.
 //
 // The step is the first whose `done` objective does not hold yet (read from the sim, counters
-// from the founding) and that the player has not `seen` (the Crier's board). `refresh` (4 Hz)
+// from the founding). `refresh` (4 Hz)
 // decides what to point at, following the UI's state; `frame` keeps the arrow on it while the
 // camera and the panels move (change-only writes). The layer never takes the pointer, except
 // the bubble of a world target: a click glides the camera there. The guide hides while a full
@@ -72,11 +72,10 @@ function shown(e: Element | null | undefined): Element | null {
 const q = (sel: string): Element | null => shown(document.querySelector(sel));
 const aimEl = (e: Element | null, desc: string): Aim | null => (e ? { k: 'el', el: e, desc } : null);
 
-/** The first step of a quest still to do (counters count from the founding; `seen` is UI memory). */
-export function stepIndex(sim: Sim, def: QuestDef, seen: ReadonlySet<string>): number {
+/** The first step of a quest still to do (counters count from the founding). */
+export function stepIndex(sim: Sim, def: QuestDef): number {
   for (let i = 0; i < def.steps.length; i++) {
     const s = def.steps[i]!;
-    if (s.seen && seen.has(s.seen)) continue;
     if (s.done && objectiveProgress(sim, s.done).met) continue;
     return i;
   }
@@ -194,8 +193,6 @@ export class Guide {
   /** The current step (null: no quest, or every quest done). */
   step: GuideStep | null = null;
   private aim: Aim = NONE;
-  private readonly seen = new Set<string>();
-  private boardShown = false;
   /** The tree node last brought into view for a step (scrolled once, then left to the player). */
   private shownNode = '';
   private on = prefs.load().on;
@@ -240,7 +237,7 @@ export class Guide {
     const sim = this.host.sim();
     const cur = currentQuest(sim);
     if (!cur || !this.on) return null;
-    const tg = cur.def.steps[stepIndex(sim, cur.def, this.seen)]?.target;
+    const tg = cur.def.steps[stepIndex(sim, cur.def)]?.target;
     if (tg?.k === 'unlock') return tg.ids.find((x) => !sim.unlocked(x)) ?? null;
     if (tg?.k === 'research') return tg.id;
     return null;
@@ -255,12 +252,8 @@ export class Guide {
   refresh(): void {
     const sim = this.host.sim();
     const cur = currentQuest(sim);
-    // The board counts as seen once the player has looked at it and moved on (another tab, or out).
-    const board = this.host.screen() === 'market' && !!document.querySelector('[data-crier-tab="board"][data-on]');
-    if (board) this.boardShown = true;
-    else if (this.boardShown) this.seen.add('board');
     if (!cur) { this.step = null; this.aim = NONE; this.hide(); return; }
-    const i = stepIndex(sim, cur.def, this.seen);
+    const i = stepIndex(sim, cur.def);
     const s = cur.def.steps[i]!;
     this.step = { quest: cur.id, index: i, hint: s.hint };
     this.aim = this.resolve(sim, s);
@@ -424,12 +417,7 @@ export class Guide {
         if (this.host.screen() !== 'market') return aimEl(q('[data-hud-crier]'), 'hud:crier');
         const on = document.querySelector('[data-crier-tab][data-on]')?.getAttribute('data-crier-tab');
         if (on !== tg.tab) return aimEl(q(`[data-crier-tab="${tg.tab}"]`), `crier:tab:${tg.tab}`);
-        if (tg.focus === 'export') {
-          const slots = [...document.querySelectorAll<HTMLSelectElement>('[data-export-slot]')];
-          return aimEl(shown(slots.find((x) => !x.value) ?? slots[0]), 'crier:export');
-        }
         if (tg.focus === 'order') return aimEl(q('[data-order-item]'), 'crier:order');
-        if (tg.focus === 'best') return aimEl(q('[data-board-recipe][data-best]') ?? q('[data-board-recipe]'), 'crier:best');
         return null;
       }
       case 'brush': return aimEl(q('.bb-mark'), 'tool:mark') ?? aimEl(q('.hud-build'), 'hud:build');

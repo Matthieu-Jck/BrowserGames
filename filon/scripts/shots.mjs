@@ -105,8 +105,8 @@ const post = await page.evaluate(() => {
   const FL = window.FL, sim = FL.app.sim, id = FL.tradePost();
   if (!id) return null;
   if (sim.tick < 600 * 45) FL.tick(600 * 45 - sim.tick);
-  sim.setExport(id, 0, 'glass');
-  sim.setExport(id, 1, 'iron_plate');
+  sim.spotTrade('glass', 'sell', 40); // a post sells what its entrance brings (D64): a spot sale from the Heart instead
+  sim.spotTrade('iron_plate', 'sell', 40);
   FL.connect(id, sim.hearthId); // an order buys only while the exit can hand its goods out
   sim.addImport(id, 'copper_ore', 10, Math.round(FL.price('copper_ore').ask * 200));
   FL.tick(600 * 30);
@@ -132,10 +132,10 @@ if (post) {
 // Research and statistics screens (a few nodes learnt, one running).
 await page.evaluate(() => {
   const sim = window.FL.app.sim;
-  for (const id of ['tr1', 'tr2', 'en1', 'en2', 'en3', 'dn1']) sim.done.add(id);
+  for (const id of ['tr1', 'tr2', 'en_pitch', 'en2', 'en_heavyacc', 'xp_swift', 'ex_sifter', 'ex3']) sim.done.add(id);
   sim.rebuildDerived();
   window.FL.feedLab('journal_1', 80);
-  window.FL.research('ex1');
+  window.FL.research('ex4');
   window.FL.tick(400);
 });
 await page.waitForTimeout(400);

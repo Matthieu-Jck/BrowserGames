@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { reachableItems, reachableNodes, rootPlans, startBuildings, tiredVeinPerMin, uniquesNeeded, validateContent, wirePerMechanicsWorkshop } from './validate';
+import { reachableItems, reachableNodes, rootPlans, startBuildings, tiredVeinPerMin, uniquesNeeded, validateContent, wirePerElectronicsWorkshop } from './validate';
 import { ITEMS } from './items';
 import { RECIPES } from './recipes';
 import { BAL } from './balance';
@@ -21,13 +21,13 @@ describe('content invariants', () => {
   it('the tired vein cannot feed a single mechanics workshop: copper must be imported', () => {
     expect(tiredVeinPerMin()).toBeCloseTo(6.75, 6);
     expect(tiredVeinPerMin() * 2).toBeCloseTo(13.5, 6);
-    expect(wirePerMechanicsWorkshop()).toBe(18);
+    expect(wirePerElectronicsWorkshop()).toBe(30);
   });
 
   it('an atlas needs two different uniques, a codex five', () => {
     expect(uniquesNeeded('atlas').size).toBe(2);
     expect(uniquesNeeded('codex').size).toBe(5);
-    expect(uniquesNeeded('journal_2').size).toBe(0);
+    expect(uniquesNeeded('journal_1').size).toBe(0);
   });
 
   it('one unlock tree (D33): the starting kit is the drill, the ribbon and the pole; everything else is in the tree', () => {
@@ -45,8 +45,11 @@ describe('content invariants', () => {
   it('the plans grow in paths of one theme (D41): each plan on one path, each path one line from one entry, no loop', () => {
     expect(pathProblems()).toEqual([]);
     expect(PLAN_PATHS).toEqual(['production', 'logistics', 'energy', 'analytics', 'trade', 'survey']);
-    // Every plan on exactly one listed path, and plans declared path by path in the tree's order.
-    expect(PLAN_PATHS.flatMap((p) => pathPlans(p))).toEqual(PLAN_IDS);
+    // Every plan on exactly one listed path, and plans declared path by path in the tree's order;
+    // the research lab's plan apart, the gate after them all (D71).
+    expect(PLAN_PATHS.flatMap((p) => pathPlans(p))).toEqual(PLAN_IDS.filter((id) => id !== 'observatory'));
+    expect(PLANS.observatory.lane).toBe('gate');
+    expect([...PLANS.observatory.prereq].sort()).toEqual(PLAN_IDS.filter((id) => id !== 'observatory').sort());
     expect(PLAN_PATHS.map((p) => pathEntries(p))).toEqual([['kiln'], ['router'], ['wind_flower'], ['telemetry'], ['trade_post'], ['beacon']]);
     // A path is a DAG: walking a plan's prerequisites on its own path never comes back to it,
     // and always ends at the path's entry.

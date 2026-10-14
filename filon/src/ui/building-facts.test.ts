@@ -35,6 +35,22 @@ const row = (f: BuildingFacts, k: string): string | undefined => {
 describe('building facts', () => {
   afterEach(() => setLocale('fr'));
 
+  it('data makers say what they make, servers their tokens (the research redesign, D68–D71)', () => {
+    setLocale('en');
+    for (const id of ['data_collector', 'data_relay']) {
+      const f = buildingFacts(id, all);
+      expect(row(f, 'mines'), id).toBeUndefined(); // no deposit: power alone
+      expect(f.rows.find((r) => r.k === 'makes')?.items, id).toEqual([itemIdx('journal_1')]);
+      expect(row(f, 'place'), id).not.toMatch(/deposit/);
+    }
+    expect(row(buildingFacts('data_collector', all), 'makes')).toBe('2/min, anywhere, from power alone');
+    expect(row(buildingFacts('sand_collector', all), 'mines')).toBe('The bare ground, no deposit');
+    expect(row(buildingFacts('server', all), 'tokens')).toMatch(/^2 k tokens\/min/);
+    expect(row(buildingFacts('supercomputer', all), 'tokens')).toMatch(/^20 k tokens\/min/);
+    expect(row(buildingFacts('auto_lab', all), 'makes')).toBe('3/min, for its own project');
+    expect(row(buildingFacts('observatory', all), 'makes')).toBeUndefined();
+  });
+
   it('every building, in both languages and at both ends of research: no missing key, French spacing kept', () => {
     for (const locale of ['fr', 'en'] as const) {
       setLocale(locale);
@@ -94,12 +110,12 @@ describe('building facts', () => {
     const plate = kiln.find((r) => r.name === 'Iron Plate')!;
     expect(plate.ins).toEqual([{ item: itemIdx('iron_ore'), perMin: 15 }, { item: itemIdx('coal'), perMin: 15 }]);
     expect(plate.outs).toEqual([{ item: itemIdx('iron_plate'), perMin: 15 }]);
-    // Gears need Mechanics (tr1): not on a new colony's workshop, there once researched.
-    expect(buildingFacts('workshop', fresh).recipes!.map((r) => r.name)).not.toContain('Gear');
-    expect(buildingFacts('workshop', all).recipes!.map((r) => r.name)).toContain('Gear');
-    // The tower works four times as fast (and research speed applies to every machine).
-    const tower = buildingFacts('tower_workshop', { ...all, mods: baseMods() }).recipes!.find((r) => r.name === 'Gear')!;
-    expect(tower.outs[0]!.perMin).toBe(48);
+    // Speed modules need Pace (dn4): not on a new colony's electronics workshop, there once researched.
+    expect(buildingFacts('workshop', fresh).recipes!.map((r) => r.name)).not.toContain('Speed Module');
+    expect(buildingFacts('workshop', all).recipes!.map((r) => r.name)).toContain('Speed Module');
+    // The tree's upgraded machines run their family's recipes faster (D70): the forging press ×3.
+    const forge = buildingFacts('forge_press', { ...all, mods: baseMods() }).recipes!.find((r) => r.name === 'Gear')!;
+    expect(forge.outs[0]!.perMin).toBe(36);
   });
 
   it('draws the routing rule of each block, Mindustry-style', () => {

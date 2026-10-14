@@ -32,9 +32,9 @@ Nothing in it shows people at the base: the only human is the investor, in Verri
 ## The base
 
 - **No humans at the base.** It is fully automated, built and run by drones, and keeps working when the player is away (the offline catch-up, D2). Nothing at the base shows people: no windows lit from inside, doors, walkways, gardens, houses or crews. Machines show machine things: LEDs, beacons, floodlights, uplink dishes, drone pads. This replaces D21's "glass and signs of life where people live": glass and domes belong to Verrière, which we never draw.
-- **Le Cœur** (the Heart; code id `hearth`): the base's core. It is a depot that pays for construction, a drone bay, the uplink to Verrière and CrierBelt, and a small built-in solar array. It takes and never gives (D34): what enters it pays for construction or is sold through a trade post set against it; machines are fed by production lines, never by the Heart. It is the base's centrepiece and grows to level 4. Code and docs keep the id and the name "Hearth"; only the displayed name changed.
+- **Le Cœur** (the Core in English since D68, the Heart before; code id `hearth`): the base's core. It is a depot that pays for construction, a drone bay, the uplink to Verrière and CrierBelt, and a small built-in solar array. It takes and never gives (D34): what enters it pays for construction or is sold through a trade post set against it; machines are fed by production lines, never by the Heart. It is the base's centrepiece and grows to level 4. Code and docs keep the id and the name "Hearth" (older docs say "the Heart"); only the displayed name changed. Once Analytics' « Analyse de l’activité » is researched it also makes data files out of what goes on at the base, and hands them out of its one outlet: the only thing it ever gives.
 - **Drones** build remotely ("kites" in older texts and code comments: `remoteBuildDelay`, the construction delay off the claim's land). They lay ribbons, poles and beacons across land the claim does not hold, never across a sister claim's; machines and stores stand on the claim's own parcels.
-- **Research**: the base turns materials into **data** for the labs in Verrière. The observatory is an automated station that uplinks it: « Données d'arpentage » (Survey Data), « Données mécaniques » (Mechanics Data), then Atlas and Codex. The science items are drawn as data cartridges.
+- **Research** (D68–D70): a **research lab** (« laboratoire de recherche ») is an automated station. It runs on two things: **data**, real items carried on ribbons, one more kind each tier (D71): « Données d'arpentage » (Survey Data, made by powered data collectors and, with analysis, by the Core), « Données mécaniques » (Mechanics Data, from the test bench, where the base load-tests its own parts), then Atlas and Codex; and **AI tokens**, compute the research uses as it runs. Tokens are not owned: they are paid by the minute when used, to CrierBelt's servers for now (later a market with the other claims that run servers), or made by the claim's own servers. Say « token » in French too, never « jeton ». Research comes in **tiers** (T1–T4) and **families** whose names grow with the tier (Commerce: Échange, Finance, Économie de marché); a family splits into specialities from T3 (Machines: Électronique or Mécanique). A research node unlocks a machine or a feature, never a bare +15 %.
 - **The land**: the claim's own parcels are the starting square, the parcels it bought for good and those it leases by the hour (« bail », « loyer »). A rent the purse cannot pay ends the lease (« Bail perdu »): the parcel goes back to its owner and what stands on it stops, nothing lost, until the claim holds it again.
 - **Other buildings**: the trade post is CrierBelt's cargo lift pad (marked with the CrierBelt logo); the skydock is a mooring mast for uncrewed drifters.
 
@@ -48,9 +48,11 @@ The forty simulated market actors (`colonies` in code: `src/content/colonies.ts`
 |---|---|---|
 | ta base · your base | ta colonie · your colony | Any text about the player's installation |
 | concession · claim | — | The land grant, the player's name for it (`Sim.colonyName`) |
-| le Cœur · the Heart | le Foyer · the Hearth | Displayed name of `hearth` |
+| le Cœur · the Core | le Foyer · the Hearth, the Heart | Displayed name of `hearth` |
 | concessions sœurs · sister claims | colonies sœurs · sister colonies | The market's other actors |
-| données · data | carnets · journals | Science items |
+| données d'arpentage, données mécaniques · Survey Data, Mechanics Data | carnets · journals | The science items (`journal_1`, `journal_2`; then `atlas`, `codex`) |
+| laboratoire de recherche · research lab | observatoire · observatory | `observatory` (its id kept) |
+| token · token | jeton | AI compute paid by the minute |
 | drones | cerfs-volants · kites | Remote construction |
 | vos terres · your land; parcelle · parcel | la zone (d'influence) · the zone | Where the claim may build: its parcels |
 | bail, loyer, louer · lease, rent, lease (verb) | — | A parcel rented by the hour |

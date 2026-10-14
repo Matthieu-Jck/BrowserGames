@@ -31,6 +31,7 @@ import { DayNight } from '@/render/daynight';
 import { CloudShadows, LightsView } from '@/render/world/lights-view';
 import { Input } from '@/input/input';
 import { Tools, type Preview } from '@/input/tools';
+import { buildingIdx } from '@/content/registry';
 import { LinkTool } from '@/input/link-tool';
 import { LandTool } from '@/input/land-tool';
 import { WiresView } from '@/render/world/wires-view';
@@ -297,7 +298,7 @@ export class App {
   /**
    * Swap in another colony (a debug base and back, M7's load / import): selection and tools
    * dropped, the views rebuilt, the land repainted where it differs from the colony before (all of
-   * it on other seeds; else the chunks either one dug or filled), the statistics and pending cargo
+   * it on other seeds or another map version; else the chunks either one dug or filled), the statistics and pending cargo
    * lifts cleared (they belong to the colony before).
    */
   setSim(sim: Sim): void {
@@ -310,7 +311,10 @@ export class App {
     this.buildings.rebuild(sim);
     this.items.rebuild(sim);
     this.lights.rebuild(sim);
-    const sameLand = old.worldSeed === sim.worldSeed && old.playerSeed === sim.playerSeed;
+    // The same land: the same seeds AND the same map version (D63: a debug base on map 2 and the
+    // player's claim founded on map 1 share their seeds, not their land — the paint of one showed
+    // mountains the other does not have; owner, 2026-10-14: « la montagne n'existe pas »).
+    const sameLand = old.worldSeed === sim.worldSeed && old.playerSeed === sim.playerSeed && (old.grid.source.mapV ?? 1) === (sim.grid.source.mapV ?? 1);
     const chunks = new Set<number>();
     if (!sameLand) for (let ck = 0; ck < CHUNKS * CHUNKS; ck++) chunks.add(ck);
     else for (const g of [old.grid, sim.grid]) for (const t of [...g.terrainDiff.keys(), ...g.oreDiff.keys()]) chunks.add(((t >> 10) >> 5) * CHUNKS + ((t & 1023) >> 5)); // tile y·1024 + x → its chunk
@@ -408,7 +412,9 @@ export class App {
     // The Link tool aims at the building under the cursor (volumes in iso, tiles in plan).
     if (this.link.active) this.link.hover = over && pointer ? this.picker.entityAt(pointer.sx, pointer.sy) : 0;
     const linkPre = this.link.active ? this.link.preview() : null;
-    this.overlays.linking = linkPre;
+    // A pole or pylon in hand shows its reach and what it could wire where it would stand.
+    const held = !linkPre && pre && !pre.box && this.tools.state?.k === 'build' && pre.pieces.length === 1 ? pre.pieces[0]! : null;
+    this.overlays.linking = linkPre ?? (held ? this.link.ghost(buildingIdx(held.def), held.x, held.y, held.rot) : null);
     // The land mode (D60) aims at the parcel under the cursor (the ground tile, through the current P).
     const land = this.landTool;
     land.hover = land.active && over && pointer ? parcelUnder(...this.picker.tileAt(pointer.sx, pointer.sy)) : -1;

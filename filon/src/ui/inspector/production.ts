@@ -1,17 +1,18 @@
 // production.ts — inspector panels of the producing buildings: a machine's recipe choice,
-// buffers and rates, its speed modules; a drill's deposit and buffer; a generator's fuel; an
-// observatory's research project. Every item shows its icon beside its name (mention.ts), and
+// buffers and rates, its speed modules; a drill's deposit and buffer; a generator's fuel; a
+// research lab's project (its data files and its AI tokens, D68) and what it runs next; a server's
+// tokens. Every item shows its icon beside its name (mention.ts), and
 // every number says what it is (held in the machine, per minute at full speed, paid / owed).
 import { CRECIPES, ITEM_IDS, itemIdx, recipesFor } from '@/content/registry';
 import { RECIPES } from '@/content/recipes';
 import { RESEARCH, type ResearchId } from '@/content/research';
 import type { RecipeDef, ResearchDef } from '@/content/types';
-import { el, setText } from '@/core/dom';
+import { el, setAttr, setText } from '@/core/dom';
 import { rate } from '@/i18n/format';
 import { locale, t } from '@/i18n/i18n';
 import { modulesOf, recipeOf } from '@/sim/cfg';
 import type { DrillNode, GeneratorNode, MachineNode } from '@/sim/flow/nodes';
-import { projectPermille } from '@/sim/research/runtime';
+import { projectPermille, tokensDue } from '@/sim/research/runtime';
 import { itemMention, itemRef } from '../mention';
 import { St } from '@/sim/types';
 import { fmt, heading, itemRow, progressBar, row, smoothProgress, STATUS_TONE, type Panel } from './kit';
@@ -105,9 +106,13 @@ export const generatorPanel: Panel = ({ node, live }) => {
   return [heading(t('card.fuel')), itemRow(g.fuelItem, v)];
 };
 
-/** The project an observatory runs: its progress, and per data item what is paid of what it costs, and what waits in store. */
+/** The project a research lab runs: its progress, per data item what is paid of what it costs and what waits in store, its AI tokens used; what it runs next. */
 export const labPanel: Panel = ({ sim, e, host, live }) => {
   const line = el('div.insp-list'), table = el('div.insp-io', { hidden: '' });
+  // Its AI tokens (D68): used of the project's total, and why it may be paused (the purse in the red).
+  const tok = el('span.insp-gv'), tokRow = row(t('insp.lab.tokens'), tok);
+  const held = el('div.insp-note', { 'data-tone': 'bad' }, t('insp.lab.held'));
+  const next = el('span'), nextRow = row(t('insp.lab.next'), next);
   // The project's progress (hours, not seconds: the 4 Hz refresh is smooth enough).
   const bar = progressBar();
   bar.root.hidden = true;
@@ -116,7 +121,13 @@ export const labPanel: Panel = ({ sim, e, host, live }) => {
   live(() => {
     const p = sim.projects.find((q) => q.lab === e.id);
     bar.root.hidden = !p;
-    if (p) bar.set(projectPermille(p) / 1000, 'good');
+    if (p) bar.set(projectPermille(p) / 1000, sim.researchHeld ? 'idle' : 'good');
+    held.hidden = !p || !sim.researchHeld;
+    tokRow.hidden = !p?.tokens;
+    if (p?.tokens) setText(tok, t('insp.lab.tokens.v', { used: tokensK(tokensDue(p)), of: tokensK(p.tokens) }));
+    const q = sim.labQueue.get(e.id);
+    nextRow.hidden = !q;
+    if (q) setText(next, (RESEARCH[q as ResearchId] as ResearchDef | undefined)?.name[locale()] ?? q);
     if (!p) {
       setText(line, t('insp.lab.none'));
       if (sig !== '') { sig = ''; table.replaceChildren(); table.hidden = true; }
@@ -146,5 +157,22 @@ export const labPanel: Panel = ({ sim, e, host, live }) => {
   });
   const head = heading(t('screen.research'));
   head.title = t('insp.lab.hint'); // how data reaches it, on hover (D53)
-  return [head, line, bar.root, table, el('button.btn.insp-recipe', { onclick: () => host.openResearch() }, t('insp.lab.choose'))];
+  return [head, line, bar.root, held, table, tokRow, nextRow, el('button.btn.insp-recipe', { onclick: () => host.openResearch() }, t('insp.lab.choose'))];
+};
+
+/** Tokens in thousands, as research counts them (« 12,5 k »). */
+const tokensK = (n: number): string => t('unit.ktokens', { v: fmt(n / 1000, n >= 100_000 ? 0 : 1) });
+
+/** A server (D68): the AI tokens it makes a minute at its grid's power now, and the last minute's bill. */
+export const serverPanel: Panel = ({ sim, e, live }) => {
+  const tpm = el('span.insp-gv'), bill = el('span');
+  live(() => {
+    const s = sim.graph?.servers.find((x) => x.ent === e.id);
+    const sat = s ? sim.ctx?.sat[s.net] ?? 0 : 0;
+    setText(tpm, t('insp.server.rate', { v: tokensK(s ? Math.floor((s.tpm * sat) / 1000) : 0) }));
+    setAttr(tpm, 'data-tone', sat > 0 ? null : 'bad');
+    const st = sim.tokenStats;
+    setText(bill, t('insp.server.bill', { used: tokensK(st.used), own: tokensK(st.fromServers), lost: tokensK(Math.max(0, st.supply - st.fromServers)) }));
+  });
+  return [heading(t('insp.server.title')), row(t('insp.server.makes'), tpm), el('div.insp-note', {}, bill)];
 };

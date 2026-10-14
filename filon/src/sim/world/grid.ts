@@ -11,6 +11,12 @@ export interface TerrainSource {
   readonly embedCopper?: number;
   /** The farthest the Crown's terraces reach from the centre (the starting square holds them; default the cirque template's foot). */
   readonly crownReach?: number;
+  /** The map version the land was made by (D63; content `MAPS`): saved with the base (`SaveData.mapV`), so it reopens on the same land. */
+  readonly mapV?: number;
+  /** The cirque template's own Crown foot, whatever the archetype (MapGen: r 34 on map 1, 29 on map 2). */
+  readonly crownOuter?: number;
+  /** The Crown's tarn, where there is one (map 2): its centre tile and the level of its water. */
+  readonly tarn?: { readonly x: number; readonly y: number; readonly level: number } | null;
 }
 
 export interface Chunk {
@@ -24,7 +30,9 @@ export interface Chunk {
   /**
    * The land's level, 0 (the cirque's floor) … `MAX_LEVEL` (D45): a rule of the game, not a look —
    * a ribbon, a port or a wire meets only its own level (a traction ribbon climbs one), and a
-   * building stands on level ground. Saved where play changed it (`levelDiff`).
+   * building stands on level ground. Rock stands above 0, and water up on the rock (the Crown's
+   * tarn, D63: a pump draws it on its own level; filled, it is ground at that level). Saved where
+   * play changed it (`levelDiff`).
    */
   level: Uint8Array;
 }

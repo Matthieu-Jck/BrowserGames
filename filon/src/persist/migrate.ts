@@ -9,6 +9,7 @@ import { BUILDING_IDS } from '@/content/registry';
 import { packRuns } from '@/sim/flow/chain';
 import { parcelAt } from '@/sim/world/land';
 import { SAVE_VERSION, type SaveData } from '@/sim/serialize';
+import { RESEARCH_RENAMED } from '@/content/retired';
 
 /** A step from version v to v + 1 (input: a parsed save of version v). */
 export type Migration = (d: Record<string, unknown>) => Record<string, unknown>;
@@ -79,7 +80,94 @@ export function postsToPads(d: Record<string, unknown>): Record<string, unknown>
   };
 }
 
-export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads };
+/**
+ * 4 → 5, the trade post without export streams (D64): its entrance takes, and it sells, every
+ * tradable item but its cargo — what it bought and holds or awaits. A post's cargo is what its
+ * orders buy, what is on its way to it, and what its container holds that its streams did not
+ * sell (its purchases); the streams go. A post's stock of a stream item stays in its store and is
+ * sold at the next lift, as before.
+ */
+export function streamsToCargo(d: Record<string, unknown>): Record<string, unknown> {
+  const trade = d.trade as { exports?: Array<[number, number[]]>; orders?: Array<{ post: number; item: number }>; inflight?: Array<{ post: number; item: number }> } | undefined;
+  if (!trade) return d;
+  const { exports = [], ...rest } = trade;
+  const cargo = new Map<number, Set<number>>();
+  const add = (post: number, it: number): void => { let s = cargo.get(post); if (!s) cargo.set(post, (s = new Set())); s.add(it); };
+  for (const o of trade.orders ?? []) add(o.post, o.item);
+  for (const s of trade.inflight ?? []) add(s.post, s.item);
+  const sells = new Map(exports.map(([post, items]) => [post, items] as const));
+  // The trade posts, by the save's own building table (7 numbers an entity: id, def, x, y, rot, cfg, builtAt).
+  const table = (d.content as { buildings?: string[] } | undefined)?.buildings ?? (BUILDING_IDS as readonly string[]);
+  const ents = (d.ents as number[] | undefined) ?? [];
+  const posts = new Set<number>();
+  for (let i = 0; i + 6 < ents.length; i += 7) {
+    const id = table[ents[i + 1]!];
+    if (id && (BUILDINGS as Record<string, { kind: string }>)[id]?.kind === 'trade') posts.add(ents[i]!);
+  }
+  for (const [id, st] of (d.stores as Array<[number, number[]]> | undefined) ?? []) {
+    if (!posts.has(id)) continue;
+    st.forEach((mu, it) => { if (mu > 0 && !(sells.get(id) ?? []).includes(it)) add(id, it); });
+  }
+  return {
+    ...d,
+    trade: { ...rest, cargo: [...cargo].sort((a, b) => a[0] - b[0]).map(([post, s]) => [post, [...s].sort((a, b) => a - b)]) },
+  };
+}
+
+/**
+ * 5 → 6, the big pylon (D75, owner 2026-10-14: "le pylon est trop petit… qu'il fasse 2x2 de large
+ * et 2 voir 3 de haut"): the 1×1 pylons cannot grow in place over what stands round them. Their
+ * content id becomes `pylon_1x1`, retired: the remap takes them down, refunded at their cost, and
+ * their wires go with them (the player rebuilds the line with the new pylons, which reach 40).
+ */
+export function pylonsToTowers(d: Record<string, unknown>): Record<string, unknown> {
+  const content = d.content as { buildings?: string[] } | undefined;
+  if (!content?.buildings?.includes('pylon')) return d;
+  return { ...d, content: { ...content, buildings: content.buildings.map((id) => (id === 'pylon' ? 'pylon_1x1' : id)) } };
+}
+
+/**
+ * 6 → 7, research on data files and AI tokens and the tiered tree (D68–D70): the research a base
+ * learnt under an id that changed is held under its successor(s) (`RESEARCH_RENAMED`; a node
+ * gone without one is dropped: it unlocked no building), and so are the projects running under
+ * them (one renamed into a node already learnt or running goes). The projects themselves are
+ * rebased on today's costs when the base loads (serialize.ts: they carry no tokens yet).
+ */
+export function researchToTokens(d: Record<string, unknown>): Record<string, unknown> {
+  const rename = (id: string): readonly string[] => RESEARCH_RENAMED[id] ?? [id];
+  const done = new Set<string>();
+  for (const id of (d.done as string[] | undefined) ?? []) for (const n of rename(id)) done.add(n);
+  const running = new Set<string>();
+  const projects = ((d.projects as Array<{ id: string }> | undefined) ?? []).flatMap((p) => {
+    if (p.id.startsWith('respec:')) return [p];
+    const n = rename(p.id)[0];
+    if (!n || done.has(n) || running.has(n)) return [];
+    running.add(n);
+    return [{ ...p, id: n }];
+  });
+  return { ...d, done: [...done].sort(), projects };
+}
+
+/**
+ * 7 → 8, research without the spread penalty (D72, owner 2026-10-15): a project started under it
+ * carries a cost and a duration grown (or cut) by what the claim owned. Its tokens are stripped,
+ * so the load rebases it on the node's cost today as it does a project from before tokens
+ * (serialize.ts): the data it paid and the time it ran kept as shares, the tokens of what it
+ * already did taken as paid. Reconversions carry no node cost and stay as they are.
+ */
+export function researchAtBase(d: Record<string, unknown>): Record<string, unknown> {
+  const projects = (d.projects as Array<{ id: string; tokens?: number; tokUsed?: number }> | undefined) ?? [];
+  return {
+    ...d,
+    projects: projects.map((p) => {
+      if (p.id.startsWith('respec:')) return p;
+      const { tokens: _t, tokUsed: _u, ...rest } = p;
+      return rest;
+    }),
+  };
+}
+
+export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsToTowers, 6: researchToTokens, 7: researchAtBase };
 
 export class SaveTooNew extends Error {
   constructor(readonly version: number) { super(`save version ${version} is newer than this build (${SAVE_VERSION})`); }

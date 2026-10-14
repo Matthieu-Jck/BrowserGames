@@ -27,6 +27,14 @@
 // higher rock in front still hides it. Its shadow then lies on the rock top among the volumes (just
 // under it, over the rock it falls on) instead of on the ground layer far below. In plan it lies
 // flat like everything else, with a short ink shadow on the map for a hint of its height.
+//
+// The incinerator (D51) is a pit (world/pits.ts): in iso its back and its near rim as two sprites
+// with its flame between them (an item tipping in sinks between them too: the items view), the
+// flame stepped per frame from the pit's fire (`animate`); in plan its sprite and, over it, the
+// flame seen from above, faded in with the fire.
+//
+// The plan layer is sorted like the volumes (world/stand.ts `PLAN_Z`): the plan copies of the
+// ribbons on rock and the elevators' marks under the items riding them, the buildings over all.
 import { Container, Matrix, Sprite, type Texture } from 'pixi.js';
 import { BUILDING_IDS, BUILDING_KIND, ITEM_IDS, buildingDef } from '@/content/registry';
 import type { BuildingId } from '@/content/buildings';
@@ -35,7 +43,7 @@ import type { Sim } from '@/sim/state';
 import { DX, DY, opposite, type Ent, type Rot } from '@/sim/types';
 import { footprint } from '@/sim/entities';
 import { tileIndex } from '@/sim/world/grid';
-import { WORLD } from '@/sim/constants';
+import { TPS, WORLD } from '@/sim/constants';
 import { gustPermille } from '@/sim/power/network';
 import { bKey, bodyKey, btKey, beltKey, iKey, inletKey, partKey, type Atlas } from '../art/atlas';
 import { DynAtlas, type DynFrame } from '../art/dyn-atlas';
@@ -50,7 +58,8 @@ import { tileTop } from '../relief';
 import { SHADOW_DX, SHADOW_DY, seamClip, shadowLook, shadowMap } from './cast-shadows';
 import { IDLE_TURNS, spinSeed, windTurns, workTurns } from './moving-parts';
 import { ISO_K, PLAN_K, skyFrames } from './sky-decks';
-import { beltZ, buildingZ, computeStands, liftOf, liftZ, riseOffset, standOf, standZ, type Stand } from './stand';
+import { PLAN_Z, beltZ, buildingZ, computeStands, liftOf, liftZ, riseOffset, standOf, standZ, type Stand } from './stand';
+import { PIT_ISO_K, PIT_PLAN_K, PIT_Z, flameFrames, flameLevel, flicker, pitFire, pitFrames, planFlameFrame } from './pits';
 import { LIFT_ISO_K, LIFT_PLAN_K, liftFrames, liftOfBelt } from './traction-lifts';
 import { FLAG, FLAG_K, flagFrames, type FlagFrames } from './heart-flag';
 import { defaultEmblem, emblemKey } from '@/content/emblem';
@@ -110,6 +119,7 @@ export function layBelt(tex: Texture, x: number, y: number, rot: Rot, mirror: bo
   const s = new Sprite(tex);
   s.setFromMatrix(m);
   if (lv <= 0) { to.ground.addChild(s); return [s]; }
+  s.zIndex = PLAN_Z.belt; // under the items riding it, and the plan buildings
   to.plan.addChild(s);
   const iso = new Sprite(tex);
   iso.setFromMatrix(new Matrix(TW / 2, TH / 2, -TW / 2, TH / 2, 0, -lv * LH).append(m));
@@ -161,6 +171,8 @@ export class BuildingsView {
   private owned = new Map<number, Sprite[]>();
   /** Entities kept out of sight across rebuilds (the intro: the Heart until it lands, D31). */
   private readonly hidden = new Set<number>();
+  /** The incinerators' pits: their flame (iso, among the volumes) and its plan glow, the heat shown. */
+  private pits: Array<{ ent: number; flame: Sprite; glow: Sprite | null; heat: number }> = [];
 
   constructor(
     private readonly beltLayer: Container,
@@ -170,6 +182,7 @@ export class BuildingsView {
     shadowLayer?: Container,
   ) {
     objectLayer.sortableChildren = true;
+    planLayer.sortableChildren = true;
     shadowLayer?.addChild(this.shadowRoot);
     this.shadowRoot.visible = false;
   }
@@ -184,6 +197,7 @@ export class BuildingsView {
     this.shadows = [];
     this.liftShadows = [];
     this.cars = [];
+    this.pits = [];
     this.liftAlpha = -1;
     this.lookL = -1;
     sim.ensureCompiled(); // the ribbons' bends come from the graph
@@ -220,6 +234,7 @@ export class BuildingsView {
     this.waveFlag(sim, seconds);
     // The elevators' cars, where the items view last left them.
     if (this.carHeight) for (const c of this.cars) c.s.position.y = c.y0 - this.carHeight(c.x, c.y) * LH;
+    if (this.pits.length) this.burn(sim, seconds * TPS);
     const dt = this.lastSec < 0 ? 0 : seconds - this.lastSec;
     this.lastSec = seconds;
     if (!this.spinners.length || dt <= 0) return;
@@ -252,6 +267,68 @@ export class BuildingsView {
 
   /** Moving parts in the world (perf, tests). */
   get movingCount(): number { return this.spinners.length; }
+
+  /**
+   * Per frame, at render tick `t`: each pit's flame from its fire (world/pits.ts) — its height and
+   * flicker in iso (a texture swap on the pits' own sheet when it changes), its plan glow's alpha.
+   */
+  private burn(sim: Sim, t: number): void {
+    const fire = pitFire(sim);
+    fire.update(sim, t);
+    const frames = flameFrames(), v = flicker(fire.tick);
+    for (const p of this.pits) {
+      const h = this.hidden.has(p.ent) ? 0 : Math.round(fire.heat(p.ent) * 40) / 40;
+      const lv = flameLevel(h);
+      if (lv < 0) { if (p.flame.visible) p.flame.visible = false; }
+      else {
+        const tex = frames[lv]![v]!.tex;
+        if (p.flame.texture !== tex) p.flame.texture = tex;
+        if (!p.flame.visible) p.flame.visible = true;
+      }
+      if (p.glow && h !== p.heat) { p.glow.alpha = 0.95 * h; p.glow.visible = h > 0.02; }
+      p.heat = h;
+    }
+  }
+
+  /**
+   * An incinerator's pit (iso, world/pits.ts): its back at its key, its flame over it (hidden
+   * until something burns), its near rim over that — an item tipping in is drawn between them.
+   */
+  private addPit(e: Ent, rot: Rot, wx: number, wy: number, alpha: number, tint: number, z: number): void {
+    const fr = pitFrames(rot);
+    const lay = (tex: Texture, ox: number, oy: number, dz: number): Sprite => {
+      const s = new Sprite(tex);
+      s.scale.set(PIT_ISO_K);
+      s.position.set(wx - ox * PIT_ISO_K, wy - oy * PIT_ISO_K);
+      s.zIndex = z + dz;
+      s.alpha = alpha;
+      s.tint = tint;
+      this.objectLayer.addChild(s);
+      this.sprites.push(s);
+      return s;
+    };
+    lay(fr.back.tex, fr.back.ox, fr.back.oy, 0);
+    const f0 = flameFrames()[0]![0]!;
+    const flame = lay(f0.tex, f0.ox, f0.oy, PIT_Z.flame);
+    flame.visible = false;
+    flame.tint = 0xffffff;
+    lay(fr.front.tex, fr.front.ox, fr.front.oy, PIT_Z.front);
+    this.pits.push({ ent: e.id, flame, glow: null, heat: -1 });
+  }
+
+  /** The plan view's flame over a pit's plan sprite (faded in with its fire by `burn`). */
+  private addPitGlow(e: Ent): void {
+    const fr = planFlameFrame();
+    const s = new Sprite(fr.tex);
+    s.scale.set(PIT_PLAN_K);
+    s.position.set(e.x - fr.ox * PIT_PLAN_K, e.y - fr.oy * PIT_PLAN_K);
+    s.alpha = 0;
+    s.visible = false;
+    this.planLayer.addChild(s);
+    this.sprites.push(s);
+    const p = this.pits[this.pits.length - 1];
+    if (p && p.ent === e.id) p.glow = s;
+  }
 
   /**
    * The cast shadows for the time of day: their opacity (one alpha on their container, none at
@@ -450,6 +527,7 @@ export class BuildingsView {
       .scale(LIFT_PLAN_K, LIFT_PLAN_K)
       .rotate((l.rot * Math.PI) / 2)
       .translate(l.x + 0.5 + DX[l.rot]! * 0.5, l.y + 0.5 + DY[l.rot]! * 0.5));
+    plan.zIndex = PLAN_Z.mark;
     this.marks.push(plan); // laid after every ribbon (`rebuild`), over the plan copies of those on rock
     this.sprites.push(plan);
   }
@@ -532,8 +610,11 @@ export class BuildingsView {
     const isoKey = this.atlas.frames.has(bKey(id, e.rot)) ? bKey(id, e.rot) : bKey(id, 0);
     const [wx, wy] = tileToIso(e.x, e.y, st?.level ?? 0);
     const isoMv = this.atlas.moving.get(isoKey);
-    this.addShadow(e, id as BuildingId, isoKey === bKey(id, e.rot) ? e.rot : 0, pending ? 0.35 : 1, st);
-    this.place(isoMv ? bodyKey(isoKey) : isoKey, this.objectLayer, wx, wy, alpha, tint, z);
+    const artRot = isoKey === bKey(id, e.rot) ? e.rot : 0;
+    const pit = BUILDING_KIND[e.def] === 'sink';
+    this.addShadow(e, id as BuildingId, artRot, pending ? 0.35 : 1, st);
+    if (pit) this.addPit(e, artRot, wx, wy, alpha, tint, z);
+    else this.place(isoMv ? bodyKey(isoKey) : isoKey, this.objectLayer, wx, wy, alpha, tint, z);
     if (isoMv) {
       const s = this.place(partKey(isoKey, 0), this.objectLayer, wx, wy, alpha, tint, z + (isoMv.over ? 0.2 : -0.2));
       if (s) parts.push({ s, tex: this.phases(isoKey, isoMv.n) });
@@ -543,6 +624,7 @@ export class BuildingsView {
     const topMv = this.atlas.moving.get(topKey);
     if (st) this.riseHint(topMv ? bodyKey(topKey) : topKey, e.x, e.y, st.level, alpha);
     this.place(topMv ? bodyKey(topKey) : topKey, this.planLayer, e.x, e.y, alpha, tint);
+    if (pit) this.addPitGlow(e);
     if (topMv) {
       const s = this.place(partKey(topKey, 0), this.planLayer, e.x, e.y, alpha, tint);
       if (s) parts.push({ s, tex: this.phases(topKey, topMv.n) });

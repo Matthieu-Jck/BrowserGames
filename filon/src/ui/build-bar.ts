@@ -21,7 +21,7 @@ import { ITEM_IDS } from '@/content/registry';
 import type { Sim } from '@/sim/state';
 import { revealed } from '@/sim/systems/quests';
 
-export const CATEGORIES: readonly BuildCategory[] = ['extraction', 'logistics', 'distribution', 'production', 'energy', 'colony', 'commerce'];
+export const CATEGORIES: readonly BuildCategory[] = ['extraction', 'logistics', 'distribution', 'production', 'research', 'energy', 'colony', 'commerce'];
 
 /** Buildings offered in a category's tray, in content order (the Hearth is never built). */
 export function trayOf(cat: BuildCategory): string[] {

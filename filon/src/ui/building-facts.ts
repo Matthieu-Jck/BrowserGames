@@ -17,11 +17,11 @@ import {
 import { nodeName } from '@/content/research';
 import type { BuildingDef, Side } from '@/content/types';
 import { COMMON_DEPOSITS } from '@/content/world';
-import { num, pct, rate } from '@/i18n/format';
+import { num, rate } from '@/i18n/format';
 import { locale, t, type MsgKey } from '@/i18n/i18n';
 import { EPOCH, TPS } from '@/sim/constants';
 import { LAB_CAP } from '@/sim/graph/compile';
-import { isLinkPoint, linkPoint, linkable } from '@/sim/power/links';
+import { climbOf, isLinkPoint, linkPoint, linkable } from '@/sim/power/links';
 import type { Mods } from '@/sim/research/modifiers';
 import { dockShips } from '@/sim/space';
 import type { Sim } from '@/sim/state';
@@ -135,9 +135,7 @@ function powerText(b: BuildingDef, m: Readonly<Mods>): string | null {
     const out = (mul: number): string => kwText(Math.floor((g.kw * mul * m.genOut) / 1e6));
     switch (b.kind) {
       case 'wind': return t('card.power.wind', { kw: out(m.windOut) });
-      case 'solar': return m.solarNight > 0
-        ? t('card.power.sunNight', { kw: out(m.solarOut), night: pct(m.solarNight / 1000) })
-        : t('card.power.sun', { kw: out(m.solarOut) });
+      case 'solar': return t('card.power.sun', { kw: out(m.solarOut) });
       case 'geothermal': return t('card.power.geo', { kw: out(m.geoOut) });
       default: return t('card.power.gen', { kw: out(1000) });
     }
@@ -170,11 +168,21 @@ function kindRows(def: number, b: BuildingDef, m: Readonly<Mods>): FactRow[] {
     case 'drill': {
       const d = b.drill;
       if (!d) break;
-      add('mines', t('card.mines'), t('card.mines.deposit'), items(COMMON_DEPOSITS.map(([it]) => it)));
+      // A data collector or relay makes its item out of power alone, anywhere (D71): no deposit, a fixed rate.
+      if (d.anywhere) {
+        add('makes', t('card.makes'), t('card.makes.power', { rate: rate(d.perMin) }), items([d.anywhere]));
+        break;
+      }
+      if (d.ground) add('mines', t('card.mines'), t('card.mines.ground'), items([d.ground]));
+      else add('mines', t('card.mines'), t('card.mines.deposit'), items(COMMON_DEPOSITS.map(([it]) => it)));
       const bonus = d.capMult !== undefined && d.capMult !== 1000 ? ` · ${t('card.drill.bonus', { m: num(d.capMult / 1000) })}` : '';
       add('rate', t('card.rate'), t('card.drill.rate', { rate: rate(d.perMin) }) + bonus);
       break;
     }
+    case 'server':
+      // AI tokens a minute (D68): the claim's research uses them before CrierBelt's; what it leaves is lost.
+      if (b.server) add('tokens', t('card.tokens'), t('card.server.v', { v: t('unit.ktokens', { v: num(b.server.tokensPerMin / 1000) }) }));
+      break;
     case 'pump':
       add('mines', t('card.mines'), itemRef('water'));
       break;
@@ -200,6 +208,8 @@ function kindRows(def: number, b: BuildingDef, m: Readonly<Mods>): FactRow[] {
       break;
     case 'lab':
       add('takes', t('card.takes'), t('card.lab.takes'), ITEM_IDS.map((_, i) => i).filter((i) => itemDef(i).kind === 'science'));
+      // The autonomous lab makes Survey Data for its own project (systems/research.ts).
+      if (b.lab) add('makes', t('card.makes'), t('card.lab.makes', { rate: rate(b.lab.dataPerMin) }), items(['journal_1']));
       add('store', t('card.store'), t('card.store.each', { n: num(LAB_CAP / 1000) }));
       break;
     case 'generator': {
@@ -216,6 +226,7 @@ function kindRows(def: number, b: BuildingDef, m: Readonly<Mods>): FactRow[] {
     case 'wind':
       add('wind', t('card.wind'), t('card.wind.local', {
         cirque: num(BAL.windCirque / 1000), plain: num(BAL.windPlain / 1000), mesa: num((BAL.windMesa[0] ?? 1000) / 1000),
+        low: num(BAL.windHeight[0]! / 1000), high: num(BAL.windHeight[BAL.windHeight.length - 1]! / 1000),
       }));
       break;
     case 'trade': {
@@ -226,9 +237,11 @@ function kindRows(def: number, b: BuildingDef, m: Readonly<Mods>): FactRow[] {
       break;
     }
     case 'pole': {
-      // A pillar of the wired grid (D25): how many wires it holds, how far they reach (Reinforced Pylons included).
+      // A pillar of the wired grid (D25): how many wires it holds, how far they reach (Reinforced Pylons included),
+      // and how many terraces they climb and clear (D78).
       const p = linkPoint(def, m);
       if (p) add('wires', t('card.wires'), t('card.wires.v', { n: p.slots, r: p.range }));
+      if (p) add('climb', t('card.climb'), t('card.climb.v', { n: climbOf(def) }));
       break;
     }
     default:
@@ -241,7 +254,7 @@ function kindRows(def: number, b: BuildingDef, m: Readonly<Mods>): FactRow[] {
 function placeRow(b: BuildingDef, m: Readonly<Mods>): FactRow | null {
   if (b.kind === 'hearth') return null;
   const parts: string[] = [];
-  if (b.kind === 'drill') parts.push(t(b.drill?.ground ? 'card.place.sand' : 'card.place.deposit'));
+  if (b.kind === 'drill' && !b.drill?.anywhere) parts.push(t(b.drill?.ground ? 'card.place.sand' : 'card.place.deposit'));
   if (b.kind === 'pump') parts.push(t('card.place.water'));
   if (b.kind === 'geothermal') parts.push(t('card.place.vent'));
   if (b.kind === 'belt' || b.kind === 'conduit') parts.push(t('card.place.remote', { m: num((BAL.remoteBeltCostMult * m.remoteBeltCost) / 1000) }));
@@ -309,10 +322,10 @@ function ruleOf(b: BuildingDef): RuleFact | null {
 
 // ── recipes ────────────────────────────────────────────────────────────────
 
-/** A machine's unlocked recipes per minute: research speed and the tower's ×4, as the graph compiler (modules and dug floor are per building). */
+/** A machine's unlocked recipes per minute: research speed and the machine's own (the tree's upgraded machines, D70), as the graph compiler (modules and dug floor are per building). */
 function recipesOf(id: string, ctx: FactCtx): RecipeFact[] {
   const L = locale();
-  const speed = (ctx.mods.craftSpeed * (id === 'tower_workshop' ? BAL.towerSpeed : 1000)) / 1e6;
+  const speed = (ctx.mods.craftSpeed * (buildingDef(buildingIdx(id)).speed ?? 1000)) / 1e6;
   return recipesFor(buildingIdx(id)).filter((r) => ctx.unlocked(r.unlock)).map((r) => {
     const per = (mu: number): number => (mu / 1000) * (EPOCH / r.ticks) * speed;
     return {

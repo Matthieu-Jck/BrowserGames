@@ -11,12 +11,14 @@
 //   2. recompile the flow graph if anything structural changed (`dirty`)
 //   3. power: per grid, demands vs weather → satisfaction ‰, dispatch, accumulators
 //   4. flow phases A (offers/accepts) → B (transfers) → C (machines, drills, internal updates)
-//   5. research projects pay their science and advance
+//   5. research projects pay their data and advance; servers make tokens; the Heart and the
+//      autonomous labs make data files (systems/research.ts)
 //   6. landscape: dig / fill jobs advance and finish
 //   7. freight: drifter routes move goods between skydocks
 //   8. tick++; at every epoch boundary (each game minute) the trade posts trade and the Crier
 //      settles (systems/trade.ts), the leases due take their hour's rent or lapse
-//      (systems/land.ts) — the catch-up calls the same functions — then an 'epoch' event
+//      (systems/land.ts), then research's tokens are billed (systems/research.ts `tokenEpoch`) —
+//      the catch-up calls the same functions — then an 'epoch' event
 //   9. quests: rate windows at epoch boundaries, a completion check every second (systems/quests.ts)
 import { isEmblem, type Emblem } from '@/content/emblem';
 import { BAL } from '@/content/balance';
@@ -76,6 +78,13 @@ export interface SimOptions {
 /** Last tick's power of one grid (for the HUD), kW. */
 export interface NetPower { demand: number; renew: number; fuel: number; sat: number }
 
+/** A minute's token bill (D68) and the running totals: tokens used, covered by the claim's servers, bought; centi-◉. */
+export interface TokenStats {
+  used: number; fromServers: number; bought: number; cents: number; supply: number; rental: number;
+  totalUsed: number; totalBought: number; totalCents: number;
+}
+export const newTokenStats = (): TokenStats => ({ used: 0, fromServers: 0, bought: 0, cents: 0, supply: 0, rental: 0, totalUsed: 0, totalBought: 0, totalCents: 0 });
+
 export class Sim {
   // ── identity & clock ──────────────────────────────────────────────────────
   tick = 0;
@@ -110,8 +119,23 @@ export class Sim {
   // ── the unlock tree: plans and research (D33) ────────────────────────────
   /** Tree nodes done: plans unlocked and research learnt (one id set; saved, hashed). */
   readonly done = new Set<string>();
-  /** Research in progress, in start order (one per observatory; reconversions hold a slot). */
+  /** Research in progress, in start order (one per lab; reconversions hold a slot). */
   projects: Project[] = [];
+  /** The Research Queue (an_queue): the node each lab starts once its project is done. Saved. */
+  readonly labQueue = new Map<number, string>();
+  // AI tokens (D68): never held — used as research runs, billed at each minute boundary.
+  /** Tokens research used since the last minute boundary (to bill). Saved, hashed. */
+  tokenUse = 0;
+  /** The servers' output since the last boundary, in token·‰·ticks (÷ 600 000 = tokens). Saved, hashed. */
+  serverAcc = 0;
+  /** The purse is in the red: research holds until it is back above zero. Saved, hashed. */
+  researchHeld = false;
+  /** Subscribed to CrierBelt's Compute Plan (cm_plan). Saved, hashed. */
+  tokenPlan = false;
+  /** Last minute's token bill and the totals (statistics for the UI: saved, not hashed). */
+  tokenStats: TokenStats = newTokenStats();
+  /** Carried fractions of the data makers (the Heart, autonomous labs), by entity: mu·‰·ticks. Saved, hashed. */
+  readonly dataAcc = new Map<number, number>();
   /** Archive notes (centi-◉ of science value), refunded by reconversions, spent on research. */
   notes = 0;
   respecs = 0;
@@ -163,6 +187,16 @@ export class Sim {
   /** Cumulative statistics (milli-items). */
   readonly produced = new Float64Array(N_ITEMS);
   readonly consumed = new Float64Array(N_ITEMS);
+  /**
+   * What the base brought into the Hearth while ticking (milli-items, cumulative): its ports'
+   * intake, the ore of dug tiles, a lost trade post's deliveries — the HUD's « +12/min » beside
+   * the Heart's stocks. Never what commands put in or take out (a building's cost or refund, a
+   * plan, a sale, a reward): the rate is the base's, and nothing flows out of the Heart by itself,
+   * so it is never negative. Neither saved nor hashed: a statistic of live play (the catch-up's
+   * reservoirs are virtual and leave it alone; an absence has its report, and the HUD starts its
+   * minute afresh after a catch-up).
+   */
+  readonly hearthIn = new Float64Array(N_ITEMS);
 
   constructor(opts: SimOptions, fresh = true) {
     this.worldSeed = opts.worldSeed;
@@ -220,8 +254,8 @@ export class Sim {
       links: this.links,
     });
     const ctx = makeCtx(this.graph, this.graph.nets.length, N_ITEMS);
-    if (this.ctx) { ctx.produced = this.ctx.produced; ctx.consumed = this.ctx.consumed; }
-    else { ctx.produced = this.produced; ctx.consumed = this.consumed; }
+    if (this.ctx) { ctx.produced = this.ctx.produced; ctx.consumed = this.ctx.consumed; ctx.hearthIn = this.ctx.hearthIn; }
+    else { ctx.produced = this.produced; ctx.consumed = this.consumed; ctx.hearthIn = this.hearthIn; }
     this.ctx = ctx;
     this.nodesByNet = this.graph.nets.map(() => []);
     for (const n of this.graph.nodes) if (n.net >= 0) this.nodesByNet[n.net]!.push(n);
@@ -311,7 +345,18 @@ export class Sim {
   unlockPlan(id: string): { ok: boolean; reason: research.PlanBlock | null } { return research.unlockPlan(this, id); }
   /** Does it stand dormant: its unlock given up (reconversion), or the land under it no longer the claim's (a lease lapsed)? */
   isDormant(e: Ent): boolean {
-    return research.isDormant(this, e) || (buildingDef(e.def).needsZone && !this.land.coversFootprint(e.def, e.x, e.y, e.rot));
+    return this.dormancy(e) !== null;
+  }
+
+  /**
+   * Why it sleeps, for the UI to say (null: awake): `research`, its unlock given up by a
+   * reconversion; `land`, a building that needs the claim's land standing where the claim no
+   * longer holds it (a lease lapsed or ended). Asleep, it is cut from every grid: its wires stay,
+   * drawn dashed, and carry nothing until it wakes.
+   */
+  dormancy(e: Ent): 'research' | 'land' | null {
+    if (research.isDormant(this, e)) return 'research';
+    return buildingDef(e.def).needsZone && !this.land.coversFootprint(e.def, e.x, e.y, e.rot) ? 'land' : null;
   }
 
   // ── land (docs/land.md) ───────────────────────────────────────────────────
@@ -321,6 +366,13 @@ export class Sim {
   rentLand(p: number): land.LandRefusal | null { return land.rentLand(this, p); }
   /** Give a lease up. */
   endLease(p: number): land.LandRefusal | null { return land.endLease(this, p); }
+  /** Parcel Resale: sell a bought parcel back to CrierBelt. */
+  sellLand(p: number): land.LandRefusal | null { return land.sellLand(this, p); }
+  resalePrice(p: number): number { return land.resalePrice(this, p); }
+  /** Why buying, leasing or selling back parcel `p` would be refused now (null: it would go through), for the UI. */
+  buyBlock(p: number): land.LandRefusal | null { return land.buyBlock(this, p); }
+  leaseBlock(p: number): land.LandRefusal | null { return land.leaseBlock(this, p); }
+  sellBlock(p: number): land.LandRefusal | null { return land.sellBlock(this, p); }
   /** What a parcel costs to buy now, and its rent for an hour's lease (centi-ocelles). */
   landPrice(p: number): number { return land.landPrice(this, p); }
   landRent(p: number): number { return land.landRent(this, p); }
@@ -330,6 +382,15 @@ export class Sim {
   researchBlock(id: string): StartBlock | null { return research.researchBlock(this, id); }
   startResearch(id: string, lab = 0): { ok: boolean; reason: StartBlock | null } { return research.startResearch(this, id, lab); }
   cancelResearch(id: string): boolean { return research.cancelResearch(this, id); }
+  /** Research Queue: the node a lab starts once its project is done (null: none). */
+  queueResearch(lab: number, id: string | null): boolean { return research.queueResearch(this, lab, id); }
+  queueBlock(lab: number, id: string): ReturnType<typeof research.queueBlock> { return research.queueBlock(this, lab, id); }
+  /** Subscribe to (or leave) CrierBelt's Compute Plan. */
+  setTokenPlan(on: boolean): boolean { return research.setTokenPlan(this, on); }
+  /** CrierBelt's price for 1 000 tokens now (centi-◉). */
+  tokenPriceK(): number { return research.tokenPriceK(this); }
+  /** The minute boundary's token bill (online: from step; offline: the catch-up). Whether research's hold changed. */
+  tokenEpoch(): boolean { return research.tokenEpoch(this); }
   respecBlock(branch: BranchId): research.RespecBlock | null { return research.respecBlock(this, branch); }
   respec(branch: BranchId): boolean { return research.respec(this, branch); }
   projectStock(p: Project): Float64Array | null { return research.projectStock(this, p); }
@@ -362,20 +423,25 @@ export class Sim {
   removeRoute(id: number): boolean { return freight.removeRoute(this, id); }
 
   // ── commands: trade (systems/trade.ts) ───────────────────────────────────
-  setExport(post: number, slot: number, item: string | null): TradeRefusal | null { return trade.setExport(this, post, slot, item); }
-  addImport(post: number, item: string, perMin: number, maxCents: number): number | TradeRefusal { return trade.addImport(this, post, item, perMin, maxCents); }
+  addImport(post: number, item: string, perMin: number, maxCents: number, express = false): number | TradeRefusal { return trade.addImport(this, post, item, perMin, maxCents, express); }
+  /** Price Forecast: the Crier's prices `minutes` from now, trade-free (pure; null for a remote market). */
+  priceForecast(minutes: number): ReturnType<typeof trade.priceForecast> { return trade.priceForecast(this, minutes); }
+  /** Floor Prices: the bid (centi-◉ an item) under which the posts hold an item back (null: none). */
+  setFloorPrice(item: string, cents: number | null): boolean { return trade.setFloorPrice(this, item, cents); }
   cancelImport(id: number): boolean { return trade.cancelImport(this, id); }
   spotTrade(item: string, side: SpotSide, n: number): { cents: number } | { refused: TradeRefusal } { return trade.spotTrade(this, item, side, n); }
   quoteSpot(item: number, side: SpotSide, n: number): ReturnType<typeof trade.quoteSpot> { return trade.quoteSpot(this, item, side, n); }
   tradePosts(): Ent[] { return trade.tradePosts(this); }
-  streamsOf(post: number): number[] { return trade.streamsOf(this, post); }
+  /** A post's cargo (D64): what it bought and holds or awaits, sorted. */
+  cargoOf(post: number): readonly number[] { return trade.cargoOf(this, post); }
   /**
    * The epoch boundary (online: from step; offline: from the catch-up — the same call): trade
    * posts trade and the Crier settles, then the claim's value is sampled when due.
    */
-  tradeEpoch(): void {
-    trade.tradeEpoch(this);
+  tradeEpoch(): boolean {
+    const changed = trade.tradeEpoch(this);
     value.valueEpoch(this);
+    return changed;
   }
   /** The claim's value now, in centi-ocelles (systems/value.ts). */
   claimValue(): ReturnType<typeof value.claimValue> { return value.claimValue(this); }
@@ -404,13 +470,14 @@ export class Sim {
     this.ctx.now = this.tick;
     power.powerTick(this);
     runPhases(this.graph, this.graph.nodes, this.ctx, this.graph.accOrder);
-    if (this.projects.length) research.researchTick(this);
+    research.researchTick(this);
     landscape.landscapeTick(this);
     freight.freightTick(this);
     this.tick++;
     if (this.tick % EPOCH === 0) {
       this.tradeEpoch();
       this.landEpoch();
+      this.tokenEpoch();
       this.events.push({ k: 'epoch', epoch: this.absEpoch() });
     }
     quests.questStep(this);
@@ -465,9 +532,12 @@ export class Sim {
     for (const [a, b] of this.links.pairs()) h.int(a).int(b);
     for (const id of [...this.done].sort()) h.str(id);
     h.int(this.notes).int(this.respecs).int(this.lastRespec);
-    for (const p of this.projects) { h.str(p.id).int(p.lab).int(p.dur).int(p.el).ints(p.paid); }
+    for (const p of this.projects) { h.str(p.id).int(p.lab).int(p.dur).int(p.el).ints(p.paid).int(p.tokens ?? 0).int(p.tokUsed ?? 0); }
+    for (const [lab, id] of [...this.labQueue].sort((a, b) => a[0] - b[0])) h.int(lab).str(id);
+    h.int(this.tokenUse).int(this.serverAcc).int(this.researchHeld ? 1 : 0).int(this.tokenPlan ? 1 : 0);
+    for (const [id, v] of [...this.dataAcc].sort((a, b) => a[0] - b[0])) h.int(id).int(v);
     for (const [t, k] of this.designated) h.int(t).int(k === 'dig' ? 1 : 2);
-    for (const j of this.jobs) h.int(j.ent).int(j.tile).int(j.dur).int(j.el).int(j.mu).int(j.moved);
+    for (const j of this.jobs) h.int(j.ent).int(j.tile).int(j.dur).int(j.el).int(j.mu).int(j.moved).int(j.quarry ? 1 : 0);
     for (const [d, n] of [...this.fleet].sort((a, b) => a[0] - b[0])) h.int(d).int(n);
     for (const r of this.routes) h.int(r.id).int(r.from).int(r.to).int(r.item).int(r.ships).int(Math.floor(r.carry * 1e6));
     h.int(this.nextRouteId);
@@ -478,9 +548,9 @@ export class Sim {
     h.ints([...this.land.bought].sort((a, b) => a - b)).ints([...this.land.granted].sort((a, b) => a - b));
     for (const [p, l] of [...this.land.leases].sort((a, b) => a[0] - b[0])) h.int(p).int(l.next).int(l.cents);
     for (const [cx, cy, r] of this.explored) h.int(cx).int(cy).int(r);
-    // Trade: streams, orders, goods in flight, the ocelles' history, and the market's own state.
+    // Trade: cargo, orders, goods in flight, the ocelles' history, and the market's own state.
     const t = this.trade;
-    for (const [post, items] of [...t.exports].sort((a, b) => a[0] - b[0])) h.int(post).ints(items);
+    for (const [post, items] of [...t.cargo].sort((a, b) => a[0] - b[0])) h.int(post).ints(items);
     for (const o of t.orders) h.int(o.id).int(o.post).int(o.item).int(o.perMin).int(o.maxCents).int(o.active ? 1 : 0);
     for (const sh of t.inflight) h.int(sh.post).int(sh.item).int(sh.mu).int(sh.arrive);
     h.int(t.nextOrderId).int(t.earned).int(t.spent).ints(t.sold).ints(t.bought);

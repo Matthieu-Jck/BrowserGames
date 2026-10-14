@@ -243,6 +243,41 @@ await step('build: off the claim’s land a kiln is refused, with the reason and
   assert(!(await FL(([x, y]) => window.FL.entityAt(x, y), far)), 'kiln placed off the claim’s land');
 });
 
+await step('build: a ribbon dragged over the Crown leaves its steps to traction ribbons (D77): the tip names it, the toast counts them', async () => {
+  await page.keyboard.press('Escape');
+  await FL(() => window.FL.tool('ribbon'));
+  // A free row east of the Heart whose drag meets the Crown's steps: the tiles the plan leaves out.
+  const row = await FL(() => {
+    const sim = window.FL.app.sim;
+    for (let y = 498; y <= 526; y++) {
+      const path = []; for (let x = 526; x <= 548; x++) path.push([x, y, 1]);
+      const plan = sim.planBelts('ribbon', path);
+      if (plan.some((s) => !s.ok && s.reason !== 'needs_lift')) continue;
+      const steps = plan.filter((s) => s.reason === 'needs_lift').map((s) => s.x);
+      if (steps.length >= 2) return { y, steps };
+    }
+    return null;
+  });
+  assert(row, 'no free row over the Crown');
+  await FL(([y]) => window.FL.lookAt(537, y, 1.2), [row.y]);
+  await page.waitForTimeout(300);
+  const [ax, ay] = await tileXY(526, row.y);
+  const [bx, by] = await tileXY(548, row.y);
+  await page.mouse.move(ax, ay);
+  await page.mouse.down();
+  await page.mouse.move(bx, by, { steps: 10 });
+  await page.waitForTimeout(250);
+  const tip = await page.evaluate(() => document.querySelector('#tooltip .tip-lift')?.textContent ?? null);
+  await page.screenshot({ path: shot('smoke-crown-steps.png') });
+  await page.mouse.up();
+  assert(tip && /traction|2|T/i.test(tip), `the tip does not name the traction ribbon: ${tip}`);
+  const t = (await FL(() => window.FL.toasts())).join(' | ');
+  assert(new RegExp(`${row.steps.length} (tuiles laissées|tiles left out)`).test(t), `no toast counting the steps left out: ${t}`);
+  const laid = await FL(([y, xs]) => xs.map((x) => window.FL.entityAt(x, y)), [row.y, row.steps]);
+  assert(laid.every((e) => !e), `a ribbon was laid facing a step: ${JSON.stringify(laid)}`);
+  assert((await FL(([y]) => window.FL.entityAt(526, y), [row.y]))?.def === 'ribbon', 'the rest of the drag was not laid');
+});
+
 await step('inspect: in the iso view a click on the Heart’s uplink (above its footprint) opens the inspector', async () => {
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
@@ -322,6 +357,28 @@ await step('power: P shows the power overlay', async () => {
   await page.keyboard.press('p');
 });
 
+await step('inspect: the grid module (D76) — a wind flower shows rated × factor = now, its factor unfolds why; a workshop shows what it draws, in the same card', async () => {
+  const ids = await FL(() => {
+    const sim = window.FL.app.sim;
+    const of = (def) => sim.ents.sorted().find((e) => window.FL.entityAt(e.x, e.y)?.def === def && e.builtAt === 0)?.id ?? 0;
+    return { wind: of('wind_flower'), shop: of('workshop') };
+  });
+  assert(ids.wind && ids.shop, `demo base: ${JSON.stringify(ids)}`);
+  await FL((id) => window.FL.selected(id), ids.wind);
+  await page.waitForSelector('[data-power-card] [data-pw="formula"] .pw-coef', { timeout: 5000 });
+  assert((await page.$$('[data-power-card]')).length === 1, 'one grid card');
+  assert(await page.$('.pw-why[hidden]'), 'the reasons start folded');
+  await page.click('.pw-coef');
+  await page.waitForSelector('.pw-why:not([hidden]) [data-pw-viz="wind"] .pw-step[data-on]', { timeout: 3000 });
+  const f = await page.evaluate(() => [...document.querySelectorAll('[data-pw="formula"] .pw-kw, [data-pw="formula"] .pw-coef-n')].map((n) => n.textContent));
+  assert(f.length === 3 && /kW/.test(f[0]) && /^×/.test(f[1]) && /kW/.test(f[2]), `formula: ${f.join(' | ')}`);
+  await page.locator('.inspector').screenshot({ path: shot('smoke-grid-card.png') });
+  await FL((id) => window.FL.selected(id), ids.shop);
+  await page.waitForSelector('[data-power-card] [data-pw="draw"]', { timeout: 5000 });
+  assert(!(await page.$('[data-pw="formula"]')), 'a consumer has no formula');
+  await FL(() => window.FL.selected(0));
+});
+
 // ── M4: research ─────────────────────────────────────────────────────────────
 await step('sound: the first click unlocked it; the score follows the clock; cues played; three live sliders', async () => {
   // The build and power steps' mouse clicks were the user gesture that starts Web Audio.
@@ -338,7 +395,7 @@ await step('sound: the first click unlocked it; the score follows the clock; cue
 
 await step('research: start Mechanics from the screen, the HUD counts down, a notice lands', async () => {
   await FL(() => window.FL.lookAt(512, 512, 1));
-  assert(await FL(() => window.FL.feedLab('journal_1', 40)), 'no observatory to feed');
+  assert(await FL(() => window.FL.feedLab('journal_1', 40)), 'no research lab to feed');
   await page.keyboard.press('t');
   await page.waitForSelector('[data-screen="research"][data-open]', { timeout: 2000 });
   await page.click('.rs-card[data-id="tr1"]');
@@ -369,7 +426,7 @@ await step('stats: the screen lists what the colony makes', async () => {
 });
 
 // ── M6: the Crier ──────────────────────────────────────────────────────────
-await step('crier: in the Port-Écume shortage, the trade post next to the Hearth sells glass dear; M opens the Crier', async () => {
+await step('crier: in the Port-Écume shortage, glass sells dear through the post (CrierBelt takes a fifth, D64); M opens the Crier', async () => {
   const post = await FL(() => window.FL.tradePost());
   assert(post > 0, 'no trade post in the demo');
   // The scripted first trade: bulbs short at Port-Écume from 20 min after founding, for 2 h,
@@ -381,14 +438,13 @@ await step('crier: in the Port-Écume shortage, the trade post next to the Heart
   console.log(`    bulbs bid ${p.bid.toFixed(2)} ◉ · gazette: ${g.active.join(' | ')}`);
   assert(g.active.some((l) => /Port-Écume/.test(l)), `no shortage in the Gazette: ${JSON.stringify(g)}`);
   assert(p.bid > 4.6, `bulbs not dearer in the shortage: ${p.bid}`);
+  // A spot sale from the Heart's stock (a post's entrance sells only what ribbons bring it, D64).
   const c0 = await FL(() => window.FL.credits());
-  const refused = await FL((id) => window.FL.app.sim.setExport(id, 0, 'glass'), post);
-  assert(refused === null, `export refused: ${refused}`);
-  await FL(() => window.FL.tick(600));
+  const sale = await FL(() => window.FL.app.sim.spotTrade('glass', 'sell', 40));
+  assert(sale && 'cents' in sale, `sale refused: ${JSON.stringify(sale)}`);
   const c1 = await FL(() => window.FL.credits());
   console.log(`    ocelles ${c0.toFixed(0)} → ${c1.toFixed(0)}`);
   assert(c1 > c0 + 100, `the sale did not pay: ${c0} → ${c1}`);
-  await FL((id) => window.FL.app.sim.setExport(id, 0, null), post);
   await page.keyboard.press('m');
   await page.waitForSelector('[data-screen="market"][data-open]', { timeout: 2000 });
   await page.waitForTimeout(900);
@@ -396,7 +452,7 @@ await step('crier: in the Port-Écume shortage, the trade post next to the Heart
   await page.keyboard.press('Escape');
 });
 
-await step('crier: a standing order imports copper ore by the post’s one exit (D62), delivered after the lift and the colony’s delay; the inspector shows its gates', async () => {
+await step('crier: a standing order imports copper ore by the post’s one exit (D62), delivered after the lift and the colony’s delay; the inspector is a recap; a click on the post picks it', async () => {
   const post = await FL(() => window.FL.tradePost());
   // D62: the 5×5 post has one entrance (port 0) and one exit (port 1), each across its scorched
   // apron on a flame-proof ribbon. The exit hands out everything the post bought, in turn: there
@@ -419,24 +475,37 @@ await step('crier: a standing order imports copper ore by the post’s one exit 
   console.log(`    copper ore ${before} → ${after}`);
   assert(after >= before + 10, `nothing delivered: ${before} → ${after}`);
   await page.waitForFunction(() => [...document.querySelectorAll('.toast')].some((n) => /Livraison|Delivered/.test(n.textContent ?? '')), undefined, { timeout: 3000 });
-  // The inspector shows the gates rather than outlet pickers: the entrance with what it sells, the
-  // exit linked, with the ore it hands out.
-  await FL((p) => window.FL.app.sim.setExport(p, 0, 'glass'), post);
+  // The inspector is a recap (D64): its gates (the exit linked), what its container holds and what
+  // it is worth, what is on its way and what it cost, its orders — no outlet or stream pickers.
   await FL((p) => { const e = window.FL.app.sim.ents.get(p); window.FL.lookAt(e.x + 2.5, e.y + 2.5, 1.5); window.FL.selected(p); }, post);
   await page.waitForSelector('.inspector:not([hidden]) [data-gate="out"]', { timeout: 3000 });
   const g = await FL(() => ({
-    outlets: document.querySelectorAll('.inspector [data-outlet]').length,
-    sells: [...document.querySelectorAll('.inspector [data-gate="in"] .insp-chip[data-item]')].map((n) => n.getAttribute('data-item')),
+    pickers: document.querySelectorAll('.inspector [data-outlet], .inspector [data-pick^="stream"]').length,
     linked: !!document.querySelector('.inspector [data-gate="out"][data-gate-linked]'),
-    hands: [...document.querySelectorAll('.inspector [data-gate="out"] .insp-chip[data-item]')].map((n) => n.getAttribute('data-item')),
+    recaps: document.querySelectorAll('.inspector .tp-recap').length,
+    order: !!document.querySelector('.inspector .tr-order[data-item="copper_ore"]'),
+    lines: [...document.querySelectorAll('.inspector .tp-recap .tp-line[data-item]')].map((n) => n.getAttribute('data-item')),
   }));
-  console.log(`    gates: in ${g.sells.join(',')} · out ${g.hands.join(',')}${g.linked ? '' : ' (not linked)'}`);
-  assert(g.outlets === 0, 'the trade post still shows outlet pickers');
-  assert(g.sells.includes('glass'), `the entrance does not show what it sells: ${g.sells}`);
-  assert(g.linked && g.hands.includes('copper_ore'), `the exit does not show the ore it hands out: ${JSON.stringify(g)}`);
+  console.log(`    recap: ${g.lines.join(',') || 'empty'}${g.linked ? '' : ' (exit not linked)'}`);
+  assert(g.pickers === 0, 'the trade post still shows outlet or stream pickers');
+  assert(g.recaps === 2, `no cargo / on-its-way recap: ${g.recaps}`);
+  assert(g.linked && g.order, `the exit or the copper order is not shown: ${JSON.stringify(g)}`);
   await page.waitForTimeout(600);
   await page.screenshot({ path: shot('smoke-m6-post.png') });
-  await FL((p) => { window.FL.app.sim.setExport(p, 0, null); window.FL.selected(0); }, post);
+  // Iso picking: a click on the post's pad or apron picks the post — a flat ribbon in front never
+  // takes it (owner, 2026-10-14: "my cursor was on the trade post, but it selected the ribbon").
+  const pick = await FL((p) => {
+    const pk = window.FL.app.picker, e = window.FL.app.sim.ents.get(p);
+    let hits = 0, n = 0;
+    for (let i = 0; i <= 12; i++) for (let j = 0; j <= 12; j++) {
+      const [sx, sy] = pk.tileToScreen(e.x - 0.4 + (i * 4.8) / 12, e.y - 0.4 + (j * 4.8) / 12);
+      n++; if (pk.entityAt(sx, sy) === p) hits++;
+    }
+    return { hits, n };
+  }, post);
+  console.log(`    picking over the post: ${pick.hits}/${pick.n}`);
+  assert(pick.hits >= 0.95 * pick.n, `clicks on the post pick something else: ${pick.hits}/${pick.n}`);
+  await FL(() => window.FL.selected(0));
   await FL((o) => window.FL.app.sim.cancelImport(o), id);
 });
 
@@ -584,7 +653,9 @@ await step('land (D60): I opens the land mode over the plan view; a click picks 
 
 await step('perf: 10 000 items riding ribbons stay above 30 fps', async () => {
   // Ribbons may cross land the claim does not hold, never a sister claim's (D60): the claim buys
-  // the sister parcels under the field first (the ocelles granted: a rig).
+  // the sister parcels under the field first (the ocelles granted, and Far Claim, since they do not
+  // touch its land: a rig).
+  await FL(() => window.FL.unlock('xp_far'));
   const sisters = await FL(() => {
     const sim = window.FL.app.sim, ps = new Set();
     for (let y = 450; y < 550; y++) for (let x = 600; x < 705; x++) ps.add(Math.floor((y + 8) / 16) * 65 + Math.floor((x + 8) / 16));
@@ -653,7 +724,7 @@ await step('debug bases: the menu page plays a ready-made base; the player’s b
   await page.click('[data-debug-load="survey"]');
   await page.waitForSelector('[data-debug-badge]:not([hidden])', { timeout: 10000 });
   const s = await FL(() => ({ menu: window.FL.menu(), cur: window.FL.debugSaves().current, q: window.FL.quests().current }));
-  assert(!s.menu && s.cur === 'survey' && s.q === 'field_journal', `after load: ${JSON.stringify(s)}`);
+  assert(!s.menu && s.cur === 'survey' && s.q === 'crier_calls', `after load: ${JSON.stringify(s)}`);
   await FL(() => window.FL.resume());
   await page.waitForTimeout(1500);
   assert((await FL(() => window.FL.debugSaves().realHash)) === own, 'the player’s base moved while aside');
@@ -730,12 +801,12 @@ await step('quests: CrierBelt has the claim named; the log moves on; rewards pay
   assert(seen, `no CrierBelt notice: ${JSON.stringify(await FL(() => window.FL.toasts()))}`);
   await page.screenshot({ path: shot('smoke-quests.png') });
   const c0 = await FL(() => window.FL.credits());
-  assert((await FL(() => window.FL.completeQuest('beyond_crown'))) === null, 'completeQuest refused');
+  assert((await FL(() => window.FL.completeQuest('field_journal'))) === null, 'completeQuest refused'); // the last quest (D71)
   q = await FL(() => window.FL.quests());
-  assert(q.done.length === 12, `done: ${q.done.length}`);
+  assert(q.done.length === 11, `done: ${q.done.length}`); // the tutorial's eleven quests (the board quest went with the export streams, D64)
   const c1 = await FL(() => window.FL.credits());
   assert(Math.abs(c1 - c0 - 250) < 0.01, `credits ${c0} → ${c1}`);
-  await FL(() => window.FL.completeQuest('beyond_crown'));
+  await FL(() => window.FL.completeQuest('field_journal'));
   assert(Math.abs((await FL(() => window.FL.credits())) - c1) < 0.01, 'paid twice');
 });
 

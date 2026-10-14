@@ -65,12 +65,14 @@ export function incidentText(sim: Sim, i: Incident): string {
     case 'orderPaused': return t('away.inc.orderPaused', { item });
     case 'orderResumed': return t('away.inc.orderResumed', { item });
     case 'leaseLapsed': return t('away.inc.leaseLapsed', { c: i.parcel !== undefined ? parcelLabel(i.parcel) : '' });
+    case 'researchHeld': return t('away.inc.researchHeld');
+    case 'researchResumed': return t('away.inc.researchResumed');
     default: { const never: never = i.kind; return never; }
   }
 }
 
 /** What stops a line: a store full or empty, the power short, the accumulators flat, an order paused, a lease lapsed (its buildings dormant). */
-const STOPS: ReadonlySet<IncidentKind> = new Set(['storageFull', 'storageEmpty', 'brownout', 'accEmpty', 'orderPaused', 'leaseLapsed']);
+const STOPS: ReadonlySet<IncidentKind> = new Set(['storageFull', 'storageEmpty', 'brownout', 'accEmpty', 'orderPaused', 'leaseLapsed', 'researchHeld']);
 
 /** The first thing that stops part of the base, or null when nothing does. */
 export function firstStop(r: AwayReport): Incident | null {
