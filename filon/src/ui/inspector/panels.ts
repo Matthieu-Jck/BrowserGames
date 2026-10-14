@@ -5,7 +5,7 @@ import type { BuildingKind } from '@/content/types';
 import { hearthPanel, landscapePanel } from './colony';
 import type { Panel } from './kit';
 import { dockPanel, forkPanel, outletsPanel, ribbonPanel, storePanel } from './logistics';
-import { drillPanel, generatorPanel, labPanel, machinePanel, modulesPanel } from './production';
+import { drillPanel, generatorPanel, labPanel, machinePanel, modulesPanel, serverPanel } from './production';
 import { tradePanel } from './trade';
 import { chargePanel, outputPanel } from './power';
 
@@ -18,10 +18,11 @@ export const PANELS: Partial<Record<BuildingKind, readonly Panel[]>> = {
   geothermal: [outputPanel],
   accumulator: [chargePanel],
   lab: [labPanel],
+  server: [serverPanel],
   belt: [ribbonPanel],
   conduit: [ribbonPanel],
   fork: [forkPanel],
-  hearth: [hearthPanel], // no outlets: the Heart takes, it never gives
+  hearth: [hearthPanel], // no outlets to set: the Heart takes, it never gives (but its data outlet, D68)
   storage: [storePanel],
   dock: [storePanel, outletsPanel, dockPanel],
   excavator: [landscapePanel],

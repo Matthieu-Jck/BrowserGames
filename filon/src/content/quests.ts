@@ -185,7 +185,7 @@ export const QUESTS = {
     name: { fr: 'Ta concession', en: 'Your Claim' },
     desc: {
       fr: 'Bienvenue dans le partenariat. Vos drones ont posé le Cœur de votre base au fond du cirque de Bonne-Veine ; elle travaille seule, vous la pilotez depuis Verrière. Donnez un nom à votre concession, que nous l’inscrivions au registre de la Criée.',
-      en: 'Welcome to the partnership. Your drones have set your base’s Heart down in the Bonne-Veine cirque; it works by itself, and you steer it from Verrière. Give your claim a name, and we will enter it in the Crier’s register.',
+      en: 'Welcome to the partnership. Your drones have set your base’s Core down in the Bonne-Veine cirque; it works by itself, and you steer it from Verrière. Give your claim a name, and we will enter it in the Crier’s register.',
     },
     objectives: [{ k: 'name' }],
     reward: {},
@@ -200,26 +200,26 @@ export const QUESTS = {
     reveals: ['build', 'power', 'stock:iron_plate', 'stock:glass', 'stock:copper_wire', 'stock:iron_ore'],
     desc: {
       fr: 'Première étape : extraire. Posez une foreuse sur le gisement de fer, reliez-la au Cœur pour l’énergie, et tracez un ruban pour le minerai.',
-      en: 'Step one: extract. Put a drill on the iron deposit, wire it to the Heart for power, and lay a ribbon for the ore.',
+      en: 'Step one: extract. Put a drill on the iron deposit, wire it to the Core for power, and lay a ribbon for the ore.',
     },
     objectives: [
       { k: 'build', defs: DRILLS, n: 1 },
-      { k: 'stock', items: ORES, n: 10, label: { fr: 'Minerai au Cœur', en: 'Ore in the Heart' } },
+      { k: 'stock', items: ORES, n: 10, label: { fr: 'Minerai au Cœur', en: 'Ore in the Core' } },
     ],
     reward: { items: [['iron_plate', 20]] },
     steps: [
       {
-        hint: { fr: 'Pose une foreuse sur le gisement de fer, au nord du Cœur (R : tourner).', en: 'Place a drill on the iron deposit, north of the Heart (R: rotate).' },
+        hint: { fr: 'Pose une foreuse sur le gisement de fer, au nord du Cœur (R : tourner).', en: 'Place a drill on the iron deposit, north of the Core (R: rotate).' },
         target: { k: 'build', def: 'drill', at: { deposit: 'iron_ore' } },
         done: { k: 'build', defs: DRILLS, n: 1 },
       },
       {
-        hint: { fr: 'Relie-la au Cœur : outil Relier, clique le Cœur puis la foreuse. Trop loin (plus de 8 tuiles) ? Pose un poteau entre les deux.', en: 'Wire it to the Heart: Link tool, click the Heart, then the drill. Too far (over 8 tiles)? Place a pole between them.' },
+        hint: { fr: 'Relie-la au Cœur : outil Relier, clique le Cœur puis la foreuse. Trop loin (plus de 8 tuiles) ? Pose un poteau entre les deux.', en: 'Wire it to the Core: Link tool, click the Core, then the drill. Too far (over 8 tiles)? Place a pole between them.' },
         target: { k: 'link' },
         done: { k: 'linked', defs: DRILLS, n: 1 },
       },
       {
-        hint: { fr: 'Trace un ruban depuis la sortie de la foreuse jusqu’à une entrée du Cœur (ses buses turquoise).', en: 'Lay a ribbon from the drill’s output to an input of the Heart (its teal nozzles).' },
+        hint: { fr: 'Trace un ruban depuis la sortie de la foreuse jusqu’à une entrée du Cœur (ses buses turquoise).', en: 'Lay a ribbon from the drill’s output to an input of the Core (its teal nozzles).' },
         target: { k: 'build', def: 'ribbon', at: INTAKE },
         done: { k: 'delivers', defs: DRILLS, n: 1 },
       },
@@ -232,7 +232,7 @@ export const QUESTS = {
     reveals: ['research'],
     desc: {
       fr: 'Une foreuse donne 20 minerais par minute, pas plus. Doublez-la. Et pour suivre vos débits, débloquez la Télémétrie dans l’arbre des techniques : un plan se paie en matériaux du Cœur et sert aussitôt.',
-      en: 'A drill gives 20 ore a minute, no more. Double it. And to follow your rates, unlock Telemetry in the tech tree: a plan is paid with materials from the Heart and works at once.',
+      en: 'A drill gives 20 ore a minute, no more. Double it. And to follow your rates, unlock Telemetry in the tech tree: a plan is paid with materials from the Core and works at once.',
     },
     objectives: [
       { k: 'unlocked', ids: ['telemetry'] },
@@ -252,12 +252,12 @@ export const QUESTS = {
         done: { k: 'build', defs: DRILLS, n: 2 },
       },
       {
-        hint: { fr: 'Relie-la elle aussi au Cœur (outil Relier).', en: 'Wire it to the Heart too (Link tool).' },
+        hint: { fr: 'Relie-la elle aussi au Cœur (outil Relier).', en: 'Wire it to the Core too (Link tool).' },
         target: { k: 'link' },
         done: { k: 'linked', defs: DRILLS, n: 2 },
       },
       {
-        hint: { fr: 'Un ruban de sa sortie jusqu’à une entrée du Cœur, ou dans le ruban de la première foreuse.', en: 'A ribbon from its output to an input of the Heart, or into the first drill’s ribbon.' },
+        hint: { fr: 'Un ruban de sa sortie jusqu’à une entrée du Cœur, ou dans le ruban de la première foreuse.', en: 'A ribbon from its output to an input of the Core, or into the first drill’s ribbon.' },
         target: { k: 'build', def: 'ribbon', at: INTAKE },
         done: { k: 'delivers', defs: DRILLS, n: 2 },
       },
@@ -270,7 +270,7 @@ export const QUESTS = {
     name: { fr: 'La fonderie', en: 'The Smelter' },
     desc: {
       fr: 'Le minerai brut se vend mal, et le Cœur ne fait que recevoir : une fonderie se nourrit à même vos lignes. Le routeur partage la ligne de fer entre le Cœur et elle ; le charbon vient tout droit de sa foreuse.',
-      en: 'Raw ore sells poorly, and the Heart only takes in: a smelter feeds straight from your lines. A router shares the iron line between the Heart and the smelter; the coal comes straight from its drill.',
+      en: 'Raw ore sells poorly, and the Core only takes in: a smelter feeds straight from your lines. A router shares the iron line between the Core and the smelter; the coal comes straight from its drill.',
     },
     objectives: [
       { k: 'build', defs: ['router'], n: 1 },
@@ -286,12 +286,12 @@ export const QUESTS = {
         done: { k: 'unlocked', ids: ['kiln', 'router'] },
       },
       {
-        hint: { fr: 'Pose une foreuse sur le gisement de charbon, à l’ouest du Cœur.', en: 'Place a drill on the coal deposit, west of the Heart.' },
+        hint: { fr: 'Pose une foreuse sur le gisement de charbon, à l’ouest du Cœur.', en: 'Place a drill on the coal deposit, west of the Core.' },
         target: { k: 'build', def: 'drill', at: { deposit: 'coal' } },
         done: { k: 'build', defs: DRILLS, item: 'coal', n: 1 },
       },
       {
-        hint: { fr: 'Le charbon est trop loin du Cœur pour un fil direct (8 tuiles au plus) : pose un poteau à mi-chemin (onglet Énergie). Il se relie tout seul au Cœur.', en: 'The coal is too far from the Heart for a direct wire (8 tiles at most): place a pole halfway (Energy tab). It wires itself to the Heart.' },
+        hint: { fr: 'Le charbon est trop loin du Cœur pour un fil direct (8 tuiles au plus) : pose un poteau à mi-chemin (onglet Énergie). Il se relie tout seul au Cœur.', en: 'The coal is too far from the Core for a direct wire (8 tiles at most): place a pole halfway (Energy tab). It wires itself to the Core.' },
         target: { k: 'build', def: 'mast', at: { between: 'coal' } },
         done: { k: 'build', defs: MASTS, n: 1 },
       },
@@ -301,7 +301,7 @@ export const QUESTS = {
         done: { k: 'linked', defs: DRILLS, item: 'coal', n: 1 },
       },
       {
-        hint: { fr: 'Pose une fonderie entre le Cœur et le charbon : ses deux entrées sont à l’arrière (R : tourner).', en: 'Place a smelter between the Heart and the coal: its two inputs are at the back (R: rotate).' },
+        hint: { fr: 'Pose une fonderie entre le Cœur et le charbon : ses deux entrées sont à l’arrière (R : tourner).', en: 'Place a smelter between the Core and the coal: its two inputs are at the back (R: rotate).' },
         target: { k: 'build', def: 'kiln', at: { between: 'coal' } },
         done: { k: 'build', defs: KILNS, n: 1 },
       },
@@ -321,7 +321,7 @@ export const QUESTS = {
         done: { k: 'feeds', item: 'coal', to: KILNS, n: 1 },
       },
       {
-        hint: { fr: 'Et un ruban de sa sortie jusqu’à une entrée du Cœur.', en: 'And a ribbon from its output to an input of the Heart.' },
+        hint: { fr: 'Et un ruban de sa sortie jusqu’à une entrée du Cœur.', en: 'And a ribbon from its output to an input of the Core.' },
         target: { k: 'build', def: 'ribbon', at: INTAKE },
         done: { k: 'delivers', defs: KILNS, n: 1 },
       },
@@ -421,7 +421,7 @@ export const QUESTS = {
         done: { k: 'feeds', item: 'sand', to: KILNS, n: 1 },
       },
       {
-        hint: { fr: 'Le verre au Cœur : un ruban de sa sortie jusqu’à une entrée du Cœur.', en: 'The glass to the Heart: a ribbon from its output to an input of the Heart.' },
+        hint: { fr: 'Le verre au Cœur : un ruban de sa sortie jusqu’à une entrée du Cœur.', en: 'The glass to the Core: a ribbon from its output to an input of the Core.' },
         target: { k: 'build', def: 'ribbon', at: INTAKE },
         done: { k: 'delivers', defs: KILNS, n: 2 },
       },
@@ -524,7 +524,7 @@ export const QUESTS = {
         done: { k: 'unlocked', ids: ['wire_mill'] },
       },
       {
-        hint: { fr: 'Pose une foreuse sur le filon de cuivre, au sud du Cœur.', en: 'Place a drill on the copper vein, south of the Heart.' },
+        hint: { fr: 'Pose une foreuse sur le filon de cuivre, au sud du Cœur.', en: 'Place a drill on the copper vein, south of the Core.' },
         target: { k: 'build', def: 'drill', at: { deposit: 'copper_ore' } },
         done: { k: 'build', defs: DRILLS, item: 'copper_ore', n: 1 },
       },
@@ -549,7 +549,7 @@ export const QUESTS = {
         done: { k: 'feeds', item: 'copper_ore', to: ['wire_mill'], n: 1 },
       },
       {
-        hint: { fr: 'Et un de la tréfileuse jusqu’à une entrée du Cœur.', en: 'And one from the wire mill to an input of the Heart.' },
+        hint: { fr: 'Et un de la tréfileuse jusqu’à une entrée du Cœur.', en: 'And one from the wire mill to an input of the Core.' },
         target: { k: 'build', def: 'ribbon', at: INTAKE },
         done: { k: 'delivers', defs: ['wire_mill'], n: 1 },
       },

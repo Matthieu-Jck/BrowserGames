@@ -229,7 +229,7 @@ export const PLANS = {
     name: { fr: 'Télémétrie', en: 'Telemetry' },
     desc: {
       fr: 'Les débits de ta base au HUD : ce que le Cœur gagne ou perd par minute, à côté de chaque stock.',
-      en: 'Your base’s rates in the HUD: what the Heart gains or loses per minute, beside each stock.',
+      en: 'Your base’s rates in the HUD: what the Core gains or loses per minute, beside each stock.',
     },
     effects: [flag('telemetry')],
   }),

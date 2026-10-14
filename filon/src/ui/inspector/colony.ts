@@ -9,7 +9,7 @@ import { el, setText } from '@/core/dom';
 import { duration } from '@/i18n/format';
 import { locale, t, tr } from '@/i18n/i18n';
 import { footprint } from '@/sim/entities';
-import { costChips, fmt, heading, heldList, itemRow, note, type Panel } from './kit';
+import { costChips, fmt, heading, heldList, itemRow, note, row, type Panel } from './kit';
 
 /** The Heart: the top of its stock, its level and the next upgrade. */
 export const hearthPanel: Panel = ({ sim, host, live }) => {
@@ -20,8 +20,10 @@ export const hearthPanel: Panel = ({ sim, host, live }) => {
     .map((i) => [i, Math.floor(sim.stock[i]! / 1000)] as const), t('insp.empty'));
   const lv = sim.hearthLevel;
   const up = BAL.hearthUpgrades[lv - 1];
+  // Its data outlet (D68): the files a minute it makes and hands out, once Analytics has it make some.
+  const data = sim.mods.heartData > 0 ? row(t('insp.hearth.data'), t('insp.hearth.data.v', { n: fmt(sim.mods.heartData / 1000, 0) })) : null;
   const out: Array<HTMLElement | null> = [
-    heading(t('insp.stock')), list,
+    heading(t('insp.stock')), list, data,
     heading(t('insp.hearth.level', { n: lv })),
   ];
   if (!up) { out.push(note(t('insp.hearth.max'))); return out; }

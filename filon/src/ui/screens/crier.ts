@@ -68,7 +68,7 @@ const SPARK_H = 24;
 interface Ctx { readonly atlas: Atlas; readonly host: CrierHost }
 
 /** What the player typed or picked: kept across a rebuild (a locale switch). */
-interface OrderForm { item: string; n: string; max: string; touched: boolean }
+interface OrderForm { item: string; n: string; max: string; touched: boolean; express?: boolean }
 interface Forms { spotItem: string; spotN: string; readonly orders: Map<number, OrderForm> }
 
 // ── small helpers ─────────────────────────────────────────────────────────────
@@ -159,6 +159,10 @@ interface PriceRow {
   readonly trend: HTMLElement;
   readonly flow: HTMLElement;
   readonly badge: HTMLElement;
+  /** Price Forecast (an_forecast): the mid price's move within the hour. */
+  readonly fc: HTMLElement;
+  /** Floor Prices (cm_floor): the bid under which the posts keep it. */
+  readonly floor: HTMLInputElement;
 }
 
 class PricesPane {
@@ -192,23 +196,56 @@ class PricesPane {
     const title = [from && t('crier.sources', { list: from }), wanted && t('crier.buyers', { list: wanted })].filter(Boolean).join('\n');
     const stock = el('span.cr-num.cr-stock'), bid = el('span.cr-num.cr-bid'), ask = el('span.cr-num.cr-ask');
     const spark = new Spark(), trend = el('span.cr-num.cr-trend'), flow = el('span.cr-num.cr-flow'), badge = el('span.cr-badge');
+    const fc = el('small.cr-fc', { hidden: '', title: t('crier.forecast.tip') });
+    const floor = el<'input'>('input.cr-input.cr-input-floor', {
+      type: 'text', inputmode: 'decimal', hidden: '', placeholder: t('crier.floor'), title: t('crier.floor.tip'), 'data-floor': im.item,
+      onchange: () => {
+        const v = floor.value.trim() === '' ? null : parseOc(floor.value);
+        if (!this.ctx.host.sim().setFloorPrice(im.item, v !== null && v > 0 ? v : null) && v !== null) floor.value = '';
+      },
+    });
     const node = el('div.cr-row.cr-prow', { 'data-price-item': im.item }, [
       el('span.cr-item', { title }, [
         itemIcon(this.ctx.atlas, im.idx, 20),
         el('span.cr-stack', {}, [
           el('span.cr-name', {}, [itemName(im.idx), im.unique ? el('span.cr-uniq', { title: t('crier.unique') }, ' ✦') : null]),
-          badge,
+          badge, fc, floor,
         ]),
       ]),
       stock, bid, ask, el('span.cr-mid', {}, [spark.root]), trend, flow,
       el('button.cr-go', { title: t('crier.go'), 'data-trade-item': im.item, onclick: () => go(im.idx) }, '⇄'),
     ]);
-    this.rows.push({ idx: im.idx, node, stock, bid, ask, spark, trend, flow, badge });
+    this.rows.push({ idx: im.idx, node, stock, bid, ask, spark, trend, flow, badge, fc, floor });
     return node;
   }
 
+  /** The forecast, once a minute (a copy of the market run an hour on: a few ms). */
+  private fcEpoch = -1;
+  private fcMid: number[] | null = null;
+
   refresh(sim: Sim, snap: MarketSnapshot, items: ReadonlyMap<number, ItemMarket>, f: PostFacts): void {
     setText(this.note, t('crier.prices.note', { fee: feeText(f.fee) }));
+    const forecast = sim.mods.flags.has('forecast'), floors = sim.mods.flags.has('floorPrices');
+    if (forecast && this.fcEpoch !== sim.absEpoch()) {
+      this.fcEpoch = sim.absEpoch();
+      const p = sim.priceForecast(60);
+      this.fcMid = p ? p.bid.map((b, i) => (b + p.ask[i]!) / 2) : null;
+    }
+    for (const r of this.rows) {
+      r.fc.hidden = !forecast || !this.fcMid;
+      r.floor.hidden = !floors;
+      if (floors && document.activeElement !== r.floor) {
+        const fl = sim.trade.floors.get(r.idx);
+        const v = fl ? ocNum(fl) : '';
+        if (r.floor.value !== v) r.floor.value = v;
+      }
+      const im = items.get(r.idx);
+      if (!forecast || !this.fcMid || !im) continue;
+      const now = (im.bid + im.ask) / 2, then = this.fcMid[r.idx] ?? now;
+      const d = now > 0 ? then / now - 1 : 0;
+      setText(r.fc, t('crier.forecast', { v: `${d > 0.005 ? '↗' : d < -0.005 ? '↘' : '→'}\u00a0${spct(d)}` }));
+      setAttr(r.fc, 'data-sign', d > 0.005 ? '+' : d < -0.005 ? '-' : null);
+    }
     const { active, announced } = snap.events;
     for (const r of this.rows) {
       const im = items.get(r.idx);
@@ -254,6 +291,9 @@ class PostCard {
   private readonly max: HTMLInputElement;
   private readonly hint = el('small.cr-sub.cr-order-hint');
   private readonly form: OrderForm;
+  /** Express Freight (cm_express): half the delay, a quarter dearer. */
+  private readonly expressBox: HTMLInputElement;
+  private readonly express: HTMLElement;
 
   constructor(private readonly ctx: Ctx, readonly id: number, forms: Forms) {
     let form = forms.orders.get(id);
@@ -268,6 +308,9 @@ class PostCard {
       type: 'number', min: '1', step: '1', value: form.n, 'data-order-n': String(id), title: t('crier.order.n'),
       oninput: () => { this.form.n = this.n.value; }, onkeydown: keys(add),
     });
+    this.expressBox = el<'input'>('input', { type: 'checkbox', 'data-order-express': String(id), onchange: () => { this.form.express = this.expressBox.checked; } });
+    this.expressBox.checked = !!form.express;
+    this.express = el('label.cr-field.cr-express', { hidden: '', title: t('crier.order.express.tip') }, [this.expressBox, el('span', {}, t('crier.order.express'))]);
     this.max = el<'input'>('input.cr-input.cr-input-oc', {
       type: 'text', inputmode: 'decimal', value: form.max, 'data-order-max': String(id), title: t('crier.order.max'),
       oninput: () => { this.form.max = this.max.value; this.form.touched = true; }, onkeydown: keys(add),
@@ -282,6 +325,7 @@ class PostCard {
           this.item.root,
           el('label.cr-field', {}, [this.n, el('span', {}, t('crier.order.perMin'))]),
           el('label.cr-field', {}, [el('span', {}, t('crier.order.atMost')), this.max, el('span', {}, '◉')]),
+          this.express,
           el('button.btn.primary.cr-add', { 'data-order-add': String(id), onclick: add }, t('crier.order.add')),
         ]),
         this.hint,
@@ -309,7 +353,7 @@ class PostCard {
     const sim = this.ctx.host.sim();
     const it = itemOf(this.form.item);
     const n = Number(this.n.value), max = parseOc(this.max.value);
-    const r = sim.addImport(this.id, this.form.item, n, max);
+    const r = sim.addImport(this.id, this.form.item, n, max, !!this.form.express && sim.mods.flags.has('expressFreight'));
     if (typeof r === 'string') { this.ctx.host.notify('bad', refusalText(r)); return; }
     this.ctx.host.notify('good', t('crier.order.placed', { rate: rate(n), item: itemRef(it), max: oc(max) }));
   }
@@ -323,6 +367,7 @@ class PostCard {
         el('div.cr-order-main', {}, [
           el('span.cr-name', {}, itemMention(o.item)),
           el('span.cr-order-line', {}, t('crier.order.line', { rate: rate(o.perMin), max: oc(o.maxCents) })),
+          o.express ? el('span.cr-tag', { title: t('crier.order.express.tip') }, t('crier.order.express')) : null,
           el('button.cr-x', { title: t('crier.order.cancel'), 'aria-label': t('crier.order.cancel'), 'data-order-cancel': String(o.id), onclick: () => this.cancel(o) }, '✕'),
         ]),
         el('div.cr-order-sub', {}, [state, eta]),
@@ -357,6 +402,7 @@ class PostCard {
         : st.state === 'active' ? t('crier.order.next', { d: duration(secondsTo(sim, nextBoundary(sim))) }) : '');
     }
 
+    this.express.hidden = !sim.mods.flags.has('expressFreight');
     // The form: its picker and max follow the sim unless the player is at them.
     this.item.set(itemOf(this.form.item));
     this.defaultMax(sim);

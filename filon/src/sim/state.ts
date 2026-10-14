@@ -399,6 +399,8 @@ export class Sim {
 
   // ── commands: trade (systems/trade.ts) ───────────────────────────────────
   addImport(post: number, item: string, perMin: number, maxCents: number, express = false): number | TradeRefusal { return trade.addImport(this, post, item, perMin, maxCents, express); }
+  /** Price Forecast: the Crier's prices `minutes` from now, trade-free (pure; null for a remote market). */
+  priceForecast(minutes: number): ReturnType<typeof trade.priceForecast> { return trade.priceForecast(this, minutes); }
   /** Floor Prices: the bid (centi-◉ an item) under which the posts hold an item back (null: none). */
   setFloorPrice(item: string, cents: number | null): boolean { return trade.setFloorPrice(this, item, cents); }
   cancelImport(id: number): boolean { return trade.cancelImport(this, id); }

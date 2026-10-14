@@ -18,6 +18,7 @@
 import { BAL } from '@/content/balance';
 import { BUILDING_KIND, ITEM_IDS, N_ITEMS, itemDef } from '@/content/registry';
 import { afterFee, valueCents } from '@/market/pricing';
+import { LocalMarketService } from '@/market/service';
 import { EPOCH } from '../constants';
 import { ReservoirNode } from '../flow/nodes';
 import {
@@ -168,6 +169,20 @@ export function addImport(sim: Sim, post: number, item: string, perMin: number, 
   addCargo(sim, post, it);
   sim.dirty = true;
   return o.id;
+}
+
+/**
+ * Price Forecast (an_forecast): the Crier's bid and ask `minutes` from now, as the sister claims
+ * alone would move them (a copy of the market run on, trade-free — the « Avant de partir »
+ * forecast's way: the world's own answer, not a guess, as long as the claim does not trade).
+ * Pure: the colony's market is untouched.
+ */
+export function priceForecast(sim: Sim, minutes: number): { bid: number[]; ask: number[] } | null {
+  if (!(sim.market instanceof LocalMarketService)) return null;
+  const copy = LocalMarketService.load(sim.market.save(), sim.market.config);
+  const zero = new Float64Array(N_ITEMS);
+  const out = copy.settle({ epoch: sim.absEpoch() - 1 + Math.max(1, minutes), sold: zero, bought: zero });
+  return { bid: out.bid, ask: out.ask };
 }
 
 /** Floor Prices (cm_floor): the bid (centi-◉ an item) under which the posts hold an item back (null: none). Logged. */

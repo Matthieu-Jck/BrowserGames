@@ -48,7 +48,7 @@ export const BUILDINGS = {
   },
   excavator: {
     name: { fr: 'Excavatrice', en: 'Excavator' },
-    desc: { fr: 'Creuse la roche marquée avec Aménager, jusqu’à 18 tuiles d’elle : du terrain à bâtir. La pierre sort à l’arrière, le minerai enfoui file au Cœur.', en: 'Digs the rock you mark with Landscape, up to 18 tiles away: new land to build on. Stone leaves at the back; ore buried in the rock goes to the Heart.' },
+    desc: { fr: 'Creuse la roche marquée avec Aménager, jusqu’à 18 tuiles d’elle : du terrain à bâtir. La pierre sort à l’arrière, le minerai enfoui file au Cœur.', en: 'Digs the rock you mark with Landscape, up to 18 tiles away: new land to build on. Stone leaves at the back; ore buried in the rock goes to the Core.' },
     kind: 'excavator', category: 'extraction', w: 3, h: 3, needsZone: true, unlock: 'tr2', kw: 240, idleKw: 24,
     cost: [['iron_plate', 30], ['gear', 10], ['circuit', 4]], ports: [P(1, 2, 'S', 'out')], excavator: { reach: 3, speed: 1000 },
   },
@@ -123,7 +123,7 @@ export const BUILDINGS = {
   },
   unloader: {
     name: { fr: 'Déchargeur', en: 'Unloader' },
-    desc: { fr: 'Collé à une réserve (Cœur, silo…), en sort l’objet choisi vers les rubans et machines qui le touchent. Choisis l’objet dans l’inspecteur.', en: 'Set against a store (the Heart, a silo…), takes out the chosen item to the ribbons and machines touching it. Pick the item in the inspector.' },
+    desc: { fr: 'Collé à une réserve (Cœur, silo…), en sort l’objet choisi vers les rubans et machines qui le touchent. Choisis l’objet dans l’inspecteur.', en: 'Set against a store (the Core, a silo…), takes out the chosen item to the ribbons and machines touching it. Pick the item in the inspector.' },
     kind: 'fork', logic: 'unloader', replaceGroup: 'transport', category: 'distribution', w: 1, h: 1, needsZone: false, unlock: 'unloader',
     cost: [['iron_plate', 2], ['copper_wire', 1]], ports: [],
   },
@@ -229,7 +229,7 @@ export const BUILDINGS = {
   // ── energy ────────────────────────────────────────────────────────────────
   mast: {
     name: { fr: 'Poteau', en: 'Pole' },
-    desc: { fr: 'Porte le courant : 8 fils jusqu’à 6 tuiles. Relie-le (outil Relier, L) au Cœur, à d’autres poteaux et aux bâtiments à alimenter.', en: 'Carries power: 8 wires up to 6 tiles long. Link it (Link tool, L) to the Heart, other poles and the buildings to power.' },
+    desc: { fr: 'Porte le courant : 8 fils jusqu’à 6 tuiles. Relie-le (outil Relier, L) au Cœur, à d’autres poteaux et aux bâtiments à alimenter.', en: 'Carries power: 8 wires up to 6 tiles long. Link it (Link tool, L) to the Core, other poles and the buildings to power.' },
     kind: 'pole', replaceGroup: 'power', category: 'energy', w: 1, h: 1, needsZone: false, onRock: true, unlock: 'start',
     cost: [['iron_plate', 2], ['copper_wire', 1]], ports: [], pole: { range: 6, slots: 8 },
   },
@@ -287,7 +287,7 @@ export const BUILDINGS = {
   // ── commerce ──────────────────────────────────────────────────────────────
   trade_post: {
     name: { fr: 'Comptoir', en: 'Trade Post' },
-    desc: { fr: 'L’aire de levage de CrierBelt, dans un anneau que brûlent les flammes de ses drones : une seule entrée, une seule sortie, sur des rubans ignifugés. Elle vend chaque minute ce que son entrée apporte (tes flux d’export) et rend tes achats par sa sortie, à tour de rôle ; accolée au Cœur, elle commerce directement avec son stock.', en: 'CrierBelt’s cargo lift pad, in a ring its drones’ flames scorch: one entrance, one exit, on flame-proof ribbons. It sells each minute what its entrance brings (your export streams) and hands what you buy out of its exit, in turn; next to the Heart, it trades straight from its stock.' },
+    desc: { fr: 'L’aire de levage de CrierBelt, dans un anneau que brûlent les flammes de ses drones : une seule entrée, une seule sortie, sur des rubans ignifugés. Elle vend chaque minute ce que son entrée apporte (tes flux d’export) et rend tes achats par sa sortie, à tour de rôle ; accolée au Cœur, elle commerce directement avec son stock.', en: 'CrierBelt’s cargo lift pad, in a ring its drones’ flames scorch: one entrance, one exit, on flame-proof ribbons. It sells each minute what its entrance brings (your export streams) and hands what you buy out of its exit, in turn; next to the Core, it trades straight from its stock.' },
     // The pad is the middle 3×3; the outer ring is the scorched apron the drones' flames keep clear
     // (owner, 2026-10-14: "should block any construction in a 1 case radius around it because of
     // the flames of the drones"), crossed by its two built-in flame-proof ribbons: the entrance in
