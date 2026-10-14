@@ -481,7 +481,7 @@ Style rules, as the code applies them:
 | [iso-shapes.ts](../src/render/art/iso-shapes.ts) | Iso volumes: `box`, `slab` (over the footprint, or a part of it: `at`), `cylinder`, `domeIso`, `vaultIso`, `rotorIso`, `mastIso`, `dishIso`, `sphereIso`, `wheelIso`, `bucketWheelIso` (turning by a phase), `cupIso`, `pipeIso`, `portIso`, `prismIso`, `frustumIso`, `latheIso`, `drumIso`, `trussIso`, `chevronIso`, `terminalIso` (a power terminal: service mast, porcelain, clamp), `crierMarkIso` / `crierMarkFace`, `face*` / `faceInk` details | `IsoFrame(w, h, rot, head)` at 2× (`IS` 64, `IH` 32, `ILH` 32 px/level, margin 14): `p(x, y, z)`, `rect`, `ell`, `depth`; `Scene` = painter's queue; `ShadowFrame` lays every point on the ground along the light (cast shadows) |
 | [recipes/buildings.ts](../src/render/art/recipes/buildings.ts) | `R[id] = {head, draw(ctx, f, seed)}`, or `{head, moving: {body, part(…, t), over(f), shadow?}}` for a building with a moving part; `drawBuilding` adds ports from content (far sides under the body, near over it) and the kit's power terminals (last); `drawBuildingMoving` (body and phases apart); `shadowFrameOf` / `drawBuildingShadow` (the cast shadow); `fallback`; `isoHead`; `needsRotations`; `petalMastIso` (the first pole's art, kept, unused) | IsoFrame |
 | [recipes/buildings-top.ts](../src/render/art/recipes/buildings-top.ts) | `R[id] = (ctx, f, seed)`, or `MOVING_TOP[id] = {body, part}`; `drawBuildingTop`, `drawBuildingTopMoving`; ports via `shapes.port`, the kit's power terminals via `terminalTop`; `needsRotationsTop`; `petalMastTop` (kept, unused) | `Frame(TOP_PX 64, TOP_MARGIN 14)` |
-| [recipes/moving.ts](../src/render/art/recipes/moving.ts) | `MOVING[id] = {frames, sym}` (phases baked per period, periods per turn); the shared geometry: `TURBINE` + `vaneAt` (the crown), `SAND_WHEEL` + `bucketFull` (the bucket wheel) | — |
+| [recipes/moving.ts](../src/render/art/recipes/moving.ts) | `MOVING[id] = {frames, sym}` (phases baked per period, periods per turn); the shared geometry: `TURBINE` + `vaneAt` (the crown), `SAND_WHEEL` + `bucketFull` (the bucket wheel), `HRotor` with `PITCH_ROTOR` and `BIG_ROTOR` (the pitch-control and big turbines' rotors, D69) | — |
 | [recipes/belts.ts](../src/render/art/recipes/belts.ts) | `BELT_TIERS` colours; `drawStraight`, `drawCorner` (rails overrun the edges for seamless joins), `drawInlet` (a side merge), `drawDeck` (skybridge span) | 64 px canvas |
 | [recipes/items.ts](../src/render/art/recipes/items.ts), [icons.ts](../src/render/art/recipes/icons.ts) | One glyph per `Glyph` kind, coloured by `ItemDef.color`; `ICON_IDS` cartouches | 32 / 40 px |
 
@@ -532,7 +532,7 @@ camera only the steps whose wall faces it (climbing away from it, or coming down
 the shaft; the others stand behind the high column and only their heads peek over.
 
 **Moving parts** ([recipes/moving.ts](../src/render/art/recipes/moving.ts), [world/moving-parts.ts](../src/render/world/moving-parts.ts)).
-A building listed in `MOVING` (the wind turbine's crown, the sand collector's bucket wheel) shows
+A building listed in `MOVING` (the wind turbines' crowns and rotors, the sand collector's bucket wheel) shows
 its body (`bodyKey`) and, as a second sprite, its part (`partKey(key, k)`), in both views: in iso
 at the body's key ± 0.2 (over the body when `Atlas.moving` says the part is the nearer one in that
 rotation, under it otherwise; lifted with it on the mountains), in plan over it. `animate(sim, seconds, grade)`, per frame with the
@@ -914,9 +914,10 @@ windows. `set(key, v)` adds stats (`tickMs`, `renderMs`, `chunks`, `chunksMissin
 
 1. **Content first.** The building must exist in `src/content/buildings.ts` (`w`, `h`, `kind`,
    `ports`; see [content.md](content.md)). The atlas bakes every id in `BUILDING_IDS`; without a
-   recipe the building gets the fallback (a riveted crate-like machine). Pick its side first
-   (D21): machines are industrial, no domes or glass; places where people live or work get
-   glass, lights and greenery (the Hearth is the one glass dome).
+   recipe the building gets the fallback (a riveted crate-like machine). No people at the base
+   (D29, [lore.md](lore.md)): no lit windows, doors, glass domes or greenery; machines show
+   machine things (LEDs, beacons, floodlights, dishes, racks). The research buildings (D68) are
+   racks and cabinets: the lab, the data collector's mast, the servers' cooling.
 2. **Iso sprite.** Add an entry to `R` in [recipes/buildings.ts](../src/render/art/recipes/buildings.ts):
    ```ts
    my_mill: {
