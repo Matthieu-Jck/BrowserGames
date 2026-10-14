@@ -267,6 +267,12 @@ export class ReservoirNode extends FNode {
   locked = -1;
   /** Observatory: only these items are taken in (null = anything). */
   accepts: ReadonlySet<number> | null = null;
+  /**
+   * A trade post's exit (its one outlet, D62): the items it buys, handed out in turn — each beat
+   * the next one's (beats counted on the world clock, so the turn is a pure function of time; a
+   * beat whose item is out passes). null: each port hands out the item `portItems` names.
+   */
+  cycle: readonly number[] | null = null;
 
   // ── virtual mode (offline warm-ups) ──
   virtual = false;
@@ -310,11 +316,33 @@ export class ReservoirNode extends FNode {
     return this.portItems[port] ?? -1;
   }
 
-  override offer(e: number, port: number, ctx: TickCtx): void {
+  /** The items an output port may hand out: what a group drawing on it pulls (the catch-up). */
+  portPulls(port: number): readonly number[] {
+    if (this.cycle) return this.cycle;
     const it = this.portItem(port);
-    if (it < 0 || !stepAt(this.portPerMin, ctx.now)) { ctx.offItem[e] = -1; ctx.offMu[e] = 0; return; }
-    const avail = !this.virtual ? this.stock[it]! : this.vState[it] === V_EMPTY ? this.vPool[it]! : MU;
-    if (avail <= 0) { ctx.offItem[e] = -1; ctx.offMu[e] = 0; return; }
+    return it >= 0 ? [it] : [];
+  }
+
+  /** What it can hand out of an item now (mu): its stock, or a virtual reservoir's pool. */
+  private availOf(it: number): number {
+    return !this.virtual ? this.stock[it]! : this.vState[it] === V_EMPTY ? this.vPool[it]! : MU;
+  }
+
+  override offer(e: number, port: number, ctx: TickCtx): void {
+    if (!stepAt(this.portPerMin, ctx.now)) { ctx.offItem[e] = -1; ctx.offMu[e] = 0; return; }
+    let it = -1, avail = 0;
+    const cyc = this.cycle;
+    if (cyc) {
+      // This beat's turn (beats since tick 0, as `stepAt` counts them): its item, or nothing this
+      // beat when it holds none — each item keeps its own beats, so each flows as a one-item
+      // outlet would, exactly the same offline.
+      it = cyc[Math.floor(((ctx.now + 1) * this.portPerMin) / 600) % cyc.length]!;
+      avail = this.availOf(it);
+    } else {
+      it = this.portItem(port);
+      avail = it >= 0 ? this.availOf(it) : 0;
+    }
+    if (it < 0 || avail <= 0) { ctx.offItem[e] = -1; ctx.offMu[e] = 0; return; }
     ctx.offItem[e] = it;
     ctx.offMu[e] = Math.min(avail, MU);
   }

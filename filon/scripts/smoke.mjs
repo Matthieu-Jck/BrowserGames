@@ -396,12 +396,19 @@ await step('crier: in the Port-Écume shortage, the trade post next to the Heart
   await page.keyboard.press('Escape');
 });
 
-await step('crier: a standing order imports copper ore, delivered after the lift and the colony’s delay', async () => {
+await step('crier: a standing order imports copper ore by the post’s one exit (D62), delivered after the lift and the colony’s delay; the inspector shows its gates', async () => {
   const post = await FL(() => window.FL.tradePost());
-  // D43: purchases land in the post's container and leave only by an outlet set to them — both
-  // outlets on copper ore, a ribbon from one into the Heart.
-  const laid = await FL((p) => { const sim = window.FL.app.sim; for (const k of [4, 5]) sim.setPortItem(p, k, 'copper_ore'); return window.FL.connect(p, sim.hearthId); }, post);
-  assert(laid > 0, 'no ribbon from the post’s outlet into the Heart');
+  // D62: the 5×5 post has one entrance (port 0) and one exit (port 1), each across its scorched
+  // apron on a flame-proof ribbon. The exit hands out everything the post bought, in turn: there
+  // is no outlet to set (setPortItem refuses a post), only a ribbon to lay from it into the Heart.
+  const r = await FL((p) => {
+    const sim = window.FL.app.sim;
+    const def = sim.ents.get(p) && window.FL.entityAt(sim.ents.get(p).x, sim.ents.get(p).y)?.def;
+    return { def, setItem: sim.setPortItem(p, 1, 'copper_ore'), laid: window.FL.connect(p, sim.hearthId) };
+  }, post);
+  assert(r.def === 'trade_post', `not a trade post: ${r.def}`);
+  assert(r.setItem === false, 'a trade post’s exit took an item setting');
+  assert(r.laid > 0, 'no ribbon from the post’s exit into the Heart');
   const ask = await FL(() => window.FL.price('copper_ore').ask);
   const id = await FL(([p, a]) => window.FL.app.sim.addImport(p, 'copper_ore', 10, Math.round(a * 100 * 2)), [post, ask]);
   assert(typeof id === 'number', `order refused: ${id}`);
@@ -409,9 +416,27 @@ await step('crier: a standing order imports copper ore, delivered after the lift
   const before = await have();
   let after = before;
   for (let i = 0; i < 14 && after < before + 10; i++) { await FL(() => window.FL.tick(600 * 5)); after = await have(); }
-  console.log(`    chimestone ${before} → ${after}`);
+  console.log(`    copper ore ${before} → ${after}`);
   assert(after >= before + 10, `nothing delivered: ${before} → ${after}`);
   await page.waitForFunction(() => [...document.querySelectorAll('.toast')].some((n) => /Livraison|Delivered/.test(n.textContent ?? '')), undefined, { timeout: 3000 });
+  // The inspector shows the gates rather than outlet pickers: the entrance with what it sells, the
+  // exit linked, with the ore it hands out.
+  await FL((p) => window.FL.app.sim.setExport(p, 0, 'glass'), post);
+  await FL((p) => { const e = window.FL.app.sim.ents.get(p); window.FL.lookAt(e.x + 2.5, e.y + 2.5, 1.5); window.FL.selected(p); }, post);
+  await page.waitForSelector('.inspector:not([hidden]) [data-gate="out"]', { timeout: 3000 });
+  const g = await FL(() => ({
+    outlets: document.querySelectorAll('.inspector [data-outlet]').length,
+    sells: [...document.querySelectorAll('.inspector [data-gate="in"] .insp-chip[data-item]')].map((n) => n.getAttribute('data-item')),
+    linked: !!document.querySelector('.inspector [data-gate="out"][data-gate-linked]'),
+    hands: [...document.querySelectorAll('.inspector [data-gate="out"] .insp-chip[data-item]')].map((n) => n.getAttribute('data-item')),
+  }));
+  console.log(`    gates: in ${g.sells.join(',')} · out ${g.hands.join(',')}${g.linked ? '' : ' (not linked)'}`);
+  assert(g.outlets === 0, 'the trade post still shows outlet pickers');
+  assert(g.sells.includes('glass'), `the entrance does not show what it sells: ${g.sells}`);
+  assert(g.linked && g.hands.includes('copper_ore'), `the exit does not show the ore it hands out: ${JSON.stringify(g)}`);
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: shot('smoke-m6-post.png') });
+  await FL((p) => { window.FL.app.sim.setExport(p, 0, null); window.FL.selected(0); }, post);
   await FL((o) => window.FL.app.sim.cancelImport(o), id);
 });
 

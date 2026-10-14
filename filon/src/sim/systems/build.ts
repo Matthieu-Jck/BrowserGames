@@ -245,7 +245,7 @@ export function place(sim: Sim, defId: string, x: number, y: number, rot0: Rot, 
   pay(sim, chk.cost);
   const b = buildingDef(def);
   let portItems: number[] | undefined;
-  if (b.kind === 'dock' || b.kind === 'trade') portItems = b.ports.map(() => -1);
+  if (b.kind === 'dock') portItems = b.ports.map(() => -1); // a trade post's exit hands out what it bought (D62)
   const e = sim.ents.add({ def, x, y, rot, cfg, builtAt: chk.delay > 0 ? sim.tick + chk.delay : 0, portItems });
   occupy(sim, e);
   reveal(sim, e);

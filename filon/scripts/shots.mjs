@@ -99,14 +99,15 @@ await page.keyboard.press('Escape');
 await page.waitForFunction(() => window.FL.view().t === 0);
 
 // The Crier: half an hour of trade from the demo's post (bulbs and plates sold in the Port-Écume
-// shortage, chimestone bought), then the screen — the orbital view while cargo pods fly — and a
-// lift-off over the post in the world.
+// shortage, copper ore bought and handed out by the post's one exit into the Heart, D62), then
+// the screen — the orbital view while cargo pods fly — and a lift-off over the post in the world.
 const post = await page.evaluate(() => {
   const FL = window.FL, sim = FL.app.sim, id = FL.tradePost();
   if (!id) return null;
   if (sim.tick < 600 * 45) FL.tick(600 * 45 - sim.tick);
   sim.setExport(id, 0, 'glass');
   sim.setExport(id, 1, 'iron_plate');
+  FL.connect(id, sim.hearthId); // an order buys only while the exit can hand its goods out
   sim.addImport(id, 'copper_ore', 10, Math.round(FL.price('copper_ore').ask * 200));
   FL.tick(600 * 30);
   const e = sim.ents.get(id);
@@ -120,7 +121,7 @@ if (post) {
   await page.screenshot({ path: shot('shot-crier.png') });
   console.log('✓ shot-crier.png');
   await page.evaluate(() => window.FL.close());
-  await page.evaluate(([x, y]) => window.FL.lookAt(x + 1.5, y - 1.5, 1.3), post);
+  await page.evaluate(([x, y]) => window.FL.lookAt(x + 2.5, y - 0.5, 1.3), post); // above the 5 × 5 post's deck, where the drone climbs
   await settle(600);
   await page.evaluate(() => window.FL.tick(600 - (window.FL.app.sim.tick % 600)));
   await page.waitForTimeout(1500);

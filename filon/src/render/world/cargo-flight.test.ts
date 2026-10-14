@@ -1,15 +1,19 @@
-// cargo-flight.test.ts — the cargo drone's choreography at a trade post: the deck's centre turns
-// with the footprint as the post's art turns it; both sequences run without a jump; the
+// cargo-flight.test.ts — the cargo drone's choreography at a trade post: the deck mirrors the
+// post's art (the middle of its 5 × 5 footprint's pad, D62) and turns with the footprint as the
+// post's art turns it; both sequences run without a jump; the
 // container only goes through the deck while the iris is open, hangs exactly a cable's length
 // under the drone, leaves the deck only once hooked and lands with its swing died out; the drone
 // never sinks into its load; both sequences end with nothing left on screen, and the next drone
 // at the same deck starts once the deck is clear.
 import { describe, it, expect } from 'vitest';
+import { BUILDINGS } from '@/content/buildings';
 import type { Rot } from '@/sim/types';
 import { IsoFrame } from '../art/iso-shapes';
+import { DECK_Z as ART_DECK_Z, TP_DECK, TP_PAD } from '../art/recipes/buildings';
+import { CARGO_DRONE, DRONE_BAY } from '../art/recipes/cargo';
 import { LH } from '../iso';
 import {
-  DECK_X, DECK_Y, HOVER, LIFTOFF, TOUCHDOWN, deckCentre, endOf, followAfter, newPose, poseAt, type CargoSide, type Pose,
+  DECK_X, DECK_Y, DECK_Z, HOVER, LIFTOFF, SLAB_Z, TOUCHDOWN, deckCentre, endOf, followAfter, newPose, poseAt, type CargoSide, type Pose,
 } from './cargo-flight';
 
 const SIDES: readonly CargoSide[] = ['sell', 'buy'];
@@ -23,13 +27,25 @@ function run(side: CargoSide): Array<{ t: number; p: Pose }> {
 }
 
 describe('cargo drone: the deck', () => {
-  it('turns with the footprint as IsoFrame turns the trade post’s art, and stays by its centre', () => {
+  it('mirrors the trade post’s art: the deck in the middle of the pad, its height, the pad’s top', () => {
+    expect([DECK_X, DECK_Y]).toEqual([...TP_DECK]);
+    expect(DECK_Z).toBe(ART_DECK_Z);
+    const [x0, y0, x1, y1] = TP_PAD;
+    expect([(x0 + x1) / 2, (y0 + y1) / 2]).toEqual([DECK_X, DECK_Y]);
+    // The drone's engines (its bay's corners, pushed out) fire on the pad, not on the apron.
+    const reach = DRONE_BAY / 2 - CARGO_DRONE.eng;
+    expect(reach).toBeLessThan((x1 - x0) / 2);
+    expect(SLAB_Z).toBe(0.3);
+  });
+
+  it('turns with the footprint as IsoFrame turns the trade post’s art, and stays at its centre', () => {
+    const { w, h } = BUILDINGS.trade_post;
     for (const rot of [0, 1, 2, 3] as Rot[]) {
-      const [x, y] = deckCentre({ x: 100, y: 200, w: 3, h: 3, rot });
-      const [rx, ry] = new IsoFrame(3, 3, rot, 1).r(DECK_X, DECK_Y);
+      const [x, y] = deckCentre({ x: 100, y: 200, w, h, rot });
+      const [rx, ry] = new IsoFrame(w, h, rot, 1).r(DECK_X, DECK_Y);
       expect(x).toBeCloseTo(100 + rx, 9);
       expect(y).toBeCloseTo(200 + ry, 9);
-      expect(Math.hypot(x - 101.5, y - 201.5)).toBeLessThan(0.06);
+      expect(Math.hypot(x - (100 + w / 2), y - (200 + h / 2))).toBeLessThan(1e-9);
     }
   });
 });

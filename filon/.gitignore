@@ -3,3 +3,4 @@ dist
 scripts/*.png
 .DS_Store
 .snapshot
+.debug

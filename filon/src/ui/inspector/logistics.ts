@@ -116,7 +116,7 @@ export const storePanel: Panel = ({ sim, e, node, live }) => {
   return [row(t('insp.store'), what), gauge];
 };
 
-/** One item picker per outlet of a store (skydock, trade post). */
+/** One item picker per outlet of a store (a skydock; a trade post has none to set: its one exit hands out what it bought, in turn, D62). */
 export const outletsPanel: Panel = ({ sim, e }) => {
   const b = buildingDef(e.def) as BuildingDef;
   const outs = b.ports.map((p, i) => ({ p, i })).filter((q) => q.p.io === 'out');

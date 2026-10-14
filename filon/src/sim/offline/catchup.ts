@@ -178,8 +178,7 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
       const r = g.reservoirs[ri]!;
       const set = new Set<number>();
       for (const e of grp.resOut.get(ri) ?? []) {
-        const it = r.portItem(g.eSrcPort[e]!);
-        if (it >= 0) { set.add(it); pulledAny.add(it); }
+        for (const it of r.portPulls(g.eSrcPort[e]!)) { set.add(it); pulledAny.add(it); }
       }
       pull.set(ri, set);
     }

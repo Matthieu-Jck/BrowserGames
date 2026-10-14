@@ -20,7 +20,7 @@ import { tileIndex } from './world/grid';
 import { packRuns } from './flow/chain';
 
 /** 2: ribbons save their cells, one item per tile (the tile-by-tile ribbons, D57); conduits their runs. */
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 export interface SaveData {
   v: number;

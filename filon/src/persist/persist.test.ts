@@ -8,6 +8,7 @@ import { migrate, SaveTooNew } from './migrate';
 import { PREV_EVERY_MS, SaveSlots } from './slots';
 import { catchUpTo, forecast, openSaved, owedTicks, worldMs } from './colony';
 import { deserialize } from '@/sim/serialize';
+import { remapSave } from '@/sim/save-remap';
 import { BUILDING_IDS, N_ITEMS, itemIdx } from '@/content/registry';
 import { catchUp } from '@/sim/offline/catchup';
 
@@ -134,6 +135,24 @@ describe('migrations', () => {
     expect(data.stock[ore]).toBe(1500);
     expect(c!.runs).toEqual([water, 700, 0, 3]);
     expect(c!.cells).toBeUndefined();
+  });
+
+  it('3 → 4 (D62): the 3×3 trade posts come down, refunded, their containers to the Heart, their streams and orders gone', () => {
+    const { sim } = foundScenario('tutorial', { playerSeed: 1, near: WORLD_EPOCH0 + 1000, name: 'Essai' });
+    const post = [...sim.ents.sorted()].find((e) => BUILDING_IDS[e.def] === 'trade_post')!;
+    expect(post).toBeTruthy();
+    expect(sim.trade.orders.length + sim.trade.exports.size).toBeGreaterThan(0);
+    const plates = itemIdx('iron_plate');
+    const d = { ...JSON.parse(JSON.stringify(serialize(sim))), v: 3 };
+    const { data } = migrate(d);
+    expect(data.content!.buildings).toContain('trade_post_3x3');
+    expect(data.trade!.orders).toEqual([]);
+    expect(data.trade!.exports).toEqual([]);
+    const r = remapSave(data);
+    expect(r.note?.removed).toEqual([{ id: 'trade_post_3x3', n: 1, refunded: true }]);
+    const back = deserialize(r.data, sim.grid.source);
+    expect([...back.ents.sorted()].some((e) => BUILDING_IDS[e.def] === 'trade_post')).toBe(false);
+    expect(back.stock[plates]).toBeGreaterThanOrEqual(sim.stock[plates]! + 40_000); // its 40 plates back
   });
 
   it('a save from a newer build is refused, a missing step too', () => {

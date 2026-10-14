@@ -26,5 +26,5 @@ export const PANELS: Partial<Record<BuildingKind, readonly Panel[]>> = {
   dock: [storePanel, outletsPanel, dockPanel],
   excavator: [landscapePanel],
   backfiller: [landscapePanel],
-  trade: [tradePanel, outletsPanel],
+  trade: [tradePanel], // no outlets: its one exit hands out everything it bought, in turn (D62)
 };

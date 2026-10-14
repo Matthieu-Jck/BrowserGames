@@ -60,7 +60,26 @@ export function zonesToParcels(d: Record<string, unknown>): Record<string, unkno
   return { ...rest, land: { bought: [], granted: [...granted].sort((a, b) => a - b), leases: [] } };
 }
 
-export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels };
+/**
+ * 3 → 4, the trade post's flame apron (D62): the 3×3 post became a 5×5 pad with one entrance and
+ * one exit, which cannot grow in place over what stands round it. Saved posts come down — their
+ * content id retired (`trade_post_3x3`: the remap refunds them and hands their containers to the
+ * Heart) — with the export streams and standing orders that were theirs; goods in flight to them
+ * land in the Heart (`tradeEpoch`: a post gone). The claim places the new pad.
+ */
+export function postsToPads(d: Record<string, unknown>): Record<string, unknown> {
+  const content = d.content as { buildings?: string[] } | undefined;
+  if (!content?.buildings?.includes('trade_post')) return d;
+  const table = content.buildings.map((id) => (id === 'trade_post' ? 'trade_post_3x3' : id));
+  const trade = d.trade as { exports?: unknown[]; orders?: unknown[] } | undefined;
+  return {
+    ...d,
+    content: { ...content, buildings: table },
+    ...(trade ? { trade: { ...trade, exports: [], orders: [] } } : {}),
+  };
+}
+
+export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads };
 
 export class SaveTooNew extends Error {
   constructor(readonly version: number) { super(`save version ${version} is newer than this build (${SAVE_VERSION})`); }

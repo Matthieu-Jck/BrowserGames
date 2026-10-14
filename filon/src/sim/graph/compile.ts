@@ -75,6 +75,8 @@ export interface CompileInput {
   labAccepts?: ReadonlyMap<number, ReadonlySet<number>>;
   /** Trade posts: what each one's inlets take (its export streams), and their store size (mu). */
   tradeAccepts?: ReadonlyMap<number, ReadonlySet<number>>;
+  /** What each trade post buys (its import orders' items, sorted): what its exit hands out in turn (D62). */
+  tradeBuys?: ReadonlyMap<number, readonly number[]>;
   tradeCap?: number;
   /** Buildings whose unlock was given up (reconversion): they stand dormant, no node. */
   dormant?(e: Ent): boolean;
@@ -249,8 +251,9 @@ export function compileGraph(inp: CompileInput): Graph {
         break;
       }
       case 'trade': {
-        // A store between the ribbons and the Crier: its inlets take its export streams (sold
-        // at each epoch boundary), its outlets hand out delivered imports (systems/trade.ts).
+        // A store between the ribbons and the Crier: its entrance takes its export streams (sold
+        // at each epoch boundary), its exit hands out the delivered imports in turn (D62,
+        // systems/trade.ts).
         let st = inp.stores.get(e.id);
         if (!st) inp.stores.set(e.id, (st = new Float64Array(N_ITEMS)));
         const items = (e.portItems ?? []).slice();
@@ -260,6 +263,8 @@ export function compileGraph(inp: CompileInput): Graph {
         r.cap = cap;
         r.portItems = items;
         r.accepts = inp.tradeAccepts?.get(e.id) ?? NOTHING;
+        const buys = inp.tradeBuys?.get(e.id);
+        r.cycle = buys && buys.length ? buys : null;
         break;
       }
       case 'sink': {

@@ -255,6 +255,12 @@
 .glyph .g-planet { fill: var(--c-peach); stroke: var(--c-ink); stroke-width: 1.2; }
 .glyph .g-ring { fill: none; stroke: var(--c-ink); stroke-width: 1.3; }
 .glyph .g-glass { fill: var(--c-peach-l); stroke: var(--c-ink); stroke-width: 1.1; stroke-linejoin: round; }
+/* The trade post's gates (D62): its pad, the entrance's turquoise arrow, the exit's coral one, « in turn », a cut ribbon. */
+.glyph .g-pad { fill: var(--t-steelL, #6c84b6); stroke: var(--c-ink); stroke-width: 1.1; }
+.glyph .g-in { fill: none; stroke: var(--c-turq-d); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.glyph .g-out { fill: none; stroke: var(--c-coral-d); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.glyph .g-turn { fill: none; stroke: var(--c-ink-soft); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.glyph .g-ribbon { fill: none; stroke: var(--c-ink-soft); stroke-width: 1.4; stroke-linecap: round; }
 /* A row whose value is a glyph and a figure: « Énergie  ⚡ 93 % ». */
 .insp-gv { display: inline-flex; align-items: center; gap: 5px; }
 .insp-gv[data-tone='bad'] { color: var(--c-coral-d); font-weight: 600; }

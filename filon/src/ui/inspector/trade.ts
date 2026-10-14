@@ -1,18 +1,24 @@
 // trade.ts (inspector) — the trade post's panel: its level, fee, throughput and lift delay,
-// whether it stands against the Hearth (then it also sells from the Hearth's stock), its export
-// streams (an item picker per slot, with icons), its standing import orders (live state, cancel),
-// last minute's activity, its container (D43: purchases wait there for an outlet set to them),
-// the goods on their way to it and its store. Items show their icons (mention.ts). Orders are
-// placed in the Crier (M), which has room for the form and the live prices. Shared helpers:
-// ../trade-view.ts.
+// whether it stands against the Hearth (then it also sells from the Hearth's stock), its two
+// gates (D62) shown rather than told — the entrance with the icons of what it sells, the exit
+// with the icons of what it hands out in turn and how many of each wait, a cut ribbon when the
+// exit is linked to nothing —, its export streams (an item picker per slot, with icons), its
+// standing import orders (live state, cancel), last minute's activity, its container (D43:
+// purchases wait there for the exit), the goods on their way to it and its store. A post has no
+// outlet to set: its one exit hands out everything it bought, in turn. Items show their icons
+// (mention.ts). Orders are placed in the Crier (M), which has room for the form and the live
+// prices. Shared helpers: ../trade-view.ts.
 import { BAL } from '@/content/balance';
-import { N_ITEMS } from '@/content/registry';
+import { ITEM_IDS, N_ITEMS } from '@/content/registry';
 import { el, setAttr, setText } from '@/core/dom';
 import { duration, num, rate } from '@/i18n/format';
 import { t } from '@/i18n/i18n';
-import { containerFull, containerMu, nextToHearth, waitingMu } from '@/sim/systems/trade';
-import { itemRef } from '../mention';
-import { heading, heldList, row, type InspectorHost, type Panel } from './kit';
+import { containerFull, containerMu, handsOut, importItems, nextToHearth, waitingMu } from '@/sim/systems/trade';
+import type { Ent } from '@/sim/types';
+import type { Sim } from '@/sim/state';
+import { glyph } from '../glyphs';
+import { itemMention, itemRef } from '../mention';
+import { heading, heldList, row, type InspectorHost, type Panel, type PanelCtx } from './kit';
 import { feeText, lastExports, minutes, nextArrival, oc, orderStateText, postFacts, refusalText, secondsTo, tradeSelect } from '../trade-view';
 
 // ── the panel ─────────────────────────────────────────────────────────────────
@@ -28,6 +34,7 @@ export const tradePanel: Panel = ({ sim, e, host, live }) => {
     row(t('insp.trade.fee'), feeText(f.fee)),
     row(t('insp.trade.lift'), minutes(f.liftMin)),
     el('p.tr-where', { 'data-hearth': hearth ? '' : null }, hearth ? t('insp.trade.hearth', { n: BAL.tradeHearthReserve }) : t('insp.trade.ribbons')),
+    ...gateRows(sim, e, live),
   ];
 
   // Last minute: what went up and down, and what it brought.
@@ -91,7 +98,7 @@ export const tradePanel: Panel = ({ sim, e, host, live }) => {
   out.push(el('small.tr-sub', {}, t('insp.trade.hintCrier')));
   if (open) out.push(el('button.btn.insp-recipe', { 'data-insp-crier': '', onclick: () => open.call(host, 'trade') }, t('insp.trade.openCrier')));
 
-  // Its container (D43): what it bought, waiting for its outlets; full, the orders stop.
+  // Its container (D43): what it bought, waiting for its exit; full, the orders stop.
   const box = el('div.tr-container'), boxFull = el('small.tr-sub.tr-full');
   out.push(box, boxFull, el('small.tr-sub', {}, t('insp.trade.containerHint')));
   live(() => {
@@ -112,7 +119,7 @@ export const tradePanel: Panel = ({ sim, e, host, live }) => {
     setText(flight, lines.join('\n') || t('crier.flight.none'));
   });
 
-  // Its store: what came in by ribbon to be sold, or deliveries waiting for its outlets.
+  // Its store: what came in by its entrance to be sold, or deliveries waiting for its exit.
   const store = heldList(live, () => {
     const st = sim.stores.get(e.id);
     const held: Array<readonly [number, number]> = [];
@@ -122,3 +129,42 @@ export const tradePanel: Panel = ({ sim, e, host, live }) => {
   out.push(heading(t('insp.trade.store')), store);
   return out;
 };
+
+// ── its gates (D62) ───────────────────────────────────────────────────────────
+
+/**
+ * The post's entrance and exit, as icons (owner: "show, don't tell"; the words on hover). The
+ * entrance: what it sells, its export streams' items (the streams shape the panel: a change
+ * rebuilds it). The exit: what it hands out in turn — what its orders buy, what is on its way,
+ * what still waits in its container (`importItems`, the engine's own list) — each with how many
+ * wait, the « in turn » arrow once there are two or more, and a cut ribbon while the exit is
+ * linked to nothing (its orders then buy nothing: `handsOut`). Hooks: `[data-gate="in|out"]`,
+ * `[data-gate-linked]` on the exit, its chips `[data-item]`.
+ */
+function gateRows(sim: Sim, e: Ent, live: PanelCtx['live']): HTMLElement[] {
+  const sells = sim.streamsOf(e.id).filter((i) => i >= 0);
+  const inItems = el('span.insp-value.insp-held.tr-gate-items', {}, sells.length
+    ? sells.map((i) => el('span.insp-chip', { 'data-item': ITEM_IDS[i] }, itemMention(i, { name: sells.length < 3 })))
+    : [glyph('empty', t('insp.trade.gate.noSale'))]);
+  const inRow = el('div.insp-row.tr-gate', { 'data-gate': 'in', title: t('insp.trade.gate.in.tip') }, [
+    glyph('gateIn'), el('span.insp-label', {}, t('insp.trade.gate.in')), inItems,
+  ]);
+
+  const turn = glyph('turn', t('insp.trade.gate.turn'));
+  const cut = glyph('noLink', t('insp.trade.gate.unlinked'));
+  const outItems = heldList(live, () => {
+    const st = sim.stores.get(e.id);
+    return (importItems(sim).get(e.id) ?? []).map((i) => [i, Math.floor((st?.[i] ?? 0) / 1000)] as const);
+  }, glyph('empty', t('insp.trade.gate.noBuy')));
+  outItems.classList.add('tr-gate-items');
+  const outRow = el('div.insp-row.tr-gate', { 'data-gate': 'out', title: t('insp.trade.gate.out.tip') }, [
+    glyph('gateOut'), el('span.insp-label', {}, t('insp.trade.gate.out')), turn, outItems, cut,
+  ]);
+  live(() => {
+    const linked = handsOut(sim, e, -1);
+    setAttr(outRow, 'data-gate-linked', linked ? '' : null);
+    setAttr(cut, 'hidden', linked ? '' : null);
+    setAttr(turn, 'hidden', outItems.childElementCount > 1 ? null : '');
+  });
+  return [inRow, outRow];
+}

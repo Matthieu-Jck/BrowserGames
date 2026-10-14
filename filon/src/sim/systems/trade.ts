@@ -71,12 +71,13 @@ export function waitingMu(sim: Sim, post: Ent): number {
   return n;
 }
 
-/** Does one of a post's outlets hand `item` out: set to it, and linked to a ribbon or a building? */
-export function handsOut(sim: Sim, post: Ent, item: number): boolean {
-  const g = sim.graph;
-  const n = g?.nodeByEnt.get(post.id);
-  if (!g || !(n instanceof ReservoirNode)) return false;
-  return n.outE.some((e) => n.portItems[g.eSrcPort[e]!] === item);
+/**
+ * Does a post hand `item` out: is its exit linked to a ribbon or a building? Its one exit hands out
+ * whatever it bought, in turn (D62), so any purchase leaves by it.
+ */
+export function handsOut(sim: Sim, post: Ent, _item: number): boolean {
+  const n = sim.graph?.nodeByEnt.get(post.id);
+  return n instanceof ReservoirNode && n.outE.length > 0;
 }
 
 /** Is a post's container full: purchases waiting up to its load, or a delivery held in the air for want of room? */
@@ -107,6 +108,23 @@ export function exportAccepts(sim: Sim): Map<number, Set<number>> {
   const m = new Map<number, Set<number>>();
   for (const [post, items] of sim.trade.exports) m.set(post, new Set(items.filter((i) => i >= 0)));
   return m;
+}
+
+/**
+ * What each post's exit hands out in turn (D62), sorted, once each: what it buys by its orders,
+ * what is on its way to it, and the purchases still waiting in its container (not what it sells).
+ */
+export function importItems(sim: Sim): Map<number, number[]> {
+  const m = new Map<number, Set<number>>();
+  const add = (post: number, it: number): void => { let s = m.get(post); if (!s) m.set(post, (s = new Set())); s.add(it); };
+  for (const o of sim.trade.orders) add(o.post, o.item);
+  for (const s of sim.trade.inflight) add(s.post, s.item);
+  for (const [post, st] of sim.stores) {
+    if (BUILDING_KIND[sim.ents.get(post)?.def ?? -1] !== 'trade') continue;
+    const sells = streamsOf(sim, post);
+    for (let i = 0; i < N_ITEMS; i++) if (st[i]! > 0 && !sells.includes(i)) add(post, i);
+  }
+  return new Map([...m].map(([post, s]) => [post, [...s].sort((a, b) => a - b)]));
 }
 
 /** The fee (‰) on every trade now: the post's, or none while a quest reward waives it (systems/quests.ts). */
@@ -145,6 +163,7 @@ export function addImport(sim: Sim, post: number, item: string, perMin: number, 
   o.active = (sim.prices.ask[it] ?? 0) > 0 && sim.prices.ask[it]! <= maxCents;
   sim.trade.orders.push(o);
   sim.log.push({ tick: sim.tick, cmd: { k: 'importOrder', post, item, perMin, maxCents } });
+  sim.dirty = true; // its exit hands the item out (D62)
   return o.id;
 }
 
@@ -153,6 +172,7 @@ export function cancelImport(sim: Sim, id: number): boolean {
   if (i < 0) return false;
   sim.trade.orders.splice(i, 1);
   sim.log.push({ tick: sim.tick, cmd: { k: 'cancelOrder', id } });
+  sim.dirty = true; // the post's exit hands out what it still buys
   return true;
 }
 
@@ -183,6 +203,7 @@ export function spotTrade(sim: Sim, item: string, side: SpotSide, n: number): { 
   if (side === 'sell' && sim.reserveShort([{ item: it, mu }]).length) return { refused: 'reserve' };
   if (side === 'buy' && sim.credits < pre.cents) return { refused: 'unaffordable' };
   const post = side === 'buy' ? posts.find((p) => handsOut(sim, p, it)) : posts[0];
+  if (side === 'buy') sim.dirty = true; // its exit hands the item out (D62)
   if (!post) return { refused: 'no_outlet' };
   if (side === 'buy' && mu > containerMu(sim)) return { refused: 'container' };
   if (side === 'buy' && containerFull(sim, post)) return { refused: 'full' };

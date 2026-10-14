@@ -5,6 +5,7 @@
 // sunk all the way paints nothing.
 import { describe, it, expect } from 'vitest';
 import type { Ctx } from '../ink';
+import { TP_DECK_R } from './buildings';
 import { artOf } from './fx';
 import {
   CARGO_DRONE, CONTAINER, DRONE_BAY, IRIS, IRIS_RIM, SKY_CRANE, containerEyes, containerFrame, craneCorners, craneFrame,
@@ -26,8 +27,6 @@ function counter(): { ctx: Ctx; fills: () => number } {
   return { ctx: ctx as unknown as Ctx, fills: () => n };
 }
 
-/** The trade post's deck radius (recipes/buildings.ts, `trade_post`). */
-const DECK_R = 0.98;
 
 describe('CrierBelt cranes', () => {
   it('the sky-crane keeps the intro’s numbers (the intro must look exactly as it was drawn)', () => {
@@ -59,7 +58,7 @@ describe('CrierBelt cranes', () => {
 describe('the Crier’s container and the deck’s iris', () => {
   it('the container passes through the iris, and the iris opens inside the deck', () => {
     expect(Math.hypot(CONTAINER.w / 2, CONTAINER.d / 2)).toBeLessThan(IRIS);
-    expect(IRIS + IRIS_RIM).toBeLessThanOrEqual(DECK_R);
+    expect(IRIS + IRIS_RIM).toBeLessThanOrEqual(TP_DECK_R);
   });
 
   it('the cables splay out from the container’s eyes to the drone’s winches, so they show beside it', () => {

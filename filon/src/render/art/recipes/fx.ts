@@ -245,8 +245,9 @@ export function nightRig(id: BuildingId, def: BuildingDef): NightRig {
   if (HOT.has(id)) return { pool: { r: big * 0.8, alpha: 0.32, warm: true } };
   switch (def.kind) {
     case 'dock':
-    case 'trade':
       return { pool: { r: big * 0.78, alpha: 0.3, warm: false } };
+    case 'trade': // the pad, not its scorched apron (D62): the 3 × 3 in the middle of the 5 × 5
+      return { pool: { r: (big - 2) * 0.78, alpha: 0.3, warm: false } };
     case 'drill': case 'excavator': case 'backfiller': case 'machine': case 'lab': case 'storage':
     case 'generator': case 'geothermal': case 'accumulator':
       return big >= 2 ? { pool: { r: big * 0.62, alpha: 0.15, warm: false } } : {};

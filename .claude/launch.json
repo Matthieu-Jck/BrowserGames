@@ -4,14 +4,38 @@
     {
       "name": "filon",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "filon", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "filon",
+        "run",
+        "dev"
+      ],
       "port": 5183
     },
     {
       "name": "filon-preview",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "filon", "run", "preview"],
+      "runtimeArgs": [
+        "--prefix",
+        "filon",
+        "run",
+        "preview"
+      ],
       "port": 5183
+    },
+    {
+      "name": "filon-debug",
+      "runtimeExecutable": "filon/node_modules/.bin/vite",
+      "runtimeArgs": [
+        "preview",
+        "filon",
+        "--outDir",
+        ".debug",
+        "--port",
+        "5093",
+        "--strictPort"
+      ],
+      "port": 5093
     }
   ]
 }

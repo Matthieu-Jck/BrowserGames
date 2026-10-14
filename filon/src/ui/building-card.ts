@@ -298,16 +298,37 @@ function swatch(l: RuleLegend): SVGElement {
 // ── the ports diagram ──────────────────────────────────────────────────────
 // The footprint from above, front up (as placed before a turn: R turns it), each inlet a
 // turquoise arrow into its tile's edge and each outlet a coral arrow out of it — the colours of
-// the ports in the world. A legend counts them.
+// the ports in the world. A legend counts them. A trade post (D62) shows its pad in the middle of
+// its scorched apron (burnt, its keep-out line dashed) and its two flame-proof ribbons crossing
+// it to the gates; the legend names the apron.
 
 const CELL = 18, PAD = 16;
 const OUT: Record<Side, [number, number]> = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
 
 function portsDiagram(p: NonNullable<BuildingFacts['ports']>): SVGElement {
   const W = p.w * CELL + 2 * PAD, H = p.h * CELL + 2 * PAD;
-  const kids: Element[] = [svg('g', { class: 'bc-block' }, [svg('rect', { x: PAD, y: PAD, width: p.w * CELL, height: p.h * CELL, rx: 4 })])];
-  for (let i = 1; i < p.w; i++) kids.push(svg('line', { class: 'bc-grid', x1: PAD + i * CELL, y1: PAD, x2: PAD + i * CELL, y2: PAD + p.h * CELL }));
-  for (let j = 1; j < p.h; j++) kids.push(svg('line', { class: 'bc-grid', x1: PAD, y1: PAD + j * CELL, x2: PAD + p.w * CELL, y2: PAD + j * CELL }));
+  const kids: Element[] = [];
+  if (p.pad) {
+    // The apron (the whole footprint, burnt), the ribbons across it to the gates, the pad on it.
+    const [x0, y0, x1, y1] = p.pad;
+    kids.push(svg('rect', { class: 'bc-apron', x: PAD, y: PAD, width: p.w * CELL, height: p.h * CELL, rx: 3 }));
+    kids.push(svg('rect', { class: 'bc-keepout', x: PAD + 3, y: PAD + 3, width: p.w * CELL - 6, height: p.h * CELL - 6, rx: 2 }));
+    for (const q of p.list) {
+      // The port's tile on the apron, from the footprint's edge to the pad's.
+      const vertical = q.side === 'N' || q.side === 'S';
+      const [ra, rb] = vertical ? (q.y < y0 ? [q.y, y0] : [y1, q.y + 1]) : (q.x < x0 ? [q.x, x0] : [x1, q.x + 1]);
+      kids.push(vertical
+        ? svg('rect', { class: 'bc-fireribbon', x: PAD + (q.x + 0.2) * CELL, y: PAD + ra * CELL, width: 0.6 * CELL, height: (rb - ra) * CELL })
+        : svg('rect', { class: 'bc-fireribbon', x: PAD + ra * CELL, y: PAD + (q.y + 0.2) * CELL, width: (rb - ra) * CELL, height: 0.6 * CELL }));
+    }
+    kids.push(svg('g', { class: 'bc-block' }, [svg('rect', { x: PAD + x0 * CELL, y: PAD + y0 * CELL, width: (x1 - x0) * CELL, height: (y1 - y0) * CELL, rx: 4 })]));
+    for (let i = x0 + 1; i < x1; i++) kids.push(svg('line', { class: 'bc-grid', x1: PAD + i * CELL, y1: PAD + y0 * CELL, x2: PAD + i * CELL, y2: PAD + y1 * CELL }));
+    for (let j = y0 + 1; j < y1; j++) kids.push(svg('line', { class: 'bc-grid', x1: PAD + x0 * CELL, y1: PAD + j * CELL, x2: PAD + x1 * CELL, y2: PAD + j * CELL }));
+  } else {
+    kids.push(svg('g', { class: 'bc-block' }, [svg('rect', { x: PAD, y: PAD, width: p.w * CELL, height: p.h * CELL, rx: 4 })]));
+    for (let i = 1; i < p.w; i++) kids.push(svg('line', { class: 'bc-grid', x1: PAD + i * CELL, y1: PAD, x2: PAD + i * CELL, y2: PAD + p.h * CELL }));
+    for (let j = 1; j < p.h; j++) kids.push(svg('line', { class: 'bc-grid', x1: PAD, y1: PAD + j * CELL, x2: PAD + p.w * CELL, y2: PAD + j * CELL }));
+  }
   // The front: a small chevron on the north edge.
   kids.push(svg('path', { class: 'bc-front', d: `M${W / 2 - 5} ${PAD + 7}L${W / 2} ${PAD + 3}L${W / 2 + 5} ${PAD + 7}` }));
   for (const q of p.list) {
@@ -325,9 +346,14 @@ function portsBlock(p: NonNullable<BuildingFacts['ports']>): HTMLElement {
   const legend: RuleLegend[] = [];
   if (n('in')) legend.push({ tone: 'pin', flow: 'in', text: t('card.ins', { n: n('in') }) });
   if (n('out')) legend.push({ tone: 'pout', flow: 'out', text: t('card.outs', { n: n('out') }) });
+  const apron = p.pad
+    ? el('li', { 'data-flow': 'apron' }, [svg('svg', { class: 'bc-swatch', viewBox: '0 0 26 14', width: 26, height: 14, 'aria-hidden': 'true' }, [
+      svg('rect', { class: 'bc-apron', x: 1, y: 1, width: 24, height: 12, rx: 2 }), svg('rect', { class: 'bc-sw-block', x: 9, y: 3.5, width: 8, height: 7, rx: 1.5 }),
+    ]), el('span', {}, t('card.apron'))])
+    : null;
   return el('div.bcard-rule.bcard-ports', { 'data-shape': 'ports' }, [
     portsDiagram(p),
-    el('ul.bcard-legend', {}, legend.map((l) => el('li', { 'data-flow': l.flow }, [swatch(l), el('span', {}, l.text)]))),
+    el('ul.bcard-legend', {}, [...legend.map((l) => el('li', { 'data-flow': l.flow }, [swatch(l), el('span', {}, l.text)])), apron]),
   ]);
 }
 

@@ -46,10 +46,12 @@ describe('saves carry their content table (D47)', () => {
     const old = remapSave(saved, shuffled(), NONE);
     expect(old.note).toBeNull();
     // The reordering touches every index-bearing field the base fills in.
-    const filled = (v: unknown): boolean => v !== undefined && JSON.stringify(v) !== '[]' && JSON.stringify(v) !== '{}';
+    // (Outlets count when one names an item: trade posts no longer set theirs, D62, and a closed one is −1 in any order.)
+    const filled = (v: unknown, k = ''): boolean => v !== undefined && JSON.stringify(v) !== '[]' && JSON.stringify(v) !== '{}'
+      && (k !== 'portItems' || (v as Array<[number, number[]]>).some(([, items]) => items.some((i) => i >= 0)));
     for (const [k, kind] of Object.entries(FIELDS)) {
       const a = saved[k as keyof SaveData], b = old.data[k as keyof SaveData];
-      if (kind === 'index' && k !== 'trade' && k !== 'oreDiff' && k !== 'nodes' && filled(a)) expect(JSON.stringify(b), k).not.toBe(JSON.stringify(a));
+      if (kind === 'index' && k !== 'trade' && k !== 'oreDiff' && k !== 'nodes' && filled(a, k)) expect(JSON.stringify(b), k).not.toBe(JSON.stringify(a));
     }
     // Node states hold items only in routing blocks (a machine's buffers follow its recipe's slots).
     if (saved.nodes.some(([, s]) => ((s as { item?: number } | null)?.item ?? -1) >= 0)) expect(JSON.stringify(old.data.nodes)).not.toBe(JSON.stringify(saved.nodes));

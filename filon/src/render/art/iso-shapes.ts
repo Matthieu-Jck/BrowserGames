@@ -201,19 +201,24 @@ export function spireIso(ctx: Ctx, f: IsoFrame, cx: number, cy: number, r: numbe
   light(ctx, t[0], t[1], 2.8, tip);
 }
 
-/** The riveted foundation slab every machine stands on (with hazard stripes if asked). */
-export function slab(ctx: Ctx, f: IsoFrame, color: string = C.steel, inset = 0.06, z = 0.3, seed = 1, hazard = false): void {
-  box(ctx, f, inset, inset, f.w - inset, f.h - inset, 0, z, { top: color, left: mix(color, C.ink, 0.3), right: mix(color, C.ink, 0.5) }, seed);
+/**
+ * The riveted foundation slab every machine stands on (with hazard stripes if asked), over the
+ * whole footprint or, given `at` (a local rect [x0, y0, x1, y1]), over part of it: the trade
+ * post's pad stands in the middle of its scorched apron.
+ */
+export function slab(ctx: Ctx, f: IsoFrame, color: string = C.steel, inset = 0.06, z = 0.3, seed = 1, hazard = false, at: readonly [number, number, number, number] = [0, 0, f.w, f.h]): void {
+  const [X0, Y0, X1, Y1] = at;
+  box(ctx, f, X0 + inset, Y0 + inset, X1 - inset, Y1 - inset, 0, z, { top: color, left: mix(color, C.ink, 0.3), right: mix(color, C.ink, 0.5) }, seed);
   // Panel seams along whole tiles.
   ctx.save();
   ctx.strokeStyle = mix(color, C.ink, 0.55);
   ctx.globalAlpha = 0.6;
   ctx.lineWidth = 1.1;
-  for (let i = 1; i < f.w; i++) { const a = f.p(i, inset, z), b = f.p(i, f.h - inset, z); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
-  for (let j = 1; j < f.h; j++) { const a = f.p(inset, j, z), b = f.p(f.w - inset, j, z); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
+  for (let i = X0 + 1; i < X1; i++) { const a = f.p(i, Y0 + inset, z), b = f.p(i, Y1 - inset, z); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
+  for (let j = Y0 + 1; j < Y1; j++) { const a = f.p(X0 + inset, j, z), b = f.p(X1 - inset, j, z); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
   ctx.restore();
   if (hazard) {
-    const band: Pt[] = [f.p(0.2, 0.12, z), f.p(f.w - 0.2, 0.12, z), f.p(f.w - 0.2, 0.3, z), f.p(0.2, 0.3, z)];
+    const band: Pt[] = [f.p(X0 + 0.2, Y0 + 0.12, z), f.p(X1 - 0.2, Y0 + 0.12, z), f.p(X1 - 0.2, Y0 + 0.3, z), f.p(X0 + 0.2, Y0 + 0.3, z)];
     flat(ctx, band, C.hazard);
     ctx.save(); pathOf(ctx, band); ctx.clip();
     hatch(ctx, band, Math.PI / 4, 9, { w: 4, alpha: 0.85, seed });
@@ -221,7 +226,7 @@ export function slab(ctx: Ctx, f: IsoFrame, color: string = C.steel, inset = 0.0
     ink(ctx, band, { closed: true, w: 1, shade: false, seed: seed + 3 });
   }
   const k = 0.2;
-  for (const [x, y] of [[inset + k, inset + k], [f.w - inset - k, inset + k], [inset + k, f.h - inset - k], [f.w - inset - k, f.h - inset - k]] as const) {
+  for (const [x, y] of [[X0 + inset + k, Y0 + inset + k], [X1 - inset - k, Y0 + inset + k], [X0 + inset + k, Y1 - inset - k], [X1 - inset - k, Y1 - inset - k]] as const) {
     rivet(ctx, ...f.p(x, y, z), 2.2, C.steelL);
   }
 }

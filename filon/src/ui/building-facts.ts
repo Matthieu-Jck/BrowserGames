@@ -26,6 +26,7 @@ import type { Mods } from '@/sim/research/modifiers';
 import { dockShips } from '@/sim/space';
 import type { Sim } from '@/sim/state';
 import { throughputMu, tradeLevel } from '@/sim/trade';
+import { TP_PAD } from '@/render/art/recipes/buildings';
 import { itemRef } from './mention';
 import { feeText, minutes } from './trade-view';
 
@@ -78,8 +79,12 @@ export interface BuildingFacts {
    * tell (owner, 2026-10-13: "there's often too much text… rather show than tell"). Null: none.
    */
   readonly brief: string | null;
-  /** Its ports, drawn on the card as its footprint with arrows in and out (null: it has none). */
-  readonly ports: { readonly w: number; readonly h: number; readonly list: readonly PortFact[] } | null;
+  /**
+   * Its ports, drawn on the card as its footprint with arrows in and out (null: it has none);
+   * `pad`: the part of the footprint it stands on when the rest is a scorched apron nothing else
+   * may take (the trade post's, D62: a local rect), null otherwise.
+   */
+  readonly ports: { readonly w: number; readonly h: number; readonly list: readonly PortFact[]; readonly pad: readonly [number, number, number, number] | null } | null;
   /** The research it still waits for (null once unlocked). */
   readonly locked: string | null;
   readonly rule: RuleFact | null;
@@ -345,7 +350,7 @@ export function buildingFacts(id: string, ctx: FactCtx): BuildingFacts {
     sub: `${t(`build.cat.${b.category}` as MsgKey)} · ${t('card.size', { n: b.w * b.h, w: b.w, h: b.h })}`,
     desc: b.desc[L],
     brief: b.kind === 'machine' || rule || own > 0 ? null : firstSentence(b.desc[L]),
-    ports: b.ports.length ? { w: b.w, h: b.h, list: b.ports.map((p) => ({ x: p.x, y: p.y, side: p.side, io: p.io })) } : null,
+    ports: b.ports.length ? { w: b.w, h: b.h, list: b.ports.map((p) => ({ x: p.x, y: p.y, side: p.side, io: p.io })), pad: b.kind === 'trade' ? TP_PAD : null } : null,
     locked,
     rule: rule ? { ...rule, legend: rule.legend.map((l) => ({ ...l, text: cap1(l.text) })) } : null,
     recipes: b.kind === 'machine' ? recipesOf(id, ctx) : null,

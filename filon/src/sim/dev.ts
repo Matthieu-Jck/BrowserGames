@@ -310,9 +310,9 @@ export function buildDemo(sim: Sim, opt: { kiln?: readonly [number, number, Rot]
   if (ids.workshop) sim.setRecipe(ids.workshop, 'journal_1');
   place('observatory', 'observatory', ...at(-12, 3), 0);
   place('silo', 'silo', ...at(9, -9), 0);
-  // The trade post against the Hearth's south side (no Hearth port faces it): it sells from, and
-  // delivers into, the Hearth's stock.
-  place('trade', 'trade_post', ...at(-4, 3), 0);
+  // The trade post against the Hearth's south side, turned half round (its entrance against the
+  // Heart, its exit opening south, D62): it sells from the Hearth's stock.
+  place('trade', 'trade_post', ...at(-4, 3), 2);
   for (const [i, [dx, dy]] of ([[-6, 9], [-3, 9], [0, 9], [3, 9]] as const).entries()) place(`wind${i}`, 'wind_flower', ...at(dx, dy), 0);
   if (s5) {
     // The coal generator a few tiles east of its drill, on free floor.
@@ -622,16 +622,19 @@ export function join(sim: Sim, fromId: number, line: BeltTiles): BeltTiles | nul
  * tiles — fed from its back (D35), the line going on out of its front — and a ribbon from its
  * side into `toId`'s input `inIdx` (-1: any; the side ribbon may be a single tile onto it), over
  * any of the `lines`' straight tiles: the cheapest branch wins. A router whose other side holds a
- * ribbon (it would feed that line too) or the target's input is never placed. Returns the
- * router's id and the side ribbon, or null (nothing placed).
+ * ribbon (it would feed that line too) or the target's input is never placed. `onto` gives the
+ * side ribbon's goals instead (a stub already leading into the target: the tile behind its tail →
+ * the way into it). Returns the router's id and the side ribbon, or null (nothing placed).
  */
-export function branch(sim: Sim, lines: readonly BeltTiles[], toId: number, inIdx = -1): { router: number; path: BeltTiles } | null {
+export function branch(sim: Sim, lines: readonly BeltTiles[], toId: number, inIdx = -1, onto?: ReadonlyMap<number, Rot>): { router: number; path: BeltTiles } | null {
   const b = sim.ents.get(toId);
   if (!b) return null;
   const ins = worldPorts(b).filter((p) => p.io === 'in');
   const targets = inIdx >= 0 ? ins.slice(inIdx, inIdx + 1) : ins;
-  if (!targets.length) return null;
-  const fronts = new Set(targets.map((t) => tileIndex(t.fx, t.fy)));
+  if (!targets.length && !onto) return null;
+  // `onto`: the goals given (a stub of ribbon already leading into the target: the tile behind its tail).
+  const goals = onto ?? intoPorts(targets);
+  const fronts = new Set(goals.keys());
   const at: Array<[number, number, Rot]> = [];
   for (const line of lines) {
     for (let k = 0; k < line.length; k++) {
@@ -673,7 +676,7 @@ export function branch(sim: Sim, lines: readonly BeltTiles[], toId: number, inId
   if (!starts.length) return null;
   const av = new Set(avoid);
   for (const t of others) if (!routerAt.has(t)) av.add(t);
-  const path = findPath(sim, starts, intoPorts(targets), av, cross);
+  const path = findPath(sim, starts, goals, av, cross);
   if (!path) return null;
   const [x, y, d] = routerAt.get(tileIndex(path[0]![0], path[0]![1]))!;
   // The path must not pass beside its own router but at its start (another start's tile may be).

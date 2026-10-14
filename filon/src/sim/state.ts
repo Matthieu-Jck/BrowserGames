@@ -213,6 +213,7 @@ export class Sim {
       refund: (item, mu) => this.refund(item, mu),
       labAccepts: research.labAccepts(this),
       tradeAccepts: trade.exportAccepts(this),
+      tradeBuys: trade.importItems(this),
       tradeCap: trade.tradeCap(this),
       dormant: (e) => this.isDormant(e),
       busy: new Set(this.jobs.map((j) => j.ent)),

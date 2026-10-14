@@ -2,13 +2,15 @@
 // "rather show than tell"): power served, no power, no wire, an empty slot; and the land's (D60):
 // a parcel, its grounds (floor, rock, water, salt flats, a vent, the dune sea, the fog), the buildings on
 // it, an owner's flag (the claim's, a sister claim's), CrierBelt's ringed planet, a lease's
-// hourglass. Inline SVG drawn in
+// hourglass; the trade post's gates (D62): its entrance and exit, « in turn », a ribbon linked to
+// nothing. Inline SVG drawn in
 // the palette through CSS classes (styles/hud.css `.glyph`), sized in em so they sit in a line of
 // text; a glyph carries its meaning in `title` / `aria-label` for hover and screen readers.
 
 export type GlyphId =
   | 'power' | 'noPower' | 'unwired' | 'empty'
-  | 'parcel' | 'floor' | 'rock' | 'water' | 'salt' | 'vent' | 'dunes' | 'fog' | 'building' | 'flag' | 'flagSister' | 'crier' | 'lease';
+  | 'parcel' | 'floor' | 'rock' | 'water' | 'salt' | 'vent' | 'dunes' | 'fog' | 'building' | 'flag' | 'flagSister' | 'crier' | 'lease'
+  | 'gateIn' | 'gateOut' | 'turn' | 'noLink';
 
 const NS = 'http://www.w3.org/2000/svg';
 
@@ -78,6 +80,22 @@ const SHAPES: Readonly<Record<GlyphId, ReadonlyArray<readonly [string, Record<st
   lease: [
     ['path', { class: 'g-line', d: 'M4 1.8h8M4 14.2h8' }],
     ['path', { class: 'g-glass', d: 'M5 2c0 3.6 6 3.8 6 6s-6 2.4-6 6h6c0-3.6-6-3.8-6-6s6-2.4 6-6z' }],
+  ],
+  // ── the trade post's two gates (D62): its pad, a turquoise arrow in, a coral arrow out ──
+  gateIn: [
+    ['rect', { class: 'g-pad', x: '2.6', y: '1.6', width: '10.8', height: '7.4', rx: '1.4' }],
+    ['path', { class: 'g-in', d: 'M8 15V9.4M5.4 11.6L8 9l2.6 2.6' }],
+  ],
+  gateOut: [
+    ['rect', { class: 'g-pad', x: '2.6', y: '7', width: '10.8', height: '7.4', rx: '1.4' }],
+    ['path', { class: 'g-out', d: 'M8 7V1.4M5.4 3.6L8 1l2.6 2.6' }],
+  ],
+  // In turn: a circling arrow.
+  turn: [['path', { class: 'g-turn', d: 'M12.9 9.2A5 5 0 1 1 11.4 4.4M11.8 1.4l-.2 3.2-3.2-.3' }]],
+  // Linked to nothing: a ribbon's end, cut.
+  noLink: [
+    ['path', { class: 'g-ribbon', d: 'M5.4 1.6v5.2M10.6 1.6v5.2M5.4 9.4v5M10.6 9.4v5' }],
+    ['path', { class: 'g-slash', d: 'M3 10.6l10-3.6' }],
   ],
 };
 

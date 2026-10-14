@@ -51,7 +51,7 @@ import { CIRQUE, WORLD_SEED } from '@/content/world';
 import { CENTER, DAY_EPOCHS, EPOCH, PERMILLE, SOLAR } from './constants';
 import { isqrt } from '@/core/fixed';
 import { besideRoutingBlock, branch, checkpoint, connect, join, keepOff, lay, layFrom, learnPlans, placeFed, placeFeeding, powerLine, rollback, routeOver, spotsNear, type BeltTiles, type Feed } from './dev';
-import { footprint, rotatePoint, worldPorts } from './entities';
+import { footprint, rotatePoint, worldPorts, type WorldPort } from './entities';
 import { Sim } from './state';
 import { Chain } from './flow/chain';
 import type { FNode } from './flow/node';
@@ -113,7 +113,7 @@ export function buildScenario(sim: Sim, id: ScenarioId, name: string): ScenarioR
   if (upTo >= 3) tradeSpot(b); // the trade post's place by the Heart, taken before the lines ring it
   if (upTo >= 1) { firstStrike(b); ribbonLines(b); }
   if (upTo >= 2) { bloomKiln(b); firstWind(b); glassworks(b); }
-  if (upTo >= 3) { fieldJournal(b); crierCalls(b); tiredVein(b); firstPurchase(b); theBoard(b); beyondCrown(b); morePower(b); tradeLine(b); }
+  if (upTo >= 3) { fieldJournal(b); crierCalls(b); tiredVein(b); firstPurchase(b); theBoard(b); beyondCrown(b); morePower(b); postLine(b); tradeLine(b); }
   if (upTo >= 4) grown(b);
   if (upTo >= 5) late(b);
   if (upTo >= 2) powerUp(b);
@@ -370,7 +370,43 @@ class Builder {
  */
 function tradeSpot(b: Builder): void {
   b.plan('telemetry', 'trade_post');
-  b.put('post', 'trade_post', b.heart, { r: 7, touch: b.H, inputsFree: false });
+  postAtHeart(b);
+}
+
+/**
+ * The trade post against the Heart where its two flame-proof ribbons (D62) can come and go: three
+ * free floor tiles straight out of its entrance and of its exit. Two ribbons are laid at once into
+ * its entrance (`post.stub`), so the tutorial's lines, ringing the Heart later, leave the way in
+ * open: the iron line joins the stub's tail (`postLine`).
+ */
+function postAtHeart(b: Builder): number {
+  const sim = b.sim, def = buildingIdx('trade_post');
+  b.affordDef('trade_post');
+  const open = (x: number, y: number): boolean => inWorld(x, y) && sim.grid.occ[tileIndex(x, y)] === 0 && isFloor(sim.grid.terrain(x, y));
+  const out3 = (p: WorldPort): boolean => [0, 1, 2].every((k) => open(p.fx + k * DX[p.dir]!, p.fy + k * DY[p.dir]!));
+  // At a corner of the Heart (one tile of its side against the post's), on its quiet side: a 5×5
+  // pad against the middle of a side would take every inlet the Heart has there from the
+  // tutorial's lines.
+  const h = sim.ents.get(b.H)!;
+  const along = (x: number, y: number): number => {
+    const ox = Math.min(x + 5, h.x + 5) - Math.max(x, h.x), oy = Math.min(y + 5, h.y + 5) - Math.max(y, h.y);
+    return Math.max(ox, oy);
+  };
+  // On the cirque's quiet side (away from the deposits and the lake: the tutorial builds there last).
+  const spots = spotsNear(sim, 'trade_post', toward(b.heart, b.quietSide(10), 5), { r: 9, touch: b.H, inputsFree: false })
+    .map((sp, k) => [sp, along(sp[0], sp[1]), k] as const).sort((p, q) => p[1] - q[1] || p[2] - q[2]).map(([sp]) => sp);
+  for (const [x, y, rot] of spots) {
+    const ports = worldPorts({ def, x, y, rot });
+    if (!ports.every(out3)) continue;
+    const r = sim.place('trade_post', x, y, rot);
+    if (!r.ok) continue;
+    const inP = ports.find((p) => p.io === 'in')!, back = opposite(inP.dir);
+    const stub: BeltTiles = [[inP.fx + DX[inP.dir]!, inP.fy + DY[inP.dir]!, back], [inP.fx, inP.fy, back]];
+    if (sim.placeBelts('ribbon', stub) === stub.length) b.lines['post.stub'] = stub;
+    return (b.ids.post = r.id!);
+  }
+  b.skip('post');
+  return 0;
 }
 
 /** 1 · a drill on iron where its line reaches the Heart, wired. */
@@ -477,7 +513,7 @@ function surveyLine(b: Builder): boolean {
 /** 7 · the trade post against the Heart (placed at the start), wired, selling glass. */
 function crierCalls(b: Builder): void {
   b.plan('trade_post');
-  if (!b.ids.post) b.put('post', 'trade_post', b.heart, { r: 7, touch: b.H, inputsFree: false });
+  if (!b.ids.post) postAtHeart(b);
   b.wire('post');
   if (b.ids.post && b.sim.setExport(b.ids.post, 0, 'glass') !== null) b.skip('export:glass');
   b.until('crier_calls');
@@ -567,15 +603,10 @@ const RESEARCH_WAIT_MIN = 40;
 function tradeLine(b: Builder): void {
   const post = b.ids.post;
   if (!post) return;
-  const iron = b.laid('iron1', 'iron2');
-  b.affordAll(['router', 1], b.spare);
-  let r = iron.length ? branch(b.sim, iron, post) : null;
-  if (!r && b.junctions()) { b.affordAll(['router', 1], b.spare); r = branch(b.sim, iron, post); }
-  if (r) b.lines['post.in'] = r.path; else b.skip('line:post');
   if (b.sim.setExport(post, 0, 'iron_ore') !== null) b.skip('export:iron_ore');
-  // Out: iron plates bought for building, out of an outlet set to them along a short ribbon into
-  // the Heart (D43: purchases leave the container only by an outlet), so what the post receives
-  // is seen going somewhere.
+  // Out: iron plates bought for building, out of its exit along a short ribbon into the Heart
+  // (D43: purchases leave the container only by an outlet; D62: its one exit hands out what it
+  // bought), so what the post receives is seen going somewhere.
   b.affordAll(b.spare);
   const e = b.sim.ents.get(post)!;
   const outs = worldPorts(e).filter((p) => p.io === 'out');
@@ -595,10 +626,26 @@ function tradeLine(b: Builder): void {
     if (path) { out = [[p.fx, p.fy, p.dir], ...path]; port = p; break; }
     b.sim.remove(p.fx, p.fy);
   }
-  if (!out || !port || !b.sim.setPortItem(post, port.idx, 'iron_plate')) { b.skip('line:post.out'); return; }
+  if (!out || !port) { b.skip('line:post.out'); return; }
   b.lines['post.out'] = out;
   const ask = b.sim.prices.ask[itemIdx('iron_plate')]!;
   if (typeof b.sim.addImport(post, 'iron_plate', PLATES_PER_MIN, Math.floor((ask * 3) / 2)) !== 'number') b.skip('import:iron_plate');
+}
+
+/**
+ * A router on an iron ore line and a ribbon onto the stub laid into the post's one entrance when
+ * it was placed (`postAtHeart`: the tutorial's lines, ringing the Heart, leave it open; D62).
+ */
+function postLine(b: Builder): void {
+  const post = b.ids.post;
+  if (!post) return;
+  const iron = b.laid('iron1', 'iron2'), stub = b.lines['post.stub'];
+  // Onto the stub's tail when it stands (the tile behind it, pointing in), else into the entrance.
+  const onto = stub ? new Map([[tileIndex(stub[0]![0] - DX[stub[0]![2]]!, stub[0]![1] - DY[stub[0]![2]]!), stub[0]![2]]]) : undefined;
+  b.affordAll(['router', 1], b.spare);
+  let r = iron.length ? branch(b.sim, iron, post, -1, onto) : null;
+  if (!r && b.junctions()) { b.affordAll(['router', 1], b.spare); r = branch(b.sim, iron, post, -1, onto); }
+  if (r) b.lines['post.in'] = [...r.path, ...(stub ?? [])]; else b.skip('line:post');
 }
 
 /** Does the ribbon on tile (x, y) run, ribbon after ribbon, into building `to`? */
@@ -830,81 +877,118 @@ const OUTER_WARM_MAX = 25 * EPOCH;
  * The outer works' plan (owner, 2026-10-13: "make the late game bases even more advanced, using a
  * lot of the tech tree. Check if it makes sense then"): drawn once, laid as a whole where it fits
  * (a crowded base's machines placed one by one box each other's lines in). Row 0 is the line of
- * tiles above the plan (y −1), kept free for the lines coming in. Everything turned half round
- * (rot 2): inputs at the top, outputs at the bottom, the goods flowing down.
- * - the post (P) buys at its two outlets: glass down into the circuit workshop (C) and plates into
- *   the gear workshop (g); speed modules come back up the right-hand line into its side;
+ * tiles above the plan (y −1). Everything turned half round (rot 2): inputs at the top, outputs at
+ * the bottom, the goods flowing down.
+ * - the post (P, its 5×5 pad and flame apron, D62) buys glass (or circuits) and plates; both come
+ *   out of its one exit, below, in turn: a sorter (Z) sends the glass (circuits) straight on, the
+ *   plates aside into the gear workshop (g);
  * - the wire mill (M), its copper coming in from above (the deep bore's), its wire along the left
- *   into C;
+ *   into the circuit workshop (C), the glass from above;
  * - the circuits down into the speed-module workshop (B), a router (R) dealing some to the compact
  *   great workshop (J); the gears down into B, a router dealing some across a junction (+) into J,
- *   and an overflow gate (%) before B spilling what neither takes into the post's line (sold): the
- *   gears never back up, so the plates bought never fill the post's container and hold the coal
- *   in the air (one container for both purchases);
- * - J's ceramic comes in from the left (the tile marked under it), its Mechanics Data down into the
- *   observatory (O).
- * Where the plain has no copper, `WORKS_BUY` instead: the post buys circuits, down the same line.
- * Laid turned as the ground allows (`planOf`): the blocks and arrows turn with it.
+ *   and an overflow gate (%) before B spilling what neither takes onto the return line (sold): the
+ *   gears never back up, so the plates bought never fill the post's one container and hold the
+ *   glass in the air;
+ * - J's ceramic comes in from the left (the tile marked above it), its Mechanics Data down into the
+ *   observatory (O);
+ * - the return line (↑ → ↓ ←: the speed modules, the spilled gears, and the bore's ore joining it)
+ *   up the right and over the top into the post's one entrance.
+ * Where the plain has no copper, `WORKS_BUY`: the post buys circuits, straight down the same line;
+ * without water for the ceramic, the `_DRY` plans, without J and O. Laid turned as the ground
+ * allows (`planOf`): the blocks and arrows turn with it.
  */
 const WORKS_WIRE: readonly string[] = [
-  '.      ...   ',
-  'M      PPP   ',
-  'M      PPP<<<',
-  'v      PPP  ^',
-  'v      v v  ^',
-  'v      v gg ^',
-  'v      v gg ^',
-  '>>>>>>vv  v ^',
-  '      CC  v ^',
-  '      CC  v ^',
-  '       v  v ^',
-  '     v<+<<R.^',
-  '    .v v  v ^',
-  '    JJ<R. v ^',
-  '    JJ v  %>^',
-  '    v  v v< ^',
-  '   OO  BBB  ^',
-  '   OO  BBB  ^',
-  '       BBB  ^',
-  '        >>>>^',
+  '       ↓←←←←←←',
+  ' .   PPPPP   ↑',
+  ' M   PPPPP   ↑',
+  ' M   PPPPP   ↑',
+  ' v   PPPPP   ↑',
+  ' v   PPPPP   ↑',
+  ' v     v     ↑',
+  ' v    .Z>>v  ↑',
+  ' >>>>>vv  gg ↑',
+  '      CC  gg ↑',
+  '      CC   v ↑',
+  '       v   v ↑',
+  '     v<+<<<R.↑',
+  '    .v v   v ↑',
+  '    JJ<R.  v ↑',
+  '    JJ v   %→↑',
+  '    v  v v<< ↑',
+  '   OO  BBB   ↑',
+  '   OO  BBB   ↑',
+  '       BBB   ↑',
+  '        →→→→→↑',
 ];
 const WORKS_BUY: readonly string[] = [
-  '       ...   ',
-  '       PPP   ',
-  '       PPP<<<',
-  '       PPP  ^',
-  '       v v  ^',
-  '       v gg ^',
-  '       v gg ^',
-  '       v  v ^',
-  '       v  v ^',
-  '       v  v ^',
-  '       v  v ^',
-  '     v<+<<R.^',
-  '    .v v  v ^',
-  '    JJ<R. v ^',
-  '    JJ v  %>^',
-  '    v  v v< ^',
-  '   OO  BBB  ^',
-  '   OO  BBB  ^',
-  '       BBB  ^',
-  '        >>>>^',
+  '       ↓←←←←←←',
+  '     PPPPP   ↑',
+  '     PPPPP   ↑',
+  '     PPPPP   ↑',
+  '     PPPPP   ↑',
+  '     PPPPP   ↑',
+  '       v     ↑',
+  '      .Z>>v  ↑',
+  '       v  gg ↑',
+  '       v  gg ↑',
+  '       v   v ↑',
+  '       v   v ↑',
+  '     v<+<<<R.↑',
+  '    .v v   v ↑',
+  '    JJ<R.  v ↑',
+  '    JJ v   %→↑',
+  '    v  v v<< ↑',
+  '   OO  BBB   ↑',
+  '   OO  BBB   ↑',
+  '       BBB   ↑',
+  '        →→→→→↑',
 ];
-/**
- * Without water for the ceramic, no Mechanics Data: the plans' lower rows without the great
- * workshop and its observatory, the circuit and gear lines straight down into the speed modules'
- * (`dry`).
- */
-const DRY_TAIL: readonly string[] = [
-  '       v  v ^',
-  '       v  v ^',
-  '       v  v ^',
-  '       v  %>^',
-  '       v v< ^',
-  '       BBB  ^',
-  '       BBB  ^',
+const WORKS_WIRE_DRY: readonly string[] = [
+  '       ↓←←←←←←',
+  ' .   PPPPP   ↑',
+  ' M   PPPPP   ↑',
+  ' M   PPPPP   ↑',
+  ' v   PPPPP   ↑',
+  ' v   PPPPP   ↑',
+  ' v     v     ↑',
+  ' v    .Z>>v  ↑',
+  ' >>>>>vv  gg ↑',
+  '      CC  gg ↑',
+  '      CC   v ↑',
+  '       v   v ↑',
+  '       v   v ↑',
+  '       v   v ↑',
+  '       v   v ↑',
+  '       v   %→↑',
+  '       v v<< ↑',
+  '       BBB   ↑',
+  '       BBB   ↑',
+  '       BBB   ↑',
+  '        →→→→→↑',
 ];
-const dry = (rows: readonly string[]): string[] => [...rows.slice(0, 11), ...DRY_TAIL, ...rows.slice(18)];
+const WORKS_BUY_DRY: readonly string[] = [
+  '       ↓←←←←←←',
+  '     PPPPP   ↑',
+  '     PPPPP   ↑',
+  '     PPPPP   ↑',
+  '     PPPPP   ↑',
+  '     PPPPP   ↑',
+  '       v     ↑',
+  '      .Z>>v  ↑',
+  '       v  gg ↑',
+  '       v  gg ↑',
+  '       v   v ↑',
+  '       v   v ↑',
+  '       v   v ↑',
+  '       v   v ↑',
+  '       v   v ↑',
+  '       v   %→↑',
+  '       v v<< ↑',
+  '       BBB   ↑',
+  '       BBB   ↑',
+  '       BBB   ↑',
+  '        →→→→→↑',
+];
 
 /** The plan's buildings by letter: role, building, recipe (all turned half round). */
 const WORKS_KEY: Record<string, readonly [string, string, string | null]> = {
@@ -915,8 +999,11 @@ const WORKS_KEY: Record<string, readonly [string, string, string | null]> = {
   J: ['journal2', 'great_workshop_compact', 'journal_2'],
   O: ['observatory2', 'observatory', null],
   B: ['bells', 'great_workshop', 'pace_bell'],
+  Z: ['sorter2', 'sorter', null],
 };
 const ARROW: Record<string, Rot> = { '^': 0, '>': 1, 'v': 2, '<': 3 };
+/** The return line's arrows: into the post's entrance (laid like the others, kept as `works.return`). */
+const RETURN: Record<string, Rot> = { '↑': 0, '→': 1, '↓': 2, '←': 3 };
 
 /** A plan turned `q` quarter turns clockwise: its tiles (but the blanks) and its size. */
 interface Plan { w: number; h: number; q: Rot; cells: ReadonlyArray<readonly [number, number, string]> }
@@ -954,13 +1041,15 @@ function layPlan(b: Builder, plan: Plan, ax: number, ay: number): boolean {
   const sim = b.sim, cp = checkpoint(sim);
   const rot = ((2 + plan.q) & 3) as Rot; // the plan's buildings and blocks, turned with it
   const at = new Map<string, [number, number]>(), blocks: Array<[string, number, number]> = [];
-  const belts: BeltTiles = [];
+  const belts: BeltTiles = [], ret: BeltTiles = [];
   for (const [i, j, c] of plan.cells) {
     const x = ax + i, y = ay + j;
     if (WORKS_KEY[c]) { const p = at.get(c); at.set(c, p ? [Math.min(p[0], x), Math.min(p[1], y)] : [x, y]); }
     else if (c === 'R' || c === '+' || c === '%') blocks.push([c, x, y]);
     else if (ARROW[c] !== undefined) belts.push([x, y, ((ARROW[c]! + plan.q) & 3) as Rot]);
+    else if (RETURN[c] !== undefined) ret.push([x, y, ((RETURN[c]! + plan.q) & 3) as Rot]);
   }
+  belts.push(...ret);
   const parts: Array<[string, number, number]> = [...[...at].map(([c, [x, y]]) => [c, x, y] as [string, number, number]), ...blocks];
   const ids: Record<string, number> = {};
   for (const [c, x, y] of parts) {
@@ -973,6 +1062,7 @@ function layPlan(b: Builder, plan: Plan, ax: number, ay: number): boolean {
   b.afford([['iron_plate', belts.length]]);
   for (const t of belts) if (sim.placeBelts('ribbon', [t]) !== 1) { rollback(sim, cp); return false; }
   Object.assign(b.ids, ids);
+  b.lines['works.return'] = ret;
   for (const c of at.keys()) {
     const k = WORKS_KEY[c]!;
     if (k[2]) b.recipe(k[0], k[2]);
@@ -1025,22 +1115,24 @@ function outerWorks(b: Builder): void {
     && (x - CENTER) * (x - CENTER) + (y - CENTER) * (y - CENTER) > crown;
   const water = nearestTile(b, site, 48, wet);
   const at = wire || !water ? toward(site, b.heart, -10) : toward(water, site, 12);
-  const rows = wire ? WORKS_WIRE : WORKS_BUY;
-  const spots = planSpots(sim, water ? rows : dry(rows), at);
+  const rows = wire ? (water ? WORKS_WIRE : WORKS_WIRE_DRY) : water ? WORKS_BUY : WORKS_BUY_DRY;
+  const spots = planSpots(sim, rows, at);
   if (!spots.some(([plan, ax, ay]) => b.landFor(plan.cells.map(([i, j]) => [ax + i, ay + j] as const)) && layPlan(b, plan, ax, ay))) { b.skip('works:plan'); return; }
   const post = b.ids.post2!, gw = b.ids.journal2 ?? 0, obs = b.ids.observatory2 ?? 0;
-  // The post's trade: its outlets buy (the plan's left one, port 5: glass, or circuits; its right
-  // one, port 4: plates), its inlets sell the speed modules and the bore's ore.
+  // The post's trade: it buys glass (or circuits) and plates — out of its one exit, in turn; the
+  // sorter sends the glass (circuits) straight on, the plates aside — and its entrance sells the
+  // speed modules, the spilled gears and the bore's ore.
   const ask = (it: string): number => Math.floor((sim.prices.ask[itemIdx(it)]! * 3) / 2);
-  for (const [port, item] of [[5, wire ? 'glass' : 'circuit'], [4, 'iron_plate']] as const) {
-    if (!sim.setPortItem(post, port, item)) { b.skip(`buy:${item}`); continue; }
+  const straight = wire ? 'glass' : 'circuit';
+  if (!sim.setForkFilter(b.ids.sorter2!, 0, straight)) b.skip('sorter');
+  for (const item of [straight, 'iron_plate']) {
     if (typeof sim.addImport(post, item, OUTER_BUY[wire ? 'wire' : 'buy'][item]!, ask(item)) !== 'number') b.skip(`import:${item}`);
   }
   if (sim.setExport(post, 0, 'pace_bell') !== null || sim.setExport(post, 2, 'gear') !== null) b.skip('export:works');
   if (obs && !sim.startResearch(ADVANCED_PROJECT, obs).ok) b.skip(`research:${ADVANCED_PROJECT}`);
   // The bore: its copper into the mill, the rest of its ore into the post (sold).
   if (bore && wire && !lay(sim, bore, b.ids.mill2!)) b.skip('line:bore');
-  if (bore && (!lay(sim, bore, post) || sim.setExport(post, 1, ore) !== null)) {
+  if (bore && (!join(sim, bore, b.laid('works.return')[0] ?? []) || sim.setExport(post, 1, ore) !== null)) {
     b.skip(`export:${ore}`);
     // A bore with nowhere to send its ore stands blocked: taken back up (refunded) where it has no mill either.
     if (!wire) { const e = sim.ents.get(bore)!; sim.remove(e.x, e.y); delete b.ids.bore; }

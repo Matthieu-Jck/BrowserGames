@@ -94,7 +94,7 @@ export const TERMINALS: Readonly<Partial<Record<BuildingId, readonly Terminal[]>
   cell_charger: [CHARGER_BUSHING],
   fumarole_tap: [roof(0.35, 0.95, 1.0, 0.3)],
   sunheart: [roof(4.3, 4.3, 3.2)],
-  trade_post: [roof(2.58, 0.42, 0.66, 0.25)], // on its power pedestal (recipes/buildings.ts `TP_PED`)
+  trade_post: [roof(3.58, 1.42, 0.66, 0.25)], // on its power pedestal, a corner of its pad (recipes/buildings.ts `TP_PED`)
 };
 
 /** The fallback art's terminal (a powered building with none of its own): a mast on its roof hatch. */

@@ -29,6 +29,7 @@ export function setPortItem(sim: Sim, id: number, port: number, item: string | n
   const e = sim.ents.get(id);
   if (!e?.portItems || port < 0 || port >= e.portItems.length) return false;
   if (buildingDef(e.def).ports[port]?.io !== 'out') return false;
+  if (BUILDING_KIND[e.def] === 'trade') return false; // its exit hands out what it bought, in turn (D62)
   e.portItems[port] = item === null ? -1 : itemIdx(item);
   sim.log.push({ tick: sim.tick, cmd: { k: 'portItem', id, port, item } });
   sim.dirty = true;

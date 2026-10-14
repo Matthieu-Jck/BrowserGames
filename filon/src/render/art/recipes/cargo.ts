@@ -260,7 +260,7 @@ const EYE = 0.07;
 /**
  * The deck's lift: an iris that opens on a round well (radius, tiles) wide enough for the
  * container's corners to pass, inside a rim of retracted blades; all of it inside the deck
- * (radius 0.98, recipes/buildings.ts `trade_post`).
+ * (radius 0.98, recipes/buildings.ts `TP_DECK_R`).
  */
 export const IRIS = 0.86;
 export const IRIS_RIM = 0.07;

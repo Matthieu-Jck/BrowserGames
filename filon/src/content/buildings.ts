@@ -283,10 +283,14 @@ export const BUILDINGS = {
   // ── commerce ──────────────────────────────────────────────────────────────
   trade_post: {
     name: { fr: 'Comptoir', en: 'Trade Post' },
-    desc: { fr: 'L’aire de levage de CrierBelt : vend chaque minute ce que ses rubans apportent (tes flux d’export) et reçoit tes achats. Accolée au Cœur, elle commerce directement avec son stock.', en: 'CrierBelt’s cargo lift pad: sells each minute what its ribbons bring in (your export streams) and receives what you buy. Next to the Heart, it trades straight from its stock.' },
-    kind: 'trade', category: 'commerce', w: 3, h: 3, needsZone: true, unlock: 'trade_post', kw: 100, idleKw: 10,
+    desc: { fr: 'L’aire de levage de CrierBelt, dans un anneau que brûlent les flammes de ses drones : une seule entrée, une seule sortie, sur des rubans ignifugés. Elle vend chaque minute ce que son entrée apporte (tes flux d’export) et rend tes achats par sa sortie, à tour de rôle ; accolée au Cœur, elle commerce directement avec son stock.', en: 'CrierBelt’s cargo lift pad, in a ring its drones’ flames scorch: one entrance, one exit, on flame-proof ribbons. It sells each minute what its entrance brings (your export streams) and hands what you buy out of its exit, in turn; next to the Heart, it trades straight from its stock.' },
+    // The pad is the middle 3×3; the outer ring is the scorched apron the drones' flames keep clear
+    // (owner, 2026-10-14: "should block any construction in a 1 case radius around it because of
+    // the flames of the drones"), crossed by its two built-in flame-proof ribbons: the entrance in
+    // the middle of one side, the exit in the middle of the other (D62).
+    kind: 'trade', category: 'commerce', w: 5, h: 5, needsZone: true, unlock: 'trade_post', kw: 100, idleKw: 10,
     cost: [['iron_plate', 40], ['glass', 10], ['copper_wire', 10]],
-    ports: [P(0, 2, 'S', 'in'), P(1, 2, 'S', 'in'), P(2, 2, 'S', 'in'), P(0, 1, 'W', 'in'), P(0, 0, 'N', 'out'), P(2, 0, 'N', 'out')],
+    ports: [P(2, 4, 'S', 'in'), P(2, 0, 'N', 'out')],
   },
   // ── appended (saves store building indices: new entries go last) ─────────
   sand_collector: {

@@ -217,11 +217,11 @@ function play(sim: Sim, last: QuestId = 'beyond_crown'): Record<string, number> 
   until(sim, 'field_journal', 8 * EPOCH);
   if (stop('field_journal')) return ids;
 
-  // 7 — the trade post against the Hearth's north-west corner, an export stream of glass.
+  // 7 — the trade post (its 5×5 pad and apron, D62) against the Hearth's west side, an export stream of glass.
   at('crier_calls', 0);
   unlock('trade_post');
   at('crier_calls', 1);
-  place('post', 'trade_post', 508, 507);
+  place('post', 'trade_post', 505, 510);
   at('crier_calls', 2);
   expect(sim.setExport(ids.post!, 0, 'glass')).toBeNull();
   at('crier_calls', 3);
@@ -507,7 +507,7 @@ describe('quests', () => {
   it('fees are waived while the First Purchase reward lasts', () => {
     const sim = testSim();
     sim.grant('iron_plate', 200); sim.grant('glass', 50); sim.grant('copper_wire', 50);
-    const post = sim.place('trade_post', 507, 507, 0);
+    const post = sim.place('trade_post', 505, 510, 0);
     expect(post.ok).toBe(true);
     const plate = itemIdx('iron_plate');
     const paid = sim.quoteSpot(plate, 'sell', 50).cents;

@@ -87,7 +87,8 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Accumulateur | Accumulator | `accumulator` [accumulator] | Stores 1 200 kW·min, delivers 300 kW. |
 | Centrale géothermique | Geothermal Plant | `fumarole_tap` [geothermal] | +1.5 MW on a vent. |
 | Cœur-Soleil | Sunheart | `sunheart` [generator] | +20 MW; burns a resonator every 30 min. |
-| Comptoir | Trade Post | `trade_post` [trade] | The Crier Ring's dock: sells what flows in and delivers purchases. Inert until M6. |
+| Comptoir | Trade Post | `trade_post` [trade] | CrierBelt's cargo pad: 5×5, its flame apron kept clear, one entrance (what it sells) and one exit (what it bought, in turn) on flame-proof ribbons (D62). |
+| tablier (du comptoir) | flame apron | the trade post's outer ring | The one-tile ring round the post's pad that the drones' flames keep clear: nothing else stands on it (D62). |
 | Dérivant | Drifter | `BAL.drifterCost`, `Sim.fleet` | A freight airship bought at a skydock (not a building). Carries one item along a route. |
 
 ### Items (`ITEMS`)
@@ -129,7 +130,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | la Criée | the Crier Ring | M6 | CrierBelt's orbital exchange, where every claim trades (`screen.crier`). |
 | concessions sœurs | sister claims | [colonies.ts](../src/content/colonies.ts) (code: "colonies"); `Land.sister` | The market's forty simulated actors: other CrierBelt partners' bases. They also own about one parcel in eight beyond the ring round the starting square, sold or leased at ×1.6–2.4 the price CrierBelt would ask, and closed even to ribbons until the claim holds it. |
 | valeur de référence · profondeur | reference value V · market depth Q | `ItemDef.value`, `ItemDef.depth` | The price anchor in ◉, and the NPC market depth in items/min. |
-| Sortie (d'un stock) | outlet | `Ent.portItems` | An unloader port of a dock or a trade post, set to one item — never of the Heart, which only takes in (D34). |
+| Sortie (d'un stock) | outlet | `Ent.portItems` | An unloader port of a dock, set to one item — never of the Heart, which only takes in (D34). A trade post's one exit hands out all it bought, in turn (D62). |
 
 ## B. Engine and code terms
 
@@ -161,7 +162,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | chain tier | The building index of a chain's ribbons (ribbon, swift, express, conduit, skybridge). | chain.ts |
 | routing block | A `ForkNode`: router, sorter, gate, unloader, distributor (kind `fork`); its links come from its surroundings. Side-loading onto a ribbon is a lower-priority incoming edge. | `ForkNode` in nodes.ts; `rim`, `routingPorts`, links in compile.ts |
 | reservoir | A stock node with a capacity: the Hearth, silos, docks, trade posts, observatories, excavators, backfillers. Groups are cut at reservoirs. | `ReservoirNode` in nodes.ts |
-| unloader port | A reservoir out port handing out one chosen item (`portItems`): skydock and trade post outlets, and the virtual ports unloaders add to the stores they touch — never on the Heart, which has no outputs (D34). | nodes.ts, [types.ts](../src/sim/types.ts) |
+| unloader port | A reservoir out port handing out one chosen item (`portItems`): skydock outlets, and the virtual ports unloaders add to the stores they touch — never on the Heart, which has no outputs (D34). | nodes.ts, [types.ts](../src/sim/types.ts) |
 | virtual mode | During warm-ups a reservoir behaves by state flags (normal, empty, full) and records flows instead of changing its stock. | `V_NORMAL`/`V_EMPTY`/`V_FULL`, [steady.ts](../src/sim/offline/steady.ts) |
 | rotating allocation · water-filling | Fair splits of capacity among edges, rotating with the tick · a proportional capped split (tested; no flow-engine caller yet). | `allocRotating` in node.ts · `waterfill` in fixed.ts |
 | group | A connected component of the graph cut at reservoirs: the unit the catch-up warms up and extrapolates. | [groups.ts](../src/sim/graph/groups.ts) |
@@ -224,7 +225,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 
 | Term | Meaning | Where |
 |---|---|---|
-| Comptoir / Trade Post (`trade_post`, kind `trade`) | The colony's dock at the Crier: a store whose inlets take its export streams and whose outlets hand out imports | `sim/trade.ts`, `systems/trade.ts` |
+| Comptoir / Trade Post (`trade_post`, kind `trade`) | The colony's dock at the Crier: a 5×5 store whose one entrance takes its export streams and whose one exit hands out its purchases in turn (D62) | `sim/trade.ts`, `systems/trade.ts` |
 | Export stream / flux d'export | An item a post sells at every epoch boundary (what came in by ribbon; next to the Hearth, also from its stock) | `TradeState.exports` |
 | Standing order / ordre d'import | Item, whole items/min, max price: bought each boundary while the ask is under the max (pause above, resume 3 % below) | `ImportOrder`, `orderTrades` |
 | Spot / comptant | A stock sold or bought at once along the market's depth (slippage), booked on the market | `spotTrade`, `quoteSpot`, `MarketService.book` |

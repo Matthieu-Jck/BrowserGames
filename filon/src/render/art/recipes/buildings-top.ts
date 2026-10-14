@@ -8,6 +8,7 @@
 // and cast shadows always fall the same way.
 import { BUILDINGS, type BuildingId } from '@/content/buildings';
 import type { BuildingDef } from '@/content/types';
+import { makeRng } from '@/core/rng';
 import { sideIndex, type Rot } from '@/sim/types';
 import { C, mix } from '../tokens';
 import { castShadow, ellipsePts, flat, hatch, ink, pathOf, shadowCrescent, shape, stipple, type Ctx, type Pt } from '../ink';
@@ -18,7 +19,10 @@ import {
 import { pvPanel } from '../solar';
 import { CHARGER_BUSHING, HEART_MASTS, KIT_K, POLE, PYLON, kitDrawn, onArm, terminalProbe, terminalsOf, turnsArt } from '../terminals';
 import { SAND_WHEEL, TURBINE, bucketFull, vaneAt } from './moving';
-import { JUNCTION, SKY, junctionHump, type SkyPiece } from './buildings';
+import {
+  JUNCTION, SCORCH, SKY, TP_BAND, TP_DECK, TP_DECK_R, TP_LAMPS, TP_PAD, TP_PED, TP_RIBBON, TP_TEMPER, TP_WALL, apronMarks, burnPts,
+  junctionHump, type SkyPiece,
+} from './buildings';
 
 export const TOP_PX = 64;     // px per tile in the atlas (2× of the 32 plan world px)
 export const TOP_MARGIN = 14; // room for shadows and overhangs
@@ -1318,12 +1322,25 @@ const R: Partial<Record<BuildingId, Recipe>> = {
   },
 
   trade_post(ctx, f, s) {
-    // CrierBelt's cargo lift pad, a plain platform (as the iso art, recipes/buildings.ts): a slab
-    // with a hazard edge, the raised round deck (hazard ring, landing lights, the lift's shut iris),
-    // a lamp post on three corners, the power pedestal on the fourth.
-    plinth(ctx, f, C.steel, 0.04, s, true);
-    const c = f.p(1.5, 1.55);
-    const deck = ellipsePts(c[0], c[1], f.l(0.98), f.l(0.98), s + 1, 0.003, 64);
+    // CrierBelt's cargo lift pad (as the iso art, recipes/buildings.ts): the scorched apron its
+    // drones' flames keep clear round the pad (D62), the two flame-proof ribbons across it — the
+    // entrance in, the exit out —, and on the pad its hazard edge, the raised round deck (hazard
+    // ring, landing lights, the lift's shut iris), a lamp post on three corners, the power
+    // pedestal on the fourth, and the hoods where the ribbons dive in and come out.
+    scorchTop(ctx, f, s + 100);
+    for (const io of ['in', 'out'] as const) tpRibbonTop(ctx, f, io, s + (io === 'in' ? 140 : 160));
+    const [X0, Y0, X1] = TP_PAD;
+    plinth(ctx, f, C.steel, 0.04, s, false, TP_PAD);
+    for (const [a, b] of [[X0 + 0.18, 2.06], [2.94, X1 - 0.18]] as const) {
+      const band = rr(f, a, Y0 + 0.1, b, Y0 + 0.22, 0.02);
+      flat(ctx, band, C.hazard);
+      ctx.save(); pathOf(ctx, band); ctx.clip();
+      hatch(ctx, band, Math.PI / 4, f.l(0.12), { w: f.l(0.05), alpha: 0.85, seed: s + a * 10 });
+      ctx.restore();
+    }
+    for (const io of ['in', 'out'] as const) tpHoodTop(ctx, f, io, s + (io === 'in' ? 50 : 60));
+    const c = f.p(...TP_DECK);
+    const deck = ellipsePts(c[0], c[1], f.l(TP_DECK_R), f.l(TP_DECK_R), s + 1, 0.003, 64);
     castShadow(ctx, deck, f.l(0.1), 0.32);
     shape(ctx, deck, C.steel, { w: 2, seed: s + 1 });
     ink(ctx, ellipsePts(c[0], c[1], f.l(0.78), f.l(0.78), s + 2, 0, 56), { closed: true, w: f.l(0.06), color: C.hazard, shade: false, seed: s + 2 });
@@ -1334,16 +1351,117 @@ const R: Partial<Record<BuildingId, Recipe>> = {
     }
     ink(ctx, ellipsePts(c[0], c[1], f.l(0.62), f.l(0.62), s + 4, 0, 48), { closed: true, w: f.l(0.03), shade: false, seed: s + 4 });
     for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2; light(ctx, c[0] + Math.cos(a) * f.l(0.9), c[1] + Math.sin(a) * f.l(0.9), f.l(0.035), i % 2 ? C.led : C.ledWarm); }
-    for (const [x, y] of [[0.24, 0.24], [0.24, 2.76], [2.76, 2.76]] as const) {
+    for (const [x, y] of TP_LAMPS) {
       shape(ctx, ellipsePts(...f.p(x, y), f.l(0.09), f.l(0.09), s + 5, 0, 16), C.steelD, { w: 1.2, shade: false, seed: s + 5 });
       light(ctx, ...f.p(x, y), f.l(0.045), C.ledWarm);
     }
-    const ped = rr(f, 2.38, 0.22, 2.78, 0.62, 0.03);
+    const [px, py] = TP_PED;
+    const ped = rr(f, px, py, px + 0.4, py + 0.4, 0.03);
     castShadow(ctx, ped, f.l(0.12), 0.3);
     shape(ctx, ped, C.teal, { w: 1.4, seed: s + 8 });
-    light(ctx, ...f.p(2.47, 0.31), f.l(0.035), C.ledGreen);
+    light(ctx, ...f.p(px + 0.09, py + 0.09), f.l(0.035), C.ledGreen);
   },
 };
+
+/**
+ * The trade post's scorched apron from above (the iso art's marks, `apronMarks`): baked earth at
+ * the edge, ragged burns darker towards the pad, blast streaks, soot, cracks with a pale lip,
+ * fused glass, embers, the half-burnt keep-out line.
+ */
+function scorchTop(ctx: Ctx, f: Frame, s: number): void {
+  const m = apronMarks();
+  const [cx, cy] = TP_DECK;
+  const foot = rr(f, 0.03, 0.03, 4.97, 4.97, 0.02);
+  flat(ctx, foot, SCORCH.baked);
+  ctx.save(); pathOf(ctx, foot); ctx.clip();
+  for (const b of m.burns) flat(ctx, burnPts(b.r).map(([x, y]) => f.p(x, y)), SCORCH[b.tone], b.alpha);
+  for (const [i, k] of m.streaks.entries()) {
+    ink(ctx, [f.p(cx + Math.cos(k.a) * k.r0, cy + Math.sin(k.a) * k.r0), f.p(cx + Math.cos(k.a) * k.r1, cy + Math.sin(k.a) * k.r1)], { w: f.l(k.w), color: C.ink, alpha: 0.22, shade: false, taper: 0.5, jitter: 0.6, seed: s + 10 + i });
+  }
+  const xs = foot.map(([x]) => x), ys = foot.map(([, y]) => y), x0 = Math.min(...xs), y0 = Math.min(...ys);
+  stipple(ctx, x0, y0, Math.max(...xs) - x0, Math.max(...ys) - y0, 300, { r: 1.1, color: C.ink, alpha: 0.28, seed: s + 40, clip: foot });
+  ctx.restore();
+  const [px0, py0, px1, py1] = TP_PAD;
+  flat(ctx, rr(f, px0 - 0.14, py0 - 0.14, px1 + 0.14, py1 + 0.14, 0.1), C.ink, 0.22);
+  for (const [i, c] of m.cracks.entries()) {
+    const pts = c.map(([x, y]) => f.p(x, y));
+    ink(ctx, pts.map(([x, y]) => [x - 0.8, y - 0.8] as Pt), { w: 1.2, color: SCORCH.baked, alpha: 0.7, shade: false, taper: 0.4, jitter: 0.3, seed: s + 60 + i });
+    ink(ctx, pts, { w: 1.6, color: C.ink, alpha: 0.75, shade: false, taper: 0.4, jitter: 0.3, seed: s + 60 + i });
+  }
+  for (const [i, q] of m.glass.entries()) {
+    const [gx, gy] = f.p(q.x, q.y);
+    const pts = ellipsePts(gx, gy, f.l(q.rx), f.l(q.ry), s + 80 + i, 0.15, 20, q.rot + (f.rot * Math.PI) / 2);
+    flat(ctx, pts, C.lilacL, 0.55);
+    ink(ctx, pts.slice(12, 18), { w: 1.2, color: '#ffffff', alpha: 0.6, shade: false, taper: 0.3, seed: s + 85 + i });
+  }
+  const rng = makeRng(s + 90);
+  const L = 0.16, H = 5 - L;
+  for (const [ax, ay, bx, by] of [[L, L, H, L], [H, L, H, H], [H, H, L, H], [L, H, L, L]] as const) {
+    for (let t = 0.04; t < 0.96; t += 0.09) {
+      if (rng.chance(0.3)) continue;
+      const a = f.p(ax + (bx - ax) * t, ay + (by - ay) * t), b = f.p(ax + (bx - ax) * (t + 0.05), ay + (by - ay) * (t + 0.05));
+      ink(ctx, [a, b], { w: f.l(0.04), color: C.hazard, alpha: rng.range(0.45, 0.85), shade: false, taper: 0, jitter: 0.2, seed: s + 91 });
+    }
+  }
+  ink(ctx, foot, { closed: true, w: 1, alpha: 0.35, shade: false, seed: s + 95 });
+  for (const [i, [x, y]] of m.embers.entries()) {
+    const [ex, ey] = f.p(x, y);
+    flat(ctx, ellipsePts(ex, ey, f.l(0.07), f.l(0.07), s + 100 + i, 0.1, 12), C.coral, 0.25);
+    flat(ctx, ellipsePts(ex, ey, f.l(0.04), f.l(0.035), s + 105 + i, 0.1, 10), C.coral, 0.8);
+    flat(ctx, ellipsePts(ex, ey, f.l(0.018), f.l(0.018), s + 110 + i, 0, 8), C.peachL);
+  }
+}
+
+/**
+ * A flame-proof ribbon from above: the dark chute across the apron, its band of ceramic
+ * heat-shield plates, chevrons in the port's colour the way the items go, the two shield walls
+ * tempered along their length (straw at the apron's edge, blue at the pad) and riveted.
+ */
+function tpRibbonTop(ctx: Ctx, f: Frame, io: 'in' | 'out', s: number): void {
+  const { outer, pad } = TP_RIBBON[io];
+  const [b0, b1] = TP_BAND, [w0, w1] = TP_WALL;
+  const ya = Math.min(outer, pad), yb = Math.max(outer, pad);
+  const yAt = (t: number): number => outer + (pad - outer) * t;
+  const chute = rr(f, w0, ya, w1, yb, 0.02);
+  dropShadow(ctx, f, chute, 0.8, 0.2);
+  shape(ctx, chute, C.steelDD, { w: 1.6, seed: s });
+  const n = 5;
+  for (let i = 0; i < n; i++) {
+    const p0 = yAt(i / n), p1 = yAt((i + 1) / n);
+    const q = rr(f, b0 + 0.03, Math.min(p0, p1) + 0.012, b1 - 0.03, Math.max(p0, p1) - 0.012, 0.01);
+    flat(ctx, q, i % 2 ? mix(C.steelDD, C.inkSoft, 0.4) : mix(C.steelDD, C.steel, 0.3));
+  }
+  const col = io === 'in' ? C.cyan : C.coral;
+  for (const [i, t] of [0.3, 0.68].entries()) {
+    const y = yAt(t), k = 0.13;
+    ink(ctx, [f.p(2.33, y + k), f.p(2.5, y - k * 0.6), f.p(2.67, y + k)], { w: f.l(0.05), color: col, shade: false, taper: 0, jitter: 0.15, seed: s + 50 + i });
+  }
+  for (const [x0, x1] of [[w0, b0], [b1, w1]] as const) {
+    const w = rr(f, x0, ya, x1, yb, 0.01);
+    shape(ctx, w, C.steelD, { w: 1.2, shade: false, seed: s + 20 + x0 });
+    const xm = (x0 + x1) / 2;
+    for (let i = 0; i < 4; i++) {
+      ink(ctx, [f.p(xm, yAt(i / 4)), f.p(xm, yAt((i + 1) / 4))], { w: f.l(0.035), color: TP_TEMPER[i]!, alpha: 0.85, shade: false, taper: 0, jitter: 0, seed: s + 30 + i });
+    }
+    for (const t of [0.18, 0.5, 0.82]) rivet(ctx, ...f.p(xm, yAt(t)), Math.max(1.4, f.l(0.025)), C.steelL);
+  }
+}
+
+/** Where a flame-proof ribbon meets the pad, from above: an armoured hood, its dark mouth on the ribbon's side, a lamp in the port's colour. */
+function tpHoodTop(ctx: Ctx, f: Frame, io: 'in' | 'out', s: number): void {
+  const [h0, h1] = TP_RIBBON[io].hood;
+  const [w0, w1] = TP_WALL;
+  const hood = rr(f, w0, h0, w1, h1, 0.03);
+  dropShadow(ctx, f, hood, 2.4, 0.26);
+  shape(ctx, hood, C.steelD, { w: 1.6, seed: s });
+  const my = io === 'in' ? [h1 - 0.07, h1 + 0.02] : [h0 - 0.02, h0 + 0.07];
+  flat(ctx, rr(f, w0 + 0.1, my[0]!, w1 - 0.1, my[1]!, 0.01), C.ink);
+  for (let i = 1; i < 4; i++) {
+    const x = w0 + ((w1 - w0) * i) / 4;
+    ink(ctx, [f.p(x, h0 + 0.04), f.p(x, h1 - 0.04)], { w: 1, color: C.steelL, alpha: 0.5, shade: false, taper: 0, jitter: 0, seed: s + 2 + i });
+  }
+  light(ctx, ...f.p(2.5, (h0 + h1) / 2), f.l(0.04), io === 'in' ? C.led : C.ledWarm);
+}
 
 const seedOf = (id: string): number => (id.length * 131 + id.charCodeAt(0) * 17) | 0;
 

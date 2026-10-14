@@ -55,10 +55,11 @@ export function rivet(ctx: Ctx, x: number, y: number, r: number, color: string =
 
 /**
  * The riveted foundation every machine stands on: a blue-steel plate with a bevel, panel
- * seams, corner rivets and (optionally) hazard stripes on the front edge.
+ * seams, corner rivets and (optionally) hazard stripes on the front edge — over the whole
+ * footprint or, given `at` (a local rect [x0, y0, x1, y1]), over part of it (the trade post's pad).
  */
-export function plinth(ctx: Ctx, f: Frame, color: string = C.steel, inset = 0.06, seed = 1, hazard = false): Pt[] {
-  const a = f.p(inset, inset), b = f.p(f.w - inset, f.h - inset);
+export function plinth(ctx: Ctx, f: Frame, color: string = C.steel, inset = 0.06, seed = 1, hazard = false, at: readonly [number, number, number, number] = [0, 0, f.w, f.h]): Pt[] {
+  const a = f.p(at[0] + inset, at[1] + inset), b = f.p(at[2] - inset, at[3] - inset);
   const x0 = Math.min(a[0], b[0]), y0 = Math.min(a[1], b[1]), x1 = Math.max(a[0], b[0]), y1 = Math.max(a[1], b[1]);
   const W = x1 - x0, H = y1 - y0, r = f.l(0.16);
   const pts = roundRectPts(x0, y0, W, H, r);
@@ -80,7 +81,7 @@ export function plinth(ctx: Ctx, f: Frame, color: string = C.steel, inset = 0.06
   for (let i = 1; i < cols; i++) { const x = x0 + (W * i) / cols; ctx.beginPath(); ctx.moveTo(x, y0 + bev); ctx.lineTo(x, y1 - bev); ctx.stroke(); }
   for (let j = 1; j < rows; j++) { const y = y0 + (H * j) / rows; ctx.beginPath(); ctx.moveTo(x0 + bev, y); ctx.lineTo(x1 - bev, y); ctx.stroke(); }
   ctx.restore();
-  if (hazard) hazardEdge(ctx, f, seed);
+  if (hazard) hazardEdge(ctx, f, seed, at);
   ink(ctx, pts, { closed: true, w: f.l(0.04), seed: seed + 4 });
   ink(ctx, inner, { closed: true, w: f.l(0.012), alpha: 0.4, shade: false, seed: seed + 5 });
   const rv = Math.max(1.6, f.l(0.035));
@@ -89,8 +90,8 @@ export function plinth(ctx: Ctx, f: Frame, color: string = C.steel, inset = 0.06
 }
 
 /** Yellow/ink hazard stripes along the front (unrotated top) edge. */
-function hazardEdge(ctx: Ctx, f: Frame, seed: number): void {
-  const band = rectPts(f, 0.18, 0.1, f.w - 0.18, 0.22, 0.02);
+function hazardEdge(ctx: Ctx, f: Frame, seed: number, at: readonly [number, number, number, number]): void {
+  const band = rectPts(f, at[0] + 0.18, at[1] + 0.1, at[2] - 0.18, at[1] + 0.22, 0.02);
   flat(ctx, band, C.hazard);
   ctx.save();
   ctx.beginPath(); ctx.moveTo(band[0]![0], band[0]![1]); for (const p of band) ctx.lineTo(p[0], p[1]); ctx.closePath(); ctx.clip();

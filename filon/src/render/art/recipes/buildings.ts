@@ -6,8 +6,8 @@
 // cooling tower… — riveted steel, teal/violet housings, coral/brass hot parts, hazard stripes,
 // LEDs. Nothing shows people (no lit windows, doors, walkways, planters, houses): the base's own
 // buildings show machine things — the Heart's fortified depot under its solar rows and uplink
-// dish, drone pads and the drones on them, status beacons, sensor and relay masts, the CrierBelt
-// mark on the trade post. Domes are for instruments only (the observatory's telescope).
+// dish, drone pads and the drones on them, status beacons, sensor and relay masts, the trade
+// post's landing pad in its scorched apron. Domes are for instruments only (the observatory's telescope).
 // Routing blocks share one body: a box whose four sides open on ribbon mouths exactly as wide as
 // the ribbon's band, the lid saying what the block does. Recipes draw in the building's own
 // (unrotated) tile frame; the IsoFrame rotates the footprint so light and shading always fall the
@@ -15,6 +15,7 @@
 // the rotation brings nearer). Ports come from the content (back ones first, front ones last).
 import { BUILDINGS, type BuildingId } from '@/content/buildings';
 import type { BuildingDef } from '@/content/types';
+import { makeRng } from '@/core/rng';
 import { sideIndex, type Rot } from '@/sim/types';
 import { C, mix } from '../tokens';
 import { castShadow, ellipsePts, flat, hatch, ink, pathOf, shape, stipple, type Ctx, type Pt } from '../ink';
@@ -421,8 +422,8 @@ function armillary(ctx: Ctx, f: IsoFrame, cx: number, cy: number, cz: number, s:
 // the buildings that once housed them show machine things instead: drone pads and the drones
 // parked on them, status beacons, uplink dishes and sensor masts, the CrierBelt mark.
 
-/** Height of the trade post's landing deck (levels): the Crier's cargo craft sets down on it (world/cargo-view). */
-const DECK_Z = 0.8;
+/** Height of the trade post's landing deck (levels): the Crier's cargo craft sets down on it (world/cargo-view; world/cargo-flight.ts mirrors it). */
+export const DECK_Z = 0.8;
 /** The construction drones' body: hazard yellow, like any site machine. */
 const DRONE: Faces = { top: C.hazard, left: mix(C.hazard, C.coralD, 0.3), right: mix(C.hazard, C.ink, 0.42) };
 
@@ -2325,10 +2326,33 @@ const R: Partial<Record<BuildingId, Recipe>> = {
     draw(ctx, f, s) {
       // CrierBelt's cargo lift pad, a plain platform (owner, 2026-10-13: "a simple platform (keep
       // the animation of the cargo etc). The random blocs all around and the planet icons are not
-      // needed"): a slab with a hazard edge, the raised round deck the Crier's drone sets down on —
-      // its hazard ring, landing lights and the lift's shut iris (cargo-view opens it) —, a lamp
-      // post on three corners and a power pedestal on the fourth (its wire terminal on top).
-      slab(ctx, f, C.steel, 0.04, SZ, s, true);
+      // needed") on the middle 3 × 3 of a 5 × 5 footprint: a slab with a hazard edge, the raised
+      // round deck the Crier's drone sets down on — its hazard ring, landing lights and the lift's
+      // shut iris (cargo-view opens it) —, a lamp post on three corners and a power pedestal on
+      // the fourth (its wire terminal on top). Round it, the scorched apron its drones' flames keep
+      // clear (owner, 2026-10-14: "should block any construction in a 1 case radius around it
+      // because of the flames of the drones", D62), crossed by its two built-in flame-proof
+      // ribbons: the entrance, ramping up into the pad, and the exit, ramping down out of it.
+      // The apron and the ribbons lie on the ground: they cast no shadow (a ShadowFrame skips
+      // them — a cast shadow stretched with the day would drag a 5 × 5 decal across the sand).
+      const ground = !(f instanceof ShadowFrame);
+      // The ribbon behind the pad goes before it, the one in front after everything on it.
+      const near = (io: 'in' | 'out'): boolean => f.depth(2.5, TP_RIBBON[io].outer) > f.depth(2.5, 2.5);
+      if (ground) {
+        tpApron(ctx, f, s + 100);
+        for (const io of ['in', 'out'] as const) if (!near(io)) tpRibbon(ctx, f, io, s + (io === 'in' ? 140 : 160));
+      }
+      const [X0, Y0, X1] = TP_PAD;
+      slab(ctx, f, C.steel, 0.04, SZ, s, false, TP_PAD);
+      // The hazard band along the pad's far edge, broken where the exit's hood stands.
+      for (const [a, b] of [[X0 + 0.2, 2.06], [2.94, X1 - 0.2]] as const) {
+        const band: Pt[] = [f.p(a, Y0 + 0.12, SZ), f.p(b, Y0 + 0.12, SZ), f.p(b, Y0 + 0.3, SZ), f.p(a, Y0 + 0.3, SZ)];
+        flat(ctx, band, C.hazard);
+        ctx.save(); pathOf(ctx, band); ctx.clip();
+        hatch(ctx, band, Math.PI / 4, 9, { w: 4, alpha: 0.85, seed: s + a * 10 });
+        ctx.restore();
+        ink(ctx, band, { closed: true, w: 1, shade: false, seed: s + 3 + a * 10 });
+      }
       const sc = new Scene();
       for (const [i, [x, y]] of TP_LAMPS.entries()) sc.add(f.depth(x, y), () => tpLamp(ctx, f, x, y, s + 20 + i * 3));
       sc.add(f.depth(TP_PED[0] + 0.2, TP_PED[1] + 0.2), () => {
@@ -2337,24 +2361,277 @@ const R: Partial<Record<BuildingId, Recipe>> = {
         faceGrille(ctx, f, rr, 'R', 0.2, 0.8, SZ + 0.06, TP_PED[2] - 0.08, s + 31, 2);
         faceLeds(ctx, f, rr, 'L', TP_PED[2] - 0.1, 0.3, 0.7, 2, [C.ledGreen, C.led]);
       });
-      sc.add(f.depth(1.5, 1.55), () => {
-        cylinder(ctx, f, 1.5, 1.55, 0.98, SZ, DECK_Z, C.steelD, s + 5, { top: C.steel });
-        const c = f.p(1.5, 1.55, DECK_Z);
+      const [dx, dy] = TP_DECK;
+      sc.add(f.depth(dx, dy), () => {
+        cylinder(ctx, f, dx, dy, TP_DECK_R, SZ, DECK_Z, C.steelD, s + 5, { top: C.steel });
+        const c = f.p(dx, dy, DECK_Z);
         const [ex, ey] = f.ell(0.78);
         ink(ctx, ellipsePts(c[0], c[1], ex, ey, s + 6, 0, 48), { closed: true, w: 3, color: C.hazard, shade: false, seed: s + 6 });
-        tpIris(ctx, f, 1.5, 1.55, DECK_Z, 0.62, s + 7);
+        tpIris(ctx, f, dx, dy, DECK_Z, 0.62, s + 7);
         for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2; light(ctx, c[0] + Math.cos(a) * ex * 1.13, c[1] + Math.sin(a) * ey * 1.13, 2, i % 2 ? C.led : C.ledWarm); }
       });
+      for (const io of ['in', 'out'] as const) {
+        const [h0, h1] = TP_RIBBON[io].hood;
+        sc.add(f.depth(2.5, (h0 + h1) / 2), () => tpHood(ctx, f, io, s + (io === 'in' ? 50 : 60)));
+      }
       sc.run();
+      if (ground) for (const io of ['in', 'out'] as const) if (near(io)) tpRibbon(ctx, f, io, s + (io === 'in' ? 140 : 160));
     },
   },
 };
 
-/** The trade post's corner lamp posts (local tiles) and its power pedestal (corner, top height). */
-const TP_LAMPS: ReadonlyArray<readonly [number, number]> = [[0.24, 0.24], [0.24, 2.76], [2.76, 2.76]];
-export const TP_PED = [2.38, 0.22, 0.66] as const;
+// ── the trade post (D62): pad, scorched apron, flame-proof ribbons ─────────────
 
-/** A lamp post on the trade post's slab: a slim steel post, a hooded lamp. */
+/** The trade post's pad: the middle 3 × 3 of its 5 × 5 footprint (local rect); the ring round it is its scorched apron. */
+export const TP_PAD = [1, 1, 4, 4] as const;
+/** The landing deck: its centre — the pad's, the footprint's — and radius (world/cargo-flight.ts mirrors them). */
+export const TP_DECK = [2.5, 2.5] as const;
+export const TP_DECK_R = 0.98;
+/** The trade post's corner lamp posts (local tiles) and its power pedestal (corner, top height): on the pad. */
+export const TP_LAMPS: ReadonlyArray<readonly [number, number]> = [[1.24, 1.24], [1.24, 3.76], [3.76, 3.76]];
+export const TP_PED = [3.38, 1.22, 0.66] as const;
+
+/**
+ * The two built-in flame-proof ribbons, at rotation 0 (the content's ports: the entrance on the
+ * south edge's middle tile, the exit on the north's): the edge the player's ribbon meets
+ * (`outer`), the pad's edge (`pad`), the hood on the pad where it dives in or comes out (`hood`,
+ * y from–to). Both carry items north: the entrance in, the exit out.
+ */
+export const TP_RIBBON = {
+  in: { outer: 5, pad: 4, hood: [3.64, 3.96] },
+  out: { outer: 0, pad: 1, hood: [1.04, 1.36] },
+} as const;
+/** The ribbons' band (x from–to: a ribbon's width) and their heat-shield walls' outer edges (x). */
+export const TP_BAND = [2.22, 2.78] as const;
+export const TP_WALL = [2.12, 2.88] as const;
+/** Heat tint along the ribbons' walls, from the cool end to the hot one: straw, bronze, purple, blue (tempered steel). */
+export const TP_TEMPER = [C.brassL, C.brass, C.violetL, C.steelL] as const;
+
+/** Where the drones' flames left their marks on the apron (local tiles, the same in every view and rotation). */
+export interface ApronMarks {
+  /** Blast streaks out from the pad: angle (rad, local), from / to (tiles from the pad's centre), width (tiles). */
+  streaks: ReadonlyArray<{ a: number; r0: number; r1: number; w: number }>;
+  /** Cracks in the baked ground: polylines. */
+  cracks: ReadonlyArray<ReadonlyArray<readonly [number, number]>>;
+  /** Sand fused to glass by the heat, near the pad: centre, radii, turn. */
+  glass: ReadonlyArray<{ x: number; y: number; rx: number; ry: number; rot: number }>;
+  /** Embers still glowing. */
+  embers: ReadonlyArray<readonly [number, number]>;
+  /** The burn's blotches round the pad's centre, outermost first: radius (tiles) per angle step (a ragged ring) and its tone. */
+  burns: ReadonlyArray<{ r: readonly number[]; tone: 'baked' | 'burnt' | 'soot'; alpha: number }>;
+}
+
+/** Is a local point on the apron, clear of the pad and of the ribbons (with a margin `m`)? */
+const onApron = (x: number, y: number, m = 0.08): boolean =>
+  x > m && y > m && x < 5 - m && y < 5 - m
+  && !(x > 1 - m && x < 4 + m && y > 1 - m && y < 4 + m)
+  && !(x > TP_WALL[0] - m && x < TP_WALL[1] + m && (y < 1 + m || y > 4 - m));
+
+let apronMemo: ApronMarks | null = null;
+/** The apron's marks, drawn once from a fixed seed (pure: the iso and plan art share them). */
+export function apronMarks(): ApronMarks {
+  if (apronMemo) return apronMemo;
+  const rng = makeRng(6211);
+  const [cx, cy] = TP_DECK;
+  const streaks: Array<{ a: number; r0: number; r1: number; w: number }> = [];
+  for (let i = 0; i < 22; i++) {
+    const a = (i / 22) * Math.PI * 2 + rng.range(-0.08, 0.08);
+    // Not under the ribbons (they cross the apron north and south of the pad).
+    if (Math.abs(Math.sin(a)) > 0.93) continue;
+    const edge = 2.5 / Math.max(Math.abs(Math.cos(a)), Math.abs(Math.sin(a)));
+    streaks.push({ a, r0: 1.45, r1: edge * rng.range(0.78, 0.96), w: rng.range(0.07, 0.16) });
+  }
+  // Cracks: jagged walks running round the pad more than away from it (the ground shrank as it
+  // baked), each with a short branch.
+  const cracks: Array<Array<readonly [number, number]>> = [];
+  const walk = (x: number, y: number, a: number, n: number): Array<readonly [number, number]> => {
+    const line: Array<readonly [number, number]> = [[x, y]];
+    for (let j = 0; j < n; j++) {
+      a += rng.range(-0.6, 0.6);
+      const l = rng.range(0.12, 0.24), nx = x + Math.cos(a) * l, ny = y + Math.sin(a) * l;
+      if (!onApron(nx, ny, 0.1)) break;
+      x = nx; y = ny;
+      line.push([x, y]);
+    }
+    return line;
+  };
+  for (let k = 0; k < 60 && cracks.length < 18; k++) {
+    const x = rng.range(0.2, 4.8), y = rng.range(0.2, 4.8);
+    if (!onApron(x, y, 0.15)) continue;
+    const a = Math.atan2(y - cy, x - cx) + (rng.chance(0.6) ? Math.PI / 2 : 0) + rng.range(-0.5, 0.5);
+    const line = walk(x, y, a, rng.int(4, 8));
+    if (line.length < 3) continue;
+    cracks.push(line);
+    const at = line[rng.int(1, line.length - 2)]!;
+    const twig = walk(at[0], at[1], a + (rng.chance(0.5) ? 1 : -1) * rng.range(0.8, 1.3), rng.int(2, 3));
+    if (twig.length > 1) cracks.push(twig);
+  }
+  const glass: Array<{ x: number; y: number; rx: number; ry: number; rot: number }> = [];
+  for (let k = 0; k < 30 && glass.length < 4; k++) {
+    const a = rng.range(0, Math.PI * 2), r = rng.range(1.62, 1.95);
+    const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+    if (onApron(x, y, 0.22)) glass.push({ x, y, rx: rng.range(0.1, 0.17), ry: rng.range(0.05, 0.09), rot: rng.range(0, Math.PI) });
+  }
+  const embers: Array<readonly [number, number]> = [];
+  for (let k = 0; k < 40 && embers.length < 6; k++) {
+    const x = rng.range(0.25, 4.75), y = rng.range(0.25, 4.75);
+    if (onApron(x, y, 0.15)) embers.push([x, y]);
+  }
+  // Ragged burns: each a ring of radii with a few random harmonics, so the scorch is a blotch, not a target.
+  const burns: Array<{ r: number[]; tone: 'baked' | 'burnt' | 'soot'; alpha: number }> = [];
+  for (const [r0, amp, tone, alpha] of [[2.85, 0.16, 'burnt', 0.45], [2.45, 0.14, 'burnt', 0.55], [2.1, 0.12, 'soot', 0.4], [1.82, 0.08, 'soot', 0.6]] as const) {
+    const h = [1, 2, 3, 5].map((k) => ({ k, a: rng.range(0.3, 1) * amp / k ** 0.6, p: rng.range(0, Math.PI * 2) }));
+    burns.push({ tone, alpha, r: Array.from({ length: 64 }, (_, i) => {
+      const t = (i / 64) * Math.PI * 2;
+      return r0 * (1 + h.reduce((v, q) => v + q.a * Math.sin(q.k * t + q.p), 0) + rng.range(-0.025, 0.025));
+    }) });
+  }
+  apronMemo = { streaks, cracks, glass, embers, burns };
+  return apronMemo;
+}
+
+/** The scorch's colours: baked ground at the edge, burnt nearer the pad, soot against it. */
+export const SCORCH = { baked: mix(C.hardpan, C.mesa, 0.3), burnt: mix(C.coralD, C.inkSoft, 0.62), soot: mix(C.inkSoft, C.ink, 0.35) } as const;
+
+/** A burn's ragged ring (radii per angle step round the pad's centre) as local points. */
+export function burnPts(r: readonly number[]): Array<[number, number]> {
+  const [cx, cy] = TP_DECK;
+  return r.map((v, i) => { const t = (i / r.length) * Math.PI * 2; return [cx + Math.cos(t) * v, cy + Math.sin(t) * v]; });
+}
+
+/**
+ * The scorched apron, on the ground of the whole footprint: baked earth at its edge, burnt and
+ * sooty towards the pad (rings of soot: the flames reach round, the corners stay paler), blast
+ * streaks out from the pad, cracks, sand fused to glass by the heat, a few embers still glowing,
+ * and the keep-out line CrierBelt paints round it, half burnt off.
+ */
+function tpApron(ctx: Ctx, f: IsoFrame, s: number): void {
+  const m = apronMarks();
+  const [cx, cy] = TP_DECK;
+  const g = (x: number, y: number): Pt => f.p(x, y, 0);
+  const foot: Pt[] = [g(0.03, 0.03), g(4.97, 0.03), g(4.97, 4.97), g(0.03, 4.97)];
+  flat(ctx, foot, SCORCH.baked);
+  ctx.save(); pathOf(ctx, foot); ctx.clip();
+  for (const b of m.burns) flat(ctx, burnPts(b.r).map(([x, y]) => g(x, y)), SCORCH[b.tone], b.alpha);
+  // Blast streaks: tapered soot strokes fanning out from the pad.
+  for (const [i, k] of m.streaks.entries()) {
+    const p0 = g(cx + Math.cos(k.a) * k.r0, cy + Math.sin(k.a) * k.r0), p1 = g(cx + Math.cos(k.a) * k.r1, cy + Math.sin(k.a) * k.r1);
+    ink(ctx, [p0, p1], { w: k.w * IS, color: C.ink, alpha: 0.22, shade: false, taper: 0.5, jitter: 0.6, seed: s + 10 + i });
+  }
+  const xs = foot.map(([x]) => x), ys = foot.map(([, y]) => y);
+  const x0 = Math.min(...xs), y0 = Math.min(...ys);
+  stipple(ctx, x0, y0, Math.max(...xs) - x0, Math.max(...ys) - y0, 260, { r: 1.1, color: C.ink, alpha: 0.28, seed: s + 40, clip: foot });
+  ctx.restore();
+  // Soot hugging the pad's base.
+  const [px0, py0, px1, py1] = TP_PAD;
+  flat(ctx, [g(px0 - 0.16, py0 - 0.16), g(px1 + 0.16, py0 - 0.16), g(px1 + 0.16, py1 + 0.16), g(px0 - 0.16, py1 + 0.16)], C.ink, 0.22);
+  // Cracks: an ink line with a pale lip on its lit side, so the baked crust reads as split.
+  for (const [i, c] of m.cracks.entries()) {
+    const pts = c.map(([x, y]) => g(x, y));
+    ink(ctx, pts.map(([x, y]) => [x - 0.8, y - 1] as Pt), { w: 1.2, color: SCORCH.baked, alpha: 0.7, shade: false, taper: 0.4, jitter: 0.3, seed: s + 60 + i });
+    ink(ctx, pts, { w: 1.7, color: C.ink, alpha: 0.75, shade: false, taper: 0.4, jitter: 0.3, seed: s + 60 + i });
+  }
+  for (const [i, q] of m.glass.entries()) {
+    const pts = ellipsePts(0, 0, q.rx, q.ry, s + 80 + i, 0.15, 20, q.rot).map(([x, y]) => g(q.x + x, q.y + y));
+    flat(ctx, pts, C.lilacL, 0.55);
+    ink(ctx, pts.slice(2, 8), { w: 1.2, color: '#ffffff', alpha: 0.6, shade: false, taper: 0.3, seed: s + 85 + i });
+  }
+  // The keep-out line: hazard dashes inset round the edge, some burnt away.
+  const rng = makeRng(s + 90);
+  const L = 0.16, H = 5 - L;
+  const sides: ReadonlyArray<readonly [number, number, number, number]> = [[L, L, H, L], [H, L, H, H], [H, H, L, H], [L, H, L, L]];
+  for (const [ax, ay, bx, by] of sides) {
+    for (let t = 0.04; t < 0.96; t += 0.09) {
+      if (rng.chance(0.3)) continue;
+      const u0 = t, u1 = t + 0.05;
+      const a = g(ax + (bx - ax) * u0, ay + (by - ay) * u0), b = g(ax + (bx - ax) * u1, ay + (by - ay) * u1);
+      ink(ctx, [a, b], { w: 2.4, color: C.hazard, alpha: rng.range(0.45, 0.85), shade: false, taper: 0, jitter: 0.2, seed: s + 91 });
+    }
+  }
+  ink(ctx, foot, { closed: true, w: 1, alpha: 0.35, shade: false, seed: s + 95 });
+  // Embers: coral coals with a pale core. Not in an LED token: the night would light them as a
+  // cold machine's work lamp (fx.ts: amber only glows amber on hot machines), so they stay paint.
+  for (const [i, [x, y]] of m.embers.entries()) {
+    const [ex, ey] = g(x, y);
+    flat(ctx, ellipsePts(ex, ey, 5, 3, s + 100 + i, 0.1, 12), C.coral, 0.25);
+    flat(ctx, ellipsePts(ex, ey, 2.8, 1.8, s + 105 + i, 0.1, 10), C.coral, 0.8);
+    flat(ctx, ellipsePts(ex, ey, 1.3, 0.9, s + 110 + i, 0, 8), C.peachL);
+  }
+}
+
+/**
+ * A built-in flame-proof ribbon across the apron (`io`: the entrance or the exit): a heat-shielded
+ * chute in dark steel ramping from the ground at the apron's edge up to the pad, its band laid
+ * with ceramic heat-shield plates, two low shield walls tempered by the flames (straw at the cool
+ * end, blue at the pad) and riveted, chevrons in the port's colour pointing the way the items go
+ * — into the pad for the entrance, out of it for the exit.
+ */
+function tpRibbon(ctx: Ctx, f: IsoFrame, io: 'in' | 'out', s: number): void {
+  const { outer, pad } = TP_RIBBON[io];
+  const Z0 = 0.06, WALL = 0.13;
+  const yAt = (t: number): number => outer + (pad - outer) * t;
+  const zAt = (t: number): number => Z0 + (SZ - Z0) * t;
+  const [b0, b1] = TP_BAND, [w0, w1] = TP_WALL;
+  const body = (x0: number, x1: number, dz: number, col: Faces, seed: number): void => {
+    prismIso(ctx, f, [[x0, outer], [x1, outer], [x1, pad], [x0, pad]], 0, [zAt(0) + dz, zAt(0) + dz, zAt(1) + dz, zAt(1) + dz], col, seed, { outline: 1.4, shadow: false });
+  };
+  const wall: Faces = { top: C.steelD, left: mix(C.steelD, C.ink, 0.25), right: mix(C.steelD, C.ink, 0.45) };
+  // The far wall, the chute and its band, the near wall.
+  const walls = ([[w0, b0], [b1, w1]] as const).slice().sort((a, b) => f.depth(a[0], 2.5) - f.depth(b[0], 2.5));
+  const shield = (x0: number, x1: number, k: number): void => {
+    body(x0, x1, WALL, wall, s + k);
+    // Tempered by the heat along its top: four tints, cool end to hot.
+    const xm = (x0 + x1) / 2;
+    for (let i = 0; i < 4; i++) {
+      const ta = i / 4, tb = (i + 1) / 4;
+      ink(ctx, [f.p(xm, yAt(ta), zAt(ta) + WALL), f.p(xm, yAt(tb), zAt(tb) + WALL)], { w: 2.2, color: TP_TEMPER[i]!, alpha: 0.85, shade: false, taper: 0, jitter: 0, seed: s + k + 10 + i });
+    }
+    for (const t of [0.18, 0.5, 0.82]) rivet(ctx, ...f.p(xm, yAt(t), zAt(t) + WALL), 1.5, C.steelL);
+  };
+  shield(walls[0]![0], walls[0]![1], 1);
+  body(b0, b1, 0, { top: C.steelDD }, s + 30);
+  // Heat-shield plates across the band: dark ceramic tiles, light seams between.
+  const n = 5;
+  for (let i = 0; i < n; i++) {
+    const ta = i / n + 0.012, tb = (i + 1) / n - 0.012;
+    const q: Pt[] = [f.p(b0 + 0.03, yAt(ta), zAt(ta)), f.p(b1 - 0.03, yAt(ta), zAt(ta)), f.p(b1 - 0.03, yAt(tb), zAt(tb)), f.p(b0 + 0.03, yAt(tb), zAt(tb))];
+    flat(ctx, q, i % 2 ? mix(C.steelDD, C.inkSoft, 0.4) : mix(C.steelDD, C.steel, 0.3));
+    ink(ctx, [q[0]!, q[1]!], { w: 1, color: C.steelL, alpha: 0.55, shade: false, taper: 0, jitter: 0, seed: s + 40 + i });
+  }
+  // Chevrons the way the items go (north, local −y), in the port's colour.
+  const col = io === 'in' ? C.cyan : C.coral;
+  for (const [i, t] of [0.3, 0.68].entries()) {
+    const y = yAt(t), z = zAt(t) + 0.01, k = 0.13;
+    ink(ctx, [f.p(2.33, y + k, z), f.p(2.5, y - k * 0.6, z), f.p(2.67, y + k, z)], { w: 3, color: col, shade: false, taper: 0, jitter: 0.15, seed: s + 50 + i });
+  }
+  shield(walls[1]![0], walls[1]![1], 60);
+}
+
+/**
+ * Where a flame-proof ribbon meets the pad: a low armoured hood on the pad's edge over the band's
+ * end, its mouth (dark, a brass frame) turned to the ribbon when that face shows, a lamp in the
+ * port's colour on its brow, heat-shield plates on its back.
+ */
+function tpHood(ctx: Ctx, f: IsoFrame, io: 'in' | 'out', s: number): void {
+  const [h0, h1] = TP_RIBBON[io].hood;
+  const z1 = SZ + 0.32;
+  const rr = box(ctx, f, TP_WALL[0], h0, TP_WALL[1], h1, SZ, z1, { top: C.steelD, left: mix(C.steelD, C.ink, 0.2), right: mix(C.steelD, C.ink, 0.42) }, s, { outline: 1.5 });
+  const side = io === 'in' ? 2 : 0; // the ribbon's side: south for the entrance, north for the exit
+  if (facing(f, side)) {
+    const face: Face = f.dir(side) === 2 ? 'L' : 'R';
+    const q = faceQuad(f, rr, face, 0.13, 0.87, SZ + 0.02, z1 - 0.07);
+    shape(ctx, q, C.ink, { w: 1.4, color: C.brass, shade: false, jitter: 0, seed: s + 1 });
+  }
+  // Plates on its roof, tempered at the pad's side.
+  for (let i = 1; i < 4; i++) {
+    const x = TP_WALL[0] + ((TP_WALL[1] - TP_WALL[0]) * i) / 4;
+    ink(ctx, [f.p(x, h0 + 0.03, z1), f.p(x, h1 - 0.03, z1)], { w: 1, color: C.steelL, alpha: 0.5, shade: false, taper: 0, jitter: 0, seed: s + 2 + i });
+  }
+  const yl = io === 'in' ? h1 - 0.08 : h0 + 0.08;
+  light(ctx, ...f.p(2.5, yl, z1 + 0.02), 2.2, io === 'in' ? C.led : C.ledWarm);
+}
+
+/** A lamp post on the trade post's pad: a slim steel post, a hooded lamp. */
 function tpLamp(ctx: Ctx, f: IsoFrame, x: number, y: number, s: number): void {
   cylinder(ctx, f, x, y, 0.05, SZ, 1.25, C.steelD, s, { top: C.steel });
   box(ctx, f, x - 0.09, y - 0.09, x + 0.09, y + 0.09, 1.25, 1.36, { top: C.steelD }, s + 1, { outline: 1.2, shadow: false });

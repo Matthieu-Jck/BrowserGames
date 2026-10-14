@@ -87,7 +87,7 @@ export function buildGroups(g: Graph): Group[] {
       if (nIn > 1) grp.rotL = lcm(grp.rotL, nIn);
       if (nOut > 1) grp.rotL = lcm(grp.rotL, nOut);
       // Its outlets hand out an item on their beat (the ribbons' clock): their phase is the group's too.
-      if (nOut > 0 && r.portPerMin > 0) grp.rotL = lcm(grp.rotL, stepPeriod(r.portPerMin));
+      if (nOut > 0 && r.portPerMin > 0) grp.rotL = lcm(grp.rotL, stepPeriod(r.portPerMin) * (r.cycle?.length ?? 1));
     }
     grp.sig = signature(g, grp);
   }

@@ -15,4 +15,7 @@ export const RETIRED_COSTS: Readonly<Record<string, ReadonlyArray<readonly [stri
   // The waystation, retired when land became parcels bought and rented (D60, docs/land.md): its
   // base cost back (its growth was never refunded, D36), its store handed to the Heart.
   outpost: [['iron_plate', 150], ['circuit', 30], ['ceramic', 40]],
+  // The 3×3 trade post with four inlets and two outlets, before its flame apron (D62): taken down
+  // by save v4 (`postsToPads`), refunded, its container handed to the Heart; the claim builds the 5×5 pad.
+  trade_post_3x3: [['iron_plate', 40], ['glass', 10], ['copper_wire', 10]],
 };

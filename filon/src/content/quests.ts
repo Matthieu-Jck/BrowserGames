@@ -593,8 +593,8 @@ export const QUESTS = {
   first_purchase: {
     name: { fr: 'Premier achat', en: 'First Purchase' },
     desc: {
-      fr: 'Ce que le cirque n’a pas, la Criée le vend. Un ordre d’import permanent achète chaque minute, tant que le prix reste sous votre maximum. Vos achats arrivent dans le conteneur du comptoir et n’en sortent que par une sortie réglée sur l’objet : sans elle, l’ordre attend et rien n’est débité. Pour ce premier achat, CrierBelt vous offre une journée sans commission.',
-      en: 'What the cirque lacks, the Crier sells. A standing import order buys every minute, as long as the price stays under your maximum. Your purchases land in the post’s container and leave only by an outlet set to that item: without one, the order waits and nothing is paid. For this first purchase, CrierBelt gives you a day without its cut.',
+      fr: 'Ce que le cirque n’a pas, la Criée le vend. Un ordre d’import permanent achète chaque minute, tant que le prix reste sous votre maximum. Vos achats arrivent dans le conteneur du comptoir et n’en sortent que par sa sortie, chacun son tour : tant qu’elle ne mène nulle part, l’ordre attend et rien n’est débité. Pour ce premier achat, CrierBelt vous offre une journée sans commission.',
+      en: 'What the cirque lacks, the Crier sells. A standing import order buys every minute, as long as the price stays under your maximum. Your purchases land in the post’s container and leave only by its exit, each in turn: until it leads somewhere, the order waits and nothing is paid. For this first purchase, CrierBelt gives you a day without its cut.',
     },
     objectives: [
       { k: 'order', item: 'copper_ore' },

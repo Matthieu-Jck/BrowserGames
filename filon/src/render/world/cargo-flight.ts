@@ -23,11 +23,13 @@ export type CargoSide = 'sell' | 'buy';
 
 /**
  * The trade post's landing deck, mirrored from recipes/buildings.ts (`DECK_Z`, and the deck
- * cylinder at local (1.5, 1.55) of the unrotated 3 × 3 footprint, radius 0.98): keep in step.
- * `SLAB_Z` is its slab's top (`SZ` there), where the engines' plumes hit outside the deck.
+ * cylinder `TP_DECK` at local (2.5, 2.5) of the unrotated 5 × 5 footprint — the middle of its
+ * pad, one tile in from the scorched apron's edge (D62) —, radius `TP_DECK_R` 0.98): keep in step
+ * (cargo-flight.test.ts checks). `SLAB_Z` is its pad's top (`SZ` there), where the engines'
+ * plumes hit outside the deck: a drone's engines (`DRONE_BAY` 2.2 tiles apart) stay over the pad.
  */
 export const DECK_Z = 0.8;
-export const DECK_X = 1.5, DECK_Y = 1.55;
+export const DECK_X = 2.5, DECK_Y = 2.5;
 export const SLAB_Z = 0.3;
 
 /** A trade post's footprint as the sim places it: its corner, its size once rotated, its rotation. */

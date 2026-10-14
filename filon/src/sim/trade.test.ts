@@ -17,7 +17,7 @@ import { MapGen } from './world/mapgen';
 const PLATE = (): number => itemIdx('iron_plate');
 const COPPER = (): number => itemIdx('copper_ore');
 
-/** A colony with a trade post against the Hearth's east side (it sells from, and delivers into, the Hearth). */
+/** A colony with a trade post (5×5: its pad and flame apron, D62) against the Hearth's east side (it sells from the Hearth's stock). */
 function postSim(): { sim: Sim; post: number } {
   const sim = testSim();
   const r = sim.place('trade_post', 515, 510, 0);
@@ -26,12 +26,11 @@ function postSim(): { sim: Sim; post: number } {
 }
 
 /**
- * Its north-west outlet (515,510) set to `item`, and a ribbon from it round into the Hearth's
- * north inlet (512,510): the post's purchases of it come out there (D43).
+ * A ribbon from its exit (517,510, facing north) round into the Hearth's north inlet (512,510):
+ * whatever the post bought comes out there, in turn (D43, D62).
  */
-function outletToHearth(sim: Sim, post: number, item: string): void {
-  expect(sim.setPortItem(post, 4, item)).toBe(true);
-  sim.placeBelts('ribbon', [[515, 509, 3], [514, 509, 3], [513, 509, 3], [512, 509, 2]]);
+function exitToHearth(sim: Sim): void {
+  sim.placeBelts('ribbon', [[517, 509, 3], [516, 509, 3], [515, 509, 3], [514, 509, 3], [513, 509, 3], [512, 509, 2]]);
 }
 
 describe('trade posts', () => {
@@ -50,7 +49,7 @@ describe('trade posts', () => {
 
   it('a standing order buys at the ask under its max; the goods land in the container after the lift and the colony’s delay, and leave by its outlet', () => {
     const { sim, post } = postSim();
-    outletToHearth(sim, post, 'copper_ore');
+    exitToHearth(sim);
     const ask = sim.prices.ask[COPPER()]!;
     const id = sim.addImport(post, 'copper_ore', 10, ask * 2);
     expect(typeof id).toBe('number');
@@ -73,7 +72,7 @@ describe('trade posts', () => {
     expect(sim.stock[COPPER()]).toBeGreaterThanOrEqual(chime0 + 10_000); // out by its outlet, along the ribbon, into the Hearth
   });
 
-  it('an order buys nothing while no outlet takes its item out: no ocelle spent; set one, and it buys', () => {
+  it('an order buys nothing while the exit leads nowhere: no ocelle spent; laid into the Hearth, it buys', () => {
     const { sim, post } = postSim();
     const o = sim.addImport(post, 'copper_ore', 10, sim.prices.ask[COPPER()]! * 2);
     expect(typeof o).toBe('number');
@@ -81,7 +80,7 @@ describe('trade posts', () => {
     sim.run(1800);
     expect(sim.credits).toBe(credits0);
     expect(sim.trade.inflight).toHaveLength(0);
-    outletToHearth(sim, post, 'copper_ore');
+    exitToHearth(sim);
     sim.run(600);
     expect(sim.credits).toBeLessThan(credits0);
     expect(sim.trade.inflight).toHaveLength(1);
@@ -90,8 +89,7 @@ describe('trade posts', () => {
   it('a full container holds its deliveries in the air and stops the orders, nothing paid; emptied by its outlet, it takes them again', () => {
     const { sim, post } = postSim();
     sim.grantCredits(5_000_000);
-    expect(sim.setPortItem(post, 4, 'copper_ore')).toBe(true);
-    sim.placeBelts('ribbon', [[515, 509, 0], [515, 508, 0]]); // a dead end: two items, then nothing leaves
+    sim.placeBelts('ribbon', [[517, 509, 0], [517, 508, 0]]); // a dead end off the exit: two items, then nothing leaves
     expect(typeof sim.addImport(post, 'copper_ore', 50, 1_000_000)).toBe('number');
     const e = sim.ents.get(post)!;
     let held = -1;
@@ -106,9 +104,9 @@ describe('trade posts', () => {
     sim.run(3 * 600);
     expect(sim.credits).toBe(credits); // nothing bought, nothing paid
     expect(sim.trade.inflight.length).toBeLessThanOrEqual(inflight);
-    // Its outlet led into the Hearth: the container empties, the deliveries land, the order buys again.
-    sim.remove(515, 508); sim.remove(515, 509);
-    outletToHearth(sim, post, 'copper_ore');
+    // Its exit led into the Hearth: the container empties, the deliveries land, the order buys again.
+    sim.remove(517, 508); sim.remove(517, 509);
+    exitToHearth(sim);
     sim.run(60 * 600);
     expect(sim.stock[COPPER()]).toBeGreaterThan(100_000);
     expect(sim.credits).toBeLessThan(credits);
@@ -116,14 +114,13 @@ describe('trade posts', () => {
 
   it('the demo’s post, against the Heart, takes a purchase out by a ribbon into it (the smoke’s order); no pole of the demo stands in front of a port', () => {
     // The breadth-first power lines (D45) once put a pole on this post's free outlet: `connect`
-    // found no way out, and the order bought nothing ('outlet'). Its other outlet faces a corner
-    // of the Heart, where no inlet is: no direct insertion there (D39).
+    // found no way out, and the order bought nothing ('outlet'). Its exit takes whatever it bought.
     const sim = new Sim({ worldSeed: WORLD_SEED, playerSeed: 1, source: new MapGen(WORLD_SEED, 1), foundingEpoch: WORLD_EPOCH0 + 777 });
     const post = buildDemo(sim).trade!;
     expect(nextToHearth(sim, sim.ents.get(post)!)).toBe(true);
     const mast = buildingIdx('mast');
     for (const e of sim.ents.map.values()) for (const p of worldPorts(e)) expect(sim.entityAt(p.fx, p.fy)?.def, `port ${p.idx} of ${e.id}`).not.toBe(mast);
-    for (const k of [4, 5]) expect(sim.setPortItem(post, k, 'copper_ore')).toBe(true);
+    expect(sim.setPortItem(post, 1, 'copper_ore')).toBe(false); // no item to set: the exit hands out every purchase
     expect(connect(sim, post, sim.hearthId)).toBeGreaterThan(0);
     sim.ensureCompiled();
     expect(handsOut(sim, sim.ents.get(post)!, COPPER())).toBe(true);
@@ -172,7 +169,7 @@ describe('trade posts', () => {
     sim.grant('iron_plate', 1000);
     sim.grantCredits(1_000_000);
     sim.setExport(post, 0, 'iron_plate');
-    outletToHearth(sim, post, 'copper_ore');
+    exitToHearth(sim);
     sim.addImport(post, 'copper_ore', 50, 1_000_000);
     sim.run(600);
     const a = sim.trade.activity.get(post)!;
@@ -198,7 +195,7 @@ describe('trade posts', () => {
   it('spot trades: sold from the Hearth along the depth, bought into the post after its delays; refused without a post', () => {
     const bare = testSim();
     expect(bare.spotTrade('iron_plate', 'sell', 10)).toEqual({ refused: 'no_post' });
-    const { sim, post } = postSim();
+    const { sim } = postSim();
     const q = sim.quoteSpot(PLATE(), 'sell', 50);
     const before = sim.credits;
     const r = sim.spotTrade('iron_plate', 'sell', 50);
@@ -206,7 +203,7 @@ describe('trade posts', () => {
     expect(sim.credits - before).toBe(q.cents);
     expect(sim.spotTrade('iron_plate', 'sell', 100_000)).toEqual({ refused: 'stock' });
     expect(sim.spotTrade('copper_ore', 'buy', 5)).toEqual({ refused: 'no_outlet' }); // it could never come out
-    outletToHearth(sim, post, 'copper_ore');
+    exitToHearth(sim);
     sim.ensureCompiled();
     expect(sim.spotTrade('copper_ore', 'buy', containerMu(sim) / 1000 + 1)).toEqual({ refused: 'container' });
     const buy = sim.spotTrade('copper_ore', 'buy', 5);
@@ -224,13 +221,12 @@ describe('trade posts', () => {
       wire(sim, d.id!);
       const p = sim.place('trade_post', 516, 499, 0);
       if (!p.ok) throw new Error(`post ${p.reason}`);
-      // Drill output (513,502) east → the post's west inlet (516,500).
-      sim.placeBelts('ribbon', [...line(513, 502, 1, 2), [515, 502, 0], [515, 501, 0], [515, 500, 1]]);
+      // Drill output (513,502) east → round the apron → the post's entrance (518,503) from the south.
+      sim.placeBelts('ribbon', [...line(513, 502, 1, 2), [515, 502, 2], [515, 503, 2], ...line(515, 504, 1, 3), [518, 504, 0]]);
       expect(sim.setExport(p.id!, 0, 'iron_ore')).toBeNull();
-      // Its sand comes out by its north-west outlet onto a dead end: six squares, then the
-      // container fills and the order stops (D43) — at the same lift online and offline.
-      expect(sim.setPortItem(p.id!, 4, 'sand')).toBe(true);
-      sim.placeBelts('ribbon', line(516, 498, 0, 6));
+      // Its sand comes out of its exit (518,499) onto a dead end: six squares, then the container
+      // fills and the order stops (D43) — at the same lift online and offline.
+      sim.placeBelts('ribbon', line(518, 498, 0, 6));
       sim.grantCredits(500_000);
       expect(typeof sim.addImport(p.id!, 'sand', 3, 1_000_000)).toBe('number');
       sim.run(30);
@@ -253,7 +249,7 @@ describe('trade posts', () => {
   it('save → load with goods in flight continues bit for bit', () => {
     const { sim, post } = postSim();
     sim.setExport(post, 0, 'iron_plate');
-    outletToHearth(sim, post, 'copper_ore');
+    exitToHearth(sim);
     sim.addImport(post, 'copper_ore', 4, 1_000_000);
     sim.run(600 * 3 + 123);
     expect(sim.trade.inflight.length).toBeGreaterThan(0);
@@ -263,5 +259,43 @@ describe('trade posts', () => {
     copy.run(600 * 40);
     expect(copy.hash()).toBe(sim.hash());
     expect(copy.credits).toBe(sim.credits);
+  });
+
+  it('the pad keeps its flame apron clear: one entrance, one exit, nothing built a tile round its deck (D62)', () => {
+    const { sim, post } = postSim();
+    const e = sim.ents.get(post)!;
+    const ports = worldPorts(e);
+    expect(ports.filter((p) => p.io === 'in')).toHaveLength(1);
+    expect(ports.filter((p) => p.io === 'out')).toHaveLength(1);
+    // The apron is the post's own ground: a pole on it is refused, one tile past it stands.
+    expect(sim.canPlace('mast', e.x + 4, e.y + 1, 0).reason).toBe('occupied');
+    expect(sim.canPlace('mast', e.x + 5, e.y + 1, 0).ok).toBe(true);
+  });
+
+  it('two purchases leave its one exit in turn, into the Hearth; an absence buys and pays the same (D62)', () => {
+    const make = (): Sim => {
+      const { sim, post } = postSim();
+      exitToHearth(sim);
+      sim.grantCredits(2_000_000);
+      expect(typeof sim.addImport(post, 'copper_ore', 6, 1_000_000)).toBe('number');
+      expect(typeof sim.addImport(post, 'iron_plate', 4, 1_000_000)).toBe('number');
+      sim.run(30);
+      return sim;
+    };
+    const a = make(), b = make();
+    const cu0 = a.stock[COPPER()]!, pl0 = a.stock[PLATE()]!;
+    const span = 3 * 36_000;
+    a.run(span);
+    catchUp(b, span, { noDirect: true });
+    // Both came out of the one exit and into the Hearth.
+    expect(a.stock[COPPER()]! - cu0).toBeGreaterThan(500_000);
+    expect(a.stock[PLATE()]! - pl0).toBeGreaterThan(300_000);
+    // Offline the same purchases, the same ocelles; what has left the container lags by at most
+    // the known gap of a store drained by an outlet (docs/offline.md, Known gaps: ≤ 40 items).
+    for (const it of [COPPER(), PLATE()]) {
+      expect(b.trade.boughtTotal[it]).toBe(a.trade.boughtTotal[it]);
+      expect(Math.abs(b.stock[it]! - a.stock[it]!)).toBeLessThanOrEqual(40_000);
+    }
+    expect(b.credits).toBe(a.credits);
   });
 });

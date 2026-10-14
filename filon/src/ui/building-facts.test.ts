@@ -73,6 +73,11 @@ describe('building facts', () => {
     expect(kp.list.filter((p) => p.io === 'in').map((p) => p.side)).toEqual(['S', 'S']);
     expect(buildingFacts('kiln_compact', all).ports!.list.filter((p) => p.io === 'in').map((p) => p.side).sort()).toEqual(['E', 'S']);
     expect(buildingFacts('router', fresh).ports).toBeNull();
+    // The trade post (D62): one entrance, one exit, and its pad in the middle of its scorched apron.
+    const tp = buildingFacts('trade_post', fresh).ports!;
+    expect([tp.w, tp.h, tp.pad]).toEqual([5, 5, [1, 1, 4, 4]]);
+    expect(tp.list.map((p) => `${p.io}:${p.side}`)).toEqual(['in:S', 'out:N']);
+    expect(kp.pad).toBeNull();
     // Words only where nothing shows how it works.
     expect(buildingFacts('kiln', fresh).brief).toBeNull();
     expect(buildingFacts('drill', fresh).brief).toBeNull();

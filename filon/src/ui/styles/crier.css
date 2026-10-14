@@ -233,6 +233,14 @@
 .tr-order .tr-state { margin-left: auto; }
 .tr-order .insp-x { margin-left: 0; font-size: 14px; }
 .tr-lines { white-space: pre-line; }
+/* Its two gates (D62): the glyph, the word, then the items' icons right after it (what goes in,
+   what comes out in turn), the cut ribbon at the far end while the exit is linked to nothing. */
+.tr-gate { gap: 5px; }
+.tr-gate > .glyph:first-child { width: 1.45em; height: 1.45em; }
+.tr-gate .insp-label { min-width: 3.6em; }
+.tr-gate .tr-gate-items { margin-left: 2px; text-align: left; gap: 3px 10px; }
+.tr-gate .glyph[data-glyph='noLink'] { margin-left: auto; width: 1.35em; height: 1.35em; }
+.tr-gate:not([data-gate-linked])[data-gate='out'] .insp-label { color: var(--c-coral-d); font-weight: 600; }
 
 /* ── HUD: the ocelles chip opens the Crier ─────────────────────────────────── */
 .hud-credits[data-hud-crier] { cursor: pointer; margin: -2px -6px; padding: 2px 6px; border-radius: 8px; transition: background 120ms; }

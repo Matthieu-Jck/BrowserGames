@@ -98,5 +98,9 @@ circle.bc-mark { fill: var(--c-turq-l); stroke-width: 1.6; }
 .bc-arrow[data-tone='pout'] line { stroke: var(--c-coral-d); }
 .bc-arrow[data-tone='pout'] .bc-head { fill: var(--c-coral-d); }
 .bc-ports .bc-block rect { fill: var(--c-paper-d); }
+/* A trade post's scorched apron round its pad (D62), its keep-out line, its flame-proof ribbons. */
+.bc-apron { fill: color-mix(in srgb, var(--t-coralD, #b8402a) 45%, var(--t-mesa, #d98e73)); stroke: var(--c-ink); stroke-width: 1.6; }
+.bc-keepout { fill: none; stroke: var(--t-hazard, #f2b33d); stroke-width: 1.6; stroke-dasharray: 3 3; }
+.bc-fireribbon { fill: var(--t-steelD, #232b48); }
 .bc-grid { stroke: rgba(30, 27, 46, 0.18); stroke-width: 1; }
 .bc-front { fill: none; stroke: var(--c-ink-soft); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
