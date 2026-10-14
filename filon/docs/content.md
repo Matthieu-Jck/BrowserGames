@@ -115,7 +115,7 @@ What each `kind` means. The graph compiler's switch on `BuildingKind` lives in [
 | `storage` | `silo` | Single-item reservoir (port rate 240/min, hard-coded) | `storageCap` |
 | `dock` | `skydock` | Reservoir (`BAL.dockCap`) with unloader ports; drifters and freight routes | — |
 | `machine` | kilns, `wire_mill`, workshops, `ceramic_oven`, `cell_charger` | `MachineNode` running the recipe stored in `cfg` | listed in recipes' `machines`; `crafts: true` (never read) |
-| `lab` | `observatory` (the Research Lab), `auto_lab` | Reservoir that takes the data files its project still owes; one project per lab; `lab.dataPerMin`: files it makes itself (D68) | — |
+| `lab` | `observatory` (the Research Lab), `auto_lab` | Reservoir that takes the data its project still owes (any kind of science item); one project per lab; `lab.dataPerMin`: Survey Data it makes itself (D68) | — |
 | `server` | `server`, `cooled_server`, `supercomputer` | Power only: `server.tokensPerMin` AI tokens a minute at its grid's satisfaction, billed against research each minute (D68) | — |
 | `generator` | `brazier`, `sunheart` | `GeneratorNode`: burns `gen.fuel` ∝ dispatch; output `gen.kw` × `mods.genOut` | `gen.kw`, `gen.fuel`, `gen.fuelPerMin`, an `in` port. Without `fuel`, compilation throws. |
 | `wind` / `solar` / `geothermal` | `wind_flower` / `sun_bulb` / `fumarole_tap` | Grid producers only: `gen.kw` × mods × local wind / sun; geothermal needs every footprint tile on a vent | `gen.kw` |
@@ -131,7 +131,7 @@ Everything a base uses beyond its starting kit is unlocked in **one tree with tw
 
 | | Plans — `PLANS` | Research — `RESEARCH` |
 |---|---|---|
-| Paid with | materials from the Heart, at once (`cost`, whole items) | data files and AI tokens as it runs, in a research lab, under the allowance, over a minimum time (D68) |
+| Paid with | materials from the Heart, at once (`cost`, whole items) | data (one more kind each tier: `SCIENCE`, D71) and AI tokens as it runs, in a research lab, under the allowance, over a minimum time (D68) |
 | Taken by | the `unlockPlan` command (one click in the tree) | `startResearch` in an idle lab (or the Research Queue) |
 | Rows in the tree | `lane`, its path (D41): `production`, `logistics`, `energy`, `analytics`, `trade`, `survey` | `branch`: the trunk or a family (`en`, `ex`, `dn`, `cm`, `an`, `xp`), and from Tier 3 its `spec` (D69) |
 | Prerequisites | plan ids (research ids are allowed) | the node before it in its lineage and its tier's gate; the family roots and `tr1` need the lab's plan |
@@ -199,7 +199,7 @@ en_solarfarm: node('en', 'r', 5, 'en4', ['Ferme solaire', 'Solar Farm'], ['Débl
 tr5: trunk(5, 2, ['tr4'], 480, '200_000', 120, ['Deuxième pupitre', 'Second Desk'], [...], [{ k: 'slots', add: 1 }]),
 ```
 
-- **`node(family, spec, depth, after, name, desc, effects)`**: `after` is the node before it in its lineage (null: the family's first node, which needs the lab's plan); the tier's gate is added; its data files, tokens and minutes come from `DEPTH_COST[depth]` (15 files, 10 k tokens and 3 min at depth 1 up to 5 760 files, 6 M tokens and 24 h for a keystone). A split family's lineages share the Tier 1–2 nodes and each runs on from the last of them. Ids: the old short ids where a node kept its meaning (`en2`, `ex4`, `dn4`, `cm3`…), descriptive ones for the rest (`en_pitch`, `an_servers`, `xp_far`…); renamed ids are in `RESEARCH_RENAMED` ([retired.ts](../src/content/retired.ts), save v7).
+- **`node(family, spec, depth, after, name, desc, effects)`**: `after` is the node before it in its lineage (null: the family's first node, which needs the lab's plan); the tier's gate is added; its tokens and minutes come from `DEPTH_COST[depth]` (10 k tokens and 3 min at depth 1 up to 6 M tokens and 24 h for a keystone), its data from `scienceCost(tier, DEPTH_COST[depth].data)` (D71): that much Survey Data (15 at depth 1, 5 760 for a keystone) and, from Tier 2, a third as much Mechanics Data, from Tier 3 a twelfth as many atlases, at Tier 4 a fortieth as many codices. A trunk node that opens a tier sits in the tier before it (tr1 in T1, tr6 in T2, tr8 in T3), so it never asks for the kind it brings. A split family's lineages share the Tier 1–2 nodes and each runs on from the last of them. Ids: the old short ids where a node kept its meaning (`en2`, `ex4`, `dn4`, `cm3`…), descriptive ones for the rest (`en_pitch`, `an_servers`, `xp_far`…); renamed ids are in `RESEARCH_RENAMED` ([retired.ts](../src/content/retired.ts), save v7).
 - **`trunk(depth, tier, prereq, data, tokens, minutes, name, desc, effects)`** is fully explicit (`tr1` needs the lab's plan). The trunk escapes the penalty.
 - **Every node gives something** (D70; `nodeGives` in validate.ts): the buildings and recipes whose `unlock` is its id, a Heart level, a feature `flag` the sim reads, research `slots`, an `add`. A node that would only multiply a number is refused. The `mul` kind stays for the few research-free multipliers some systems still read.
 - **Effects** (`Effect`). `mul` (target ×permille), `add` (target + v), `flag` (a string the sim tests with `mods.flags.has`) and `slots`. They compile into `Mods` in [modifiers.ts](../src/sim/research/modifiers.ts), applied **in `PLAN_IDS` then `RESEARCH_IDS` order with a floor after each step**. No mastery bonus (D69).
@@ -295,7 +295,7 @@ The item ids inside `BAL` (`startStock`, `drifterCost`, `hearthUpgrades`) are ty
 | Every science item that research asks for can be produced | Same reason. |
 | `tiredVeinPerMin() × 2 < wirePerElectronicsWorkshop()`, pinned at 6.75 ore/min → 13.5 wire vs 30 | Design: the cirque's « filon fatigué » cannot feed one electronics workshop on circuits, so copper ore must be imported from T2. |
 | `recipesPerMachine()`: none over `MAX_RECIPES`; `nodeGives(id)` non-empty for every research node; a speciality only from Tier 3, a split family's Tier 3–4 nodes with one; each node needs its tier's gate | D69, D70. |
-| `uniquesNeeded('atlas') ≥ 2`, `uniquesNeeded('codex') === 5` (pinned at 2 and 5; `data_file` needs 0) | Each colony reaches about two uniques, so T3 and T4 require trade. |
+| `uniquesNeeded('atlas') ≥ 2`, `uniquesNeeded('codex') === 5` (pinned at 2 and 5; Survey Data needs 0) | Each colony reaches about two uniques, so T3 and T4 require trade. |
 
 Not validated, though the engine relies on it: a recipe has exactly one output; recipe `machines` are of kind `machine` and have enough input ports; kind-specific fields are present (`belt`, `pole`, `gen.fuel`…); `RAW` lists every land-sourced item (the list is hand-maintained); descriptions match the actual unlocks and numbers.
 

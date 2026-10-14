@@ -134,7 +134,7 @@ Long processes are not flow nodes: they hang off reservoir stores. `labFlows()` 
 | Process | Reservoir | Map | Rate |
 |---|---|---|---|
 | Research project | its lab | `labOut`, per data item still owed | `cost × sat / (dur·1000)` while `el < dur·1000` |
-| Data files out of the Heart / an autonomous lab (D68) | the Heart / the lab | `pIn`, `data_file` | `rate × sat / (600·1000)` (the Heart: sat 1000) |
+| Survey Data out of the Heart / an autonomous lab (D68) | the Heart / the lab | `pIn`, `journal_1` | `rate × sat / (600·1000)` (the Heart: sat 1000) |
 | Dig | the excavator's store | `pIn`, stone | `jobRate = mu × sat / (dur·1000)` |
 | Fill | the backfiller's store | `labOut`, stone | `jobRate` |
 | Drifter route | origin / destination skydock | `labOut` / `pIn`, the route's item | `routeRateNow` (0 while a dock is unpowered) |

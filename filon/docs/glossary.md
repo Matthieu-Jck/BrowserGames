@@ -79,9 +79,9 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Atelier d’optique · Scriptorium | Optics Workshop · Scriptorium | `optics_workshop`, `scriptorium` [machine] | Lenses and nacre lattice · resin canvas, Atlas, Codex. |
 | Four à céramique | Ceramic Oven | `ceramic_oven` [machine] | Stone + water → ceramic. |
 | Chargeur | Cell Charger | `cell_charger` [machine] | Charges cells: exportable energy. |
-| Laboratoire de recherche | Research Lab | `observatory` [lab] | Where research runs: takes data files on its ribbons (and Atlas, Codex) and holds the research slots (D68). Unlocked by a plan after the data collector. |
-| Collecteur de données · Relais de données | Data Collector · Data Relay | `data_collector`, `data_relay` [machine, `drill.anywhere`] | Powered 1×1 makers of data files, set anywhere (no deposit): 2 and 6 a minute. |
-| Laboratoire autonome | Autonomous Lab | `auto_lab` [lab] | A research lab that also makes 3 data files a minute into its own store (Analytics · Data Mining). |
+| Laboratoire de recherche | Research Lab | `observatory` [lab] | Where research runs: takes its data on its ribbons (Survey Data, Mechanics Data, atlases, codices by tier) and holds the research slots (D68). Its plan is the gate after every other plan, and brings the data collector (D71). |
+| Collecteur de données · Relais de données | Data Collector · Data Relay | `data_collector`, `data_relay` [machine, `drill.anywhere`] | Powered makers of Survey Data, set anywhere (no deposit): 2 and 6 a minute. |
+| Laboratoire autonome | Autonomous Lab | `auto_lab` [lab] | A research lab that also makes 3 Survey Data a minute into its own store (Analytics · Data Mining). |
 | Serveur · Serveur refroidi · Supercalculateur | Server · Cooled Server · Supercomputer | `server`, `cooled_server`, `supercomputer` [server] | The claim's own compute: tokens a minute for its research while powered (2 000, 6 000, 20 000), billed before CrierBelt's (D70). |
 | Poteau | Pole | `mast` [pole] | A pillar: up to 8 wires, each up to 6 tiles long (edge to edge). A new one wires itself to the nearest pillar or Cœur in reach. |
 | Pylône | Pylon | `pylon` [pole] | A long-reach pillar, 2×2 and about three tiles tall (D75): up to 4 wires, 40 tiles long (60 with xp4). The 1×1 pylon of older saves is `pylon_1x1`, retired (refunded) |
@@ -109,7 +109,8 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Verre-spore · Résine céleste · Sel de braise | Sporeglass · Sky Resin · Embersalt | `sporeglass`, `sky_resin`, `embersalt` | T3 uniques: each colony reaches only some of them, so they are traded. |
 | Mousse lumen · Nacre fossile · Quartz chantant | Lumen Moss · Fossil Nacre · Singing Quartz | `lumen_moss`, `fossil_nacre`, `singing_quartz` | T4 uniques. |
 | Lentille · Toile de résine · Cœur thermique · Résonateur · Treillis de nacre | Lens · Resin Canvas · Thermal Core · Resonator · Nacre Lattice | `lens`, `resin_canvas`, `thermal_core`, `resonator`, `nacre_lattice` | T3–T4 parts. |
-| Fichier de données | Data File | `data_file` | The science item (D68): made by data collectors, by the Core once analysed, by autonomous labs; carried on ribbons to research labs. Old saves' Survey and Mechanics Data (`journal_1`, `journal_2`) became data files. |
+| Données d'arpentage · Données mécaniques | Survey Data · Mechanics Data | `journal_1`, `journal_2` | Research's data (D71): Survey Data from the data collectors, the Core once analysed and the autonomous labs; Mechanics Data from the test bench (2 gears + 2 circuits). A node uses its tier's kinds: T1 Survey Data, T2 + Mechanics Data, T3 + atlases, T4 + codices (`SCIENCE`). |
+| Banc d'essai | Test Bench | `test_bench` [machine] | Load-tests gears and circuits into Mechanics Data (Mechanics, tr1). |
 | Atlas · Codex | Atlas · Codex | `atlas`, `codex` | T3 science (needs 2 uniques) and T4 science (needs 5). |
 | Module de vitesse | Speed Module | `pace_bell` | A module fitted into a machine: +30% speed (+50% with dn7), +40% power each. |
 
