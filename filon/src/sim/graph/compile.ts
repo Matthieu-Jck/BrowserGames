@@ -15,17 +15,15 @@ import {
 import { filterOf, modulesOf, recipeOf } from '../cfg';
 import { MU, WORLD } from '../constants';
 import { footprint, worldPorts, forTiles, type Entities, type WorldPort } from '../entities';
-import { DX, DY, T, isRock, opposite, type Ent, type Rot } from '../types';
+import { DX, DY, T, opposite, type Ent, type Rot } from '../types';
 import type { RouterLogic } from '@/content/types';
 import type { Grid } from '../world/grid';
 import { tileIndex } from '../world/grid';
-import { CIRQUE } from '@/content/world';
-import { CENTER } from '../constants';
 import { Chain, VIA_NONE } from '../flow/chain';
 import type { FNode } from '../flow/node';
 import { DrillNode, ForkNode, GeneratorNode, MachineNode, ReservoirNode, SinkNode } from '../flow/nodes';
 import type { Mods } from '../research/modifiers';
-import { buildGrids, type Acc, type Net, type Producer, type WireSource } from '../power/network';
+import { buildGrids, producerOf, type Acc, type Net, type Producer, type WireSource } from '../power/network';
 import { isLinkPoint, linkable } from '../power/links';
 
 export interface Graph {
@@ -648,12 +646,10 @@ export function compileGraph(inp: CompileInput): Graph {
     if (node) node.net = g;
     const b = buildingDef(e.def);
     const net = nets[g]!;
-    // The Hearth's built-in solar panel: a solar panel's rules (solar research, all-generator bonus).
-    if (b.kind === 'hearth') net.producers.push({ ent: e.id, kind: 'hearth', kw: Math.floor((BAL.hearthSolarKw * mods.solarOut * mods.genOut) / 1e6), local: 1000, base: Math.floor((BAL.hearthCoreKw * mods.genOut) / 1000) });
-    else if (b.kind === 'wind') net.producers.push({ ent: e.id, kind: 'wind', kw: Math.floor((b.gen!.kw * mods.windOut * mods.genOut) / 1e6), local: windLocal(grid, e) });
-    else if (b.kind === 'solar') net.producers.push({ ent: e.id, kind: 'solar', kw: Math.floor((b.gen!.kw * mods.solarOut * mods.genOut) / 1e6), local: b.gen!.night ?? 0 });
-    else if (b.kind === 'geothermal') net.producers.push({ ent: e.id, kind: 'geo', kw: Math.floor((b.gen!.kw * mods.geoOut * mods.genOut) / 1e6), local: 1000 });
-    else if (b.kind === 'accumulator') {
+    // A producer (the Hearth's own panel and core, a turbine, a panel, a geothermal well): `producerOf`.
+    const prod = producerOf(e, b, grid, mods);
+    if (prod) net.producers.push(prod);
+    if (b.kind === 'accumulator') {
       const a = b.accumulator!;
       net.accs.push({ ent: e.id, cap: Math.floor((a.kwMin * 600 * mods.accCap) / 1000), rate: Math.floor((a.kw * mods.accRate) / 1000) } satisfies Acc);
     }
@@ -718,20 +714,6 @@ export function drillRate(grid: Grid, e: Ent, mods: Mods): { item: number; rateE
   const ring3 = cx * cx + cy * cy > 320 * 320 ? mods.ring3Caps : 1000;
   const cap = Math.floor((Math.floor((caps.get(item)! * capMult) / 1000) * ring3) / 1000);
   return { item, rateEp: Math.min(b.drill!.perMin * 1000, cap) };
-}
-
-/** Local wind factor ‰ at a building: on the mountains the Sough blows (D44), the cirque's floor is sheltered, plateaus are windy. */
-function windLocal(grid: Grid, e: Ent): number {
-  const t = grid.terrain(e.x, e.y);
-  if (isRock(t)) return BAL.windRock[t - T.Rock1] ?? BAL.windRock[0]!;
-  const [w, h] = footprint(e.def, e.rot);
-  const dx = e.x + w / 2 - CENTER, dy = e.y + h / 2 - CENTER;
-  const r2 = dx * dx + dy * dy;
-  // Sheltered inside the Crown: its foot on this land's map (D63: map 1 keeps its own, 34).
-  const outer = grid.source.crownOuter ?? CIRQUE.crownOuter;
-  if (r2 < outer * outer) return BAL.windCirque;
-  // Mesas (hardpan plateaus) are windy; the rest of the outside is plain.
-  return grid.terrain(e.x, e.y) === T.Hardpan ? BAL.windMesa[0] : BAL.windPlain;
 }
 
 /** May a routing block take items in from / hand them out towards outward side d? */

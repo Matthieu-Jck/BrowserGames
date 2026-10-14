@@ -1,27 +1,37 @@
 // levels.test.ts — the land's levels (D45): a ribbon, a port or a wire meets only its own level;
-// a traction ribbon climbs or comes down one; a building stands on level ground.
+// a traction ribbon climbs or comes down one; a building stands on level ground. Placement
+// refuses a line piece facing a step it cannot take (D77): a plain ribbon, a traction ribbon
+// facing two terraces, a conduit.
 import { describe, it, expect } from 'vitest';
 import { itemIdx } from '@/content/registry';
 import { WORLD_EPOCH0 } from './constants';
 import { Sim } from './state';
+import { deserialize, serialize } from './serialize';
 import { learnPlans, line, stockedSilo } from './testkit';
 import { T, type Rot } from './types';
 import { FlatSource } from './world/grid';
 
-/** A flat base with a ridge of soft rock (level 1) across x 509–515, y 503–504, and a level-3 crag further east. */
-function ridgeSim(): Sim {
+/** The ridge of soft rock (level 1) across x 509–515, y 503–504, and a level-3 crag further east. */
+const RIDGE = [{ x: 509, y: 503, w: 7, h: 2, t: T.Rock1, level: 1 }, { x: 530, y: 500, w: 3, h: 3, t: T.Rock3, level: 3 }];
+
+/** A flat base with the ridge and the crag (`flat`: without them, the same base before the land rose). */
+function ridgeSim(flat = false): Sim {
   const sim = new Sim({
     worldSeed: 7, playerSeed: 11, foundingEpoch: WORLD_EPOCH0 + 24,
-    source: new FlatSource([], [{ x: 509, y: 503, w: 7, h: 2, t: T.Rock1, level: 1 }, { x: 530, y: 500, w: 3, h: 3, t: T.Rock3, level: 3 }]),
+    source: new FlatSource([], flat ? [] : RIDGE),
   });
   learnPlans(sim);
   sim.grant('iron_plate', 200); sim.grant('copper_wire', 100);
   return sim;
 }
 
-/** Copper ore from a silo north of the ridge, down x = 512 to the Heart's north inlet (512,510); `climb`: the ridge's edges take traction ribbons. */
+/**
+ * Copper ore from a silo north of the ridge, down x = 512 to the Heart's north inlet (512,510);
+ * `climb`: the ridge's edges take traction ribbons. Without them the line is laid on the flat
+ * land and the ridge raised under it after (a save reloaded): a base laid before D77 refused it.
+ */
 function overTheRidge(climb: boolean): Sim {
-  const sim = ridgeSim();
+  const sim = ridgeSim(!climb);
   stockedSilo(sim, 512, 496, 2, 'copper_ore', 200); // hands out south into (512,498)
   const up = climb ? 'traction_ribbon' : 'ribbon';
   const path: Array<[string, Array<[number, number, Rot]>]> = [
@@ -32,11 +42,11 @@ function overTheRidge(climb: boolean): Sim {
     ['ribbon', line(512, 505, 2, 5)],   // level 0, into the Heart
   ];
   for (const [def, tiles] of path) for (const [x, y, r] of tiles) expect(sim.place(def, x, y, r).ok, `${def} ${x},${y}`).toBe(true);
-  return sim;
+  return climb ? sim : deserialize(serialize(sim), new FlatSource([], RIDGE));
 }
 
 describe('the land’s levels (D45)', () => {
-  it('a line climbs over a ridge only on traction ribbons; plain ribbons end at the cliff', () => {
+  it('a line climbs over a ridge only on traction ribbons; plain ribbons laid before D77 end at the cliff', () => {
     const COPPER = itemIdx('copper_ore');
     const over = overTheRidge(true);
     const c0 = over.stock[COPPER]!;
@@ -62,7 +72,7 @@ describe('the land’s levels (D45)', () => {
     // Up onto the one-tile terrace, then straight up again: the second step has no flat tile in front of the first.
     expect(sim.place('traction_ribbon', 519, 500, 1).ok).toBe(true);
     expect(sim.canPlace('traction_ribbon', 520, 500, 1).reason).toBe('lift_room');
-    expect(sim.canPlace('ribbon', 520, 500, 1).ok).toBe(true); // a plain ribbon there is no step (the line just ends at the cliff)
+    expect(sim.canPlace('ribbon', 520, 500, 1).reason).toBe('needs_lift'); // a plain ribbon would end against the cliff (D77)
     // The other order: the upper step first, then the one feeding it.
     expect(sim.place('traction_ribbon', 520, 501, 1).ok).toBe(true);
     expect(sim.canPlace('traction_ribbon', 519, 501, 1).reason).toBe('lift_room');
@@ -75,8 +85,42 @@ describe('the land’s levels (D45)', () => {
   it('a building stands on level ground; ribbons and poles stand on the rock too', () => {
     const sim = ridgeSim();
     expect(sim.canPlace('silo', 508, 502, 0).reason).toBe('uneven'); // a corner on the ridge
-    expect(sim.canPlace('ribbon', 510, 503, 0).ok).toBe(true);
+    expect(sim.canPlace('ribbon', 510, 503, 1).ok).toBe(true); // along the ridge
     expect(sim.canPlace('mast', 511, 504, 0).ok).toBe(true);
+  });
+
+  it('a line piece facing a step it cannot take is refused (D77)', () => {
+    const sim = ridgeSim();
+    sim.done.add('dn1'); sim.done.add('tr3'); // swift ribbons and conduits (research): granted outside the commands
+    // Facing the wall from the floor, and facing the drop from the ridge's top: only a traction ribbon.
+    expect(sim.canPlace('ribbon', 512, 502, 2).reason).toBe('needs_lift');
+    expect(sim.canPlace('ribbon', 512, 504, 2).reason).toBe('needs_lift');
+    expect(sim.canPlace('ribbon', 512, 503, 0).reason).toBe('needs_lift');
+    expect(sim.canPlace('swift_ribbon', 512, 502, 2).reason).toBe('needs_lift');
+    expect(sim.canPlace('traction_ribbon', 512, 502, 2).ok).toBe(true);
+    expect(sim.canPlace('traction_ribbon', 512, 504, 2).ok).toBe(true);
+    // Its back or its side to a cliff is fine: it is fed from its sides, or runs along the foot.
+    expect(sim.canPlace('ribbon', 512, 502, 0).ok).toBe(true);
+    expect(sim.canPlace('ribbon', 512, 502, 1).ok).toBe(true);
+    expect(sim.canPlace('ribbon', 512, 505, 2).ok).toBe(true);
+    // Three terraces at once: no elevator climbs that.
+    expect(sim.canPlace('traction_ribbon', 529, 501, 1).reason).toBe('steep');
+    expect(sim.canPlace('ribbon', 529, 501, 1).reason).toBe('needs_lift');
+    // A conduit keeps to its level; a skybridge leaps to the next one on its level, past the ridge.
+    expect(sim.canPlace('conduit', 512, 502, 2).reason).toBe('cliff');
+    expect(sim.canPlace('skybridge', 512, 502, 2).ok).toBe(true);
+  });
+
+  it('a ribbon drag over the ridge leaves its steps to traction ribbons', () => {
+    const sim = ridgeSim();
+    const plan = sim.planBelts('ribbon', line(512, 500, 2, 8)); // y 500–507 down x = 512: the ridge at y 503–504
+    expect(plan.map((s) => (s.ok ? 'ok' : s.reason))).toEqual(['ok', 'ok', 'needs_lift', 'ok', 'needs_lift', 'ok', 'ok', 'ok']);
+    expect(sim.placeBelts('ribbon', line(512, 500, 2, 8))).toBe(6);
+    // The traction ribbons go where the drag left a gap, and the line is whole.
+    expect(sim.place('traction_ribbon', 512, 502, 2).ok).toBe(true);
+    expect(sim.place('traction_ribbon', 512, 504, 2).ok).toBe(true);
+    // Dragged over the ridge, the traction ribbon fits every tile: on the flat it is a slow ribbon.
+    expect(sim.planBelts('traction_ribbon', line(513, 500, 2, 8)).every((s) => s.ok)).toBe(true);
   });
 
   it('a wire climbs one terrace at most', () => {

@@ -22,7 +22,7 @@ import { firstSentence } from '../building-facts';
 import { itemList, itemRef } from '../mention';
 import { STATUS_TONE, type InspectorHost, type PanelCtx } from './kit';
 import { PANELS } from './panels';
-import { powerRows } from './power';
+import { gridCard } from './power';
 import { tradeSig } from '../trade-view';
 
 export type { InspectorHost } from './kit';
@@ -117,13 +117,13 @@ export class Inspector {
         ]),
         el('button.insp-x', { title: t('insp.close'), 'aria-label': t('insp.close'), onclick: () => this.host.select(0) }, '✕'),
       ]),
-      // What it is for, in words, only when nothing below shows it — no panel, no power row (its card in the tray says the rest).
+      // What it is for, in words, only when nothing below shows it — no panel, no grid module (its card in the tray says the rest).
       (PANELS[kind] ?? []).length || linkable(e.def) ? null : el('p.insp-desc', {}, firstSentence(b.desc[L])),
       el('div.insp-state', {}, [status, whyEl]),
       ...(PANELS[kind] ?? []).flatMap((panel) => panel(ctx)),
     ];
-    // The grid it is wired into and its wires (nothing for a building outside power).
-    parts.push(...powerRows(ctx));
+    // The grid module: its grid, its own part in it, its wires (nothing for a building outside power).
+    parts.push(...gridCard(ctx));
     if (kind !== 'hearth') parts.push(el('footer.insp-foot', {}, [el('button.btn.danger', { onclick: () => this.host.remove(e.id) }, t('insp.remove'))]));
     this.body.replaceChildren(...parts.filter((p): p is HTMLElement => !!p));
     if (had) this.body.querySelector<HTMLElement>(`[data-pick="${CSS.escape(had)}"]`)?.focus();

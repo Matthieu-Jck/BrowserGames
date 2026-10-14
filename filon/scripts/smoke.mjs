@@ -322,6 +322,28 @@ await step('power: P shows the power overlay', async () => {
   await page.keyboard.press('p');
 });
 
+await step('inspect: the grid module (D76) — a wind flower shows rated × factor = now, its factor unfolds why; a workshop shows what it draws, in the same card', async () => {
+  const ids = await FL(() => {
+    const sim = window.FL.app.sim;
+    const of = (def) => sim.ents.sorted().find((e) => window.FL.entityAt(e.x, e.y)?.def === def && e.builtAt === 0)?.id ?? 0;
+    return { wind: of('wind_flower'), shop: of('workshop') };
+  });
+  assert(ids.wind && ids.shop, `demo base: ${JSON.stringify(ids)}`);
+  await FL((id) => window.FL.selected(id), ids.wind);
+  await page.waitForSelector('[data-power-card] [data-pw="formula"] .pw-coef', { timeout: 5000 });
+  assert((await page.$$('[data-power-card]')).length === 1, 'one grid card');
+  assert(await page.$('.pw-why[hidden]'), 'the reasons start folded');
+  await page.click('.pw-coef');
+  await page.waitForSelector('.pw-why:not([hidden]) [data-pw-viz="wind"] .pw-step[data-on]', { timeout: 3000 });
+  const f = await page.evaluate(() => [...document.querySelectorAll('[data-pw="formula"] .pw-kw, [data-pw="formula"] .pw-coef-n')].map((n) => n.textContent));
+  assert(f.length === 3 && /kW/.test(f[0]) && /^×/.test(f[1]) && /kW/.test(f[2]), `formula: ${f.join(' | ')}`);
+  await page.locator('.inspector').screenshot({ path: shot('smoke-grid-card.png') });
+  await FL((id) => window.FL.selected(id), ids.shop);
+  await page.waitForSelector('[data-power-card] [data-pw="draw"]', { timeout: 5000 });
+  assert(!(await page.$('[data-pw="formula"]')), 'a consumer has no formula');
+  await FL(() => window.FL.selected(0));
+});
+
 // ── M4: research ─────────────────────────────────────────────────────────────
 await step('sound: the first click unlocked it; the score follows the clock; cues played; three live sliders', async () => {
   // The build and power steps' mouse clicks were the user gesture that starts Web Audio.

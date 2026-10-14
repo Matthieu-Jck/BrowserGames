@@ -216,6 +216,7 @@ function kindRows(def: number, b: BuildingDef, m: Readonly<Mods>): FactRow[] {
     case 'wind':
       add('wind', t('card.wind'), t('card.wind.local', {
         cirque: num(BAL.windCirque / 1000), plain: num(BAL.windPlain / 1000), mesa: num((BAL.windMesa[0] ?? 1000) / 1000),
+        low: num(BAL.windHeight[0]! / 1000), high: num(BAL.windHeight[BAL.windHeight.length - 1]! / 1000),
       }));
       break;
     case 'trade': {

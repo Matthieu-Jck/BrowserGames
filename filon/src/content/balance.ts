@@ -36,7 +36,7 @@ export const BAL = {
 
   // ── power ────────────────────────────────────────────────────────────────
   windCirque: 250, // ‰ local wind on the cirque's floor: sheltered, a poor spot for a turbine (owner, 2026-10-13)
-  windRock: [1400, 1600, 1800, 2000], // ‰ on the mountains, by rock hardness H1–H4 (the harder, the higher: D44)
+  windHeight: [1400, 1600, 1800, 2000], // ‰ up on the land by its height: level 1, 2, 3, 4 and above (D44; by height, not hardness, since 2026-10-14)
   windPlain: 1000,
   windMesa: [1600, 2000],
 

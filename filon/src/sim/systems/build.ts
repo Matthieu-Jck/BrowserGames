@@ -24,7 +24,13 @@ export type PlaceReason =
   | 'ok' | 'outside_world' | 'occupied' | 'terrain' | 'needs_deposit' | 'needs_water' | 'needs_vent'
   | 'outside_zone' | 'sister_land' | 'locked' | 'unaffordable' | 'not_buildable' | 'fog' | 'limit' | 'reserve' | 'needs_sand' | 'uneven'
   /** A traction step next to another one: an elevator needs one flat ribbon tile in front of it. */
-  | 'lift_room';
+  | 'lift_room'
+  /** A plain ribbon facing another level (a wall, or the edge of a drop): only a traction ribbon changes level (D77). */
+  | 'needs_lift'
+  /** A traction ribbon facing two levels or more: its elevator climbs one terrace at a time (D77). */
+  | 'steep'
+  /** A conduit facing another level: fluids keep to their level (D77). */
+  | 'cliff';
 
 export type Cost = Array<{ item: number; mu: number }>;
 
@@ -157,6 +163,8 @@ export function canPlace(sim: Sim, defId: string, x: number, y: number, rot: Rot
     cost = cost.map((c) => ({ item: c.item, mu: c.mu * mult }));
   }
   if (b.kind === 'trade' && [...sim.ents.map.values()].filter((o) => BUILDING_KIND[o.def] === 'trade').length >= maxPosts(sim.mods)) return fail('limit');
+  const step = stepRefusal(sim, def, x, y, rot);
+  if (step) return fail(step);
   if (b.lift && liftCrowded(sim, def, x, y, rot)) return fail('lift_room');
   replaces.sort((a, c) => a - c);
   // What it replaces is refunded before the new building is paid: it counts towards the cost.
@@ -167,6 +175,29 @@ export function canPlace(sim: Sim, defId: string, x: number, y: number, rot: Rot
   const extra = cost.map((c) => ({ item: c.item, mu: c.mu - (base.find((k) => k.item === c.item)?.mu ?? 0) })).filter((c) => c.mu > 0);
   if (extra.length && sim.reserveShort(extra).length) return { ok: false, reason: 'reserve', cost, delay: 0, replaces };
   return { ok: true, reason: 'ok', cost, delay: remoteDelay(sim, x, y, inZone), replaces };
+}
+
+/**
+ * A line piece that would face a step it cannot take (owner, 2026-10-14: "we must make sure that
+ * we block the user from doing something that makes no sense… some ribbons are half floating,
+ * pointing to a wall, or coming from a cliff, and nothing blocks the user or tells him he needs
+ * to put an elevator"). A ribbon hands on only to its own level (D45; compile.ts gives it no
+ * target past a step), so one facing a wall or the edge of a drop is a dead end: refused, and the
+ * reason names the traction ribbon. A traction ribbon takes one terrace, never two; a conduit
+ * none. Read against the tile right ahead, as the compile reads it. A skybridge is not checked:
+ * it leaps to the next one on its level, whatever lies between. A ribbon whose back is to a cliff
+ * stays allowed: it is fed from its sides.
+ */
+function stepRefusal(sim: Sim, def: number, x: number, y: number, rot: Rot): PlaceReason | null {
+  const b = buildingDef(def);
+  if (b.kind !== 'belt' && b.kind !== 'conduit') return null;
+  const gx = x + DX[rot]!, gy = y + DY[rot]!;
+  if (!inWorld(gx, gy)) return null;
+  const dl = Math.abs(sim.grid.level(gx, gy) - sim.grid.level(x, y));
+  if (dl === 0) return null;
+  if (b.kind === 'conduit') return 'cliff';
+  if (!b.lift) return 'needs_lift';
+  return dl > 1 ? 'steep' : null;
 }
 
 /**

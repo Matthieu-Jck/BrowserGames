@@ -8,11 +8,36 @@
 // Generator output lives in small named functions (`solarKw`, `windKw`, `producerKw`) over a
 // `Weather` value so that a new weather input (temperature, for the climate follow-up) is
 // added in one place: `weatherAt`, `weatherKey` and the functions that read it.
+import { BAL } from '@/content/balance';
+import { CIRQUE } from '@/content/world';
+import type { BuildingDef } from '@/content/types';
 import { hash32 } from '@/core/hash';
 import { mulDiv } from '@/core/fixed';
-import { DAY_EPOCHS, GUST_EPOCHS, GUST_LEVELS, SOLAR } from '../constants';
+import { CENTER, DAY_EPOCHS, GUST_EPOCHS, GUST_LEVELS, SOLAR } from '../constants';
+import { footprint } from '../entities';
 import type { Mods } from '../research/modifiers';
-import type { Ent } from '../types';
+import { T, type Ent } from '../types';
+import type { Grid } from '../world/grid';
+
+/** Why a turbine gets the wind it gets: its height on the land, or the ground it stands on. */
+export type WindSite = { readonly k: 'height'; readonly level: number } | { readonly k: 'cirque' } | { readonly k: 'plain' } | { readonly k: 'mesa' };
+
+/**
+ * A turbine's local wind ‰ and why (D44): up on the land, the higher the windier (`windHeight` by
+ * level: owner, 2026-10-14, "les éoliennes en fonction de leur hauteur"); down inside the Crown the
+ * cirque's floor is sheltered; outside it, mesas (hardpan) are windy and the rest is plain. The
+ * graph compiler builds each turbine with it; the inspector shows it.
+ */
+export function windSite(grid: Grid, e: Pick<Ent, 'def' | 'x' | 'y' | 'rot'>): { permille: number; site: WindSite } {
+  const level = grid.level(e.x, e.y);
+  if (level > 0) return { permille: BAL.windHeight[Math.min(level, BAL.windHeight.length) - 1]!, site: { k: 'height', level } };
+  const [w, h] = footprint(e.def, e.rot);
+  const dx = e.x + w / 2 - CENTER, dy = e.y + h / 2 - CENTER;
+  // Sheltered inside the Crown: its foot on this land's map (D63: map 1 keeps its own, 34).
+  const outer = grid.source.crownOuter ?? CIRQUE.crownOuter;
+  if (dx * dx + dy * dy < outer * outer) return { permille: BAL.windCirque, site: { k: 'cirque' } };
+  return grid.terrain(e.x, e.y) === T.Hardpan ? { permille: BAL.windMesa[0]!, site: { k: 'mesa' } } : { permille: BAL.windPlain, site: { k: 'plain' } };
+}
 
 export interface Producer {
   ent: number;
@@ -24,6 +49,22 @@ export interface Producer {
   local: number;
   /** Steady output on top of the weather-bound part (kW): the Hearth's isotope core. */
   base?: number;
+}
+
+/**
+ * The producer a building is, wired or not (null when it makes no power): the grids' compile and
+ * the inspector's grid module read the same numbers. The Hearth's built-in solar panel follows a
+ * solar panel's rules (solar research, the all-generator bonus) and carries its isotope core.
+ */
+export function producerOf(e: Ent, b: Pick<BuildingDef, 'kind' | 'gen'>, grid: Grid, mods: Pick<Mods, 'windOut' | 'solarOut' | 'geoOut' | 'genOut'>): Producer | null {
+  switch (b.kind) {
+    case 'hearth': return { ent: e.id, kind: 'hearth', kw: Math.floor((BAL.hearthSolarKw * mods.solarOut * mods.genOut) / 1e6), local: 1000, base: Math.floor((BAL.hearthCoreKw * mods.genOut) / 1000) };
+    case 'wind': return { ent: e.id, kind: 'wind', kw: Math.floor((b.gen!.kw * mods.windOut * mods.genOut) / 1e6), local: windSite(grid, e).permille };
+    // A solar producer's `local` is its night floor (‰ of its peak it keeps in the dark: the solar farm, D70).
+    case 'solar': return { ent: e.id, kind: 'solar', kw: Math.floor((b.gen!.kw * mods.solarOut * mods.genOut) / 1e6), local: b.gen!.night ?? 0 };
+    case 'geothermal': return { ent: e.id, kind: 'geo', kw: Math.floor((b.gen!.kw * mods.geoOut * mods.genOut) / 1e6), local: 1000 };
+    default: return null;
+  }
 }
 
 export interface Acc {
