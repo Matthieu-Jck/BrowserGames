@@ -22,7 +22,7 @@ import { makeRng } from '@/core/rng';
 import { sideIndex, type Rot } from '@/sim/types';
 import { C, mix } from '../tokens';
 import { castShadow, ellipsePts, flat, hatch, ink, pathOf, shape, stipple, type Ctx, type Pt } from '../ink';
-import { arrowPoly, crierMarkMapped, hull, light, rivet } from '../shapes';
+import { arrowPoly, cable, crierMarkMapped, hull, light, rivet } from '../shapes';
 import { pvPanel } from '../solar';
 import {
   ILH, IS, IsoFrame, Scene, ShadowFrame, box, bucketWheelIso, cableIso, chevronIso, cupIso, cylinder,
@@ -1932,6 +1932,96 @@ function electronicsIso(ctx: Ctx, f: IsoFrame, s: number): void {
   sc.run();
 }
 
+/** A scope screen on a visible face (u0…u1 across, z0…z1 up): a dark bezel, a green grid, a glowing trace. */
+function scopeIso(ctx: Ctx, f: IsoFrame, rr: RRect, face: Face, u0: number, u1: number, z0: number, z1: number, s: number): void {
+  shape(ctx, faceQuad(f, rr, face, u0, u1, z0, z1), C.steelDD, { w: 1.2, shade: false, jitter: 0, seed: s });
+  const du = (u1 - u0) * 0.1, dz = (z1 - z0) * 0.14;
+  const a0 = u0 + du, a1 = u1 - du, b0 = z0 + dz, b1 = z1 - dz;
+  flat(ctx, faceQuad(f, rr, face, a0, a1, b0, b1), mix(C.teal, C.ink, 0.6));
+  for (let k = 1; k < 4; k++) ink(ctx, [facePt(f, rr, face, a0 + ((a1 - a0) * k) / 4, b0), facePt(f, rr, face, a0 + ((a1 - a0) * k) / 4, b1)], { w: 0.7, color: C.teal, alpha: 0.7, shade: false, taper: 0, jitter: 0, seed: s + k });
+  ink(ctx, [facePt(f, rr, face, a0, (b0 + b1) / 2), facePt(f, rr, face, a1, (b0 + b1) / 2)], { w: 0.7, color: C.teal, alpha: 0.7, shade: false, taper: 0, jitter: 0, seed: s + 5 });
+  const trace: Pt[] = Array.from({ length: 25 }, (_, i) => {
+    const t = i / 24;
+    return facePt(f, rr, face, a0 + (a1 - a0) * t, (b0 + b1) / 2 + Math.sin(t * Math.PI * 4) * (b1 - b0) * 0.32 * (1 - 0.5 * t));
+  });
+  ink(ctx, trace, { w: 1.5, color: C.ledGreen, shade: false, taper: 0, jitter: 0, seed: s + 6 });
+}
+
+/**
+ * The test bench (`test_bench`, 2×2): it load-tests gears and circuits and records Mechanics
+ * Data. A dynamometer at the front — a teal drive motor turning a gear train clamped in an open
+ * frame under a coral clamp bar, braked by a coral load drum; a vibration table at the back on brass
+ * springs, a circuit board clamped on it, over its shaker; the instrument rack beside them, its
+ * status LEDs and a scope screen showing the trace; cable looms tying the rigs to the rack.
+ */
+function testBenchIso(ctx: Ctx, f: IsoFrame, s: number): void {
+  slab(ctx, f, C.steel, 0.05, SZ, s, true);
+  const sc = new Scene();
+  // The vibration table: base and shaker, springs, the plate, the clamped board.
+  sc.add(f.depth(0.68, 1.4), () => {
+    const base = box(ctx, f, 0.16, 1.02, 1.24, 1.8, SZ, 0.4, { top: C.steelD, left: C.steel, right: mix(C.steel, C.ink, 0.4) }, s + 1);
+    faceGrille(ctx, f, base, 'L', 0.08, 0.4, SZ + 0.03, 0.37, s + 2, 2);
+    faceLeds(ctx, f, base, 'L', 0.35, 0.6, 0.9, 3, [C.ledGreen, C.led], 1.3);
+    drumIso(ctx, f, 0.69, 1.41, 0.48, 0.07, 0.16, 'x', C.coral, s + 3, { shadow: false });
+    for (const [i, [x, y]] of ([[0.26, 1.12], [1.12, 1.12], [0.26, 1.7], [1.12, 1.7]] as const).slice().sort((a, b) => f.depth(a[0], a[1]) - f.depth(b[0], b[1])).entries()) springIso(ctx, f, x, y, 0.4, 0.58, s + 4 + i);
+    const plate = box(ctx, f, 0.2, 1.06, 1.18, 1.76, 0.58, 0.67, { top: C.steelL, left: mix(C.steelL, C.ink, 0.15), right: mix(C.steel, C.ink, 0.3) }, s + 8, { outline: 1.6, shadow: false });
+    faceHazard(ctx, f, plate, 'L', 0.02, 0.98, 0.59, 0.66, s + 9);
+    pcbIso(ctx, f, 0.4, 1.18, 0.98, 1.64, 0.67, s + 10);
+    for (const x of [0.36, 1.02]) box(ctx, f, x - 0.05, 1.14, x + 0.05, 1.68, 0.67, 0.77, { top: C.steelDD }, s + 12 + x, { outline: 1.1, shadow: false });
+  });
+  // The dynamometer: a hazard-edged bed, the drive motor, the gear train clamped in an open frame
+  // (gears on shafts between two posts under a clamp bar), the coral load brake on its stand.
+  sc.add(f.depth(0.74, 0.46), () => {
+    const bed = box(ctx, f, 0.12, 0.22, 1.36, 0.7, SZ, 0.55, { top: C.steelD, left: C.steel, right: mix(C.steel, C.ink, 0.4) }, s + 20);
+    faceHazard(ctx, f, bed, 'L', 0.03, 0.97, SZ + 0.04, SZ + 0.13, s + 21);
+    const m = box(ctx, f, 0.14, 0.28, 0.4, 0.64, 0.55, 1.3, C.teal, s + 22, { outline: 1.6 });
+    faceGrille(ctx, f, m, 'L', 0.15, 0.85, 0.62, 1.08, s + 23, 3);
+    faceLeds(ctx, f, m, 'L', 1.2, 0.25, 0.75, 2, [C.led, C.ledGreen], 1.3);
+  });
+  const gears = [[0.72, 1.36, 0.27, 16, C.brass], [1.05, 1.44, 0.13, 9, C.steelL], [1.26, 1.3, 0.11, 8, C.brassL]] as const;
+  for (const [i, [x, z, r, n, col]] of gears.entries()) {
+    sc.add(f.depth(x, 0.46) + 0.001 * i, () => {
+      pipeIso(ctx, f, [[x, 0.34, z], [x, 0.58, z]], 2.6, C.steelD, s + 30 + i, false);
+      wheelIso(ctx, f, x, 0.46, z, r, 'y', n, col, s + 33 + i);
+    });
+  }
+  for (const [i, x] of [0.42, 1.42].entries()) sc.add(f.depth(x, 0.46) + 0.002, () => box(ctx, f, x - 0.035, 0.4, x + 0.035, 0.52, 0.55, 1.98, { top: C.steelD, left: C.steelL, right: mix(C.steel, C.ink, 0.3) }, s + 37 + i, { outline: 1.3 }));
+  sc.add(f.depth(0.92, 0.46) + 0.5, () => {
+    pipeIso(ctx, f, [[0.4, 0.46, 1.2], [0.6, 0.46, 1.3], [0.72, 0.46, 1.36]], 3.2, C.steelL, s + 39, false);
+    const bar = box(ctx, f, 0.37, 0.43, 1.47, 0.49, 1.98, 2.08, { top: C.coral }, s + 40, { outline: 1.4, shadow: false });
+    for (const u of [0.2, 0.5, 0.78]) rivet(ctx, ...facePt(f, bar, 'L', u, 2.03), 1.6, C.brassL);
+  });
+  sc.add(f.depth(1.62, 0.42), () => {
+    box(ctx, f, 1.44, 0.24, 1.82, 0.6, SZ, 0.62, { top: C.steelD, left: C.steel, right: mix(C.steel, C.ink, 0.4) }, s + 41, { outline: 1.4 });
+    pipeIso(ctx, f, [[1.26, 0.46, 1.3], [1.5, 0.46, 1.0]], 3, C.steelL, s + 42, false);
+    drumIso(ctx, f, 1.64, 0.44, 0.98, 0.2, 0.13, 'x', C.coral, s + 43, { bands: [0], end: mix(C.coral, C.coralD, 0.4) });
+    box(ctx, f, 1.56, 0.32, 1.72, 0.42, 1.32, 1.44, { top: C.steelD }, s + 44, { outline: 1.2, shadow: false });
+  });
+  // The instrument rack: status LEDs, the scope screen with its trace, a vent.
+  sc.add(f.depth(1.65, 0.8), () => {
+    const jb = box(ctx, f, 1.48, 0.66, 1.82, 0.94, SZ, 0.72, { top: C.steelD, left: C.steel, right: mix(C.steel, C.ink, 0.4) }, s + 48, { outline: 1.4 });
+    faceLeds(ctx, f, jb, 'L', 0.6, 0.3, 0.7, 2, [C.ledWarm, C.led], 1.3);
+  });
+  sc.add(f.depth(1.65, 1.41), () => {
+    const rr = box(ctx, f, 1.44, 1.02, 1.86, 1.8, SZ, 1.25, { top: mix(C.violet, C.steelD, 0.35), left: C.violet, right: mix(C.violet, C.ink, 0.42) }, s + 50);
+    scopeIso(ctx, f, rr, 'L', 0.12, 0.88, 0.8, 1.14, s + 51);
+    faceLeds(ctx, f, rr, 'L', 0.66, 0.16, 0.84, 4, [C.led, C.ledGreen, C.ledWarm], 1.5);
+    faceGrille(ctx, f, rr, 'L', 0.14, 0.86, SZ + 0.06, 0.54, s + 52, 3);
+    for (const z of [0.55, 0.78, 1.01]) faceLeds(ctx, f, rr, 'R', z, 0.08, 0.45, 5, [C.led, C.ledGreen, C.led], 1.3);
+    faceGrille(ctx, f, rr, 'R', 0.58, 0.92, 0.45, 1.1, s + 53, 4);
+  });
+  // The cable looms: from the rack's flank to the vibration table and to the dynamometer's plate.
+  sc.add(f.depth(1.3, 1.0) + 2, () => {
+    const loom = (a: V3, b: V3, col: string, k: number): void => cable(ctx, f.p(...a), f.p(...b), 2.2, 0.16, col, s + 60 + k);
+    loom([1.44, 1.3, 0.95], [1.18, 1.4, 0.7], C.teal, 0);
+    loom([1.44, 1.42, 0.85], [1.18, 1.52, 0.66], C.steelDD, 1);
+    loom([1.6, 1.02, 1.0], [1.6, 0.8, 0.72], C.coral, 2);
+    loom([1.5, 0.8, 0.7], [1.42, 0.5, 1.6], C.coral, 3);
+    loom([1.55, 0.7, 0.66], [1.42, 0.5, 1.25], C.steelDD, 4);
+  });
+  sc.run();
+}
+
 /**
  * A data collector's rig: a geared turntable carrying a yoke and a tilted phased-array panel,
  * screen-fixed (like the Heart's uplink): turned to the camera and a little to the left, so its
@@ -2771,6 +2861,12 @@ const R: Partial<Record<BuildingId, Recipe>> = {
     // The electronics workshop (the old press drawing went to `press`): see `electronicsIso`.
     head: 1.95,
     draw: electronicsIso,
+  },
+  test_bench: {
+    // The test bench: a dynamometer and a vibration table under load, the instrument rack and
+    // its scope; see `testBenchIso`.
+    head: 2.25,
+    draw: testBenchIso,
   },
   data_collector: {
     head: 2.75,

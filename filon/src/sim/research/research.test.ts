@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { itemIdx } from '@/content/registry';
-import { DEPTH_COST } from '@/content/research';
+import { DEPTH_COST, PLAN_IDS, PLANS } from '@/content/research';
 import { testSim, stockedSilo, steadyPower, wire } from '../testkit';
 import { effectiveCost } from './runtime';
 import { serialize, deserialize } from '../serialize';
@@ -8,7 +8,7 @@ import { catchUp } from '../offline/catchup';
 import { replay } from '../commands';
 import type { Sim } from '../state';
 
-const DF = (): number => itemIdx('data_file');
+const DF = (): number => itemIdx('journal_1');
 
 /** A research lab beside the Heart (on the claim's land, wired to it), its store pre-filled with data files. */
 function labSim(files: number): { sim: Sim; lab: number } {
@@ -31,17 +31,19 @@ describe('research (D68, D69): data files, AI tokens, tiers', () => {
   it('a node costs more for each node owned elsewhere — more so the higher its tier — and the sibling speciality counts as elsewhere', () => {
     // A power specialist: the Energy family's shared lineage, then Renewables.
     const spec = new Set(['tr1', 'tr6', 'en_pitch', 'en2', 'en_heavyacc', 'en4', 'en_solarfarm']);
-    // Its own lineage: 5 nodes, nothing elsewhere: −20 %.
+    // Its own lineage: 5 nodes, nothing elsewhere: −20 %. A Tier 3 node uses three kinds of data
+    // (D71): Survey Data, a third as much Mechanics Data, a twelfth as many atlases.
     const a = effectiveCost('en_bigwind', spec);
     expect(a.tokens).toBe(960_000);
-    expect(a.cost.map((c) => c.mu / 1000)).toEqual([1536]);
+    expect(a.cost.map((c) => c.mu / 1000)).toEqual([1536, 512, 128]);
     // Power Plants, the sibling speciality: Solar Farm now counts as elsewhere (+25 % at Tier 3), 4 shared nodes −16 %.
     const b = effectiveCost('en5', spec);
     expect(b.tokens).toBe(630_000);
-    expect(b.cost.map((c) => c.mu / 1000)).toEqual([1008]);
-    // Two Extraction nodes: a Tier 1 node elsewhere pays +5 % a node, a Tier 4 node +50 %.
+    expect(b.cost.map((c) => c.mu / 1000)).toEqual([1008, 336, 84]);
+    // Two Extraction nodes: a Tier 1 node pays nothing for the nodes elsewhere (Tier 1 is meant to
+    // be completed whole, D71), a Tier 4 node +50 % a node.
     const gen = new Set([...spec, 'ex_sifter', 'ex3']);
-    expect(effectiveCost('dn3', gen).tokens).toBe(13_500); // 7 nodes elsewhere: +35 %
+    expect(effectiveCost('dn3', gen).tokens).toBe(10_000); // 7 nodes elsewhere, no spread at Tier 1
     const t4 = effectiveCost('en_tower', gen);
     expect(t4.tokens).toBe(9_600_000); // (1 + 2 × 0.5) × (1 − 5 × 0.04)
     expect(t4.ticks).toBe(1440 * 600 * 1.4); // +20 % a node elsewhere at Tier 4
@@ -179,7 +181,7 @@ describe('research (D68, D69): data files, AI tokens, tiers', () => {
     const lab = sim.place('observatory', 512, 517, 0);
     expect(lab.ok).toBe(true);
     wire(sim, lab.id!);
-    stockedSilo(sim, 512, 520, 0, 'data_file', 200);
+    stockedSilo(sim, 512, 520, 0, 'journal_1', 200);
     expect(sim.placeBelts('ribbon', [[512, 519, 0]])).toBe(1);
     sim.grant('circuit', 10); sim.grant('copper_wire', 10);
     const s = sim.place('server', 503, 512, 0);
@@ -270,7 +272,11 @@ describe('plans (D33): the tree’s instant unlocks, paid from the Heart', () =>
     sim.grant('iron_plate', 100); sim.grant('glass', 20); sim.grant('copper_wire', 20);
     expect(sim.researchBlock('tr1')).toBe('prereq');
     expect(sim.researchBlock('ex_sifter')).toBe('prereq');
-    for (const id of ['kiln', 'data_collector', 'observatory']) expect(sim.unlockPlan(id).ok, id).toBe(true);
+    // The lab's plan is the gate (D71): it waits for every other plan.
+    expect(sim.unlockPlan('observatory').reason).toBe('prereq');
+    for (const id of PLAN_IDS) if (PLANS[id].lane !== 'gate') { for (const [it, n] of PLANS[id].cost) sim.grant(it, n); expect(sim.unlockPlan(id).ok, id).toBe(true); }
+    expect(sim.researchBlock('tr1')).toBe('prereq');
+    expect(sim.unlockPlan('observatory').ok).toBe(true);
     expect(sim.researchBlock('tr1')).toBe('no_lab'); // now only a lab is missing
   });
 

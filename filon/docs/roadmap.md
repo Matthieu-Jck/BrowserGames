@@ -54,6 +54,50 @@ Deviations from the plan:
   - Souffle storms as world events: the wind on the Crown, dust on the panels, forecast by the Gazette (gives `stormHarvest` a use).
   - Undo, blueprints, and sprite culling for big bases.
 
+## Design backlog (owner, 2026-10-14)
+
+Agreed in conversation, not built yet. Each becomes a decision (D-number) when it is.
+
+**The tree's arc.** Plans → the research lab (the gate, D71) → Tier 1, meant to be completed whole → the Core's level 3 → the **expertise** window (« Expertise » in both languages): the claim picks two of the expertises it has earned → Tier 2 and on, where the spread pushes it to focus.
+- **Expertises.** Each one is earned by what the base did: ore mined, ◉ sold at the Crier, the grid held at 95 % for a day, parcels bought, data made, and rarer feats. Each improves one family's research (time, tokens, data) or its production (rate, yield, wear).
+- **Home families.** The two chosen expertises make their families « home ». Nodes there do not count as elsewhere for each other, so the claim builds a two-family identity.
+- **Ranks.** Each expertise has ranks I–III, earned by keeping up its feat.
+- **Changing.** A « réorientation » costs ◉, more each time, and leaves the claim without the expertise for 24 h.
+- **Where percentages live.** The tree unlocks what can be built; expertises improve how well it is done. Percentages live only there (D70).
+
+**New content.**
+- **Oil and gas, with a Chemistry family** (Chimie → Pétrochimie → Matériaux).
+  - Underground reservoirs from the world seed, not on the map, revealed by a seismic station; oil seeps hint where they are.
+  - Oil wells and gas wells; a flare stack for surplus gas.
+  - A distillation column with one recipe of three outputs (byproducts back up unless used).
+  - A barrel filler, so oil can be traded; a gas turbine.
+  - Sulfur (vents, sour gas) → acid → copper leaching. Lithium from the salt flats; ammonia; hydrogen; helium from gas.
+- **Advanced power.**
+  - Combined cycle, molten-salt storage for the solar tower, enhanced geothermal.
+  - Fission: big, constant output that cannot ramp; cooling water, and a safe shutdown if it stops (no meltdown, no randomness). Its fuel cycle runs through centrifuges, a cooling pool, reprocessing and a deep repository dug by the excavators.
+  - Fusion: needs ignition from the accumulators; the tritium loop is bred from lithium.
+  - No orbital rectenna.
+- **The orbital grid.** An electricity market on the Crier Ring, through a station on the claim's grid.
+  - Buying is dear: about 4 to 5 times the cost of making it, last in the merit order, under a cap the player sets. Surplus sells low.
+  - Billed by the minute like tokens; a purse in the red cuts it off.
+  - Commerce: buying at T2, selling and fixed-price contracts at T3. Later, other players sell on it too.
+- **Deep chains at T3–T4.** Capstone machines are fed by 10–15-machine chains: the quantum computer (tokens, liquid helium), the fusion reactor (deuterium, tritium, blanket modules).
+  - The chains share their intermediates and have byproducts that loop back.
+  - Odd ratios, slow steps that need buffers, and terrain spreading the chain.
+  - Every link can be traded. The capstone's inspector shows its production tree in icons.
+- **Biology, a later family.** Samples from beyond the Crown, a sequencer (data), bioreactors growing uniques, bioleaching, algae oil, enzyme modules, organic computing (tokens), radiotrophic fungi in the repository, lichens and the first terraforming. Lore check: glass algae tubes vs « glass belongs to Verrière ».
+
+**The economy, once many players share the Crier** (owner's answers):
+- **Money creation.** La Banque de l'Anneau issues the ocelles only through Verrière's purchases and contracts (and a claim's starting capital); they leave through CrierBelt's services (fees, tokens, land, power). The Gazette publishes a price index and the money supply.
+- **Verrière's market.** It is a human market of NPCs that consumes only a few final goods (phones, food…). Its population grows with the number of *active players*, not with what they make: if every player makes phones, phones are worth nothing. Every other good trades between players.
+- **No price floor or ceiling.** Supply and demand only. A good worth nothing gets a machine that uses it in a later update.
+- **Not the lever.** Deposits running dry are not planned.
+- **Continuous consumption.** Late in the game, a claim alone cannot supply its own copper, even mining everything round it.
+- **Trade from Tier 2.** Buying from other players should pay off from Tier 2 (how: to design).
+- **Later.** Knowledge diffusion (research cheaper the more claims know it), a land tax, starter contracts for young claims.
+- **Future extensions.** Regional uniques, seasons (new worlds where everyone starts equal).
+- **First step.** An agent-based simulator in `src/market`: thousands of claims arriving over months. Measure prices, newcomers' income against veterans', the money supply and inflation, and tune before the server.
+
 ## M8: onboarding and polish
 
 ✅ Quests 0–10 (section 8: `content/quests.ts`, `sim/systems/quests.ts`, the quest log and the guide; a scripted run completes them in `quests.test.ts`, `FL.quests` / `FL.completeQuest`; [quests.md](quests.md)), night tint and lights, FX, the far-zoom look, the flow-heat overlay, ✅ generative audio (D30: score, ambience, cues, live volumes; [audio.md](audio.md)), Ctrl+Z (commands make undo tractable: inverse commands or a replay from a checkpoint), README for players, the full smoke run in fr-FR and en-US, a stress colony at > 30 fps.

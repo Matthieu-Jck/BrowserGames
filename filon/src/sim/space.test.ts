@@ -249,7 +249,7 @@ describe('space', () => {
       expect(connect(sim, ex.id!, sim.hearthId)).toBeGreaterThan(0);
       expect(sim.designate([tileIndex(530, 511)])).toBe(1); // obsidian: needs Basalt Bits (ex4)
       sim.ensureCompiled();
-      sim.stores.get(lab.id!)![itemIdx('data_file')] = 400 * 1000;
+      sim.stores.get(lab.id!)![itemIdx('journal_1')] = 400 * 1000;
       expect(sim.startResearch('ex4').ok).toBe(true);
       return sim;
     };

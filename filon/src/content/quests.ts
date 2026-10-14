@@ -10,7 +10,7 @@
 // · the Heart only takes in (D34): it pays for construction and sells next to a trade post, it
 //   never feeds a machine — every machine is fed by its own production lines, so the tutorial
 //   builds lines: a router splits the iron line between the Heart and the smelter, another
-//   shares the coal, a data collector feeds the research lab (D68);
+//   shares the coal, and at the end a data collector feeds the research lab (D68, D71);
 // · everything beyond the starting kit (drill, ribbon, pole, the Link tool) is unlocked in
 //   the tech tree (D33): a quest opens the tree and unlocks what it needs before using it — the
 //   telemetry first, then the smelter and the router, the junction once lines cross…
@@ -29,7 +29,7 @@ import { BAL } from './balance';
 import { BUILDINGS } from './buildings';
 import { ITEMS } from './items';
 import { RECIPES } from './recipes';
-import { RESEARCH, isTreeNode } from './research';
+import { PLAN_IDS, PLANS, RESEARCH, isTreeNode } from './research';
 import type { BuildCategory, BuildingDef, Loc, RecipeDef } from './types';
 import { CIRQUE } from './world';
 
@@ -61,7 +61,7 @@ export type QuestObjective = (
   /** A research node started (or already learnt). */
   | { readonly k: 'research'; readonly id: string }
   /** These nodes of the tech tree unlocked: plans taken, research learnt (D33). */
-  | { readonly k: 'unlocked'; readonly ids: readonly string[] }
+  | { readonly k: 'unlocked'; readonly ids: readonly string[]; readonly label?: Loc }
   /** A trade post built. */
   | { readonly k: 'post' }
   /** n of these items sold through the Crier (by a post's entrance, or spot sales), *since*. */
@@ -178,6 +178,8 @@ const MASTS = ['mast', 'pylon'] as const;
 const NEAR_HEART = { hearth: true } as const;
 /** Where an output ribbon must end: a free input of the Heart (its teal nozzles). */
 const INTAKE = { intake: true } as const;
+/** The plans of the six paths: all of them open the research lab's plan (D71). */
+const PATH_PLANS = PLAN_IDS.filter((id) => PLANS[id].lane !== 'gate');
 
 export const QUESTS = {
   // ── 0 ── the name ───────────────────────────────────────────────────────────
@@ -329,24 +331,23 @@ export const QUESTS = {
     ],
   },
 
-  // ── 4 ── power: wind turbines on the grid, a powered data collector ─────────
+  // ── 4 ── power: wind turbines on the grid ────────────────────────────────────
   first_wind: {
     name: { fr: 'Le Souffle', en: 'The Sough' },
     reveals: ['clock'],
     desc: {
-      fr: 'Le panneau du Cœur s’éteint la nuit, et ses fils sont comptés. Le Souffle ne porte qu’en hauteur : plantez deux éoliennes sur la Couronne, les montagnes autour du cirque, reliez-les au réseau de poteau en poteau, et alimentez un collecteur de données.',
-      en: 'The Core’s panel goes dark at night, and its wires are few. The Sough only blows up high: plant two wind turbines on the Crown, the mountains round the cirque, wire them to the grid pole by pole, and power a data collector.',
+      fr: 'Le panneau du Cœur s’éteint la nuit, et ses fils sont comptés. Le Souffle ne porte qu’en hauteur : plantez deux éoliennes sur la Couronne, les montagnes autour du cirque, et reliez-les au réseau de poteau en poteau.',
+      en: 'The Core’s panel goes dark at night, and its wires are few. The Sough only blows up high: plant two wind turbines on the Crown, the mountains round the cirque, and wire them to the grid pole by pole.',
     },
     objectives: [
       { k: 'linked', defs: ['wind_flower'], n: 2 },
-      { k: 'powered', defs: ['data_collector'], n: 1 },
     ],
     reward: { kit: 'brazier' },
     steps: [
       {
-        hint: { fr: 'Arbre des techniques : débloque l’Éolienne et le Collecteur de données.', en: 'Tech tree: unlock the Wind Turbine and the Data Collector.' },
-        target: { k: 'unlock', ids: ['wind_flower', 'data_collector'] },
-        done: { k: 'unlocked', ids: ['wind_flower', 'data_collector'] },
+        hint: { fr: 'Arbre des techniques : débloque l’Éolienne.', en: 'Tech tree: unlock the Wind Turbine.' },
+        target: { k: 'unlock', ids: ['wind_flower'] },
+        done: { k: 'unlocked', ids: ['wind_flower'] },
       },
       {
         hint: { fr: 'Plante deux éoliennes sur la Couronne, les montagnes autour du cirque (onglet Énergie) : au fond du cirque, abrité, le vent ne donne presque rien.', en: 'Plant two wind turbines on the Crown, the mountains round the cirque (Energy tab): down in the sheltered cirque the wind gives next to nothing.' },
@@ -354,19 +355,9 @@ export const QUESTS = {
         done: { k: 'build', defs: ['wind_flower'], n: 2 },
       },
       {
-        hint: { fr: 'Pose un collecteur de données près du Cœur (onglet Recherche) : il tire des fichiers de données de l’électricité, n’importe où.', en: 'Place a data collector near the Core (Research tab): it makes data files out of power, anywhere.' },
-        target: { k: 'build', def: 'data_collector', at: NEAR_HEART },
-        done: { k: 'build', defs: ['data_collector'], n: 1 },
-      },
-      {
         hint: { fr: 'Outil Relier : du Cœur, de poteau en poteau (ils se posent aussi sur la roche), jusqu’à chaque éolienne.', en: 'Link tool: from the Core, pole to pole (they stand on rock too), to each turbine.' },
         target: { k: 'link' },
         done: { k: 'linked', defs: ['wind_flower'], n: 2 },
-      },
-      {
-        hint: { fr: 'Puis relie le collecteur, lui aussi.', en: 'Then wire the collector too.' },
-        target: { k: 'link' },
-        done: { k: 'powered', defs: ['data_collector'], n: 1 },
       },
     ],
   },
@@ -428,50 +419,7 @@ export const QUESTS = {
     ],
   },
 
-  // ── 6 ── data files and research (D68) ──────────────────────────────────────
-  field_journal: {
-    name: { fr: 'Fichiers de données', en: 'Data Files' },
-    desc: {
-      fr: 'La recherche se nourrit de fichiers de données et de tokens d’IA. Votre collecteur fait les fichiers ; un laboratoire de recherche les reçoit par ruban et paie ses tokens à la minute aux serveurs de CrierBelt, sur votre trésorerie. Posez le laboratoire, amenez-lui les fichiers, puis lancez Mécanique.',
-      en: 'Research feeds on data files and AI tokens. Your collector makes the files; a research lab takes them in by ribbon and pays for its tokens by the minute to CrierBelt’s servers, out of your purse. Place the lab, bring it the files, then start Mechanics.',
-    },
-    objectives: [
-      { k: 'produce', items: ['data_file'], n: 3 },
-      { k: 'build', defs: ['observatory'], n: 1 },
-      { k: 'research', id: 'tr1' },
-    ],
-    reward: { credits: 100 },
-    steps: [
-      {
-        hint: { fr: 'Arbre des techniques : débloque le Laboratoire de recherche.', en: 'Tech tree: unlock the Research Lab.' },
-        target: { k: 'unlock', ids: ['observatory'] },
-        done: { k: 'unlocked', ids: ['observatory'] },
-      },
-      {
-        hint: { fr: 'Pose le laboratoire près du collecteur de données.', en: 'Place the lab near the data collector.' },
-        target: { k: 'build', def: 'observatory', at: { entity: 'data_collector' } },
-        done: { k: 'build', defs: ['observatory'], n: 1 },
-      },
-      {
-        hint: { fr: 'Relie le laboratoire au réseau.', en: 'Wire the lab into the grid.' },
-        target: { k: 'link' },
-        done: { k: 'linked', defs: ['observatory'], n: 1 },
-      },
-      {
-        hint: { fr: 'Un ruban de la sortie du collecteur jusqu’à une entrée du laboratoire : les fichiers y montent.', en: 'A ribbon from the collector’s output to one of the lab’s inputs: the files go up from there.' },
-        target: { k: 'build', def: 'ribbon', at: { entity: 'observatory' } },
-        done: { k: 'feeds', item: 'data_file', to: ['observatory'], n: 1 },
-      },
-      {
-        hint: { fr: 'Dans l’arbre (T), lance Mécanique : ses tokens se paient à la minute, quelques ocelles.', en: 'In the tree (T), start Mechanics: its tokens are paid by the minute, a few ocelles.' },
-        target: { k: 'research', id: 'tr1' },
-        done: { k: 'research', id: 'tr1' },
-      },
-      { hint: { fr: 'Les fichiers arrivent : trois en tout. La recherche les consomme à mesure.', en: 'The files are coming: three in all. Research uses them up as they arrive.' }, target: { k: 'none' } },
-    ],
-  },
-
-  // ── 7 ── the first trade ────────────────────────────────────────────────────
+  // ── 6 ── the first trade ────────────────────────────────────────────────────
   crier_calls: {
     name: { fr: 'La Criée appelle', en: 'The Crier Calls' },
     reveals: ['credits', 'crier'],
@@ -504,7 +452,7 @@ export const QUESTS = {
     ],
   },
 
-  // ── 8 ── the tired vein ─────────────────────────────────────────────────────
+  // ── 7 ── the tired vein ─────────────────────────────────────────────────────
   tired_vein: {
     name: { fr: 'Le filon fatigué', en: 'The Tired Vein' },
     desc: {
@@ -556,7 +504,7 @@ export const QUESTS = {
     ],
   },
 
-  // ── 9 ── buying ─────────────────────────────────────────────────────────────
+  // ── 8 ── buying ─────────────────────────────────────────────────────────────
   first_purchase: {
     name: { fr: 'Premier achat', en: 'First Purchase' },
     desc: {
@@ -577,7 +525,7 @@ export const QUESTS = {
     ],
   },
 
-  // ── 10 ── beyond the Crown ──────────────────────────────────────────────────
+  // ── 9 ── beyond the Crown ──────────────────────────────────────────────────
   beyond_crown: {
     name: { fr: 'Au-delà de la Couronne', en: 'Beyond the Crown' },
     reveals: ['brush'],
@@ -601,6 +549,67 @@ export const QUESTS = {
         hint: { fr: 'Plante une balise d’arpentage au-delà de la Couronne… ou creuse deux tuiles (excavatrice, puis pinceau C).', en: 'Plant a survey beacon beyond the Crown… or dig two tiles (an excavator, then the brush, C).' },
         target: { k: 'build', def: 'beacon', at: { beyond: true } },
       },
+    ],
+  },
+
+  // ── 10 ── research: every plan, then the lab and its Survey Data (D71) ─────
+  // The research lab is the gate between the plans and research (owner, 2026-10-14): it needs
+  // every plan, so the tutorial ends here, the whole kit in hand.
+  field_journal: {
+    name: { fr: 'Données d’arpentage', en: 'Survey Data' },
+    desc: {
+      fr: 'La recherche se nourrit de données et de tokens d’IA. Quand tous les plans sont pris, le laboratoire de recherche s’ouvre, avec le collecteur qui tire des données d’arpentage de l’électricité. Le laboratoire les reçoit par ruban et paie ses tokens à la minute aux serveurs de CrierBelt, sur votre trésorerie. Prenez les derniers plans, posez le laboratoire et son collecteur, puis lancez Mécanique.',
+      en: 'Research feeds on data and AI tokens. Once every plan is taken, the research lab opens, with the data collector that makes Survey Data out of power. The lab takes the data in by ribbon and pays for its tokens by the minute to CrierBelt’s servers, out of your purse. Take the last plans, place the lab and its collector, then start Mechanics.',
+    },
+    objectives: [
+      { k: 'unlocked', ids: PLAN_IDS, label: { fr: 'Tous les plans débloqués', en: 'Every plan unlocked' } },
+      { k: 'produce', items: ['journal_1'], n: 3 },
+      { k: 'build', defs: ['observatory'], n: 1 },
+      { k: 'research', id: 'tr1' },
+    ],
+    reward: { credits: 100 },
+    steps: [
+      {
+        hint: { fr: 'Arbre des techniques : débloque les plans qui te manquent encore, l’un après l’autre.', en: 'Tech tree: unlock the plans you are still missing, one after the other.' },
+        target: { k: 'unlock', ids: PATH_PLANS },
+        done: { k: 'unlocked', ids: PATH_PLANS },
+      },
+      {
+        hint: { fr: 'Tous les plans sont pris : débloque le Laboratoire de recherche, au bout des plans.', en: 'Every plan is taken: unlock the Research Lab, at the end of the plans.' },
+        target: { k: 'unlock', ids: ['observatory'] },
+        done: { k: 'unlocked', ids: ['observatory'] },
+      },
+      {
+        hint: { fr: 'Pose le laboratoire près du Cœur (onglet Recherche).', en: 'Place the lab near the Core (Research tab).' },
+        target: { k: 'build', def: 'observatory', at: NEAR_HEART },
+        done: { k: 'build', defs: ['observatory'], n: 1 },
+      },
+      {
+        hint: { fr: 'Pose un collecteur de données à côté : il tire des données d’arpentage de l’électricité, n’importe où.', en: 'Place a data collector beside it: it makes Survey Data out of power, anywhere.' },
+        target: { k: 'build', def: 'data_collector', at: { entity: 'observatory' } },
+        done: { k: 'build', defs: ['data_collector'], n: 1 },
+      },
+      {
+        hint: { fr: 'Relie le laboratoire au réseau.', en: 'Wire the lab into the grid.' },
+        target: { k: 'link' },
+        done: { k: 'linked', defs: ['observatory'], n: 1 },
+      },
+      {
+        hint: { fr: 'Puis le collecteur.', en: 'Then the collector.' },
+        target: { k: 'link' },
+        done: { k: 'powered', defs: ['data_collector'], n: 1 },
+      },
+      {
+        hint: { fr: 'Un ruban de la sortie du collecteur jusqu’à une entrée du laboratoire : les données y montent.', en: 'A ribbon from the collector’s output to one of the lab’s inputs: the data goes up from there.' },
+        target: { k: 'build', def: 'ribbon', at: { entity: 'observatory' } },
+        done: { k: 'feeds', item: 'journal_1', to: ['observatory'], n: 1 },
+      },
+      {
+        hint: { fr: 'Dans l’arbre (T), lance Mécanique : ses tokens se paient à la minute, quelques ocelles.', en: 'In the tree (T), start Mechanics: its tokens are paid by the minute, a few ocelles.' },
+        target: { k: 'research', id: 'tr1' },
+        done: { k: 'research', id: 'tr1' },
+      },
+      { hint: { fr: 'Les données arrivent : trois en tout. La recherche les consomme à mesure.', en: 'The data is coming: three in all. Research uses it up as it arrives.' }, target: { k: 'none' } },
     ],
   },
 } as const satisfies Record<string, QuestDef>;

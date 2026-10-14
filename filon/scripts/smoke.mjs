@@ -338,7 +338,7 @@ await step('sound: the first click unlocked it; the score follows the clock; cue
 
 await step('research: start Mechanics from the screen, the HUD counts down, a notice lands', async () => {
   await FL(() => window.FL.lookAt(512, 512, 1));
-  assert(await FL(() => window.FL.feedLab('data_file', 40)), 'no research lab to feed');
+  assert(await FL(() => window.FL.feedLab('journal_1', 40)), 'no research lab to feed');
   await page.keyboard.press('t');
   await page.waitForSelector('[data-screen="research"][data-open]', { timeout: 2000 });
   await page.click('.rs-card[data-id="tr1"]');

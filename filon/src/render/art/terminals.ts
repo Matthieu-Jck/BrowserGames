@@ -97,6 +97,7 @@ export const TERMINALS: Readonly<Partial<Record<BuildingId, readonly Terminal[]>
   sunheart: [roof(4.3, 4.3, 3.2)],
   trade_post: [roof(3.58, 1.42, 0.66, 0.25)], // on its power pedestal, a corner of its pad (recipes/buildings.ts `TP_PED`)
   // The research redesign and the second tier: on a cabinet, a power pack or a motor house.
+  test_bench: [roof(1.66, 1.16, 1.25, 0.22)], // on the instrument rack
   data_collector: [roof(0.37, 1.7, 1.22, 0.22)],
   data_relay: [roof(2.62, 2.62, 1.0)],
   server: [roof(1.76, 1.62, 1.72, 0.2)],

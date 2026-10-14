@@ -16,9 +16,9 @@
 //   claim     the claim named, at the very start of the tutorial (quest 1 current), nothing built
 //   smelter   quests 0–2: two iron drills into the Heart, wired, telemetry → at « La fonderie »
 //   survey    quests 0–5: + the smelter (a router splits the second iron line), the coal, two
-//             wind turbines, the data collector, the glass smelter (two sand collectors; a router
-//             shares the coal) → at « Fichiers de données »
-//   tutorial  all eleven quests: + the collector's data files into the research lab (Mechanics under way), the
+//             wind turbines, the glass smelter (two sand collectors; a router shares the coal)
+//             → at « La Criée appelle »
+//   tutorial  all eleven quests: + every plan, the collector's Survey Data into the research lab (Mechanics under way), the
 //             trade post (glass led into its entrance for its quest, then the iron ore line
 //             joining it — the post sells whatever comes in, D64 — and its exit laid into the
 //             Heart, fed by a small import order of plates: what the base builds with), the copper line, a beacon past the
@@ -47,7 +47,7 @@
 import { BUILDING_KIND, buildingDef, buildingIdx, ITEM_IDS, itemIdx } from '@/content/registry';
 import { BAL } from '@/content/balance';
 import { QUEST_IDS, type QuestId } from '@/content/quests';
-import { planDef, researchNode, treePrereq } from '@/content/research';
+import { PLAN_IDS, planDef, researchNode, treePrereq } from '@/content/research';
 import { CIRQUE, COS64, SIN64, WORLD_SEED } from '@/content/world';
 import { CENTER, DAY_EPOCHS, EPOCH, PERMILLE, SOLAR } from './constants';
 import { besideRoutingBlock, branch, join, keepOff, lay, layFrom, learnPlans, placeFed, placeFeeding, powerLine, routeOver, sideGoals, spotsNear, type BeltTiles, type Feed } from './dev';
@@ -115,7 +115,7 @@ export function buildScenario(sim: Sim, id: ScenarioId, name: string): ScenarioR
   if (upTo >= 3) tradeSpot(b); // the trade post's place by the Heart, taken before the lines ring it
   if (upTo >= 1) { firstStrike(b); ribbonLines(b); }
   if (upTo >= 2) { bloomKiln(b); firstWind(b); glassworks(b); }
-  if (upTo >= 3) { fieldJournal(b); crierCalls(b); tiredVein(b); firstPurchase(b); beyondCrown(b); morePower(b); postLine(b); tradeLine(b); }
+  if (upTo >= 3) { crierCalls(b); tiredVein(b); firstPurchase(b); beyondCrown(b); fieldJournal(b); morePower(b); postLine(b); tradeLine(b); }
   if (upTo >= 4) grown(b);
   if (upTo >= 5) late(b);
   if (upTo >= 2) powerUp(b, id === 'late' ? LATE_TURBINES : undefined, id === 'late' ? LATE_POWER_MARGIN : undefined);
@@ -474,9 +474,9 @@ function bloomKiln(b: Builder): void {
   b.until('bloom_kiln');
 }
 
-/** 4 · two wind turbines on the quiet side, wired; a data collector by the Heart, wired (D68). */
+/** 4 · two wind turbines on the quiet side, wired. */
 function firstWind(b: Builder): void {
-  b.plan('wind_flower', 'data_collector');
+  b.plan('wind_flower');
   // Where the levels have always planted them, on the floor: they give little now (D44), but moving
   // them reshapes every line laid after and leaves the later levels no room to branch. The base's
   // wind comes from the Crown (`morePower`, `powerUp`).
@@ -484,10 +484,6 @@ function firstWind(b: Builder): void {
   b.put('wind1', 'wind_flower', spot, { r: 8 });
   b.put('wind2', 'wind_flower', spot, { r: 8 });
   b.wire('wind1', 'wind2');
-  // The data collector stands anywhere (power alone): where the levels' workshop stood, by the plate
-  // line (its wire then shares a pole, and the Heart keeps a wire for the Crown's turbines).
-  b.put('collector', 'data_collector', b.middle('plates'), { r: 10 });
-  b.wireByPole('collector');
   b.until('first_wind');
 }
 
@@ -503,9 +499,15 @@ function glassworks(b: Builder): void {
   b.until('glassworks');
 }
 
-/** 6 · data files: the research lab by the data collector, fed by a ribbon from it; Mechanics starts (its tokens paid by the minute, D68). */
+/**
+ * 10 · Survey Data: every plan left, then the research lab's (the gate, D71); a data collector by
+ * the plate line (power alone: it stands anywhere; its wire shares a pole), the lab by it, fed by
+ * a ribbon from it; Mechanics starts (its tokens paid by the minute, D68).
+ */
 function fieldJournal(b: Builder): void {
-  b.plan('observatory');
+  b.plan(...PLAN_IDS.filter((id) => planDef(id)!.lane !== 'gate'), 'observatory');
+  b.put('collector', 'data_collector', b.middle('plates'), { r: 10 });
+  b.wireByPole('collector');
   if (!dataLine(b) && !(b.junctions() && dataLine(b))) b.skip('observatory');
   b.wireByPole('observatory');
   if (b.ids.observatory && !b.sim.startResearch('tr1').ok) b.skip('research:tr1');

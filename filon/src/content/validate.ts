@@ -49,6 +49,33 @@ export function reachableItems(): Set<string> {
   return have;
 }
 
+/**
+ * The items a base can make knowing these tree nodes (and the starting kit): what comes from the
+ * land — but for what a building makes from power alone (the data collectors), which needs that
+ * building — and the outputs of the recipes known, run by a machine known, from inputs it can make.
+ */
+export function makeableWith(known: ReadonlySet<string>): Set<string> {
+  const has = (unlock: string): boolean => unlock === 'start' || known.has(unlock);
+  const fromPower = new Map<string, boolean>();
+  for (const [, b] of buildings) if (b.drill?.anywhere) fromPower.set(b.drill.anywhere, (fromPower.get(b.drill.anywhere) ?? false) || has(b.unlock));
+  const have = new Set(RAW.filter((it) => fromPower.get(it) ?? true));
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const [, r] of recipes) {
+      if (!has(r.unlock) || !r.machines.some((m) => has((BUILDINGS as Record<string, BuildingDef>)[m]!.unlock))) continue;
+      if (!r.ins.every(([it]) => have.has(it))) continue;
+      for (const [o] of r.outs) if (!have.has(o)) { have.add(o); changed = true; }
+    }
+  }
+  return have;
+}
+
+/** Every tree node a node needs, its prerequisites' prerequisites included. */
+export function ancestors(id: string, out = new Set<string>()): Set<string> {
+  for (const p of treePrereq(id)) if (!out.has(p)) { out.add(p); ancestors(p, out); }
+  return out;
+}
+
 /** Tree nodes (plans and research) reachable from the start: their prerequisites all reachable. */
 export function reachableNodes(): Set<string> {
   const learnt = new Set<string>();
@@ -189,6 +216,17 @@ export function validateContent(): string[] {
   for (const it of items) if (!reach.has(it)) errs.push(`item ${it}: cannot be produced`);
   for (const [id, r] of research) for (const [it] of r.cost) if (!reach.has(it)) errs.push(`research ${id}: ${it} cannot be produced`);
   for (const [id, p] of plans) for (const [it] of p.cost) if (!reach.has(it)) errs.push(`plan ${id}: ${it} cannot be produced`);
+  // …and in time (D71): a plan only costs what the plans alone let a base make — every plan is
+  // taken before the research lab's, and nothing research brings can be in hand by then; a
+  // research node only costs what its prerequisites and the plans let a base make (Tier 2's
+  // Mechanics Data needs the test bench Mechanics brings; Atlas Lore cannot ask for atlases).
+  const planIds = new Set(plans.map(([id]) => id));
+  const withPlans = makeableWith(planIds);
+  for (const [id, p] of plans) for (const [it] of p.cost) if (reach.has(it) && !withPlans.has(it)) errs.push(`plan ${id}: ${it} cannot be made with the plans alone`);
+  for (const [id, r] of research) {
+    const known = makeableWith(new Set([...planIds, ...ancestors(id)]));
+    for (const [it] of r.cost) if (reach.has(it) && !known.has(it)) errs.push(`research ${id}: ${it} cannot be made before it (its prerequisites and the plans)`);
+  }
 
   // Machines are specialised (D70); research nodes unlock things (D70); the tree's shape (D69).
   for (const [b, rs] of recipesPerMachine()) if (rs.length > MAX_RECIPES) errs.push(`machine ${b}: ${rs.length} recipes (${rs.join(', ')}), at most ${MAX_RECIPES}`);

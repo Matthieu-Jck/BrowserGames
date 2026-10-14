@@ -21,13 +21,13 @@ const build = (id: ScenarioId, seed: number) => {
 };
 
 /** The quest each level leaves current (null: the tutorial is over). */
-const AT: Record<ScenarioId, string | null> = { claim: 'first_strike', smelter: 'bloom_kiln', survey: 'field_journal', tutorial: null, grown: null, late: null };
+const AT: Record<ScenarioId, string | null> = { claim: 'first_strike', smelter: 'bloom_kiln', survey: 'crier_calls', tutorial: null, grown: null, late: null };
 
 /** The roles each level must have built (positions are never pinned: they come from the map). */
 const BUILT: Record<ScenarioId, readonly string[]> = {
   claim: [],
   smelter: ['iron1', 'iron2'],
-  survey: ['iron1', 'iron2', 'kiln1', 'coal', 'wind1', 'wind2', 'collector', 'kiln2', 'sand1', 'sand2'],
+  survey: ['iron1', 'iron2', 'kiln1', 'coal', 'wind1', 'wind2', 'kiln2', 'sand1', 'sand2'],
   tutorial: ['post', 'kiln1', 'kiln2', 'collector', 'observatory', 'mill', 'copper', 'beacon', 'wind3', 'wind4'],
   grown: ['post', 'kiln1', 'kiln2', 'collector', 'observatory', 'mill', 'copper'],
   // The late base's works (scenario-late.ts): the potteries on the tarn's peak, the Fabrique on
@@ -88,7 +88,7 @@ describe('debug bases (scenarios)', () => {
       expect(report.granted, `${id}: nothing outside the commands`).toEqual([]);
       if (id === 'tutorial') {
         // The whole factory runs: plates, glass, data files, copper wire all made.
-        for (const it of ['iron_plate', 'glass', 'data_file', 'copper_wire']) expect(sim.produced[itemIdx(it)], it).toBeGreaterThan(0);
+        for (const it of ['iron_plate', 'glass', 'journal_1', 'copper_wire']) expect(sim.produced[itemIdx(it)], it).toBeGreaterThan(0);
         expect(sim.done.has('tr1') || sim.projects.some((p) => p.id === 'tr1'), 'Mechanics learnt or under way').toBe(true);
       }
       if (id === 'grown') {
@@ -119,7 +119,7 @@ describe('debug bases (scenarios)', () => {
         // The late base's chains run over the day (D66): the Fabrique's wire, circuits, gears, speed
         // modules and data files, the potteries' ceramic, the thermal cores where embersalt comes.
         const made = (it: string): number => sim.produced[itemIdx(it)]! - produced0[itemIdx(it)]!;
-        for (const it of ['copper_wire', 'circuit', 'gear', 'pace_bell', 'data_file', 'ceramic', ...(report.ids.cores ? ['thermal_core'] : [])]) expect(made(it), `late: ${it} made over a day`).toBeGreaterThan(0);
+        for (const it of ['copper_wire', 'circuit', 'gear', 'pace_bell', 'journal_1', 'ceramic', ...(report.ids.cores ? ['thermal_core'] : [])]) expect(made(it), `late: ${it} made over a day`).toBeGreaterThan(0);
         // Far more than its way: its sales of what it makes, after what it buys.
         expect(sim.credits - credits0, 'late: ocelles earned over a day').toBeGreaterThan(100_000);
       }

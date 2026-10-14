@@ -6,7 +6,7 @@
 //     `PLAN_PATHS`), each growing from one entry. Unlocking one is the `unlockPlan` command
 //     (src/sim/systems/research.ts).
 //   · RESEARCH (D69): the tree's advanced part, run by research labs over a minimum time and paid
-//     as it runs in data files (items, by ribbon) and AI tokens (D68: bought by the minute, the
+//     as it runs in data (items, by ribbon: `SCIENCE`, one more kind each tier) and AI tokens (D68: bought by the minute, the
 //     claim's own servers first). It reads in four tiers. The trunk (the Foundations) opens each
 //     tier; six families grow beside it, each named anew at every tier (Commerce: Exchange, then
 //     Finance, then Market Economy) and most splitting in two specialities at Tier 3 (Precision
@@ -169,16 +169,16 @@ export const RESEARCH = {
   cmK: node('cm', undefined, 9, 'cm_rent', ['La Maison de Criée', 'The Crier House'], ['Un troisième comptoir.', 'A third trade post.'], [flag('post3')]),
 
   // ── Analytics: Analytics → Data → Computing | Data Mining ────────────────
-  an_data: node('an', undefined, 1, null, ['Traitement des données', 'Data Processing'], ['Le Cœur traite l’activité de la base : 1 fichier de données par minute, par sa sortie de données.', 'The Core processes the base’s activity: 1 data file a minute, out of its data outlet.'], [add('heartData', 1000)]),
-  an_relay: node('an', undefined, 2, 'an_data', ['Relais de données', 'Data Relay'], ['Débloque le Relais de données : 6 fichiers par minute.', 'Unlocks the Data Relay: 6 files a minute.']),
+  an_data: node('an', undefined, 1, null, ['Traitement des données', 'Data Processing'], ['Le Cœur traite l’activité de la base : 1 donnée d’arpentage par minute, par sa sortie de données.', 'The Core processes the base’s activity: 1 Survey Data a minute, out of its data outlet.'], [add('heartData', 1000)]),
+  an_relay: node('an', undefined, 2, 'an_data', ['Relais de données', 'Data Relay'], ['Débloque le Relais de données : 6 données d’arpentage par minute.', 'Unlocks the Data Relay: 6 Survey Data a minute.']),
   an_servers: node('an', undefined, 3, 'an_relay', ['Salle des serveurs', 'Server Room'], ['Débloque le Serveur : tes propres tokens d’IA, de l’électricité.', 'Unlocks the Server: your own AI tokens, from power.']),
   an_queue: node('an', undefined, 4, 'an_servers', ['File de recherche', 'Research Queue'], ['Chaque laboratoire enchaîne la recherche que tu lui as préparée.', 'Each lab moves on to the research you queued for it.'], [flag('researchQueue')]),
   an_cooled: node('an', 'c', 5, 'an_queue', ['Serveur refroidi', 'Cooled Server'], ['Débloque le Serveur refroidi : 6 000 tokens par minute.', 'Unlocks the Cooled Server: 6,000 tokens a minute.']),
   an_slot: node('an', 'c', 6, 'an_cooled', ['Calcul partagé', 'Shared Computing'], ['Un emplacement de recherche de plus.', 'One more research slot.'], [{ k: 'slots', add: 1 }]),
   an_super: node('an', 'c', 9, 'an_slot', ['Supercalculateur', 'Supercomputer'], ['Débloque le Supercalculateur : 20 000 tokens par minute.', 'Unlocks the Supercomputer: 20,000 tokens a minute.']),
-  an_mining: node('an', 'm', 5, 'an_queue', ['Fouille de données', 'Data Mining'], ['Le Cœur produit 2 fichiers de données de plus par minute.', 'The Core makes 2 more data files a minute.'], [add('heartData', 2000)]),
+  an_mining: node('an', 'm', 5, 'an_queue', ['Fouille de données', 'Data Mining'], ['Le Cœur produit 2 données d’arpentage de plus par minute.', 'The Core makes 2 more Survey Data a minute.'], [add('heartData', 2000)]),
   an_forecast: node('an', 'm', 6, 'an_mining', ['Prévision des cours', 'Price Forecast'], ['La Criée montre où va chaque cours dans l’heure.', 'The Crier shows where each price is heading within the hour.'], [flag('forecast')]),
-  an_autolab: node('an', 'm', 9, 'an_forecast', ['Laboratoire autonome', 'Autonomous Lab'], ['Débloque le Laboratoire autonome : 3 fichiers par minute, sur place.', 'Unlocks the Autonomous Lab: 3 files a minute, on site.']),
+  an_autolab: node('an', 'm', 9, 'an_forecast', ['Laboratoire autonome', 'Autonomous Lab'], ['Débloque le Laboratoire autonome : 3 données d’arpentage par minute, sur place.', 'Unlocks the Autonomous Lab: 3 Survey Data a minute, on site.']),
 
   // ── Expansion: Surveying → Logistics → Transport | Claims ───────────────
   xp_swift: node('xp', undefined, 1, null, ['Ruban vif', 'Swift Ribbon'], ['Débloque le Ruban vif (120/min).', 'Unlocks the Swift Ribbon (120/min).']),
@@ -352,7 +352,11 @@ export const pathEntries = (lane: PlanLane): PlanId[] =>
  */
 export function pathProblems(): string[] {
   const errs: string[] = [];
-  for (const id of PLAN_IDS) if (!PLAN_PATHS.includes(PLANS[id].lane)) errs.push(`plan ${id}: path ${PLANS[id].lane} is not in PLAN_PATHS`);
+  for (const id of PLAN_IDS) if (PLANS[id].lane !== 'gate' && !PLAN_PATHS.includes(PLANS[id].lane)) errs.push(`plan ${id}: path ${PLANS[id].lane} is not in PLAN_PATHS`);
+  // The gate (D71): one plan, the research lab's, after every plan of the paths; research hangs from it.
+  const gates = PLAN_IDS.filter((id) => PLANS[id].lane === 'gate');
+  if (gates.length !== 1 || gates[0] !== LAB_PLAN) errs.push(`the gate must be the one plan ${LAB_PLAN} (found ${gates.join(', ') || 'none'})`);
+  for (const id of PLAN_IDS) if (PLANS[id].lane !== 'gate' && !PLANS[LAB_PLAN].prereq.includes(id)) errs.push(`plan ${LAB_PLAN}: does not need ${id} (the gate needs every plan)`);
   if (new Set(PLAN_PATHS).size !== PLAN_PATHS.length) errs.push('PLAN_PATHS lists a path twice');
   for (const lane of PLAN_PATHS) {
     const mine = pathPlans(lane);

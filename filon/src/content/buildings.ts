@@ -9,7 +9,7 @@ export const BUILDINGS = {
   // ── colony ────────────────────────────────────────────────────────────────
   hearth: {
     name: { fr: 'Cœur', en: 'Core' },
-    desc: { fr: 'Le cœur de ta base : il reçoit sans jamais rendre son stock, qui paie tes constructions. Son noyau isotopique donne 90 kW jour et nuit, son panneau solaire jusqu’à 240 kW de plus en plein soleil, il tend 6 fils jusqu’à 8 tuiles et, avec la recherche Analytique, sa sortie de données donne les fichiers qu’il produit.', en: 'The heart of your base: it takes and never gives back its stock, which pays for your construction. Its isotope reactor gives 90 kW day and night, its solar panel up to 240 kW more in full sun, it holds 6 wires up to 8 tiles long and, with the Analytics research, its data outlet hands out the data files it makes.' },
+    desc: { fr: 'Le cœur de ta base : il reçoit sans jamais rendre son stock, qui paie tes constructions. Son noyau isotopique donne 90 kW jour et nuit, son panneau solaire jusqu’à 240 kW de plus en plein soleil, il tend 6 fils jusqu’à 8 tuiles et, avec la recherche Analytique, sa sortie de données donne les données d’arpentage qu’il produit.', en: 'The heart of your base: it takes and never gives back its stock, which pays for your construction. Its isotope reactor gives 90 kW day and night, its solar panel up to 240 kW more in full sun, it holds 6 wires up to 8 tiles long and, with the Analytics research, its data outlet hands out the Survey Data it makes.' },
     kind: 'hearth', category: 'colony', w: 5, h: 5, needsZone: false, cost: [], unlock: 'never',
     ports: [
       // Inputs only: the Heart takes, it never gives (owner, 2026-10-12) — machines are fed by
@@ -18,7 +18,7 @@ export const BUILDINGS = {
       P(1, 4, 'S', 'in'), P(2, 4, 'S', 'in'), P(3, 4, 'S', 'in'),
       P(4, 1, 'E', 'in'), P(4, 2, 'E', 'in'), P(4, 3, 'E', 'in'),
       P(0, 1, 'W', 'in'), P(0, 2, 'W', 'in'), P(0, 3, 'W', 'in'), // three a side, all round (owner, 2026-10-12)
-      // Its one outlet (D68): the data files it makes once the Analytics research has it process
+      // Its one outlet (D68): the Survey Data it makes once the Analytics research has it process
       // the base's activity (mods.heartData) — never its stock, which it still never gives.
       P(4, 4, 'S', 'out'),
     ],
@@ -221,7 +221,7 @@ export const BUILDINGS = {
   observatory: {
     // The Research Lab (D68); its id stays `observatory` (saves, the plan, the unlock tree).
     name: { fr: 'Laboratoire de recherche', en: 'Research Lab' },
-    desc: { fr: 'Mène une recherche à la fois. Lance-la dans l’arbre des techniques (T) et apporte au laboratoire des fichiers de données par ruban ; elle consomme aussi des tokens d’IA à mesure qu’elle avance, ceux de tes serveurs d’abord, puis ceux de CrierBelt, payés à la minute.', en: 'Runs one research project at a time. Start it in the tech tree (T) and bring the lab data files by ribbon; it also uses AI tokens as it runs, your own servers’ first, then CrierBelt’s, paid by the minute.' },
+    desc: { fr: 'Mène une recherche à la fois. Lance-la dans l’arbre des techniques (T) et apporte au laboratoire ses données par ruban (d’arpentage, puis mécaniques, atlas et codex selon le tier) ; elle consomme aussi des tokens d’IA à mesure qu’elle avance, ceux de tes serveurs d’abord, puis ceux de CrierBelt, payés à la minute.', en: 'Runs one research project at a time. Start it in the tech tree (T) and bring the lab its data by ribbon (Survey Data, then Mechanics Data, atlases and codices by tier); it also uses AI tokens as it runs, your own servers’ first, then CrierBelt’s, paid by the minute.' },
     kind: 'lab', category: 'research', w: 2, h: 2, needsZone: true, unlock: 'observatory', kw: 150, idleKw: 15,
     cost: [['iron_plate', 30], ['glass', 20], ['copper_wire', 10]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in')],
   },
@@ -314,12 +314,12 @@ export const BUILDINGS = {
     cost: [['iron_plate', 3]], ports: [P(0, 0, 'N', 'in'), P(0, 0, 'E', 'in'), P(0, 0, 'S', 'in'), P(0, 0, 'W', 'in')],
   },
   // ── appended: research (D68) and the tree's machines (D70) ──────────────
-  // Research runs on data files and AI tokens: data collectors make the files from power alone,
+  // Research runs on data and AI tokens: data collectors make Survey Data from power alone,
   // servers supply the tokens. Every research node unlocks a machine or a feature (owner,
   // 2026-10-14: not just a boost): the upgraded machines below are those unlocks.
   data_collector: {
     name: { fr: 'Collecteur de données', en: 'Data Collector' },
-    desc: { fr: 'Capte et compile des données sur la planète : 2 fichiers de données par minute, n’importe où, de l’électricité seule. Les fichiers sortent à l’avant, pour les laboratoires.', en: 'Picks up and compiles data about the planet: 2 data files a minute, anywhere, from power alone. The files leave at the front, for the labs.' },
+    desc: { fr: 'Capte et compile des données sur la planète : 2 données d’arpentage par minute, n’importe où, de l’électricité seule. Elles sortent à l’avant, pour les laboratoires.', en: 'Picks up and compiles data about the planet: 2 Survey Data a minute, anywhere, from power alone. They leave at the front, for the labs.' },
     kind: 'drill', category: 'research', w: 2, h: 2, needsZone: true, unlock: 'observatory', kw: 120, idleKw: 12,
     cost: [['iron_plate', 10], ['glass', 4], ['copper_wire', 6]], ports: [P(0, 0, 'N', 'out')], drill: { perMin: 2, anywhere: 'journal_1' },
   },
@@ -331,7 +331,7 @@ export const BUILDINGS = {
   },
   test_bench: {
     name: { fr: 'Banc d’essai', en: 'Test Bench' },
-    desc: { fr: 'Éprouve engrenages et circuits sous charge et en tire des données mécaniques : deux engrenages et deux circuits pour une. Deux entrées.', en: 'Puts gears and circuits through load tests and records Mechanics Data: two gears and two circuits each. Two inputs.' },
+    desc: { fr: 'Éprouve engrenages et circuits sous charge et en tire des données mécaniques : deux engrenages et deux circuits pour une. Deux entrées.', en: 'Puts gears and circuits through load tests and records Mechanics Data: two gears and two circuits each. Two inputs.' },
     kind: 'machine', category: 'research', w: 2, h: 2, needsZone: true, unlock: 'tr1', crafts: true, kw: 90, idleKw: 9,
     cost: [['iron_plate', 20], ['glass', 6], ['copper_wire', 8]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(1, 0, 'N', 'out')],
   },
@@ -454,7 +454,7 @@ export const BUILDINGS = {
   },
   data_relay: {
     name: { fr: 'Relais de données', en: 'Data Relay' },
-    desc: { fr: 'Un collecteur de données en grand : 6 fichiers de données par minute, n’importe où.', en: 'A data collector writ large: 6 data files a minute, anywhere.' },
+    desc: { fr: 'Un collecteur de données en grand : 6 données d’arpentage par minute, n’importe où.', en: 'A data collector writ large: 6 Survey Data a minute, anywhere.' },
     kind: 'drill', category: 'research', w: 3, h: 3, needsZone: true, unlock: 'an_relay', kw: 300, idleKw: 30,
     cost: [['circuit', 10], ['glass', 10], ['iron_plate', 30]], ports: [P(1, 0, 'N', 'out')], drill: { perMin: 6, anywhere: 'journal_1' },
   },
@@ -472,7 +472,7 @@ export const BUILDINGS = {
   },
   auto_lab: {
     name: { fr: 'Laboratoire autonome', en: 'Autonomous Lab' },
-    desc: { fr: 'Un laboratoire de recherche qui produit lui-même 3 fichiers de données par minute ; ses entrées en prennent d’autres.', en: 'A research lab that makes 3 data files a minute itself; its inputs take more.' },
+    desc: { fr: 'Un laboratoire de recherche qui produit lui-même 3 données d’arpentage par minute ; ses entrées en prennent d’autres.', en: 'A research lab that makes 3 Survey Data a minute itself; its inputs take more.' },
     kind: 'lab', category: 'research', w: 3, h: 3, needsZone: true, unlock: 'an_autolab', kw: 400, idleKw: 40,
     cost: [['circuit', 40], ['lens', 10], ['ceramic', 30]], ports: [P(0, 2, 'S', 'in'), P(2, 2, 'S', 'in')], lab: { dataPerMin: 3 },
   },

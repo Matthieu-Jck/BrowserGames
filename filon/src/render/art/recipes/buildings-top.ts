@@ -1392,6 +1392,41 @@ const R: Partial<Record<BuildingId, Recipe>> = {
     shape(ctx, head, C.violetL, { w: 1.2, seed: s + 53 });
     light(ctx, ...f.p(0.5, 1.15), f.l(0.025), C.led);
   },
+  test_bench(ctx, f, s) {
+    // The test bench from above: the vibration table's plate on its springs with the clamped
+    // board, the dynamometer — drive motor, the gear train edge-on under its coral clamp bar, the
+    // coral load drum — and the violet instrument rack, cable looms between them.
+    plinth(ctx, f, C.steel, 0.05, s, true);
+    roofTop(ctx, f, 0.16, 1.02, 1.24, 1.8, 0.4, C.steelD, s + 1);
+    roofTop(ctx, f, 0.2, 1.06, 1.18, 1.76, 0.67, C.steelL, s + 2);
+    shape(ctx, rr(f, 0.22, 1.66, 1.16, 1.74, 0.005), C.hazard, { w: 0.8, shade: false, jitter: 0, seed: s + 3 });
+    shape(ctx, rr(f, 0.4, 1.18, 0.98, 1.64, 0.01), PCB, { w: 1, shade: false, jitter: 0, seed: s + 4 });
+    for (let k = 0; k < 4; k++) ink(ctx, [f.p(0.46, 1.25 + k * 0.1), f.p(0.8, 1.25 + k * 0.1), f.p(0.86, 1.29 + k * 0.1)], { w: 0.9, color: C.brassL, alpha: 0.9, shade: false, taper: 0, jitter: 0, seed: s + 5 + k });
+    shape(ctx, rr(f, 0.5, 1.3, 0.66, 1.44, 0.005), C.steelDD, { w: 0.8, shade: false, jitter: 0, seed: s + 9 });
+    for (const x of [0.36, 1.02]) shape(ctx, rr(f, x - 0.05, 1.14, x + 0.05, 1.68, 0.01), C.steelDD, { w: 1, shade: false, jitter: 0, seed: s + 10 + x });
+    roofTop(ctx, f, 0.12, 0.22, 1.36, 0.7, 0.55, C.steelD, s + 12);
+    shape(ctx, rr(f, 0.14, 0.62, 1.34, 0.68, 0.005), C.hazard, { w: 0.8, shade: false, jitter: 0, seed: s + 13 });
+    roofTop(ctx, f, 0.14, 0.28, 0.4, 0.64, 1.3, C.teal, s + 14);
+    grille(ctx, rr(f, 0.18, 0.32, 0.36, 0.5, 0.01), 3, s + 15);
+    for (const [i, [x, r, col]] of ([[0.72, 0.27, C.brass], [1.05, 0.13, C.steelL], [1.26, 0.11, C.brassL]] as const).entries()) {
+      const g = rr(f, x - r, 0.39, x + r, 0.53, 0.01);
+      dropShadow(ctx, f, g, 1.5, 0.22);
+      shape(ctx, g, col, { w: 1.1, shade: false, jitter: 0, seed: s + 16 + i });
+      const n = Math.round(r * 40);
+      for (let k = 1; k < n; k++) { const tx = x - r + (2 * r * k) / n; ink(ctx, [f.p(tx, 0.39), f.p(tx, 0.53)], { w: 0.7, color: C.ink, alpha: 0.6, shade: false, taper: 0, jitter: 0, seed: s + 20 + k }); }
+      pipe(ctx, [f.p(x, 0.32), f.p(x, 0.6)], f.l(0.03), C.steelD, s + 26 + i, false);
+    }
+    const bar = rr(f, 0.37, 0.435, 1.47, 0.485, 0.005);
+    dropShadow(ctx, f, bar, 2.1, 0.22);
+    shape(ctx, bar, C.coral, { w: 1.3, seed: s + 29 });
+    for (const x of [0.42, 1.42]) rivet(ctx, ...f.p(x, 0.46), f.l(0.022), C.brassL);
+    roofTop(ctx, f, 1.44, 0.24, 1.82, 0.6, 0.62, C.steelD, s + 30);
+    drumTop(ctx, rr(f, 1.5, 0.24, 1.78, 0.64, 0.06), (f.rot & 1) === 0 ? 'x' : 'y', C.coral, s + 33, 1, f.l(0.12));
+    roofTop(ctx, f, 1.48, 0.66, 1.82, 0.94, 0.72, C.steelD, s + 38);
+    light(ctx, ...f.p(1.65, 0.8), f.l(0.025), C.ledWarm);
+    cabinetTop(ctx, f, 1.44, 1.02, 1.86, 1.8, 1.25, C.violet, s + 40);
+    for (const [k, [a, b, col]] of ([[[1.44, 1.3], [1.18, 1.4], C.teal], [[1.44, 1.42], [1.18, 1.52], C.steelDD], [[1.5, 0.8], [1.42, 0.5], C.coral]] as const).entries()) cable(ctx, f.p(a[0], a[1]), f.p(b[0], b[1]), f.l(0.03), 0.12, col, s + 50 + k);
+  },
   data_collector(ctx, f, s) {
     // A data-gathering antenna from above: the geared turntable under its tilted array panel,
     // the receiver cabinet with its LEDs, the cartridge stacker by the outlet.
