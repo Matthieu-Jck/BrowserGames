@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { reachableItems, reachableNodes, rootPlans, startBuildings, tiredVeinPerMin, uniquesNeeded, validateContent, wirePerMechanicsWorkshop } from './validate';
+import { reachableItems, reachableNodes, rootPlans, startBuildings, tiredVeinPerMin, uniquesNeeded, validateContent, wirePerElectronicsWorkshop } from './validate';
 import { ITEMS } from './items';
 import { RECIPES } from './recipes';
 import { BAL } from './balance';
@@ -21,7 +21,7 @@ describe('content invariants', () => {
   it('the tired vein cannot feed a single mechanics workshop: copper must be imported', () => {
     expect(tiredVeinPerMin()).toBeCloseTo(6.75, 6);
     expect(tiredVeinPerMin() * 2).toBeCloseTo(13.5, 6);
-    expect(wirePerMechanicsWorkshop()).toBe(18);
+    expect(wirePerElectronicsWorkshop()).toBe(30);
   });
 
   it('an atlas needs two different uniques, a codex five', () => {

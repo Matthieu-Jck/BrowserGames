@@ -55,6 +55,8 @@ export class Land {
   readonly granted = new Set<number>();
   /** Parcels leased, by parcel. Saved. */
   readonly leases = new Map<number, Lease>();
+  /** What each bought parcel cost (centi-ocelles): Parcel Resale (xp_resell) gives a share back. Saved. */
+  readonly paid = new Map<number, number>();
 
   constructor(crownReach: number, private readonly seed: number) {
     this.reach = Math.ceil(Math.max(0, crownReach - HALF) / PARCEL);
@@ -65,6 +67,13 @@ export class Land {
 
   /** Does the claim hold the parcel (its grant, bought or leased)? */
   holds(p: number): boolean { return this.inStart(p) || this.bought.has(p) || this.granted.has(p) || this.leases.has(p); }
+
+  /** Does the parcel touch the claim's land, side by side (a purchase grows the claim outward, unless Far Claim)? */
+  touches(p: number): boolean {
+    const col = p % PARCEL_COLS, row = (p - col) / PARCEL_COLS;
+    return (col > 0 && this.holds(p - 1)) || (col < PARCEL_COLS - 1 && this.holds(p + 1))
+      || (row > 0 && this.holds(p - PARCEL_COLS)) || (row < PARCEL_COLS - 1 && this.holds(p + PARCEL_COLS));
+  }
 
   /** Is the tile on the claim's land? */
   covers(x: number, y: number): boolean {

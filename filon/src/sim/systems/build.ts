@@ -141,7 +141,7 @@ export function canPlace(sim: Sim, defId: string, x: number, y: number, rot: Rot
     }
   }
   // A drill wants a deposit; a ground collector bare sand under every tile (sand is the floor).
-  if (b.kind === 'drill' && (b.drill?.ground ? !bare : !deposit)) return fail(b.drill?.ground ? 'needs_sand' : 'needs_deposit');
+  if (b.kind === 'drill' && !b.drill?.anywhere && (b.drill?.ground ? !bare : !deposit)) return fail(b.drill?.ground ? 'needs_sand' : 'needs_deposit');
   if (b.kind === 'pump' && !water && !touchesWater(sim, x, y, w, h, level)) return fail('needs_water');
   if (b.kind === 'geothermal' && !vent) return fail('needs_vent');
   // On the mountains, the whole footprint or none of it (no building astride a cliff, D44).
@@ -150,7 +150,7 @@ export function canPlace(sim: Sim, defId: string, x: number, y: number, rot: Rot
   // infrastructure may cross other land, by kite and at the remote cost — never a sister claim's.
   const inZone = sim.land.coversFootprint(def, x, y, rot);
   if (b.needsZone && !inZone) return fail('outside_zone');
-  if (!inZone && onSisterLand(sim, def, x, y, rot)) return fail('sister_land');
+  if (!inZone && !sim.mods.flags.has('sisterCrossing') && onSisterLand(sim, def, x, y, rot)) return fail('sister_land');
   let cost = costOf(def);
   if (isBelt && !inZone) {
     const mult = Math.floor((BAL.remoteBeltCostMult * sim.mods.remoteBeltCost) / 1000) || 1;

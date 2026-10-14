@@ -1,16 +1,18 @@
 // modifiers.ts — the modifier table compiled from the unlock tree's completed nodes (D33): the
-// plans' effects first (a feature such as telemetry), in plan order, then research (+ branch
-// mastery) in research-id order, with an integer floor after each step, so every engine computes
-// the same values. Multipliers are permille; "add" values are plain integers.
+// plans' effects first (a feature such as telemetry), in plan order, then research in research-id
+// order, with an integer floor after each step, so every engine computes the same values.
+// Multipliers are permille; "add" values are plain integers. Specialising pays in the research's
+// own costs and durations (runtime.ts `penalty`), never as a hidden output bonus: the tree unlocks
+// machines and features, not boosts (D69, D70).
 import { BAL } from '@/content/balance';
-import { PLAN_IDS, PLANS, RESEARCH, BRANCH_CORE, type ResearchId } from '@/content/research';
+import { PLAN_IDS, PLANS, RESEARCH, type ResearchId } from '@/content/research';
 import { RESEARCH_IDS } from '@/content/registry';
 import type { Effect, ModTarget, PlanDef, ResearchDef } from '@/content/types';
 
 export type Mods = Record<ModTarget, number> & { flags: ReadonlySet<string>; slots: number };
 
 const ADDITIVE: ReadonlySet<ModTarget> = new Set<ModTarget>([
-  'landGrowth', 'pylonLink', 'dockShips', 'bridgeSpan', 'orders', 'tradeFee', 'solarNight',
+  'landGrowth', 'pylonLink', 'dockShips', 'bridgeSpan', 'orders', 'tradeFee', 'solarNight', 'heartData',
 ]);
 
 export function baseMods(): Mods {
@@ -19,7 +21,7 @@ export function baseMods(): Mods {
     'digSpeed', 'rubbleYield', 'embeddedOre', 'windOut', 'solarOut', 'solarNight', 'geoOut', 'accCap', 'accRate',
     'genOut', 'craftSpeed', 'tradeFee', 'deliveryDelay', 'slippage', 'landPrice', 'landRent', 'landGrowth', 'farLand',
     'remoteBeltCost', 'remoteBuildDelay', 'pylonLink', 'dockShips', 'shipCap', 'shipSpeed', 'ring3Caps',
-    'bridgeSpan', 'orders', 'excavatedSpeed', 'gustVariance', 'drifterDistance',
+    'bridgeSpan', 'orders', 'excavatedSpeed', 'gustVariance', 'drifterDistance', 'heartData',
   ];
   for (const t of targets) m[t] = ADDITIVE.has(t) ? 0 : 1000;
   m.tradeFee = BAL.tradeFee; // nothing lowers it (D64)
@@ -32,7 +34,6 @@ export function computeMods(done: ReadonlySet<string>): Mods {
   const m = baseMods() as Mods & Record<string, number>;
   const flags = new Set<string>();
   let slots = 1;
-  const perBranch: Record<string, number> = { ex: 0, xp: 0, dn: 0, en: 0, cm: 0 };
   const apply = (effects: readonly Effect[]): void => {
     for (const ef of effects) {
       switch (ef.k) {
@@ -47,18 +48,7 @@ export function computeMods(done: ReadonlySet<string>): Mods {
   for (const id of PLAN_IDS) if (done.has(id)) apply((PLANS[id] as PlanDef).effects ?? []);
   for (const id of RESEARCH_IDS) {
     if (!done.has(id)) continue;
-    const r = RESEARCH[id as ResearchId] as ResearchDef;
-    if (r.branch !== 'trunk') perBranch[r.branch] = (perBranch[r.branch] ?? 0) + 1;
-    apply(r.effects);
-  }
-  // Mastery: Initiate (3 nodes) / Master (6 nodes) boost the branch's core stat.
-  for (const [b, n] of Object.entries(perBranch)) {
-    const t = BRANCH_CORE[b as keyof typeof BRANCH_CORE];
-    const bonus = n >= 6 ? BAL.masterBonus : n >= 3 ? BAL.initiateBonus : 0;
-    if (!bonus) continue;
-    // Slippage is a cost: mastery lowers it.
-    const f = t === 'slippage' ? 1000 - bonus : 1000 + bonus;
-    m[t] = Math.floor((m[t]! * f) / 1000);
+    apply((RESEARCH[id as ResearchId] as ResearchDef).effects);
   }
   return Object.assign(m, { flags, slots });
 }

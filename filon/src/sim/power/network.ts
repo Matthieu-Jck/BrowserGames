@@ -20,7 +20,7 @@ export interface Producer {
   kind: 'wind' | 'solar' | 'geo' | 'hearth';
   /** Base output (kW) before weather. */
   kw: number;
-  /** Local wind factor ‰ (wind only). */
+  /** Local wind factor ‰ (wind); for a solar plant, what it still gives at night, ‰ of its peak (its stored heat, D70). */
   local: number;
   /** Steady output on top of the weather-bound part (kW): the Hearth's isotope core. */
   base?: number;
@@ -140,7 +140,7 @@ export function producerKw(p: Producer, w: Weather): number {
     case 'hearth':
       return solarKw(p.kw, w) + (p.base ?? 0);
     case 'solar':
-      return solarKw(p.kw, w);
+      return mulDiv(p.kw, Math.max(w.sun, p.local), 1000);
     case 'wind':
       return windKw(p.kw, p.local, w);
   }

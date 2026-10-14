@@ -1,41 +1,58 @@
 import { describe, it, expect } from 'vitest';
 import { itemIdx } from '@/content/registry';
-import { testSim, stockedSilo, wire } from '../testkit';
+import { DEPTH_COST } from '@/content/research';
+import { testSim, stockedSilo, steadyPower, wire } from '../testkit';
 import { effectiveCost } from './runtime';
 import { serialize, deserialize } from '../serialize';
 import { catchUp } from '../offline/catchup';
 import { replay } from '../commands';
 import type { Sim } from '../state';
 
-const J1 = (): number => itemIdx('journal_1');
+const DF = (): number => itemIdx('data_file');
 
-/** An observatory beside the Hearth (inside its zone, wired to it), store pre-filled. */
-function labSim(journals: number): { sim: Sim; lab: number } {
+/** A research lab beside the Heart (on the claim's land, wired to it), its store pre-filled with data files. */
+function labSim(files: number): { sim: Sim; lab: number } {
   const sim = testSim();
   const r = sim.place('observatory', 503, 512, 0);
   if (!r.ok) throw new Error(`observatory: ${r.reason}`);
   wire(sim, r.id!);
   sim.ensureCompiled();
-  sim.stores.get(r.id!)![J1()] = journals * 1000;
+  sim.stores.get(r.id!)![DF()] = files * 1000;
   return { sim, lab: r.id! };
 }
 
-describe('research', () => {
-  it('the en7 example: a specialist pays 114 atlases and 16 codex in 10.2 h, a generalist 224 and 30 in 14.28 h', () => {
-    const spec = new Set(['en1', 'en2', 'en3', 'en4', 'en5', 'en6']);
-    const a = effectiveCost('en7', spec);
-    expect(a.cost.map((c) => c.mu / 1000)).toEqual([114, 16]);
-    expect(a.ticks).toBe(10.2 * 3600 * 10);
-    const gen = new Set([...spec, 'ex1', 'ex2', 'xp1', 'xp2', 'dn1', 'dn2', 'cm1', 'cm2']);
-    const b = effectiveCost('en7', gen);
-    expect(b.cost.map((c) => c.mu / 1000)).toEqual([224, 30]);
-    expect(b.ticks).toBe(14.28 * 3600 * 10);
+/** Research nodes granted outside commands (such a colony is not replayed), like `steadyPower`'s. */
+function learn(sim: Sim, ...ids: string[]): void {
+  for (const id of ids) sim.done.add(id);
+  sim.rebuildDerived();
+}
+
+describe('research (D68, D69): data files, AI tokens, tiers', () => {
+  it('a node costs more for each node owned elsewhere — more so the higher its tier — and the sibling speciality counts as elsewhere', () => {
+    // A power specialist: the Energy family's shared lineage, then Renewables.
+    const spec = new Set(['tr1', 'tr6', 'en_pitch', 'en2', 'en_heavyacc', 'en4', 'en_solarfarm']);
+    // Its own lineage: 5 nodes, nothing elsewhere: −20 %.
+    const a = effectiveCost('en_bigwind', spec);
+    expect(a.tokens).toBe(960_000);
+    expect(a.cost.map((c) => c.mu / 1000)).toEqual([1536]);
+    // Power Plants, the sibling speciality: Solar Farm now counts as elsewhere (+25 % at Tier 3), 4 shared nodes −16 %.
+    const b = effectiveCost('en5', spec);
+    expect(b.tokens).toBe(630_000);
+    expect(b.cost.map((c) => c.mu / 1000)).toEqual([1008]);
+    // Two Extraction nodes: a Tier 1 node elsewhere pays +5 % a node, a Tier 4 node +50 %.
+    const gen = new Set([...spec, 'ex_sifter', 'ex3']);
+    expect(effectiveCost('dn3', gen).tokens).toBe(13_500); // 7 nodes elsewhere: +35 %
+    const t4 = effectiveCost('en_tower', gen);
+    expect(t4.tokens).toBe(9_600_000); // (1 + 2 × 0.5) × (1 − 5 × 0.04)
+    expect(t4.ticks).toBe(1440 * 600 * 1.4); // +20 % a node elsewhere at Tier 4
     // The trunk escapes the spreading penalty.
-    expect(effectiveCost('tr6', gen).cost.map((c) => c.mu / 1000)).toEqual([150]);
+    expect(effectiveCost('tr2', gen).tokens).toBe(15_000);
+    expect(DEPTH_COST[9]!.tokens).toBe(6_000_000);
   });
 
-  it('cannot finish before its minimum duration, even with science to spare', () => {
-    const { sim } = labSim(100);
+  it('cannot finish before its minimum duration; it uses its data files and, by the minute, its tokens', () => {
+    const { sim, lab } = labSim(100);
+    const credits = sim.credits;
     expect(sim.startResearch('tr1').ok).toBe(true);
     const dur = sim.projects[0]!.dur;
     expect(dur).toBe(3000);
@@ -43,58 +60,131 @@ describe('research', () => {
     expect(sim.done.has('tr1')).toBe(false);
     sim.run(1);
     expect(sim.done.has('tr1')).toBe(true);
-    expect(sim.stores.get(sim.ents.sorted().find((e) => e.def !== 0 && sim.projects.length === 0 && e.x === 503)!.id)![J1()]).toBe(70_000);
+    expect(sim.stores.get(lab)![DF()]).toBe(80_000);
+    // 8 000 tokens at CrierBelt's 10 ◉ the thousand, billed minute by minute: 80 ◉.
+    expect(sim.tokenStats.totalBought).toBe(8000);
+    expect(credits - sim.credits).toBe(8000);
   });
 
-  it('takes longer when science runs short, and resumes as it arrives', () => {
+  it('takes longer when data runs short, and resumes as it arrives', () => {
     const { sim, lab } = labSim(10);
     sim.startResearch('tr1');
     sim.run(3500);
     expect(sim.done.has('tr1')).toBe(false);
     expect(sim.projects[0]!.paid[0]).toBe(10_000);
-    sim.stores.get(lab)![J1()] = 20_000;
+    sim.stores.get(lab)![DF()] = 20_000;
     sim.run(1);
     expect(sim.done.has('tr1')).toBe(true);
   });
 
-  it('starts only with its prerequisites, a free slot and an idle observatory', () => {
+  it('starts only with its prerequisites, a free slot, an idle lab and a purse out of the red', () => {
     const { sim } = labSim(0);
     expect(sim.researchBlock('tr2')).toBe('prereq');
     expect(sim.startResearch('tr1').ok).toBe(true);
     expect(sim.researchBlock('tr1')).toBe('active');
-    sim.done.add('tr1');
-    sim.rebuildDerived();
+    learn(sim, 'tr1');
     expect(sim.researchBlock('tr2')).toBe('slots');
-    // A second desk and a second observatory allow two at once.
-    for (const id of ['tr3', 'tr4', 'tr5']) sim.done.add(id);
-    sim.rebuildDerived();
+    learn(sim, 'tr3', 'tr4', 'tr5');
     expect(sim.mods.slots).toBe(2);
     expect(sim.researchBlock('tr2')).toBe('no_lab');
     expect(sim.place('observatory', 503, 515, 0).ok).toBe(true);
+    sim.credits = -1;
+    expect(sim.researchBlock('tr2')).toBe('debt');
+    sim.credits = 100;
     expect(sim.startResearch('tr2').ok).toBe(true);
     expect(sim.projects.map((p) => p.id)).toEqual(['tr1', 'tr2']);
   });
 
-  it('cancelling returns the science already paid', () => {
-    const { sim } = labSim(100);
+  it('cancelling leaves the data already paid in the lab; the tokens used are spent', () => {
+    const { sim, lab } = labSim(100);
     sim.startResearch('tr1');
     sim.run(1500);
-    const paid = sim.projects[0]!.paid[0]!;
-    expect(paid).toBe(15_000);
-    const before = sim.stock[J1()]!;
+    expect(sim.projects[0]!.paid[0]).toBe(10_000);
     expect(sim.cancelResearch('tr1')).toBe(true);
-    expect(sim.stock[J1()]! - before).toBe(paid);
+    expect(sim.stores.get(lab)![DF()]).toBe(100_000);
+    sim.run(600);
+    expect(sim.tokenStats.totalBought).toBe(4000);
   });
 
-  it('the offline catch-up completes the same research as ticking, fed by ribbon', () => {
+  it('a purse in the red holds research until it is back above zero', () => {
+    const { sim } = labSim(100);
+    sim.credits = 500; // 5 ◉: less than a minute of Mechanics' tokens (1 600 a minute)
+    sim.startResearch('tr1');
+    sim.run(600 - (sim.tick % 600)); // to the boundary
+    sim.run(600);
+    expect(sim.credits).toBeLessThan(0);
+    expect(sim.researchHeld).toBe(true);
+    expect(sim.events).toContainEqual({ k: 'researchHeld', held: true });
+    const el = sim.projects[0]!.el;
+    sim.run(600);
+    expect(sim.projects[0]!.el).toBe(el); // held: no progress, no tokens
+    sim.credits += 100_000;
+    sim.run(600); // the next boundary lifts the hold
+    expect(sim.researchHeld).toBe(false);
+    sim.run(600);
+    expect(sim.projects[0]?.el ?? Infinity).toBeGreaterThan(el);
+  });
+
+  it('servers cover the tokens first; CrierBelt bills the rest; what they make and nobody uses is lost', () => {
+    const { sim } = labSim(100);
+    steadyPower(sim);
+    learn(sim, 'an_servers');
+    sim.grant('circuit', 10); sim.grant('copper_wire', 10);
+    const s = sim.place('server', 512, 503, 0);
+    expect(s.ok).toBe(true);
+    wire(sim, s.id!);
+    sim.run(600 - (sim.tick % 600));
+    sim.run(600); // a minute with no research: 2 000 tokens made, all lost
+    expect(sim.tokenStats.supply).toBe(2000);
+    expect(sim.tokenStats.used).toBe(0);
+    const credits = sim.credits;
+    sim.startResearch('tr1'); // 1 600 tokens a minute: the server covers them
+    sim.run(600 - (sim.tick % 600));
+    sim.run(600);
+    expect(sim.tokenStats.used).toBe(1600);
+    expect(sim.tokenStats.fromServers).toBe(1600);
+    expect(sim.tokenStats.bought).toBe(0);
+    expect(sim.credits).toBe(credits);
+  });
+
+  it('the Heart makes data files with Data Processing, and hands them out of its one outlet', () => {
     const sim = testSim();
-    // An observatory (wired to the Hearth) over a silo of survey data; one ribbon square between:
-    // the silo hands out (512,520) → (512,519), up into the observatory's inlet (512,518).
+    learn(sim, 'an_data');
+    const d0 = sim.stock[DF()]!;
+    sim.run(600);
+    expect(sim.stock[DF()]! - d0).toBe(1000); // a file a minute, no power needed
+    // Its outlet: the south side of its south-east corner tile (514, 514) faces (514, 515).
+    expect(sim.placeBelts('ribbon', [[514, 515, 2], [514, 516, 2], [514, 517, 2]])).toBe(3);
+    sim.run(1800);
+    expect(sim.stock[DF()]! - d0).toBeLessThan(3000); // the files leave by the ribbon
+  });
+
+  it('the Research Queue: a lab moves on to the node queued for it', () => {
+    const { sim, lab } = labSim(200);
+    learn(sim, 'an_queue');
+    expect(sim.queueResearch(lab, 'nope')).toBe(false); // a known node, not learnt yet
+    sim.startResearch('tr1');
+    expect(sim.queueResearch(lab, 'tr2')).toBe(true);
+    sim.run(3000);
+    expect(sim.done.has('tr1')).toBe(true);
+    expect(sim.projects.map((p) => p.id)).toEqual(['tr2']);
+    expect(sim.labQueue.size).toBe(0);
+  });
+
+  it('online ≈ offline: data by ribbon, the Heart’s files, servers, the minute’s bill', () => {
+    const sim = testSim();
+    steadyPower(sim);
+    learn(sim, 'an_servers', 'an_data');
+    // A lab over a silo of data files, one ribbon square between (the silo hands out north).
     const lab = sim.place('observatory', 512, 517, 0);
     expect(lab.ok).toBe(true);
     wire(sim, lab.id!);
-    stockedSilo(sim, 512, 520, 0, 'journal_1', 200);
+    stockedSilo(sim, 512, 520, 0, 'data_file', 200);
     expect(sim.placeBelts('ribbon', [[512, 519, 0]])).toBe(1);
+    sim.grant('circuit', 10); sim.grant('copper_wire', 10);
+    const s = sim.place('server', 503, 512, 0);
+    expect(s.ok).toBe(true);
+    wire(sim, s.id!);
     expect(sim.startResearch('tr1').ok).toBe(true);
     sim.run(5);
     const save = serialize(sim);
@@ -103,31 +193,32 @@ describe('research', () => {
     catchUp(b, 8000, { noDirect: true });
     expect(a.done.has('tr1')).toBe(true);
     expect(b.done.has('tr1')).toBe(true);
-    expect(Math.abs(a.consumed[J1()]! - b.consumed[J1()]!)).toBeLessThan(1000);
+    expect(b.tokenStats.totalUsed).toBe(a.tokenStats.totalUsed);
+    expect(b.tokenStats.totalBought).toBe(a.tokenStats.totalBought);
+    expect(b.credits).toBe(a.credits);
+    expect(Math.abs(a.consumed[DF()]! - b.consumed[DF()]!)).toBeLessThan(1000);
+    expect(b.stock[DF()]).toBe(a.stock[DF()]);
   });
 
-  it('reconversion: the branch goes, its buildings stand dormant, notes come back after the wait', () => {
+  it('reconversion: the family goes, its buildings stand dormant, notes come back after the wait', () => {
     const sim = testSim();
-    for (const id of ['tr1', 'en1', 'en2', 'xp1']) sim.done.add(id);
-    sim.rebuildDerived();
+    learn(sim, 'tr1', 'en_pitch', 'en2', 'xp_swift');
     sim.grant('iron_plate', 50); sim.grant('glass', 50); sim.grant('copper_wire', 50);
     const sb = sim.place('sun_bulb', 516, 504, 0);
     expect(sb.ok).toBe(true);
     expect(sim.respec('en')).toBe(true);
-    expect(sim.done.has('en1') || sim.done.has('en2')).toBe(false);
+    expect(sim.done.has('en_pitch') || sim.done.has('en2')).toBe(false);
     expect(sim.isDormant(sim.ents.get(sb.id!)!)).toBe(true);
     expect(sim.projects[0]!.id).toBe('respec:en');
-    // The reconversion holds the only slot; another one would also wait its cooldown.
-    expect(sim.researchBlock('xp2')).toBe('slots');
+    expect(sim.researchBlock('xp_bigsilo')).toBe('slots');
     expect(sim.respecBlock('xp')).toBe('cooldown');
     sim.run(sim.projects[0]!.dur);
     expect(sim.projects.length).toBe(0);
     expect(sim.notes).toBeGreaterThan(0);
-    expect(sim.respecBlock('xp')).toBe('cooldown');
-    // Notes pre-pay the next research.
+    // Notes pre-pay the next research's data files.
     expect(sim.place('observatory', 503, 512, 0).ok).toBe(true);
     const notes = sim.notes;
-    sim.startResearch('en1');
+    sim.startResearch('en_pitch');
     expect(sim.notes).toBeLessThan(notes);
     expect(sim.projects[0]!.paid[0]).toBeGreaterThan(0);
   });
@@ -154,9 +245,9 @@ describe('plans (D33): the tree’s instant unlocks, paid from the Heart', () =>
     const sim = testSim(undefined, { plans: false });
     const log = sim.log.length, stock = Float64Array.from(sim.stock);
     expect(sim.unlockPlan('nope').reason).toBe('unknown');
-    expect(sim.unlockPlan('tr1').reason).toBe('unknown'); // research starts in an observatory
+    expect(sim.unlockPlan('tr1').reason).toBe('unknown'); // research starts in a lab
     expect(sim.unlockPlan('bridge').reason).toBe('prereq'); // after the junction
-    expect(sim.unlockPlan('observatory').reason).toBe('prereq'); // after the workshop
+    expect(sim.unlockPlan('observatory').reason).toBe('prereq'); // after the data collector
     expect(sim.log.length).toBe(log);
     expect(Array.from(sim.stock)).toEqual(Array.from(stock));
     expect(sim.unlockPlan('router').ok).toBe(true);
@@ -174,13 +265,13 @@ describe('plans (D33): the tree’s instant unlocks, paid from the Heart', () =>
     expect(sim.mods.flags.has('telemetry')).toBe(true);
   });
 
-  it('research hangs from the observatory’s plan: its roots wait for it', () => {
+  it('research hangs from the lab’s plan: its roots wait for it', () => {
     const sim = testSim(undefined, { plans: false });
     sim.grant('iron_plate', 100); sim.grant('glass', 20); sim.grant('copper_wire', 20);
     expect(sim.researchBlock('tr1')).toBe('prereq');
-    expect(sim.researchBlock('ex1')).toBe('prereq');
-    for (const id of ['kiln', 'workshop', 'observatory']) expect(sim.unlockPlan(id).ok, id).toBe(true);
-    expect(sim.researchBlock('tr1')).toBe('no_lab'); // now only an observatory is missing
+    expect(sim.researchBlock('ex_sifter')).toBe('prereq');
+    for (const id of ['kiln', 'data_collector', 'observatory']) expect(sim.unlockPlan(id).ok, id).toBe(true);
+    expect(sim.researchBlock('tr1')).toBe('no_lab'); // now only a lab is missing
   });
 
   it('unlocks replay to the same state hash, and survive save → load', () => {
@@ -200,7 +291,6 @@ describe('plans (D33): the tree’s instant unlocks, paid from the Heart', () =>
     expect([...c.done].sort()).toEqual(['bridge', 'junction', 'kiln', 'router', 'telemetry']);
     expect(c.mods.flags.has('telemetry')).toBe(true);
     expect(c.hash()).toBe(a.hash());
-    // The hash sees the tree: the same base without one plan hashes differently.
     const d = deserialize(JSON.parse(JSON.stringify(serialize(a))), a.grid.source);
     d.done.delete('bridge');
     expect(d.hash()).not.toBe(a.hash());

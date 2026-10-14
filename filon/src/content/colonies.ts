@@ -33,7 +33,7 @@ export const UNIQUE_WEIGHT = 3;
 export const COLONY_PROFILES = {
   mining: {
     name: { fr: 'Camp minier', en: 'Mining Camp' }, count: 7, bands: ['near'], growth: 0.01,
-    supplies: [['iron_ore', 3], ['copper_ore', 3], ['stone', 3], ['journal_1', 1]],
+    supplies: [['iron_ore', 3], ['copper_ore', 3], ['stone', 3], ['salt', 1]],
     needs: [['coal', 3], ['circuit', 3], ['charged_cell', 3], ['gear', 1], ['thermal_core', 1]],
     uniques: [],
   },
@@ -65,13 +65,13 @@ export const COLONY_PROFILES = {
   ember: {
     name: { fr: 'Forge de braise', en: 'Ember Forge' }, count: 5, bands: ['far'], growth: 0.02,
     supplies: [['thermal_core', 3], ['ceramic', 1], ['pace_bell', 1]],
-    needs: [['circuit', 3], ['glass', 3], ['journal_2', 1], ['fossil_nacre', 1]],
+    needs: [['circuit', 3], ['glass', 3], ['pace_bell', 1], ['fossil_nacre', 1]],
     uniques: ['embersalt'],
   },
   scholar: {
     name: { fr: 'Flèche savante', en: 'Scholar Spire' }, count: 4, bands: ['far'], growth: 0.025,
-    supplies: [['circuit', 1], ['journal_2', 1], ['resonator', 1]],
-    needs: [['atlas', 3], ['codex', 3], ['lens', 3], ['journal_1', 1], ['sporeglass', 1], ['lumen_moss', 1]],
+    supplies: [['circuit', 1], ['thermal_core', 1], ['resonator', 1]],
+    needs: [['atlas', 3], ['codex', 3], ['lens', 3], ['resin_canvas', 1], ['sporeglass', 1], ['lumen_moss', 1]],
     uniques: ['singing_quartz'],
   },
   drifter: {

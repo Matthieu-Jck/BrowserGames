@@ -15,6 +15,7 @@
 //   4. the market settles that epoch with the mu sold / bought → the next epoch's prices;
 //   5. the Gazette's news and each post's activity go out as events.
 // Spot trades are booked on the market at once (`book`).
+import { BAL } from '@/content/balance';
 import { BUILDING_KIND, ITEM_IDS, N_ITEMS, itemDef } from '@/content/registry';
 import { afterFee, valueCents } from '@/market/pricing';
 import { EPOCH } from '../constants';
@@ -151,21 +152,33 @@ const line = (sim: Sim, l: Omit<TradeLine, 'epoch'>): void => {
 
 // ── commands ──────────────────────────────────────────────────────────────
 /** Open a standing import order (whole items per minute, at most `maxCents` per item). Returns its id or a refusal. */
-export function addImport(sim: Sim, post: number, item: string, perMin: number, maxCents: number): number | TradeRefusal {
+export function addImport(sim: Sim, post: number, item: string, perMin: number, maxCents: number, express = false): number | TradeRefusal {
   if (!isPost(sim, post)) return 'no_post';
   const it = ITEM_IDS.indexOf(item as never);
   if (!tradable(it)) return 'not_tradable';
   if (!Number.isInteger(perMin) || perMin < 1 || !Number.isInteger(maxCents) || maxCents < 1) return 'bad_amount';
   if (sim.trade.orders.length >= orderSlots(sim.mods)) return 'slots';
-  const o: ImportOrder = { id: sim.trade.nextOrderId++, post, item: it, perMin, maxCents, active: false };
+  if (express && !sim.mods.flags.has('expressFreight')) return 'no_express';
+  const o: ImportOrder = { id: sim.trade.nextOrderId++, post, item: it, perMin, maxCents, active: false, ...(express ? { express: true } : {}) };
   o.active = (sim.prices.ask[it] ?? 0) > 0 && sim.prices.ask[it]! <= maxCents;
   sim.trade.orders.push(o);
-  sim.log.push({ tick: sim.tick, cmd: { k: 'importOrder', post, item, perMin, maxCents } });
+  sim.log.push({ tick: sim.tick, cmd: { k: 'importOrder', post, item, perMin, maxCents, ...(express ? { express: true } : {}) } });
   // Its cargo now: the exit hands it out, the entrance no longer takes it (what it brought of it,
   // still in the container, leaves by the exit too: nothing is sold or lost).
   addCargo(sim, post, it);
   sim.dirty = true;
   return o.id;
+}
+
+/** Floor Prices (cm_floor): the bid (centi-◉ an item) under which the posts hold an item back (null: none). Logged. */
+export function setFloorPrice(sim: Sim, item: string, cents: number | null): boolean {
+  if (!sim.mods.flags.has('floorPrices')) return false;
+  const it = ITEM_IDS.indexOf(item as never);
+  if (!tradable(it)) return false;
+  if (cents === null) { if (!sim.trade.floors.delete(it)) return false; }
+  else { if (!Number.isInteger(cents) || cents < 1) return false; sim.trade.floors.set(it, cents); }
+  sim.log.push({ tick: sim.tick, cmd: { k: 'floorPrice', item, cents } });
+  return true;
 }
 
 export function cancelImport(sim: Sim, id: number): boolean {
@@ -284,10 +297,15 @@ export function tradeEpoch(sim: Sim): boolean {
       const src = sim.market.sources(o.item)[0];
       if (!src) continue;
       // Whole items: as many as the order wants, the throughput allows and the ocelles pay for.
-      const unit = afterFee(valueCents(1000, ask[o.item]!, 'buy'), 'buy', fee(sim));
-      let n = Math.min(o.perMin, Math.floor(budget / 1000), unit > 0 ? Math.floor(sim.credits / unit) : 0);
-      let cost = n > 0 ? afterFee(valueCents(n * 1000, ask[o.item]!, 'buy'), 'buy', fee(sim)) : 0;
-      while (n > 0 && cost > sim.credits) { n--; cost = n > 0 ? afterFee(valueCents(n * 1000, ask[o.item]!, 'buy'), 'buy', fee(sim)) : 0; }
+      // Express freight (cm_express) costs a share more and comes in a share of the time.
+      const priceOf = (k: number): number => {
+        const c = afterFee(valueCents(k * 1000, ask[o.item]!, 'buy'), 'buy', fee(sim));
+        return o.express ? Math.ceil((c * BAL.express.price) / 1000) : c;
+      };
+      const unit = priceOf(1);
+      let n = Math.min(o.perMin, Math.floor(budget / 1000), unit > 0 ? Math.floor(Math.max(0, sim.credits) / unit) : 0);
+      let cost = n > 0 ? priceOf(n) : 0;
+      while (n > 0 && cost > sim.credits) { n--; cost = n > 0 ? priceOf(n) : 0; }
       if (n <= 0) continue;
       const mu = n * 1000;
       sim.credits -= cost;
@@ -295,7 +313,8 @@ export function tradeEpoch(sim: Sim): boolean {
       t.bought[o.item] = t.bought[o.item]! + mu;
       t.boughtTotal[o.item] = t.boughtTotal[o.item]! + mu;
       budget -= mu; boughtMu += mu; net -= cost;
-      t.inflight.push({ post: p.id, item: o.item, mu, arrive: sim.tick + deliveryTicks(level, src.delayMin, sim.mods), colony: src.colony, cents: cost });
+      const delay = deliveryTicks(level, src.delayMin, sim.mods);
+      t.inflight.push({ post: p.id, item: o.item, mu, arrive: sim.tick + (o.express ? Math.ceil((delay * BAL.express.delay) / 1000 / EPOCH) * EPOCH : delay), colony: src.colony, cents: cost });
       if (!from.includes(src.colony)) from.push(src.colony);
       line(sim, { post: p.id, item: o.item, kind: 'import', mu, cents: -cost });
     }
@@ -304,6 +323,8 @@ export function tradeEpoch(sim: Sim): boolean {
     for (const it of tradables()) {
       if (budget <= 0) break;
       if (own[it]! < 1000 || cargo.includes(it) || (bid[it] ?? 0) <= 0) continue;
+      // Floor Prices (cm_floor): under its floor, the item waits in the container for a better bid.
+      if (sim.mods.flags.has('floorPrices') && bid[it]! < (t.floors.get(it) ?? 0)) continue;
       // Whole items, as many as the throughput lets go (the rest waits for the next lift).
       const mu = Math.min(Math.floor(own[it]! / 1000), Math.floor(budget / 1000)) * 1000;
       if (mu <= 0) break;

@@ -27,7 +27,6 @@ export const BAL = {
   depositRich: { iron_ore: 500, sand: 400, coal: 300, copper_ore: 500, salt: 300 } as Record<string, number>,
   uniqueRich: 100,
   forkBufItems: 2,
-  towerSpeed: 4000, // ‰
 
   // ── belts ────────────────────────────────────────────────────────────────
   beltDensity: 1, // items per ribbon tile: one item per square; a full ribbon blocks (owner, 2026-10-11)
@@ -79,15 +78,26 @@ export const BAL = {
     farRadius: 320, // tiles: land beyond is cheaper with Far Claims (xp8)
   },
 
-  // ── research ─────────────────────────────────────────────────────────────
-  spreadCostPerNode: 120, // ‰ added per node owned in OTHER branches
-  depthDiscountPerNode: 40, // ‰ removed per node owned in THIS branch (max 8)
-  spreadTimePerNode: 50, // ‰
-  masterTimeFactor: 850, // ‰ duration once 6 nodes are owned in the branch
-  initiateBonus: 100, // ‰ core stat at 3 nodes
-  masterBonus: 250, // ‰ core stat at 6 nodes
-  respecRefund: 500, // ‰ (250 for a keystone)
+  // ── research (D69) ───────────────────────────────────────────────────────
+  // A node's cost and duration grow with every node owned elsewhere — another family, or the
+  // sibling speciality once its family split — and the more so the higher its tier: the tree
+  // pushes a claim to specialise (owner, 2026-10-14). By tier T1..T4, ‰ per node.
+  spreadCostByTier: [50, 120, 250, 500] as readonly number[],
+  spreadTimeByTier: [20, 50, 100, 200] as readonly number[],
+  depthDiscountPerNode: 40, // ‰ removed per node owned in THIS lineage (max 8)
+  masterTimeFactor: 850, // ‰ duration once 6 nodes are owned in the lineage
+  respecRefund: 500, // ‰ of the data files (250 for a keystone)
   respecCooldownDays: 14,
+  // ── AI tokens (D68): never owned, paid the minute they are used ───────────
+  // Research uses tokens as it runs; each minute the claim's servers cover what they can (what
+  // they make and nobody uses is lost), CrierBelt's servers the rest, at this price.
+  tokenCentsPerK: 1000, // centi-ocelles per 1 000 tokens at CrierBelt: 10 ◉ the thousand
+  // The Compute Plan (cm_plan): CrierBelt's tokens at this share of the price, for a fee an hour.
+  tokenPlan: { priceFactor: 500, feeCentsPerHour: 6000 },
+  serverRental: 500, // ‰ of the price CrierBelt pays for the tokens a claim's servers leave unused (cm_rent)
+  // Express freight (cm_express): ‰ of the delay, ‰ of the price.
+  express: { delay: 500, price: 1250 },
+  landResale: 800, // ‰ of what a parcel cost, when sold back (xp_resell)
 
   // ── market (see market/) ─────────────────────────────────────────────────
   tradeFee: 200, // ‰ CrierBelt takes on every trade: it holds the Ring's monopoly, and nothing lowers it (owner, 2026-10-14, D64)

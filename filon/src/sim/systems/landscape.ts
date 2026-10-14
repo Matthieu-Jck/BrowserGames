@@ -4,7 +4,7 @@
 // offline catch-up drives the same jobs as pseudo-flows); a finished tile turns to floor —
 // reclaimed land when it touches a zone — and a dug tile gives up its embedded ore.
 import { BAL } from '@/content/balance';
-import { BUILDING_KIND, itemIdx } from '@/content/registry';
+import { BUILDING_KIND, buildingDef, itemIdx } from '@/content/registry';
 import { EPOCH } from '../constants';
 import { footprint } from '../entities';
 import { ReservoirNode } from '../flow/nodes';
@@ -36,7 +36,7 @@ export function designate(sim: Sim, tiles: readonly number[], on = true): number
 }
 
 /** Machine reach: an excavator's in tiles from its footprint's edge (D54), a backfiller's from its centre. */
-const reachOf = (e: Pick<Ent, 'def'>): number => (BUILDING_KIND[e.def] === 'excavator' ? BAL.digReach : BAL.fillReach);
+const reachOf = (e: Pick<Ent, 'def'>): number => (BUILDING_KIND[e.def] === 'excavator' ? buildingDef(e.def).excavator?.reach ?? BAL.digReach : BAL.fillReach);
 
 /**
  * Is tile (x, y) in a machine's reach? An excavator digs what lies within `digReach` tiles of its
@@ -83,7 +83,7 @@ export function assignJobs(sim: Sim): void {
     const bx = best % 1024, by = (best - bx) / 1024;
     const tt = sim.grid.terrain(bx, by);
     const job: Job = want === 'dig'
-      ? { ent: e.id, kind: 'dig', tile: best, dur: digTicks(tt, sim.mods), el: 0, mu: digRubble(tt, sim.mods), moved: 0 }
+      ? { ent: e.id, kind: 'dig', tile: best, dur: digTicks(tt, sim.mods, buildingDef(e.def).excavator?.speed ?? 1000), el: 0, mu: digRubble(tt, sim.mods), moved: 0 }
       : { ent: e.id, kind: 'fill', tile: best, dur: fillTicks(), el: 0, mu: fillCost(tt, sim.mods)!, moved: 0 };
     sim.jobs.push(job);
     sim.jobs.sort((a, b) => a.ent - b.ent);

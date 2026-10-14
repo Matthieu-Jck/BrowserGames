@@ -28,6 +28,8 @@ export interface ImportOrder {
   maxCents: number;
   /** Hysteresis state: an order pauses above its max and resumes 3 % below it. */
   active: boolean;
+  /** Express Freight (cm_express): half the delay, a quarter dearer. */
+  express?: boolean;
 }
 
 export interface Shipment {
@@ -58,7 +60,7 @@ export interface TradeLine {
 export interface PostActivity { epoch: number; soldMu: number; boughtMu: number; cents: number }
 
 /** Why a trade command was refused (null = accepted). */
-export type TradeRefusal = 'no_post' | 'not_tradable' | 'slots' | 'unaffordable' | 'stock' | 'bad_amount' | 'reserve'
+export type TradeRefusal = 'no_express' | 'no_post' | 'not_tradable' | 'slots' | 'unaffordable' | 'stock' | 'bad_amount' | 'reserve'
   /** A purchase no outlet of any post takes out; more than one container's load; a full container (D43). */
   | 'no_outlet' | 'container' | 'full';
 
@@ -69,7 +71,7 @@ export const tradeLevel = (mods: Mods): number => (mods.flags.has('tradeL3') ? 3
 export const orderSlots = (mods: Mods): number => BAL.tradeOrders + mods.orders;
 
 /** Trade posts the colony may build (Second Wharf allows a second one). */
-export const maxPosts = (mods: Mods): number => (mods.flags.has('tradeL2') ? 2 : 1);
+export const maxPosts = (mods: Mods): number => (mods.flags.has('post3') ? 3 : mods.flags.has('tradeL2') ? 2 : 1);
 
 /** What one post lifts per epoch, imports and exports together (mu). */
 export const throughputMu = (level: number): number => BAL.tradeThroughput[Math.min(3, level) - 1]! * 1000;
@@ -112,6 +114,8 @@ export interface TradeState {
   ledger: TradeLine[];
   /** Per post: its last epoch with trade. */
   activity: Map<number, PostActivity>;
+  /** Floor Prices (cm_floor): per item, the bid (centi-◉ an item) under which the posts hold it back. */
+  floors: Map<number, number>;
   /** Lifetime ocelles earned and spent through the Crier (centi-◉), and mu sold / bought per item. */
   earned: number;
   spent: number;
@@ -123,7 +127,7 @@ export function newTradeState(nItems: number): TradeState {
   return {
     cargo: new Map(), orders: [], nextOrderId: 1, inflight: [],
     sold: new Float64Array(nItems), bought: new Float64Array(nItems),
-    ledger: [], activity: new Map(), earned: 0, spent: 0,
+    ledger: [], activity: new Map(), floors: new Map(), earned: 0, spent: 0,
     soldTotal: new Float64Array(nItems), boughtTotal: new Float64Array(nItems),
   };
 }

@@ -73,10 +73,19 @@ const HANDLERS: Handlers = {
       case 'leased': sink.toasts.show('good', t('toast.land.leased', { c, v: oc(ev.cents) }), 4000); bus.emit('sfx', { cue: 'purchase' }); break;
       case 'ended': sink.toasts.show('info', t('toast.land.ended', { c }), 4000); break;
       case 'lapsed': sink.toasts.show('bad', t('toast.land.lapsed', { c }), 9000); bus.emit('sfx', { cue: 'notice' }); break;
+      case 'sold': sink.toasts.show('good', t('toast.land.sold', { c, v: oc(ev.cents) }), 4000); break;
       case 'rent': break; // every hour: the purse shows it
     }
     // What stands on land newly held wakes, on land let go sleeps: the views follow the graph.
     if (ev.what !== 'rent') sink.structure = true;
+  },
+  // The purse in the red: research cannot pay CrierBelt's tokens and holds (D68).
+  researchHeld: (ev, sink) => {
+    if (ev.held) { sink.toasts.show('bad', t('toast.research.held'), 9000); bus.emit('sfx', { cue: 'notice' }); }
+    else sink.toasts.show('good', t('toast.research.resumed'), 4000);
+  },
+  researchQueued: (ev, sink) => {
+    sink.toasts.show('info', t('toast.research.queued', { name: (RESEARCH[ev.id as ResearchId] as ResearchDef).name[locale()] }), 5000);
   },
 };
 

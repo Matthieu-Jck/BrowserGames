@@ -14,7 +14,7 @@
 // `FIELDS` declares every SaveData field, typed against SaveData: a new field does not compile
 // until it says whether it holds indices — the guard that keeps this file complete.
 import { BUILDINGS } from '@/content/buildings';
-import { BUILDING_IDS, CRECIPES, ITEM_IDS, RECIPE_IDS, type CRecipe } from '@/content/registry';
+import { BUILDING_IDS, CRECIPES, ITEM_IDS, RECIPE_IDS, recipesFor, type CRecipe } from '@/content/registry';
 import { RENAMED, RETIRED_COSTS } from '@/content/retired';
 import type { BuildingDef } from '@/content/types';
 import { filterOf, recipeOf, withFilter, withRecipe } from './cfg';
@@ -53,7 +53,7 @@ export const FIELDS: { readonly [K in keyof Required<SaveData>]: Kind } = {
   credits: 'plain', hearthLevel: 'plain', hearthId: 'plain', nextId: 'plain', content: 'plain',
   ents: 'index', portItems: 'index', stock: 'index', stores: 'index', acc: 'refs', links: 'refs',
   done: 'plain', terrainDiff: 'plain', levelDiff: 'plain', oreDiff: 'index', land: 'plain', explored: 'plain',
-  nodes: 'index', chains: 'index', produced: 'index', consumed: 'index', projects: 'index',
+  nodes: 'index', chains: 'index', produced: 'index', consumed: 'index', projects: 'index', tokens: 'plain', dataAcc: 'refs', labQueue: 'refs',
   notes: 'plain', respecs: 'plain', lastRespec: 'plain', designated: 'plain', jobs: 'refs', fleet: 'refs',
   routes: 'index', nextRouteId: 'plain', market: 'plain', trade: 'index', quests: 'plain', value: 'plain',
 };
@@ -61,7 +61,7 @@ export const FIELDS: { readonly [K in keyof Required<SaveData>]: Kind } = {
 /** The same for the trade section. */
 export const TRADE_FIELDS: { readonly [K in keyof Required<NonNullable<SaveData['trade']>>]: Kind } = {
   cargo: 'index', orders: 'index', nextOrderId: 'plain', inflight: 'index', sold: 'index', bought: 'index',
-  ledger: 'index', activity: 'refs', earned: 'plain', spent: 'plain', soldTotal: 'index', boughtTotal: 'index',
+  ledger: 'index', activity: 'refs', earned: 'plain', spent: 'plain', soldTotal: 'index', boughtTotal: 'index', floors: 'index',
 };
 
 const sigOf = (r: CRecipe): string =>
@@ -164,7 +164,9 @@ export function remapSave(d: SaveData, to: ContentTable = contentTable(), retire
     if (b?.kind === 'machine') {
       const r = recipeOf(cfg);
       if (r > 0) {
-        const nr = RM[r - 1] ?? -1;
+        let nr = RM[r - 1] ?? -1;
+        // A recipe the machine no longer offers (machines specialised, D70) clears it too.
+        if (nr >= 0 && to === today && !recipesFor(nd).some((c) => CRECIPES.indexOf(c) === nr)) nr = -1;
         if (nr < 0) { reset.add(from.recipes[r - 1] ?? `#${r - 1}`); resetEnts.add(id); cfg = withRecipe(cfg, 0); }
         else cfg = withRecipe(cfg, nr + 1);
       }
@@ -261,6 +263,7 @@ export function remapSave(d: SaveData, to: ContentTable = contentTable(), retire
     activity: t.activity.filter(([post]) => alive(post)),
     ...(t.soldTotal ? { soldTotal: dense(t.soldTotal, false) } : {}),
     ...(t.boughtTotal ? { boughtTotal: dense(t.boughtTotal, false) } : {}),
+    ...(t.floors ? { floors: t.floors.filter(([it]) => item(it) >= 0).map(([it, c]) => [item(it), c] as [number, number]) } : {}),
   };
 
   for (let j = 0; j < NT; j++) stock[j]! += refund[j]!;
@@ -283,6 +286,8 @@ export function remapSave(d: SaveData, to: ContentTable = contentTable(), retire
     consumed: dense(d.consumed, false),
     projects,
     jobs: (d.jobs ?? []).filter((j) => alive(j.ent)),
+    ...(d.dataAcc ? { dataAcc: d.dataAcc.filter(([id]) => alive(id)) } : {}),
+    ...(d.labQueue ? { labQueue: d.labQueue.filter(([id]) => alive(id)) } : {}),
     fleet: (d.fleet ?? []).filter(([id]) => alive(id)),
     routes: (d.routes ?? []).filter((r) => alive(r.from) && alive(r.to) && item(r.item) >= 0).map((r) => ({ ...r, item: item(r.item) })),
     ...(trade ? { trade } : {}),

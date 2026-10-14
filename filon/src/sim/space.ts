@@ -52,10 +52,10 @@ export function canDig(t: number, mods: Mods): boolean {
   return true;
 }
 
-/** Ticks to dig one tile (basalt is faster with Basalt Bits). */
-export function digTicks(t: number, mods: Mods): number {
+/** Ticks to dig one tile (basalt is faster with Basalt Bits; `machine`: the excavator's own speed ‰, D70). */
+export function digTicks(t: number, mods: Mods, machine = 1000): number {
   const c = rockClass(t);
-  let speed = mods.digSpeed;
+  let speed = Math.floor((mods.digSpeed * machine) / 1000);
   if (c === 1 && mods.flags.has('basaltBits')) speed = Math.floor((speed * 1500) / 1000);
   return Math.max(1, mulDiv(BAL.digMinutes[c]! * 60 * TPS, 1000, speed));
 }
@@ -115,15 +115,15 @@ export function routeDistance(ax: number, ay: number, bx: number, by: number, mo
   return mulDiv(d, mods.drifterDistance, 1000);
 }
 
-/** Items per minute a route's ships carry: ships × C / (2d/v + 2t). */
-export function routePerMin(ships: number, dist: number, mods: Mods): number {
-  const cap = (BAL.drifterCap * mods.shipCap) / 1000;
+/** Items per minute a route's ships carry: ships × C / (2d/v + 2t) (`capMult`: the source dock's ships' load ‰, D70). */
+export function routePerMin(ships: number, dist: number, mods: Mods, capMult = 1000): number {
+  const cap = (((BAL.drifterCap * mods.shipCap) / 1000) * capMult) / 1000;
   const v = (BAL.drifterTilesPerMin * mods.shipSpeed) / 1000;
   return (ships * cap) / ((2 * dist) / v + 2 * BAL.drifterLoadMin);
 }
 
 /** The same in mu per tick. */
-export const routeRate = (ships: number, dist: number, mods: Mods): number => (routePerMin(ships, dist, mods) * 1000) / EPOCH;
+export const routeRate = (ships: number, dist: number, mods: Mods, capMult = 1000): number => (routePerMin(ships, dist, mods, capMult) * 1000) / EPOCH;
 
-/** Ships one dock can host (Docks II adds two). */
-export const dockShips = (mods: Mods): number => BAL.dockShips + mods.dockShips;
+/** Ships one dock can host: its own (the great skydock's 8, D70), plus research. */
+export const dockShips = (mods: Mods, dock?: { readonly ships: number }): number => (dock?.ships ?? BAL.dockShips) + mods.dockShips;

@@ -485,7 +485,7 @@ function glassworks(b: Builder): void {
 function fieldJournal(b: Builder): void {
   b.plan('observatory');
   if (!surveyLine(b) && !(b.junctions() && surveyLine(b))) b.skip('observatory');
-  b.recipe('workshop', 'journal_1');
+  b.recipe('workshop', 'circuit');
   b.wire('workshop', 'observatory');
   if (b.ids.observatory && !b.sim.startResearch('tr1').ok) b.skip('research:tr1');
   b.until('field_journal');

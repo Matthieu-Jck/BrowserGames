@@ -9,6 +9,7 @@ import { BUILDING_IDS } from '@/content/registry';
 import { packRuns } from '@/sim/flow/chain';
 import { parcelAt } from '@/sim/world/land';
 import { SAVE_VERSION, type SaveData } from '@/sim/serialize';
+import { RESEARCH_RENAMED } from '@/content/retired';
 
 /** A step from version v to v + 1 (input: a parsed save of version v). */
 export type Migration = (d: Record<string, unknown>) => Record<string, unknown>;
@@ -113,7 +114,35 @@ export function streamsToCargo(d: Record<string, unknown>): Record<string, unkno
   };
 }
 
-export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo };
+/**
+ * 5 → 6 belongs to the main checkout (the 2 × 2 pylon, D75): an identity step here until the
+ * branches meet, then theirs.
+ */
+export const pylonsPlaceholder: Migration = (d) => d;
+
+/**
+ * 6 → 7, research on data files and AI tokens and the tiered tree (D68–D70): the research a base
+ * learnt under an id that changed is held under its successor(s) (`RESEARCH_RENAMED`; a node
+ * gone without one is dropped: it unlocked no building), and so are the projects running under
+ * them (one renamed into a node already learnt or running goes). The projects themselves are
+ * rebased on today's costs when the base loads (serialize.ts: they carry no tokens yet).
+ */
+export function researchToTokens(d: Record<string, unknown>): Record<string, unknown> {
+  const rename = (id: string): readonly string[] => RESEARCH_RENAMED[id] ?? [id];
+  const done = new Set<string>();
+  for (const id of (d.done as string[] | undefined) ?? []) for (const n of rename(id)) done.add(n);
+  const running = new Set<string>();
+  const projects = ((d.projects as Array<{ id: string }> | undefined) ?? []).flatMap((p) => {
+    if (p.id.startsWith('respec:')) return [p];
+    const n = rename(p.id)[0];
+    if (!n || done.has(n) || running.has(n)) return [];
+    running.add(n);
+    return [{ ...p, id: n }];
+  });
+  return { ...d, done: [...done].sort(), projects };
+}
+
+export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsPlaceholder, 6: researchToTokens };
 
 export class SaveTooNew extends Error {
   constructor(readonly version: number) { super(`save version ${version} is newer than this build (${SAVE_VERSION})`); }

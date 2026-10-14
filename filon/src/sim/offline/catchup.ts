@@ -1,7 +1,9 @@
 // catchup.ts — unlimited offline progression with the SAME engine. The timeline is cut into
 // segments at events (an epoch boundary, a reservoir item reaching a bound, an accumulator filling
-// or emptying, a construction or a research completing). Observatories are reservoirs whose
-// research draw is a known outflow (its allowance rate). Within a segment every group follows a regime —
+// or emptying, a construction or a research completing). Research labs are reservoirs whose
+// research draw is a known outflow (its allowance rate); the Heart's and the autonomous labs'
+// data files a known inflow; servers' tokens and research's are counted per segment and billed
+// at each boundary by the online call (`tokenEpoch`, D68). Within a segment every group follows a regime —
 // warmed up once from its true state, then extrapolated exactly (transient + whole periods
 // + prefix). Groups only interact through reservoirs (state flags and throttle rates) and
 // power grids (fixed satisfaction / dispatch per segment). Every per-segment pass is indexed
@@ -16,7 +18,8 @@ import { buildGroups, type Group } from '../graph/groups';
 import { makeCtx } from '../flow/step';
 import type { TickCtx } from '../flow/node';
 import { DrillNode, MachineNode, ReservoirNode, V_EMPTY, V_FULL, V_NORMAL } from '../flow/nodes';
-import { advanceProject, owedItems, projectDone } from '../research/runtime';
+import { advanceProject, owedItems, projectDone, takeTokens } from '../research/runtime';
+import { dataMakers, dataTick, serverTick } from '../systems/research';
 import { jobDone, jobRate, type Job } from '../space';
 import { renewableKw, weatherAt, weatherKey } from '../power/network';
 import { modsKey } from '../research/modifiers';
@@ -430,7 +433,7 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     return sat;
   };
 
-  /** Power satisfaction of a project this segment (its observatory's grid). */
+  /** Power satisfaction of a project this segment (its lab's grid; nothing while the purse is in the red). */
   const projSat = (p: (typeof sim.projects)[number]): number => sim.projectSat(p, (n) => netModes[n]?.sat ?? 0);
 
   /** Research draws as reservoir outflows (allowance rates while the allowance grows). */
@@ -465,6 +468,12 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
       add(nextIn, rb * N_ITEMS + rt.item, r);
     }
     for (const [k, d] of deliveries) if (d.n > d.done) add(nextIn, k, (d.n * 1000) / EPOCH);
+    // Data files out of the Heart (Analytics) and the autonomous labs: steady inflows (D68, D70).
+    const data = itemIdx('data_file');
+    for (const m of dataMakers(sim, projSat)) {
+      const ri = m.ent === sim.hearthId ? (g.hearth ? g.reservoirs.indexOf(g.hearth) : -1) : resIndex(m.ent);
+      if (ri >= 0 && m.sat > 0) add(nextIn, ri * N_ITEMS + data, (m.rate * m.sat) / (EPOCH * 1000));
+    }
     for (const [cur, nu] of [[labOut, next], [pIn, nextIn]] as const) {
       for (const k of new Set([...cur.keys(), ...nu.keys()])) {
         if (Math.abs((cur.get(k) ?? 0) - (nu.get(k) ?? 0)) > 1e-12) throttleDirty.add(k);
@@ -553,6 +562,11 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
       r.stock[i] = r.stock[i]! + (due - d.done) * 1000;
       d.done = due;
     }
+    // The servers' tokens and the data makers' files, exactly as online over these ticks.
+    serverTick(sim, dt, (n) => netModes[n]?.sat ?? 0);
+    const data = itemIdx('data_file'), data0 = sim.produced[data]!;
+    dataTick(sim, dt, projSat);
+    if (sim.produced[data]! !== data0) rep.produced[data] = rep.produced[data]! + sim.produced[data]! - data0;
     for (const p of sim.projects) {
       const paid = advanceProject(p, sim.projectStock(p), dt, projSat(p));
       paid.forEach((mu, i) => {
@@ -561,6 +575,7 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
         rep.consumed[it] = rep.consumed[it]! + mu;
         sim.consumed[it] = sim.consumed[it]! + mu;
       });
+      sim.tokenUse += takeTokens(p);
     }
     g.nets.forEach((net, n) => {
       const m = netModes[n]!;
@@ -700,6 +715,11 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
         const held = [...sim.land.leases.keys()];
         if (sim.landEpoch()) for (const p of held) if (!sim.land.leases.has(p)) rep.incidents.push({ tick: now, kind: 'leaseLapsed', parcel: p });
       }
+      // Research's tokens for the minute, as online, after the trade and the leases (D68): the purse
+      // in the red holds research (its projects' pace changes: the next segment sees it).
+      const heldBefore = sim.researchHeld;
+      sim.tokenEpoch();
+      if (sim.researchHeld !== heldBefore) rep.incidents.push({ tick: now, kind: sim.researchHeld ? 'researchHeld' : 'researchResumed' });
       dropTradeEvents(sim);
     }
     // Constructions finishing change the graph.

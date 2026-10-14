@@ -10,7 +10,7 @@
 // · the Heart only takes in (D34): it pays for construction and sells next to a trade post, it
 //   never feeds a machine — every machine is fed by its own production lines, so the tutorial
 //   builds lines: a router splits the iron line between the Heart and the smelter, another
-//   shares the coal, routers branch the plate and glass lines into the workshop;
+//   shares the coal, a data collector feeds the research lab (D68);
 // · everything beyond the starting kit (drill, ribbon, pole, the Link tool) is unlocked in
 //   the tech tree (D33): a quest opens the tree and unlocks what it needs before using it — the
 //   telemetry first, then the smelter and the router, the junction once lines cross…
@@ -174,7 +174,6 @@ export interface QuestDef {
 const ORES = ['iron_ore', 'copper_ore'] as const;
 const DRILLS = ['drill', 'deep_bore'] as const;
 const KILNS = ['kiln', 'kiln_compact'] as const;
-const WORKSHOPS = ['workshop', 'great_workshop', 'great_workshop_compact', 'tower_workshop'] as const;
 const MASTS = ['mast', 'pylon'] as const;
 const NEAR_HEART = { hearth: true } as const;
 /** Where an output ribbon must end: a free input of the Heart (its teal nozzles). */
@@ -330,24 +329,24 @@ export const QUESTS = {
     ],
   },
 
-  // ── 4 ── power: wind turbines on the grid, a powered workshop ───────────────
+  // ── 4 ── power: wind turbines on the grid, a powered data collector ─────────
   first_wind: {
     name: { fr: 'Le Souffle', en: 'The Sough' },
     reveals: ['clock'],
     desc: {
-      fr: 'Le panneau du Cœur s’éteint la nuit, et ses fils sont comptés. Le Souffle ne porte qu’en hauteur : plantez deux éoliennes sur la Couronne, les montagnes autour du cirque, reliez-les au réseau de poteau en poteau, et alimentez un atelier.',
-      en: 'The Heart’s panel goes dark at night, and its wires are few. The Sough only blows up high: plant two wind turbines on the Crown, the mountains round the cirque, wire them to the grid pole by pole, and power a workshop.',
+      fr: 'Le panneau du Cœur s’éteint la nuit, et ses fils sont comptés. Le Souffle ne porte qu’en hauteur : plantez deux éoliennes sur la Couronne, les montagnes autour du cirque, reliez-les au réseau de poteau en poteau, et alimentez un collecteur de données.',
+      en: 'The Core’s panel goes dark at night, and its wires are few. The Sough only blows up high: plant two wind turbines on the Crown, the mountains round the cirque, wire them to the grid pole by pole, and power a data collector.',
     },
     objectives: [
       { k: 'linked', defs: ['wind_flower'], n: 2 },
-      { k: 'powered', defs: WORKSHOPS, n: 1 },
+      { k: 'powered', defs: ['data_collector'], n: 1 },
     ],
     reward: { kit: 'brazier' },
     steps: [
       {
-        hint: { fr: 'Arbre des techniques : débloque l’Éolienne et l’Atelier.', en: 'Tech tree: unlock the Wind Turbine and the Workshop.' },
-        target: { k: 'unlock', ids: ['wind_flower', 'workshop'] },
-        done: { k: 'unlocked', ids: ['wind_flower', 'workshop'] },
+        hint: { fr: 'Arbre des techniques : débloque l’Éolienne et le Collecteur de données.', en: 'Tech tree: unlock the Wind Turbine and the Data Collector.' },
+        target: { k: 'unlock', ids: ['wind_flower', 'data_collector'] },
+        done: { k: 'unlocked', ids: ['wind_flower', 'data_collector'] },
       },
       {
         hint: { fr: 'Plante deux éoliennes sur la Couronne, les montagnes autour du cirque (onglet Énergie) : au fond du cirque, abrité, le vent ne donne presque rien.', en: 'Plant two wind turbines on the Crown, the mountains round the cirque (Energy tab): down in the sheltered cirque the wind gives next to nothing.' },
@@ -355,19 +354,19 @@ export const QUESTS = {
         done: { k: 'build', defs: ['wind_flower'], n: 2 },
       },
       {
-        hint: { fr: 'Pose un atelier près de la fonderie : il recevra ses plaques.', en: 'Place a workshop near the smelter: it will take its plates.' },
-        target: { k: 'build', def: 'workshop', at: { entity: 'kiln' } },
-        done: { k: 'build', defs: WORKSHOPS, n: 1 },
+        hint: { fr: 'Pose un collecteur de données près du Cœur (onglet Recherche) : il tire des fichiers de données de l’électricité, n’importe où.', en: 'Place a data collector near the Core (Research tab): it makes data files out of power, anywhere.' },
+        target: { k: 'build', def: 'data_collector', at: NEAR_HEART },
+        done: { k: 'build', defs: ['data_collector'], n: 1 },
       },
       {
-        hint: { fr: 'Outil Relier : du Cœur, de poteau en poteau (ils se posent aussi sur la roche), jusqu’à chaque éolienne.', en: 'Link tool: from the Heart, pole to pole (they stand on rock too), to each turbine.' },
+        hint: { fr: 'Outil Relier : du Cœur, de poteau en poteau (ils se posent aussi sur la roche), jusqu’à chaque éolienne.', en: 'Link tool: from the Core, pole to pole (they stand on rock too), to each turbine.' },
         target: { k: 'link' },
         done: { k: 'linked', defs: ['wind_flower'], n: 2 },
       },
       {
-        hint: { fr: 'Puis relie l’atelier, lui aussi.', en: 'Then wire the workshop too.' },
+        hint: { fr: 'Puis relie le collecteur, lui aussi.', en: 'Then wire the collector too.' },
         target: { k: 'link' },
-        done: { k: 'powered', defs: WORKSHOPS, n: 1 },
+        done: { k: 'powered', defs: ['data_collector'], n: 1 },
       },
     ],
   },
@@ -429,61 +428,46 @@ export const QUESTS = {
     ],
   },
 
-  // ── 6 ── survey data and research ───────────────────────────────────────────
+  // ── 6 ── data files and research (D68) ──────────────────────────────────────
   field_journal: {
-    name: { fr: 'Données d’arpentage', en: 'Survey Data' },
+    name: { fr: 'Fichiers de données', en: 'Data Files' },
     desc: {
-      fr: 'La recherche se nourrit de données d’arpentage : un atelier les compile (deux plaques et un verre par paquet), un observatoire les transmet aux laboratoires de Verrière. Branchez l’atelier sur vos lignes de plaques et de verre, puis lancez Mécanique.',
-      en: 'Research feeds on survey data: a workshop compiles it (two plates and a glass a package), an observatory uplinks it to Verrière’s labs. Plug the workshop into your plate and glass lines, then start Mechanics.',
+      fr: 'La recherche se nourrit de fichiers de données et de tokens d’IA. Ton collecteur fait les fichiers ; un laboratoire de recherche les reçoit par ruban et paie ses tokens à la minute aux serveurs de CrierBelt, sur ta trésorerie. Pose le laboratoire, amène-lui les fichiers, puis lance Mécanique.',
+      en: 'Research feeds on data files and AI tokens. Your collector makes the files; a research lab takes them in by ribbon and pays for its tokens by the minute to CrierBelt’s servers, out of your purse. Place the lab, bring it the files, then start Mechanics.',
     },
     objectives: [
-      { k: 'produce', items: ['journal_1'], n: 3 },
+      { k: 'produce', items: ['data_file'], n: 3 },
       { k: 'build', defs: ['observatory'], n: 1 },
       { k: 'research', id: 'tr1' },
     ],
     reward: { credits: 100 },
     steps: [
       {
-        hint: { fr: 'Arbre des techniques : débloque l’Observatoire, qui ouvre la recherche.', en: 'Tech tree: unlock the Observatory, which opens research.' },
+        hint: { fr: 'Arbre des techniques : débloque le Laboratoire de recherche.', en: 'Tech tree: unlock the Research Lab.' },
         target: { k: 'unlock', ids: ['observatory'] },
         done: { k: 'unlocked', ids: ['observatory'] },
       },
       {
-        hint: { fr: 'Clique l’atelier et choisis Données d’arpentage.', en: 'Click the workshop and pick Survey Data.' },
-        target: { k: 'recipe', defs: WORKSHOPS, recipe: 'journal_1' },
-        done: { k: 'recipe', defs: WORKSHOPS, recipe: 'journal_1', n: 1 },
-      },
-      {
-        hint: { fr: 'Des plaques pour l’atelier : un routeur sur le ruban des plaques, puis un ruban du routeur jusqu’à l’atelier.', en: 'Plates for the workshop: a router on the plate ribbon, then a ribbon from the router to the workshop.' },
-        target: { k: 'branch', item: 'iron_plate', to: WORKSHOPS },
-        done: { k: 'feeds', item: 'iron_plate', to: WORKSHOPS, n: 1 },
-      },
-      {
-        hint: { fr: 'Et du verre : un routeur sur le ruban du verre, puis un ruban jusqu’à l’autre entrée de l’atelier.', en: 'And glass: a router on the glass ribbon, then a ribbon to the workshop’s other input.' },
-        target: { k: 'branch', item: 'glass', to: WORKSHOPS },
-        done: { k: 'feeds', item: 'glass', to: WORKSHOPS, n: 1 },
-      },
-      {
-        hint: { fr: 'Pose un observatoire près de l’atelier.', en: 'Place an observatory near the workshop.' },
-        target: { k: 'build', def: 'observatory', at: { entity: 'workshop' } },
+        hint: { fr: 'Pose le laboratoire près du collecteur de données.', en: 'Place the lab near the data collector.' },
+        target: { k: 'build', def: 'observatory', at: { entity: 'data_collector' } },
         done: { k: 'build', defs: ['observatory'], n: 1 },
       },
       {
-        hint: { fr: 'Relie l’observatoire au réseau.', en: 'Wire the observatory into the grid.' },
+        hint: { fr: 'Relie le laboratoire au réseau.', en: 'Wire the lab into the grid.' },
         target: { k: 'link' },
         done: { k: 'linked', defs: ['observatory'], n: 1 },
       },
       {
-        hint: { fr: 'Un ruban de la sortie de l’atelier jusqu’à l’observatoire : les données y montent.', en: 'A ribbon from the workshop’s output to the observatory: the data goes up from there.' },
+        hint: { fr: 'Un ruban de la sortie du collecteur jusqu’à une entrée du laboratoire : les fichiers y montent.', en: 'A ribbon from the collector’s output to one of the lab’s inputs: the files go up from there.' },
         target: { k: 'build', def: 'ribbon', at: { entity: 'observatory' } },
-        done: { k: 'feeds', item: 'journal_1', to: ['observatory'], n: 1 },
+        done: { k: 'feeds', item: 'data_file', to: ['observatory'], n: 1 },
       },
       {
-        hint: { fr: 'Dans l’arbre (T), lance Mécanique.', en: 'In the tree (T), start Mechanics.' },
+        hint: { fr: 'Dans l’arbre (T), lance Mécanique : ses tokens se paient à la minute, quelques ocelles.', en: 'In the tree (T), start Mechanics: its tokens are paid by the minute, a few ocelles.' },
         target: { k: 'research', id: 'tr1' },
         done: { k: 'research', id: 'tr1' },
       },
-      { hint: { fr: 'Les paquets arrivent : trois en tout. La recherche les consomme à mesure.', en: 'The packages are coming: three in all. Research uses them up as they arrive.' }, target: { k: 'none' } },
+      { hint: { fr: 'Les fichiers arrivent : trois en tout. La recherche les consomme à mesure.', en: 'The files are coming: three in all. Research uses them up as they arrive.' }, target: { k: 'none' } },
     ],
   },
 
@@ -637,7 +621,7 @@ export const questDef = (id: string): QuestDef | undefined => (QUESTS as Record<
 // ── validation (run by content/validate.ts) ─────────────────────────────────
 
 const has = (table: object, id: string): boolean => Object.prototype.hasOwnProperty.call(table, id);
-const CATEGORIES: readonly BuildCategory[] = ['extraction', 'logistics', 'distribution', 'production', 'energy', 'colony', 'commerce'];
+const CATEGORIES: readonly BuildCategory[] = ['extraction', 'logistics', 'distribution', 'production', 'research', 'energy', 'colony', 'commerce'];
 const recipeOf = (id: string): RecipeDef | undefined => (has(RECIPES, id) ? (RECIPES as Record<string, RecipeDef>)[id] : undefined);
 const buildingOf = (id: string): BuildingDef | undefined => (has(BUILDINGS, id) ? (BUILDINGS as Record<string, BuildingDef>)[id] : undefined);
 

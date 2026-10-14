@@ -18,7 +18,7 @@ import { RECIPES } from '@/content/recipes';
 import { RESEARCH, nodeName } from '@/content/research';
 import { ITEM_IDS, buildingDef, buildingIdx, itemDef, itemIdx } from '@/content/registry';
 import type { BuildingDef, Loc, RecipeDef, ResearchDef } from '@/content/types';
-import { wirePerMechanicsWorkshop } from '@/content/validate';
+import { wirePerElectronicsWorkshop } from '@/content/validate';
 import { el, setAttr, setStyle, setText } from '@/core/dom';
 import { makeStore } from '@/core/store';
 import { duration, num } from '@/i18n/format';
@@ -426,7 +426,7 @@ export class QuestLog {
       return [node];
     };
     switch (def.info) {
-      case 'vein': return live((s) => t('quest.info.vein', { need: num(wirePerMechanicsWorkshop()), have: num(this.ratePerMin(s, 'copper_wire')), item: itemRef('copper_wire') }));
+      case 'vein': return live((s) => t('quest.info.vein', { need: num(wirePerElectronicsWorkshop()), have: num(this.ratePerMin(s, 'copper_wire')), item: itemRef('copper_wire') }));
       case 'delivery': {
         const o = def.objectives.find((x) => x.k === 'import');
         const items = o && o.k === 'import' ? o.items.map((i) => itemIdx(i)) : [];

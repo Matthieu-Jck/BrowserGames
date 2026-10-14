@@ -8,7 +8,9 @@ import { N_ITEMS } from '@/content/registry';
 import { isEmblem, type Emblem } from '@/content/emblem';
 import { LocalMarketService } from '@/market/service';
 import type { MarketSave } from '@/market/types';
-import { Sim } from './state';
+import { Sim, newTokenStats, type TokenStats } from './state';
+import { effectiveCost, projectPermille, tokensDue } from './research/runtime';
+import { BUILDING_KIND, hasResearch, itemIdx } from '@/content/registry';
 import type { ImportOrder, PostActivity, Shipment, TradeLine } from './trade';
 import { loadQuests, saveQuests, type QuestSave } from './systems/quests';
 import { loadValue, saveValue, type ValueState } from './systems/value';
@@ -22,9 +24,11 @@ import { packRuns } from './flow/chain';
 /**
  * 2: ribbons save their cells, one item per tile (the tile-by-tile ribbons, D57); conduits their
  * runs. 3: land in parcels (D60). 4: the 5 × 5 trade post (D62). 5: a post's cargo instead of its
- * export streams (D64).
+ * export streams (D64). 6: the 2 × 2 pylon (D75, the main checkout's step). 7: research on data
+ * files and AI tokens, the tiered tree (D68–D70): research ids renamed (`RESEARCH_RENAMED`),
+ * projects with their tokens.
  */
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 7;
 
 export interface SaveData {
   v: number;
@@ -57,7 +61,7 @@ export interface SaveData {
   levelDiff?: Array<[number, number]>;
   oreDiff: Array<[number, number]>;
   /** The parcels held beyond the starting square (docs/land.md): bought, granted (save v3), leased [parcel, next tick due, rent]. Absent: none. */
-  land?: { bought: number[]; granted?: number[]; leases: Array<[number, number, number]> };
+  land?: { bought: number[]; granted?: number[]; leases: Array<[number, number, number]>; paid?: Array<[number, number]> };
   explored: Array<[number, number, number]>;
   nodes: Array<[number, unknown]>;
   /**
@@ -69,7 +73,13 @@ export interface SaveData {
   produced: number[];
   consumed: number[];
   /** Research in progress (start order), archive notes, reconversion state. */
-  projects?: Array<{ id: string; lab: number; cost: number[]; paid: number[]; dur: number; el: number; notes?: number }>;
+  projects?: Array<{ id: string; lab: number; cost: number[]; paid: number[]; dur: number; el: number; notes?: number; tokens?: number; tokUsed?: number }>;
+  /** AI tokens (D68): used and not yet billed, the servers' output since the boundary, research held, the Compute Plan, the bill's statistics. */
+  tokens?: { use: number; serverAcc: number; held: boolean; plan: boolean; stats?: TokenStats };
+  /** The data makers' carried fractions, by entity (the Heart, autonomous labs). */
+  dataAcc?: Array<[number, number]>;
+  /** The Research Queue: each lab's next node. */
+  labQueue?: Array<[number, string]>;
   notes?: number;
   respecs?: number;
   lastRespec?: number;
@@ -95,6 +105,8 @@ export interface SaveData {
     spent: number;
     soldTotal?: number[];
     boughtTotal?: number[];
+    /** Floor Prices: [item, centi-◉ an item]. */
+    floors?: Array<[number, number]>;
   };
   /** The tutorial: quests done (ids), the current one's baselines, rewards in force (systems/quests.ts). */
   quests?: QuestSave;
@@ -141,6 +153,7 @@ export function serialize(sim: Sim): SaveData {
       bought: [...sim.land.bought].sort((a, b) => a - b),
       granted: [...sim.land.granted].sort((a, b) => a - b),
       leases: [...sim.land.leases].sort((a, b) => a[0] - b[0]).map(([p, l]) => [p, l.next, l.cents] as [number, number, number]),
+      paid: [...sim.land.paid].sort((a, b) => a[0] - b[0]),
     },
     explored: sim.explored.map((d) => [...d] as [number, number, number]),
     nodes, chains,
@@ -149,7 +162,11 @@ export function serialize(sim: Sim): SaveData {
     projects: sim.projects.map((p) => ({
       id: p.id, lab: p.lab, cost: p.cost.flatMap((c) => [c.item, c.mu]), paid: [...p.paid], dur: p.dur, el: p.el,
       ...(p.notes !== undefined ? { notes: p.notes } : {}),
+      ...(p.tokens !== undefined ? { tokens: p.tokens, tokUsed: p.tokUsed ?? 0 } : {}),
     })),
+    tokens: { use: sim.tokenUse, serverAcc: sim.serverAcc, held: sim.researchHeld, plan: sim.tokenPlan, stats: { ...sim.tokenStats } },
+    dataAcc: [...sim.dataAcc].sort((a, b) => a[0] - b[0]),
+    labQueue: [...sim.labQueue].sort((a, b) => a[0] - b[0]),
     notes: sim.notes,
     respecs: sim.respecs,
     lastRespec: sim.lastRespec,
@@ -172,6 +189,7 @@ export function serialize(sim: Sim): SaveData {
       spent: sim.trade.spent,
       soldTotal: Array.from(sim.trade.soldTotal),
       boughtTotal: Array.from(sim.trade.boughtTotal),
+      floors: [...sim.trade.floors].sort((a, b) => a[0] - b[0]),
     },
     quests: saveQuests(sim.quests),
     value: saveValue(sim.value),
@@ -210,6 +228,7 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
   for (const p of d.land?.bought ?? []) sim.land.bought.add(p);
   for (const p of d.land?.granted ?? []) sim.land.granted.add(p);
   for (const [p, next, cents] of d.land?.leases ?? []) sim.land.leases.set(p, { next, cents });
+  for (const [p, cents] of d.land?.paid ?? []) sim.land.paid.set(p, cents);
   for (const e of d.explored ?? []) sim.explored.push([e[0], e[1], e[2]]);
   sim.produced.set(d.produced);
   sim.consumed.set(d.consumed);
@@ -219,7 +238,33 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
   for (const p of d.projects ?? []) {
     const cost: Array<{ item: number; mu: number }> = [];
     for (let i = 0; i < p.cost.length; i += 2) cost.push({ item: p.cost[i]!, mu: p.cost[i + 1]! });
-    sim.projects.push({ id: p.id, lab: p.lab, cost, paid: [...p.paid], dur: p.dur, el: p.el, ...(p.notes !== undefined ? { notes: p.notes } : {}) });
+    const proj = { id: p.id, lab: p.lab, cost, paid: [...p.paid], dur: p.dur, el: p.el, ...(p.notes !== undefined ? { notes: p.notes } : {}), ...(p.tokens !== undefined ? { tokens: p.tokens, tokUsed: p.tokUsed ?? 0 } : {}) };
+    if (p.id.startsWith('respec:') || p.tokens !== undefined) { sim.projects.push(proj); continue; }
+    // A project from before AI tokens (D68): rebased on the node's cost today, its progress
+    // kept (the data it paid as a share of the new cost, its elapsed time as a share of the new
+    // duration) and the tokens of what it already did taken as paid. A node gone: dropped.
+    if (!hasResearch(p.id)) continue;
+    const share = projectPermille(proj);
+    const now = effectiveCost(p.id, new Set(d.done));
+    const el = p.dur > 0 ? Math.floor((Math.min(p.el, p.dur * 1000) * now.ticks) / p.dur) : 0;
+    const re = { id: p.id, lab: p.lab, cost: now.cost, paid: now.cost.map((c) => Math.floor((c.mu * share) / 1000)), dur: now.ticks, el, tokens: now.tokens, tokUsed: 0 };
+    re.tokUsed = tokensDue(re);
+    sim.projects.push(re);
+  }
+  if (d.tokens) {
+    sim.tokenUse = d.tokens.use; sim.serverAcc = d.tokens.serverAcc; sim.researchHeld = d.tokens.held; sim.tokenPlan = d.tokens.plan;
+    sim.tokenStats = { ...newTokenStats(), ...(d.tokens.stats ?? {}) };
+  }
+  for (const [id, v] of d.dataAcc ?? []) sim.dataAcc.set(id, v);
+  for (const [lab, id] of d.labQueue ?? []) if (hasResearch(id)) sim.labQueue.set(lab, id);
+  // A lab's store holds data files only (D68): what an older lab held besides (atlases, codices
+  // waiting for research that no longer asks for them) goes to the Heart — nothing vanishes.
+  const data = itemIdx('data_file');
+  for (let i = 0; i < d.ents.length; i += 7) {
+    if (BUILDING_KIND[d.ents[i + 1]!] !== 'lab') continue;
+    const st = sim.stores.get(d.ents[i]!);
+    if (!st) continue;
+    for (let it = 0; it < st.length; it++) if (it !== data && st[it]! > 0) { sim.refund(it, st[it]!); st[it] = 0; }
   }
   for (const [t, k] of d.designated ?? []) sim.designated.set(t, k === 1 ? 'dig' : 'fill');
   sim.jobs = (d.jobs ?? []).map((j) => ({ ...j }));
@@ -244,6 +289,7 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
     t.spent = d.trade.spent;
     if (d.trade.soldTotal) t.soldTotal.set(d.trade.soldTotal.slice(0, N_ITEMS));
     if (d.trade.boughtTotal) t.boughtTotal.set(d.trade.boughtTotal.slice(0, N_ITEMS));
+    for (const [it, cents] of d.trade.floors ?? []) t.floors.set(it, cents);
   }
   // The tutorial (a colony saved before quests existed starts them at quest 0).
   if (d.quests) loadQuests(sim, d.quests);

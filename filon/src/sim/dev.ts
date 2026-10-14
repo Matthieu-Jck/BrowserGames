@@ -436,7 +436,7 @@ export function buildDemo(sim: Sim, opt: { kiln?: readonly [number, number, Rot]
   place('kiln', 'kiln', kx, ky, kr);
   if (ids.kiln) sim.setRecipe(ids.kiln, 'iron_plate');
   place('workshop', 'workshop', ...at(-9, -4), 0);
-  if (ids.workshop) sim.setRecipe(ids.workshop, 'journal_1');
+  if (ids.workshop) sim.setRecipe(ids.workshop, 'circuit');
   place('observatory', 'observatory', ...at(-12, 3), 0);
   place('silo', 'silo', ...at(9, -9), 0);
   // The trade post against the Hearth's south side, turned half round (its entrance against the

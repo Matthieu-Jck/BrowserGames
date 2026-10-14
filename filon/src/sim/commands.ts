@@ -30,7 +30,8 @@ export type Command =
   | { k: 'drifter'; dock: number }
   | { k: 'route'; from: number; to: number; item: string; ships: number }
   | { k: 'unroute'; id: number }
-  | { k: 'importOrder'; post: number; item: string; perMin: number; maxCents: number }
+  /** `express` (Express Freight, cm_express): half the delay, a quarter dearer. */
+  | { k: 'importOrder'; post: number; item: string; perMin: number; maxCents: number; express?: boolean }
   | { k: 'cancelOrder'; id: number }
   | { k: 'spot'; item: string; side: 'sell' | 'buy'; n: number }
   /** Power wires (D25): `a` is the end the player started from (a pillar or the Hearth, usually). */
@@ -47,7 +48,15 @@ export type Command =
   /** Land (docs/land.md): buy a parcel, lease one by the hour, give a lease up. */
   | { k: 'buyLand'; p: number }
   | { k: 'rentLand'; p: number }
-  | { k: 'endLease'; p: number };
+  | { k: 'endLease'; p: number }
+  /** Parcel Resale (xp_resell): sell a bought parcel back. */
+  | { k: 'sellLand'; p: number }
+  /** Research Queue (an_queue): the node a lab starts once its project is done (null: none). */
+  | { k: 'queueResearch'; lab: number; id: string | null }
+  /** The Compute Plan (cm_plan): CrierBelt's tokens at a share of the price, for a fee an hour. */
+  | { k: 'tokenPlan'; on: boolean }
+  /** Floor Prices (cm_floor): the trade posts hold back an item whose bid is under this (centi-◉; null: none). */
+  | { k: 'floorPrice'; item: string; cents: number | null };
 
 export type CommandKind = Command['k'];
 
@@ -73,7 +82,11 @@ export type SimEvent =
   /** A tutorial quest completed; its reward is in the Hearth (content/quests.ts ids; `title`: the one it granted). */
   | { k: 'quest'; id: string; title?: string }
   /** A parcel changed hands, or a lease's hour was paid (centi-◉): bought, leased, rent, lapsed (the purse could not pay), ended. */
-  | { k: 'land'; p: number; what: 'bought' | 'leased' | 'rent' | 'lapsed' | 'ended'; cents: number };
+  | { k: 'land'; p: number; what: 'bought' | 'leased' | 'rent' | 'lapsed' | 'ended' | 'sold'; cents: number }
+  /** The purse went into the red (research holds: its tokens cannot be paid) or back out of it (D68). */
+  | { k: 'researchHeld'; held: boolean }
+  /** A lab started the node queued for it (the Research Queue). */
+  | { k: 'researchQueued'; id: string };
 
 /** Apply one command (as logged). Returns whether the colony accepted it. */
 export function exec(sim: Sim, cmd: Command): boolean {
@@ -95,7 +108,7 @@ export function exec(sim: Sim, cmd: Command): boolean {
     case 'drifter': return sim.buyDrifter(cmd.dock);
     case 'route': return sim.addRoute(cmd.from, cmd.to, cmd.item, cmd.ships) > 0;
     case 'unroute': return sim.removeRoute(cmd.id);
-    case 'importOrder': return typeof sim.addImport(cmd.post, cmd.item, cmd.perMin, cmd.maxCents) === 'number';
+    case 'importOrder': return typeof sim.addImport(cmd.post, cmd.item, cmd.perMin, cmd.maxCents, cmd.express ?? false) === 'number';
     case 'cancelOrder': return sim.cancelImport(cmd.id);
     case 'spot': return 'cents' in sim.spotTrade(cmd.item, cmd.side, cmd.n);
     case 'link': return sim.link(cmd.a, cmd.b).ok;
@@ -107,6 +120,10 @@ export function exec(sim: Sim, cmd: Command): boolean {
     case 'buyLand': return sim.buyLand(cmd.p) === null;
     case 'rentLand': return sim.rentLand(cmd.p) === null;
     case 'endLease': return sim.endLease(cmd.p) === null;
+    case 'sellLand': return sim.sellLand(cmd.p) === null;
+    case 'queueResearch': return sim.queueResearch(cmd.lab, cmd.id);
+    case 'tokenPlan': return sim.setTokenPlan(cmd.on);
+    case 'floorPrice': return sim.setFloorPrice(cmd.item, cmd.cents);
     default: { const never: never = cmd; return never; } // a new Command kind must be handled here
   }
 }

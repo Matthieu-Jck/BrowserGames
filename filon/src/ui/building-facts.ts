@@ -309,10 +309,10 @@ function ruleOf(b: BuildingDef): RuleFact | null {
 
 // ── recipes ────────────────────────────────────────────────────────────────
 
-/** A machine's unlocked recipes per minute: research speed and the tower's ×4, as the graph compiler (modules and dug floor are per building). */
+/** A machine's unlocked recipes per minute: research speed and the machine's own (the tree's upgraded machines, D70), as the graph compiler (modules and dug floor are per building). */
 function recipesOf(id: string, ctx: FactCtx): RecipeFact[] {
   const L = locale();
-  const speed = (ctx.mods.craftSpeed * (id === 'tower_workshop' ? BAL.towerSpeed : 1000)) / 1e6;
+  const speed = (ctx.mods.craftSpeed * (buildingDef(buildingIdx(id)).speed ?? 1000)) / 1e6;
   return recipesFor(buildingIdx(id)).filter((r) => ctx.unlocked(r.unlock)).map((r) => {
     const per = (mu: number): number => (mu / 1000) * (EPOCH / r.ticks) * speed;
     return {
