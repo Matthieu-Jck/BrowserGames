@@ -250,6 +250,7 @@ export class App {
       tileToScreen: (x, y) => this.picker.tileToScreen(x, y),
       lookAt: (x, y) => this.camera.glideTo(x + 0.5, y + 0.5),
       blocked: () => this.quests.modalOpen,
+      linkSource: () => (this.link.active ? this.link.source : 0),
     });
     this.quests = new QuestLog(atlas, { sim: () => this.sim, screenOpen: () => !!this.screens.current, step: () => this.guide.step, guide: this.guide });
     document.getElementById('ui')?.append(this.quests.root);

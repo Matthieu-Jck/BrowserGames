@@ -150,7 +150,7 @@ export const RESEARCH = {
   dn_wiremill: node('dn', undefined, 2, 'dn3', ['Tréfileuse double', 'Twin Wire Mill'], ['Débloque la Tréfileuse double : le fil deux fois plus vite.', 'Unlocks the Twin Wire Mill: wire twice as fast.']),
   dn4: node('dn', undefined, 3, 'dn_wiremill', ['Servomoteurs', 'Servomotors'], ['La recette du servomoteur : les machines avancées en sont construites.', 'The servomotor’s recipe: the advanced machines are built of them.']),
   dn_compact: node('dn', undefined, 4, 'dn4', ['Atelier d’assemblage compact', 'Compact Assembly'], ['Débloque l’Atelier d’assemblage compact (2×2).', 'Unlocks the Compact Assembly Workshop (2×2).']),
-  dn_etcher: node('dn', 'e', 5, 'dn_compact', ['Graveuse', 'Etcher'], ['Débloque la Graveuse : circuits et modules trois fois plus vite.', 'Unlocks the Etcher: circuits and modules three times as fast.']),
+  dn_etcher: node('dn', 'e', 5, 'dn_compact', ['Graveuse', 'Etcher'], ['Débloque la Graveuse : l’électronique trois fois plus vite.', 'Unlocks the Etcher: electronics three times as fast.']),
   dn7: node('dn', 'e', 6, 'dn_etcher', ['Robotique', 'Robotics'], ['La recette du bras robotisé : deux servomoteurs et deux circuits ; l’Usine de puces en est construite.', 'The robot arm’s recipe: two servomotors and two circuits; the Chip Fab is built of them.']),
   dn_chipfab: node('dn', 'e', 9, 'dn7', ['Usine de puces', 'Chip Fab'], ['Débloque l’Usine de puces : l’électronique six fois plus vite.', 'Unlocks the Chip Fab: electronics six times as fast.']),
   dn_forge: node('dn', 'm', 5, 'dn_compact', ['Presse à forger', 'Forging Press'], ['Débloque la Presse à forger : les engrenages trois fois plus vite.', 'Unlocks the Forging Press: gears three times as fast.']),

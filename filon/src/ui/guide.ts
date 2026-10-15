@@ -26,6 +26,7 @@ import { locale, t } from '@/i18n/i18n';
 import { CENTER } from '@/sim/constants';
 import { footprint } from '@/sim/entities';
 import { DX, DY, sideIndex } from '@/sim/types';
+import { isLinkPoint } from '@/sim/power/links';
 import type { Ent } from '@/sim/types';
 import type { Sim } from '@/sim/state';
 import { currentQuest, drillItem, objectiveProgress, producersOf, receives } from '@/sim/systems/quests';
@@ -47,6 +48,8 @@ export interface GuideHost {
   lookAt(tx: number, ty: number): void;
   /** Something modal is up (the naming modal): no guide. */
   blocked(): boolean;
+  /** The Link tool's source, once one is picked (0: none yet, or the tool not in hand). */
+  linkSource(): number;
 }
 
 /** The current step, for the quest log's hint line. */
@@ -160,6 +163,18 @@ function lineOf(sim: Sim, from: readonly number[]): { tiles: number[]; fork: boo
     }
   }
   return out;
+}
+
+/**
+ * Where a wire to `e` starts: the Heart, or a pillar of its grid that can wire it now (the
+ * nearest); −1 when none can (too far: a pole between first).
+ */
+function linkFrom(sim: Sim, e: Ent): number {
+  const grid = sim.graph?.netOfEnt.get(sim.hearthId);
+  const d2 = (o: Ent): number => (o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y);
+  const pillars = sim.ents.sorted().filter((o) => o.id !== sim.hearthId && isLinkPoint(o.def) && sim.graph?.netOfEnt.get(o.id) === grid)
+    .sort((a, b) => d2(a) - d2(b) || a.id - b.id);
+  return [sim.hearthId, ...pillars.map((o) => o.id)].find((id) => sim.canLink(id, e.id).ok) ?? -1;
 }
 
 /** A place in the world (content `GuideSpot`): tile centre and radius. */
@@ -384,8 +399,15 @@ export class Guide {
           const defs = s.done && 'defs' in s.done ? s.done.defs : [];
           const item = s.done && 'item' in s.done && s.done.item !== undefined ? itemIdx(s.done.item) : -1;
           const e = builtOf(sim, defs).find((x) => (item < 0 || drillItem(sim, x.id) === item) && !sim.graph?.netOfEnt.has(x.id));
-          const c = centreOf(sim, e ? e.id : sim.hearthId)!;
-          return { k: 'world', x: c[0], y: c[1], r: c[2], desc: e ? `entity:${BUILDING_IDS[e.def]}` : 'hearth' };
+          // A wire starts from a pillar or the Heart: with no source picked yet, the arrow points at
+          // one that reaches the building, then at the building (playtest, 2026-10-15: the arrow on
+          // the drill first made the click a refusal, against the hint « clique le Cœur puis… »).
+          const from = e && !this.host.linkSource() ? linkFrom(sim, e) : 0;
+          // Nothing of the grid reaches it (the hint: « Trop loin ? Pose un poteau entre les deux »):
+          // the pole's slot (a new pole wires itself to the nearest pillar, D25), then back here.
+          if (from < 0) return this.build(sim, 'mast', null);
+          const c = centreOf(sim, from || (e ? e.id : sim.hearthId))!;
+          return { k: 'world', x: c[0], y: c[1], r: c[2], desc: from ? `link:from:${BUILDING_IDS[sim.ents.get(from)!.def]}` : e ? `entity:${BUILDING_IDS[e.def]}` : 'hearth' };
         }
         const btn = q('[data-tool="link"]') ?? q('[data-guide="link"]') ?? q('.bb-link');
         if (btn) return aimEl(btn, 'tool:link');
