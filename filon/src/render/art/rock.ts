@@ -7,7 +7,11 @@
 // D63) is the rock round it with the water for its top (`ColumnOpts.top`): each tile draws its
 // part of the pool, cut by marching squares over its corners so the shore runs on from tile to
 // tile (into the rock's own corner where three tiles of water meet it), inked like the floor's
-// water, deep at its heart; reclaimed ground is fill. Worker-safe (Canvas2D only).
+// water, deep at its heart; reclaimed ground is fill. A column whose rock holds a face ore (D87:
+// quartz set in the cliff, `ColumnOpts.vein`) wears it: a milky seam across its camera-facing
+// walls with clusters of rock crystal erupting from it, and a few points poking up along the lip
+// of its top (`crystal`, the one crystal drawing the plan's seam and the machines share).
+// Worker-safe (Canvas2D only).
 import { hashUnit } from '@/core/hash';
 import { slabOutline, shadeOf, STEP_LEVELS, wallRuns, type OutlinePt } from '../relief';
 import { C, mix, rgba } from './tokens';
@@ -71,6 +75,8 @@ export interface ColumnOpts {
   k: number;
   /** Its top, when it is not rock (water up on the rock, ground reclaimed from it). */
   top?: TopLook | null;
+  /** Its rock holds a face ore (D87: quartz in the cliff): a crystal seam on its walls, points on its lip. */
+  vein?: boolean;
 }
 
 /**
@@ -131,9 +137,11 @@ function drawSlab(ctx: Ctx, P: Proj, cls: number, pts: readonly OutlinePt[], z0:
       poly(ctx, foot);
       ctx.fill();
       wallMarks(ctx, P, cls, run, z0, z1, o, rnd);
+      if (o.vein) veinSeam(ctx, P, run, z0, z1, o, rnd);
       ctx.restore();
-    }
+    } else if (o.vein) veinSeam(ctx, P, run, z0, z1, o, rnd);
   }
+  if (o.vein && o.detail >= 1) for (const [r, { pts: run }] of runs.entries()) veinCrystals(ctx, P, run, z0, z1, o, rnd, r);
 
   // ── top ──
   const topPts = pts.map((p) => P(p.u, p.v, z1));
@@ -218,6 +226,9 @@ function drawSlab(ctx: Ctx, P: Proj, cls: number, pts: readonly OutlinePt[], z0:
       if (Math.abs(run[i]!.a - run[i + 1]!.a) > 0.1) line(ctx, [P(p.u, p.v, z0), P(p.u, p.v, z1)], C.ink, 0.9 * k, 0.5);
     }
   }
+  // A face ore's points poking up along the lip of the top, over every side that drops (sprites
+  // only: the paint's would stick out past the sprite's silhouette where both show).
+  if (o.vein && o.detail >= 2 && z1 === L) veinLip(ctx, P, pts, z1, o, rnd);
 }
 
 /** A tile's corners clockwise from the back (NW, NE, SE, SW), and the 3×3 bits (`TopLook.wet`) of the four tiles meeting at each. */
@@ -382,6 +393,174 @@ function wallMarks(ctx: Ctx, P: Proj, cls: number, run: ReadonlyArray<{ u: numbe
       const u = p.u + (q.u - p.u) * f, v = p.v + (q.v - p.v) * f;
       const za = z0 + rnd(60 + i * 31 + j) * 0.4, zb = Math.min(z1, za + 0.5 + rnd(70 + i * 31 + j) * (z1 - z0 - 0.5));
       line(ctx, [P(u, v, za), P(u, v, zb)], C.ink, 0.9 * k, 0.22 + (sh - 0.55) * 0.5);
+    }
+  }
+}
+
+// ── the face ore's vein (D87: quartz set in the cliff) ─────────────────────────────────────────
+
+/**
+ * Rock crystal's tones: a milky body, the face towards the light white, the far face and the
+ * termination's shade ice-blue, the ink a cool violet-black. Plain paint (no light token: a vein
+ * does not glow at night, D83's spy and the night lights never see it).
+ */
+export const QZ = { body: '#e8f0f3', lit: '#ffffff', shade: '#b4c9d6', deep: '#86a0b6', line: '#232a44' } as const;
+
+/**
+ * One terminated crystal point in canvas px: a hexagonal prism from `base` to `tip`, `w` px either
+ * side of its axis — three faces seen side by side (the one turned to the light, top-left, white;
+ * the far one ice-blue), its termination cut in facets to the tip, its root clouded milky. `lw`:
+ * the outline's width (0: none, the far paint's flecks); `fine`: facet edges and a glint (sprites,
+ * near plan buckets). Shared by the cliff's vein, the plan's seam (terrain.ts) and the machines'
+ * cut quartz (recipes/buildings.ts), so the quartz reads the same wherever it shows.
+ */
+export function crystal(ctx: Ctx, base: Pt, tip: Pt, w: number, lw: number, fine: boolean): void {
+  const dx = tip[0] - base[0], dy = tip[1] - base[1], L = Math.hypot(dx, dy) || 1;
+  const ux = dx / L, uy = dy / L;
+  // The across axis, turned towards the light (from the top-left): +b is the lit side.
+  let nx = -uy, ny = ux;
+  if (nx * -0.6 + ny * -0.8 < 0) { nx = -nx; ny = -ny; }
+  const at = (a: number, b: number): Pt => [base[0] + ux * a + nx * b, base[1] + uy * a + ny * b];
+  const sh = Math.max(L * 0.45, L - w * 1.3), sm = Math.min(L * 0.92, sh + w * 0.3);
+  const e1 = w * 0.3, e2 = -w * 0.42;
+  const out = [at(0, w), at(sh, w), tip, at(sh, -w), at(0, -w)];
+  const poly = (q: readonly Pt[], col: string, alpha = 1): void => {
+    ctx.save();
+    ctx.globalAlpha *= alpha;
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    q.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  };
+  poly(out, QZ.body);
+  poly([at(0, w), at(sh, w), tip, at(sm, e1), at(0, e1)], QZ.lit);
+  poly([at(0, e2), at(sm, e2), tip, at(sh, -w), at(0, -w)], QZ.shade);
+  poly([at(sm, e2), tip, at(sh, -w)], QZ.deep, 0.7);
+  // The root clouded: milky quartz where it grows out of the rock.
+  poly([at(0, w), at(L * 0.3, w), at(L * 0.3, -w), at(0, -w)], '#ffffff', 0.4);
+  if (fine) {
+    const edge = (q: readonly Pt[]): void => line(ctx, q, QZ.line, Math.max(0.5, lw * 0.45), 0.45);
+    edge([at(0, e1), at(sm, e1), tip]);
+    edge([at(0, e2), at(sm, e2), tip]);
+    edge([at(sh, w), at(sm, e1), at(sm, e2), at(sh, -w)]);
+  }
+  if (lw > 0) {
+    ctx.save();
+    ctx.strokeStyle = QZ.line;
+    ctx.lineWidth = lw;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    out.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.stroke();
+    ctx.restore();
+  }
+  if (fine) {
+    const [gx, gy] = at(sh * 0.86, w * 0.55);
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(gx, gy, Math.max(0.7, w * 0.32), 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+/** Points along a polyline every `step` tiles from `start`, each with its arc length and the outward normal (u, v) there. */
+function alongRun(run: ReadonlyArray<{ u: number; v: number; a: number }>, step: number, start: number): Array<{ u: number; v: number; s: number; nu: number; nv: number; tu: number; tv: number }> {
+  const out: Array<{ u: number; v: number; s: number; nu: number; nv: number; tu: number; tv: number }> = [];
+  let d = start, acc = 0;
+  for (let i = 0; i < run.length - 1; i++) {
+    const p = run[i]!, q = run[i + 1]!;
+    const len = Math.hypot(q.u - p.u, q.v - p.v);
+    if (len < 1e-6) continue;
+    const tu = (q.u - p.u) / len, tv = (q.v - p.v) / len, a = q.a;
+    while (d <= acc + len) {
+      const f = (d - acc) / len;
+      out.push({ u: p.u + (q.u - p.u) * f, v: p.v + (q.v - p.v) * f, s: d, nu: Math.cos(a), nv: Math.sin(a), tu, tv });
+      d += step;
+    }
+    acc += len;
+  }
+  return out;
+}
+
+/** The seam's height (levels above the slab's foot) at arc length s along a wall: it wanders, low and high. */
+const seamAt = (s: number, z0: number, z1: number, ph: number): number => z0 + (z1 - z0) * (0.3 + 0.12 * Math.sin(s * 4.4 + ph) + 0.05 * Math.sin(s * 11 + ph * 2));
+
+/** px per tile of a projection (the crystals' widths follow the drawing's scale: sprite, paint, artboard). */
+const scaleOf = (P: Proj): number => { const a = P(0, 0, 0), b = P(1, 0, 0); return Math.hypot(b[0] - a[0], b[1] - a[1]); };
+
+/** The vein's seam across a wall run: a milky band that wanders along it, sparkling (inside the wall). */
+function veinSeam(ctx: Ctx, P: Proj, run: ReadonlyArray<{ u: number; v: number; a: number }>, z0: number, z1: number, o: ColumnOpts, rnd: (n: number) => number): void {
+  const ph = rnd(500) * 6.28, pts = alongRun(run, 0.06, 0);
+  if (pts.length < 2) return;
+  const half = (z1 - z0) * 0.075;
+  const top = pts.map((p) => P(p.u, p.v, seamAt(p.s, z0, z1, ph) + half));
+  const bot = pts.map((p) => P(p.u, p.v, seamAt(p.s, z0, z1, ph) - half)).reverse();
+  ctx.save();
+  ctx.globalAlpha *= o.detail >= 1 ? 0.62 : 0.8;
+  ctx.fillStyle = QZ.body;
+  ctx.beginPath();
+  [...top, ...bot].forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+  if (o.detail < 1) return;
+  line(ctx, bot, QZ.deep, 0.9 * o.k, 0.55);
+  // Sparkle: white flecks along the seam.
+  ctx.fillStyle = '#ffffff';
+  for (const [i, p] of pts.entries()) {
+    if (rnd(520 + i) > 0.3) continue;
+    const [x, y] = P(p.u, p.v, seamAt(p.s, z0, z1, ph) + (rnd(560 + i) - 0.5) * half * 2);
+    ctx.beginPath(); ctx.arc(x, y, (0.6 + rnd(600 + i) * 0.7) * o.k, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+/**
+ * Clusters of rock crystal erupting from the seam of a wall run: every third of a tile or so, a
+ * tall point and one or two smaller ones leaning off it, standing out of the face a little.
+ */
+function veinCrystals(ctx: Ctx, P: Proj, run: ReadonlyArray<{ u: number; v: number; a: number }>, z0: number, z1: number, o: ColumnOpts, rnd: (n: number) => number, r: number): void {
+  const ph = rnd(500) * 6.28, sc = scaleOf(P), fine = o.detail >= 2;
+  const lw = (fine ? 1.3 : 0.9) * o.k;
+  // Standing out of the face only in the sprites: the far paint's crystals (placed by the world's
+  // hash, not the sprite's key) stay in the wall's plane, under the sprite's wall when both show.
+  const out = fine ? 0.08 : 0;
+  const at = alongRun(run, 0.4, 0.14 + rnd(700 + r) * 0.12);
+  // The run's far end: keep the clusters off the wall's open-air corners.
+  let total = 0;
+  for (let i = 0; i < run.length - 1; i++) total += Math.hypot(run[i + 1]!.u - run[i]!.u, run[i + 1]!.v - run[i]!.v);
+  for (const [i, p] of at.entries()) {
+    if (p.s > total - 0.1 || rnd(710 + r * 31 + i) < 0.18) continue;
+    const zb = seamAt(p.s, z0, z1, ph);
+    const n = 2 + (rnd(730 + r * 31 + i) < 0.55 ? 1 : 0);
+    const big = 0.85 + rnd(750 + r * 31 + i) * 0.4;
+    // Far ones first: the side crystals, then the tall middle one over them.
+    for (let c = n - 1; c >= 0; c--) {
+      const lean = c === 0 ? (rnd(770 + i) - 0.5) * 0.3 : c === 1 ? -0.75 : 0.8;
+      const h = (c === 0 ? 0.72 : 0.46) * big * (z1 - z0) / 2;
+      const off = c === 0 ? 0 : c === 1 ? -0.085 : 0.095;
+      const bu = p.u + p.tu * off, bv = p.v + p.tv * off;
+      const base = P(bu, bv, zb - 0.04);
+      const tip = P(bu + p.nu * out + p.tu * lean * 0.16, bv + p.nv * out + p.tv * lean * 0.16, zb + h);
+      crystal(ctx, base, tip, (c === 0 ? 0.085 : 0.062) * big * sc, lw, fine);
+    }
+  }
+}
+
+/** A face ore's points poking up along the lip of a column's top, over the sides that drop (any side: a face may look away). */
+function veinLip(ctx: Ctx, P: Proj, pts: readonly OutlinePt[], z: number, o: ColumnOpts, rnd: (n: number) => number): void {
+  const sc = scaleOf(P), fine = o.detail >= 2, lw = (fine ? 1.2 : 0.85) * o.k;
+  let n = 0;
+  for (const run of silhouetteRuns(pts)) {
+    const r = run.map((p) => ({ u: p.u, v: p.v, a: 0 }));
+    for (const p of alongRun(r, 0.36, 0.16 + rnd(800 + n) * 0.1)) {
+      n++;
+      if (rnd(820 + n) < 0.45) continue;
+      // Just inside the edge, leaning out over it.
+      const bu = p.u + (0.5 - p.u) * 0.14, bv = p.v + (0.5 - p.v) * 0.14;
+      const ou = (p.u - 0.5) * 0.12, ov = (p.v - 0.5) * 0.12;
+      const h = 0.34 + rnd(840 + n) * 0.22;
+      crystal(ctx, P(bu, bv, z - 0.04), P(bu + ou, bv + ov, z + h), 0.065 * sc, lw, fine);
+      if (rnd(860 + n) < 0.5) crystal(ctx, P(bu + 0.07, bv - 0.05, z - 0.03), P(bu + 0.07 + ou * 1.6, bv - 0.05 + ov * 1.6, z + h * 0.6), 0.048 * sc, lw, fine);
     }
   }
 }

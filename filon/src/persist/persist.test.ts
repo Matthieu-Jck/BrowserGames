@@ -154,7 +154,7 @@ describe('migrations', () => {
     expect(data.trade!.orders).toEqual([]);
     const r = remapSave(data);
     expect(r.data.trade!.cargo).toEqual([]); // the post gone, its cargo with it
-    expect(r.note?.removed).toEqual([{ id: 'trade_post_3x3', n: 1, refunded: true }]);
+    expect(r.note?.removed.filter((x) => x.id !== 'observatory_2x2')).toEqual([{ id: 'trade_post_3x3', n: 1, refunded: true }]); // (its labs go too, at 9 → 10)
     const back = deserialize(r.data, sim.grid.source);
     expect([...back.ents.sorted()].some((e) => BUILDING_IDS[e.def] === 'trade_post')).toBe(false);
     expect(back.stock[plates]).toBeGreaterThanOrEqual(sim.stock[plates]! + 40_000); // its 40 plates back
@@ -193,11 +193,36 @@ describe('migrations', () => {
     expect(data.content!.buildings).toContain('pylon_1x1');
     expect(data.content!.buildings).not.toContain('pylon');
     const r = remapSave(data);
-    expect(r.note?.removed).toEqual([{ id: 'pylon_1x1', n: pylons.length, refunded: true }]);
+    expect(r.note?.removed.filter((x) => x.id !== 'observatory_2x2')).toEqual([{ id: 'pylon_1x1', n: pylons.length, refunded: true }]); // (its labs go too, at 9 → 10)
     const back = deserialize(r.data, sim.grid.source);
     expect([...back.ents.sorted()].some((e) => BUILDING_IDS[e.def] === 'pylon')).toBe(false);
     for (const p of pylons) expect(back.linksOf(p.id)).toEqual([]);
     expect(back.stock[plates]).toBeGreaterThanOrEqual(sim.stock[plates]! + 8_000 * pylons.length); // 8 plates each back
+  });
+
+  it('9 → 10 (D84): the 2×2 research labs come down, refunded with the files they held and the data their project had paid', () => {
+    const { sim } = foundScenario('tutorial', { playerSeed: 1, near: WORLD_EPOCH0 + 1000, name: 'Essai' });
+    const labs = [...sim.ents.sorted()].filter((e) => BUILDING_IDS[e.def] === 'observatory');
+    expect(labs.length).toBeGreaterThan(0);
+    const ids = new Set(labs.map((e) => e.id));
+    const project = sim.projects.find((p) => ids.has(p.lab));
+    expect(project, 'the tutorial base runs Mechanics in its lab').toBeTruthy();
+    const df = itemIdx('journal_1'), plates = itemIdx('iron_plate');
+    const paid = project!.cost.reduce((a, c, k) => (c.item === df ? a + project!.paid[k]! : a), 0);
+    expect(paid).toBeGreaterThan(0);
+    const d = { ...JSON.parse(JSON.stringify(serialize(sim))), v: 9 };
+    const { data, from } = migrate(d);
+    expect(from).toBe(9);
+    expect(data.content!.buildings).toContain('observatory_2x2');
+    expect(data.content!.buildings).not.toContain('observatory');
+    const r = remapSave(data);
+    expect(r.note?.removed).toEqual([{ id: 'observatory_2x2', n: labs.length, refunded: true }]);
+    const back = deserialize(r.data, sim.grid.source);
+    expect([...back.ents.sorted()].some((e) => BUILDING_IDS[e.def] === 'observatory')).toBe(false);
+    expect(back.projects.some((p) => ids.has(p.lab))).toBe(false);
+    for (const l of labs) expect(back.linksOf(l.id)).toEqual([]);
+    expect(back.stock[plates]).toBeGreaterThanOrEqual(sim.stock[plates]! + 30_000 * labs.length); // 30 plates each back
+    expect(back.stock[df]).toBeGreaterThanOrEqual(sim.stock[df]! + paid); // its project's data, not lost
   });
 
   it('7 → 8 (D72): a project started under the spread penalty is rebased on its table cost, its progress kept', () => {

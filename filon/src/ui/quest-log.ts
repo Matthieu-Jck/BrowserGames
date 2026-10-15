@@ -105,6 +105,7 @@ export function objectiveLabel(o: QuestObjective): string {
     case 'delivers': return t('quest.obj.delivers', { name: buildingName(o.defs[0]!) });
     case 'unlocked': return o.label ? o.label[locale()] : t('quest.obj.unlocked', { name: listOf(o.ids.map((id) => nodeName(id)[locale()])) });
     case 'feeds': return t('quest.obj.feeds', { item: itemRef(o.item), name: buildingName(o.to[0]!) });
+    case 'vein': return t('quest.obj.vein');
     default: { const never: never = o; return never; }
   }
 }

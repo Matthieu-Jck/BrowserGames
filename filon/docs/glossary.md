@@ -35,6 +35,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | archétype | archetype | `ARCHETYPES` (`closed`, `steppe`, `lagoons`, `mesas`, `embers`) | A per-player environment: Cirque fermé / Closed Cirque, Grande Steppe / Wide Steppe, Lagunes de sel / Salt Lagoons, Mesas sifflantes / Whistling Mesas, Champs de braise / Ember Fields. |
 | biome unique | unique biome | `UNIQUE_BIOMES` | A site that yields one unique resource. T3: Bosquet de verre / Glassgrove, Falaises à résine / Resin Cliffs, Champs de braise / Ember Fields. T4: Marais d'encre / Inkmarsh, Mer de nacre / Nacre Seabed, Les Orgues / Organ Peaks. |
 | gisement | deposit | per-tile `ore` and `rich` ([grid.ts](../src/sim/world/grid.ts)) | Ore tiles: infinite, but capped per tile per minute. Only drills extract them. |
+| paroi · veine de quartz | face · quartz vein | `QUARTZ_VEIN`, `TerrainSource.quartzVein`, `isFaceOre` ([face.ts](../src/sim/face.ts)) | A face is the wall between floor ground and higher rock. Map 3 (D87) guarantees a quartz vein in the nearest mountain past the Crown, in the parcel west or north of the starting square: eight face tiles holding quartz, floor at their foot. Only a face cutter works it; no drill takes it, no excavator digs it. |
 | roche H1–H4 | rock H1–H4 | `T.Rock1`…`T.Rock4` | Diggable rock by hardness: sandstone, basalt, lilac obsidian (ex4), heartrock (ex7). |
 | évent | vent | `T.Vent` | The tile a geothermal plant must stand on. |
 | saline | salt flat | `T.Salt` | Takes ribbons, masts and salt drills; can be backfilled. |
@@ -50,7 +51,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 
 | Français | English | Code | Meaning |
 |---|---|---|---|
-| Cœur | Core | `hearth` [hearth] | The base's core (code: "Hearth"; older docs say "Heart"): depot of the base's stock, pays for construction, drone bay, uplink, small solar array. Placed at founding; grows to level 4, each level past the first making land 5 % cheaper. Its one outlet (bottom-left) hands out data files once Analytics' « Analyse de l’activité » is researched (D68). |
+| Cœur | Core | `hearth` [hearth] | The base's core (code: "Hearth"; older docs say "Heart"): depot of the base's stock, pays for construction, drone bay, uplink, small solar array. Placed at founding; grows to level 4, each level mounting one piece on a corner of its slab and dressing it up (D86): level 2 its one outlet (south-east), which hands out Survey Data once Analytics' « Traitement des données » is researched (D68). |
 | Avant-poste | Waystation | `outpost` (retired, D60) | Gone with the influence zones it extended: a save that still holds one gets it refunded (`RETIRED_COSTS`), its store to the Heart, and the claim keeps the parcels it stood on. |
 | Balise d'arpentage | Survey Beacon | `beacon` [beacon] | Lifts the fog within 40 tiles; can stand off the claim's land and on rock (never on a sister claim's parcel). |
 | Foreuse · Foreuse profonde | Drill · Deep Bore | `drill`, `deep_bore` [drill] | Extract the majority ore beneath them, capped by the tiles' caps. |
@@ -79,7 +80,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Atelier d’optique · Scriptorium | Optics Workshop · Scriptorium | `optics_workshop`, `scriptorium` [machine] | Lenses and nacre lattice · resin canvas, Atlas, Codex. |
 | Four à céramique | Ceramic Oven | `ceramic_oven` [machine] | Stone + water → ceramic. |
 | Chargeur | Cell Charger | `cell_charger` [machine] | Charges cells: exportable energy. |
-| Laboratoire de recherche | Research Lab | `observatory` [lab] | Where research runs: takes its data on its ribbons (Survey Data, Mechanics Data, atlases, codices by tier) and holds the research slots (D68). Its plan is the gate after every other plan, and brings the data collector (D71). |
+| Laboratoire de recherche | Research Lab | `observatory` [lab] | 3×3 since D84 (the 2×2 one retired, `observatory_2x2`). Where research runs: takes its data on its ribbons (three inputs along its back) (Survey Data, Mechanics Data, atlases, codices by tier) and holds the research slots (D68). Its plan is the gate after every other plan, and brings the data collector (D71). |
 | Collecteur de données · Relais de données | Data Collector · Data Relay | `data_collector`, `data_relay` [machine, `drill.anywhere`] | Powered makers of Survey Data, set anywhere (no deposit): 2 and 6 a minute. |
 | Laboratoire autonome | Autonomous Lab | `auto_lab` [lab] | A research lab that also makes 3 Survey Data a minute into its own store (Analytics · Data Mining). |
 | Serveur · Serveur refroidi · Supercalculateur | Server · Cooled Server · Supercomputer | `server`, `cooled_server`, `supercomputer` [server] | The claim's own compute: tokens a minute for its research while powered (2 000, 6 000, 20 000), billed before CrierBelt's (D70). |
@@ -97,6 +98,8 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Comptoir | Trade Post | `trade_post` [trade] | CrierBelt's cargo pad: 5×5, its flame apron kept clear, one entrance (what it sells) and one exit (what it bought, in turn) on flame-proof ribbons (D62). |
 | tablier (du comptoir) | flame apron | the trade post's outer ring | The one-tile ring round the post's pad that the drones' flames keep clear: nothing else stands on it (D62). |
 | Dérivant | Drifter | `BAL.drifterCost`, `Sim.fleet` | A freight airship bought at a skydock (not a building). Carries one item along a route. |
+| Haveuse | Face Cutter | `face_cutter` [drill, `drill.face`] | Stands on the floor at the foot of a quartz face, its back to the rock, and cuts the face tiles it touches (7.5/min each, 15 at most); never on the wall (`needs_face`); it turns its back to the wall by itself (D87, research `ex_quartz`). |
+| Atelier de quartz | Quartz Workshop | `quartz_workshop` [machine] | Cuts quartz into blades and mounts each on two copper wires: the quartz oscillator, its one recipe (D87, `ex_quartz`). |
 
 ### Items (`ITEMS`)
 
@@ -108,9 +111,11 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Engrenage · Circuit imprimé · Céramique · Batterie vide / chargée | Gear · Circuit Board · Ceramic · Empty / Charged Battery | `gear`, `circuit`, `ceramic`, `empty_cell`, `charged_cell` | T2 parts. A charged battery is energy you can export. |
 | Verre-spore · Résine céleste · Sel de braise | Sporeglass · Sky Resin · Embersalt | `sporeglass`, `sky_resin`, `embersalt` | T3 uniques: each colony reaches only some of them, so they are traded. |
 | Mousse lumen · Nacre fossile · Quartz chantant | Lumen Moss · Fossil Nacre · Singing Quartz | `lumen_moss`, `fossil_nacre`, `singing_quartz` | T4 uniques. |
+| Quartz | Quartz | `quartz` (item `face: true`) | T1 raw ore set in cliff faces (D87): the face cutter's; traded at the Crier (what a land founded before map 3 buys). Not the T4 unique Singing Quartz. |
+| Oscillateur à quartz | Quartz Oscillator | `oscillator` | A part (D87): 1 quartz + 2 copper wire at the quartz workshop; Mechanics Data takes one a test, a server costs four. |
 | Lentille · Toile de résine · Cœur thermique · Résonateur · Treillis de nacre | Lens · Resin Canvas · Thermal Core · Resonator · Nacre Lattice | `lens`, `resin_canvas`, `thermal_core`, `resonator`, `nacre_lattice` | T3–T4 parts. |
 | Données d'arpentage · Données mécaniques | Survey Data · Mechanics Data | `journal_1`, `journal_2` | Research's data (D71): Survey Data from the data collectors, the Core once analysed and the autonomous labs; Mechanics Data from the test bench (2 gears + 2 circuits). A node uses its tier's kinds: T1 Survey Data, T2 + Mechanics Data, T3 + atlases, T4 + codices (`SCIENCE`). |
-| Banc d'essai | Test Bench | `test_bench` [machine] | Load-tests gears and circuits into Mechanics Data (Mechanics, tr1). |
+| Banc d'essai | Test Bench | `test_bench` [machine] | Load-tests gears and circuits, clocked by a quartz oscillator, into Mechanics Data (Mechanics, tr1; three inputs since D87). |
 | Atlas · Codex | Atlas · Codex | `atlas`, `codex` | T3 science (needs 2 uniques) and T4 science (needs 5). |
 | Servomoteur | Servomotor | `pace_bell` | A part (D81; once the speed module, gone): 4 circuits + 2 gears; the advanced machines of the Machines family are built of it, and the Crier trades it. |
 | Bras robotisé | Robot Arm | `robot_arm` | A part (D81, Robotics `dn7`): 2 servomotors + 2 circuits; the Chip Fab is built of it. |

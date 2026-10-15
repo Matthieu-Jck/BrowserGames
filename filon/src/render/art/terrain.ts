@@ -8,14 +8,19 @@
 //   stand up exactly as the relief sprites draw them — the far-zoom stand-in for the sprites.
 //   Water up on the rock (the Crown's tarn, D63) is a column too, topped by its pool
 //   (`columnLook`): in iso it lies at its level, in plan the ground shows it within the rock.
+// A face ore (D87: quartz set in the cliff, `isFaceOre`) is no hidden vein: in iso its columns wear
+// a crystal seam on their walls (rock.ts `drawColumn`'s `vein`), in plan its tiles a sparkling
+// seam of crystals along every edge that drops to lower ground (`faceSeam`), where a face cutter
+// stands to work it.
 // Every random choice is hashed from WORLD coordinates and every shape reads a border window,
 // so chunks join seamlessly. Runs in a worker (OffscreenCanvas) — no DOM, no Pixi.
 import { ITEMS } from '@/content/items';
 import { ITEM_IDS } from '@/content/registry';
 import { hash32, hashUnit } from '@/core/hash';
+import { isFaceOre } from '@/sim/face';
 import { T } from '@/sim/types';
 import { C, mix, rgba } from './tokens';
-import { columnShadow, drawColumn, topColor, type Proj, type TopLook } from './rock';
+import { columnShadow, crystal, drawColumn, QZ, topColor, type Proj, type TopLook } from './rock';
 import { isRockT, isWaterT, levelOf, maskAt, masksAt, MAX_LEVEL, MAX_TERRACE, SHIFT, slabOutline, SMOOTH, STEP_LEVELS } from '../relief';
 
 type Ctx2 = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D;
@@ -370,6 +375,8 @@ export function paintChunk(ctx: Ctx2, d: PaintData, ppt: number, scratch: (w: nu
         continue;
       }
       const o = d.ore[at(i, j)]!;
+      // A face ore on rock bared by a drop beside it: its seam along the face (else a hidden vein, below).
+      if (o > 0 && bared(d, i, j)) { faceSeam(ctx, d, i, j, ppt); continue; }
       if (o > 0 && !isWaterT(tt)) {
         const id = ITEM_IDS[o - 1]!;
         const col = (ITEMS as Record<string, { color: string }>)[id]!.color;
@@ -399,6 +406,100 @@ export function paintChunk(ctx: Ctx2, d: PaintData, ppt: number, scratch: (w: nu
   }
 }
 
+/** The sides of a tile (N, E, S, W): the neighbour's offset, the edge's ends and its inward normal (tile-local). */
+const SIDES: ReadonlyArray<{ di: number; dj: number; a: readonly [number, number]; b: readonly [number, number]; n: readonly [number, number] }> = [
+  { di: 0, dj: -1, a: [0, 0], b: [1, 0], n: [0, 1] },
+  { di: 1, dj: 0, a: [1, 0], b: [1, 1], n: [-1, 0] },
+  { di: 0, dj: 1, a: [1, 1], b: [0, 1], n: [0, -1] },
+  { di: -1, dj: 0, a: [0, 1], b: [0, 0], n: [1, 0] },
+];
+
+/** The sides of window tile (i, j) that drop to lower ground (its land's level, `levelOf`): where a face lies. */
+function dropSides(d: PaintData, i: number, j: number): typeof SIDES {
+  const lv = (a: number, b: number): number => (a < 0 || b < 0 || a >= WIN || b >= WIN ? 0 : levelOf(d.terrain[b * WIN + a]!, d.level[b * WIN + a]!));
+  const here = lv(i, j);
+  return SIDES.filter((s) => lv(i + s.di, j + s.dj) < here);
+}
+
+/** Is window tile (i, j) rock holding a face ore (D87) that a drop beside it bares? */
+const bared = (d: PaintData, i: number, j: number): boolean => {
+  const o = j * WIN + i;
+  return isRockT(d.terrain[o]!) && isFaceOre(d.ore[o]! - 1) && dropSides(d, i, j).length > 0;
+};
+
+/**
+ * A face ore on a rock tile, in plan (D87): along every edge that drops to lower ground — the face
+ * a cutter stands at — a milky seam inked on its inner side, and at ≥ 16 px/tile clusters of rock
+ * crystal rooted in the face and pointing in over the top, white with ink outlines (rock.ts `crystal`),
+ * so a vein reads at a glance where a hidden ore is a faint dot. Everything is hashed from world
+ * coordinates and kept inside the tile's ground footprint (its first slab, relief.ts
+ * `slabOutline`: the tile cut by its chamfers): the ground texture shows in iso too, where the
+ * column covers exactly that footprint, so none of it shows on the floor in front of the face.
+ */
+function faceSeam(ctx: Ctx2, d: PaintData, i: number, j: number, ppt: number): void {
+  const B = BORDER, k = ppt / 32;
+  const wx = d.cx * 32 - B + i, wy = d.cy * 32 - B + j;
+  const px = (i - B) * ppt, py = (j - B) * ppt;
+  const at = (u: number, v: number): [number, number] => [px + u * ppt, py + v * ppt];
+  const rl = (a: number, b: number): number => (a < 0 || b < 0 || a >= WIN || b >= WIN || !isRockT(d.terrain[b * WIN + a]!) ? 0 : levelOf(d.terrain[b * WIN + a]!, d.level[b * WIN + a]!));
+  ctx.save();
+  ctx.beginPath();
+  slabOutline(masksAt(rl, i, j), 0).forEach((p, n) => { const [x, y] = at(p.u, p.v); if (n) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+  ctx.closePath();
+  ctx.clip();
+  for (const s of dropSides(d, i, j)) {
+    const side = SIDES.indexOf(s);
+    // A point t along the edge, m in from it (tiles; negative: out over the face).
+    const on = (t: number, m: number): [number, number] => at(s.a[0] + (s.b[0] - s.a[0]) * t + s.n[0] * m, s.a[1] + (s.b[1] - s.a[1]) * t + s.n[1] * m);
+    // The seam: a band along the edge, its inner line wandering.
+    const outer: Array<[number, number]> = [], inner: Array<[number, number]> = [];
+    const ph = hashUnit(wx, wy, 0x3a0 + side) * 6;
+    for (let q = 0; q <= 10; q++) {
+      const t = 0.08 + (0.84 * q) / 10, taper = Math.min(1, Math.sin((q / 10) * Math.PI) * 1.6);
+      outer.push(on(t, 0.03));
+      inner.push(on(t, 0.03 + (0.16 + 0.06 * Math.sin(t * 9 + ph)) * taper));
+    }
+    ctx.save();
+    ctx.globalAlpha = 0.95;
+    ctx.fillStyle = QZ.body;
+    ctx.beginPath();
+    [...outer, ...inner.slice().reverse()].forEach(([x, y], n) => (n ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = QZ.deep;
+    ctx.lineWidth = 1.1 * k;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    inner.forEach(([x, y], n) => (n ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.stroke();
+    ctx.restore();
+    if (ppt < 16) continue;
+    // Sparkle on the seam: a few white four-point glints.
+    ctx.fillStyle = '#ffffff';
+    for (let g = 0; g < 3; g++) {
+      const [gx, gy] = on(0.15 + hashUnit(wx, wy, 0x3f0 + side * 3 + g) * 0.7, 0.1);
+      const r = (0.03 + hashUnit(wx, wy, 0x400 + side * 3 + g) * 0.025) * ppt, w = r * 0.28;
+      ctx.beginPath();
+      ctx.moveTo(gx, gy - r); ctx.lineTo(gx + w, gy - w); ctx.lineTo(gx + r, gy); ctx.lineTo(gx + w, gy + w);
+      ctx.lineTo(gx, gy + r); ctx.lineTo(gx - w, gy + w); ctx.lineTo(gx - r, gy); ctx.lineTo(gx - w, gy - w);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // Clusters: three along the edge, each a long point and a short one fanned.
+    for (let c = 0; c < 3; c++) {
+      const t = ((c + 0.5) / 3) * 0.66 + 0.17 + (hashUnit(wx, wy, 0x3c0 + side * 4 + c) - 0.5) * 0.08;
+      for (let q = 0; q < 2; q++) {
+        const h = hashUnit(wx, wy, 0x3d0 + side * 8 + c * 2 + q);
+        const fan = (q ? 1 : -0.45) * (0.3 + h * 0.35);
+        const len = (q ? 0.24 : 0.34) * (0.85 + hashUnit(wx, wy, 0x3e0 + side * 8 + c * 2 + q) * 0.3);
+        // Rooted in the face, the point inward over the top: a geode's rim seen from above.
+        crystal(ctx, on(t, 0.01), on(t + fan * len * 0.55, 0.01 + len), (q ? 0.06 : 0.085) * ppt, Math.max(0.8, 0.6 * k), ppt >= 32);
+      }
+    }
+  }
+  ctx.restore();
+}
+
 /** Levels and per-step masks of the window (0 outside the valid ring). */
 export function windowLevels(d: PaintData): { lv: Uint8Array; masks: Uint8Array[] } {
   const lv = new Uint8Array(WIN * WIN);
@@ -418,9 +519,10 @@ export function windowLevels(d: PaintData): { lv: Uint8Array; masks: Uint8Array[
  * How a raised window tile is drawn: its rock class (for a column of water or reclaimed ground up
  * on the rock, D63: the hardest rock round it, its basin) and its top when it is not plain rock —
  * water or reclaimed ground, or rock in whose corner three tiles of water at its height meet —
- * with which of its 3×3 hold water and deep water at its height (art/rock.ts `TopLook`).
+ * with which of its 3×3 hold water and deep water at its height (art/rock.ts `TopLook`); `vein`:
+ * its rock holds a face ore (D87), worn as a crystal seam on its walls.
  */
-export function columnLook(d: PaintData, lv: Uint8Array, o: number): { cls: number; top: TopLook | null } {
+export function columnLook(d: PaintData, lv: Uint8Array, o: number): { cls: number; top: TopLook | null; vein: boolean } {
   const t = d.terrain[o]!, L = lv[o]!;
   let wet = 0, deep = 0, cls = isRockT(t) ? t - T.Rock1 : 0;
   for (let j = -1; j <= 1; j++) {
@@ -430,11 +532,13 @@ export function columnLook(d: PaintData, lv: Uint8Array, o: number): { cls: numb
       if (!isRockT(t) && isRockT(u) && u - T.Rock1 > cls) cls = u - T.Rock1;
     }
   }
-  if (isWaterT(t)) return { cls, top: { kind: 'water', wet, deep } };
-  if (!isRockT(t)) return { cls, top: { kind: 'ground', wet, deep } };
-  // Rock: a top of its own only where a corner of it is under water (its three other tiles wet).
+  if (isWaterT(t)) return { cls, top: { kind: 'water', wet, deep }, vein: false };
+  if (!isRockT(t)) return { cls, top: { kind: 'ground', wet, deep }, vein: false };
+  // Rock: a top of its own only where a corner of it is under water (its three other tiles wet);
+  // a crystal seam on its walls where it holds a face ore (D87).
   const corner = (a: number, b: number, c: number): boolean => (wet & (1 << a)) !== 0 && (wet & (1 << b)) !== 0 && (wet & (1 << c)) !== 0;
-  return { cls, top: corner(0, 1, 3) || corner(1, 2, 5) || corner(5, 7, 8) || corner(3, 6, 7) ? { kind: 'rock', wet, deep } : null };
+  const vein = isFaceOre(d.ore[o]! - 1);
+  return { cls, top: corner(0, 1, 3) || corner(1, 2, 5) || corner(5, 7, 8) || corner(3, 6, 7) ? { kind: 'rock', wet, deep } : null, vein };
 }
 
 /** The per-step masks of one window tile. */
@@ -476,9 +580,9 @@ export function paintRelief(ctx: Ctx2, d: PaintData, ppt: number, scratch: (w: n
   const detail = ppt >= 32 ? 1 : 0;
   const k = Math.max(0.35, ppt / 70);
   for (const [i, j] of cols) {
-    const o = j * WIN + i, { cls, top } = columnLook(d, lv, o);
+    const o = j * WIN + i, { cls, top, vein } = columnLook(d, lv, o);
     const wx = d.cx * 32 - B + i, wy = d.cy * 32 - B + j;
-    drawColumn(ctx, proj(i, j), cls, tileMasks(lv, masks, o), { detail, seed: hash32(wx, wy, 0x2c), k, top });
+    drawColumn(ctx, proj(i, j), cls, tileMasks(lv, masks, o), { detail, seed: hash32(wx, wy, 0x2c), k, top, vein });
   }
   return true;
 }

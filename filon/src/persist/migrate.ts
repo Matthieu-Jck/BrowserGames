@@ -255,7 +255,20 @@ export function parcelsResized(d: Record<string, unknown>): Record<string, unkno
   };
 }
 
-export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsToTowers, 6: researchToTokens, 7: researchAtBase, 8: parcelsResized };
+/**
+ * 9 → 10, the 3×3 research lab (D84, owner 2026-10-15: "the research lab should be 3x3"): a 2×2
+ * lab cannot grow in place over what stands round it (its data line comes in at its back). Its
+ * content id becomes `observatory_2x2`, retired: the remap takes it down, refunded at its cost,
+ * the files in its store handed to the Heart, its wires gone, and its project cancelled as taking
+ * a lab down cancels it — the data it had paid back to the Heart.
+ */
+export function labsToThree(d: Record<string, unknown>): Record<string, unknown> {
+  const content = d.content as { buildings?: string[] } | undefined;
+  if (!content?.buildings?.includes('observatory')) return d;
+  return { ...d, content: { ...content, buildings: content.buildings.map((id) => (id === 'observatory' ? 'observatory_2x2' : id)) } };
+}
+
+export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsToTowers, 6: researchToTokens, 7: researchAtBase, 8: parcelsResized, 9: labsToThree };
 
 export class SaveTooNew extends Error {
   constructor(readonly version: number) { super(`save version ${version} is newer than this build (${SAVE_VERSION})`); }

@@ -49,6 +49,15 @@ export const ITEMS = {
   resonator: { name: { fr: 'Résonateur', en: 'Resonator' }, tier: 4, kind: 'part', value: 260, depth: 1.5, glyph: 'resonator', color: '#6f5fa0' },
   nacre_lattice: { name: { fr: 'Treillis de nacre', en: 'Nacre Lattice' }, tier: 4, kind: 'part', value: 252, depth: 1.5, glyph: 'lattice', color: '#e6dcf2' },
   codex: { name: { fr: 'Codex', en: 'Codex' }, tier: 4, kind: 'science', value: 1014, depth: 0.5, glyph: 'codex', color: '#3a3550' },
+
+  // ── appended (D87): the quartz of the cliff faces, and its oscillator ──────
+  // Rock crystal set in a cliff face past the Crown (map 3: a guaranteed vein in the nearest
+  // mountain, a parcel away): only the face cutter works it, from the floor beside the wall
+  // (`face`). Not the T4 unique « Quartz chantant » (`singing_quartz`): a plain ore, milky white.
+  quartz: { name: { fr: 'Quartz', en: 'Quartz' }, tier: 1, kind: 'ore', value: 4.5, depth: 150, glyph: 'crystal', color: '#e6eef0', face: true },
+  // A quartz blade on copper leads (the quartz workshop): the clock of Mechanics Data's load
+  // tests and of the servers.
+  oscillator: { name: { fr: 'Oscillateur à quartz', en: 'Quartz Oscillator' }, tier: 1, kind: 'part', value: 11, depth: 100, glyph: 'oscillator', color: '#b9c3cc' },
 } as const satisfies Record<string, ItemDef>;
 
 export type ItemId = keyof typeof ITEMS;

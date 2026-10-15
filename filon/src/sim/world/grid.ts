@@ -17,6 +17,23 @@ export interface TerrainSource {
   readonly crownOuter?: number;
   /** The Crown's tarn, where there is one (map 2): its centre tile and the level of its water. */
   readonly tarn?: { readonly x: number; readonly y: number; readonly level: number } | null;
+  /** The land's quartz vein, where there is one (map 3, D87): its face tiles and the way they look. */
+  readonly quartzVein?: VeinSite | null;
+}
+
+/**
+ * A vein set in a cliff face (D87): `n` face tiles from (x, y), a step (dx, dy) apart along the
+ * wall, each rock one level above the floor at its foot; `look` is the side the face looks to (the
+ * floor a face cutter stands on, its back to the wall: the cutter's own rotation); `item` the ore.
+ */
+export interface VeinSite {
+  readonly x: number;
+  readonly y: number;
+  readonly dx: number;
+  readonly dy: number;
+  readonly n: number;
+  readonly look: 0 | 1 | 2 | 3;
+  readonly item: number;
 }
 
 export interface Chunk {

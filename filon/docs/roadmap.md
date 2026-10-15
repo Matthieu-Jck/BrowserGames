@@ -53,6 +53,8 @@ Deviations from the plan:
 - ✅ 2026-10-15: **a starting square of nine parcels** (D74, owner, [land.md](land.md)): parcels of 23 tiles, the grant the 3 × 3 round the Heart's — about exactly the cirque and its Crown (±34 tiles); save v9 moves the land's parcel ids to the new grid.
 - ✅ 2026-10-15: **ribbon drags planned whole at the release** (D73, owner): traction ribbons up the steps and bridge pairs over obstacles by themselves, junctions never chain, the drag's ghost a faint placeholder until the release.
 - ✅ 2026-10-15: **the debug bases work the cirque to the full** (D82, owner): every deposit covered by drills from the grown level on, more smelters, a sand field of arc furnaces in the late base; lines and buildings of the layout kit keep off the deposits.
+- ✅ 2026-10-15: **the debug bases are run before they are kept** (D85, owner): six minutes after the build, no production building stands off three minutes on end and no line leads nowhere (the late base's cut copper lines, its coal-starved smelters, a blocked generator drill, an idle lab fixed); checked by scenarios.test.ts.
+- ✅ 2026-10-15: **quartz, a parcel away** (D87, owner): map 3 guarantees a quartz vein in the nearest mountain past the Crown, in the parcel west or north of the starting square; the **Haveuse / Face Cutter** stands at the wall's foot, its back to the rock, and cuts it; the **Atelier de quartz** makes quartz oscillators, which Mechanics Data and the servers take; a twelfth tutorial quest, « Le quartz de la paroi » (the land's first purchase); maps 1–2 keep their land and buy quartz at the Crier.
 - Next candidates, from the review of 2026-10-13:
   - Hide or wire inert content: the temperature shown without effect (D26), and research flags with no consumer.
   - A long-term goal: the claim's value ranked against the sister claims in the Gazette, and CrierBelt delivery contracts in world time.
@@ -69,7 +71,7 @@ The redesign (D68–D71) is in, but these gaps in it are known and not fixed yet
 - The tutorial's last quest now asks for every plan: about 170 plates, 40 copper wire and 18 glass beyond the earlier quests. The scripted run still finishes in about 7 game minutes.
 
 **Next features**, agreed with the owner (default order; details in the backlog below and in [decisions.md](decisions.md) D68–D71):
-1. **Expertises.** The Core's level 3 needs Tier 1 complete and opens the window. Tier 2 opens once two expertises are chosen. Then ranks, reorientation. Save v9.
+1. **Expertises.** The Core's level 3 needs Tier 1 complete and opens the window. Tier 2 opens once two expertises are chosen. Then ranks, reorientation. Save v9. The level-3 corner piece that will open it, the expertise archive, is already drawn (a placeholder, D86).
 2. **Oil and gas with the Chemistry family**, up to barrels on the Crier and the gas turbine.
 3. **The orbital grid**, an electricity market. It reuses the per-minute billing of tokens.
 4. **The deep chains** at Tier 3–4: the quantum computer, the fusion reactor.
@@ -98,7 +100,7 @@ Agreed in conversation, not built yet. Each becomes a decision (D-number) when i
   - Fission: big, constant output that cannot ramp; cooling water, and a safe shutdown if it stops (no meltdown, no randomness). Its fuel cycle runs through centrifuges, a cooling pool, reprocessing and a deep repository dug by the excavators.
   - Fusion: needs ignition from the accumulators; the tritium loop is bred from lithium.
   - No orbital rectenna.
-- **The orbital grid.** An electricity market on the Crier Ring, through a station on the claim's grid.
+- **The orbital grid.** An electricity market on the Crier Ring, through a station on the claim's grid. Proposed: the Core's level-4 corner piece, the grid station, already drawn as a placeholder (D86).
   - Buying is dear: about 4 to 5 times the cost of making it, last in the merit order, under a cap the player sets. Surplus sells low.
   - Billed by the minute like tokens; a purse in the red cuts it off.
   - Commerce: buying at T2, selling and fixed-price contracts at T3. Later, other players sell on it too.

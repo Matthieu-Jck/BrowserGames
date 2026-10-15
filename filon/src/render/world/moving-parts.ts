@@ -2,14 +2,13 @@
 // knows (BuildingsView.animate steps their baked phases; recipes/moving.ts lists the parts).
 // A wind turbine on a grid turns with the wind its generator sees — the local wind ‰ (sheltered
 // cirque, plain, windy mesa) times the gust ‰ of the moment — so a gusty hour shows as faster
-// crowns and a mesa's turbines outspin the cirque's. One on no grid idles, braked: wiring it is
-// what sets it going. A machine's part (the sand collector's wheel) turns while it works, slower
-// on a short grid, and stops when it starves, backs up or loses power. Speeds are turns per
-// second of game time: a paused game stands still.
+// crowns and a mesa's turbines outspin the cirque's. One on no grid stands still, braked and
+// switched off (D83: a building that does not work shows no motion); wiring it sets it going. A
+// machine's part (the sand collector's wheel) turns while it works, slower on a short grid, and
+// stops when it starves, backs up or loses power. Speeds are turns per second of game time: a
+// paused game stands still.
 import { St } from '@/sim/types';
 
-/** A turbine on no grid: braked, creeping round (turns per second). */
-export const IDLE_TURNS = 0.035;
 /** A machine's part at full power (turns per second). */
 export const WORK_TURNS = 0.14;
 

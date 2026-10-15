@@ -1405,7 +1405,7 @@ export class ResearchScreen {
     if (id === ROOT) return rows;
     for (const r of recipesOf(id)) rows.push(el('li', {}, [itemIcon(this.atlas, itemIdx(r.outs[0]![0]), 24), r.name[L]]));
     const lvl = heartLevelOf(id);
-    if (lvl > 1) rows.push(el('li', {}, [buildingIcon(this.atlas, 'hearth', 24), t('tree.heartLevel', { n: lvl })]));
+    if (lvl > 1) rows.push(el('li', {}, [buildingIcon(this.atlas, 'hearth', 24, lvl), t('tree.heartLevel', { n: lvl })])); // its look at that level (D86)
     if (!isResearch(id)) return rows;
     for (const ef of effectsOf(id)) {
       const key = effectKey(ef);

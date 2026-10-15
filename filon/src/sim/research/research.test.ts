@@ -13,6 +13,9 @@ const DF = (): number => itemIdx('journal_1');
 /** A research lab beside the Heart (on the claim's land, wired to it), its store pre-filled with data files. */
 function labSim(files: number): { sim: Sim; lab: number } {
   const sim = testSim();
+  // Mechanics hangs from the Face Cutter (D87): learnt outside commands, as `learn` does.
+  sim.done.add('ex_quartz');
+  sim.rebuildDerived();
   const r = sim.place('observatory', 503, 512, 0);
   if (!r.ok) throw new Error(`observatory: ${r.reason}`);
   wire(sim, r.id!);
@@ -127,7 +130,7 @@ describe('research (D68, D69): data files, AI tokens, tiers', () => {
     const { sim } = labSim(100);
     steadyPower(sim);
     learn(sim, 'an_servers');
-    sim.grant('circuit', 10); sim.grant('copper_wire', 10);
+    sim.grant('circuit', 10); sim.grant('copper_wire', 10); sim.grant('oscillator', 4); // its clocks (D87)
     const s = sim.place('server', 512, 503, 0);
     expect(s.ok).toBe(true);
     wire(sim, s.id!);
@@ -145,16 +148,30 @@ describe('research (D68, D69): data files, AI tokens, tiers', () => {
     expect(sim.credits).toBe(credits);
   });
 
-  it('the Heart makes data files with Data Processing, and hands them out of its one outlet', () => {
+  it('the Heart makes data files with Data Processing from its level 2, and hands them out of its one outlet (D86)', () => {
     const sim = testSim();
     learn(sim, 'an_data');
     const d0 = sim.stock[DF()]!;
-    sim.run(600);
-    expect(sim.stock[DF()]! - d0).toBe(1000); // a file a minute, no power needed
     // Its outlet: the south side of its south-east corner tile (514, 514) faces (514, 515).
     expect(sim.placeBelts('ribbon', [[514, 515, 2], [514, 516, 2], [514, 517, 2]])).toBe(3);
-    sim.run(1800);
-    expect(sim.stock[DF()]! - d0).toBeLessThan(3000); // the files leave by the ribbon
+    // Level 1: no outlet mounted on that corner — the port stands, the line on it gets nothing, and
+    // a save of that base opens the same.
+    sim.run(1200);
+    expect(sim.heartDataRate()).toBe(0);
+    expect(sim.produced[DF()]).toBe(0);
+    expect(sim.stock[DF()]).toBe(d0);
+    const back = deserialize(serialize(sim), sim.grid.source);
+    back.run(600);
+    expect(back.produced[DF()]).toBe(0);
+    // Level 2 (Mechanics and its materials): a file a minute, no power needed, out by the ribbon.
+    learn(back, 'tr1');
+    back.grant('iron_plate', 200); back.grant('gear', 50);
+    expect(back.upgradeHearth().ok).toBe(true);
+    back.run(600);
+    expect(back.produced[DF()]).toBe(1000);
+    back.run(1800);
+    expect(back.produced[DF()]).toBe(4000);
+    expect(back.stock[DF()]! - d0).toBeLessThan(3000); // the files leave by the ribbon
   });
 
   it('the Research Queue: a lab moves on to the node queued for it', () => {
@@ -172,14 +189,15 @@ describe('research (D68, D69): data files, AI tokens, tiers', () => {
   it('online ≈ offline: data by ribbon, the Heart’s files, servers, the minute’s bill', () => {
     const sim = testSim();
     steadyPower(sim);
-    learn(sim, 'an_servers', 'an_data');
-    // A lab over a silo of data files, one ribbon square between (the silo hands out north).
-    const lab = sim.place('observatory', 512, 517, 0);
+    learn(sim, 'an_servers', 'an_data', 'ex_quartz'); // Mechanics hangs from the Face Cutter (D87)
+    sim.hearthLevel = 2; // its data outlet mounted (D86), outside commands like `learn`
+    // A lab (3×3, D84) over a silo of data files, one ribbon square between (the silo hands out north).
+    const lab = sim.place('observatory', 512, 516, 0);
     expect(lab.ok).toBe(true);
     wire(sim, lab.id!);
     stockedSilo(sim, 512, 520, 0, 'journal_1', 200);
     expect(sim.placeBelts('ribbon', [[512, 519, 0]])).toBe(1);
-    sim.grant('circuit', 10); sim.grant('copper_wire', 10);
+    sim.grant('circuit', 10); sim.grant('copper_wire', 10); sim.grant('oscillator', 4); // its clocks (D87)
     const s = sim.place('server', 503, 512, 0);
     expect(s.ok).toBe(true);
     wire(sim, s.id!);
@@ -273,7 +291,8 @@ describe('plans (D33): the tree’s instant unlocks, paid from the Heart', () =>
     for (const id of PLAN_IDS) if (PLANS[id].lane !== 'gate') { for (const [it, n] of PLANS[id].cost) sim.grant(it, n); expect(sim.unlockPlan(id).ok, id).toBe(true); }
     expect(sim.researchBlock('tr1')).toBe('prereq');
     expect(sim.unlockPlan('observatory').ok).toBe(true);
-    expect(sim.researchBlock('tr1')).toBe('no_lab'); // now only a lab is missing
+    expect(sim.researchBlock('ex_quartz')).toBe('no_lab'); // now only a lab is missing
+    expect(sim.researchBlock('tr1')).toBe('prereq'); // Mechanics after the Face Cutter (D87)
   });
 
   it('unlocks replay to the same state hash, and survive save → load', () => {

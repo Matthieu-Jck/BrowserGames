@@ -12,8 +12,9 @@
 //     the rest; its power on a pylon line over the Crown;
 //   - the Ember Fields mine (when the land has that tier-3 site): a deep bore on embersalt into a
 //     skydock, its power on the same pylon line, out to r 180–280.
-// Drifters fly the ceramic and the embersalt to the Fabrique's skydock. Besides: a coal pit whose
-// coal is flown home when the cirque keeps one coal drill (`coalPit`), a second copper bore whose
+// Drifters fly the ceramic and the embersalt to the Fabrique's skydock. Besides: when the cirque
+// keeps one coal drill, that drill made a deep bore beside where it stood (`boreInPlace`, D85), else
+// a coal pit whose coal is flown home (`coalPit`), a second copper bore whose
 // ore is flown to the cirque's wire mill (`copperHome`), a geothermal plant on a vent where the
 // land has one (`geothermal`). What the land does not allow is skipped and reported
 // (`report.skipped`), never thrown.
@@ -22,6 +23,7 @@ import { BUILDING_KIND, buildingIdx, itemIdx } from '@/content/registry';
 import { CENTER } from './constants';
 import { checkpoint, hearthNetwork, join, lay, layTo, powerLine, pylonLine, rollback, routeLevel, routeOver, sideGoalsOver, spotsNear, type BeltTiles } from './dev';
 import { footprint, worldPorts, type WorldPort } from './entities';
+import type { DrillNode } from './flow/nodes';
 import { gap2 } from './power/links';
 import { layPlan, planSpots, type Laid, type PlanSpec } from './scenario-plans';
 import type { Builder } from './scenarios';
@@ -76,8 +78,9 @@ export const FABRIQUE: PlanSpec = {
     '↑    TTT  JJv KKK',
     '↑    TTT  JJv KKK',
     '↑    TTT   vv KKK',
-    '↑     v   OOv  v',
-    '↑     v   OOv  v',
+    '↑     v  OOOv  v',
+    '↑     v  OOOv  v',
+    '↑     v  OOOv  v',
     '↑<<<<<<<<<<<<<<<',
   ],
   mask: [
@@ -94,6 +97,7 @@ export const FABRIQUE: PlanSpec = {
     '              EEE',
     '              EEE',
     '              EEE',
+    '               E',
     '               E',
     '               E',
     '         EEEEEEE',
@@ -523,6 +527,48 @@ function cirqueCoalDrills(sim: Sim, crownOuter: number): number {
   return n;
 }
 
+/**
+ * The cirque's coal drill made a deep bore beside where it stood (D85): on the deposit's free coal,
+ * its ribbon into the coal line's first tile from straight behind (the drill's old outlet), more
+ * coal for the smelters — where that line is too short and hemmed in for a skydock's outlet to join
+ * it (a drill two tiles from the smelters' router). Its other outlet faces open ground (no coal fed
+ * into another line). Whether the bore stands; else the drill stands again as it was.
+ */
+function boreInPlace(b: Builder): boolean {
+  const sim = b.sim;
+  const drill = b.ids.coal ? sim.ents.get(b.ids.coal) : undefined;
+  if (!drill || drill.def !== buildingIdx('drill')) return false;
+  sim.ensureCompiled();
+  const old = sim.graph.nodeByEnt.get(drill.id) as DrillNode | undefined;
+  const out = worldPorts(drill).find((p) => p.io === 'out');
+  if (!old || !out) return false;
+  const { x, y, rot } = drill;
+  b.affordDef('deep_bore');
+  sim.remove(x, y);
+  const goal = new Map([[tileIndex(out.x, out.y), out.dir]]);
+  for (const [bx, by, br] of spotsNear(sim, 'deep_bore', [x, y], { item: 'coal', r: 6 }).slice(0, 24)) {
+    const d = sim.place('deep_bore', bx, by, br);
+    if (!d.ok) continue;
+    sim.ensureCompiled();
+    const n = sim.graph.nodeByEnt.get(d.id!) as DrillNode | undefined;
+    const outs = worldPorts(sim.ents.get(d.id!)!).filter((p) => p.io === 'out');
+    const onLine = outs.find((p) => p.fx === out.fx && p.fy === out.fy && p.dir === out.dir);
+    const path = !n || n.item !== old.item || n.rateEp <= old.rateEp ? null : onLine ? [] : layTo(sim, d.id!, goal, -1, 4000);
+    const used = onLine ? [out.fx, out.fy] : path?.[0];
+    if (path && used && outs.every((p) => (p.fx === used[0] && p.fy === used[1]) || !sim.entityAt(p.fx, p.fy))) {
+      b.ids.coal = d.id!;
+      if (path.length) b.lines['coal.bore'] = path;
+      b.wire('coal');
+      return true;
+    }
+    if (path?.length) unlay(sim, path);
+    sim.remove(bx, by);
+  }
+  const back = sim.place('drill', x, y, rot);
+  if (back.ok) { b.ids.coal = back.id!; b.wire('coal'); }
+  return false;
+}
+
 /** The coal nearest the Heart past the Crown that a deep bore covers whole (level floor, land the claim may buy), within `R`. */
 function coalDeposit(sim: Sim, from: number, R: number): [number, number] | null {
   const coal = itemIdx('coal');
@@ -551,7 +597,7 @@ const COAL_PIT_R = 130;
 export function coalPit(b: Builder, crownOuter: number): boolean {
   const sim = b.sim;
   const line = b.lines['coal'];
-  if (!line || cirqueCoalDrills(sim, crownOuter) >= 2) return false;
+  if (!line || cirqueCoalDrills(sim, crownOuter) >= 2 || boreInPlace(b)) return false;
   const at = coalDeposit(sim, crownOuter + 4, COAL_PIT_R);
   if (!at) { b.skip('coalPit'); return false; }
   claimAround(b, at, 8, 'beaconC');
@@ -562,7 +608,8 @@ export function coalPit(b: Builder, crownOuter: number): boolean {
   for (const [x, y, rot] of spotsNear(sim, 'skydock', toward(b.centre('boreC'), b.heart, 6), { r: 6, toward: b.centre('boreC') }).slice(0, 16)) {
     const d = sim.place('skydock', x, y, rot);
     if (!d.ok) continue;
-    if (lay(sim, bore, d.id!)) { pit = d.id!; break; }
+    const l = lay(sim, bore, d.id!);
+    if (l) { pit = d.id!; b.lines['boreC'] = l; break; }
     sim.remove(x, y);
   }
   if (!pit) { b.skip('dockM'); const e = sim.ents.get(bore)!; sim.remove(e.x, e.y); delete b.ids.boreC; return false; }
@@ -582,7 +629,14 @@ export function coalPit(b: Builder, crownOuter: number): boolean {
     if (path) unlay(sim, path);
     sim.remove(x, y);
   }
-  if (!home) { b.skip('dockC'); return false; }
+  if (!home) {
+    // No home for the coal: the pit's bore and dock come back up, rather than stand on no grid with nowhere to send it (D85).
+    b.skip('dockC');
+    for (const role of ['dockM', 'boreC']) { const e = sim.ents.get(b.ids[role]!); if (e) sim.remove(e.x, e.y); delete b.ids[role]; }
+    if (b.lines['boreC']) unlay(sim, b.lines['boreC']);
+    delete b.lines['boreC'];
+    return false;
+  }
   b.ids.dockC = home;
   wireFar(b, 'boreC');
   b.wire('dockM', 'dockC');

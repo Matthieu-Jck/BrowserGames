@@ -437,28 +437,28 @@ await step('sound: the first click unlocked it; the score follows the clock; cue
   await FL(() => window.FL.menu(false));
 });
 
-await step('research: start Mechanics from the screen, the HUD counts down, a notice lands', async () => {
+await step('research: start the Face Cutter from the screen (D87: Mechanics hangs from it), the HUD counts down, a notice lands', async () => {
   await FL(() => window.FL.lookAt(512, 512, 1));
   assert(await FL(() => window.FL.feedLab('journal_1', 40)), 'no research lab to feed');
   await page.keyboard.press('t');
   await page.waitForSelector('[data-screen="research"][data-open]', { timeout: 2000 });
-  await page.click('.rs-card[data-id="tr1"]');
+  await page.click('.rs-card[data-id="ex_quartz"]');
   await page.click('.rs-detail .btn.primary');
   const r = await FL(() => window.FL.research());
-  assert(r.projects?.some((p) => p.id === 'tr1'), `tr1 not running: ${JSON.stringify(r)}`);
+  assert(r.projects?.some((p) => p.id === 'ex_quartz'), `ex_quartz not running: ${JSON.stringify(r)}`);
   await page.keyboard.press('Escape');
-  await page.waitForSelector('.hud-rs[data-id="tr1"]', { timeout: 2000 });
-  const eta = await page.textContent('.hud-rs[data-id="tr1"] .hud-rs-eta');
+  await page.waitForSelector('.hud-rs[data-id="ex_quartz"]', { timeout: 2000 });
+  const eta = await page.textContent('.hud-rs[data-id="ex_quartz"] .hud-rs-eta');
   assert(/min|m|s/.test(eta ?? ''), `no countdown in the HUD: ${eta}`);
-  // 3 000 ticks at full power; the weather follows the real clock, so a calm hour browns
+  // 1 800 ticks at full power; the weather follows the real clock, so a calm hour browns
   // the demo grid out: tick on until it is learnt (bounded).
   for (let i = 0; i < 12; i++) {
     await FL(() => window.FL.tick(600));
-    if ((await FL(() => window.FL.research())).done?.includes('tr1')) break;
+    if ((await FL(() => window.FL.research())).done?.includes('ex_quartz')) break;
   }
-  await page.waitForFunction(() => [...document.querySelectorAll('.toast')].some((n) => /Mécanique|Mechanics/.test(n.textContent ?? '')), undefined, { timeout: 3000 });
+  await page.waitForFunction(() => [...document.querySelectorAll('.toast')].some((n) => /Haveuse|Face Cutter/.test(n.textContent ?? '')), undefined, { timeout: 3000 });
   const after = await FL(() => window.FL.research());
-  assert(after.done?.includes('tr1'), 'tr1 not learnt');
+  assert(after.done?.includes('ex_quartz'), 'ex_quartz not learnt');
   await page.screenshot({ path: shot('smoke-m4.png') });
 });
 
@@ -774,6 +774,20 @@ await step('debug bases: the menu page plays a ready-made base; the player’s b
   const r = await FL(() => window.FL.debugSave('tutorial'));
   console.log(`    tutorial built in ${r.ms} ms, forced ${r.forced.length}, skipped ${r.skipped.length}`);
   assert(r.ok && r.quest === null && r.forced.length === 0, `tutorial: ${JSON.stringify(r)}`);
+  // D83: a production building that does not work looks switched off — a drill whose wires are cut goes dark.
+  const cut = await FL(() => {
+    const app = window.FL.app;
+    const e = app.sim.ents.sorted().find((x) => window.FL.entityAt(x.x, x.y)?.def === 'drill' && app.buildings.work.isLit(x.id) && window.FL.links(x.id).length > 0);
+    if (!e) return null;
+    for (const o of window.FL.links(e.id)) window.FL.unlink(e.id, o);
+    return e.id;
+  });
+  assert(cut, 'no lit, wired drill on the tutorial base');
+  await page.waitForFunction((id) => window.FL.workLook(id).lit === false, cut, { timeout: 8000 });
+  await page.waitForFunction(() => window.FL.workLook().waiting === 0, undefined, { timeout: 4000 });
+  const wl = await FL(() => window.FL.workLook());
+  console.log(`    work look: ${wl.watched} watched, ${wl.off} switched off, ${wl.baked} unlit pictures`);
+  assert(wl.watched > 0 && wl.off > 0 && wl.baked > 0, `work look: ${JSON.stringify(wl)}`);
   await page.screenshot({ path: shot('smoke-debug.png') });
   await FL(() => window.FL.pause());
   await page.click('[data-debug-back]');
@@ -844,13 +858,40 @@ await step('quests: CrierBelt has the claim named; the log moves on; rewards pay
   assert(seen, `no CrierBelt notice: ${JSON.stringify(await FL(() => window.FL.toasts()))}`);
   await page.screenshot({ path: shot('smoke-quests.png') });
   const c0 = await FL(() => window.FL.credits());
-  assert((await FL(() => window.FL.completeQuest('field_journal'))) === null, 'completeQuest refused'); // the last quest (D71)
+  assert((await FL(() => window.FL.completeQuest('wall_quartz'))) === null, 'completeQuest refused'); // the last quest (D87)
   q = await FL(() => window.FL.quests());
-  assert(q.done.length === 11, `done: ${q.done.length}`); // the tutorial's eleven quests (the board quest went with the export streams, D64)
+  assert(q.done.length === 12, `done: ${q.done.length}`); // the tutorial's twelve quests (the quartz in the wall last, D87)
   const c1 = await FL(() => window.FL.credits());
-  assert(Math.abs(c1 - c0 - 250) < 0.01, `credits ${c0} → ${c1}`);
-  await FL(() => window.FL.completeQuest('field_journal'));
+  assert(Math.abs(c1 - c0 - 450) < 0.01, `credits ${c0} → ${c1}`); // 150 (the Crier) + 300 (Survey Data)
+  await FL(() => window.FL.completeQuest('wall_quartz'));
   assert(Math.abs((await FL(() => window.FL.credits())) - c1) < 0.01, 'paid twice');
+});
+
+await step('quartz (D87): today\'s land has its vein a parcel away; a face cutter dropped facing away turns its back to the wall and cuts 15 a minute', async () => {
+  const v = await FL(() => window.FL.vein());
+  assert(v && v.n === 8 && (v.look === 1 || v.look === 2) && v.spots.length === 4, `vein: ${JSON.stringify(v)}`);
+  const [x, y, rot] = v.spots[0];
+  const r = await FL(([p, x, y, rot]) => {
+    const sim = window.FL.app.sim;
+    if (sim.credits < sim.landPrice(p) + 100) sim.grantCredits(sim.landPrice(p) + 100 - sim.credits);
+    if (sim.buyLand(p) !== null) return { ok: false, reason: 'land' };
+    window.FL.unlock('ex_quartz');
+    // Dropped facing the wall (its back away from it): the placement turns it round.
+    const placed = window.FL.place('face_cutter', x, y, (rot + 2) % 4);
+    if (!placed.ok) return placed;
+    sim.ensureCompiled();
+    const e = sim.ents.get(placed.id), n = sim.graph.nodeByEnt.get(placed.id);
+    return { ok: true, id: placed.id, rot: e.rot, item: n.item, rate: n.rateEp, quartz: window.FL.itemIndex('quartz') };
+  }, [v.parcel, x, y, rot]);
+  assert(r.ok && r.rot === rot, `cutter: ${JSON.stringify(r)}`);
+  assert(r.item === r.quartz && r.rate === 15000, `its face: ${JSON.stringify(r)}`);
+  // Off the wall it is refused, with the reason.
+  const off = await FL(([x, y, rot]) => window.FL.app.sim.canPlace('face_cutter', x + 3 * [0, 1, 0, -1][rot], y + 3 * [-1, 0, 1, 0][rot], rot).reason, [x, y, rot]);
+  assert(off === 'needs_face', `off the wall: ${off}`);
+  await FL(([x, y]) => { window.FL.view('iso'); window.FL.lookAt(x, y, 1.6); }, [x, y]);
+  await settleView('iso');
+  await page.waitForFunction(() => window.FL.perf().chunksMissing === 0, undefined, { timeout: 8000 }).catch(() => {});
+  await page.screenshot({ path: shot('smoke-vein.png') });
 });
 
 await step('intro (D31): not by itself under automation; FL.intro plays it; the register refuses a sister claim; the landing names the claim and gives it the emblem designed on the form', async () => {

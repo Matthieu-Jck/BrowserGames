@@ -39,7 +39,7 @@ the Heart's growing disc, the waystations and the land reclaimed next to a zone 
 or water filled):
 
 - a base (`BAL.land.base`), plus per tile: floor, rock, water, salt, vent, dune sea (`BAL.land.tile`);
-- plus, per deposit tile, the ore's value × the tile's richness (`BAL.land.depositPerValue`);
+- plus, per deposit tile, the ore's value × the tile's richness (`BAL.land.depositPerValue`); a face ore (D87: the quartz set in a wall) is priced as the rock it is in — no drill takes it, and the vein's parcel is the tutorial's first purchase (« Le quartz de la paroi »), within its purse (about 450–570 ◉ against 700–790 with it);
 - × the growth: each parcel the claim has bought makes the next one dearer (`BAL.land.growth`,
   ‰ per parcel; research lowers it);
 - × the research discounts (`landPrice`). The Heart's level does not change it (owner,

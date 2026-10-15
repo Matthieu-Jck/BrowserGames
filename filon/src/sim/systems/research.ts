@@ -328,10 +328,11 @@ export function setTokenPlan(sim: Sim, on: boolean): boolean {
 
 // ── data files out of the Heart and the autonomous labs (D68, D70) ──────────
 
-/** The data makers now: the Heart (Analytics, no power needed), and every autonomous lab whose project still owes data (at its power). */
+/** The data makers now: the Heart (Analytics, from the level that mounts its outlet, D86; no power needed), and every autonomous lab whose project still owes data (at its power). */
 export function dataMakers(sim: Sim, satOfProject: (p: Project) => number): Array<{ ent: number; stock: Float64Array; rate: number; sat: number }> {
   const out: Array<{ ent: number; stock: Float64Array; rate: number; sat: number }> = [];
-  if (sim.mods.heartData > 0 && sim.hearthId) out.push({ ent: sim.hearthId, stock: sim.stock, rate: sim.mods.heartData, sat: 1000 });
+  const heart = sim.heartDataRate();
+  if (heart > 0 && sim.hearthId) out.push({ ent: sim.hearthId, stock: sim.stock, rate: heart, sat: 1000 });
   const data = DATA_IDX();
   for (const p of sim.projects) {
     if (!p.lab || !owedItems(p).includes(data)) continue;

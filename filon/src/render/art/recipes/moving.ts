@@ -1,5 +1,6 @@
 // moving.ts — the buildings with a moving part, and the geometry their iso and plan drawings
-// share. A moving part (the wind turbines' rotors, the sand collector's bucket wheel) is drawn
+// share. A moving part (the wind turbines' rotors, the sand collector's bucket wheel, the face
+// cutter's drum) is drawn
 // apart from its building's body and baked at boot in `frames` phases of one period — its
 // symmetry: a 3-vane rotor looks the same every third of a turn, so 16 phases of a third of a
 // turn make a smooth spin. In the world the body is one sprite and the part another whose
@@ -19,6 +20,7 @@ export interface MovingSpec {
 export const MOVING: Partial<Record<BuildingId, MovingSpec>> = {
   wind_flower: { frames: 16, sym: 3 },
   sand_collector: { frames: 8, sym: 8 },
+  face_cutter: { frames: 8, sym: 6 },
   pitch_turbine: { frames: 16, sym: 3 },
   big_turbine: { frames: 16, sym: 4 },
 };
@@ -74,6 +76,17 @@ export const BIG_ROTOR: HRotor = {
  * hence cy − r − (bucket lip ≈ 0.095) ≥ split: nothing of the wheel crosses it.
  */
 export const SAND_WHEEL = { cx: 1, cy: 1.42, cz: 0.95, r: 0.46, half: 0.12, buckets: 8, split: 0.86 } as const;
+
+/**
+ * The face cutter's drum (D87; local tiles and levels, iso and plan alike): it turns on an axle
+ * along x across the machine's back, against the cliff — radius `r` (2r levels tall), `half` tiles
+ * either side of `cx`, its axle at height `cz` — so it overhangs the footprint's back edge into the
+ * wall. Its helical flights wind round it in `starts` starts, `twist` radians end to end, a pick
+ * standing `pick` tiles proud every `picks`-th of its length on each, so a sixth of a turn brings the
+ * picture back (moving.ts `sym`). `split`: the plane y = split parts the drum and its boom (the
+ * part) from the machine (the body); cy − r − pick ≥ split, so nothing of the drum crosses it.
+ */
+export const CUTTER = { cx: 1, cy: 1.88, cz: 0.92, r: 0.27, half: 0.82, starts: 6, picks: 6, twist: 1.7, pick: 0.06, split: 1.54 } as const;
 
 /** Does the bucket at wheel angle a (0 = the back, π/2 = the top) carry sand? It fills at the bottom and tips past the crest. */
 export function bucketFull(a: number): boolean {

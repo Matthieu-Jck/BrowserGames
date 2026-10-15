@@ -18,24 +18,32 @@
 // base (`mapV`), so a base reopens on the land it was founded on. Version 1 is the Crown of D45
 // (three levels all round, the lake on the floor); version 2 a thinner ridge rising into a few
 // peaks, one holding the tarn. Code shared by both reads only the template's fields, and a field
-// version 1 lacks (`ridge`, `shoulders`, `lake.onCrest`) leaves its land as it was.
+// version 1 lacks (`ridge`, `shoulders`, `lake.onCrest`) leaves its land as it was. Version 3 is
+// version 2 with the quartz vein (D87): a bluff in the parcel west or north of the starting
+// square, its face looking back at the cirque, quartz in the face's rock, floor at its foot and a
+// corridor of floor back to the Crown (`vein`).
 import { BAL } from '@/content/balance';
 import { itemIdx } from '@/content/registry';
 import {
   ARCHETYPES, ARCHETYPE_IDS, COMMON_DEPOSITS, COS64, DEPOSIT_CHANCE, MAP_VERSION, MAPS, MOUNTAINS, RICH_MULT, RINGS, SHADE, SIN64,
-  T3_UNIQUES, T4_UNIQUES, UNIQUE_BIOMES, type ArchetypeId, type CirqueTemplate, type MapParams, type UniqueBiomeId,
+  T3_UNIQUES, T4_UNIQUES, UNIQUE_BIOMES, type ArchetypeId, type CirqueTemplate, type MapParams, type QuartzVein, type UniqueBiomeId,
 } from '@/content/world';
 import { hash32 } from '@/core/hash';
 import { isqrt } from '@/core/fixed';
 import { makeNoise2, qfbm, type Noise2 } from '@/core/noise';
 import { CENTER, CHUNK } from '../constants';
 import { T } from '../types';
-import { MAX_LEVEL, type TerrainSource } from './grid';
+import { MAX_LEVEL, type TerrainSource, type VeinSite } from './grid';
 
 export interface Site { id: UniqueBiomeId; cx: number; cy: number; r: number; item: number }
 interface Blob { cx: number; cy: number; r2: number; item: number; rich: number; onRock: boolean }
 /** A disc the mountains keep off: the guaranteed copper field, a unique site and its rim, a vent. */
 interface Clearing { cx: number; cy: number; r: number }
+/**
+ * The quartz vein's bluff in its own frame (D87): `west` (else north) of the cirque, the face `u0`
+ * tiles out along the axis, its ore on `va … vb` across it, `vc` the wall's centre line.
+ */
+interface Bluff { west: boolean; u0: number; va: number; vb: number; vc: number; Q: QuartzVein }
 
 /** Biome codes written next to terrain (renderer decor; not saved). */
 export const BIOME = { none: 0, cirque: 7, crown: 8 } as const;
@@ -67,6 +75,10 @@ export class MapGen implements TerrainSource {
   readonly crownOuter: number;
   /** The Crown's tarn (map 2): its centre tile and the level of its water; null on map 1 (the lake is on the floor). */
   readonly tarn: { readonly x: number; readonly y: number; readonly level: number } | null;
+  /** The quartz vein in the nearest mountain (map 3, D87): its face tiles; null on maps 1–2. */
+  readonly quartzVein: VeinSite | null;
+  /** The vein's bluff in its own frame (null: no vein). */
+  private readonly bluff: Bluff | null;
   /** The cirque template and the mountains' hardness of this map version. */
   private readonly C: CirqueTemplate;
   private readonly hard: MapParams['hardness'];
@@ -154,6 +166,22 @@ export class MapGen implements TerrainSource {
         const d = hash32(ps, 111, i) % 64, r = 70 + (hash32(ps, 112, i) % 80);
         this.ventSites.push({ x: CENTER + ((COS64[d]! * r) >> 10) - 1, y: CENTER + ((SIN64[d]! * r) >> 10) - 1 });
       }
+    }
+    // The quartz vein (map 3, D87): which side, how far out, where along.
+    const Q = P.quartz;
+    if (Q) {
+      const west = Q.sides[hash32(ps, 120) % Q.sides.length] === 'W';
+      const u0 = Q.face + (hash32(ps, 121) % Q.faceSpan);
+      const vc = (hash32(ps, 122) % (2 * Q.shift + 1)) - Q.shift;
+      const va = vc - (Q.length >> 1), vb = va + Q.length - 1;
+      this.bluff = { west, u0, va, vb, vc, Q };
+      // West: the face at x = centre − u0, down from y = centre + va, looking east; north: at y = centre − u0, along x, looking south.
+      this.quartzVein = west
+        ? { x: CENTER - u0, y: CENTER + va, dx: 0, dy: 1, n: Q.length, look: 1, item: itemIdx(Q.item) }
+        : { x: CENTER + va, y: CENTER - u0, dx: 1, dy: 0, n: Q.length, look: 2, item: itemIdx(Q.item) };
+    } else {
+      this.bluff = null;
+      this.quartzVein = null;
     }
     // The mountains keep off what the land guarantees, so it stays open ground at level 0.
     const K = MOUNTAINS.clear;
@@ -274,6 +302,32 @@ export class MapGen implements TerrainSource {
     return d2 <= t.r2deep ? T.Deep : d2 <= t.r2 ? T.Shallow : 0;
   }
 
+  /**
+   * The quartz vein's bluff at a tile past the Crown (D87): its rock's raw level (1 at the face, one
+   * more every `climb` tiles back, to `top`), −1 on the floor it keeps (the apron at the wall's foot,
+   * the corridor home to the Crown), 0 elsewhere. In the bluff's frame: `u` out along its axis, `v` across.
+   */
+  private vein(x: number, y: number): number {
+    const B = this.bluff;
+    if (!B) return 0;
+    const Q = B.Q;
+    const u = B.west ? CENTER - x : CENTER - y, v = B.west ? y - CENTER : x - CENTER;
+    if (u < 0 || u >= B.u0 + Q.depth) return 0;
+    if (u >= B.u0) {
+      // A rounded massif behind a straight face: the face row runs the wall's whole length (its ore
+      // and a bare tile each end), the rock narrowing towards the back (`d²/depth` a side) with a
+      // wobble of the shared noise on its flanks; its level rises with the distance from the face
+      // and from the flanks, so settling makes terraces of a dome, not of a box. Doubled
+      // coordinates across (the wall's centre falls between two tiles).
+      const d = u - B.u0, dv2 = Math.abs(2 * v - (B.va + B.vb));
+      const edge = Q.length + 1 - 2 * Math.floor((d * d) / Q.depth) + (d > 0 ? 2 * this.jitter(x * 2, y * 2, 2, 4) : 0);
+      if (dv2 > edge) return 0;
+      return Math.min(Q.top, 1 + Math.floor(Math.min(d, (edge - dv2) >> 1) / Q.climb));
+    }
+    if (u >= B.u0 - Q.apron && v >= B.va - Q.apronWide && v <= B.vb + Q.apronWide) return -1;
+    return v >= B.vc - Q.corridor && v <= B.vc + Q.corridor ? -1 : 0;
+  }
+
   /** The mountains' raw level at a tile outside the Crown (0: none): its elevation cut into terraces (`MOUNTAINS`). */
   private mountain(x: number, y: number, r: number, h: number): number {
     const M = MOUNTAINS;
@@ -313,6 +367,11 @@ export class MapGen implements TerrainSource {
       }
     }
     const h = this.heightAt(x, y, r), hb = h << HEIGHT;
+    // The quartz vein's bluff (map 3): its rock (a mountain behind it may stand higher), the floor
+    // at its foot and the corridor home, kept dry and open whatever the land would put there.
+    const q = this.vein(x, y);
+    if (q < 0) return hb | (T.Sand << GROUND);
+    if (q > 0) return hb | Math.max(q, this.mountain(x, y, r, h));
     for (const v of this.ventSites) if (x >= v.x && x < v.x + 3 && y >= v.y && y < v.y + 3) return hb | (T.Vent << GROUND);
     for (const s of this.sites) {
       const sd = (x - s.cx) * (x - s.cx) + (y - s.cy) * (y - s.cy);
@@ -463,6 +522,20 @@ export class MapGen implements TerrainSource {
           // Richer at the heart of a blob, thinner at its rim.
           rich[k] = d2 * 3 <= b.r2 ? b.rich : Math.floor((b.rich * 700) / 1000);
         }
+      }
+    }
+    // The quartz vein's face (D87): its ore on the face's rock, at the face ore's cap (last: it
+    // wins over a hidden vein there).
+    const V = this.quartzVein;
+    if (V) {
+      const rich0 = BAL.depositRich[this.bluff!.Q.item] ?? BAL.depositRich.iron_ore!;
+      for (let i = 0; i < V.n; i++) {
+        const x = V.x + i * V.dx, y = V.y + i * V.dy;
+        if (x < x0 || y < y0 || x >= x0 + CHUNK || y >= y0 + CHUNK) continue;
+        const k = (y - y0) * CHUNK + (x - x0), t = terrain[k]!;
+        if (t < T.Rock1 || t > T.Rock4) continue;
+        ore[k] = V.item + 1;
+        rich[k] = rich0;
       }
     }
   }

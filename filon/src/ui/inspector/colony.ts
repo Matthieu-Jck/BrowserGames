@@ -1,7 +1,6 @@
 // colony.ts — inspector panels of the base itself: the Heart (its stock as icons and amounts,
-// its level — and what it takes off the land's price, D60: each level past the first makes the
-// parcels cheaper — and the next upgrade) and the landscapers (an excavator's / backfiller's job,
-// marks in reach, stone in store).
+// its data outlet, its level and the next upgrade, with what that level mounts on a corner: D86)
+// and the landscapers (an excavator's / backfiller's job, marks in reach, stone in store).
 import { BAL } from '@/content/balance';
 import { itemIdx } from '@/content/registry';
 import { nodeName } from '@/content/research';
@@ -9,6 +8,7 @@ import { el, setText } from '@/core/dom';
 import { duration } from '@/i18n/format';
 import { locale, t, tr } from '@/i18n/i18n';
 import { footprint } from '@/sim/entities';
+import { itemMention } from '../mention';
 import { costChips, fmt, heading, heldList, itemRow, note, row, type Panel } from './kit';
 
 /** The Heart: the top of its stock, its level and the next upgrade. */
@@ -20,8 +20,10 @@ export const hearthPanel: Panel = ({ sim, host, live }) => {
     .map((i) => [i, Math.floor(sim.stock[i]! / 1000)] as const), t('insp.empty'));
   const lv = sim.hearthLevel;
   const up = BAL.hearthUpgrades[lv - 1];
-  // Its data outlet (D68): the files a minute it makes and hands out, once Analytics has it make some.
-  const data = sim.mods.heartData > 0 ? row(t('insp.hearth.data'), t('insp.hearth.data.v', { n: fmt(sim.mods.heartData / 1000, 0) })) : null;
+  // Its data outlet (D68): the files a minute it makes and hands out, once Analytics has it make
+  // some — from the level that mounts the outlet (D86); before, the row says which level.
+  const mounted = lv >= BAL.hearthDataLevel;
+  const data = sim.mods.heartData > 0 ? row(t('insp.hearth.data'), mounted ? t('insp.hearth.data.v', { n: fmt(sim.mods.heartData / 1000, 0) }) : t('insp.hearth.data.at', { n: BAL.hearthDataLevel })) : null;
   const out: Array<HTMLElement | null> = [
     heading(t('insp.stock')), list, data,
     heading(t('insp.hearth.level', { n: lv })),
@@ -29,6 +31,8 @@ export const hearthPanel: Panel = ({ sim, host, live }) => {
   if (!up) { out.push(note(t('insp.hearth.max'))); return out; }
   const ok = sim.unlocked(up.unlock);
   out.push(
+    // What the next level mounts on its corner (D86): the data outlet, shown by the file it hands out.
+    lv + 1 === BAL.hearthDataLevel ? row(t('insp.hearth.adds', { n: lv + 1 }), itemMention(itemIdx('journal_1'), { name: false }), null) : null,
     note(t('insp.hearth.next')),
     costChips(sim, up.cost),
     el('button.btn.insp-recipe', {

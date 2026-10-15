@@ -72,6 +72,11 @@ export type QuestObjective = (
   | { readonly k: 'import'; readonly items: readonly string[]; readonly n: number }
   /** n tiles dug out of rock (the colony's total). */
   | { readonly k: 'dig'; readonly n: number }
+  /**
+   * The land's quartz vein stands on the claim's land, its parcel held (D87); met at once on a land
+   * without one (maps 1–2, founded before it: their quartz comes from the Crier).
+   */
+  | { readonly k: 'vein' }
   /** A built building whose centre lies `r` tiles or more from the Hearth's. */
   | { readonly k: 'reach'; readonly r: number }
   /** n buildings among `defs` set to this recipe. */
@@ -109,7 +114,8 @@ export type GuideSpot =
   | { readonly intake: true }    // a free input of the Heart, the nearest to the newest producer: where its ribbon must end
   | { readonly beyond: true }    // past the Crown (D45: closed, no pass)
   | { readonly entity: string }  // the first built building of a kind
-  | { readonly newest: string }; // the newest built building of a kind
+  | { readonly newest: string }  // the newest built building of a kind
+  | { readonly vein: true };     // the floor at the foot of the land's quartz vein (D87): where a face cutter goes
 
 /** What the guide's arrow points at for a step; it follows the UI (tab → slot → the world). */
 export type GuideTarget =
@@ -133,6 +139,8 @@ export type GuideTarget =
   | { readonly k: 'crier'; readonly tab: 'prices' | 'trade' | 'board'; readonly focus?: 'order' }
   /** The landscaping brush. */
   | { readonly k: 'brush' }
+  /** Buy a parcel (D60): the HUD's land button, then the parcel holding the spot, then its « Acheter ». */
+  | { readonly k: 'land'; readonly at: GuideSpot }
   /** The quest log's naming button. */
   | { readonly k: 'name' }
   /** No arrow: the hint alone. */
@@ -143,6 +151,11 @@ export interface QuestStep {
   readonly target: GuideTarget;
   /** The step is over once this holds (counters count from the founding). Omitted: it lasts until the quest ends. */
   readonly done?: QuestObjective;
+  /**
+   * Only on a land with a quartz vein (`vein`: map 3, D87), or only on one without (`novein`: the
+   * lands founded before it, whose quartz comes from the Crier): elsewhere the guide passes it by.
+   */
+  readonly land?: 'vein' | 'novein';
 }
 
 /** Extra live lines the quest log shows for a quest. */
@@ -482,11 +495,6 @@ export const QUESTS = {
         done: { k: 'build', defs: ['wire_mill'], n: 1 },
       },
       {
-        hint: { fr: 'Clique la tréfileuse et choisis Fil de cuivre.', en: 'Click the wire mill and pick Copper Wire.' },
-        target: { k: 'recipe', defs: ['wire_mill'], recipe: 'copper_wire' },
-        done: { k: 'recipe', defs: ['wire_mill'], recipe: 'copper_wire', n: 1 },
-      },
-      {
         hint: { fr: 'Relie la foreuse de cuivre et la tréfileuse au réseau (des poteaux portent les fils jusque-là).', en: 'Wire the copper drill and the wire mill into the grid (poles carry the wires out there).' },
         target: { k: 'link' },
         done: { k: 'powered', defs: ['wire_mill'], n: 1 },
@@ -558,16 +566,17 @@ export const QUESTS = {
   field_journal: {
     name: { fr: 'Données d’arpentage', en: 'Survey Data' },
     desc: {
-      fr: 'La recherche se nourrit de données et de tokens d’IA. Quand tous les plans sont pris, le laboratoire de recherche s’ouvre, avec le collecteur qui tire des données d’arpentage de l’électricité. Le laboratoire les reçoit par ruban et paie ses tokens à la minute aux serveurs de CrierBelt, sur votre trésorerie. Prenez les derniers plans, posez le laboratoire et son collecteur, puis lancez Mécanique.',
-      en: 'Research feeds on data and AI tokens. Once every plan is taken, the research lab opens, with the data collector that makes Survey Data out of power. The lab takes the data in by ribbon and pays for its tokens by the minute to CrierBelt’s servers, out of your purse. Take the last plans, place the lab and its collector, then start Mechanics.',
+      fr: 'La recherche se nourrit de données et de tokens d’IA. Quand tous les plans sont pris, le laboratoire de recherche s’ouvre, avec le collecteur qui tire des données d’arpentage de l’électricité. Le laboratoire les reçoit par ruban et paie ses tokens à la minute aux serveurs de CrierBelt, sur votre trésorerie. Prenez les derniers plans, posez le laboratoire et son collecteur, puis lancez la Haveuse : le quartz qu’elle taille ouvre la suite.',
+      en: 'Research feeds on data and AI tokens. Once every plan is taken, the research lab opens, with the data collector that makes Survey Data out of power. The lab takes the data in by ribbon and pays for its tokens by the minute to CrierBelt’s servers, out of your purse. Take the last plans, place the lab and its collector, then start the Face Cutter: the quartz it cuts opens what follows.',
     },
     objectives: [
       { k: 'unlocked', ids: PLAN_IDS, label: { fr: 'Tous les plans débloqués', en: 'Every plan unlocked' } },
       { k: 'produce', items: ['journal_1'], n: 3 },
       { k: 'build', defs: ['observatory'], n: 1 },
-      { k: 'research', id: 'tr1' },
+      { k: 'research', id: 'ex_quartz' },
     ],
-    reward: { credits: 100 },
+    // 300 (100 before D87): the next objective buys the parcel of the quartz vein.
+    reward: { credits: 300 },
     steps: [
       {
         hint: { fr: 'Arbre des techniques : débloque les plans qui te manquent encore, l’un après l’autre.', en: 'Tech tree: unlock the plans you are still missing, one after the other.' },
@@ -605,11 +614,69 @@ export const QUESTS = {
         done: { k: 'feeds', item: 'journal_1', to: ['observatory'], n: 1 },
       },
       {
-        hint: { fr: 'Dans l’arbre (T), lance Mécanique : ses tokens se paient à la minute, quelques ocelles.', en: 'In the tree (T), start Mechanics: its tokens are paid by the minute, a few ocelles.' },
-        target: { k: 'research', id: 'tr1' },
-        done: { k: 'research', id: 'tr1' },
+        hint: { fr: 'Dans l’arbre (T), lance la Haveuse : ses tokens se paient à la minute, quelques ocelles.', en: 'In the tree (T), start the Face Cutter: its tokens are paid by the minute, a few ocelles.' },
+        target: { k: 'research', id: 'ex_quartz' },
+        done: { k: 'research', id: 'ex_quartz' },
       },
       { hint: { fr: 'Les données arrivent : trois en tout. La recherche les consomme à mesure.', en: 'The data is coming: three in all. Research uses it up as it arrives.' }, target: { k: 'none' } },
+    ],
+  },
+
+  // ── 11 ── quartz in the wall (D87) ────────────────────────────────────────
+  // The resource the cirque lacks, a parcel away (owner, 2026-10-15: « une ressource disponible
+  // uniquement en dehors du cirque de départ, mais avec un filon très proche […] calée à peu près
+  // vers la fin du tutoriel »): the land's first purchase, the tree's first research node, a face
+  // cutter at the foot of the nearest mountain's wall, its quartz carried home over the Crown on
+  // traction ribbons (quest 9 taught them). A land founded before the vein buys its quartz instead.
+  wall_quartz: {
+    name: { fr: 'Le quartz de la paroi', en: 'Quartz in the Wall' },
+    desc: {
+      fr: 'Le cirque n’a pas de quartz. La montagne la plus proche en a, serti dans sa paroi, à une parcelle de vos terres. Achetez cette parcelle et posez-y la Haveuse que vous recherchez — elle se tient au pied de la paroi et taille le quartz dans la roche —, puis ramenez-le au Cœur par-dessus la Couronne. Vos données mécaniques en dépendent : il faut un oscillateur à quartz par essai.',
+      en: 'The cirque has no quartz. The nearest mountain does, set in its face, one parcel from your land. Buy that parcel and set the Face Cutter you are researching there — it stands at the foot of the wall and cuts the quartz out of the rock — then bring it back to the Core over the Crown. Your Mechanics Data depends on it: every test takes a quartz oscillator.',
+    },
+    objectives: [
+      { k: 'unlocked', ids: ['ex_quartz'] },
+      { k: 'stock', items: ['quartz'], n: 10, label: { fr: 'Quartz au Cœur', en: 'Quartz in the Core' } },
+    ],
+    reward: { kit: 'quartz_workshop' },
+    steps: [
+      {
+        land: 'vein',
+        hint: { fr: 'Terrain (I) : achète la parcelle de la veine de quartz, juste au-delà de la Couronne.', en: 'Land (I): buy the parcel of the quartz vein, just beyond the Crown.' },
+        target: { k: 'land', at: { vein: true } },
+        done: { k: 'vein' },
+      },
+      {
+        // Started at the end of « Données d'arpentage »: the arrow shows its card while it runs.
+        hint: { fr: 'La Haveuse se recherche : elle sera bientôt prête.', en: 'The Face Cutter is being researched: it will soon be ready.' },
+        target: { k: 'research', id: 'ex_quartz' },
+        done: { k: 'unlocked', ids: ['ex_quartz'] },
+      },
+      {
+        land: 'vein',
+        hint: { fr: 'Pose une haveuse au pied de la paroi, dos à la roche : elle se tourne d’elle-même.', en: 'Place a face cutter at the foot of the wall, its back to the rock: it turns by itself.' },
+        target: { k: 'build', def: 'face_cutter', at: { vein: true } },
+        done: { k: 'build', defs: ['face_cutter'], n: 1 },
+      },
+      {
+        land: 'vein',
+        hint: { fr: 'Relie-la au réseau : des poteaux passent la Couronne, gradin par gradin.', en: 'Wire it into the grid: poles cross the Crown, terrace by terrace.' },
+        target: { k: 'link' },
+        done: { k: 'powered', defs: ['face_cutter'], n: 1 },
+      },
+      {
+        land: 'vein',
+        hint: { fr: 'Un ruban de la haveuse jusqu’à une entrée du Cœur : sur la Couronne, il se fait ruban à traction.', en: 'A ribbon from the face cutter to an input of the Core: on the Crown, it turns into traction ribbon.' },
+        target: { k: 'build', def: 'ribbon', at: INTAKE },
+        done: { k: 'delivers', defs: ['face_cutter'], n: 1 },
+      },
+      {
+        land: 'novein',
+        hint: { fr: 'Ta terre n’a pas de veine de quartz : Criée (M), onglet Échanges, un ordre d’import de quartz, que la sortie du comptoir mène au Cœur.', en: 'Your land has no quartz vein: Crier (M), Trade tab, an import order of quartz, which the post’s exit leads into the Core.' },
+        target: { k: 'crier', tab: 'trade', focus: 'order' },
+        done: { k: 'order', item: 'quartz' },
+      },
+      { hint: { fr: 'Le quartz arrive : dix au Cœur.', en: 'The quartz is coming: ten in the Core.' }, target: { k: 'none' } },
     ],
   },
 } as const satisfies Record<string, QuestDef>;
@@ -722,6 +789,7 @@ export function questProblems(): string[] {
         if (rc) usable(where, rc.unlock, `recipe ${t.recipe}`);
       }
       if (t.k === 'research' && !has(RESEARCH, t.id)) out.push(`${where}: unknown research ${t.id}`);
+      if (t.k === 'land' && !('vein' in t.at) && !('entity' in t.at)) out.push(`${where}: a land target names the vein or a building`);
       if (s.done) {
         objectiveProblems(`${where} done`, s.done, out);
         if (s.done.k === 'unlocked') for (const n of s.done.ids) have.add(n);

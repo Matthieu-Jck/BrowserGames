@@ -112,7 +112,8 @@ function node(family: FamilyId, spec: string | undefined, depth: number, after: 
 
 export const RESEARCH = {
   // ── the trunk: the Foundations, which open each tier ─────────────────────
-  tr1: trunk(1, 1, ['observatory'], 20, 8_000, 5, ['Mécanique', 'Mechanics'], ['Presse et engrenages ; Cœur niveau 2. Ouvre le Tier 2.', 'Press and gears; Core level 2. Opens Tier 2.']),
+  // After the Face Cutter (D87): Mechanics opens Tier 2, whose Mechanics Data takes quartz oscillators.
+  tr1: trunk(1, 1, ['observatory', 'ex_quartz'], 20, 8_000, 5, ['Mécanique', 'Mechanics'], ['Presse et engrenages ; Cœur niveau 2. Ouvre le Tier 2.', 'Press and gears; Core level 2. Opens Tier 2.']),
   tr2: trunk(2, 2, ['tr1'], 40, 15_000, 10, ['Terrassement', 'Earthworks'], ['Excavatrice : creuser le grès et le basalte (H1–H2).', 'Excavator: dig sandstone and basalt (H1–H2).']),
   tr3: trunk(3, 2, ['tr1'], 120, 60_000, 30, ['Céramique', 'Ceramics'], ['Four à céramique, pompes et conduits ; atelier d’assemblage, batteries vides, accumulateurs.', 'Ceramic oven, pumps and conduits; assembly workshop, empty batteries, accumulators.']),
   tr4: trunk(4, 2, ['tr3'], 240, 120_000, 60, ['Cadastre', 'Land Registry'], ['Baux de parcelles, pylônes ; Cœur niveau 3.', 'Parcel leases, pylons; Core level 3.'], [flag('lease')]),
@@ -134,8 +135,10 @@ export const RESEARCH = {
   enK: node('en', 'c', 9, 'en_cellgen', ['Le Cœur-Soleil', 'The Sunheart'], ['Débloque le Cœur-Soleil : 20 MW pour un résonateur toutes les 30 minutes.', 'Unlocks the Sunheart: 20 MW for one resonator every 30 minutes.']),
 
   // ── Extraction: Extraction → Prospecting → Drilling | Excavation ─────────
-  ex_sifter: node('ex', undefined, 1, null, ['Tamiseur', 'Sifter'], ['Débloque le Tamiseur : sable, fer ou cuivre tirés de la pierre.', 'Unlocks the Sifter: sand, iron or copper out of stone.']),
-  ex3: node('ex', undefined, 2, 'ex_sifter', ['Remblai', 'Backfill'], ['Débloque la Remblayeuse.', 'Unlocks the Backfiller.']),
+  // The face cutter first (D87): quartz is Tier 1's; the sifter's stone and the backfiller's ceramic come with Tier 2.
+  ex_quartz: node('ex', undefined, 1, null, ['Haveuse', 'Face Cutter'], ['Débloque la Haveuse, qui taille le quartz d’une paroi, et l’Atelier de quartz : ses oscillateurs.', 'Unlocks the Face Cutter, which cuts quartz out of a cliff face, and the Quartz Workshop: its oscillators.']),
+  ex_sifter: node('ex', undefined, 2, 'ex_quartz', ['Tamiseur', 'Sifter'], ['Débloque le Tamiseur : sable, fer ou cuivre tirés de la pierre.', 'Unlocks the Sifter: sand, iron or copper out of stone.']),
+  ex3: node('ex', undefined, 3, 'ex_sifter', ['Remblai', 'Backfill'], ['Débloque la Remblayeuse.', 'Unlocks the Backfiller.']),
   ex4: node('ex', undefined, 3, 'ex3', ['Forets à basalte', 'Basalt Bits'], ['L’obsidienne (H3) devient creusable ; le basalte se creuse plus vite.', 'Obsidian (H3) becomes diggable; basalt digs faster.'], [flag('digH3'), flag('basaltBits')]),
   ex_fastdrill: node('ex', undefined, 4, 'ex4', ['Foreuse rapide', 'Fast Drill'], ['Débloque la Foreuse rapide : 35/min.', 'Unlocks the Fast Drill: 35/min.']),
   ex5: node('ex', 'd', 5, 'ex_fastdrill', ['Puits profond', 'Deep Bore'], ['Débloque la Foreuse profonde.', 'Unlocks the Deep Bore.']),
@@ -168,7 +171,7 @@ export const RESEARCH = {
   cmK: node('cm', undefined, 9, 'cm_rent', ['La Maison de Criée', 'The Crier House'], ['Un troisième comptoir.', 'A third trade post.'], [flag('post3')]),
 
   // ── Analytics: Analytics → Data → Computing | Data Mining ────────────────
-  an_data: node('an', undefined, 1, null, ['Traitement des données', 'Data Processing'], ['Le Cœur traite l’activité de la base : 1 donnée d’arpentage par minute, par sa sortie de données.', 'The Core processes the base’s activity: 1 Survey Data a minute, out of its data outlet.'], [add('heartData', 1000)]),
+  an_data: node('an', undefined, 1, null, ['Traitement des données', 'Data Processing'], ['Le Cœur traite l’activité de la base : 1 donnée d’arpentage par minute, par sa sortie de données, montée à son niveau 2.', 'The Core processes the base’s activity: 1 Survey Data a minute, out of its data outlet, mounted at its level 2.'], [add('heartData', 1000)]),
   an_relay: node('an', undefined, 2, 'an_data', ['Relais de données', 'Data Relay'], ['Débloque le Relais de données : 6 données d’arpentage par minute.', 'Unlocks the Data Relay: 6 Survey Data a minute.']),
   an_servers: node('an', undefined, 3, 'an_relay', ['Salle des serveurs', 'Server Room'], ['Débloque le Serveur : tes propres tokens d’IA, de l’électricité.', 'Unlocks the Server: your own AI tokens, from power.']),
   an_queue: node('an', undefined, 4, 'an_servers', ['File de recherche', 'Research Queue'], ['Chaque laboratoire enchaîne la recherche que tu lui as préparée.', 'Each lab moves on to the research you queued for it.'], [flag('researchQueue')]),

@@ -235,16 +235,64 @@ export const ARCHETYPES: Record<ArchetypeId, Archetype> = {
 
 export const ARCHETYPE_IDS = Object.keys(ARCHETYPES) as ArchetypeId[];
 
-/** What a map version reads (D63): its cirque, its Crown's foot by archetype, its mountains' hardness. */
+/**
+ * The quartz vein a land guarantees (map 3, D87; owner, 2026-10-15: « une ressource disponible
+ * uniquement en dehors du cirque de départ, mais avec un filon très proche […] incrusté dans la
+ * montagne la plus proche, dans une parcelle juste à côté »): a short wall of rock — a bluff, the
+ * nearest mountain past the Crown — whose face looks back at the cirque, in a parcel beside the
+ * starting square. The face's rock tiles hold the ore (`item`, a face ore); a face cutter works
+ * them from the floor at the wall's foot. All in tiles, measured from the centre along the
+ * bluff's axis (`u`, outwards) and across it (`v`).
+ */
+export interface QuartzVein {
+  readonly item: string;
+  /**
+   * The bearings it may stand at, picked per player (cardinal: 'W' or 'N' — a bluff west of the
+   * cirque turns its face east, one north turns it south: the walls the iso camera sees, so the
+   * crystals in the face show).
+   */
+  readonly sides: readonly ('W' | 'N')[];
+  /** The face's distance from the centre: `face` plus 0 … `faceSpan` − 1 per player (past the Crown's farthest terrace, r 41, with room for a cutter). */
+  readonly face: number;
+  readonly faceSpan: number;
+  /** Face tiles holding the ore, along the wall; the wall runs a tile further each way, bare. */
+  readonly length: number;
+  /** The wall's centre slides across the axis by −`shift` … `shift` tiles per player. */
+  readonly shift: number;
+  /** Rock behind the face (tiles), its raw level rising one every `climb` tiles to `top` (the land's settling makes terraces of it). */
+  readonly depth: number;
+  readonly climb: number;
+  readonly top: number;
+  /** Floor kept at the wall's foot: `apron` tiles out from the face, `apronWide` tiles past each end of the wall. */
+  readonly apron: number;
+  readonly apronWide: number;
+  /** A floor corridor from the Crown's foot to the apron, `corridor` tiles each side of the wall's centre line: no water or rock in the way home. */
+  readonly corridor: number;
+}
+
+/** What a map version reads (D63): its cirque, its Crown's foot by archetype, its mountains' hardness, its quartz vein (map 3). */
 export interface MapParams {
   readonly cirque: CirqueTemplate;
   /** The Crown's foot (tiles from the centre) on these archetypes; the others take `cirque.crownOuter`. */
   readonly crownOuter: Readonly<Partial<Record<ArchetypeId, number>>>;
   readonly hardness: { readonly near: readonly number[]; readonly reaches: readonly number[]; readonly far: readonly number[] };
+  /** The quartz vein in the nearest mountain (map 3, D87); absent: none (maps 1–2, whose bases buy quartz at the Crier). */
+  readonly quartz?: QuartzVein;
 }
 
+/**
+ * Map 3's vein (D87). The face 44–46 tiles out (the starting square ends at 34, its ring of parcels
+ * at 57: the bluff stands wholly in the parcel west or north of it; the start's reveal, r 44, just
+ * misses it), eight tiles of quartz (two tiles a cutter: four cutters along it, 60 a minute),
+ * five tiles of floor before it, a corridor of floor back to the Crown's foot.
+ */
+export const QUARTZ_VEIN: QuartzVein = {
+  item: 'quartz', sides: ['W', 'N'], face: 44, faceSpan: 3, length: 8, shift: 3,
+  depth: 7, climb: 2, top: 3, apron: 5, apronWide: 3, corridor: 3,
+};
+
 /** The map version a new base is founded on (saved as `mapV`; a save without it is on map 1). */
-export const MAP_VERSION = 2;
+export const MAP_VERSION = 3;
 
 /**
  * Every map version, kept for the bases founded on it: a land never changes under a base. A new
@@ -262,6 +310,13 @@ export const MAPS: Readonly<Record<number, MapParams>> = {
     // levels high all round, a Wide Steppe's the bare ridge.
     crownOuter: { closed: 31, steppe: 27 },
     hardness: MOUNTAINS.hardness,
+  },
+  // Map 2's land with the quartz vein in the nearest mountain, a parcel away (D87).
+  3: {
+    cirque: CIRQUE,
+    crownOuter: { closed: 31, steppe: 27 },
+    hardness: MOUNTAINS.hardness,
+    quartz: QUARTZ_VEIN,
   },
 };
 

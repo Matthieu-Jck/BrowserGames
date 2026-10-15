@@ -14,7 +14,7 @@ export type Glyph =
   | 'pebble' | 'grain' | 'coal' | 'copper' | 'crystal' | 'rubble' | 'drop' | 'salt' | 'plate' | 'pane'
   | 'coil' | 'journal' | 'gear' | 'servo' | 'arm' | 'chip' | 'tile' | 'cell' | 'cellCharged' | 'journal2' | 'shard'
   | 'resin' | 'ember' | 'lens' | 'canvas' | 'core' | 'atlas' | 'moss' | 'nacre' | 'quartz' | 'resonator'
-  | 'lattice' | 'codex';
+  | 'lattice' | 'codex' | 'oscillator';
 
 export interface ItemDef {
   readonly name: Loc;
@@ -27,6 +27,12 @@ export interface ItemDef {
   readonly glyph: Glyph;
   /** Fill colour token for the glyph. */
   readonly color: string;
+  /**
+   * An ore set in a cliff face (D87: quartz): its deposit lies on the rock tiles of a wall, and only
+   * a face cutter (`drill.face`) works it, from the floor beside the wall. A drill does not see it,
+   * and an excavator leaves its tiles standing.
+   */
+  readonly face?: boolean;
 }
 
 export interface RecipeDef {
@@ -130,9 +136,11 @@ export interface BuildingDef {
    * tiles' caps); with `ground`, it collects that item off the bare ground instead — every tile of
    * its footprint plain sand, no deposit — at a steady `perMin` (the sand collector: sand is the
    * desert floor itself, owner 2026-10-12). With `anywhere`, it makes that item out of nothing but
-   * power, on any ground (the data collectors, D68). A pump's `perMin` is its water a minute.
+   * power, on any ground (the data collectors, D68). With `face` (the face cutter, D87), it stands
+   * on the floor beside a wall and works the face ore (`ItemDef.face`) of the rock tiles its back
+   * touches, each at its tile's cap. A pump's `perMin` is its water a minute.
    */
-  readonly drill?: { readonly perMin: number; readonly capMult?: number; readonly ground?: string; readonly anywhere?: string };
+  readonly drill?: { readonly perMin: number; readonly capMult?: number; readonly ground?: string; readonly anywhere?: string; readonly face?: boolean };
   /** A machine's crafting speed, ‰ of the recipe's own (the upgraded machines of the tree, D70). */
   readonly speed?: number;
   /** A server (kind `server`): AI tokens a minute at full power (D68). */

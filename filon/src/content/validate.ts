@@ -22,9 +22,10 @@ import type { BuildingDef, ItemDef, PlanDef, RecipeDef, ResearchDef } from './ty
 
 const CYCLE_LCM = 1200;
 
-/** Items mined straight from the land (deposits, unique biomes, digging, pumping), and those collectors make from power alone (data files, D68). */
+/** Items mined straight from the land (deposits, unique biomes, digging, pumping, the cliff faces' veins, D87), and those collectors make from power alone (data files, D68). */
 export const RAW: readonly string[] = [
   'iron_ore', 'sand', 'coal', 'copper_ore', 'salt', 'stone', 'water', ...Object.values(UNIQUE_BIOMES).map((u) => u.item),
+  ...(Object.entries(ITEMS) as Array<[string, ItemDef]>).filter(([, it]) => it.face).map(([id]) => id),
   ...new Set((Object.values(BUILDINGS) as BuildingDef[]).flatMap((b) => (b.drill?.anywhere ? [b.drill.anywhere] : []))),
 ];
 

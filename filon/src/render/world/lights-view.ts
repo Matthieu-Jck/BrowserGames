@@ -13,7 +13,9 @@
 //   M, faded with the volumes) and one plan container (under P, fainter). Built on structural changes only,
 //   from pooled sprites; per frame only the layer's alpha (the night factor: one render-group
 //   uniform), the beacon's pulse, the incinerators' fire (a glow over each pit and up its flame,
-//   bright as an item burns: world/pits.ts) and, during a morph, two transforms.
+//   bright as an item burns: world/pits.ts) and, during a morph, two transforms. A production
+//   building that does not work is dark (D83): its glows and its work lamp hidden while the
+//   buildings view's `WorkLook` says it is switched off — re-applied only when a look flips.
 // - **Solar states**: solar panels wear an overlay above their sprite (iso: in `objects`, depth-
 //   sorted just above the bulb; plan: on `plan`): a closed bud at night, half-open petals at
 //   dawn and dusk, nothing when open, a sheen in full sun. Any solar cells drawn in `PV` (the
@@ -34,7 +36,7 @@ import type { Ent, Rot } from '@/sim/types';
 import { bKey, btKey, type Atlas } from '../art/atlas';
 import type { Pt } from '../art/ink';
 import { C, num } from '../art/tokens';
-import { isoHead } from '../art/recipes/buildings';
+import { artLevelOf, isoHead } from '../art/recipes/buildings';
 import {
   drawBulbIso, drawBulbPlan, drawCloud, drawGlow, drawPvState, drawSoft, HOT, isoArt, isoFrameOf, nightRig, planArt, planFrameOf,
   SOLAR_STAGES, type Emitter, type GlowClass, type SolarStage,
@@ -44,6 +46,7 @@ import { tileToIso } from '../iso';
 import { isoToView, type Lin } from '../projection';
 import { buildingZ, standOf } from './stand';
 import { pitFire } from './pits';
+import { OFF_TINT, looksAtWork, type WorkLook } from './work-look';
 import { PIT } from '../art/recipes/buildings';
 
 // ── the fx sheet ─────────────────────────────────────────────────────────────────
@@ -219,8 +222,8 @@ function rotLocal(w: number, h: number, rot: Rot, x: number, y: number): [number
   }
 }
 
-/** A state overlay: its sprite, its frame by stage (null: nothing to show), its anchor point and scale. */
-interface Overlay { s: Sprite; keys: ReadonlyArray<string | null>; x: number; y: number; k: number }
+/** A state overlay: its building, its sprite, its frame by stage (null: nothing to show), its anchor point and scale. */
+interface Overlay { ent: number; s: Sprite; keys: ReadonlyArray<string | null>; x: number; y: number; k: number }
 
 export class LightsView {
   /** Iso glows (iso world px, under M) and plan glows (tile units, under P). */
@@ -241,6 +244,11 @@ export class LightsView {
   private stage = -1;
   /** Entities left dark (no glows, no solar overlay) from the next rebuild on: the intro's Heart until it lands (D31). */
   readonly hidden = new Set<number>();
+  /** Which production buildings work (the buildings view's): a switched-off one shows no light (D83). */
+  work: WorkLook | null = null;
+  /** Each watched building's glows (its run of each pool) and whether they show; the look version applied. */
+  private groups: Array<{ ent: number; i0: number; i1: number; p0: number; p1: number; on: boolean }> = [];
+  private workVer = -1;
 
   constructor(
     private readonly layer: Container,
@@ -271,13 +279,17 @@ export class LightsView {
     this.nPlan = 0;
     this.beacons = [];
     this.pits = [];
+    this.groups = [];
+    this.workVer = -1; // applied below, then on every flip
     this.sim = sim;
     for (const o of this.overlays) o.s.destroy();
     this.overlays = [];
     for (const e of sim.ents.sorted()) {
       const kind = BUILDING_KIND[e.def]!;
       if (kind === 'belt' || kind === 'conduit' || e.builtAt !== 0 || sim.isDormant(e) || this.hidden.has(e.id)) continue;
+      const i0 = this.nIso, p0 = this.nPlan;
       this.addBuilding(e);
+      if (looksAtWork(e.def) && (this.nIso > i0 || this.nPlan > p0)) this.groups.push({ ent: e.id, i0, i1: this.nIso, p0, p1: this.nPlan, on: true });
     }
     for (let i = this.nIso; i < this.isoPool.length; i++) this.isoPool[i]!.visible = false;
     for (let i = this.nPlan; i < this.planPool.length; i++) this.planPool[i]!.visible = false;
@@ -330,7 +342,8 @@ export class LightsView {
     const rotP = this.atlas.frames.has(btKey(id, e.rot)) ? e.rot : 0;
     const hot = HOT.has(id);
     const bulb = id === 'sun_bulb';
-    const isoA = isoArt(id, rotI), planA = planArt(id, rotP);
+    const look = artLevelOf(id, this.sim?.hearthLevel ?? 1); // the Heart's lamps follow its level (D86)
+    const isoA = isoArt(id, rotI, look), planA = planArt(id, rotP, look);
     // Iso: atlas px are half world px; the sprite's anchor is the footprint's ground corner — on the
     // rock top for a building standing on the mountains (its stand's level: plan lights stay flat).
     const st = standOf(e), lv = st?.level ?? 0;
@@ -383,31 +396,55 @@ export class LightsView {
     // Solar states over the sprites: the bulb's petals, any cells drawn in PV.
     const z = (st ? st.z : buildingZ(e.x, e.y, w, h)) + 0.25;
     if (bulb) {
-      this.overlay('i', [bulbKey('i', rotI, 0), bulbKey('i', rotI, 1), null, bulbKey('i', rotI, 3)], ax, ay, 0.5, z);
-      this.overlay('p', [bulbKey('p', rotP, 0), bulbKey('p', rotP, 1), null, bulbKey('p', rotP, 3)], e.x, e.y, 1 / 64, 0);
+      this.overlay(e.id, 'i', [bulbKey('i', rotI, 0), bulbKey('i', rotI, 1), null, bulbKey('i', rotI, 3)], ax, ay, 0.5, z);
+      this.overlay(e.id, 'p', [bulbKey('p', rotP, 0), bulbKey('p', rotP, 1), null, bulbKey('p', rotP, 3)], e.x, e.y, 1 / 64, 0);
     }
     if (isoA.cells.length) {
       bakeCells(this.sheet, 'i', id, rotI, isoA.cells);
-      this.overlay('i', [pvKey('i', id, rotI, 0), pvKey('i', id, rotI, 1), null, pvKey('i', id, rotI, 3)], ax, ay, 0.5, z);
+      this.overlay(e.id, 'i', [pvKey('i', id, rotI, 0), pvKey('i', id, rotI, 1), null, pvKey('i', id, rotI, 3)], ax, ay, 0.5, z);
     }
     if (planA.cells.length) {
       bakeCells(this.sheet, 'p', id, rotP, planA.cells);
-      this.overlay('p', [pvKey('p', id, rotP, 0), pvKey('p', id, rotP, 1), null, pvKey('p', id, rotP, 3)], e.x, e.y, 1 / 64, 0);
+      this.overlay(e.id, 'p', [pvKey('p', id, rotP, 0), pvKey('p', id, rotP, 1), null, pvKey('p', id, rotP, 3)], e.x, e.y, 1 / 64, 0);
     }
   }
 
   /** An overlay sprite above a building (iso: in `objects` at zIndex z; plan: on `plan`). */
-  private overlay(view: 'i' | 'p', keys: ReadonlyArray<string | null>, x: number, y: number, k: number, z: number): void {
+  private overlay(ent: number, view: 'i' | 'p', keys: ReadonlyArray<string | null>, x: number, y: number, k: number, z: number): void {
     if (!keys.some((key) => key !== null && !!this.sheet.get(key))) return;
     const s = new Sprite();
     s.scale.set(k);
     s.visible = false;
     if (view === 'i') { s.zIndex = z; this.objectLayer.addChild(s); } else this.planLayer.addChild(s);
-    this.overlays.push({ s, keys, x, y, k });
+    this.overlays.push({ ent, s, keys, x, y, k });
+  }
+
+  /**
+   * The switched-off buildings' glows hidden, the working ones' shown (D83), when a look has
+   * flipped since the last call: one pass over the watched buildings' groups, writing only those
+   * that changed.
+   */
+  private lookAtWork(): void {
+    const w = this.work;
+    if (!w || w.version === this.workVer) return;
+    this.workVer = w.version;
+    for (const g of this.groups) {
+      const on = w.isLit(g.ent);
+      if (on === g.on) continue;
+      g.on = on;
+      for (let i = g.i0; i < g.i1; i++) this.isoPool[i]!.visible = on;
+      for (let i = g.p0; i < g.p1; i++) this.planPool[i]!.visible = on;
+    }
+    // A panel's petals and cells over its sprite: greyed with it (a few dozen at most).
+    for (const o of this.overlays) {
+      const tint = w.isLit(o.ent) ? 0xffffff : OFF_TINT;
+      if (o.s.tint !== tint) o.s.tint = tint;
+    }
   }
 
   /** Per frame: the night factor, the beacon's pulse, the view's fades, the solar stage. */
   update(g: Grade, P: Lin, te: number, seconds: number): void {
+    this.lookAtWork();
     // Lights: one alpha on a render group (no per-sprite work), skipped entirely by day.
     const a = g.night;
     this.layer.visible = a > 0.004 && this.count > 0;

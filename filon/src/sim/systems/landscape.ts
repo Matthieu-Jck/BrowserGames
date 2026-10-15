@@ -7,6 +7,7 @@ import { BAL } from '@/content/balance';
 import { BUILDING_KIND, buildingDef, itemIdx } from '@/content/registry';
 import { EPOCH } from '../constants';
 import { footprint } from '../entities';
+import { isFaceOre } from '../face';
 import { ReservoirNode } from '../flow/nodes';
 import { inWorld } from '../world/grid';
 import { isRock, T, type Ent } from '../types';
@@ -28,6 +29,7 @@ export function designate(sim: Sim, tiles: readonly number[], on = true): number
     const tt = sim.grid.terrain(x, y);
     const kind: JobKind | null = isRock(tt) ? 'dig' : tt === T.Shallow || tt === T.Deep || tt === T.Salt ? 'fill' : null;
     if (!kind || sim.grid.occ[t] !== 0) continue; // a building stands there (on rock too, D44)
+    if (isFaceOre(sim.grid.ore(x, y))) continue; // a vein's face stays a wall for the face cutters (D87)
     sim.designated.set(t, kind);
     n++;
   }
@@ -116,7 +118,7 @@ function quarryTile(sim: Sim, e: Ent): number {
     for (let x = e.x - r; x < e.x + w + r; x++) {
       if (x < 0 || y < 0 || x >= 1024 || y >= 1024 || !inReach(e, x, y)) continue;
       const tt = sim.grid.terrain(x, y), t = y * 1024 + x;
-      if (!isRock(tt) || !canDig(tt, sim.mods) || sim.grid.occ[t] !== 0) continue;
+      if (!isRock(tt) || !canDig(tt, sim.mods) || sim.grid.occ[t] !== 0 || isFaceOre(sim.grid.ore(x, y))) continue;
       const d = (2 * x - cx2) ** 2 + (2 * y - cy2) ** 2;
       if (d < bd) { best = t; bd = d; }
     }

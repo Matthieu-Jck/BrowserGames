@@ -38,4 +38,6 @@ export const RETIRED_COSTS: Readonly<Record<string, ReadonlyArray<readonly [stri
   // by save v4 (`postsToPads`), refunded, its container handed to the Heart; the claim builds the 5×5 pad.
   trade_post_3x3: [['iron_plate', 40], ['glass', 10], ['copper_wire', 10]],
   pylon_1x1: [['iron_plate', 8], ['copper_wire', 6], ['ceramic', 2]], // the 1×1 pylon before D75 (save v6: refunded, its wires dropped)
+  // The 2×2 research lab before D84 (save v10): refunded, its files and its project's paid data handed to the Heart, its wires dropped.
+  observatory_2x2: [['iron_plate', 30], ['glass', 20], ['copper_wire', 10]],
 };

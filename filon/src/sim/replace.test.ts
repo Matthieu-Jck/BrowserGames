@@ -2,10 +2,11 @@
 // replaces the buildings of its replace group that lie wholly inside its footprint, refunding
 // them first; ribbon drags keep the routing blocks they run through and lay a junction where
 // they cut straight across another ribbon line. Each placement is one logged `place`, so a
-// replay redoes the same replacements.
+// replay redoes the same replacements. Also the settings a placement starts with: a sorter
+// re-placed keeps its item (D24), a new machine starts on its lone recipe (D83).
 import { describe, it, expect } from 'vitest';
-import { BUILDING_IDS, itemIdx } from '@/content/registry';
-import { filterOf } from './cfg';
+import { BUILDING_IDS, itemIdx, recipeIdx } from '@/content/registry';
+import { filterOf, recipeOf } from './cfg';
 import { replay } from './commands';
 import { testSim, drillToHearth, line, stockedSilo, wire, IRON, SAND } from './testkit';
 import type { Sim } from './state';
@@ -291,6 +292,33 @@ describe('replacement', () => {
     expect(sim.log[sim.log.length - 1]!.cmd).toEqual({ k: 'place', def: 'sorter', x: 520, y: 520, rot: 1, cfg: e.cfg });
     const cleared = sim.place('sorter', 520, 520, 2, 0);
     expect(filterOf(sim.ents.get(cleared.id!)!.cfg, 0)).toBe(-1);
+    const b = testSim();
+    replay(b, sim.log, sim.tick);
+    expect(b.hash()).toBe(sim.hash());
+  });
+
+  it('a new machine starts on its only recipe unlocked (D83); with two to choose from it waits; explicit settings win; the replay agrees', () => {
+    const sim = testSim(); // every plan: the wire mill draws copper wire only, the smelter casts plates or glass, the workshop makes circuits until Pace Bells are researched
+    const recipe = (r: { id?: number }): number => recipeOf(sim.ents.get(r.id!)!.cfg);
+    const mill = sim.place('wire_mill', 520, 520, 0);
+    expect(mill.ok, mill.reason).toBe(true);
+    expect(recipe(mill)).toBe(recipeIdx('copper_wire') + 1);
+    expect(sim.log[sim.log.length - 1]!.cmd).toMatchObject({ k: 'place', def: 'wire_mill', cfg: recipeIdx('copper_wire') + 1 }); // logged with it
+    expect(recipe(sim.place('kiln', 522, 520, 0))).toBe(0);
+    expect(recipe(sim.place('workshop', 525, 520, 0))).toBe(recipeIdx('circuit') + 1);
+    expect(recipe(sim.place('wire_mill', 528, 520, 0, 0))).toBe(0); // given explicitly: none
+    sim.run(50); // a placed machine on its recipe compiles and runs like one set by hand
+    unlock(sim, 'dn4'); // Pace Bells: the workshop's second recipe
+    expect(recipe(sim.place('workshop', 530, 520, 0))).toBe(0);
+    expect(sim.setRecipe(mill.id!, 'copper_wire')).toBe(true); // already on it: nothing to do, nothing logged
+    expect(sim.log[sim.log.length - 1]!.cmd).toMatchObject({ k: 'place', def: 'workshop' });
+  });
+
+  it('a placement replayed from a log carries the recipe it started on', () => {
+    const sim = testSim();
+    expect(sim.place('wire_mill', 520, 520, 0).ok).toBe(true);
+    expect(sim.place('workshop', 525, 520, 0).ok).toBe(true);
+    sim.run(30);
     const b = testSim();
     replay(b, sim.log, sim.tick);
     expect(b.hash()).toBe(sim.hash());

@@ -1,6 +1,7 @@
 // atlas.ts — bakes every sprite with Canvas2D (deterministic, antialiased, clip-able), packs
 // them on 2048² pages with a shelf packer (8 px padding survives mipmaps) and wraps each page
-// in one Pixi texture source, so hot layers batch. Pages are also exposed as canvases for the
+// in one Pixi texture source, so hot layers batch. A building with a look per level (the Heart,
+// D86) gets each of them, keyed by level. Pages are also exposed as canvases for the
 // DOM (artboard, icons) — pixel-identical to the game. Buildings with a moving part
 // (recipes/moving.ts) also get their body alone and the part's phases, cropped to one cell
 // size and packed together as one sheet — the same page, so stepping through them never
@@ -11,7 +12,7 @@ import type { BuildingId } from '@/content/buildings';
 import type { ItemId } from '@/content/items';
 import type { Rot } from '@/sim/types';
 import type { Ctx } from './ink';
-import { drawBuilding, drawBuildingMoving, needsRotations } from './recipes/buildings';
+import { artLevels, drawBuilding, drawBuildingMoving, needsRotations } from './recipes/buildings';
 import { drawBuildingTop, drawBuildingTopMoving, needsRotationsTop, TOP_MARGIN, TOP_PX } from './recipes/buildings-top';
 import { MOVING } from './recipes/moving';
 import { drawItem, GLYPH } from './recipes/items';
@@ -60,9 +61,10 @@ function canvasOf(w: number, h: number): { canvas: HTMLCanvasElement; ctx: Canva
   return { canvas, ctx };
 }
 
-export const bKey = (id: string, rot: Rot): string => `b:${id}:${rot}`;
-/** Plan-view (build mode) building frame. */
-export const btKey = (id: string, rot: Rot): string => `bt:${id}:${rot}`;
+/** Iso building frame; `lv`: its look's level past the first (the Heart's, D86: `artLevels`). */
+export const bKey = (id: string, rot: Rot, lv = 1): string => (lv > 1 ? `b:${id}:${rot}:${lv}` : `b:${id}:${rot}`);
+/** Plan-view (build mode) building frame; `lv` as `bKey`'s. */
+export const btKey = (id: string, rot: Rot, lv = 1): string => (lv > 1 ? `bt:${id}:${rot}:${lv}` : `bt:${id}:${rot}`);
 export const iKey = (id: string): string => `i:${id}`;
 export const beltKey = (tier: string, corner: boolean): string => `belt:${tier}:${corner ? 'c' : 's'}`;
 export const iconKey = (id: string): string => `ic:${id}`;
@@ -143,6 +145,12 @@ export function bakeAtlas(): Atlas {
     for (const rot of rots) {
       const { canvas, frame } = drawBuilding(id as BuildingId, rot, make);
       pieces.push({ key: bKey(id, rot), canvas: canvas as HTMLCanvasElement, ox: frame.ox, oy: frame.oy, k: 0.5 });
+      // Its other looks, one per level (the Heart's, D86), at rot 0 only (the Heart never turns;
+      // views fall back to rot 0): no moving part among them.
+      for (let lv = 2; rot === 0 && lv <= artLevels(id as BuildingId); lv++) {
+        const o = drawBuilding(id as BuildingId, rot, make, lv);
+        pieces.push({ key: bKey(id, rot, lv), canvas: o.canvas as HTMLCanvasElement, ox: o.frame.ox, oy: o.frame.oy, k: 0.5 });
+      }
       const mv = spec ? drawBuildingMoving(id as BuildingId, rot, spec.frames, make) : null;
       if (mv) {
         pieces.push({ key: bodyKey(bKey(id, rot)), canvas: mv.body as HTMLCanvasElement, ox: frame.ox, oy: frame.oy, k: 0.5 });
@@ -158,6 +166,10 @@ export function bakeAtlas(): Atlas {
     for (const rot of rots) {
       const { canvas } = drawBuildingTop(id as BuildingId, rot, make);
       pieces.push({ key: btKey(id, rot), canvas: canvas as HTMLCanvasElement, ox: TOP_MARGIN, oy: TOP_MARGIN, k: 1 / TOP_PX });
+      for (let lv = 2; rot === 0 && lv <= artLevels(id as BuildingId); lv++) {
+        const o = drawBuildingTop(id as BuildingId, rot, make, lv);
+        pieces.push({ key: btKey(id, rot, lv), canvas: o.canvas as HTMLCanvasElement, ox: TOP_MARGIN, oy: TOP_MARGIN, k: 1 / TOP_PX });
+      }
       const mv = spec ? drawBuildingTopMoving(id as BuildingId, rot, spec.frames, make) : null;
       if (mv) {
         pieces.push({ key: bodyKey(btKey(id, rot)), canvas: mv.body as HTMLCanvasElement, ox: TOP_MARGIN, oy: TOP_MARGIN, k: 1 / TOP_PX });

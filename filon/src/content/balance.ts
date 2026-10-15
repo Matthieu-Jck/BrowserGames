@@ -24,7 +24,8 @@ export const BAL = {
   drillBufItems: 5,
   // Deposit richness off the cirque template (100 = 1 item/min per tile; mapgen's procedural
   // fields, hidden veins and unique sites — the cirque's own deposits are in content/world.ts).
-  depositRich: { iron_ore: 500, sand: 400, coal: 300, copper_ore: 500, salt: 300 } as Record<string, number>,
+  // quartz: a face tile of the vein (D87), what a face cutter cuts out of it: two tiles make its 15/min.
+  depositRich: { iron_ore: 500, sand: 400, coal: 300, copper_ore: 500, salt: 300, quartz: 750 } as Record<string, number>,
   uniqueRich: 100,
   forkBufItems: 2,
 
@@ -186,6 +187,11 @@ export const BAL = {
     { unlock: 'tr4', cost: [['gear', 300], ['ceramic', 100], ['circuit', 50]] },
     { unlock: 'tr6', cost: [['circuit', 200], ['thermal_core', 20]] },
   ] as ReadonlyArray<{ unlock: string; cost: ReadonlyArray<readonly [string, number]> }>,
+  /**
+   * The Heart level that mounts its data outlet on its south-east corner (D86): below it the
+   * outlet hands out nothing and the Heart makes no Survey Data, whatever Analytics researched.
+   */
+  hearthDataLevel: 2,
 
   // ── drifters ─────────────────────────────────────────────────────────────
   dockShips: 4,

@@ -29,7 +29,8 @@ import { DX, DY, sideIndex } from '@/sim/types';
 import { isLinkPoint } from '@/sim/power/links';
 import type { Ent } from '@/sim/types';
 import type { Sim } from '@/sim/state';
-import { currentQuest, drillItem, objectiveProgress, producersOf, receives } from '@/sim/systems/quests';
+import { currentQuest, drillItem, objectiveProgress, producersOf, receives, stepApplies } from '@/sim/systems/quests';
+import { PARCEL, parcelAt, parcelCentre } from '@/sim/world/land';
 import { hintText } from './quest-log';
 
 export interface GuideHost {
@@ -50,6 +51,8 @@ export interface GuideHost {
   blocked(): boolean;
   /** The Link tool's source, once one is picked (0: none yet, or the tool not in hand). */
   linkSource(): number;
+  /** The land mode (D60): on or not, and the parcel picked in it (−1: none). */
+  land(): { active: boolean; selected: number };
 }
 
 /** The current step, for the quest log's hint line. */
@@ -75,11 +78,11 @@ function shown(e: Element | null | undefined): Element | null {
 const q = (sel: string): Element | null => shown(document.querySelector(sel));
 const aimEl = (e: Element | null, desc: string): Aim | null => (e ? { k: 'el', el: e, desc } : null);
 
-/** The first step of a quest still to do (counters count from the founding). */
+/** The first step of a quest still to do (counters count from the founding; a step for another land passed by, D87). */
 export function stepIndex(sim: Sim, def: QuestDef): number {
   for (let i = 0; i < def.steps.length; i++) {
     const s = def.steps[i]!;
-    if (s.done && objectiveProgress(sim, s.done).met) continue;
+    if (!stepApplies(sim, s) || (s.done && objectiveProgress(sim, s.done).met)) continue;
     return i;
   }
   return def.steps.length - 1;
@@ -198,6 +201,13 @@ export function spotOf(sim: Sim, at: GuideSpot): [number, number, number] | null
     const all = builtOf(sim, [at.newest]);
     const e = all[all.length - 1];
     return e ? centreOf(sim, e.id) : null;
+  }
+  if ('vein' in at) {
+    // The floor at the foot of the quartz vein's face, its middle (D87): where face cutters stand.
+    const V = sim.grid.source.quartzVein;
+    if (!V) return null;
+    const m = (V.n - 1) / 2;
+    return [V.x + m * V.dx + 1.5 * DX[V.look]!, V.y + m * V.dy + 1.5 * DY[V.look]!, V.n / 2 + 0.5];
   }
   const e = builtOf(sim, [at.entity])[0];
   return e ? centreOf(sim, e.id) : null;
@@ -443,6 +453,19 @@ export class Guide {
         return null;
       }
       case 'brush': return aimEl(q('.bb-mark'), 'tool:mark') ?? aimEl(q('.hud-build'), 'hud:build');
+      case 'land': {
+        // Buy a parcel (D60): the land mode (the HUD's button), the parcel holding the spot, its « Acheter ».
+        const spot = spotOf(sim, tg.at);
+        if (!spot) return null;
+        const p = parcelAt(Math.round(spot[0]), Math.round(spot[1]));
+        const land = this.host.land();
+        if (!land.active) return aimEl(q('[data-hud-land]'), 'hud:land');
+        if (land.selected !== p) {
+          const [cx, cy] = parcelCentre(p);
+          return { k: 'world', x: cx, y: cy, r: PARCEL / 2, desc: 'land:parcel' };
+        }
+        return aimEl(q('[data-land-act="buy"]'), 'land:buy');
+      }
       case 'name': return aimEl(q('[data-quest-name]'), 'quest:name');
       case 'none': return null;
       default: { const never: never = tg; return never; }
@@ -476,7 +499,8 @@ export class Guide {
     const cat = buildingDef(buildingIdx(def)).category;
     const tool = this.host.tool();
     if (tool?.def === def) {
-      const first = def === 'drill' && !sim.ents.sorted().some((e) => BUILDING_IDS[e.def] === 'drill');
+      // …and the quartz vein's foot (D87): far off past the Crown, the face cutter's one place.
+      const first = (def === 'drill' && !sim.ents.sorted().some((e) => BUILDING_IDS[e.def] === 'drill')) || (!!at && !Array.isArray(at) && 'vein' in at);
       const spot = !first ? null : Array.isArray(at) ? at : at ? spotOf(sim, at) : null;
       return spot ? { k: 'world', x: spot[0], y: spot[1], r: spot[2], desc: desc ?? `spot:${JSON.stringify(at)}` } : null;
     }

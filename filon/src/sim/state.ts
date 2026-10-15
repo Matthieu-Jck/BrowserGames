@@ -225,6 +225,11 @@ export class Sim {
     return BAL.hearthCap[Math.min(BAL.hearthCap.length, this.hearthLevel) - 1]! * 1000;
   }
 
+  /** The Survey Data the Heart makes a minute (mu): the Analytics research's, once its level has mounted the data outlet (D86), else none. */
+  heartDataRate(): number {
+    return this.hearthLevel >= BAL.hearthDataLevel ? this.mods.heartData : 0;
+  }
+
   absEpoch(tick = this.tick): number {
     return this.foundingEpoch + Math.floor(tick / EPOCH);
   }
@@ -244,7 +249,7 @@ export class Sim {
     const old = this.graph ?? null;
     this.graph = compileGraph({
       ents: this.ents, grid: this.grid, mods: this.mods, now: this.tick,
-      hearthStock: this.stock, hearthCap: this.hearthCap(), stores: this.stores, old,
+      hearthStock: this.stock, hearthCap: this.hearthCap(), heartData: this.heartDataRate(), stores: this.stores, old,
       refund: (item, mu) => this.refund(item, mu),
       labAccepts: research.labAccepts(this),
       tradeAccepts: trade.exportAccepts(this),

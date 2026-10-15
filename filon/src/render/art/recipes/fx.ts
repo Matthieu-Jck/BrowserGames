@@ -194,14 +194,14 @@ export function artOf(draw: (ctx: Ctx) => void, ox = 0, oy = 0): SpriteArt {
 const isoCache = new Map<string, SpriteArt>();
 const planCache = new Map<string, SpriteArt>();
 
-/** The lights and solar cells baked into a building's iso sprite, in atlas px (2× world) from its anchor. */
-export function isoArt(id: BuildingId, rot: Rot): SpriteArt {
-  const key = `${id}:${rot}`;
+/** The lights and solar cells baked into a building's iso sprite (at its look's level `lv`, D86), in atlas px (2× world) from its anchor. */
+export function isoArt(id: BuildingId, rot: Rot, lv = 1): SpriteArt {
+  const key = `${id}:${rot}:${lv}`;
   let art = isoCache.get(key);
   if (!art) {
     let ox = 0, oy = 0;
     const s = spy((ctx) => {
-      const { frame } = drawBuilding(id, rot, () => ({ ctx, canvas: null }));
+      const { frame } = drawBuilding(id, rot, () => ({ ctx, canvas: null }), lv);
       ox = frame.ox; oy = frame.oy;
     }, `b:${key}`);
     art = toArt(s, ox, oy);
@@ -210,12 +210,12 @@ export function isoArt(id: BuildingId, rot: Rot): SpriteArt {
   return art;
 }
 
-/** The lights and solar cells baked into a building's plan sprite, in atlas px (TOP_PX per tile) from its footprint's top-left. */
-export function planArt(id: BuildingId, rot: Rot): SpriteArt {
-  const key = `${id}:${rot}`;
+/** The lights and solar cells baked into a building's plan sprite (at its look's level `lv`), in atlas px (TOP_PX per tile) from its footprint's top-left. */
+export function planArt(id: BuildingId, rot: Rot, lv = 1): SpriteArt {
+  const key = `${id}:${rot}:${lv}`;
   let art = planCache.get(key);
   if (!art) {
-    art = toArt(spy((ctx) => { drawBuildingTop(id, rot, () => ({ ctx, canvas: null })); }, `bt:${key}`), TOP_MARGIN, TOP_MARGIN);
+    art = toArt(spy((ctx) => { drawBuildingTop(id, rot, () => ({ ctx, canvas: null }), lv); }, `bt:${key}`), TOP_MARGIN, TOP_MARGIN);
     planCache.set(key, art);
   }
   return art;

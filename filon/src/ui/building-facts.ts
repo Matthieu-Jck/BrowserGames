@@ -15,8 +15,9 @@ import {
   BUILDING_IDS, ITEM_IDS, buildingDef, buildingIdx, costOf, itemDef, itemIdx, recipeDef, recipesFor,
 } from '@/content/registry';
 import { nodeName } from '@/content/research';
-import type { BuildingDef, Side } from '@/content/types';
+import type { BuildingDef, ItemDef, Side } from '@/content/types';
 import { COMMON_DEPOSITS } from '@/content/world';
+import { ITEMS } from '@/content/items';
 import { num, rate } from '@/i18n/format';
 import { locale, t, type MsgKey } from '@/i18n/i18n';
 import { EPOCH, TPS } from '@/sim/constants';
@@ -28,6 +29,9 @@ import type { Sim } from '@/sim/state';
 import { throughputMu, tradeLevel } from '@/sim/trade';
 import { TP_PAD } from '@/render/art/recipes/buildings';
 import { itemRef } from './mention';
+
+/** The ores set in cliff faces (D87: quartz), what a face cutter cuts. */
+const FACE_ORES = (Object.entries(ITEMS) as Array<[string, ItemDef]>).filter(([, it]) => it.face).map(([id]) => id);
 import { feeText, minutes } from './trade-view';
 
 /** What the facts read from the colony: its research (unlocks, modifiers). */
@@ -174,6 +178,7 @@ function kindRows(def: number, b: BuildingDef, m: Readonly<Mods>): FactRow[] {
         break;
       }
       if (d.ground) add('mines', t('card.mines'), t('card.mines.ground'), items([d.ground]));
+      else if (d.face) add('mines', t('card.mines'), t('card.mines.face'), items(FACE_ORES)); // D87: the wall behind it
       else add('mines', t('card.mines'), t('card.mines.deposit'), items(COMMON_DEPOSITS.map(([it]) => it)));
       const bonus = d.capMult !== undefined && d.capMult !== 1000 ? ` · ${t('card.drill.bonus', { m: num(d.capMult / 1000) })}` : '';
       add('rate', t('card.rate'), t('card.drill.rate', { rate: rate(d.perMin) }) + bonus);
@@ -254,7 +259,7 @@ function kindRows(def: number, b: BuildingDef, m: Readonly<Mods>): FactRow[] {
 function placeRow(b: BuildingDef, m: Readonly<Mods>): FactRow | null {
   if (b.kind === 'hearth') return null;
   const parts: string[] = [];
-  if (b.kind === 'drill' && !b.drill?.anywhere) parts.push(t(b.drill?.ground ? 'card.place.sand' : 'card.place.deposit'));
+  if (b.kind === 'drill' && !b.drill?.anywhere) parts.push(t(b.drill?.ground ? 'card.place.sand' : b.drill?.face ? 'card.place.face' : 'card.place.deposit'));
   if (b.kind === 'pump') parts.push(t('card.place.water'));
   if (b.kind === 'geothermal') parts.push(t('card.place.vent'));
   if (b.kind === 'belt' || b.kind === 'conduit') parts.push(t('card.place.remote', { m: num((BAL.remoteBeltCostMult * m.remoteBeltCost) / 1000) }));

@@ -82,7 +82,7 @@ export const TERMINALS: Readonly<Partial<Record<BuildingId, readonly Terminal[]>
   great_workshop_compact: [roof(1.75, 0.92, 1.18, 0.3)],
   tower_workshop: [roof(2.0, 2.0, 2.6)],
   ceramic_oven: [roof(1.6, 1.35, 1.45)],
-  observatory: [roof(1.7, 1.08, 1.12, 0.22)], // the research lab: on its low instrument cabinet
+  observatory: [roof(2.53, 1.3, 1.3, 0.22)], // the research lab (3×3, D84): on its middle instrument cabinet
   mast: [
     { x: POLE.cx, y: POLE.cy, z: POLE.top + INSULATOR, bias: 0.14 },
     ...[-POLE.pin, POLE.pin].map((k) => { const [x, y] = onArm(POLE.cx, POLE.cy, k); return { x, y, z: POLE.arm + POLE.armH + INSULATOR }; }),
@@ -123,6 +123,9 @@ export const TERMINALS: Readonly<Partial<Record<BuildingId, readonly Terminal[]>
   solar_farm: [roof(2.58, 2.56, 0.95)],
   solar_tower: [roof(2.36, 2.36, 0.9, 0.3)],
   cell_generator: [roof(1.71, 0.3, 1.2)],
+  // Quartz (D87): on the face cutter's power house, on the workshop's control cabinet.
+  face_cutter: [roof(1.44, 0.44, 1.1, 0.22)],
+  quartz_workshop: [roof(1.78, 0.4, 1.2, 0.22)],
 };
 
 /** The fallback art's terminal (a powered building with none of its own): a mast on its roof hatch. */

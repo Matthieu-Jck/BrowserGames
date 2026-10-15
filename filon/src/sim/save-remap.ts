@@ -234,6 +234,12 @@ export function remapSave(d: SaveData, to: ContentTable = contentTable(), retire
     return out;
   });
 
+  // A project whose lab came down (a retired lab: the 2×2 one, D84) is cancelled as taking the lab
+  // down in play cancels it: the data it had paid go back to the Heart (nothing vanishes).
+  for (const p of d.projects ?? []) {
+    if (alive(p.lab)) continue;
+    for (let k = 0; 2 * k < p.cost.length; k++) give(p.cost[2 * k]!, p.paid[k] ?? 0);
+  }
   const projects = (d.projects ?? []).filter((p) => alive(p.lab)).map((p) => {
     const cost: number[] = [], paid: number[] = [];
     for (let k = 0; 2 * k < p.cost.length; k++) {

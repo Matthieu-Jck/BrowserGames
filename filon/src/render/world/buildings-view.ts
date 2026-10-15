@@ -35,6 +35,13 @@
 //
 // The plan layer is sorted like the volumes (world/stand.ts `PLAN_Z`): the plan copies of the
 // ribbons on rock and the elevators' marks under the items riding them, the buildings over all.
+//
+// Switched off (D83; world/work-look.ts): a production building that does not work — no power,
+// starved, backed up, no recipe, no grid — shows its unlit art (art/unlit.ts: its lamps and
+// furnace mouths dark glass, the body greyed and darker) in both views, its moving part still and
+// greyed. The unlit pictures are baked the first time one is needed (a DynAtlas of their own, a
+// few ms a frame at most; until then a grey tint stands in), then a look that flips is a texture
+// swap on its sprites — `WorkLook` reports the flips, sampled once per game tick.
 import { Container, Matrix, Sprite, type Texture } from 'pixi.js';
 import { BUILDING_IDS, BUILDING_KIND, ITEM_IDS, buildingDef } from '@/content/registry';
 import type { BuildingId } from '@/content/buildings';
@@ -48,15 +55,17 @@ import { gustPermille } from '@/sim/power/network';
 import { bKey, bodyKey, btKey, beltKey, iKey, inletKey, partKey, type Atlas } from '../art/atlas';
 import { DynAtlas, type DynFrame } from '../art/dyn-atlas';
 import { BELT_PX, BELT_TIERS, type BeltTier } from '../art/recipes/belts';
-import { SKY, drawBuildingShadow, isoHead, shadowFrameOf, type SkyPiece } from '../art/recipes/buildings';
+import { SKY, artLevelOf, drawBuildingShadow, isoHead, shadowFrameOf, type SkyPiece } from '../art/recipes/buildings';
 import { MOVING } from '../art/recipes/moving';
+import { drawOff } from '../art/recipes/off';
 import { silhouette } from '../art/silhouette';
 import { C, mix, num } from '../art/tokens';
 import type { Grade } from '../daynight';
 import { LH, TH, TW, tileToIso } from '../iso';
 import { tileTop } from '../relief';
 import { SHADOW_DX, SHADOW_DY, seamClip, shadowLook, shadowMap } from './cast-shadows';
-import { IDLE_TURNS, spinSeed, windTurns, workTurns } from './moving-parts';
+import { spinSeed, windTurns, workTurns } from './moving-parts';
+import { OFF_TINT, WorkLook, looksAtWork } from './work-look';
 import { ISO_K, PLAN_K, skyFrames } from './sky-decks';
 import { PLAN_Z, beltZ, buildingZ, computeStands, liftOf, liftZ, riseOffset, standOf, standZ, type Stand } from './stand';
 import { PIT_ISO_K, PIT_PLAN_K, PIT_Z, flameFrames, flameLevel, flicker, pitFire, pitFrames, planFlameFrame } from './pits';
@@ -80,6 +89,24 @@ export { buildingZ } from './stand';
 
 /** Plan: how dark the hint of height is under a building standing above the floor (its offset: `riseOffset`). */
 const RISE_ALPHA = 0.3;
+
+/** Dormant (its unlock given up, its land lost): a grey wash, like an unpainted model. */
+const DORMANT_TINT = 0x9b97a8;
+/** Baking time (ms) a frame may spend on unlit pictures; the rest wait for the next frame. */
+const OFF_BAKE_MS = 6;
+
+/** A building whose look says whether it works (D83): its sprites, what they show lit, the look applied. */
+interface Look {
+  ent: number;
+  id: BuildingId;
+  dormant: boolean;
+  /** Its body sprites (iso, plan): their atlas key lit, the art's rotation, whether the key is a moving building's body. */
+  views: Array<{ s: Sprite; key: string; iso: boolean; rot: Rot; body: boolean }>;
+  parts: Sprite[];
+  /** Switched off (as applied); waiting for an unlit picture to be baked. */
+  off: boolean;
+  waits: boolean;
+}
 
 /**
  * Which belt piece a ribbon tile shows: straight, or a bend when its only feeder sits on one
@@ -173,6 +200,12 @@ export class BuildingsView {
   private readonly hidden = new Set<number>();
   /** The incinerators' pits: their flame (iso, among the volumes) and its plan glow, the heat shown. */
   private pits: Array<{ ent: number; flame: Sprite; glow: Sprite | null; heat: number }> = [];
+  /** Which production buildings look at work (D83), sampled per game tick; the lights view reads it too. */
+  readonly work = new WorkLook();
+  /** Each watched building's look, by entity; those waiting for an unlit picture; the unlit pictures. */
+  private looks = new Map<number, Look>();
+  private waiting: Look[] = [];
+  private readonly offSheet = new DynAtlas();
 
   constructor(
     private readonly beltLayer: Container,
@@ -200,7 +233,11 @@ export class BuildingsView {
     this.pits = [];
     this.liftAlpha = -1;
     this.lookL = -1;
+    this.looks.clear();
+    this.waiting = [];
     sim.ensureCompiled(); // the ribbons' bends come from the graph
+    this.work.rebuild(sim);
+    this.heartLv = sim.hearthLevel; // the Heart's look (D86): a new level comes with a structure event, so a rebuild
     const stands = computeStands(sim); // who stands on the mountains, how high, how it sorts (once per rebuild)
     for (const e of sim.ents.sorted()) {
       const kind = BUILDING_KIND[e.def]!;
@@ -221,6 +258,8 @@ export class BuildingsView {
 
   /** Spinners of the last build, by entity: a rebuild keeps each part where it was in its turn. */
   private kept = new Map<number, Spinner>();
+  /** The Heart's level at the last rebuild: the look its sprites wear (art `artLevelOf`, D86). */
+  private heartLv = 1;
 
   /**
    * Per frame, with the game time (s): turn the moving parts. A turbine on a grid turns with
@@ -231,6 +270,7 @@ export class BuildingsView {
    */
   animate(sim: Sim, seconds: number, grade?: Grade): void {
     if (grade) this.shade(grade);
+    this.lookAtWork(sim);
     this.waveFlag(sim, seconds);
     // The elevators' cars, where the items view last left them.
     if (this.carHeight) for (const c of this.cars) c.s.position.y = c.y0 - this.carHeight(c.x, c.y) * LH;
@@ -248,10 +288,10 @@ export class BuildingsView {
     const gust = gustPermille(sim.absEpoch(), sim.worldSeed, sim.mods.gustVariance);
     for (const sp of this.spinners) {
       let turns = 0;
-      if (sp.still) turns = 0;
+      if (sp.still || !this.work.isLit(sp.ent)) turns = 0; // switched off: nothing moves (D83)
       else if (sp.wind) {
         const local = this.windLocal.get(sp.ent);
-        turns = local === undefined ? IDLE_TURNS : windTurns(local, gust);
+        turns = local === undefined ? 0 : windTurns(local, gust);
       } else {
         const node = g?.nodeByEnt.get(sp.ent);
         turns = node ? workTurns(node.status, node.net >= 0 ? sim.ctx.sat[node.net] ?? 0 : 0) : 0;
@@ -267,6 +307,57 @@ export class BuildingsView {
 
   /** Moving parts in the world (perf, tests). */
   get movingCount(): number { return this.spinners.length; }
+
+  /**
+   * Per frame: the looks that flipped since the last game tick (`WorkLook.sample`), applied; the
+   * buildings still waiting for their unlit picture, retried within the frame's baking budget.
+   */
+  private lookAtWork(sim: Sim): void {
+    for (const id of this.work.sample(sim)) {
+      const L = this.looks.get(id);
+      if (L) this.applyLook(L, !this.work.isLit(id));
+    }
+    if (this.waiting.length) {
+      const still = this.waiting;
+      this.waiting = [];
+      for (const L of still) { L.waits = false; if (L.off) this.applyLook(L, true); }
+    }
+    this.offSheet.flush();
+  }
+
+  /**
+   * Show a building lit or switched off: its body sprites swap to their unlit pictures (baked now if
+   * the frame's budget allows; else a grey tint stands in and it waits), its moving part is greyed.
+   */
+  private applyLook(L: Look, off: boolean): void {
+    L.off = off;
+    const base = L.dormant ? DORMANT_TINT : 0xffffff;
+    let waits = false;
+    for (const v of L.views) {
+      const tex = off ? this.unlit(v.key, L.id, v.iso, v.rot, v.body) : this.atlas.textures.get(v.key) ?? null;
+      if (tex) { if (v.s.texture !== tex) v.s.texture = tex; v.s.tint = base; }
+      else { v.s.tint = L.dormant ? DORMANT_TINT : OFF_TINT; waits = true; }
+    }
+    for (const p of L.parts) p.tint = L.dormant ? DORMANT_TINT : off ? OFF_TINT : 0xffffff;
+    if (waits && !L.waits) { L.waits = true; this.waiting.push(L); }
+  }
+
+  /**
+   * A building's unlit picture for an atlas key (its whole frame, the same anchor: a texture swap),
+   * baked the first time (recipes/off.ts `drawOff`). Null when this frame's baking budget is spent.
+   */
+  private unlit(key: string, id: BuildingId, iso: boolean, rot: Rot, body: boolean): Texture | null {
+    const got = this.offSheet.get(key);
+    if (got) return got.tex;
+    const fr = this.atlas.frames.get(key);
+    if (!fr || this.offSheet.spent > OFF_BAKE_MS) return null;
+    return this.offSheet.add(key, fr.w, fr.h, fr.ox, fr.oy, (ctx) => drawOff(ctx, id, rot, iso, body, fr.w, fr.h)).tex;
+  }
+
+  /** Watched buildings, how many look switched off, how many unlit pictures are baked (debug, smoke). */
+  workLook(): { watched: number; off: number; baked: number; waiting: number } {
+    return { ...this.work.counts(), baked: this.offSheet.size, waiting: this.waiting.length };
+  }
 
   /**
    * Per frame, at render tick `t`: each pit's flame from its fire (world/pits.ts) — its height and
@@ -363,8 +454,8 @@ export class BuildingsView {
    * sprites' scale): only the far side of the seam through its foot (cast-shadows.ts `seamClip`),
    * so the day's stretch about the foot never pushes any of it towards the sun.
    */
-  private shadowMask(id: BuildingId, rot: Rot): DynFrame {
-    const key = `${id}:${rot}`;
+  private shadowMask(id: BuildingId, rot: Rot, lv = 1): DynFrame {
+    const key = `${id}:${rot}:${lv}`;
     const got = this.shadowSheet.get(key);
     if (got) return got;
     const f = shadowFrameOf(id, rot, SHADOW_DX, SHADOW_DY);
@@ -377,7 +468,7 @@ export class BuildingsView {
       ctx.closePath();
       ctx.clip();
       ctx.scale(0.5, 0.5);
-      drawBuildingShadow(id, rot, SHADOW_DX, SHADOW_DY, silhouette(ctx));
+      drawBuildingShadow(id, rot, SHADOW_DX, SHADOW_DY, silhouette(ctx), lv);
     });
   }
 
@@ -387,8 +478,8 @@ export class BuildingsView {
    * lies on the rock top at its level, among the volumes just under the building (key − 0.3:
    * after the rock it falls on, under its moving part too), hidden until the day's look is set.
    */
-  private addShadow(e: Ent, id: BuildingId, rot: Rot, alpha: number, st?: Stand): void {
-    const fr = this.shadowMask(id, rot);
+  private addShadow(e: Ent, id: BuildingId, rot: Rot, alpha: number, st?: Stand, look = 1): void {
+    const fr = this.shadowMask(id, rot, look);
     const s = new Sprite(fr.tex);
     s.tint = SHADOW_TINT;
     const lv = st?.level ?? 0;
@@ -602,34 +693,49 @@ export class BuildingsView {
     const pending = e.builtAt !== 0;
     const alpha = pending ? 0.45 : 1;
     // Dormant (its unlock given up): a grey wash, like an unpainted model.
-    const tint = dormant ? 0x9b97a8 : 0xffffff;
+    const tint = dormant ? DORMANT_TINT : 0xffffff;
     const [w, h] = footprint(e.def, e.rot);
     const z = st ? st.z : buildingZ(e.x, e.y, w, h);
     const parts: Spinner['sprites'] = [];
     // The iso volume (on the rock top it stands on); a moving part apart, just over or under its body.
-    const isoKey = this.atlas.frames.has(bKey(id, e.rot)) ? bKey(id, e.rot) : bKey(id, 0);
+    // `lv`: the look it wears — the Heart's grows with its level (D86), every other building has one.
+    const lv = artLevelOf(id as BuildingId, this.heartLv);
+    const isoKey = this.atlas.frames.has(bKey(id, e.rot, lv)) ? bKey(id, e.rot, lv) : bKey(id, 0, lv);
     const [wx, wy] = tileToIso(e.x, e.y, st?.level ?? 0);
     const isoMv = this.atlas.moving.get(isoKey);
-    const artRot = isoKey === bKey(id, e.rot) ? e.rot : 0;
+    const artRot = isoKey === bKey(id, e.rot, lv) ? e.rot : 0;
     const pit = BUILDING_KIND[e.def] === 'sink';
-    this.addShadow(e, id as BuildingId, artRot, pending ? 0.35 : 1, st);
+    this.addShadow(e, id as BuildingId, artRot, pending ? 0.35 : 1, st, lv);
+    const look: Look | null = looksAtWork(e.def) ? { ent: e.id, id: id as BuildingId, dormant, views: [], parts: [], off: false, waits: false } : null;
     if (pit) this.addPit(e, artRot, wx, wy, alpha, tint, z);
-    else this.place(isoMv ? bodyKey(isoKey) : isoKey, this.objectLayer, wx, wy, alpha, tint, z);
+    else {
+      const key = isoMv ? bodyKey(isoKey) : isoKey;
+      const s = this.place(key, this.objectLayer, wx, wy, alpha, tint, z);
+      if (s && look) look.views.push({ s, key, iso: true, rot: artRot, body: !!isoMv });
+    }
     if (isoMv) {
       const s = this.place(partKey(isoKey, 0), this.objectLayer, wx, wy, alpha, tint, z + (isoMv.over ? 0.2 : -0.2));
       if (s) parts.push({ s, tex: this.phases(isoKey, isoMv.n) });
     }
     // The plan sprite (flat; above the floor, over its hint of height); a moving part over it.
-    const topKey = this.atlas.frames.has(btKey(id, e.rot)) ? btKey(id, e.rot) : btKey(id, 0);
+    const topKey = this.atlas.frames.has(btKey(id, e.rot, lv)) ? btKey(id, e.rot, lv) : btKey(id, 0, lv);
     const topMv = this.atlas.moving.get(topKey);
     if (st) this.riseHint(topMv ? bodyKey(topKey) : topKey, e.x, e.y, st.level, alpha);
-    this.place(topMv ? bodyKey(topKey) : topKey, this.planLayer, e.x, e.y, alpha, tint);
+    const planKey = topMv ? bodyKey(topKey) : topKey;
+    const plan = this.place(planKey, this.planLayer, e.x, e.y, alpha, tint);
+    if (plan && look) look.views.push({ s: plan, key: planKey, iso: false, rot: topKey === btKey(id, e.rot, lv) ? e.rot : 0, body: !!topMv });
     if (pit) this.addPitGlow(e);
     if (topMv) {
       const s = this.place(partKey(topKey, 0), this.planLayer, e.x, e.y, alpha, tint);
       if (s) parts.push({ s, tex: this.phases(topKey, topMv.n) });
     }
     if (parts.length) this.addSpinner(e, id as BuildingId, pending || dormant, parts);
+    if (look) {
+      look.parts = parts.map((p) => p.s);
+      this.looks.set(e.id, look);
+      // Known switched off before this rebuild: drawn so at once, never a lit frame.
+      if (!this.work.isLit(e.id)) this.applyLook(look, true);
+    }
     this.addChosenItem(e, id, st);
   }
 

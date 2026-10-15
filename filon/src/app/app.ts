@@ -178,6 +178,7 @@ export class App {
     this.landing = new LandingView(this.layers.get('fxTop'), this.layers.get('fxGlow'), atlas);
     this.dayNight = new DayNight([this.layers.lit, this.layers.get('fog'), this.layers.get('status'), this.layers.get('fxTop')], stage.renderer);
     this.lights = new LightsView(this.layers.get('lights'), this.layers.get('objects'), this.layers.get('plan'), atlas);
+    this.lights.work = this.buildings.work; // a production building that does not work shows no light (D83)
     this.clouds = new CloudShadows(this.layers.get('shade'), this.lights.cloudTextures());
     this.stressSpike = new StressSpike(this.layers.get('fxTop'));
     this.buildings.rebuild(sim);
@@ -251,6 +252,7 @@ export class App {
       lookAt: (x, y) => this.camera.glideTo(x + 0.5, y + 0.5),
       blocked: () => this.quests.modalOpen,
       linkSource: () => (this.link.active ? this.link.source : 0),
+      land: () => ({ active: this.landTool.active, selected: this.landTool.selected }),
     });
     this.quests = new QuestLog(atlas, { sim: () => this.sim, screenOpen: () => !!this.screens.current, step: () => this.guide.step, guide: this.guide });
     document.getElementById('ui')?.append(this.quests.root);

@@ -15,6 +15,7 @@ import {
 import { filterOf, recipeOf } from '../cfg';
 import { MU, WORLD } from '../constants';
 import { footprint, worldPorts, forTiles, type Entities, type WorldPort } from '../entities';
+import { faceRate, isFaceOre } from '../face';
 import { DX, DY, T, opposite, type Ent, type Rot } from '../types';
 import type { RouterLogic } from '@/content/types';
 import type { Grid } from '../world/grid';
@@ -66,6 +67,8 @@ export interface CompileInput {
   now: number;
   hearthStock: Float64Array;
   hearthCap: number;
+  /** The Survey Data the Heart makes a minute (mu, `Sim.heartDataRate`): 0 until its level mounts the data outlet (D86), which then hands it out. */
+  heartData: number;
   /** Per-entity stocks of silos, docks and trade posts (persisted by the state). */
   stores: Map<number, Float64Array>;
   old: Graph | null;
@@ -151,10 +154,11 @@ export function compileGraph(inp: CompileInput): Graph {
     switch (kind) {
       case 'hearth': {
         // Its ports are inlets, but for its data outlet: the data files it makes, once the
-        // Analytics research has it make some (D68) — never anything else of its stock.
+        // Analytics research has it make some (D68) and its level has mounted the outlet (D86) —
+        // never anything else of its stock. Before that the port stands, offering nothing.
         const items = (e.portItems ?? []).slice();
         while (items.length < b.ports.length) items.push(-1);
-        if (HEART_OUTLET >= 0) items[HEART_OUTLET] = mods.heartData > 0 ? DATA_IDX() : -1;
+        if (HEART_OUTLET >= 0) items[HEART_OUTLET] = inp.heartData > 0 ? DATA_IDX() : -1;
         node = reuse(e, () => new ReservoirNode(e.id, inp.hearthStock, inp.hearthCap, items, mpt(BAL.hearthPortPerMin), false),
           (o) => o.kind === 'reservoir');
         const r = node as ReservoirNode;
@@ -689,9 +693,11 @@ function onDugFloor(grid: Grid, e: Ent): boolean {
   return all;
 }
 
-/** Majority ore under a drill and its rate cap (mu per epoch). */
+/** Majority ore under a drill and its rate cap (mu per epoch); a face cutter's, the face behind it (D87). */
 export function drillRate(grid: Grid, e: Ent, mods: Mods): { item: number; rateEp: number } {
   const b = buildingDef(e.def);
+  // A face cutter (D87): the face ore of the wall its back is against, not what lies under it.
+  if (b.drill?.face) return faceRate(grid, e.def, e.x, e.y, e.rot);
   // A ground collector: a steady rate off the bare ground (its placement checked the sand).
   if (b.drill?.ground) return { item: itemIdx(b.drill.ground), rateEp: b.drill.perMin * 1000 };
   // A data collector (D68): its item out of power alone, anywhere.
@@ -700,7 +706,7 @@ export function drillRate(grid: Grid, e: Ent, mods: Mods): { item: number; rateE
   const caps = new Map<number, number>();
   forTiles(e, (x, y) => {
     const o = grid.ore(x, y);
-    if (o < 0) return;
+    if (o < 0 || isFaceOre(o)) return; // a face ore is a wall's, never a drill's (D87)
     counts.set(o, (counts.get(o) ?? 0) + 1);
     caps.set(o, (caps.get(o) ?? 0) + grid.capMuPerEpoch(x, y));
   });

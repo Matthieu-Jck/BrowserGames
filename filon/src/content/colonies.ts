@@ -33,26 +33,26 @@ export const UNIQUE_WEIGHT = 3;
 export const COLONY_PROFILES = {
   mining: {
     name: { fr: 'Camp minier', en: 'Mining Camp' }, count: 7, bands: ['near'], growth: 0.01,
-    supplies: [['iron_ore', 3], ['copper_ore', 3], ['stone', 3], ['journal_1', 1]],
+    supplies: [['iron_ore', 3], ['copper_ore', 3], ['stone', 3], ['journal_1', 1], ['quartz', 1]], // quartz (D87): what a land without its vein buys
     needs: [['coal', 3], ['circuit', 3], ['charged_cell', 3], ['gear', 1], ['thermal_core', 1], ['robot_arm', 1]],
     uniques: [],
   },
   foundry: {
     name: { fr: 'Fonderie', en: 'Foundry' }, count: 6, bands: ['near', 'medium'], growth: 0.015,
-    supplies: [['iron_plate', 3], ['gear', 3], ['glass', 1], ['copper_wire', 1]],
+    supplies: [['iron_plate', 3], ['gear', 3], ['glass', 1], ['copper_wire', 1], ['oscillator', 1]],
     needs: [['iron_ore', 3], ['sand', 3], ['copper_ore', 3], ['coal', 3], ['ceramic', 3], ['embersalt', 1], ['pace_bell', 1]],
     uniques: [],
   },
   glasshouse: {
     name: { fr: 'Serre', en: 'Glasshouse' }, count: 6, bands: ['medium'], growth: 0.01,
     supplies: [['coal', 3], ['sand', 3], ['lens', 1]],
-    needs: [['glass', 3], ['ceramic', 3], ['charged_cell', 3], ['empty_cell', 1]],
+    needs: [['glass', 3], ['ceramic', 3], ['charged_cell', 3], ['empty_cell', 1], ['quartz', 1]],
     uniques: ['sporeglass', 'lumen_moss'],
   },
   wind: {
     name: { fr: 'Citadelle du vent', en: 'Wind Citadel' }, count: 5, bands: ['medium'], growth: 0.015,
     supplies: [['charged_cell', 3], ['empty_cell', 3]],
-    needs: [['circuit', 3], ['ceramic', 3], ['salt', 3], ['copper_wire', 1], ['resin_canvas', 1], ['thermal_core', 1], ['singing_quartz', 1], ['resonator', 1]],
+    needs: [['circuit', 3], ['ceramic', 3], ['salt', 3], ['copper_wire', 1], ['resin_canvas', 1], ['thermal_core', 1], ['singing_quartz', 1], ['resonator', 1], ['oscillator', 1]],
     uniques: ['sky_resin'],
   },
   saltport: {

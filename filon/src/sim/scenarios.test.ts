@@ -5,7 +5,7 @@ import { itemIdx } from '@/content/registry';
 import { WORLD_SEED } from '@/content/world';
 import { replay } from './commands';
 import { DAY_EPOCHS, SOLAR, WORLD_EPOCH0 } from './constants';
-import { foundScenario, scenarioEpoch, SCENARIO_IDS, type ScenarioId } from './scenarios';
+import { foundScenario, idleAfter, scenarioEpoch, SCENARIO_IDS, type ScenarioId } from './scenarios';
 import { Sim } from './state';
 import { handsOut } from './systems/trade';
 import { MapGen } from './world/mapgen';
@@ -28,17 +28,24 @@ const BUILT: Record<ScenarioId, readonly string[]> = {
   claim: [],
   smelter: ['iron1', 'iron2'],
   survey: ['iron1', 'iron2', 'kiln1', 'coal', 'wind1', 'wind2', 'kiln2', 'sand1', 'sand2'],
-  tutorial: ['post', 'kiln1', 'kiln2', 'collector', 'observatory', 'mill', 'copper', 'beacon', 'wind3', 'wind4'],
-  grown: ['post', 'kiln1', 'kiln2', 'collector', 'observatory', 'mill', 'copper'],
+  tutorial: ['post', 'kiln1', 'kiln2', 'collector', 'observatory', 'mill', 'copper', 'beacon', 'wind3', 'wind4', 'cutter1', 'cutter2', 'osc'],
+  grown: ['post', 'kiln1', 'kiln2', 'collector', 'observatory', 'mill', 'copper', 'cutter1', 'cutter2', 'osc'],
   // The late base's works (scenario-late.ts): the potteries on the tarn's peak, the Fabrique on
   // the copper field — on every land (the Ember Fields mine and its thermal cores where the land has
   // that site: checked below).
   late: [
-    'post', 'kiln1', 'collector', 'observatory',
+    'post', 'kiln1', 'collector', 'observatory', 'cutter1', 'cutter2', 'osc',
     'oven', 'pump', 'dockT', 'digger1',
     'boreCu', 'post2', 'dockW', 'mill2', 'mill3', 'circuits', 'circuits2', 'gears2', 'bells', 'data2', 'observatory2', 'sorter2',
   ],
 };
+
+/**
+ * The production buildings that stand off three minutes on end while the base runs six more (D85,
+ * owner 2026-10-15: two copper drills of the late base fed ribbons that led nowhere). It runs the
+ * base: the last check on it.
+ */
+const idle = (sim: Sim): string[] => idleAfter(sim).map((i) => `${i.def}@${i.x},${i.y}:${i.work}`);
 
 describe('debug bases (scenarios)', () => {
   it('a level is founded at sunrise: its build runs in full sun', () => {
@@ -78,6 +85,7 @@ describe('debug bases (scenarios)', () => {
         // Nothing the map refused (each part of the works is laid whole, or skipped by name) but the
         // grown base's gear workshop where its plate line is too short to branch (land 3).
         expect(report.skipped.filter((s) => s !== 'gears'), 'late skipped').toEqual([]);
+        expect(idle(sim), 'late: idle three minutes on end').toEqual([]);
         continue;
       }
       // The tutorial path is played, not forced, and the map allowed every part of it.
@@ -87,13 +95,15 @@ describe('debug bases (scenarios)', () => {
       }
       expect(report.granted, `${id}: nothing outside the commands`).toEqual([]);
       if (id === 'tutorial') {
-        // The whole factory runs: plates, glass, data files, copper wire all made.
-        for (const it of ['iron_plate', 'glass', 'journal_1', 'copper_wire']) expect(sim.produced[itemIdx(it)], it).toBeGreaterThan(0);
-        expect(sim.done.has('tr1') || sim.projects.some((p) => p.id === 'tr1'), 'Mechanics learnt or under way').toBe(true);
+        // The whole factory runs: plates, glass, data files, copper wire, the vein's quartz all made.
+        for (const it of ['iron_plate', 'glass', 'journal_1', 'copper_wire', 'quartz']) expect(sim.produced[itemIdx(it)], it).toBeGreaterThan(0);
+        expect(sim.done.has('ex_quartz'), 'the Face Cutter learnt').toBe(true);
       }
       if (id === 'grown') {
         expect(PLAN_IDS.every((p) => sim.done.has(p))).toBe(true);
+        expect(sim.produced[itemIdx('oscillator')], 'grown: oscillators made').toBeGreaterThan(0);
         for (const r of ['tr1', 'en_pitch', 'xp_swift']) expect(sim.done.has(r), `learnt ${r}`).toBe(true);
+        expect(idle(sim), 'grown: idle three minutes on end').toEqual([]);
       }
     }
     if (process.env.SCENARIO_REPORT) console.log(`player ${seed}: ${times.join(' · ')}`);

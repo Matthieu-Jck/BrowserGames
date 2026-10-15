@@ -7,6 +7,8 @@
 // A building standing on a column (D44) sorts after it and every column under its footprint
 // (world/stand.ts), so the rock it stands on never covers it. Water up on the rock (the Crown's
 // tarn, D63) is a column like the rock round it, topped by its pool (terrain.ts `columnLook`).
+// Rock holding a face ore (D87: quartz in the cliff) wears its vein — a crystal seam on its walls,
+// points on its lip — keyed apart (`:q`) and baked with a little headroom for the points.
 //
 // The sun's shadows on the rock (owner, 2026-10-13: "high ground needs to be doing way bigger
 // shadows… proportionate to the place of the sun"): the floor's are painted (terrain-chunks.ts,
@@ -37,11 +39,13 @@ const M = 5; // sprite margin (atlas px)
 /** Where a column's top is tested for shade (tile-local), and the shade's ink (the cast shadows' cool ink). */
 const SAMPLES: ReadonlyArray<readonly [number, number]> = [0.17, 0.5, 0.83].flatMap((u) => [0.17, 0.5, 0.83].map((v) => [u, v] as const));
 const SHADE = mix(C.ink, C.lilacD, 0.3);
+/** Headroom (levels) over a vein's column for the crystal points on its lip (rock.ts `veinLip`: up to half a level). */
+const VEIN_HEAD = 0.6;
 /** Sorting key shared with the buildings (world/stand.ts holds them all): 4 × (2 × depth) + kind. */
 export { rockZ };
 
-/** A chunk's columns: relief level, per-step masks, rock class, and the top of a column that is not rock (null: rock). */
-interface ChunkRelief { lv: Uint8Array; masks: Uint8Array[]; cls: Uint8Array; top: Array<TopLook | null> }
+/** A chunk's columns: relief level, per-step masks, rock class, the top of a column that is not rock (null: rock), its face-ore vein (D87). */
+interface ChunkRelief { lv: Uint8Array; masks: Uint8Array[]; cls: Uint8Array; top: Array<TopLook | null>; vein: Uint8Array }
 
 export class ReliefView {
   readonly atlas = new DynAtlas();
@@ -89,13 +93,13 @@ export class ReliefView {
       const { lv, masks } = windowLevels(d);
       c = {
         lv: new Uint8Array(CHUNK * CHUNK), masks: Array.from({ length: MAX_TERRACE }, () => new Uint8Array(CHUNK * CHUNK)),
-        cls: new Uint8Array(CHUNK * CHUNK), top: new Array<TopLook | null>(CHUNK * CHUNK).fill(null),
+        cls: new Uint8Array(CHUNK * CHUNK), top: new Array<TopLook | null>(CHUNK * CHUNK).fill(null), vein: new Uint8Array(CHUNK * CHUNK),
       };
       for (let j = 0; j < CHUNK; j++) {
         for (let i = 0; i < CHUNK; i++) {
           const o = (j + BORDER) * WIN + i + BORDER, k = j * CHUNK + i;
           c.lv[k] = lv[o]!;
-          if (lv[o]) { const look = columnLook(d, lv, o); c.cls[k] = look.cls; c.top[k] = look.top; }
+          if (lv[o]) { const look = columnLook(d, lv, o); c.cls[k] = look.cls; c.top[k] = look.top; c.vein[k] = look.vein ? 1 : 0; }
           for (let t = 0; t < MAX_TERRACE; t++) c.masks[t]![k] = masks[t]![o]!;
         }
       }
@@ -105,15 +109,17 @@ export class ReliefView {
   }
 
   /** The baked frame for a column look, or undefined when over this frame's budget. */
-  private frame(cls: number, L: number, masks: readonly number[], variant: number, top: TopLook | null): ReturnType<DynAtlas['get']> {
-    const key = `${cls}:${masks.join('.')}:${variant}:${topKey(top)}`;
+  private frame(cls: number, L: number, masks: readonly number[], variant: number, top: TopLook | null, vein: boolean): ReturnType<DynAtlas['get']> {
+    const key = `${cls}:${masks.join('.')}:${variant}:${topKey(top)}${vein ? ':q' : ''}`;
     const f = this.atlas.get(key);
     if (f || this.atlas.spent > BUDGET_MS) return f;
-    const w = 2 * IS + 2 * M, h = 2 * IH + L * ILH + 2 * M;
-    const ox = M + IS, oy = M + L * ILH;
+    // A vein's points poke up over the top's back lip: room for them above.
+    const head = vein ? Math.ceil(VEIN_HEAD * ILH) : 0;
+    const w = 2 * IS + 2 * M, h = 2 * IH + L * ILH + 2 * M + head;
+    const ox = M + IS, oy = M + L * ILH + head;
     const seed = hash32(cls, L, masks[masks.length - 1]!, variant + 0x51);
     return this.atlas.add(key, w, h, ox, oy, (ctx) => {
-      drawColumn(ctx, (u, v, z) => [ox + (u - v) * IS, oy + (u + v) * IH - z * ILH], cls, masks, { detail: 2, seed, k: 1, top });
+      drawColumn(ctx, (u, v, z) => [ox + (u - v) * IS, oy + (u + v) * IH - z * ILH], cls, masks, { detail: 2, seed, k: 1, top, vein });
     });
   }
 
@@ -160,7 +166,7 @@ export class ReliefView {
         const k = (y - cy * CHUNK) * CHUNK + (x - cx * CHUNK);
         const L = c.lv[k]!;
         if (!L) continue;
-        const f = this.frame(c.cls[k]!, L, tileMasks(c.lv, c.masks, k), hash32(x, y, 0x77) & 1, c.top[k]!);
+        const f = this.frame(c.cls[k]!, L, tileMasks(c.lv, c.masks, k), hash32(x, y, 0x77) & 1, c.top[k]!, c.vein[k] === 1);
         if (!f) { complete = false; this.pending++; continue; }
         const s = new Sprite(f.tex);
         s.scale.set(0.5);

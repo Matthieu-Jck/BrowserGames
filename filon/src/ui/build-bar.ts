@@ -110,12 +110,13 @@ export function itemIcon(atlas: Atlas, item: number, size: number): HTMLCanvasEl
   return f ? frameCanvas(atlas, iKey(ITEM_IDS[item]!), size / f.w) : null;
 }
 
-/** A plan-view icon of a building fitted in a box of `size` px. */
-export function buildingIcon(atlas: Atlas, def: string, size: number): HTMLCanvasElement | null {
+/** A plan-view icon of a building fitted in a box of `size` px; `lv`: its look at a level (the Heart's, D86), if it has one. */
+export function buildingIcon(atlas: Atlas, def: string, size: number, lv = 1): HTMLCanvasElement | null {
   if (isBeltDef(def)) return beltIcon(atlas, def, size);
-  const f = atlas.frames.get(btKey(def, 0));
+  const key = atlas.frames.has(btKey(def, 0, lv)) ? btKey(def, 0, lv) : btKey(def, 0);
+  const f = atlas.frames.get(key);
   if (!f) return null;
-  return frameCanvas(atlas, btKey(def, 0), size / Math.max(f.w, f.h));
+  return frameCanvas(atlas, key, size / Math.max(f.w, f.h));
 }
 
 /**

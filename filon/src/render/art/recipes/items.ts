@@ -253,6 +253,32 @@ function gem(ctx: Ctx, col: string, table = hi(col, 0.55)): void {
   stroke(ctx, S);
 }
 
+/** Copper (wire, leads): warm, a touch darker than brass. */
+const COPPER = '#d9844a';
+
+/**
+ * A rock-crystal point: a hexagonal prism standing at (x, base) with its foot hidden, `h` tall and
+ * `w` wide, leaning `lean` rad, terminated in three facets — the face to the light white, the far
+ * one ice-blue, its root clouded milky.
+ */
+function quartzPoint(ctx: Ctx, x: number, base: number, h: number, w: number, lean: number, col: string): void {
+  ctx.save();
+  ctx.translate(x, base);
+  ctx.rotate(lean);
+  const hw = w / 2, sh = -h + w * 0.95, m = hw * 0.2, n = hw * 0.4;
+  const S = poly([[-hw, 0], [-hw, sh], [0, -h], [hw, sh], [hw, 0]]);
+  const ice = mix(col, '#7f9fb6', 0.42);
+  fill(ctx, S, col);
+  fill(ctx, poly([[-hw, 0], [-hw, sh], [0, -h], [-m, sh + 1], [-m, 0]]), WHITE);
+  fill(ctx, poly([[n, 0], [n, sh + 1], [0, -h], [hw, sh], [hw, 0]]), ice);
+  fill(ctx, poly([[-hw, 0], [-hw, -h * 0.28], [hw, -h * 0.28], [hw, 0]]), WHITE, 0.45);
+  line(ctx, [[-m, 0], [-m, sh + 1], [0, -h]], 0.8, lo(col, 0.45));
+  line(ctx, [[n, 0], [n, sh + 1], [0, -h]], 0.8, lo(col, 0.45));
+  line(ctx, [[-hw, sh], [-m, sh + 1], [n, sh + 1], [hw, sh]], 0.8, lo(col, 0.45));
+  stroke(ctx, S);
+  ctx.restore();
+}
+
 // ── the glyphs ────────────────────────────────────────────────────────────
 
 const GLYPHS: Record<Glyph, G> = {
@@ -291,8 +317,41 @@ const GLYPHS: Record<Glyph, G> = {
     stroke(ctx, heap);
   },
   crystal: (ctx, col) => {
-    gem(ctx, col);
-    glint(ctx, 13, 8.5, 1.3);
+    // Quartz (D87): rock crystal as it is cut from the cliff — two clear, milky-rooted points
+    // breaking out of a lump of grey stone, cool pale tints and a glint. Two white points on grey,
+    // where the singing quartz is three lilac prisms on a dark matrix.
+    const stone = '#a7a3b4';
+    quartzPoint(ctx, 21.5, 25, 16, 7, 0.48, col);
+    quartzPoint(ctx, 13.2, 26, 24, 9, -0.2, col);
+    const lump = poly([[3.5, 26.5], [5.5, 22.5], [10.5, 21], [17, 22], [23.5, 20.5], [28, 23.5], [28.5, 27], [24, 29.5], [8.5, 29.5]]);
+    fill(ctx, lump, stone);
+    rim(ctx, lump, -1.4, -1.6, lo(stone, 0.32));
+    rim(ctx, lump, 1, 1.2, hi(stone, 0.35));
+    line(ctx, [[9, 26.5], [13, 27.8], [17.5, 27]], 0.8, lo(stone, 0.45));
+    stroke(ctx, lump);
+    fill(ctx, star(10, 5.6, 2.8), WHITE);
+  },
+  oscillator: (ctx, col) => {
+    // Quartz oscillator (D87): the HC-49 can — a rounded metal case on its darker flange, a quartz
+    // blade's wave stamped on it, its two copper leads below.
+    for (const x of [12.2, 19.8]) {
+      line(ctx, [[x, 24], [x, 30]], 3.4);
+      line(ctx, [[x, 24], [x, 30]], 1.6, COPPER);
+    }
+    const flange = rrect(5.5, 21, 21, 4.5, 1.6);
+    part(ctx, flange, lo(col, 0.18), { d: 1.1, l: 0.9 });
+    const can = rrect(6.5, 5, 19, 17, 4.2);
+    fill(ctx, can, col);
+    inside(ctx, can, () => {
+      fill(ctx, rrect(9.4, 0, 2.6, 40, 0), hi(col, 0.55));
+      fill(ctx, rrect(20.2, 0, 6, 40, 0), lo(col, 0.24));
+    });
+    stroke(ctx, can);
+    // The stamp: one period of a wave in a little frame (the crystal's ring).
+    const frame = rrect(10.5, 9.8, 11, 7.4, 1.2);
+    stroke(ctx, frame, 0.8, lo(col, 0.5));
+    stroke(ctx, (k) => { k.moveTo(11.8, 13.5); k.bezierCurveTo(13.8, 9.3, 14.5, 9.3, 16, 13.5); k.bezierCurveTo(17.5, 17.7, 18.2, 17.7, 20.2, 13.5); }, 1.2, C.ink);
+    glint(ctx, 10, 7.6, 1.4);
   },
   coal: (ctx, col) => {
     // Coal: three black faceted lumps with cool grey top facets, one cold glint.

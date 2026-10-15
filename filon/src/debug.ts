@@ -23,6 +23,7 @@ import { buildArtboard } from '@/ui/screens/artboard';
 import { eventLine } from '@/ui/gazette';
 import type { Rot } from '@/sim/types';
 import { CENTER } from '@/sim/constants';
+import { veinSpots } from '@/sim/scenario-quartz';
 import { PARCEL, parcelAt, parcelCentre, ringOf } from '@/sim/world/land';
 
 export interface FilonDebug {
@@ -74,6 +75,11 @@ export interface FilonDebug {
   linking(source?: number | null): { active: boolean; source: number; hover: number; verdict: string | null };
   /** Wires drawn by the wires view. */
   wires(): number;
+  /**
+   * The production buildings' looks (D83): how many are watched, how many look switched off, unlit
+   * pictures baked and still waiting; with an id, whether that building looks at work.
+   */
+  workLook(id?: number): { watched: number; off: number; baked: number; waiting: number; lit?: boolean };
   /** Item index of an item id. */
   itemIndex(id: string): number;
   /** Sandbox: drop science straight into the first observatory's store. */
@@ -104,6 +110,8 @@ export interface FilonDebug {
   parcel(dx: number, dy: number): { p: number; at: [number, number]; ring: number };
   /** The parcel holding tile (x, y). */
   parcelAt(x: number, y: number): number;
+  /** The land's quartz vein (D87: map 3): its face tiles, the way they look, the floor spots of its face cutters (top-left, rot); null on maps 1–2. */
+  vein(): { x: number; y: number; dx: number; dy: number; n: number; look: number; parcel: number; spots: Array<[number, number, number]> } | null;
   /** This epoch's bid / ask of an item (◉). */
   price(item: string): { bid: number; ask: number };
   /** The first built trade post (0 = none). */
@@ -270,6 +278,7 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
       return { active: l.active, source: l.source, hover: l.hover, verdict: l.active ? l.preview().verdict : null };
     },
     wires: () => app.wires.count,
+    workLook: (id) => ({ ...app.buildings.workLook(), ...(id === undefined ? {} : { lit: app.buildings.work.isLit(id) }) }),
     itemIndex: (id) => ITEM_IDS.indexOf(id as never),
     feedLab: (item, n) => {
       const sim = app.sim;
@@ -345,6 +354,10 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
       return { p, at: parcelCentre(p), ring: ringOf(p) };
     },
     parcelAt: (x, y) => parcelAt(x, y),
+    vein: () => {
+      const V = app.sim.grid.source.quartzVein;
+      return V ? { x: V.x, y: V.y, dx: V.dx, dy: V.dy, n: V.n, look: V.look, parcel: parcelAt(V.x, V.y), spots: veinSpots(app.sim) } : null;
+    },
     price: (item) => {
       const i = ITEM_IDS.indexOf(item as never);
       return { bid: (app.sim.prices.bid[i] ?? 0) / 100, ask: (app.sim.prices.ask[i] ?? 0) / 100 };

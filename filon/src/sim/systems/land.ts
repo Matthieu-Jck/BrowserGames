@@ -8,6 +8,7 @@ import { BAL } from '@/content/balance';
 import { ITEMS } from '@/content/items';
 import { ITEM_IDS } from '@/content/registry';
 import { CENTER, EPOCH } from '../constants';
+import { isFaceOre } from '../face';
 import type { Sim } from '../state';
 import { T } from '../types';
 import { PARCEL_COLS, parcelCentre, parcelRect } from '../world/land';
@@ -29,7 +30,11 @@ const VALUE = ITEM_IDS.map((id) => Math.round(ITEMS[id].value * 100));
 
 const valid = (p: number): boolean => Number.isInteger(p) && p >= 0 && p < PARCEL_COLS * PARCEL_COLS;
 
-/** What a parcel holds, priced (centi-ocelles): its ground tile by tile and its deposits by ore and richness. */
+/**
+ * What a parcel holds, priced (centi-ocelles): its ground tile by tile and its deposits by ore and
+ * richness. A face ore (D87: the quartz in a wall) is priced as the rock it is set in: no drill
+ * takes it, and the vein's parcel is the tutorial's first purchase, within its purse.
+ */
 export function landContent(sim: Sim, p: number): number {
   const L = BAL.land, { x0, y0, x1, y1 } = parcelRect(p);
   let cents = L.base;
@@ -43,7 +48,7 @@ export function landContent(sim: Sim, p: number): number {
               : t === T.DuneSea ? L.tile.dunes!
                 : L.tile.floor!;
       const ore = sim.grid.ore(x, y);
-      if (ore >= 0) cents += Math.floor((L.depositPerValue * VALUE[ore]! * (sim.grid.capMuPerEpoch(x, y) / 10)) / (100 * 500));
+      if (ore >= 0 && !isFaceOre(ore)) cents += Math.floor((L.depositPerValue * VALUE[ore]! * (sim.grid.capMuPerEpoch(x, y) / 10)) / (100 * 500));
     }
   }
   return cents;

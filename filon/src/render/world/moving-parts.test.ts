@@ -5,15 +5,15 @@ import { describe, it, expect } from 'vitest';
 import { St } from '@/sim/types';
 import { GUST_LEVELS } from '@/sim/constants';
 import { BAL } from '@/content/balance';
-import { IDLE_TURNS, WORK_TURNS, spinSeed, windTurns, workTurns } from './moving-parts';
+import { WORK_TURNS, spinSeed, windTurns, workTurns } from './moving-parts';
 
 describe('moving parts: speeds', () => {
-  it('a turbine turns faster in a stronger wind, within bounds, and faster than an idle one', () => {
+  it('a turbine turns faster in a stronger wind, within bounds, and never stands still on a grid', () => {
     let prev = 0;
     for (const gust of GUST_LEVELS) {
       const v = windTurns(700, gust); // the sheltered cirque
       expect(v).toBeGreaterThan(prev);
-      expect(v).toBeGreaterThan(IDLE_TURNS);
+      expect(v).toBeGreaterThan(0);
       prev = v;
     }
     for (const local of [700, 1000, 1600, 2000]) for (const gust of GUST_LEVELS) {

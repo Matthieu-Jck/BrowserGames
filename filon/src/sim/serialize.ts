@@ -29,9 +29,9 @@ import { packRuns } from './flow/chain';
  * files and AI tokens, the tiered tree (D68–D70): research ids renamed (`RESEARCH_RENAMED`),
  * projects with their tokens. 8: research at its table's cost, without the spread penalty (D72):
  * the running projects rebased on it at load. 9: parcels of 23 tiles, a starting square of 3 × 3
- * (D74): the land's parcel ids on the new grid.
+ * (D74): the land's parcel ids on the new grid. 10: the 3×3 research lab (D84: the 2×2 ones retired).
  */
-export const SAVE_VERSION = 9;
+export const SAVE_VERSION = 10;
 
 export interface SaveData {
   v: number;

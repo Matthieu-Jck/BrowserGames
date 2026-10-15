@@ -9,7 +9,7 @@ export const BUILDINGS = {
   // ── colony ────────────────────────────────────────────────────────────────
   hearth: {
     name: { fr: 'Cœur', en: 'Core' },
-    desc: { fr: 'Le cœur de ta base : il reçoit sans jamais rendre son stock, qui paie tes constructions. Son noyau isotopique donne 90 kW jour et nuit, son panneau solaire jusqu’à 240 kW de plus en plein soleil, il tend 6 fils jusqu’à 8 tuiles et, avec la recherche Analytique, sa sortie de données donne les données d’arpentage qu’il produit.', en: 'The heart of your base: it takes and never gives back its stock, which pays for your construction. Its isotope reactor gives 90 kW day and night, its solar panel up to 240 kW more in full sun, it holds 6 wires up to 8 tiles long and, with the Analytics research, its data outlet hands out the Survey Data it makes.' },
+    desc: { fr: 'Le cœur de ta base : il reçoit sans jamais rendre son stock, qui paie tes constructions. Son noyau isotopique donne 90 kW jour et nuit, son panneau solaire jusqu’à 240 kW de plus en plein soleil, il tend 6 fils jusqu’à 8 tuiles et, dès son niveau 2, sa sortie de données donne les données d’arpentage que la recherche Analytique lui fait produire.', en: 'The heart of your base: it takes and never gives back its stock, which pays for your construction. Its isotope reactor gives 90 kW day and night, its solar panel up to 240 kW more in full sun, it holds 6 wires up to 8 tiles long and, from its level 2, its data outlet hands out the Survey Data the Analytics research has it make.' },
     kind: 'hearth', category: 'colony', w: 5, h: 5, needsZone: false, cost: [], unlock: 'never',
     ports: [
       // Inputs only: the Heart takes, it never gives (owner, 2026-10-12) — machines are fed by
@@ -19,7 +19,8 @@ export const BUILDINGS = {
       P(4, 1, 'E', 'in'), P(4, 2, 'E', 'in'), P(4, 3, 'E', 'in'),
       P(0, 1, 'W', 'in'), P(0, 2, 'W', 'in'), P(0, 3, 'W', 'in'), // three a side, all round (owner, 2026-10-12)
       // Its one outlet (D68): the Survey Data it makes once the Analytics research has it process
-      // the base's activity (mods.heartData) — never its stock, which it still never gives.
+      // the base's activity (mods.heartData) — never its stock, which it still never gives. Level 2
+      // mounts it on this corner (D86): the port stands before, handing out nothing.
       P(4, 4, 'S', 'out'),
     ],
     // gen.kw: the built-in solar panel's peak (BAL.hearthSolarKw wins; D25). A link point of 6 wires.
@@ -222,8 +223,9 @@ export const BUILDINGS = {
     // The Research Lab (D68); its id stays `observatory` (saves, the plan, the unlock tree).
     name: { fr: 'Laboratoire de recherche', en: 'Research Lab' },
     desc: { fr: 'Mène une recherche à la fois. Lance-la dans l’arbre des techniques (T) et apporte au laboratoire ses données par ruban (d’arpentage, puis mécaniques, atlas et codex selon le tier) ; elle consomme aussi des tokens d’IA à mesure qu’elle avance, ceux de tes serveurs d’abord, puis ceux de CrierBelt, payés à la minute.', en: 'Runs one research project at a time. Start it in the tech tree (T) and bring the lab its data by ribbon (Survey Data, then Mechanics Data, atlases and codices by tier); it also uses AI tokens as it runs, your own servers’ first, then CrierBelt’s, paid by the minute.' },
-    kind: 'lab', category: 'research', w: 2, h: 2, needsZone: true, unlock: 'observatory', kw: 150, idleKw: 15,
-    cost: [['iron_plate', 30], ['glass', 20], ['copper_wire', 10]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in')],
+    // 3×3 since D84 (owner, 2026-10-15: "the research lab should be 3x3"): an intake along its whole back.
+    kind: 'lab', category: 'research', w: 3, h: 3, needsZone: true, unlock: 'observatory', kw: 150, idleKw: 15,
+    cost: [['iron_plate', 30], ['glass', 20], ['copper_wire', 10]], ports: [P(0, 2, 'S', 'in'), P(1, 2, 'S', 'in'), P(2, 2, 'S', 'in')],
   },
 
   // ── energy ────────────────────────────────────────────────────────────────
@@ -327,13 +329,15 @@ export const BUILDINGS = {
     name: { fr: 'Serveur', en: 'Server' },
     desc: { fr: 'Calcule pour tes recherches : 2 000 tokens d’IA par minute pour 400 kW. Ce que les recherches n’utilisent pas dans la minute est perdu.', en: 'Computes for your research: 2,000 AI tokens a minute for 400 kW. What research does not use within the minute is lost.' },
     kind: 'server', category: 'research', w: 2, h: 2, needsZone: true, unlock: 'an_servers', kw: 400, idleKw: 40,
-    cost: [['circuit', 10], ['iron_plate', 20], ['copper_wire', 10]], ports: [], server: { tokensPerMin: 2000 },
+    // Its clocks are quartz oscillators since D87 (a server built before gives them back too when taken down: nothing vanishes).
+    cost: [['circuit', 10], ['iron_plate', 20], ['copper_wire', 10], ['oscillator', 4]], ports: [], server: { tokensPerMin: 2000 },
   },
   test_bench: {
     name: { fr: 'Banc d’essai', en: 'Test Bench' },
-    desc: { fr: 'Éprouve engrenages et circuits sous charge et en tire des données mécaniques : deux engrenages et deux circuits pour une. Deux entrées.', en: 'Puts gears and circuits through load tests and records Mechanics Data: two gears and two circuits each. Two inputs.' },
+    desc: { fr: 'Éprouve engrenages et circuits sous charge, au rythme d’un oscillateur à quartz, et en tire des données mécaniques : deux engrenages, un circuit et un oscillateur pour une. Trois entrées.', en: 'Puts gears and circuits through load tests, clocked by a quartz oscillator, and records Mechanics Data: two gears, a circuit and an oscillator each. Three inputs.' },
     kind: 'machine', category: 'research', w: 2, h: 2, needsZone: true, unlock: 'tr1', crafts: true, kw: 90, idleKw: 9,
-    cost: [['iron_plate', 20], ['glass', 6], ['copper_wire', 8]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(1, 0, 'N', 'out')],
+    // A third input on its side since D87 (the oscillator), appended: the others keep their indices.
+    cost: [['iron_plate', 20], ['glass', 6], ['copper_wire', 8]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(1, 0, 'N', 'out'), P(0, 1, 'W', 'in')],
   },
   press: {
     name: { fr: 'Presse', en: 'Press' },
@@ -489,6 +493,22 @@ export const BUILDINGS = {
     kind: 'dock', category: 'logistics', w: 4, h: 4, needsZone: true, unlock: 'xp_bigdock', kw: 400, idleKw: 40,
     cost: [['ceramic', 60], ['gear', 30], ['lens', 15]],
     ports: [P(0, 3, 'S', 'in'), P(3, 3, 'S', 'in'), P(0, 0, 'N', 'out'), P(3, 0, 'N', 'out')], dock: { ships: 8, capMult: 2000 },
+  },
+  // ── appended (D87): quartz, from the cliff face to the oscillator ─────────
+  // The face cutter stands on the floor beside a wall, never on it (owner, 2026-10-15: « une
+  // machine particulière qui le récupère et qui se pose à côté et pas au-dessus, car c'est dans une
+  // paroi »): its back against the face, its cutting head in the rock, its output at its front.
+  face_cutter: {
+    name: { fr: 'Haveuse', en: 'Face Cutter' },
+    desc: { fr: 'Se pose au pied d’une paroi de quartz, dos contre la roche : sa tête taille le quartz des tuiles de paroi qu’elle touche, jusqu’à 15/min. La production sort à l’avant, sur un ruban.', en: 'Stands at the foot of a quartz face, its back to the rock: its head cuts the quartz out of the face tiles it touches, up to 15/min. Its output leaves at the front, onto a ribbon.' },
+    kind: 'drill', category: 'extraction', w: 2, h: 2, needsZone: true, unlock: 'ex_quartz', kw: 90, idleKw: 9,
+    cost: [['iron_plate', 12], ['glass', 2], ['copper_wire', 4]], ports: [P(0, 0, 'N', 'out')], drill: { perMin: 15, face: true },
+  },
+  quartz_workshop: {
+    name: { fr: 'Atelier de quartz', en: 'Quartz Workshop' },
+    desc: { fr: 'Taille le quartz en lames et les monte sur deux fils de cuivre : des oscillateurs à quartz, pour les données mécaniques et les serveurs. Deux entrées à l’arrière.', en: 'Cuts quartz into blades and mounts each on two copper wires: quartz oscillators, for Mechanics Data and the servers. Two inputs at the back.' },
+    kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'ex_quartz', crafts: true, kw: 60, idleKw: 6,
+    cost: [['iron_plate', 15], ['glass', 4], ['copper_wire', 4]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
   },
 } as const satisfies Record<string, BuildingDef>;
 

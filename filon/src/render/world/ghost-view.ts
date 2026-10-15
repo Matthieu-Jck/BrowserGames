@@ -8,7 +8,10 @@
 // back, small coral ones out of its three ways out — drawn from the piece's own rotation, which
 // is the ribbon's when the block is dropped onto one (`Sim.placementRot`). While a ribbon drag
 // runs, nothing is laid yet (D73): its plan — traction steps, bridge pairs, a dashed leap between
-// each pair's ends — is a faint placeholder until the release. Redrawn only when the preview changes.
+// each pair's ends — is a faint placeholder until the release. A face cutter in hand (D87) shows which
+// way it must face: the tiles its back would press on tinted turquoise where they hold a face ore,
+// coral where not, and an arrow from the machine into the wall on its working side. Redrawn only
+// when the preview changes.
 //
 // A building that would stand above the floor (D44: on the mountains; world/stand.ts, from the
 // one height function, relief.ts `tileTop`) is shown where it would stand: in iso its ghost is
@@ -19,9 +22,11 @@
 import { Container, Graphics, Sprite } from 'pixi.js';
 import { buildingIdx } from '@/content/registry';
 import { footprint } from '@/sim/entities';
+import { backRow, faceTiles, workSide, worksFace } from '@/sim/face';
 import type { Sim } from '@/sim/state';
 import type { Rot } from '@/sim/types';
 import { btKey, beltKey, type Atlas } from '../art/atlas';
+import { arrowPoly } from '../art/shapes';
 import { BELT_TIERS, type BeltTier } from '../art/recipes/belts';
 import { num, C } from '../art/tokens';
 import { isBeltDef } from '@/content/registry';
@@ -33,6 +38,10 @@ import { riseOffset, standLevel } from './stand';
 
 const OK = num(C.cyan), BAD = num(C.ledRed), SWAP = num(C.warn);
 const FLOW_IN = num(C.glowTurq), FLOW_OUT = num(C.coral), INK = num(C.ink);
+/** A face cutter's back row (D87): a face ore there (turquoise), none (coral). */
+const FACE_OK = num(C.turq), FACE_OK_FILL = num(C.glowTurq), FACE_NONE = num(C.coral);
+/** Outward unit vectors of the sides (0 N, 1 E, 2 S, 3 W). */
+const SIDE_V: ReadonlyArray<readonly [number, number]> = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 /** The plan's hint of height under a ghost that would stand above the floor (as a placed building's, a little fainter). */
 const RISE_ALPHA = 0.24;
 /** A ribbon drag's placeholder: its pieces this faint until the release lays them (D73). */
@@ -144,6 +153,8 @@ export class GhostView {
           s.tint = tint;
           this.box.addChild(s);
           if (isDirectional(p.def)) this.flow(p.x, p.y, p.rot, p.ok ? 1 : 0.55);
+          const di = buildingIdx(p.def);
+          if (worksFace(di)) this.face(sim, di, p.x, p.y, p.rot);
         }
       }
       // A bridge pair's leap: a dashed line from end to end, over what it leaves as it is.
@@ -167,6 +178,27 @@ export class GhostView {
     if (showHover && hover && !(pre && (pre.pieces.length || pre.box || pre.mark))) {
       g.rect(hover[0], hover[1], 1, 1).stroke({ width: 0.05, color: 0xffffff, alpha: 0.85 });
     }
+  }
+
+  /**
+   * A face cutter's working side (D87): its back row tinted — turquoise on the tiles that hold a
+   * face ore it would cut (`faceTiles`), coral on the others — and a short arrow from the machine
+   * across its back edge into the wall, turquoise when it meets quartz, coral when it meets none.
+   */
+  private face(sim: Sim, def: number, x: number, y: number, rot: Rot): void {
+    const g = this.g;
+    const hits = new Set(faceTiles(sim.grid, def, x, y, rot).map(([tx, ty]) => `${tx},${ty}`));
+    for (const [tx, ty] of backRow(def, x, y, rot)) {
+      const ok = hits.has(`${tx},${ty}`);
+      g.rect(tx + 0.05, ty + 0.05, 0.9, 0.9).fill({ color: ok ? FACE_OK_FILL : FACE_NONE, alpha: ok ? 0.34 : 0.22 }).stroke({ width: 0.06, color: ok ? FACE_OK : FACE_NONE, alpha: 0.95 });
+    }
+    const [w, h] = footprint(def, rot);
+    const side = workSide(rot), [vx, vy] = SIDE_V[side]!;
+    const ex = x + w / 2 + (vx * w) / 2, ey = y + h / 2 + (vy * h) / 2; // the back edge's middle
+    const arrow = arrowPoly(ex - vx * 0.5, ey - vy * 0.5, ex + vx * 0.62, ey + vy * 0.62, 0.1, 0.24, 0.28);
+    const col = hits.size ? FACE_OK_FILL : FACE_NONE;
+    g.poly(arrow.map(([px, py]) => [px + 0.04, py + 0.05]).flat()).fill({ color: INK, alpha: 0.3 });
+    g.poly(arrow.flat()).fill({ color: col, alpha: 1 }).stroke({ width: 0.055, color: INK, alpha: 1 });
   }
 
   /** A directional block's flow: the way in (big, turquoise, over a soft shadow), the ways out (coral). */

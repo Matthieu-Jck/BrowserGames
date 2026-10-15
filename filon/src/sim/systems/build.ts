@@ -9,9 +9,10 @@
 // modules, drifters) to the Hearth. Ribbon drags are planned as a whole in belt-plan.ts
 // (`planBelts`, D73). Also: the Hearth's levels.
 import { BAL } from '@/content/balance';
-import { BUILDING_KIND, CRECIPES, N_ITEMS, buildingDef, buildingIdx, costOf, itemIdx } from '@/content/registry';
+import { BUILDING_KIND, CRECIPES, N_ITEMS, buildingDef, buildingIdx, costOf, itemIdx, recipesFor } from '@/content/registry';
 import { filterOf, recipeOf, withFilter } from '../cfg';
 import { footprint, forTiles } from '../entities';
+import { faceRot, faceTiles, isFaceOre } from '../face';
 import { refundNode } from '../graph/compile';
 import { inWorld, tileIndex } from '../world/grid';
 import { parcelAt } from '../world/land';
@@ -32,7 +33,9 @@ export type PlaceReason =
   /** A conduit facing another level: fluids keep to their level (D77). */
   | 'cliff'
   /** A junction next to another junction: a ribbon must run on each side of one (D73). */
-  | 'junction_chain';
+  | 'junction_chain'
+  /** A face cutter whose back meets no face ore: it stands at the foot of a quartz wall, its back to the rock (D87). */
+  | 'needs_face';
 
 export type Cost = Array<{ item: number; mu: number }>;
 
@@ -144,12 +147,15 @@ export function canPlace(sim: Sim, defId: string, x: number, y: number, rot: Rot
         else return fail('terrain');
       }
       if (t !== T.Vent) vent = false;
-      if (sim.grid.ore(tx, ty) >= 0) deposit = true;
-      if (t !== T.Sand || sim.grid.ore(tx, ty) >= 0) bare = false;
+      const ore = sim.grid.ore(tx, ty);
+      if (ore >= 0 && !isFaceOre(ore)) deposit = true; // a face ore is a wall's, never a drill's (D87)
+      if (t !== T.Sand || ore >= 0) bare = false;
     }
   }
-  // A drill wants a deposit; a ground collector bare sand under every tile (sand is the floor).
-  if (b.kind === 'drill' && !b.drill?.anywhere && (b.drill?.ground ? !bare : !deposit)) return fail(b.drill?.ground ? 'needs_sand' : 'needs_deposit');
+  // A drill wants a deposit; a ground collector bare sand under every tile (sand is the floor); a
+  // face cutter a face ore in the wall behind it (D87: on the floor beside the wall, never on it).
+  if (b.drill?.face) { if (!faceTiles(sim.grid, def, x, y, rot).length) return fail('needs_face'); }
+  else if (b.kind === 'drill' && !b.drill?.anywhere && (b.drill?.ground ? !bare : !deposit)) return fail(b.drill?.ground ? 'needs_sand' : 'needs_deposit');
   if (b.kind === 'pump' && !water && !touchesWater(sim, x, y, w, h, level)) return fail('needs_water');
   if (b.kind === 'geothermal' && !vent) return fail('needs_vent');
   // On the mountains, the whole footprint or none of it (no building astride a cliff, D44).
@@ -307,17 +313,30 @@ function validCfg(sim: Sim, def: number, cfg: number): number {
 }
 
 /**
- * Place a building, replacing what `canPlace` says it replaces. `cfg0`: its settings; when
- * omitted, a building re-placed over the same building (a sorter turned) keeps that one's
- * settings. The settings actually kept are logged, so a replay needs no such inference.
+ * The recipe a machine starts on (`index + 1`; 0 = none): its only recipe unlocked now, so a
+ * one-recipe machine works as soon as it is fed and wired (D83, owner, 2026-10-15). A machine with
+ * two or more to choose from (the smelter: plates or glass) waits for the player's pick.
  */
+export function loneRecipe(sim: Sim, def: number): number {
+  if (BUILDING_KIND[def] !== 'machine') return 0;
+  let r = 0;
+  for (const cr of recipesFor(def)) {
+    if (!sim.unlocked(cr.unlock)) continue;
+    if (r) return 0;
+    r = cr.idx + 1;
+  }
+  return r;
+}
+
 /**
  * The rotation a placement really takes: a one-tile directional routing block (router, sorters,
  * gates) dropped onto a ribbon follows it — its back takes in what the ribbon brings (owner,
- * 2026-10-12). Anything else keeps the rotation asked for. The ghost shows the same.
+ * 2026-10-12); a face cutter turns its back to the quartz wall it is dropped against (D87,
+ * `faceRot`). Anything else keeps the rotation asked for. The ghost shows the same.
  */
 export function placementRot(sim: Sim, defId: string, x: number, y: number, rot: Rot): Rot {
-  const b = buildingDef(buildingIdx(defId));
+  const def = buildingIdx(defId), b = buildingDef(def);
+  if (b.drill?.face) return inWorld(x, y) ? faceRot(sim.grid, def, x, y, rot) : rot;
   if (b.kind !== 'fork' || b.w !== 1 || b.h !== 1) return rot;
   const logic = b.logic ?? 'router';
   if (logic === 'distributor' || logic === 'unloader') return rot;
@@ -325,13 +344,19 @@ export function placementRot(sim: Sim, defId: string, x: number, y: number, rot:
   return e && BUILDING_KIND[e.def] === 'belt' ? e.rot : rot;
 }
 
+/**
+ * Place a building, replacing what `canPlace` says it replaces. `cfg0`: its settings; when
+ * omitted, a building re-placed over the same building (a sorter turned) keeps that one's
+ * settings (D24), and a new machine starts on its lone recipe (`loneRecipe`, D83). The settings
+ * actually kept are logged, so a replay needs no such inference.
+ */
 export function place(sim: Sim, defId: string, x: number, y: number, rot0: Rot, cfg0?: number): PlaceCheck & { id?: number } {
   const rot = placementRot(sim, defId, x, y, rot0);
   const chk = canPlace(sim, defId, x, y, rot);
   if (!chk.ok) return chk;
   const def = buildingIdx(defId);
   const prev = chk.replaces.length === 1 ? sim.ents.get(chk.replaces[0]!) : undefined;
-  const cfg = validCfg(sim, def, cfg0 ?? (prev && prev.def === def ? prev.cfg : 0));
+  const cfg = validCfg(sim, def, cfg0 ?? (prev && prev.def === def ? prev.cfg : loneRecipe(sim, def)));
   // What it replaces comes down first (ascending ids), fully refunded: cost, buffers, modules,
   // store. Silently: the placement pushes the one structure event.
   for (const id of chk.replaces) removeEntity(sim, id, true);

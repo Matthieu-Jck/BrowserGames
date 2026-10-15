@@ -24,7 +24,7 @@
 // Quest state is saved (serialize.ts) and hashed (`hashQuests`). Integers only: milli-items,
 // ticks, centi-ocelles.
 import { BAL } from '@/content/balance';
-import { COLONY_NAME_MAX, QUEST_CHECK_TICKS, QUEST_IDS, QUESTS, type QuestDef, type QuestObjective, type QuestReward, type Reveal } from '@/content/quests';
+import { COLONY_NAME_MAX, QUEST_CHECK_TICKS, QUEST_IDS, QUESTS, type QuestDef, type QuestObjective, type QuestReward, type QuestStep, type Reveal } from '@/content/quests';
 import { buildingIdx, costOf, itemIdx, recipeIdx, toMu } from '@/content/registry';
 import type { StateHasher } from '@/core/hash';
 import { recipeOf } from '../cfg';
@@ -245,8 +245,17 @@ export function objectiveProgress(sim: Sim, o: QuestObjective, base = 0, win: re
       const r = o.recipe === undefined ? 0 : recipeIdx(o.recipe) + 1;
       return count(countBuilt(sim, o.to, (e) => (!r || recipeOf(e.cfg) === r) && receives(sim, e.id, it, from)), o.n);
     }
+    case 'vein': { const V = sim.grid.source.quartzVein; return flag(!V || sim.land.covers(V.x, V.y)); } // no vein: nothing to buy (D87)
     default: { const never: never = o; return never; } // a new objective kind must be read here
   }
+}
+
+/**
+ * Does a guide step apply on this land? A step for the quartz vein (`land: 'vein'`) only where the
+ * land has one (map 3), its stand-in (`'novein'`) only where it has none (D87).
+ */
+export function stepApplies(sim: Sim, s: QuestStep): boolean {
+  return s.land === undefined || (s.land === 'vein') === !!sim.grid.source.quartzVein;
 }
 
 /** Progress of every objective of the current quest (empty once all quests are done). */
