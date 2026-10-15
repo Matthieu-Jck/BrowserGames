@@ -7,12 +7,12 @@ export type Tier = 1 | 2 | 3 | 4;
 export type Side = 'N' | 'E' | 'S' | 'W';
 
 export type ItemKind =
-  | 'ore' | 'fuel' | 'fluid' | 'material' | 'part' | 'science' | 'unique' | 'energy' | 'module' | 'rubble';
+  | 'ore' | 'fuel' | 'fluid' | 'material' | 'part' | 'science' | 'unique' | 'energy' | 'rubble';
 
 /** Glyph shapes the art pipeline knows how to ink (render/art/recipes/items.ts). */
 export type Glyph =
   | 'pebble' | 'grain' | 'coal' | 'copper' | 'crystal' | 'rubble' | 'drop' | 'salt' | 'plate' | 'pane'
-  | 'coil' | 'journal' | 'gear' | 'module' | 'chip' | 'tile' | 'cell' | 'cellCharged' | 'journal2' | 'shard'
+  | 'coil' | 'journal' | 'gear' | 'servo' | 'arm' | 'chip' | 'tile' | 'cell' | 'cellCharged' | 'journal2' | 'shard'
   | 'resin' | 'ember' | 'lens' | 'canvas' | 'core' | 'atlas' | 'moss' | 'nacre' | 'quartz' | 'resonator'
   | 'lattice' | 'codex';
 

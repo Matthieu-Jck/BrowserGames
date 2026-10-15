@@ -432,18 +432,38 @@ const GLYPHS: Record<Glyph, G> = {
     stroke(ctx, hub, LINE);
     fill(ctx, circle(c, c, 2.2), C.ink);
   },
-  module: (ctx, col) => {
-    // Speed module: a chip-like block with side pins and a bright double chevron.
-    for (const y of [10.5, 15, 19.5]) for (const x of [3.5, 25.5]) {
-      const pin = rrect(x, y, 3, 2.4, 0.6);
-      fill(ctx, pin, STEEL);
-      stroke(ctx, pin, 0.8);
+  servo: (ctx, col) => {
+    // Servomotor (D81): a ribbed motor can on its side, a steel flange and the output shaft with
+    // its key, the cable out of its back end.
+    line(ctx, [[6.5, 21.5], [4.5, 25.5], [8.5, 27.5]], 1.6, C.ink);
+    const plug = rrect(8, 26, 4, 3, 0.8);
+    fill(ctx, plug, STEEL);
+    stroke(ctx, plug, 0.8);
+    const can = rrect(4.5, 9.5, 17.5, 13, 3);
+    part(ctx, can, col, { d: 1.8, l: 1.2 });
+    for (const x of [8.5, 11.5, 14.5, 17.5]) line(ctx, [[x, 10.5], [x, 21.5]], 1.2, lo(col, 0.45));
+    const flange = rrect(21.5, 7, 4.5, 18, 1.2);
+    part(ctx, flange, STEEL, { d: 1.2, l: 1 });
+    const shaft = rrect(25.5, 14, 4.5, 4, 0.8);
+    fill(ctx, shaft, hi(STEEL, 0.25));
+    stroke(ctx, shaft, LINE);
+    line(ctx, [[27, 14.6], [29, 14.6]], 1, C.ink);
+  },
+  arm: (ctx, col) => {
+    // Robot arm (D81): a steel base plate, a pedestal, two jointed segments and a two-finger gripper.
+    const base = rrect(3.5, 24.5, 13, 4, 1.2);
+    part(ctx, base, STEEL, { d: 1.2, l: 1 });
+    part(ctx, rrect(7, 19, 6, 6.5, 1.5), col, { d: 1.4, l: 1 });
+    part(ctx, poly([[11.6, 20.5], [20.6, 10.5], [17.4, 7.5], [8.4, 17.5]]), col, { d: 1.4, l: 1 });
+    part(ctx, poly([[20.5, 7.9], [26.5, 15.9], [23.5, 18.1], [17.5, 10.1]]), col, { d: 1.4, l: 1 });
+    for (const [x, y, r] of [[10, 19, 3], [19, 9, 2.6], [25, 17, 1.9]] as const) {
+      const j = circle(x, y, r);
+      fill(ctx, j, STEEL);
+      stroke(ctx, j, LINE);
+      fill(ctx, circle(x, y, r * 0.38), C.ink);
     }
-    part(ctx, rrect(6, 5.5, 20, 21, 3), col, { d: 1.8, l: 1.2 });
-    const face = rrect(9.5, 9, 13, 14, 2);
-    fill(ctx, face, lo(col, 0.62));
-    stroke(ctx, face, LINE);
-    for (const dx of [0, 5]) line(ctx, [[11.8 + dx, 12], [15.3 + dx, 16], [11.8 + dx, 20]], 2.2, '#fff1c9');
+    line(ctx, [[24.2, 18.5], [22.6, 23], [24, 24.5]], 1.7, C.ink);
+    line(ctx, [[26.3, 18.3], [28.2, 22.4], [27, 24.2]], 1.7, C.ink);
   },
   chip: (ctx, col) => {
     // Circuit board: a board, a black chip, gold traces running to pads.

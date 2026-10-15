@@ -32,7 +32,7 @@
 //             line upgraded to swift ribbons with a bridge pair (owner, 2026-10-13: "improve the late
 //             stage debug save to have more of the features we developed"), solar panels; then the
 //             works of scenario-late.ts (owner, 2026-10-14: "actuellement elle n'est pas tres
-//             avancée", D66): the Fabrique on the copper field (circuits, gears, speed modules in a
+//             avancée", D66): the Fabrique on the copper field (circuits, gears, servomotors in a
 //             tower workshop, Mechanics Data researched for real, thermal cores, round a second trade
 //             post), the potteries on the tarn's peak, the Ember Fields mine, coal and copper flown
 //             home, drifters between them, a geothermal plant where there is a vent, pylon lines
@@ -763,7 +763,7 @@ function grown(b: Builder): void {
  * "make the late game bases saves even more advanced, using a lot of the tech tree"; 2026-10-14:
  * "actuellement elle n'est pas tres avancée"): the whole trunk (the three desks, Atlas and Codex
  * Lore); Extraction through Excavation to Deep Fill, and the Deep Bore (Drilling) its far mines need; Machines through both specialities (the etcher
- * makes its speed modules, the assembly tower stands ready); Energy through Power Plants to the
+ * makes its servomotors, the assembly tower stands ready); Energy through Power Plants to the
  * Sunheart; Expansion through Claims to the Far Claim (its works stand on parcels far from the
  * claim's land); Commerce to the second wharf; Analytics to the servers (D68–D70). 44 of the tree's
  * 77 nodes, two more under way on the labs' own data files.

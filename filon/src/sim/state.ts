@@ -39,6 +39,7 @@ import { computeMods, type Mods } from './research/modifiers';
 import type { BranchId, Project, StartBlock } from './research/runtime';
 import type { Job, JobKind, Route } from './space';
 import * as build from './systems/build';
+import * as beltPlan from './systems/belt-plan';
 import * as configure from './systems/configure';
 import * as freight from './systems/freight';
 import * as landscape from './systems/landscape';
@@ -55,14 +56,14 @@ import { PowerLinks } from './power/links';
 import { Land } from './world/land';
 import * as land from './systems/land';
 import { hash32 } from '@/core/hash';
-import { CIRQUE } from '@/content/world';
 
 export type { Command, SimEvent } from './commands';
-export type { BeltPath, BeltStep, Cost, PlaceCheck, PlaceReason } from './systems/build';
+export type { Cost, PlaceCheck, PlaceReason } from './systems/build';
+export type { BeltPath, BeltStep } from './systems/belt-plan';
 export type { PlanBlock, RespecBlock } from './systems/research';
 export type { LinkCheck } from './systems/power';
 export type { LinkReason } from './power/links';
-export { modulesOf, recipeOf } from './cfg';
+export { recipeOf } from './cfg';
 
 export interface SimOptions {
   worldSeed: number;
@@ -204,7 +205,7 @@ export class Sim {
     this.foundingEpoch = opts.foundingEpoch;
     this.colonyName = opts.colonyName ?? '';
     this.grid = new Grid(opts.source);
-    this.land = new Land(opts.source.crownReach ?? CIRQUE.crownOuter, hash32(opts.worldSeed, opts.playerSeed));
+    this.land = new Land(hash32(opts.worldSeed, opts.playerSeed));
     this.market = opts.market ?? new LocalMarketService({ worldSeed: opts.worldSeed, foundingEpoch: opts.foundingEpoch });
     this.prices = this.market.prices();
     if (fresh) {
@@ -295,9 +296,9 @@ export class Sim {
     if (r.ok && r.id) power.placed(this, r.id, r.replaces);
     return r;
   }
-  /** How a ribbon drag would go, tile by tile (kept, laid, replaced, a junction): the preview `placeBelts` follows. */
-  planBelts(defId: string, path: build.BeltPath): build.BeltStep[] { return build.planBelts(this, defId, path); }
-  placeBelts(defId: string, path: build.BeltPath): number { return build.placeBelts(this, defId, path); }
+  /** How a ribbon drag would go as a whole (kept, laid, replaced, a junction, a traction step, a bridge pair, D73): the preview `placeBelts` follows. */
+  planBelts(defId: string, path: beltPlan.BeltPath): beltPlan.BeltStep[] { return beltPlan.planBelts(this, defId, path); }
+  placeBelts(defId: string, path: beltPlan.BeltPath): number { return beltPlan.placeBelts(this, defId, path); }
   remove(x: number, y: number): boolean {
     const id = this.entityAt(x, y)?.id ?? 0;
     if (!build.remove(this, x, y)) return false;
@@ -322,8 +323,6 @@ export class Sim {
   setRecipe(id: number, recipe: string | null): boolean { return configure.setRecipe(this, id, recipe); }
   setPortItem(id: number, port: number, item: string | null): boolean { return configure.setPortItem(this, id, port, item); }
   setForkFilter(id: number, side: Rot, item: string | null): boolean { return configure.setForkFilter(this, id, side, item); }
-  setModule(id: number, add: boolean): boolean { return configure.setModule(this, id, add); }
-  moduleSlots(): number { return configure.moduleSlots(this); }
 
   /** Sandbox / rewards: items straight into the Hearth (logged). */
   grant(item: string, n: number): void {

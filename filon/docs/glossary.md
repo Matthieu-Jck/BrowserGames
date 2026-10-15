@@ -39,8 +39,8 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | évent | vent | `T.Vent` | The tile a geothermal plant must stand on. |
 | saline | salt flat | `T.Salt` | Takes ribbons, masts and salt drills; can be backfilled. |
 | brouillard | fog | `Sim.explored` | Unexplored land. Lifted at founding (r 44), round each parcel the claim comes to hold (r 32 from its centre) and by beacons. |
-| parcelle | parcel | `PARCEL`, `parcelAt`, `sim.land` ([world/land.ts](../src/sim/world/land.ts)) | A square of land, 16 tiles a side, on a grid centred on the Heart; CrierBelt sells and leases it at a price from what it holds (ground, deposits), dearer with each parcel bought ([land.md](land.md), D60). |
-| carré de départ | starting square | `Land.inStart`, `Land.reach` | The claim's grant: the square of parcels round the Heart that holds the whole Crown (5×5 on most lands, 7×7 round a closed cirque); never bought nor lost. The land panel calls it « Concession d’origine » / Original grant. |
+| parcelle | parcel | `PARCEL`, `parcelAt`, `sim.land` ([world/land.ts](../src/sim/world/land.ts)) | A square of land, 23 tiles a side (D74; 16 before), on a grid centred on the Heart; CrierBelt sells and leases it at a price from what it holds (ground, deposits), dearer with each parcel bought ([land.md](land.md), D60). |
+| carré de départ | starting square | `Land.inStart`, `Land.reach` | The claim's grant: the 3 × 3 parcels round the Heart, about exactly the cirque and its Crown (D74); never bought nor lost. The land panel calls it « Concession d’origine » / Original grant. |
 | vos terres | your land (the claim's land) | `Land.holds`, `covers`; refusal `outside_zone` « Hors de vos terres » | The parcels the claim holds: the starting square, those bought, granted (an older save) or leased. A production building stands wholly on them; ribbons, poles and beacons may cross other land. |
 | bail · loyer | lease · rent | `rentLand`, `Lease`, `landEpoch`, `endLease` | A parcel rented by the hour once « Cadastre » / Land Registry (`tr4`) is learnt: 3 % of its price an hour, fixed for the lease's life. A rent the purse cannot pay ends it (« Bail perdu »): what stands there goes dormant until the parcel is held again. |
 | Aménager | Landscape | the `mark` tool; `designated` | The brush that marks rock to dig or water to fill. |
@@ -73,7 +73,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Embarcadère | Skydock | `skydock` [dock] | Hosts drifters; the end of a freight route. |
 | Fonderie (compacte) | (Compact) Smelter | `kiln`, `kiln_compact` [machine] | Smelts ore and sand by burning coal; needs no grid. |
 | Tréfileuse | Wire Mill | `wire_mill` [machine] | Copper ore → copper wire. |
-| Atelier d’électronique · Graveuse · Fonderie de puces | Electronics Workshop · Etcher · Chip Fab | `workshop`, `etcher`, `chip_fab` [machine] | The electronics family: circuits and speed modules (D69: at most three recipes per machine). |
+| Atelier d’électronique · Graveuse · Fonderie de puces | Electronics Workshop · Etcher · Chip Fab | `workshop`, `etcher`, `chip_fab` [machine] | The electronics family: circuits, servomotors and robot arms (D70: at most three recipes per machine). |
 | Atelier d’assemblage (compact) · Tour d’assemblage | (Compact) Assembly Workshop · Assembly Tower | `great_workshop`, `great_workshop_compact`, `tower_workshop` [machine] | 3-input assembly: batteries, thermal cores, resonators; the tower at 4× speed. |
 | Presse · Presse à forger | Press · Forge Press | `press`, `forge_press` [machine] | Iron plate → gear (the forge press at ×3). |
 | Atelier d’optique · Scriptorium | Optics Workshop · Scriptorium | `optics_workshop`, `scriptorium` [machine] | Lenses and nacre lattice · resin canvas, Atlas, Codex. |
@@ -112,7 +112,8 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Données d'arpentage · Données mécaniques | Survey Data · Mechanics Data | `journal_1`, `journal_2` | Research's data (D71): Survey Data from the data collectors, the Core once analysed and the autonomous labs; Mechanics Data from the test bench (2 gears + 2 circuits). A node uses its tier's kinds: T1 Survey Data, T2 + Mechanics Data, T3 + atlases, T4 + codices (`SCIENCE`). |
 | Banc d'essai | Test Bench | `test_bench` [machine] | Load-tests gears and circuits into Mechanics Data (Mechanics, tr1). |
 | Atlas · Codex | Atlas · Codex | `atlas`, `codex` | T3 science (needs 2 uniques) and T4 science (needs 5). |
-| Module de vitesse | Speed Module | `pace_bell` | A module fitted into a machine: +30% speed (+50% with dn7), +40% power each. |
+| Servomoteur | Servomotor | `pace_bell` | A part (D81; once the speed module, gone): 4 circuits + 2 gears; the advanced machines of the Machines family are built of it, and the Crier trades it. |
+| Bras robotisé | Robot Arm | `robot_arm` | A part (D81, Robotics `dn7`): 2 servomotors + 2 circuits; the Chip Fab is built of it. |
 
 ### Research, economy, states
 
@@ -160,7 +161,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | kind | `BuildingKind`: the behaviour selector of a building. | [content/types.ts](../src/content/types.ts), `BUILDING_KIND` |
 | entity (`Ent`) · `def` | A placed building or ribbon tile (ids never reused) · its building index. | [types.ts](../src/sim/types.ts), [entities.ts](../src/sim/entities.ts) |
 | footprint · port · world port | Rotated size · a building's in/out opening · the same in world coordinates with the tile it faces. | entities.ts |
-| `cfg` | Per-entity config word: recipe + 1 and speed modules (machines), side filters (forks). | [cfg.ts](../src/sim/cfg.ts) |
+| `cfg` | Per-entity config word: recipe + 1 (machines; bits 16–19 held speed modules until D81), side filters (forks). | [cfg.ts](../src/sim/cfg.ts) |
 | command · log · replay | Every mutation is a logged `Command`; replaying the log rebuilds the same state hash. | [commands.ts](../src/sim/commands.ts) |
 | `SimEvent` | What the colony reports to the shell: ids and numbers only. | commands.ts |
 | graph | The flow graph compiled from grid + entities: nodes, chains, edges, power nets. | [compile.ts](../src/sim/graph/compile.ts) |

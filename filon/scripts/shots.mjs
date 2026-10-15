@@ -85,11 +85,12 @@ console.log('✓ shot-inspect.png');
 await page.keyboard.press('Escape');
 
 // The land mode (D60): the parcels over the plan view, a parcel past the starting square picked.
-await page.evaluate(() => window.FL.lookAt(512 + 36, 512, 1));
+const east = await page.evaluate(() => window.FL.parcel(2, 0)); // just past the 3 × 3 starting square (D74)
+await page.evaluate(() => window.FL.lookAt(512 + 30, 512, 0.8));
 await page.keyboard.press('i');
 await page.waitForFunction(() => window.FL.view().t === 1);
-await page.evaluate(() => { window.FL.app.landTool.selected = 32 * 65 + 35; }); // 3 E of the Heart's parcel
-const [lx, ly] = await page.evaluate(() => window.FL.tileToScreen(512 + 3 * 16, 512 + 16));
+await page.evaluate((p) => { window.FL.app.landTool.selected = p; }, east.p); // 2 E of the Heart's parcel
+const [lx, ly] = await page.evaluate(([x, y]) => window.FL.tileToScreen(x, y + 12), east.at);
 await page.mouse.move(lx, ly);
 await settle(1200);
 await page.screenshot({ path: shot('shot-land.png') });

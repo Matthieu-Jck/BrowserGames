@@ -31,13 +31,14 @@ describe('land facts', () => {
     const sim = testSim();
     expect(parcelState(sim, HOME)).toBe('start');
     expect(ownsForGood('start')).toBe(true);
-    expect(parcelState(sim, EAST3)).toBe('free');
+    const east2 = parcelAt(CENTER + 2 * PARCEL, CENTER); // touching the 3 × 3 starting square (D74)
+    expect(parcelState(sim, east2)).toBe('free');
     sim.grantCredits(1_000_000);
-    expect(sim.buyLand(EAST3)).toBeNull();
-    expect(parcelState(sim, EAST3)).toBe('bought');
+    expect(sim.buyLand(east2)).toBeNull();
+    expect(parcelState(sim, east2)).toBe('bought');
     sim.done.add('tr4');
     sim.rebuildDerived();
-    const next = parcelAt(CENTER + 4 * PARCEL, CENTER);
+    const next = EAST3; // touching the parcel bought
     expect(sim.rentLand(next)).toBeNull();
     expect(parcelState(sim, next)).toBe('leased');
     expect(ownsForGood('leased')).toBe(false);

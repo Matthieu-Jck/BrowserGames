@@ -17,7 +17,6 @@ export type Command =
   | { k: 'recipe'; id: number; recipe: string | null }
   | { k: 'portItem'; id: number; port: number; item: string | null }
   | { k: 'forkFilter'; id: number; side: Rot; item: string | null }
-  | { k: 'module'; id: number; add: boolean }
   | { k: 'grant'; item: string; n: number }
   | { k: 'credits'; cents: number }
   | { k: 'research'; id: string; lab: number }
@@ -96,7 +95,6 @@ export function exec(sim: Sim, cmd: Command): boolean {
     case 'recipe': return sim.setRecipe(cmd.id, cmd.recipe);
     case 'portItem': return sim.setPortItem(cmd.id, cmd.port, cmd.item);
     case 'forkFilter': return sim.setForkFilter(cmd.id, cmd.side, cmd.item);
-    case 'module': return sim.setModule(cmd.id, cmd.add);
     case 'grant': sim.grant(cmd.item, cmd.n); return true;
     case 'credits': sim.grantCredits(cmd.cents); return true;
     case 'research': return sim.startResearch(cmd.id, cmd.lab).ok;

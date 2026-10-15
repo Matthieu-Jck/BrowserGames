@@ -6,8 +6,9 @@
 // drawn as the traction ribbon that would take it. A directional routing block (router, sorters, gates:
 // in from the back only) shows its flow while it is placed: a big turquoise arrow into its
 // back, small coral ones out of its three ways out — drawn from the piece's own rotation, which
-// is the ribbon's when the block is dropped onto one (`Sim.placementRot`). Redrawn only when
-// the preview changes.
+// is the ribbon's when the block is dropped onto one (`Sim.placementRot`). While a ribbon drag
+// runs, nothing is laid yet (D73): its plan — traction steps, bridge pairs, a dashed leap between
+// each pair's ends — is a faint placeholder until the release. Redrawn only when the preview changes.
 //
 // A building that would stand above the floor (D44: on the mountains; world/stand.ts, from the
 // one height function, relief.ts `tileTop`) is shown where it would stand: in iso its ghost is
@@ -34,6 +35,19 @@ const OK = num(C.cyan), BAD = num(C.ledRed), SWAP = num(C.warn);
 const FLOW_IN = num(C.glowTurq), FLOW_OUT = num(C.coral), INK = num(C.ink);
 /** The plan's hint of height under a ghost that would stand above the floor (as a placed building's, a little fainter). */
 const RISE_ALPHA = 0.24;
+/** A ribbon drag's placeholder: its pieces this faint until the release lays them (D73). */
+const DRAG_ALPHA = 0.55;
+
+/** A bridge pair's leap (tile units, centre to centre): turquoise dashes, gaps between. */
+function leapDash(g: Graphics, ax: number, ay: number, bx: number, by: number): void {
+  const len = Math.abs(bx - ax) + Math.abs(by - ay);
+  if (len <= 0) return;
+  for (let d = 0.45; d < len - 0.45; d += 0.36) {
+    const t0 = d / len, t1 = Math.min(len - 0.45, d + 0.2) / len;
+    g.moveTo(ax + (bx - ax) * t0, ay + (by - ay) * t0).lineTo(ax + (bx - ax) * t1, ay + (by - ay) * t1);
+  }
+  g.stroke({ width: 0.09, color: OK, alpha: 0.9 });
+}
 
 export class GhostView {
   private readonly g = new Graphics();
@@ -74,7 +88,7 @@ export class GhostView {
 
   draw(pre: Preview | null, sim: Sim, hover: [number, number] | null, showHover: boolean): void {
     this.follow();
-    const sig = JSON.stringify([pre?.pieces.map((p) => [p.def, p.x, p.y, p.rot, p.ok, p.reason]), pre?.box, pre?.doomed, pre?.mark, showHover ? hover : null]);
+    const sig = JSON.stringify([pre?.pieces.map((p) => [p.def, p.x, p.y, p.rot, p.ok, p.reason]), pre?.box, pre?.doomed, pre?.mark, pre?.drag, pre?.leaps, showHover ? hover : null]);
     if (sig === this.sig) return;
     this.sig = sig;
     for (const c of this.box.removeChildren()) c.destroy();
@@ -94,9 +108,11 @@ export class GhostView {
       }
     }
     if (pre) {
+      // A ribbon drag is not laid before the release (D73): its plan shows as a placeholder, faint.
+      const a = pre.drag ? DRAG_ALPHA : 1;
       for (const p of pre.pieces) {
         const [w, h] = footprint(buildingIdx(p.def), p.rot);
-        g.rect(p.x, p.y, w, h).fill({ color: p.ok ? OK : BAD, alpha: 0.2 }).stroke({ width: 0.06, color: p.ok ? OK : BAD, alpha: 0.95 });
+        g.rect(p.x, p.y, w, h).fill({ color: p.ok ? OK : BAD, alpha: 0.2 * a }).stroke({ width: 0.06, color: p.ok ? OK : BAD, alpha: 0.95 * a });
         const tint = p.ok ? 0xffffff : 0xff9a8a;
         if (isBeltDef(p.def)) {
           // A ribbon facing a step it cannot take (D77): the piece that takes it, over the coral footprint.
@@ -105,7 +121,7 @@ export class GhostView {
           if (!tex) continue;
           const s = new Sprite(tex);
           s.setFromMatrix(beltMatrix(p.x, p.y, p.rot, false));
-          s.alpha = 0.8;
+          s.alpha = 0.8 * a;
           s.tint = tint;
           this.box.addChild(s);
         } else {
@@ -124,12 +140,14 @@ export class GhostView {
           const s = new Sprite(tex);
           s.scale.set(fr.k);
           s.position.set(p.x - fr.ox * fr.k, p.y - fr.oy * fr.k);
-          s.alpha = 0.72;
+          s.alpha = 0.72 * a;
           s.tint = tint;
           this.box.addChild(s);
           if (isDirectional(p.def)) this.flow(p.x, p.y, p.rot, p.ok ? 1 : 0.55);
         }
       }
+      // A bridge pair's leap: a dashed line from end to end, over what it leaves as it is.
+      for (const [x0, y0, x1, y1] of pre.leaps ?? []) leapDash(g, x0 + 0.5, y0 + 0.5, x1 + 0.5, y1 + 0.5);
       if (pre.mark) {
         const [x0, y0, x1, y1] = pre.mark.box;
         const col = pre.mark.clear ? num(C.ink) : num(C.coral);

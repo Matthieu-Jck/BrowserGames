@@ -1,16 +1,16 @@
 // production.ts — inspector panels of the producing buildings: a machine's recipe choice,
-// buffers and rates, its speed modules; a drill's deposit and buffer; a generator's fuel; a
+// buffers and rates; a drill's deposit and buffer; a generator's fuel; a
 // research lab's project (its data files and its AI tokens, D68) and what it runs next; a server's
 // tokens. Every item shows its icon beside its name (mention.ts), and
 // every number says what it is (held in the machine, per minute at full speed, paid / owed).
-import { CRECIPES, ITEM_IDS, itemIdx, recipesFor } from '@/content/registry';
+import { CRECIPES, ITEM_IDS, recipesFor } from '@/content/registry';
 import { RECIPES } from '@/content/recipes';
 import { RESEARCH, type ResearchId } from '@/content/research';
 import type { RecipeDef, ResearchDef } from '@/content/types';
 import { el, setAttr, setText } from '@/core/dom';
 import { rate } from '@/i18n/format';
 import { locale, t } from '@/i18n/i18n';
-import { modulesOf, recipeOf } from '@/sim/cfg';
+import { recipeOf } from '@/sim/cfg';
 import type { DrillNode, GeneratorNode, MachineNode } from '@/sim/flow/nodes';
 import { projectPermille, tokensDue } from '@/sim/research/runtime';
 import { itemMention, itemRef } from '../mention';
@@ -42,7 +42,7 @@ export const machinePanel: Panel = ({ sim, e, node, host, live, anim }) => {
     anim((ticks) => bar.set(prog(ticks), STATUS_TONE[m.status] ?? 'good'));
     out.push(el('div.insp-row.insp-progress', { 'data-progress': 'craft' }, [el('span.insp-label', {}, t('insp.craft')), bar.root]));
     // A small table: each input and output, what the machine holds of it, and how many a minute it
-    // uses or makes at full speed (this machine's speed: research, modules, dug floor).
+    // uses or makes at full speed (this machine's speed: its own, and a dug floor's).
     const perMin = (q: number): string => fmt((q / 1000) * (600 / cur.ticks) * (m.speed / 1000));
     const rows = (specs: typeof cur.ins, buf: () => ArrayLike<number>): HTMLElement[] => specs.flatMap((s, j) => {
       const held = el('span.insp-io-n');
@@ -60,24 +60,6 @@ export const machinePanel: Panel = ({ sim, e, node, host, live, anim }) => {
     ]));
   }
   return out;
-};
-
-/** Speed modules: fit one from the Hearth's stock, or take one back (Pace research). */
-export const modulesPanel: Panel = ({ sim, e, host, live }) => {
-  const max = sim.moduleSlots();
-  if (max <= 0) return [];
-  const n = modulesOf(e.cfg);
-  const mod = itemIdx('pace_bell');
-  const held = el('p.insp-note');
-  live(() => setText(held, t('insp.modules.note', { item: itemRef(mod), n: Math.floor(sim.stock[mod]! / 1000) })));
-  return [
-    heading(t('insp.modules', { n, max })),
-    held,
-    el('div.insp-recipes', {}, [
-      el('button.btn.insp-recipe', { disabled: n >= max ? '' : null, onclick: () => { if (!sim.setModule(e.id, true)) host.notify('bad', t('reason.unaffordable')); } }, t('insp.modules.add')),
-      el('button.btn.insp-recipe', { disabled: n <= 0 ? '' : null, onclick: () => sim.setModule(e.id, false) }, t('insp.modules.remove')),
-    ]),
-  ];
 };
 
 /** What it mines and how fast (at full power), and what waits at its output. */

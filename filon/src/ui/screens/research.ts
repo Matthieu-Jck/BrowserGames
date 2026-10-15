@@ -323,7 +323,7 @@ const EFFECT_ICON: Readonly<Record<string, Icon | readonly Icon[]>> = {
   remoteBeltCost: { b: 'ribbon' }, remoteBuildDelay: { b: 'beacon' }, pylonLink: { b: 'pylon' },
   ring3Caps: { b: 'deep_bore' }, dockShips: { b: 'skydock' }, shipCap: { b: 'skydock' }, shipSpeed: { b: 'skydock' },
   drifterDistance: { b: 'skydock' }, bridgeSpan: { b: 'skybridge' }, forkFilters: { b: 'router' },
-  modules1: { i: 'pace_bell' }, modules2: { i: 'pace_bell' }, craftSpeed: { i: 'gear' },
+  craftSpeed: { i: 'gear' },
   windOut: { b: 'wind_flower' }, gustVariance: { b: 'wind_flower' }, stormHarvest: { b: 'wind_flower' }, solarOut: { b: 'sun_bulb' },
   accCap: { b: 'accumulator' }, accRate: { b: 'accumulator' }, geoOut: { b: 'fumarole_tap' },
   deepHeat: { b: 'fumarole_tap' }, genOut: { b: 'brazier' },

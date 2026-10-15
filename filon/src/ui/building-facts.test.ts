@@ -110,9 +110,9 @@ describe('building facts', () => {
     const plate = kiln.find((r) => r.name === 'Iron Plate')!;
     expect(plate.ins).toEqual([{ item: itemIdx('iron_ore'), perMin: 15 }, { item: itemIdx('coal'), perMin: 15 }]);
     expect(plate.outs).toEqual([{ item: itemIdx('iron_plate'), perMin: 15 }]);
-    // Speed modules need Pace (dn4): not on a new colony's electronics workshop, there once researched.
-    expect(buildingFacts('workshop', fresh).recipes!.map((r) => r.name)).not.toContain('Speed Module');
-    expect(buildingFacts('workshop', all).recipes!.map((r) => r.name)).toContain('Speed Module');
+    // Servomotors need their research (dn4, D81): not on a new colony's electronics workshop, there once researched.
+    expect(buildingFacts('workshop', fresh).recipes!.map((r) => r.name)).not.toContain('Servomotor');
+    expect(buildingFacts('workshop', all).recipes!.map((r) => r.name)).toContain('Servomotor');
     // The tree's upgraded machines run their family's recipes faster (D70): the forging press ×3.
     const forge = buildingFacts('forge_press', { ...all, mods: baseMods() }).recipes!.find((r) => r.name === 'Gear')!;
     expect(forge.outs[0]!.perMin).toBe(36);

@@ -101,7 +101,7 @@ Sim.step()
 
 ### State, commands, events
 
-- **`Sim` is a facade.** It holds the whole state and exposes the API. The rules live in `src/sim/systems/*.ts`, each a set of functions over the Sim (`build`, `configure`, `research`, `landscape`, `land`, `freight`, `power`, `trade`). Formulas that need no state sit beside them (`space.ts`, `research/runtime.ts`, `power/*`).
+- **`Sim` is a facade.** It holds the whole state and exposes the API. The rules live in `src/sim/systems/*.ts`, each a set of functions over the Sim (`build`, `belt-plan` (a ribbon drag planned whole, D73), `configure`, `research`, `landscape`, `land`, `freight`, `power`, `trade`). Formulas that need no state sit beside them (`space.ts`, `research/runtime.ts`, `power/*`).
 - **Commands** ([src/sim/commands.ts](src/sim/commands.ts)): the `Command` union is what a player can do. Command methods log themselves, and `exec` / `replay` re-apply a log. A switch checked for exhaustiveness makes a new command kind fail to compile until it is handled.
 - **Events**: the Sim appends `SimEvent`s, and the shell drains them once per frame through a handler table typed so that every event kind needs a handler ([src/app/sim-events.ts](src/app/sim-events.ts)).
 - **Reads**: views and UI read the Sim directly. They pull at 4 Hz for the DOM, every frame for the views, and rebuild when a `structure` event arrives. They never write to it except through commands.

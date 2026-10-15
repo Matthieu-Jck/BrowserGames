@@ -16,7 +16,7 @@ const ARC = ['arc_furnace'] as const;
 const WIRE = ['wire_mill', 'wire_mill_double'] as const;
 /** Gears: the press and its forging press. */
 const PRESSES = ['press', 'forge_press'] as const;
-/** Circuits and speed modules: the electronics workshop, the etcher, the chip fab. */
+/** Circuits, servomotors and robot arms (D81): the electronics workshop, the etcher, the chip fab. */
 const ELECTRONICS = ['workshop', 'etcher', 'chip_fab'] as const;
 /** Batteries, thermal cores, resonators: the assembly workshop, compact and tower. */
 const ASSEMBLY = ['great_workshop', 'great_workshop_compact', 'tower_workshop'] as const;
@@ -66,8 +66,12 @@ export const RECIPES = {
     ins: [['empty_cell', 1]], outs: [['charged_cell', 1]], energyKwMin: 600, unlock: 'en4',
   },
   pace_bell: {
-    name: { fr: 'Module de vitesse', en: 'Speed Module' }, machines: ELECTRONICS, seconds: 20,
+    name: { fr: 'Servomoteur', en: 'Servomotor' }, machines: ELECTRONICS, seconds: 20,
     ins: [['circuit', 4], ['gear', 2]], outs: [['pace_bell', 1]], unlock: 'dn4',
+  },
+  robot_arm: {
+    name: { fr: 'Bras robotisé', en: 'Robot Arm' }, machines: ELECTRONICS, seconds: 30,
+    ins: [['pace_bell', 2], ['circuit', 2]], outs: [['robot_arm', 1]], unlock: 'dn7',
   },
   lens_a: {
     name: { fr: 'Lentille (verre-spore)', en: 'Lens (sporeglass)' }, machines: OPTICS, seconds: 8,

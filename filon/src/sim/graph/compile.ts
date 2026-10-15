@@ -12,7 +12,7 @@ import { BAL } from '@/content/balance';
 import {
   BUILDING_KIND, CRECIPES, N_ITEMS, buildingDef, buildingIdx, itemIdx,
 } from '@/content/registry';
-import { filterOf, modulesOf, recipeOf } from '../cfg';
+import { filterOf, recipeOf } from '../cfg';
 import { MU, WORLD } from '../constants';
 import { footprint, worldPorts, forTiles, type Entities, type WorldPort } from '../entities';
 import { DX, DY, T, opposite, type Ent, type Rot } from '../types';
@@ -170,15 +170,14 @@ export function compileGraph(inp: CompileInput): Graph {
         break;
       }
       case 'machine': {
-        const r = recipeOf(e.cfg), bells = modulesOf(e.cfg);
+        const r = recipeOf(e.cfg);
         const recipe = r > 0 ? CRECIPES[r - 1] ?? null : null;
-        // Speed modules: +30 % speed each (+50 % with Pace II), +40 % power each.
-        const kw = Math.floor(((b.kw ?? 0) * (1000 + 400 * bells)) / 1000);
+        const kw = b.kw ?? 0;
         node = reuse(e, () => new MachineNode(e.id, recipe, kw, b.idleKw ?? 0),
           (o) => o.kind === 'machine' && (o as MachineNode).recipe === recipe);
         const m = node as MachineNode;
         m.kw = kw;
-        let speed = Math.floor((mods.craftSpeed * (1000 + (mods.flags.has('modules2') ? 500 : 300) * bells)) / 1000);
+        let speed = mods.craftSpeed; // no speed modules (D81): a machine runs at its own pace
         if (b.speed) speed = Math.floor((speed * b.speed) / 1000); // the tree's upgraded machines (D70)
         if (onDugFloor(grid, e)) speed = Math.floor((speed * mods.excavatedSpeed) / 1000);
         m.speed = speed;

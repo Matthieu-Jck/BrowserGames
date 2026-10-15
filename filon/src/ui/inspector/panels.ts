@@ -6,11 +6,11 @@ import type { BuildingKind } from '@/content/types';
 import { hearthPanel, landscapePanel } from './colony';
 import type { Panel } from './kit';
 import { dockPanel, forkPanel, outletsPanel, ribbonPanel, storePanel } from './logistics';
-import { drillPanel, generatorPanel, labPanel, machinePanel, modulesPanel, serverPanel } from './production';
+import { drillPanel, generatorPanel, labPanel, machinePanel, serverPanel } from './production';
 import { tradePanel } from './trade';
 
 export const PANELS: Partial<Record<BuildingKind, readonly Panel[]>> = {
-  machine: [machinePanel, modulesPanel],
+  machine: [machinePanel],
   drill: [drillPanel],
   generator: [generatorPanel], // its fuel; its output is the grid module's
   lab: [labPanel],

@@ -6,12 +6,11 @@
 // new footprint, not the very same building. It comes down first, fully refunded, so its refund
 // counts towards the new cost. Off the claim's land a kite flies the materials out: the building
 // completes after a delay growing with the distance. Removal refunds everything (cost, buffers,
-// modules, drifters) to the Hearth. Ribbon drags are planned tile by tile (`planBelts`: kept,
-// laid, replaced, or a junction where the drag cuts straight across a ribbon line); the build
-// tool's preview shows the same plan. Also: the Hearth's levels.
+// modules, drifters) to the Hearth. Ribbon drags are planned as a whole in belt-plan.ts
+// (`planBelts`, D73). Also: the Hearth's levels.
 import { BAL } from '@/content/balance';
-import { BUILDING_IDS, BUILDING_KIND, CRECIPES, N_ITEMS, buildingDef, buildingIdx, costOf, itemIdx } from '@/content/registry';
-import { filterOf, modulesOf, recipeOf, withFilter } from '../cfg';
+import { BUILDING_KIND, CRECIPES, N_ITEMS, buildingDef, buildingIdx, costOf, itemIdx } from '@/content/registry';
+import { filterOf, recipeOf, withFilter } from '../cfg';
 import { footprint, forTiles } from '../entities';
 import { refundNode } from '../graph/compile';
 import { inWorld, tileIndex } from '../world/grid';
@@ -31,7 +30,9 @@ export type PlaceReason =
   /** A traction ribbon facing two levels or more: its elevator climbs one terrace at a time (D77). */
   | 'steep'
   /** A conduit facing another level: fluids keep to their level (D77). */
-  | 'cliff';
+  | 'cliff'
+  /** A junction next to another junction: a ribbon must run on each side of one (D73). */
+  | 'junction_chain';
 
 export type Cost = Array<{ item: number; mu: number }>;
 
@@ -167,6 +168,7 @@ export function canPlace(sim: Sim, defId: string, x: number, y: number, rot: Rot
   const step = stepRefusal(sim, def, x, y, rot);
   if (step) return fail(step);
   if (b.lift && liftCrowded(sim, def, x, y, rot)) return fail('lift_room');
+  if (b.kind === 'crossing' && junctionNear(sim, x, y)) return fail('junction_chain');
   replaces.sort((a, c) => a - c);
   // What it replaces is refunded before the new building is paid: it counts towards the cost.
   if (!affordable(sim, cost, replaces)) return { ok: false, reason: 'unaffordable', cost, delay: 0, replaces };
@@ -189,7 +191,7 @@ export function canPlace(sim: Sim, defId: string, x: number, y: number, rot: Rot
  * it leaps to the next one on its level, whatever lies between. A ribbon whose back is to a cliff
  * stays allowed: it is fed from its sides.
  */
-function stepRefusal(sim: Sim, def: number, x: number, y: number, rot: Rot): PlaceReason | null {
+export function stepRefusal(sim: Sim, def: number, x: number, y: number, rot: Rot): PlaceReason | null {
   const b = buildingDef(def);
   if (b.kind !== 'belt' && b.kind !== 'conduit') return null;
   const gx = x + DX[rot]!, gy = y + DY[rot]!;
@@ -205,7 +207,7 @@ function stepRefusal(sim: Sim, def: number, x: number, y: number, rot: Rot): Pla
  * Does a ribbon of `def` at (x, y) pointing `rot` change level into the tile ahead: a traction step
  * (D45), its elevator standing on the step's low tile?
  */
-function stepAt(sim: Sim, def: number, x: number, y: number, rot: Rot): boolean {
+export function stepAt(sim: Sim, def: number, x: number, y: number, rot: Rot): boolean {
   if (!buildingDef(def).lift) return false;
   const gx = x + DX[rot]!, gy = y + DY[rot]!;
   return inWorld(gx, gy) && sim.grid.level(gx, gy) !== sim.grid.level(x, y);
@@ -230,6 +232,22 @@ function liftCrowded(sim: Sim, def: number, x: number, y: number, rot: Rot): boo
   for (let d = 0; d < 4; d++) {
     const n = beltAt(x + DX[d]!, y + DY[d]!);
     if (n && n.x + DX[n.rot]! === x && n.y + DY[n.rot]! === y && stepAt(sim, n.def, n.x, n.y, n.rot)) return true;
+  }
+  return false;
+}
+
+/**
+ * Does a junction stand on a tile beside (x, y)? Junctions never chain (owner, 2026-10-15, D73:
+ * « on ne devrait pas pouvoir mettre plusieurs jonctions à la chaîne, il faut un tapis de chaque
+ * côté du pont »): a ribbon runs between two of them, or a bridge leaps both lines. Old chains
+ * laid before the rule stay as they are.
+ */
+function junctionNear(sim: Sim, x: number, y: number): boolean {
+  for (let d = 0; d < 4; d++) {
+    const nx = x + DX[d]!, ny = y + DY[d]!;
+    if (!inWorld(nx, ny)) continue;
+    const o = sim.ents.get(sim.grid.occ[tileIndex(nx, ny)]!);
+    if (o && BUILDING_KIND[o.def] === 'crossing') return true;
   }
   return false;
 }
@@ -268,14 +286,14 @@ function remoteDelay(sim: Sim, x: number, y: number, inZone: boolean): number {
 
 /**
  * Only the settings a player could have made through commands survive a placement (a replayed
- * or crafted `place` must not smuggle in a locked recipe or free speed modules).
+ * or crafted `place` must not smuggle in a locked recipe; the old speed-module bits never survive, D81).
  */
 function validCfg(sim: Sim, def: number, cfg: number): number {
   const k = BUILDING_KIND[def];
   if (k === 'machine') {
     const r = recipeOf(cfg);
     const cr = r > 0 ? CRECIPES[r - 1] : undefined;
-    return cr && cr.machines.has(def) && sim.unlocked(cr.unlock) ? r : 0; // bells are fitted later (setModule)
+    return cr && cr.machines.has(def) && sim.unlocked(cr.unlock) ? r : 0; // the recipe alone: no module bits (D81)
   }
   if (k === 'fork') {
     // Sorters and unloaders: their chosen item (byte 0); routers and distributors: a filter per side.
@@ -331,96 +349,6 @@ export function place(sim: Sim, defId: string, x: number, y: number, rot0: Rot, 
   return { ...chk, id: e.id };
 }
 
-/** One tile of a ribbon drag as planned: what goes there (or why nothing does), and its check. */
-export interface BeltStep extends PlaceCheck {
-  x: number;
-  y: number;
-  rot: Rot;
-  /**
-   * What stands on the tile once the drag is laid: the dragged ribbon, a junction where the
-   * drag cuts across a ribbon line, or — on a skipped tile — what is already there.
-   */
-  def: string;
-  /** Nothing to place: this very ribbon already runs here, or the line runs through a block. */
-  skip: boolean;
-}
-
-export type BeltPath = ReadonlyArray<readonly [number, number, Rot]>;
-
-/** The junction (the building of kind `crossing`), -1 if the content has none. */
-const JUNCTION = BUILDING_KIND.indexOf('crossing');
-
-/**
- * Plan a ribbon drag tile by tile against the grid as it stands — what `placeBelts` lays and
- * what the build tool's ghost shows:
- * - this very ribbon, same direction: skipped, nothing to do;
- * - a routing block, junction or bridge end of the ribbon's replace group, in a drag of two
- *   tiles or more: kept (skipped) — lines are routinely dragged through routers. A one-tile
- *   drag (a click) replaces it;
- * - a ribbon of any tier running across the drag, where the drag goes straight through (not
- *   an end, not a bend): a junction instead, so both lines keep flowing (Mindustry's
- *   auto-junction), when the junction is unlocked;
- * - anything else: the dragged ribbon, as `canPlace` allows (another tier or another direction
- *   is replaced: an upgrade, a turn).
- * The steps share one budget, in path order: a long drag runs out of materials (`unaffordable`)
- * exactly where laying it tile by tile would.
- */
-export function planBelts(sim: Sim, defId: string, path: BeltPath): BeltStep[] {
-  const def = buildingIdx(defId);
-  const b = buildingDef(def);
-  const out: BeltStep[] = [];
-  const spent = new Map<number, number>(); // net mu by item, taken by the steps before
-  for (let i = 0; i < path.length; i++) {
-    const [x, y, rot] = path[i]!;
-    const id = inWorld(x, y) ? sim.grid.occ[tileIndex(x, y)]! : 0;
-    const o = id ? sim.ents.get(id) : undefined;
-    let what = defId;
-    if (o) {
-      const k = BUILDING_KIND[o.def];
-      const kept = o.def === def
-        ? o.rot === rot
-        : path.length > 1 && b.replaceGroup !== undefined && buildingDef(o.def).replaceGroup === b.replaceGroup && k !== 'belt' && k !== 'conduit';
-      if (kept) {
-        out.push({ x, y, rot, def: BUILDING_IDS[o.def]!, skip: true, ok: true, reason: 'ok', cost: [], delay: 0, replaces: [] });
-        continue;
-      }
-      if (b.kind === 'belt' && k === 'belt' && ((o.rot - rot) & 1) === 1 && JUNCTION >= 0 && throughAt(path, i) && sim.unlocked(buildingDef(JUNCTION).unlock)) {
-        what = BUILDING_IDS[JUNCTION]!;
-      }
-    }
-    const step: BeltStep = { x, y, rot, def: what, skip: false, ...canPlace(sim, what, x, y, rot) };
-    if (step.ok && !affordable(sim, step.cost, step.replaces, spent)) {
-      step.ok = false;
-      step.reason = 'unaffordable';
-      step.delay = 0;
-    } else if (step.ok) {
-      for (const c of step.cost) spent.set(c.item, (spent.get(c.item) ?? 0) + c.mu);
-      for (const r of step.replaces) for (const c of costOf(sim.ents.get(r)!.def)) spent.set(c.item, (spent.get(c.item) ?? 0) - c.mu);
-    }
-    out.push(step);
-  }
-  return out;
-}
-
-/** Does a drag run straight through path tile i: in line with the tiles before and after it? */
-function throughAt(path: BeltPath, i: number): boolean {
-  const prev = path[i - 1], next = path[i + 1];
-  if (!prev || !next) return false; // an end of the drag
-  const [x, y, r] = path[i]!;
-  return prev[2] === r && prev[0] === x - DX[r]! && prev[1] === y - DY[r]! && next[0] === x + DX[r]! && next[1] === y + DY[r]!;
-}
-
-/**
- * Lay a ribbon drag (each element [x, y, rot]) as `planBelts` plans it: exactly the steps the
- * plan (and so the ghost) accepts. Every placement is its own logged `place` (a junction as a
- * junction), so a replay needs no planner. Returns how many were placed.
- */
-export function placeBelts(sim: Sim, defId: string, path: BeltPath): number {
-  let n = 0;
-  for (const s of planBelts(sim, defId, path)) if (!s.skip && s.ok && place(sim, s.def, s.x, s.y, s.rot).ok) n++;
-  return n;
-}
-
 /** Remove whatever occupies (x, y) (never the Hearth); refunds its cost and buffered items. */
 export function remove(sim: Sim, x: number, y: number): boolean {
   if (!inWorld(x, y)) return false;
@@ -451,7 +379,6 @@ export function removeEntity(sim: Sim, id: number, silent: boolean): void {
   sim.trade.cargo.delete(id);
   sim.trade.orders = sim.trade.orders.filter((o) => o.post !== id);
   sim.trade.activity.delete(id);
-  if (BUILDING_KIND[e.def] === 'machine') for (let k = 0; k < modulesOf(e.cfg); k++) sim.refund(itemIdx('pace_bell'), 1000);
   sim.jobsDirty = true;
   const node = sim.graph?.nodeByEnt.get(id);
   if (node) refundNode(node, (item, mu) => sim.refund(item, mu));

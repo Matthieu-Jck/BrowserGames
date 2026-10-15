@@ -63,7 +63,7 @@ wire: {
 | `unlock` | `'start'` or a node of the unlock tree (a plan or a research id, D33). Mention it in a research node's `desc` by hand (a plan's detail pane lists its recipes itself). |
 | `energyKwMin` | Compiled to `energyKwTicks`, but no engine code reads it. The cell charger's own `kw` (300 kW × 120 s = 600 kW·min) is what is actually drawn. |
 
-A machine's effective speed is `mods.craftSpeed`, × speed modules (+30% each, +50% with `modules2`), × `BAL.towerSpeed` for `tower_workshop`, × `mods.excavatedSpeed` when the machine stands entirely on dug floor (graph compiler). Any input port accepts any of the recipe's inputs: the machine sorts them by item (`slotOf`).
+A machine's effective speed is `mods.craftSpeed`, × its own `speed` (the upgraded machines, D70), × `BAL.towerSpeed` for `tower_workshop`, × `mods.excavatedSpeed` when the machine stands entirely on dug floor (graph compiler). Any input port accepts any of the recipe's inputs: the machine sorts them by item (`slotOf`).
 
 ## Buildings — `BUILDINGS`
 
@@ -123,7 +123,7 @@ What each `kind` means. The graph compiler's switch on `BuildingKind` lives in [
 | `pole` | `mast`, `pylon` | Pillars: link points the player wires to each other, to the Hearth and to buildings (grids = the wires' components, D25); a new one wires itself to the nearest pillar or Hearth in reach with a free slot | `pole.range`, `pole.slots`, `pole.climb`, `pole.tall` |
 | `trade` | `trade_post` | 5×5: pad and flame apron (D62); a `ReservoirNode` store whose one entrance takes, and sells, every tradable item but its cargo (D64: no export streams) and whose one exit hands out what it bought, in turn | `ports` (one `in`, one `out`) |
 
-Ids special-cased in code: `hearth` (founding), `tower_workshop` (×`BAL.towerSpeed`), `drill` and `excavator` (rotation variants in art), and the items `stone`, `water`, `pace_bell`, `iron_ore` and `copper_ore` in the sim. Map generation keeps a per-item base richness, and the HUD keeps an `ORDER` list. The ribbon drag's auto-junction lays the building of kind `crossing`, found by kind, not by id (`planBelts` in [systems/build.ts](../src/sim/systems/build.ts)). The waystation (`outpost`, its own kind) was retired with the influence zones (D60): its id lives on only in `RETIRED_COSTS` and the save v3 migration (`zonesToParcels`). The 3×3 trade post's likewise as `trade_post_3x3` (D62, save v4 `postsToPads`).
+Ids special-cased in code: `hearth` (founding), `tower_workshop` (×`BAL.towerSpeed`), `drill` and `excavator` (rotation variants in art), and the items `stone`, `water`, `pace_bell` (the servomotor, once the speed module: the load hands modules an old save fitted back as servomotors, D81), `iron_ore` and `copper_ore` in the sim. Map generation keeps a per-item base richness, and the HUD keeps an `ORDER` list. The ribbon drag's auto-junction lays the building of kind `crossing`, found by kind, not by id (`planBelts` in [systems/build.ts](../src/sim/systems/build.ts)). The waystation (`outpost`, its own kind) was retired with the influence zones (D60): its id lives on only in `RETIRED_COSTS` and the save v3 migration (`zonesToParcels`). The 3×3 trade post's likewise as `trade_post_3x3` (D62, save v4 `postsToPads`).
 
 ## The unlock tree — `PLANS` and `RESEARCH` (D33)
 

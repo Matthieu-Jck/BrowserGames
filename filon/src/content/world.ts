@@ -70,7 +70,7 @@ export interface CirqueTemplate {
  * cirque (D40), so two things hold the layout rather than the scale: the coal stays just beyond
  * the Heart's 8-tile wire for every player (quest 3 lays a pole to it), and the drills of the coal
  * and of the tired vein stay within 18 tiles (the Heart's old level-1 zone; land is parcels since
- * D60, the starting square holding the whole Crown). mapgen.test.ts checks both on the real map.
+ * D60, the starting square holding the cirque, D74). mapgen.test.ts checks both on the real map.
  */
 const CIRQUE_DEPOSITS: readonly CirqueDeposit[] = [
   { item: 'iron_ore', dx: 0, dy: -10, radius: 3.4, rich: 500 }, // north: its near half is within the Heart's own wires
@@ -116,8 +116,9 @@ export const CIRQUE: CirqueTemplate = {
   // over it, room for an elevator's flat tile; three would widen the whole ring by a tile.
   minCrest: 2,
   crownOuter: 29,
-  // At most (255 − 150) × 8 / 128 = 6 tiles: the Crown's farthest terrace stays within r 40, the
-  // starting square's five parcels a side (D60).
+  // At most (255 − 150) × 8 / 128 = 6 tiles: the Crown's farthest terrace stays within r 40. The
+  // starting square (3×3 parcels of 23 tiles, D74) spans ±34 tiles: the whole Crown but the crest
+  // of the tarn's peak, which reaches 36 east.
   shoulders: { radius: 28, scale: 10, from: 150, gain: 8 },
   // The lilac rock on the peaks only, the ridge sandstone (a one-tile lilac spine along it was
   // tried: on the tile grid it reads as a dotted zigzag).

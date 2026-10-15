@@ -225,10 +225,10 @@ await step('build: place over things — a router clicked onto a ribbon replaces
 await step('build: off the claim’s land a kiln is refused, with the reason and the land key', async () => {
   await page.keyboard.press('Escape');
   await FL(() => window.FL.tool('kiln'));
-  // Past the starting square (5 × 5 parcels of 16 tiles round the Heart: ±40 tiles), on explored floor.
+  // Past the starting square (3 × 3 parcels of 23 tiles round the Heart: ±34 tiles, D74), on explored floor.
   const far = await FL(() => {
     const sim = window.FL.app.sim;
-    for (let d = 41; d <= 48; d++) for (const [x, y] of [[512, 512 + d], [512 + d, 512], [512, 512 - d], [512 - d, 512]]) {
+    for (let d = 36; d <= 48; d++) for (const [x, y] of [[512, 512 + d], [512 + d, 512], [512, 512 - d], [512 - d, 512]]) {
       if (sim.canPlace('kiln', x, y, 0).reason === 'outside_zone') return [x, y];
     }
     return null;
@@ -243,17 +243,18 @@ await step('build: off the claim’s land a kiln is refused, with the reason and
   assert(!(await FL(([x, y]) => window.FL.entityAt(x, y), far)), 'kiln placed off the claim’s land');
 });
 
-await step('build: a ribbon dragged over the Crown leaves its steps to traction ribbons (D77): the tip names it, the toast counts them', async () => {
+await step('build: a ribbon dragged over the Crown takes its steps with traction ribbons by itself (D73); nothing is laid before the release', async () => {
   await page.keyboard.press('Escape');
+  await FL(() => { const s = window.FL.app.sim; s.done.add('traction'); s.rebuildDerived(); s.grant('iron_plate', 40); s.grant('copper_wire', 20); });
   await FL(() => window.FL.tool('ribbon'));
-  // A free row east of the Heart whose drag meets the Crown's steps: the tiles the plan leaves out.
+  // A free row east of the Heart whose drag meets the Crown's steps: the plan lays a traction ribbon at each.
   const row = await FL(() => {
     const sim = window.FL.app.sim;
     for (let y = 498; y <= 526; y++) {
       const path = []; for (let x = 526; x <= 548; x++) path.push([x, y, 1]);
       const plan = sim.planBelts('ribbon', path);
-      if (plan.some((s) => !s.ok && s.reason !== 'needs_lift')) continue;
-      const steps = plan.filter((s) => s.reason === 'needs_lift').map((s) => s.x);
+      if (!plan.every((s) => s.ok && !s.skip)) continue;
+      const steps = plan.filter((s) => s.def === 'traction_ribbon').map((s) => s.x);
       if (steps.length >= 2) return { y, steps };
     }
     return null;
@@ -267,15 +268,58 @@ await step('build: a ribbon dragged over the Crown leaves its steps to traction 
   await page.mouse.down();
   await page.mouse.move(bx, by, { steps: 10 });
   await page.waitForTimeout(250);
-  const tip = await page.evaluate(() => document.querySelector('#tooltip .tip-lift')?.textContent ?? null);
+  // Mid-drag: a placeholder of the plan, nothing on the ground yet.
+  const mid = await FL(([y]) => {
+    const pre = window.FL.app.tools.preview();
+    return { drag: !!pre.drag, lifts: pre.pieces.filter((p) => p.def === 'traction_ribbon').length, laid: [526, 537, 548].filter((x) => window.FL.entityAt(x, y)).length };
+  }, [row.y]);
   await page.screenshot({ path: shot('smoke-crown-steps.png') });
   await page.mouse.up();
-  assert(tip && /traction|2|T/i.test(tip), `the tip does not name the traction ribbon: ${tip}`);
-  const t = (await FL(() => window.FL.toasts())).join(' | ');
-  assert(new RegExp(`${row.steps.length} (tuiles laissées|tiles left out)`).test(t), `no toast counting the steps left out: ${t}`);
-  const laid = await FL(([y, xs]) => xs.map((x) => window.FL.entityAt(x, y)), [row.y, row.steps]);
-  assert(laid.every((e) => !e), `a ribbon was laid facing a step: ${JSON.stringify(laid)}`);
-  assert((await FL(([y]) => window.FL.entityAt(526, y), [row.y]))?.def === 'ribbon', 'the rest of the drag was not laid');
+  assert(mid.drag && mid.lifts === row.steps.length, `the ghost is not the plan's placeholder: ${JSON.stringify(mid)}`);
+  assert(mid.laid === 0, `something was laid before the release: ${JSON.stringify(mid)}`);
+  const laid = await FL(([y, xs]) => xs.map((x) => window.FL.entityAt(x, y)?.def ?? null), [row.y, row.steps]);
+  assert(laid.every((d) => d === 'traction_ribbon'), `the steps did not take traction ribbons: ${JSON.stringify(laid)}`);
+  assert((await FL(([y]) => window.FL.entityAt(548, y), [row.y]))?.def === 'ribbon', 'the drag was not laid to its end');
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: shot('smoke-crown-laid.png') });
+});
+
+await step('build: a drag across two lines side by side lays a bridge pair over them (D73), never two junctions in a row', async () => {
+  await page.keyboard.press('Escape');
+  const at = await FL(() => {
+    const sim = window.FL.app.sim;
+    sim.done.add('bridge'); sim.rebuildDerived(); sim.grant('iron_plate', 20);
+    const free = (x, y) => { const c = sim.canPlace('ribbon', x, y, 2); return c.ok && c.replaces.length === 0; };
+    for (let r = 8; r < 34; r++) for (let y = 512 - r; y <= 512 + r; y++) for (let x = 512 - r; x <= 512 + r; x++) {
+      if (Math.max(Math.abs(x - 512), Math.abs(y - 512)) !== r) continue;
+      let ok = true;
+      for (let dy = 0; dy < 5 && ok; dy++) for (let dx = -3; dx <= 4 && ok; dx++) ok = free(x + dx, y + dy);
+      if (!ok) continue;
+      for (const lx of [x, x + 1]) sim.placeBelts('ribbon', [0, 1, 2, 3, 4].map((k) => [lx, y + k, 2]));
+      return [x, y];
+    }
+    return null;
+  });
+  assert(at, 'no free square for the two lines');
+  const [lx, ly] = at;
+  await FL(([x, y]) => window.FL.lookAt(x, y + 2, 1.4), at);
+  await page.waitForTimeout(300);
+  await FL(() => window.FL.tool('ribbon'));
+  const [ax, ay] = await tileXY(lx - 3, ly + 2);
+  const [bx, by] = await tileXY(lx + 4, ly + 2);
+  await page.mouse.move(ax, ay);
+  await page.mouse.down();
+  await page.mouse.move(bx, by, { steps: 8 });
+  await page.waitForTimeout(200);
+  const leaps = await FL(() => window.FL.app.tools.preview().leaps ?? []);
+  await page.screenshot({ path: shot('smoke-bridge-ghost.png') });
+  await page.mouse.up();
+  assert(leaps.length === 1, `the ghost shows no leap: ${JSON.stringify(leaps)}`);
+  const row = await FL(([x, y]) => [-1, 0, 1, 2].map((d) => window.FL.entityAt(x + d, y)), [lx, ly + 2]);
+  assert(row[0]?.def === 'skybridge' && row[3]?.def === 'skybridge', `no bridge pair over the lines: ${JSON.stringify(row)}`);
+  assert(row[1]?.def === 'ribbon' && row[1].rot === 2 && row[2]?.def === 'ribbon' && row[2].rot === 2, 'a crossed line was cut');
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: shot('smoke-bridge-laid.png') });
 });
 
 await step('inspect: in the iso view a click on the Heart’s uplink (above its footprint) opens the inspector', async () => {
@@ -568,13 +612,12 @@ await step('space: mark rock with the brush, an excavator digs six tiles (stone,
 await step('space: a parcel bought past the starting square takes a skydock; a drifter route carries plates between skydocks', async () => {
   const r = await FL(() => {
     const sim = window.FL.app.sim;
-    // The parcel three east of the Heart's (ring 3: just past the starting square), bought with
-    // the ocelles granted if short (a rig: the land panel's own step buys one by the mouse).
-    const p = 32 * 65 + 35, cents = sim.landPrice(p);
+    // The parcel two east of the Heart's (ring 2: just past the 3 × 3 starting square, D74), bought
+    // with the ocelles granted if short (a rig: the land panel's own step buys one by the mouse).
+    const { p, at } = window.FL.parcel(2, 0), cents = sim.landPrice(p);
     if (sim.credits < cents) sim.grantCredits(cents - sim.credits);
     if (sim.land.holds(p) ? false : sim.buyLand(p) !== null) return { err: 'land not bought' };
-    const at = [35 * 16, 32 * 16]; // the parcel's middle tile
-    if (!sim.land.covers(at[0], at[1])) return { err: 'parcel not held' };
+    if (!sim.land.covers(at[0], at[1])) return { err: 'parcel not held' }; // its middle tile
     // Two skydocks: one by the Hearth, one on the new parcel.
     const find = (cx, cy, rad) => { for (let d = 0; d <= rad; d++) for (let y = cy - d; y <= cy + d; y++) for (let x = cx - d; x <= cx + d; x++) if ((() => { const c = sim.canPlace('skydock', x, y, 0); return c.ok && c.replaces.length === 0; })()) return [x, y]; return null; };
     const pa = find(512 + 6, 512 + 6, 10), pb = find(at[0] - 1, at[1] - 1, 6);
@@ -608,13 +651,13 @@ await step('space: a parcel bought past the starting square takes a skydock; a d
 await step('land (D60): I opens the land mode over the plan view; a click picks a parcel, the panel shows it, « Acheter » buys it', async () => {
   await FL(() => { window.FL.tool(null); window.FL.category(null); window.FL.close(); window.FL.selected(0); });
   await settleView('iso');
-  // A parcel for sale just past the starting square (ring 3: 5 × 5 parcels of 16 tiles round the
-  // Heart's), its middle explored; the ocelles granted if short (a rig: the purse of the demo base).
+  // A parcel for sale just past the starting square (ring 2: 3 × 3 parcels of 23 tiles round the
+  // Heart's, D74), its middle explored; the ocelles granted if short (a rig: the purse of the demo base).
   const pick = await FL(() => {
-    const sim = window.FL.app.sim, cols = 65, home = 32;
-    for (let r = home - 3; r <= home + 3; r++) for (let c = home - 3; c <= home + 3; c++) {
-      if (Math.max(Math.abs(c - home), Math.abs(r - home)) !== 3) continue;
-      const p = r * cols + c, at = [c * 16, r * 16];
+    const sim = window.FL.app.sim;
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== 2) continue;
+      const { p, at } = window.FL.parcel(dx, dy);
       if (sim.land.holds(p) || sim.land.sister(p) >= 0 || !sim.revealed(at[0], at[1])) continue;
       const cents = sim.landPrice(p);
       if (sim.credits < cents + 100) sim.grantCredits(cents + 100 - sim.credits);
@@ -658,7 +701,7 @@ await step('perf: 10 000 items riding ribbons stay above 30 fps', async () => {
   await FL(() => window.FL.unlock('xp_far'));
   const sisters = await FL(() => {
     const sim = window.FL.app.sim, ps = new Set();
-    for (let y = 450; y < 550; y++) for (let x = 600; x < 705; x++) ps.add(Math.floor((y + 8) / 16) * 65 + Math.floor((x + 8) / 16));
+    for (let y = 450; y < 550; y++) for (let x = 600; x < 705; x++) ps.add(window.FL.parcelAt(x, y));
     let n = 0;
     for (const p of [...ps].sort((a, b) => a - b)) {
       if (sim.land.sister(p) < 0) continue;
@@ -922,9 +965,9 @@ await step('i18n: no missing key (⟦…⟧) on any screen, in French and in Eng
       if (scr?.startsWith('menu')) await FL(() => window.FL.menu(false));
       else if (scr) await FL(() => window.FL.close());
     }
-    // The land mode's panel, on a parcel for sale and on the Heart's (D60).
-    for (const p of [32 * 65 + 36, 32 * 65 + 32]) {
-      await FL((q) => { window.FL.app.build.land(true); window.FL.app.landTool.selected = q; }, p);
+    // The land mode's panel, on a parcel for sale (far off: its refusal) and on the Heart's (D60).
+    for (const off of [[4, 0], [0, 0]]) {
+      await FL(([dx, dy]) => { window.FL.app.build.land(true); window.FL.app.landTool.selected = window.FL.parcel(dx, dy).p; }, off);
       await page.waitForTimeout(350);
       const txt = await page.evaluate(() => document.body.innerText);
       for (const m of txt.match(/⟦[^⟧]*⟧/g) ?? []) missing.push(`${loc}/land: ${m}`);

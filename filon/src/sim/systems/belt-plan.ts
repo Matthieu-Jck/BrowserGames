@@ -1,0 +1,191 @@
+// belt-plan.ts — a ribbon drag planned as a whole (D73; owner, 2026-10-15: « quand le joueur place
+// des tapis, attends qu'il relève la souris avant de réellement les installer, mets un placeholder
+// transparent en attendant. De cette manière, l'algo peut "réfléchir" à ce que le joueur veut : un
+// pont si le tapis doit passer un obstacle, un ascenseur s'il y a une montée »). The build tool
+// draws the plan as a transparent placeholder while the drag runs and lays it on release
+// (`placeBelts`); every piece laid is its own logged `place`, so a replay needs no planner.
+//
+// The plan, against the grid as it stands:
+// 1. What each tile wants: this very ribbon already there (kept); a routing block, junction or
+//    bridge end of the ribbon's replace group, in a drag of two tiles or more (kept: lines are
+//    routinely dragged through routers; a one-tile drag replaces it); a junction where the drag
+//    runs straight across a ribbon line (Mindustry's auto-junction, D24); a traction ribbon where
+//    a plain ribbon would face a step (D77), once traction is learnt; the dragged ribbon otherwise.
+// 2. Each wish checked (`canPlace`), and what the grid cannot see yet because nothing is laid:
+//    two planned traction steps in a row (D65: the later one is refused) and a run of planned
+//    junctions (D73: junctions never chain).
+// 3. Each run of obstacles — a building, water or other ground a ribbon cannot take, a sister
+//    claim's land, a chain of junctions — is leapt by a bridge pair (`skybridge`) on the plain
+//    ribbon tiles just before and after it: when bridges are learnt, the run is straight, the
+//    start is fed from straight behind (D55), the pair is within the bridges' reach on one level
+//    and no other bridge of that direction on the line would take the leap. The tiles between
+//    are left as they are. A run no pair can leap stays refused: the drag is laid in part.
+// 4. One budget in path order: a long drag runs out of materials (`unaffordable`) exactly where
+//    laying it tile by tile would.
+// Conduits get 1, 2 and 4 only: no junction, lift or bridge carries fluids.
+import { BUILDING_IDS, BUILDING_KIND, buildingDef, buildingIdx, costOf } from '@/content/registry';
+import { DX, DY, type Rot } from '../types';
+import { inWorld, tileIndex } from '../world/grid';
+import type { Sim } from '../state';
+import { affordable, canPlace, place, stepAt, stepRefusal, type PlaceCheck, type PlaceReason } from './build';
+
+/** One tile of a ribbon drag as planned: what goes there (or why nothing does), and its check. */
+export interface BeltStep extends PlaceCheck {
+  x: number;
+  y: number;
+  rot: Rot;
+  /**
+   * What stands on the tile once the drag is laid: the dragged ribbon, a junction, a traction
+   * ribbon, a bridge end — or, on a skipped tile, what is already there ('' on open ground a
+   * bridge leaps).
+   */
+  def: string;
+  /** Nothing to place: this very ribbon already runs here, the line runs through a block, or a bridge leaps the tile. */
+  skip: boolean;
+  /** Leapt by one of the drag's bridge pairs (D73): left as it is. */
+  leapt?: boolean;
+}
+
+export type BeltPath = ReadonlyArray<readonly [number, number, Rot]>;
+
+/** The pieces the plan lays besides the dragged ribbon (-1 when the content has none). */
+const JUNCTION = BUILDING_KIND.indexOf('crossing');
+const BRIDGE = BUILDING_KIND.indexOf('bridge');
+const LIFT = BUILDING_IDS.findIndex((_, i) => BUILDING_KIND[i] === 'belt' && !!buildingDef(i).lift);
+
+/** Refusals a bridge pair can leap: what stands or lies on the tile — not a step, nor the purse. */
+const LEAPABLE: ReadonlySet<PlaceReason> = new Set<PlaceReason>(['occupied', 'terrain', 'sister_land', 'junction_chain']);
+
+const learnt = (sim: Sim, def: number): boolean => def >= 0 && sim.unlocked(buildingDef(def).unlock);
+
+const kept = (x: number, y: number, rot: Rot, def: string): BeltStep => ({ x, y, rot, def, skip: true, ok: true, reason: 'ok', cost: [], delay: 0, replaces: [] });
+
+function refuse(st: BeltStep, reason: PlaceReason): void {
+  st.ok = false;
+  st.reason = reason;
+  st.delay = 0;
+}
+
+/** Plan a ribbon drag as a whole (above): what `placeBelts` lays and the build tool's ghost shows. */
+export function planBelts(sim: Sim, defId: string, path: BeltPath): BeltStep[] {
+  const def = buildingIdx(defId);
+  const b = buildingDef(def);
+  const items = b.kind === 'belt';
+  const n = path.length;
+  // 1–2. What each tile wants, checked against the grid.
+  const out: BeltStep[] = path.map(([x, y, rot], i) => {
+    const o = inWorld(x, y) ? sim.ents.get(sim.grid.occ[tileIndex(x, y)]!) : undefined;
+    let what = def;
+    if (o) {
+      const k = BUILDING_KIND[o.def];
+      const keep = o.def === def
+        ? o.rot === rot
+        : n > 1 && b.replaceGroup !== undefined && buildingDef(o.def).replaceGroup === b.replaceGroup && k !== 'belt' && k !== 'conduit';
+      if (keep) return kept(x, y, rot, BUILDING_IDS[o.def]!);
+      if (items && k === 'belt' && ((o.rot - rot) & 1) === 1 && learnt(sim, JUNCTION) && throughAt(path, i)) what = JUNCTION;
+    }
+    // A step (D77): the traction ribbon takes it, once learnt.
+    if (what === def && items && !b.lift && learnt(sim, LIFT) && stepRefusal(sim, def, x, y, rot) === 'needs_lift') what = LIFT;
+    const id = BUILDING_IDS[what]!;
+    return { x, y, rot, def: id, skip: false, ...canPlace(sim, id, x, y, rot) };
+  });
+  // Two planned traction steps in a row: an elevator wants a flat ribbon in front of it (D65).
+  for (let i = 1; i < n; i++) {
+    const a = out[i - 1]!, c = out[i]!;
+    if (a.skip || c.skip || !a.ok || !c.ok) continue;
+    const da = buildingIdx(a.def), dc = buildingIdx(c.def);
+    if (buildingDef(da).lift && buildingDef(dc).lift && stepAt(sim, da, a.x, a.y, a.rot) && stepAt(sim, dc, c.x, c.y, c.rot)) refuse(c, 'lift_room');
+  }
+  // A run of planned junctions: none chains (D73) — the run is an obstacle for a bridge to leap.
+  for (let i = 0; i < n;) {
+    if (!isJunction(out[i]!)) { i++; continue; }
+    let m = i;
+    while (m + 1 < n && isJunction(out[m + 1]!)) m++;
+    if (m > i) for (let j = i; j <= m; j++) refuse(out[j]!, 'junction_chain');
+    i = m + 1;
+  }
+  // 3. Bridges over the obstacles.
+  if (items && learnt(sim, BRIDGE)) {
+    const span = 4 + sim.mods.bridgeSpan;
+    for (let i = 0; i < n;) {
+      if (!leapable(out[i]!)) { i++; continue; }
+      let m = i;
+      while (m + 1 < n && leapable(out[m + 1]!)) m++;
+      leap(sim, path, out, def, i - 1, m + 1, span);
+      i = m + 1;
+    }
+  }
+  // 4. One budget, in path order.
+  const spent = new Map<number, number>(); // net mu by item, taken by the steps before
+  for (const st of out) {
+    if (st.skip || !st.ok) continue;
+    if (!affordable(sim, st.cost, st.replaces, spent)) { refuse(st, 'unaffordable'); continue; }
+    for (const c of st.cost) spent.set(c.item, (spent.get(c.item) ?? 0) + c.mu);
+    for (const r of st.replaces) for (const c of costOf(sim.ents.get(r)!.def)) spent.set(c.item, (spent.get(c.item) ?? 0) - c.mu);
+  }
+  return out;
+}
+
+const isJunction = (st: BeltStep): boolean => !st.skip && buildingIdx(st.def) === JUNCTION;
+const leapable = (st: BeltStep): boolean => !st.skip && !st.ok && LEAPABLE.has(st.reason);
+
+/** Does a drag run straight through path tile i: in line with the tiles before and after it? */
+function throughAt(path: BeltPath, i: number): boolean {
+  const prev = path[i - 1], next = path[i + 1];
+  if (!prev || !next) return false; // an end of the drag
+  const [x, y, r] = path[i]!;
+  return prev[2] === r && prev[0] === x - DX[r]! && prev[1] === y - DY[r]! && next[0] === x + DX[r]! && next[1] === y + DY[r]!;
+}
+
+/**
+ * A bridge pair on path tiles s and e, over the obstacles between them, when it can carry the
+ * line (pass 3 above); else nothing changes and the obstacles stay refused.
+ */
+function leap(sim: Sim, path: BeltPath, out: BeltStep[], def: number, s: number, e: number, span: number): void {
+  if (s < 0 || e >= path.length || e - s > span) return;
+  const d = path[s]![2];
+  // Straight from s to e, each tile facing on along d (so the tiles follow one another in line).
+  for (let j = s; j <= e; j++) if (path[j]![2] !== d) return;
+  // Entered from straight behind only (D55): a bridge start at the drag's corner would be fed from its side.
+  if (s > 0 && path[s - 1]![2] !== d) return;
+  // Its ends stand where the dragged ribbon would: not a junction, a step or a kept block.
+  const plain = (st: BeltStep): boolean => (st.skip ? st.def === BUILDING_IDS[def] && !st.leapt : st.ok && buildingIdx(st.def) === def);
+  if (!plain(out[s]!) || !plain(out[e]!)) return;
+  const [sx, sy] = path[s]!, [ex, ey] = path[e]!;
+  if (sim.grid.level(sx, sy) !== sim.grid.level(ex, ey)) return; // a bridge keeps to its level
+  // No other bridge of this direction on the line within reach, laid or planned: it would take
+  // the leap from ours, or leap onto it.
+  for (let k = -span; k <= e - s + span; k++) {
+    if (k === 0 || k === e - s) continue;
+    const tx = sx + DX[d]! * k, ty = sy + DY[d]! * k;
+    if (!inWorld(tx, ty)) continue;
+    const o = sim.ents.get(sim.grid.occ[tileIndex(tx, ty)]!);
+    if (o && BUILDING_KIND[o.def] === 'bridge' && o.rot === d) return;
+  }
+  for (const st of out) {
+    if (st.skip || buildingIdx(st.def) !== BRIDGE || st.rot !== d) continue;
+    const k = (st.x - sx) * DX[d]! + (st.y - sy) * DY[d]!;
+    if ((DX[d] === 0 ? st.x === sx : st.y === sy) && k >= -span && k <= e - s + span) return;
+  }
+  const id = BUILDING_IDS[BRIDGE]!;
+  const cs = canPlace(sim, id, sx, sy, d), ce = canPlace(sim, id, ex, ey, d);
+  if (!cs.ok || !ce.ok) return;
+  out[s] = { x: sx, y: sy, rot: d, def: id, skip: false, ...cs };
+  out[e] = { x: ex, y: ey, rot: d, def: id, skip: false, ...ce };
+  for (let j = s + 1; j < e; j++) {
+    const [x, y] = path[j]!;
+    const o = sim.ents.get(sim.grid.occ[tileIndex(x, y)]!);
+    out[j] = { ...kept(x, y, d, o ? BUILDING_IDS[o.def]! : ''), leapt: true };
+  }
+}
+
+/**
+ * Lay a ribbon drag (each element [x, y, rot]) as `planBelts` plans it: exactly the steps the
+ * plan (and so the ghost) accepts. Every placement is its own logged `place` (a junction as a
+ * junction, a bridge end as a bridge), so a replay needs no planner. Returns how many were placed.
+ */
+export function placeBelts(sim: Sim, defId: string, path: BeltPath): number {
+  let n = 0;
+  for (const s of planBelts(sim, defId, path)) if (!s.skip && s.ok && place(sim, s.def, s.x, s.y, s.rot).ok) n++;
+  return n;
+}

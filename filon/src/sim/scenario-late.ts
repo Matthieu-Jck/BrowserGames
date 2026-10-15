@@ -7,7 +7,7 @@
 //     the rock top into a ceramic oven, its stone climbing from excavators digging the Crown's
 //     inner foot, its ceramic down the terraces on traction ribbons into a skydock on the floor;
 //   - the Fabrique on the guaranteed copper field past the Crown (`FABRIQUE`): a deep bore, wire,
-//     circuits, gears, speed modules in a tower workshop, Mechanics Data into a second
+//     circuits, gears, servomotors in a tower workshop, Mechanics Data into a second
 //     observatory, thermal cores, round a second trade post that buys glass and plates and sells
 //     the rest; its power on a pylon line over the Crown;
 //   - the Ember Fields mine (when the land has that tier-3 site): a deep bore on embersalt into a
@@ -45,7 +45,7 @@ import { MapGen } from './world/mapgen';
  *   sorter (I) sends the plates aside, down to the gear workshop (G), the glass on along a glass
  *   bus (row 2) whose routers drop it, across the copper bus on junctions, into the circuit
  *   workshops' other inputs (C, c); each mill hands its wire straight into its workshop below;
- * - circuits and gears down to a router each, dealing them to the etcher (T: speed modules,
+ * - circuits and gears down to a router each, dealing them to the etcher (T: servomotors,
  *   three times as fast as an electronics workshop) and to the assembly workshop (K: thermal
  *   cores); a data collector (J, D68) hands its files straight down into the research lab O;
  * - the skydock (D) receives the ceramic flown from the potteries and the embersalt flown from
@@ -66,7 +66,7 @@ export const FABRIQUE: PlanSpec = {
     '↑      v   v  v  DDD',
     '↑<<<<<<%.  v<<<  v v',
     '↑<<<<<<+<<<+<<<<<%.v',
-    '↑<<<<<<+<<<%.    v v',
+    '↑      v^<<%.    v v',
     '↑      v   v     v v',
     '↑     .R.  v     v v',
     '↑     v+<<<R>v   v v',
@@ -399,8 +399,7 @@ function unlayPlan(sim: Sim, l: Laid): void {
 /**
  * The Fabrique (`FABRIQUE`): the copper field's parcels bought, a deep bore on its copper, the
  * plan laid where it fits nearest the bore (its land bought; a sister claim's left alone), the
- * bore's line into the plan's copper entry, the post's standing orders, speed modules in the
- * circuit workshops; power by a pylon line from the base's grid, then masts. `ember`: the Ember
+ * bore's line into the plan's copper entry, the post's standing orders; power by a pylon line from the base's grid, then masts. `ember`: the Ember
  * Fields mine is coming, so the thermal cores' part is laid too. Whether it stands.
  */
 export function fabrique(b: Builder, ember: boolean): boolean {
@@ -443,11 +442,6 @@ export function fabrique(b: Builder, ember: boolean): boolean {
   // Power: a pylon line over the Crown to the post, then masts to the rest.
   wireFar(b, 'post2');
   b.wire('boreCu', 'dockW', 'mill2', 'mill3', 'circuits', 'circuits2', 'gears2', 'bells', 'data2', 'observatory2', 'cores');
-  // Speed modules (Pace, Pace II) in the circuit workshops: the wire mills outrun them.
-  for (const r of ['circuits', 'circuits2']) {
-    b.afford([['pace_bell', 1]]);
-    if (b.ids[r] && !sim.setModule(b.ids[r]!, true)) b.skip(`module:${r}`);
-  }
   return true;
 }
 

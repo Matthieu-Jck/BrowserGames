@@ -164,19 +164,29 @@ Space (pan modifier) is hard-coded in `input.ts`, not in the table.
   a pylon over a pole, a deep bore over a drill. They are refunded first, so their refund
   counts towards the cost. Re-placing the very same building (or turning one whose rotation means
   nothing, such as a router or a mast) is `occupied`. A sorter turned round keeps its chosen item.
-- **Ribbon drags** follow `sim.planBelts(def, path)`, the same plan the ghost shows:
+- **Ribbon drags** are laid on release only, as `sim.planBelts(def, path)` plans them whole
+  ([belt-plan.ts](../src/sim/systems/belt-plan.ts), D73) — the plan the ghost shows meanwhile, as a
+  faint placeholder:
   - a tile already holding this ribbon in this direction is skipped;
   - another tier or another direction is replaced (an upgrade, a turn);
   - a routing block, junction or bridge end on the path is **kept** when the drag is 2+ tiles
     (lines are dragged through routers); a one-tile drag (a click) replaces it;
   - **auto-junction**: where the drag runs straight across a ribbon of any tier lying
     perpendicular to it (not at the drag's first or last tile, not at its bend), a junction
-    (`crossing`) is laid instead, so both lines keep flowing;
+    (`crossing`) is laid instead, so both lines keep flowing. Junctions never chain (D73,
+    `junction_chain`): a ribbon runs between two of them;
+  - **a step** a plain ribbon would face takes a **traction ribbon** by itself once `traction` is
+    learnt (D73); never two steps in a row (`lift_room`, D65);
+  - **an obstacle** — a run of tiles refused as `occupied`, `terrain` (water…), `sister_land` or
+    `junction_chain` (two lines side by side) — is leapt by a **bridge pair** on the ribbon tiles
+    just before and after it, when `bridge` is learnt, the run is straight, the start is fed from
+    straight behind, the pair is within reach (`4 + bridgeSpan`) on one level and no other bridge of
+    that direction on the line would take the leap; what lies between stays as it is (`leapt`);
   - the tiles share one budget in path order, so a drag that runs short turns `unaffordable` from
     the tile where it would stop;
-  - a tile facing a step its piece cannot take is left out (D77: `needs_lift` for a ribbon, `steep`
-    for a traction ribbon two terraces away, `cliff` for a conduit); the rest is laid, the toast
-    counts what was left out, and the gaps take traction ribbons.
+  - a tile facing a step its piece cannot take is left out (D77: `needs_lift` for a ribbon before
+    traction is learnt, `steep` two terraces away, `cliff` for a conduit), and so is an obstacle no
+    bridge pair can leap; the rest is laid and the toast counts what was left out.
 - **Rotation.** `rotate(dir)` flips the bend during a ribbon drag, turns a build or ribbon tool
   otherwise (remembered in `lastRot` for the next pick), and does nothing for remove and mark.
   After a drag, the ribbon tool keeps the last tile's direction.
@@ -195,13 +205,14 @@ the remove tool's `from ?? hover`), then a mark box, then build or ribbon pieces
 
 | Field | Meaning |
 |---|---|
-| `pieces` | `GhostPiece {def, x, y, rot, ok, reason}`: one for a building, one per planned tile of a ribbon drag (a `crossing` piece where the plan lays a junction). Tiles already holding this ribbon in this direction are shown as `ok` and free; a block the drag keeps gets no piece (it stays as it is). |
+| `pieces` | `GhostPiece {def, x, y, rot, ok, reason}`: one for a building, one per planned tile of a ribbon drag (a `crossing`, `traction_ribbon` or `skybridge` piece where the plan lays one). Tiles already holding this ribbon in this direction are shown as `ok` and free; a block the drag keeps, and a tile a bridge pair leaps, get no piece (they stay as they are). |
+| `drag`, `leaps` | A ribbon drag in progress (nothing laid before the release: the ghost draws the plan faint), and its bridge pairs' ends `[x0, y0, x1, y1]` (a dashed line between them) |
 | `box`, `doomed` | Demolition box (tiles, inclusive) and the entity ids it would remove. Without a box, `doomed` lists what the pieces that fit would replace |
 | `mark` | `{box, clear, n}`: `n` tiles would be marked or cleared |
 | `reason` | First refusal along the preview (`PlaceReason`) |
 | `cost` | Map from item index to milli-items, net: each piece's `canPlace` cost (or the building's base `costOf` when refused before costing), minus the base cost of what it replaces. Only items actually spent are listed, so the tip's "missing" test (stock < cost) is the affordability rule |
 
-GhostView draws it, keying its redraw on `pieces`, `box`, `doomed`, `mark` and the hover
+GhostView draws it, keying its redraw on `pieces`, `box`, `doomed`, `mark`, `drag`, `leaps` and the hover
 ([render.md](render.md#10-world-views)). The tip shows the cost, the refusal and the mark count.
 `ToolResult {placed?, removed?, refused?, left?, marked?, cleared?}` becomes toasts in the app's build
 mode: a refusal shows its `reason.*` string, a drag laid in part how many tiles it left out and why

@@ -8,12 +8,17 @@ the Heart's growing disc, the waystations and the land reclaimed next to a zone 
 
 ## The grid
 
-- A parcel is `BAL.land.parcel` tiles square (16). Parcels are centred on the Heart: its tile is
-  the middle of parcel (32, 32), so the starting square is symmetric round the cirque
-  (`sim/world/land.ts`: `parcelAt`, `parcelRect`).
-- **The starting square** is the claim's grant: the smallest square of parcels round the Heart
-  that holds the whole Crown out to its farthest terrace (the land's `crownReach`; 5×5 parcels on
-  most lands, 7×7 round a closed cirque). It is never bought, rented nor lost.
+- A parcel is `BAL.land.parcel` tiles square (23 since D74; 16 before). Parcels are centred on
+  the Heart: its tile is the middle of parcel (22, 22) — an odd side, so exactly —, the grid
+  starting at `ORIGIN` (−5) so the first and last columns are cut short by the world's edge;
+  the starting square is symmetric round the cirque (`sim/world/land.ts`: `parcelAt`,
+  `parcelRect`, `parcelCentre`).
+- **The starting square** is the claim's grant: the 3 × 3 parcels round the Heart's
+  (`BAL.land.startRings` = 1; owner, 2026-10-15, D74: « le joueur ne devrait posséder que 9
+  parcelles… à peu près exactement le cirque »). It spans ±34 tiles: on map 2 the Crown reaches
+  29–33 tiles west, north and south, and 36 east at the tarn's peak, whose crest alone is left out.
+  It is never bought, rented nor lost. (D60 had the smallest square holding the Crown out to its
+  farthest terrace: 5 × 5 parcels of 16, 7 × 7 round a map-1 Closed Cirque.)
 - Everything a zone used to gate now asks the land: a building that `needsZone` must stand
   wholly on held parcels (the starting square, bought, granted or leased), the Crown's slopes too (the
   D44 exemption is gone: turbines on far mountains need their parcel). Infrastructure (ribbons,
@@ -60,6 +65,15 @@ or water filled):
 handed to the Heart) and grants the claim every parcel a building of its stands on (`granted`:
 held without a purchase, so it raises no price; the starting square's own parcels among them do
 no harm), so no base loses a machine to the change. A granted parcel is held: it is not sold again.
+
+Version 9's migration (`parcelsResized`, D74) moves the parcel ids from the 16-tile grid to the
+23-tile one: a bought parcel stays bought where its middle tile now falls (its price kept in
+`paid`, for Parcel Resale; refunded if that is the new starting square), a lease likewise (two
+falling together make one lease with both rents; one falling on land held already is refunded
+its hour), and every new parcel under a building that needs land, standing wholly on land the
+claim held, is granted. The old start is recomputed from the land's Crown (`MapGen.crownReach`).
+The migrations keep frozen grids by size (`parcelGrid(16)`, `parcelGrid(23)`), so version 3's
+step still grants on the grid of its time whatever `BAL.land.parcel` becomes.
 
 ## Research
 

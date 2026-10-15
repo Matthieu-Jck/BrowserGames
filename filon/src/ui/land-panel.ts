@@ -26,7 +26,7 @@ import { TICK_MS } from '@/sim/constants';
 import { footprint } from '@/sim/entities';
 import type { Sim } from '@/sim/state';
 import { LEASE_TICKS, type LandRefusal } from '@/sim/systems/land';
-import { parcelRect } from '@/sim/world/land';
+import { PARCEL, parcelRect } from '@/sim/world/land';
 import { glyph, type GlyphId } from './glyphs';
 import { itemMention } from './mention';
 import { buildingsOn, contentsSig, ownsForGood, parcelContents, parcelLabel, parcelState, sisterName, type ParcelState } from './land-facts';
@@ -47,8 +47,8 @@ export interface LandHost {
 const TERRAIN_COL: readonly string[] = [
   C.cirque, C.hardpan, C.rock1, C.rock2, C.rock3, C.rock4, C.shallow, C.deep, C.salt, C.vent, C.duneSea, C.dug, C.filled,
 ];
-/** The map's size: pixels a tile (CSS px; drawn at twice that for sharp edges). */
-const MAP_PX = 7;
+/** The map's size: pixels a tile (CSS px; drawn at twice that for sharp edges), the parcel about 112 px a side whatever its size (D74: 23 tiles). */
+const MAP_PX = Math.max(3, Math.round(112 / PARCEL));
 
 /** What a refusal says under its button; `locked` names the research that lifts it (Land Registry unless told). */
 function whyText(sim: Sim, r: LandRefusal, short: number, research = 'tr4'): string {

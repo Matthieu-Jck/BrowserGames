@@ -10,7 +10,8 @@ import { LocalMarketService } from '@/market/service';
 import type { MarketSave } from '@/market/types';
 import { Sim, newTokenStats, type TokenStats } from './state';
 import { effectiveCost, projectPermille, tokensDue } from './research/runtime';
-import { BUILDING_KIND, hasResearch, itemDef } from '@/content/registry';
+import { BUILDING_KIND, hasResearch, itemDef, itemIdx } from '@/content/registry';
+import { modulesOf, withModules } from './cfg';
 import type { ImportOrder, PostActivity, Shipment, TradeLine } from './trade';
 import { loadQuests, saveQuests, type QuestSave } from './systems/quests';
 import { loadValue, saveValue, type ValueState } from './systems/value';
@@ -27,9 +28,10 @@ import { packRuns } from './flow/chain';
  * export streams (D64). 6: the 2×2 pylon (D75: the 1×1 ones retired). 7: research on data
  * files and AI tokens, the tiered tree (D68–D70): research ids renamed (`RESEARCH_RENAMED`),
  * projects with their tokens. 8: research at its table's cost, without the spread penalty (D72):
- * the running projects rebased on it at load.
+ * the running projects rebased on it at load. 9: parcels of 23 tiles, a starting square of 3 × 3
+ * (D74): the land's parcel ids on the new grid.
  */
-export const SAVE_VERSION = 8;
+export const SAVE_VERSION = 9;
 
 export interface SaveData {
   v: number;
@@ -266,6 +268,13 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
     const st = sim.stores.get(d.ents[i]!);
     if (!st) continue;
     for (let it = 0; it < st.length; it++) if (itemDef(it).kind !== 'science' && st[it]! > 0) { sim.refund(it, st[it]!); st[it] = 0; }
+  }
+  // Speed modules are gone (D81): those an older save had fitted in machines go back to the Heart,
+  // as the item they were made as (now the servomotor, the same id), and the machine runs at its own pace.
+  const servo = itemIdx('pace_bell');
+  for (const e of sim.ents.map.values()) {
+    const n = modulesOf(e.cfg);
+    if (n > 0 && BUILDING_KIND[e.def] === 'machine') { sim.refund(servo, n * 1000); e.cfg = withModules(e.cfg, 0); }
   }
   for (const [t, k] of d.designated ?? []) sim.designated.set(t, k === 1 ? 'dig' : 'fill');
   sim.jobs = (d.jobs ?? []).map((j) => ({ ...j }));

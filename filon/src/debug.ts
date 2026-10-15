@@ -22,6 +22,8 @@ import { isScenario } from '@/sim/scenarios';
 import { buildArtboard } from '@/ui/screens/artboard';
 import { eventLine } from '@/ui/gazette';
 import type { Rot } from '@/sim/types';
+import { CENTER } from '@/sim/constants';
+import { PARCEL, parcelAt, parcelCentre, ringOf } from '@/sim/world/land';
 
 export interface FilonDebug {
   app: App;
@@ -98,6 +100,10 @@ export interface FilonDebug {
   screen(): ScreenId | null;
   /** Ocelles in hand (◉). */
   credits(): number;
+  /** The parcel `dx` east and `dy` south of the Heart's, in parcels (D60): its id, middle tile and ring (the starting square is ring ≤ 1, D74). */
+  parcel(dx: number, dy: number): { p: number; at: [number, number]; ring: number };
+  /** The parcel holding tile (x, y). */
+  parcelAt(x: number, y: number): number;
   /** This epoch's bid / ask of an item (◉). */
   price(item: string): { bid: number; ask: number };
   /** The first built trade post (0 = none). */
@@ -289,9 +295,7 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
           path.push([ltr ? x + c : x + cols - 1 - c, y + r, (last ? 2 : ltr ? 1 : 3) as Rot]);
         }
       }
-      const steps = app.sim.planBelts('ribbon', path).filter((s) => s.reason === 'needs_lift');
-      let n = app.sim.placeBelts('ribbon', path);
-      for (const s of steps) if (app.sim.place('traction_ribbon', s.x, s.y, s.rot).ok) n++;
+      const n = app.sim.placeBelts('ribbon', path); // the plan lays the traction steps itself (D73)
       // Off the claim's land the kites would take a while: finish the rig at once.
       for (const e of app.sim.ents.map.values()) if (e.builtAt !== 0) e.builtAt = 0;
       app.sim.markDirty();
@@ -336,6 +340,11 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
     close,
     screen: () => app.screens.current,
     credits: () => app.sim.credits / 100,
+    parcel: (dx, dy) => {
+      const p = parcelAt(CENTER + dx * PARCEL, CENTER + dy * PARCEL);
+      return { p, at: parcelCentre(p), ring: ringOf(p) };
+    },
+    parcelAt: (x, y) => parcelAt(x, y),
     price: (item) => {
       const i = ITEM_IDS.indexOf(item as never);
       return { bid: (app.sim.prices.bid[i] ?? 0) / 100, ask: (app.sim.prices.ask[i] ?? 0) / 100 };

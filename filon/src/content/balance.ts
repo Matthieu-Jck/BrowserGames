@@ -65,7 +65,12 @@ export const BAL = {
   landReveal: 32,  // fog lifted round a parcel the claim comes to hold (from its centre)
   remoteBuildTilesPerSec: 4,
   land: {
-    parcel: 16, // tiles a side; parcels are centred on the Heart
+    // Tiles a side; parcels are centred on the Heart (odd: its parcel exactly so). The starting
+    // square, `startRings` rings round the Heart's parcel — 3×3 —, holds about exactly the cirque
+    // (owner, 2026-10-15, D74: « le joueur ne devrait posséder que 9 parcelles… à peu près
+    // exactement le cirque »): −34…+34 tiles, where map 2's Crown reaches 29–33 (36 at the tarn's peak).
+    parcel: 23,
+    startRings: 1,
     base: 20_000, // centi-ocelles: every parcel, before what it holds
     /** Centi-ocelles per tile, by ground: what it gives to build on (rock to dig, water to pump or fill, a vent to tap). */
     tile: { floor: 60, rock: 25, water: 90, salt: 70, vent: 3_000, dunes: 15 } as Record<string, number>,

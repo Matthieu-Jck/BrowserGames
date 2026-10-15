@@ -27,7 +27,9 @@ export const ITEMS = {
   ceramic: { name: { fr: 'Céramique', en: 'Ceramic' }, tier: 2, kind: 'material', value: 1.7, depth: 300, glyph: 'tile', color: '#f8dfc6' },
   empty_cell: { name: { fr: 'Batterie vide', en: 'Empty Battery' }, tier: 2, kind: 'part', value: 12, depth: 60, glyph: 'cell', color: '#c9bee6' },
   charged_cell: { name: { fr: 'Batterie chargée', en: 'Charged Battery' }, tier: 2, kind: 'energy', value: 29, depth: 60, glyph: 'cellCharged', color: '#6ff2e4' },
-  pace_bell: { name: { fr: 'Module de vitesse', en: 'Speed Module' }, tier: 2, kind: 'module', value: 86, depth: 3, glyph: 'module', color: '#f0a04b' },
+  // The servomotor (D81): the part the advanced machines are built from. Its id is the old speed
+  // module's (`pace_bell`), kept so saves and the Crier's history carry over; modules are gone.
+  pace_bell: { name: { fr: 'Servomoteur', en: 'Servomotor' }, tier: 2, kind: 'part', value: 86, depth: 8, glyph: 'servo', color: '#f0a04b' },
 
   // ── tier 3 (uniques + products) ───────────────────────────────────────────
   sporeglass: { name: { fr: 'Verre-spore', en: 'Sporeglass' }, tier: 3, kind: 'unique', value: 15, depth: 20, glyph: 'shard', color: '#b7e3d8' },
@@ -37,6 +39,8 @@ export const ITEMS = {
   resin_canvas: { name: { fr: 'Toile de résine', en: 'Resin Canvas' }, tier: 3, kind: 'material', value: 64, depth: 6, glyph: 'canvas', color: '#f2c6a0' },
   thermal_core: { name: { fr: 'Cœur thermique', en: 'Thermal Core' }, tier: 3, kind: 'part', value: 64, depth: 6, glyph: 'core', color: '#c4533c' },
   atlas: { name: { fr: 'Atlas', en: 'Atlas' }, tier: 3, kind: 'science', value: 188, depth: 4, glyph: 'atlas', color: '#2a8c85' },
+  // Robotics (D81): two servomotors and two circuits make an arm; the Chip Fab is built of them.
+  robot_arm: { name: { fr: 'Bras robotisé', en: 'Robot Arm' }, tier: 3, kind: 'part', value: 230, depth: 4, glyph: 'arm', color: '#e0b04a' },
 
   // ── tier 4 ────────────────────────────────────────────────────────────────
   lumen_moss: { name: { fr: 'Mousse lumen', en: 'Lumen Moss' }, tier: 4, kind: 'unique', value: 40, depth: 6, glyph: 'moss', color: '#7cf5c8' },

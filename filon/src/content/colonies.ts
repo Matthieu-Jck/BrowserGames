@@ -34,7 +34,7 @@ export const COLONY_PROFILES = {
   mining: {
     name: { fr: 'Camp minier', en: 'Mining Camp' }, count: 7, bands: ['near'], growth: 0.01,
     supplies: [['iron_ore', 3], ['copper_ore', 3], ['stone', 3], ['journal_1', 1]],
-    needs: [['coal', 3], ['circuit', 3], ['charged_cell', 3], ['gear', 1], ['thermal_core', 1]],
+    needs: [['coal', 3], ['circuit', 3], ['charged_cell', 3], ['gear', 1], ['thermal_core', 1], ['robot_arm', 1]],
     uniques: [],
   },
   foundry: {
@@ -64,7 +64,7 @@ export const COLONY_PROFILES = {
   },
   ember: {
     name: { fr: 'Forge de braise', en: 'Ember Forge' }, count: 5, bands: ['far'], growth: 0.02,
-    supplies: [['thermal_core', 3], ['ceramic', 1], ['pace_bell', 1]],
+    supplies: [['thermal_core', 3], ['ceramic', 1], ['pace_bell', 1], ['robot_arm', 1]],
     needs: [['circuit', 3], ['glass', 3], ['journal_2', 1], ['fossil_nacre', 1]],
     uniques: ['embersalt'],
   },

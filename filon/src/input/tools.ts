@@ -3,14 +3,19 @@
 // from press to release, R flips the corner), demolish (a click, or a box dragged with the
 // tool or with the right button), and the pipette (pick the building under the cursor). A
 // placement may go over buildings it replaces (same replace group, wholly inside); a ribbon
-// drag follows the sim's plan (`planBelts`: kept, laid, replaced, auto-junction); one laid in
-// part says how many tiles it left out and why (a step without a traction ribbon, D77). The
-// preview tells the ghost what would happen — what it replaces, what it costs net — and why not.
-import { BUILDING_IDS, buildingIdx, costOf, isBeltDef } from '@/content/registry';
+// drag is laid only on release, as the sim plans it whole (`planBelts`, D73: kept, laid,
+// replaced, auto-junction, a traction ribbon up a step, a bridge pair over an obstacle) — until
+// then the ghost is a transparent placeholder of that plan; one laid in part says how many tiles
+// it left out and why. The preview tells the ghost what would happen — what it replaces, what it
+// costs net — and why not.
+import { BUILDING_IDS, BUILDING_KIND, buildingIdx, costOf, isBeltDef } from '@/content/registry';
 import { footprint, forTiles } from '@/sim/entities';
 import type { PlaceCheck, PlaceReason, Sim } from '@/sim/state';
 import { isRock, T, type Rot } from '@/sim/types';
 import { beltPath } from './belt-path';
+
+/** The bridge end a drag lays in pairs over its obstacles (D73). */
+const BRIDGE_ID = BUILDING_IDS[BUILDING_KIND.indexOf('bridge')] ?? '';
 
 export type ToolState =
   | { k: 'build'; def: string; rot: Rot }
@@ -38,6 +43,10 @@ export interface Preview {
    * pieces' cost minus the refund of what they replace — so it compares with the stock.
    */
   cost: Map<number, number>;
+  /** A ribbon drag in progress: nothing is laid before the release, the ghost is a placeholder (D73). */
+  drag?: boolean;
+  /** The drag's bridge pairs, start and end tiles [x0, y0, x1, y1]: what they leap over stays as it is. */
+  leaps?: Array<[number, number, number, number]>;
 }
 
 export interface ToolResult {
@@ -249,12 +258,21 @@ export class Tools {
       const rot = sim.placementRot(s.def, ox, oy, s.rot); // a router over a ribbon follows it
       add(s.def, ox, oy, rot, sim.canPlace(s.def, ox, oy, rot));
     } else {
-      // Exactly what the drag will do (the sim's plan): kept tiles, ribbons, junctions.
+      // Exactly what the release will lay (the sim's plan, D73): kept tiles, ribbons, junctions,
+      // traction steps, bridge pairs.
       const from = s.from ?? h;
+      out.drag = !!s.from;
+      out.leaps = [];
+      let start: [number, number] | null = null; // the last bridge start seen, until its leap ends
       for (const st of sim.planBelts(s.def, beltPath(from[0], from[1], h[0], h[1], s.flip, s.rot))) {
-        if (!st.skip) add(st.def, st.x, st.y, st.rot, st);
+        if (st.leapt) continue; // left as it is, under the leap
+        if (!st.skip) {
+          add(st.def, st.x, st.y, st.rot, st);
+          if (st.def === BRIDGE_ID) {
+            if (start) { out.leaps.push([start[0], start[1], st.x, st.y]); start = null; } else start = [st.x, st.y];
+          }
         // This very ribbon already there: shown, free. A block the line runs through stays as it is.
-        else if (st.def === s.def) out.pieces.push({ def: s.def, x: st.x, y: st.y, rot: st.rot, ok: true, reason: 'ok' });
+        } else if (st.def === s.def) out.pieces.push({ def: s.def, x: st.x, y: st.y, rot: st.rot, ok: true, reason: 'ok' });
       }
     }
     // Only what is actually spent (a downgrade gives more back than it costs).

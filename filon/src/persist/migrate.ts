@@ -6,13 +6,31 @@
 // table and are re-pointed by id on load (sim/save-remap.ts, D47).
 import { BUILDINGS } from '@/content/buildings';
 import { BUILDING_IDS } from '@/content/registry';
+import { CENTER, WORLD } from '@/sim/constants';
 import { packRuns } from '@/sim/flow/chain';
-import { parcelAt } from '@/sim/world/land';
+import { MapGen } from '@/sim/world/mapgen';
 import { SAVE_VERSION, type SaveData } from '@/sim/serialize';
 import { RESEARCH_RENAMED } from '@/content/retired';
 
 /** A step from version v to v + 1 (input: a parsed save of version v). */
 export type Migration = (d: Record<string, unknown>) => Record<string, unknown>;
+
+/**
+ * A grid of `size`-tile parcels centred on the Heart, as world/land.ts lays it: frozen here by
+ * size, so a step keeps the grid of its own versions whatever `BAL.land.parcel` becomes.
+ */
+function parcelGrid(size: number): { at: (x: number, y: number) => number; ring: (p: number) => number; centre: (p: number) => [number, number] } {
+  const half = size >> 1, home = Math.ceil((CENTER - half) / size), origin = CENTER - half - home * size;
+  const cols = Math.floor((WORLD - 1 - origin) / size) + 1;
+  const cell = (p: number): [number, number] => { const c = p % cols; return [c, (p - c) / cols]; };
+  return {
+    at: (x, y) => Math.floor((y - origin) / size) * cols + Math.floor((x - origin) / size),
+    ring: (p) => { const [c, r] = cell(p); return Math.max(Math.abs(c - home), Math.abs(r - home)); },
+    centre: (p) => { const [c, r] = cell(p); return [origin + c * size + half, origin + r * size + half]; },
+  };
+}
+/** The 16-tile parcels of saves 3–8 (D60) and the 23-tile ones from save 9 (D74). */
+const GRID16 = parcelGrid(16), GRID23 = parcelGrid(23);
 
 type V1Chain = { tier: number; head: number; len: number; runs?: number[]; cells?: number[]; credit?: unknown };
 
@@ -55,7 +73,7 @@ export function zonesToParcels(d: Record<string, unknown>): Record<string, unkno
     const needs = id === 'outpost' || !!b?.needsZone;
     if (!needs) continue;
     const w = b ? (rot & 1 ? b.h : b.w) : 3, h = b ? (rot & 1 ? b.w : b.h) : 3;
-    for (let ty = y; ty < y + h; ty++) for (let tx = x; tx < x + w; tx++) granted.add(parcelAt(tx, ty));
+    for (let ty = y; ty < y + h; ty++) for (let tx = x; tx < x + w; tx++) granted.add(GRID16.at(tx, ty));
   }
   const { claimed: _claimed, ...rest } = d;
   return { ...rest, land: { bought: [], granted: [...granted].sort((a, b) => a - b), leases: [] } };
@@ -167,7 +185,77 @@ export function researchAtBase(d: Record<string, unknown>): Record<string, unkno
   };
 }
 
-export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsToTowers, 6: researchToTokens, 7: researchAtBase };
+/**
+ * 8 → 9, a starting square of nine parcels (D74, owner 2026-10-15: « le joueur ne devrait posséder
+ * que 9 parcelles… à peu près exactement le cirque »): parcels grow from 16 to 23 tiles a side and
+ * the grant is the 3 × 3 round the Heart's (it was the Crown out to its farthest terrace: 5 × 5,
+ * 7 × 7 round a map-1 Closed Cirque). Parcel ids move to the new grid:
+ * - a bought parcel stays bought where its middle tile now falls (what it cost carried over, for
+ *   Parcel Resale), or is refunded when that is the new starting square;
+ * - a lease likewise, at its rent and due tick (two falling together: one lease, both rents); one
+ *   falling on land held already is refunded its hour;
+ * - every new parcel under a building that needs land, standing wholly on land the claim held, is
+ *   granted — no base loses a machine; granted parcels raise no price.
+ */
+export function parcelsResized(d: Record<string, unknown>): Record<string, unknown> {
+  const land = d.land as SaveData['land'] | undefined;
+  // The old grant's rings, as world/land.ts measured them then (from the land's Crown).
+  const crownReach = new MapGen(d.worldSeed as number, d.playerSeed as number, (d.mapV as number | undefined) ?? 1).crownReach;
+  const reach16 = Math.ceil(Math.max(0, crownReach - 8) / 16);
+  const bought16 = new Set(land?.bought ?? []), granted16 = new Set(land?.granted ?? []);
+  const leases16 = new Map((land?.leases ?? []).map(([p, next, cents]) => [p, { next, cents }] as const));
+  const paid16 = new Map(land?.paid ?? []);
+  const held16 = (x: number, y: number): boolean => {
+    const p = GRID16.at(x, y);
+    return GRID16.ring(p) <= reach16 || bought16.has(p) || granted16.has(p) || leases16.has(p);
+  };
+  const inStart = (q: number): boolean => GRID23.ring(q) <= 1;
+  let credits = d.credits as number;
+  const bought = new Set<number>(), paid = new Map<number, number>();
+  for (const p of [...bought16].sort((a, b) => a - b)) {
+    const q = GRID23.at(...GRID16.centre(p)), cents = paid16.get(p);
+    if (inStart(q)) { credits += cents ?? 0; continue; }
+    bought.add(q);
+    if (cents !== undefined) paid.set(q, (paid.get(q) ?? 0) + cents);
+  }
+  const leases = new Map<number, [number, number]>();
+  for (const [p, l] of [...leases16].sort((a, b) => a[0] - b[0])) {
+    const q = GRID23.at(...GRID16.centre(p));
+    if (inStart(q) || bought.has(q)) { credits += l.cents; continue; }
+    const was = leases.get(q);
+    leases.set(q, was ? [Math.min(was[0], l.next), was[1] + l.cents] : [l.next, l.cents]);
+  }
+  const table = (d.content as { buildings?: string[] } | undefined)?.buildings ?? (BUILDING_IDS as readonly string[]);
+  const defs = BUILDINGS as Record<string, { w: number; h: number; needsZone?: boolean }>;
+  const ents = (d.ents as number[] | undefined) ?? [];
+  const granted = new Set<number>();
+  for (let i = 0; i + 6 < ents.length; i += 7) {
+    const id = table[ents[i + 1]!], x = ents[i + 2]!, y = ents[i + 3]!, rot = ents[i + 4]!;
+    const b = id ? defs[id] : undefined;
+    if (!b?.needsZone) continue;
+    const w = rot & 1 ? b.h : b.w, h = rot & 1 ? b.w : b.h;
+    let held = true;
+    for (let ty = y; ty < y + h && held; ty++) for (let tx = x; tx < x + w; tx++) if (!held16(tx, ty)) { held = false; break; }
+    if (!held) continue; // asleep off the claim's land before: it stays so
+    for (let ty = y; ty < y + h; ty++) for (let tx = x; tx < x + w; tx++) {
+      const q = GRID23.at(tx, ty);
+      if (!inStart(q) && !bought.has(q) && !leases.has(q)) granted.add(q);
+    }
+  }
+  const asc = (a: number, b: number): number => a - b;
+  return {
+    ...d,
+    credits,
+    land: {
+      bought: [...bought].sort(asc),
+      granted: [...granted].sort(asc),
+      leases: [...leases].sort((a, b) => a[0] - b[0]).map(([q, [next, cents]]) => [q, next, cents]),
+      paid: [...paid].sort((a, b) => a[0] - b[0]),
+    },
+  };
+}
+
+export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsToTowers, 6: researchToTokens, 7: researchAtBase, 8: parcelsResized };
 
 export class SaveTooNew extends Error {
   constructor(readonly version: number) { super(`save version ${version} is newer than this build (${SAVE_VERSION})`); }

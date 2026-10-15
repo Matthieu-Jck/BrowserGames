@@ -12,6 +12,7 @@ import { serialize, deserialize } from './serialize';
 import { catchUp } from './offline/catchup';
 import { connect } from './dev';
 import { worldPorts } from './entities';
+import { modulesOf, withModules } from './cfg';
 import { BAL } from '@/content/balance';
 
 const RUB = (): number => itemIdx('stone');
@@ -80,7 +81,7 @@ describe('space', () => {
 
   it('land rules: production stands on the claim\'s land, infrastructure may leave it (paid ribbons cost ×3 out there)', () => {
     const sim = spaceSim(['tr1', 'tr2', 'tr3', 'tr4', 'xp_swift']);
-    const far = 512 + 40; // the first parcel past the starting square (5×5 parcels round the Heart)
+    const far = 512 + 35; // the first parcel past the starting square (3 × 3 parcels of 23 tiles round the Heart, D74)
     expect(sim.canPlace('kiln', far, 512, 0).reason).toBe('outside_zone');
     expect(sim.canPlace('kiln', far - 2, 512, 0).reason).not.toBe('outside_zone');
     for (const def of ['ribbon', 'mast', 'pylon', 'beacon', 'skybridge']) {
@@ -194,21 +195,24 @@ describe('space', () => {
     expect(sim.upgradeHearth().reason).toBe('locked');
   });
 
-  it('a speed module speeds a machine up (and draws more power)', () => {
+  it('speed modules are gone (D81): those an old save fitted come back to the Heart as servomotors, and the machine runs at its own pace', () => {
     const sim = spaceSim(['tr1', 'xp_swift', 'xp_bridges', 'dn3', 'dn4']);
-    sim.grant('pace_bell', 2);
     const k = sim.place('workshop', 516, 504, 0);
     expect(k.ok).toBe(true);
     sim.setRecipe(k.id!, 'circuit');
     sim.ensureCompiled();
     const m0 = sim.graph.nodeByEnt.get(k.id!) as unknown as { speed: number; kw: number };
     const [s0, kw0] = [m0.speed, m0.kw];
-    expect(sim.setModule(k.id!, true)).toBe(true);
-    expect(sim.setModule(k.id!, true)).toBe(false); // one slot with Pace
-    sim.ensureCompiled();
-    const m1 = sim.graph.nodeByEnt.get(k.id!) as unknown as { speed: number; kw: number };
-    expect(m1.speed).toBe(Math.floor((s0 * 1300) / 1000));
-    expect(m1.kw).toBe(Math.floor((kw0 * 1400) / 1000));
+    // An older save: two modules in the workshop's cfg (bits 16–19).
+    const servo = itemIdx('pace_bell'), before = sim.stock[servo]!;
+    sim.ents.get(k.id!)!.cfg = withModules(sim.ents.get(k.id!)!.cfg, 2);
+    const back = deserialize(serialize(sim), sim.grid.source);
+    expect(back.stock[servo]).toBe(before + 2000);
+    expect(modulesOf(back.ents.get(k.id!)!.cfg)).toBe(0);
+    expect(back.ents.get(k.id!)!.cfg).toBe(sim.ents.get(k.id!)!.cfg & 0xffff); // its recipe kept
+    back.ensureCompiled();
+    const m1 = back.graph.nodeByEnt.get(k.id!) as unknown as { speed: number; kw: number };
+    expect([m1.speed, m1.kw]).toEqual([s0, kw0]);
   });
 
   it('save → load in the middle of a dig and a freight run continues bit for bit', () => {

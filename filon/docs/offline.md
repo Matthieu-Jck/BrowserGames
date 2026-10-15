@@ -241,7 +241,7 @@ The plan's target is < 2 s for 7 days. The shell runs it on the main thread for 
 - No `epoch` events and no market settlement during a catch-up yet (M6). `storageOk`, `accEmpty`, `accFull`, `orderPaused`, `orderResumed` are declared but never emitted; storage incidents cover only the Hearth; stone, embedded ore and dug tiles are missing from the report (they reach `sim.produced` and `sim.events` only).
 - Every recompile re-warms every group (`setup()` resets `warmCount`, so the cache is not used right after): frequent research completions on a large base cost a full warm-up round each.
 - `signature` omits reservoir accept sets and capacities and silo locks (routing blocks' mode, chosen item, filters and sides are in it); a cached regime from before a recompile could be reused for a group whose observatory now accepts something else (only after 6 warm-ups).
-- `CYCLE_LCM` guarantees short periods only at speed 1000 ‰ and full power; research speed bonuses, speed modules and low satisfaction can push periods past 4800 ticks (`approx`).
+- `CYCLE_LCM` guarantees short periods only at speed 1000 ‰ and full power; research speed bonuses, the upgraded machines' speeds and low satisfaction can push periods past 4800 ticks (`approx`).
 - Period detection trusts a 53-bit state key (collisions improbable, unchecked).
 - The plan asks for online ≈ offline on 200 random bases; the suite has 12. Catch-ups are not logged, so a server cannot replay them yet.
 

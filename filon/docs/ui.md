@@ -48,7 +48,7 @@ The interface over the world is plain DOM: inked paper **cartouches** (HUD, buil
 
 **Hosts, not imports.** A component receives a small host interface (`HudHost`, `BuildBarHost`, `InspectorHost`, `LandHost`, `ResearchHost`, `StatsHost`) with exactly the actions it may trigger: open a screen, select, remove, notify. It never imports the shell or the scene graph (`src/architecture.test.ts`: ui may use render's art kit and geometry only, never `pixi.js`).
 
-**Commands for changes.** Buttons call the Sim's command methods (`sim.upgradeHearth()`, `sim.setModule(...)`, `sim.addRoute(...)`…) or host actions. A refusal comes back as a result (`{ ok, reason }` or `false`); show it with a toast, using the `reason.*` i18n keys.
+**Commands for changes.** Buttons call the Sim's command methods (`sim.upgradeHearth()`, `sim.setRecipe(...)`, `sim.addRoute(...)`…) or host actions. A refusal comes back as a result (`{ ok, reason }` or `false`); show it with a toast, using the `reason.*` i18n keys.
 
 **Icons come from the atlas.** `itemIcon(atlas, item, px)` and `buildingIcon(atlas, def, px)` copy atlas frames into small canvases. The art is the same as in the world, pixel for pixel ([render.md](render.md)). **An item named in text always shows its icon**: build it with `itemMention(item)`, or pass `itemRef(item)` as the placeholder of a translated sentence ([Item mentions and the item picker](#item-mentions-and-the-item-picker)); never write an item's bare name where the player reads it.
 
@@ -109,7 +109,7 @@ The claim builds on the parcels it holds ([land.md](land.md)); the land mode is 
 |---|---|---|
 | Header | the parcel glyph, « Parcelle » and the picked parcel's name on the map (`parcelLabel`: « 3 E », « 1 N · 2 O », « Cœur »), ✕ (ends the mode) | `[data-land-close]` |
 | Legend | the overlay's four marks drawn as swatches (`.land-swatch[data-k]`: `held`, `leased`, `sister`, `free`) and one word each; under it, with nothing picked, one hint line (`land.hint`) | `.land-key[data-k]` |
-| Map and holder | the parcel's 16 × 16 tiles in the ground's colours (`.land-map`, the fog over what is not explored, each deposit tile dotted in its ore's colour, the buildings on it outlined); the owner's flag and name (the claim's name or « Votre concession », a sister claim's from the Crier's colonies, CrierBelt's ringed planet), a tag for how it is held (`.land-tag[data-state]`) and a sister claim's markup (« ×1,8 ») | `.land-owner`, `.land-tag` |
+| Map and holder | the parcel's 23 × 23 tiles in the ground's colours (`MAP_PX` per tile, so the map stays about 112 px a side) (`.land-map`, the fog over what is not explored, each deposit tile dotted in its ore's colour, the buildings on it outlined); the owner's flag and name (the claim's name or « Votre concession », a sister claim's from the Crier's colonies, CrierBelt's ringed planet), a tag for how it is held (`.land-tag[data-state]`) and a sister claim's markup (« ×1,8 ») | `.land-owner`, `.land-tag` |
 | What it holds | each ore's icon and its tile count, then glyphs and counts for rock, water, salt flats, vents, the dune sea, floor and the fog; the buildings standing on it (live) | `.land-chip[data-k]` (an item id, a ground, `buildings`) |
 | The deal | not on land held for good — but a bought parcel, once Parcel Resale (`xp_resell`) is learnt, shows « Revendre » with what CrierBelt gives back (`sim.resalePrice`, 80 %; its tooltip: how many buildings would stop). « Acheter » with the price (`sim.landPrice`, the ocelle sign), « Louer » with the rent an hour (`sim.landRent`; disabled until Land Registry, `canLease`) — or, on a leased parcel, its hour as a bar towards the next rent (its time left in the tooltip), the rent fixed for its life and « Rendre le bail » (its tooltip: how many buildings would stop). A button the colony would refuse is disabled with its reason under it in a few words (« Il manque 53,60 ◉ », « Recherche : Cadastre », « Ne touche pas vos terres »: `land.why.*`), read from the sim's own checks (`sim.buyBlock` / `leaseBlock` / `sellBlock`) | `[data-land-act="buy" \| "lease" \| "end" \| "sell"]`, `.land-why` |
 
@@ -189,7 +189,7 @@ The settings page ([screens/settings.ts](../src/ui/screens/settings.ts)) cannot 
 
 | Kind | Panels |
 |---|---|
-| `machine` | `machinePanel` (recipe buttons, each with its output's icon; a table of the inputs and outputs: the item, *en réserve* — what the machine holds — and *par min* at full speed, this machine's speed included) · `modulesPanel` (speed modules, and how many the Heart holds) |
+| `machine` | `machinePanel` (recipe buttons, each with its output's icon; a table of the inputs and outputs: the item, *en réserve* — what the machine holds — and *par min* at full speed, this machine's speed included; no speed modules since D81) |
 | `drill` | `drillPanel` (what it mines and how fast, what waits at its output against its buffer) |
 | `generator` | `generatorPanel` (its fuel and how much it holds) |
 | `lab` | `labPanel` (project, progress, per data item paid / owed / held, open research; empty: where to pick one) |

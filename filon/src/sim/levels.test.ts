@@ -3,7 +3,7 @@
 // refuses a line piece facing a step it cannot take (D77): a plain ribbon, a traction ribbon
 // facing two terraces, a conduit.
 import { describe, it, expect } from 'vitest';
-import { itemIdx } from '@/content/registry';
+import { BUILDING_IDS, itemIdx } from '@/content/registry';
 import { WORLD_EPOCH0 } from './constants';
 import { Sim } from './state';
 import { deserialize, serialize } from './serialize';
@@ -111,14 +111,18 @@ describe('the land’s levels (D45)', () => {
     expect(sim.canPlace('skybridge', 512, 502, 2).ok).toBe(true);
   });
 
-  it('a ribbon drag over the ridge leaves its steps to traction ribbons', () => {
+  it('a ribbon drag over the ridge takes its steps with traction ribbons by itself (D73)', () => {
     const sim = ridgeSim();
-    const plan = sim.planBelts('ribbon', line(512, 500, 2, 8)); // y 500–507 down x = 512: the ridge at y 503–504
-    expect(plan.map((s) => (s.ok ? 'ok' : s.reason))).toEqual(['ok', 'ok', 'needs_lift', 'ok', 'needs_lift', 'ok', 'ok', 'ok']);
-    expect(sim.placeBelts('ribbon', line(512, 500, 2, 8))).toBe(6);
-    // The traction ribbons go where the drag left a gap, and the line is whole.
-    expect(sim.place('traction_ribbon', 512, 502, 2).ok).toBe(true);
-    expect(sim.place('traction_ribbon', 512, 504, 2).ok).toBe(true);
+    const path = line(512, 500, 2, 8); // y 500–507 down x = 512: the ridge at y 503–504
+    const plan = sim.planBelts('ribbon', path);
+    expect(plan.map((s) => (s.ok ? s.def : s.reason))).toEqual(['ribbon', 'ribbon', 'traction_ribbon', 'ribbon', 'traction_ribbon', 'ribbon', 'ribbon', 'ribbon']);
+    expect(sim.placeBelts('ribbon', path)).toBe(8);
+    expect([502, 503, 504].map((y) => BUILDING_IDS[sim.entityAt(512, y)!.def])).toEqual(['traction_ribbon', 'ribbon', 'traction_ribbon']);
+    // Before traction is learnt, the steps are left out and say why (D77).
+    const early = ridgeSim();
+    early.done.delete('traction');
+    early.rebuildDerived();
+    expect(early.planBelts('ribbon', path).map((s) => (s.ok ? 'ok' : s.reason))).toEqual(['ok', 'ok', 'needs_lift', 'ok', 'needs_lift', 'ok', 'ok', 'ok']);
     // Dragged over the ridge, the traction ribbon fits every tile: on the flat it is a slow ribbon.
     expect(sim.planBelts('traction_ribbon', line(513, 500, 2, 8)).every((s) => s.ok)).toBe(true);
   });
