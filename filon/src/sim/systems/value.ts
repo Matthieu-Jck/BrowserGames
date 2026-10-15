@@ -32,10 +32,15 @@ export function claimValue(sim: Sim): { total: number; credits: number; stock: n
   let stock = 0;
   for (let i = 0; i < N_ITEMS; i++) stock += at(sim.stock[i]!, bid[i] ?? 0);
   for (const st of sim.stores.values()) for (let i = 0; i < Math.min(st.length, N_ITEMS); i++) stock += at(st[i]!, bid[i] ?? 0);
+  // Per building def, times how many stand: the same integer sum as building by building, without
+  // walking a 25 k-entity base at every sample (the offline catch-up samples a week of them).
   let plant = 0;
-  for (const e of sim.ents.sorted()) {
-    if (BUILDING_KIND[e.def] === 'hearth') continue;
-    for (const c of costOf(e.def)) plant += at(c.mu, bid[c.item] ?? 0);
+  const counts = sim.ents.defCounts();
+  for (let d = 0; d < counts.length; d++) {
+    if (!counts[d] || BUILDING_KIND[d] === 'hearth') continue;
+    let one = 0;
+    for (const c of costOf(d)) one += at(c.mu, bid[c.item] ?? 0);
+    plant += counts[d]! * one;
   }
   const credits = Math.floor(sim.credits);
   return { total: credits + stock + plant, credits, stock, plant };

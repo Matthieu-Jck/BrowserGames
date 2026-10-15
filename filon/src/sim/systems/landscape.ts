@@ -54,6 +54,9 @@ export function inReach(e: Pick<Ent, 'def' | 'x' | 'y' | 'rot'>, x: number, y: n
   return (2 * x - (2 * e.x + w - 1)) ** 2 + (2 * y - (2 * e.y + h - 1)) ** 2 <= 4 * r * r;
 }
 
+/** The machines that take jobs (walked through `ofKinds`: once a minute, and the base may hold 25 k entities). */
+const MACHINES = ['excavator', 'backfiller'] as const;
+
 /**
  * Give idle excavators / backfillers the nearest workable marked tile in reach (ids in order,
  * squared distances on doubled centres: integers only). An excavator with no marked rock in reach
@@ -65,9 +68,9 @@ export function assignJobs(sim: Sim): void {
   // A quarry gives way to marked rock (a mark made, or research letting it dig harder rock).
   const busy = new Set(sim.jobs.filter((j) => !j.quarry).map((j) => j.ent));
   const quarrying = new Set(sim.jobs.filter((j) => j.quarry).map((j) => j.ent));
-  for (const e of sim.ents.sorted()) {
+  for (const e of sim.ents.ofKinds(MACHINES)) {
     const k = BUILDING_KIND[e.def];
-    if ((k !== 'excavator' && k !== 'backfiller') || e.builtAt !== 0 || busy.has(e.id) || sim.isDormant(e)) continue;
+    if (e.builtAt !== 0 || busy.has(e.id) || sim.isDormant(e)) continue;
     const want: JobKind = k === 'excavator' ? 'dig' : 'fill';
     const [w, h] = footprint(e.def, e.rot);
     const cx2 = 2 * e.x + w - 1, cy2 = 2 * e.y + h - 1; // doubled centre: nearest first

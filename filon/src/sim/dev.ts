@@ -547,6 +547,9 @@ function touches(a: Pick<Ent, 'def' | 'x' | 'y' | 'rot'>, b: Pick<Ent, 'def' | '
   return (ox === 0 && oy > 0) || (oy === 0 && ox > 0);
 }
 
+/** What an ore tile under a non-drill's footprint adds to its distance (doubled tiles, squared: 1024 is about 16 tiles off). */
+const ORE_SPOT = 1024;
+
 /**
  * Where `def` can stand around tile `near` (within `r` tiles), nearest first — by its centre,
  * then by how close its first output's front (else its first port's) lies to `toward`, then y,
@@ -554,9 +557,10 @@ function touches(a: Pick<Ent, 'def' | 'x' | 'y' | 'rot'>, b: Pick<Ent, 'def' | '
  * onto free floor no other port faces (whatever is laid there gets its output), its inputs onto
  * free floor no output faces (`inputsFree: false`: anything but an output's front — a trade
  * post on the Heart sells the Heart's stock, it needs no line in); on `item` ore only (its whole
- * footprint) if given; sharing an edge with entity `touch` if given (whose tiles its ports may face).
+ * footprint, or `orePart` tiles of it at least, the rest bare of other ore) if given, else off the
+ * deposits where it can (`ORE_SPOT`); sharing an edge with entity `touch` if given (whose tiles its ports may face).
  */
-export function spotsNear(sim: Sim, def: string, near: readonly [number, number], opts: { item?: string; r?: number; toward?: readonly [number, number]; touch?: number; inputsFree?: boolean; onRock?: boolean } = {}): Array<[number, number, Rot]> {
+export function spotsNear(sim: Sim, def: string, near: readonly [number, number], opts: { item?: string; orePart?: number; r?: number; toward?: readonly [number, number]; touch?: number; inputsFree?: boolean; onRock?: boolean } = {}): Array<[number, number, Rot]> {
   const di = buildingIdx(def), it = opts.item ? itemIdx(opts.item) : -1, r = opts.r ?? 12;
   const fronts = portFronts(sim), outs = outFronts(sim), inputsFree = opts.inputsFree ?? true;
   const toucher = opts.touch ? sim.ents.get(opts.touch) : undefined;
@@ -571,13 +575,16 @@ export function spotsNear(sim: Sim, def: string, near: readonly [number, number]
     for (let x = near[0] - r; x <= near[0] + r; x++) {
       for (const rot of [0, 1, 2, 3] as const) {
         const [w, h] = footprint(di, rot);
-        let ok = true;
+        let ok = true, onOre = 0;
         for (let j = 0; j < h && ok; j++) {
           for (let i = 0; i < w && ok; i++) {
-            const px = x + i, py = y + j;
-            if (!(opts.onRock ? openRock(sim, px, py) : openFloor(sim, px, py)) || fronts.has(tileIndex(px, py)) || (it >= 0 && sim.grid.ore(px, py) !== it)) ok = false;
+            const px = x + i, py = y + j, o = sim.grid.ore(px, py);
+            if (!(opts.onRock ? openRock(sim, px, py) : openFloor(sim, px, py)) || fronts.has(tileIndex(px, py))) ok = false;
+            // On `item`'s ore: every tile, or `orePart` of them at least (the rest no other ore).
+            else if (it >= 0) { if (o === it) onOre++; else if (o >= 0 || opts.orePart === undefined) ok = false; }
           }
         }
+        if (ok && it >= 0 && onOre < (opts.orePart ?? w * h)) ok = false;
         if (!ok || (toucher && !touches({ def: di, x, y, rot }, toucher))) continue;
         const ports = worldPorts({ def: di, x, y, rot });
         const lv = sim.grid.level(x, y);
@@ -592,7 +599,11 @@ export function spotsNear(sim: Sim, def: string, near: readonly [number, number]
         if (!freeSpot(sim, def, x, y, rot)) continue;
         const p0 = ports.find((p) => p.io === 'out') ?? ports[0];
         const ddx = 2 * x + w - 2 * near[0] - 1, ddy = 2 * y + h - 2 * near[1] - 1;
-        out.push([x, y, rot, ddx * ddx + ddy * ddy, p0 ? (p0.fx - tx) * (p0.fx - tx) + (p0.fy - ty) * (p0.fy - ty) : 0]);
+        // Anything but a drill keeps off the deposits where it can (D82): each ore tile it would
+        // cover counts as standing some tiles farther off.
+        let ore = 0;
+        if (it < 0) for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) if (sim.grid.ore(x + i, y + j) >= 0) ore++;
+        out.push([x, y, rot, ddx * ddx + ddy * ddy + ORE_SPOT * ore, p0 ? (p0.fx - tx) * (p0.fx - tx) + (p0.fy - ty) * (p0.fy - ty) : 0]);
       }
     }
   }
@@ -613,16 +624,20 @@ function crossable(sim: Sim, x: number, y: number, d: Rot): boolean {
   return !!back && BUILDING_KIND[back.def] === 'belt' && back.rot === e.rot && !!ahead && BUILDING_KIND[ahead.def] === 'belt';
 }
 
-/** What a step beside another line costs on top of the step itself (a gap leaves room to branch it later), and a junction. */
-const BESIDE_COST = 2, CROSS_COST = 4;
+/**
+ * What a step beside another line costs on top of the step itself (a gap leaves room to branch it
+ * later), a junction, and a step onto a deposit tile (D82: lines go round the deposits where they
+ * can, so the drills laid later find them whole).
+ */
+const BESIDE_COST = 2, CROSS_COST = 4, ORE_COST = 6;
 
 /**
  * The cheapest ribbon path from any of the `starts` to any of the `goals` (tile → the direction its
  * last ribbon points), over free floor, keeping off `avoid` (but at its ends). A step costs 1,
  * plus `BESIDE_COST` on a tile beside another ribbon — lines keep a gap where they can, so a
  * router can branch them later. With `cross`, it may run straight across another line, one tile
- * at right angles (`CROSS_COST` more): `placeBelts` lays a junction there. A Dijkstra over cost
- * buckets, starts and neighbours in a fixed order: deterministic.
+ * at right angles (`CROSS_COST` more): `placeBelts` lays a junction there. A deposit tile costs
+ * `ORE_COST` more. A Dijkstra over cost buckets, starts and neighbours in a fixed order: deterministic.
  */
 function findPath(sim: Sim, starts: ReadonlyArray<readonly [number, number]>, goals0: ReadonlyMap<number, Rot>, avoid: ReadonlySet<number>, cross: boolean, maxNodes = 14400): BeltTiles | null {
   // Ends beside a routing block are off too: the block would deal into the ribbon there (a
@@ -634,8 +649,8 @@ function findPath(sim: Sim, starts: ReadonlyArray<readonly [number, number]>, go
     const t = tileIndex(x, y);
     let v = besideMemo.get(t);
     if (v === undefined) {
-      v = 0;
-      for (let d = 0; d < 4; d++) if (isBeltAt(sim, x + DX[d]!, y + DY[d]!)) { v = BESIDE_COST; break; }
+      v = sim.grid.ore(x, y) >= 0 ? ORE_COST : 0;
+      for (let d = 0; d < 4; d++) if (isBeltAt(sim, x + DX[d]!, y + DY[d]!)) { v += BESIDE_COST; break; }
       besideMemo.set(t, v);
     }
     return v;
@@ -949,12 +964,12 @@ export function rollback(sim: Sim, cp: Checkpoint): void {
  * `spotsNear` gives them (`item`: on that ore; its output faces the target), the nearest `tries`
  * in turn; a spot whose line cannot be laid is taken back up. Returns its id and its line, or null.
  */
-export function placeFeeding(sim: Sim, def: string, near: readonly [number, number], into: number | BeltTiles, opts: { item?: string; r?: number; tries?: number } = {}): { id: number; line: BeltTiles } | null {
+export function placeFeeding(sim: Sim, def: string, near: readonly [number, number], into: number | BeltTiles, opts: { item?: string; orePart?: number; r?: number; tries?: number } = {}): { id: number; line: BeltTiles } | null {
   const dest = typeof into === 'number' ? sim.ents.get(into) : undefined;
   if (typeof into === 'number' && !dest) return null;
   const end = typeof into === 'number' ? null : into[0];
   const toward: [number, number] = dest ? [dest.x + (footprint(dest.def, dest.rot)[0] >> 1), dest.y + (footprint(dest.def, dest.rot)[1] >> 1)] : end ? [end[0], end[1]] : [near[0], near[1]];
-  for (const [x, y, rot] of spotsNear(sim, def, near, { item: opts.item, r: opts.r ?? 12, toward }).slice(0, opts.tries ?? 40)) {
+  for (const [x, y, rot] of spotsNear(sim, def, near, { item: opts.item, orePart: opts.orePart, r: opts.r ?? 12, toward }).slice(0, opts.tries ?? 40)) {
     const placed = sim.place(def, x, y, rot);
     if (!placed.ok) continue;
     const line = typeof into === 'number' ? lay(sim, placed.id!, into) : join(sim, placed.id!, into);

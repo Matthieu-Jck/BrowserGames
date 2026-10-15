@@ -28,7 +28,7 @@ import { N_ITEMS, buildingDef, buildingIdx, hasResearch, itemIdx } from '@/conte
 import { isPlan } from '@/content/research';
 import { StateHasher } from '@/core/hash';
 import type { Command, SimEvent } from './commands';
-import { CENTER, EPOCH } from './constants';
+import { CENTER, EPOCH, WORLD } from './constants';
 import { Entities } from './entities';
 import type { Chain } from './flow/chain';
 import type { FNode, TickCtx } from './flow/node';
@@ -277,11 +277,37 @@ export class Sim {
   }
 
   revealed(x: number, y: number): boolean {
-    for (const [cx, cy, r] of this.explored) {
-      const dx = x - cx, dy = y - cy;
-      if (dx * dx + dy * dy <= r * r) return true;
+    if (x < 0 || y < 0 || x >= WORLD || y >= WORLD) {
+      for (const [cx, cy, r] of this.explored) {
+        const dx = x - cx, dy = y - cy;
+        if (dx * dx + dy * dy <= r * r) return true;
+      }
+      return false;
     }
-    return false;
+    if (this.seenUpTo !== this.explored.length) this.paintSeen();
+    return this.seen![y * WORLD + x] === 1;
+  }
+
+  /**
+   * The explored circles painted onto a tile map as they are added (the list only grows): the
+   * route searches ask `revealed` for every tile they look at, and the list runs to dozens of
+   * circles on a grown base. The same answer as reading the list; not saved, not hashed.
+   */
+  private seen: Uint8Array | null = null;
+  private seenUpTo = 0;
+
+  private paintSeen(): void {
+    if (!this.seen || this.explored.length < this.seenUpTo) { this.seen = new Uint8Array(WORLD * WORLD); this.seenUpTo = 0; }
+    const seen = this.seen;
+    for (; this.seenUpTo < this.explored.length; this.seenUpTo++) {
+      const [cx, cy, r] = this.explored[this.seenUpTo]!;
+      for (let y = Math.max(0, Math.ceil(cy - r)); y <= Math.min(WORLD - 1, Math.floor(cy + r)); y++) {
+        for (let x = Math.max(0, Math.ceil(cx - r)); x <= Math.min(WORLD - 1, Math.floor(cx + r)); x++) {
+          const dx = x - cx, dy = y - cy;
+          if (dx * dx + dy * dy <= r * r) seen[y * WORLD + x] = 1;
+        }
+      }
+    }
   }
 
   // ── commands: structures (systems/build.ts) ──────────────────────────────

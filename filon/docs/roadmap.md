@@ -52,6 +52,7 @@ Deviations from the plan:
 - ✅ 2026-10-15: **no speed modules** (D81, owner): the servomotor is a part the advanced machines are built of, Robotics makes robot arms for the Chip Fab.
 - ✅ 2026-10-15: **a starting square of nine parcels** (D74, owner, [land.md](land.md)): parcels of 23 tiles, the grant the 3 × 3 round the Heart's — about exactly the cirque and its Crown (±34 tiles); save v9 moves the land's parcel ids to the new grid.
 - ✅ 2026-10-15: **ribbon drags planned whole at the release** (D73, owner): traction ribbons up the steps and bridge pairs over obstacles by themselves, junctions never chain, the drag's ghost a faint placeholder until the release.
+- ✅ 2026-10-15: **the debug bases work the cirque to the full** (D82, owner): every deposit covered by drills from the grown level on, more smelters, a sand field of arc furnaces in the late base; lines and buildings of the layout kit keep off the deposits.
 - Next candidates, from the review of 2026-10-13:
   - Hide or wire inert content: the temperature shown without effect (D26), and research flags with no consumer.
   - A long-term goal: the claim's value ranked against the sister claims in the Gazette, and CrierBelt delivery contracts in world time.
@@ -62,8 +63,7 @@ Deviations from the plan:
 
 The redesign (D68–D71) is in, but these gaps in it are known and not fixed yet. Whoever picks one up deletes its line.
 
-**Bugs and gaps in what landed:** fixed on 2026-10-15 — the land panel's refusals (`far`, `not_bought`) and its « Revendre » button (Parcel Resale), the building card's data makers, servers and autonomous lab, the HUD's held research, the trade tests' Commerce ids, the unused `file` glyph, the raw text writes that skipped `screenText`. Still open:
-- **Perf bench.** The week's catch-up of `base20k` takes 4.25 s on an idle machine (2026-10-15; 6.7 s under load) against its 3 s limit, the same on the tree from before the landing (3 477 warm-ups); a tick is 0.81 ms. Not caused by the redesign; still to find.
+**Bugs and gaps in what landed:** fixed on 2026-10-15 — the land panel's refusals (`far`, `not_bought`) and its « Revendre » button (Parcel Resale), the building card's data makers, servers and autonomous lab, the HUD's held research, the trade tests' Commerce ids, the unused `file` glyph, the raw text writes that skipped `screenText`, and the perf bench: base20k's week of catch-up is back to 0.9 s from 4.25 s, the same result bit for bit (it predated the redesign: per-boundary passes over the whole base; [offline.md](offline.md#performance)). Nothing else is open here.
 
 **Balance to review with the owner:**
 - The tutorial's last quest now asks for every plan: about 170 plates, 40 copper wire and 18 glass beyond the earlier quests. The scripted run still finishes in about 7 game minutes.

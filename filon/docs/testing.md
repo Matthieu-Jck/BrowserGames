@@ -18,7 +18,7 @@ Ocelle is checked by strict TypeScript (plus a "purity" project that compiles th
 | Smoke test → `scripts/smoke-*.png` | [scripts/smoke.mjs](../scripts/smoke.mjs) |
 | Art captures → `scripts/shot-*.png` | [scripts/shots.mjs](../scripts/shots.mjs) |
 | Debug handle `window.FL` | [src/debug.ts](../src/debug.ts); sim-side helpers in [src/sim/dev.ts](../src/sim/dev.ts) |
-| Debug bases (ready-made levels of a base) | [src/sim/scenarios.ts](../src/sim/scenarios.ts) on the layout kit at the end of [dev.ts](../src/sim/dev.ts); the late base's works in [scenario-late.ts](../src/sim/scenario-late.ts), drawn as plans laid by [scenario-plans.ts](../src/sim/scenario-plans.ts) (D66); the menu page and the swap in [app/debug-bases.ts](../src/app/debug-bases.ts) |
+| Debug bases (ready-made levels of a base) | [src/sim/scenarios.ts](../src/sim/scenarios.ts) on the layout kit at the end of [dev.ts](../src/sim/dev.ts); the late base's works in [scenario-late.ts](../src/sim/scenario-late.ts), drawn as plans laid by [scenario-plans.ts](../src/sim/scenario-plans.ts) (D66); the cirque worked to the full from the grown level on in [scenario-cirque.ts](../src/sim/scenario-cirque.ts) (D82); the menu page and the swap in [app/debug-bases.ts](../src/app/debug-bases.ts) |
 | Dev-server launch configs | [.claude/launch.json](../../.claude/launch.json) at the BrowserGames root |
 | Milestones ("done when") and the verification plan | design plan §10–§11, outside the repo: `~/.claude/plans/nous-allons-creer-un-mighty-perlis.md` |
 

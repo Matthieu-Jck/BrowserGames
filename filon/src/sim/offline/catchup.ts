@@ -52,6 +52,8 @@ interface Run {
 }
 
 interface NetMode { sat: number; disp: number; accRate: number }
+/** A grid's load under the current regimes: average and peak demand (kW), fuel capacity and its fueled part. */
+interface NetLoad { dAvg: number; dMax: number; F: number; Feff: number }
 
 export interface CatchUpOptions {
   /** Force the regime path even for short gaps (tests). */
@@ -121,6 +123,10 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
   let netModes: NetMode[] = [];
   /** Per grid: what reservoir buildings draw (observatories, excavators, docks…; they belong to no group). */
   let resKw: number[] = [];
+  /** Per grid: its load as last summed (`computeNetModes`; undefined: to sum). */
+  let netLoad: Array<NetLoad | undefined> = [];
+  /** Per weather key: each grid's renewables (kW; NaN: not yet asked). Producers change only with the graph. */
+  const netR = new Map<string, Float64Array>();
   let mk = '';
   const curIn = new Map<number, number>();     // Σ current regimes' gross inflow per key (mu/tick)
   const curOut = new Map<number, number>();
@@ -173,6 +179,8 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     netModes = g.nets.map(() => ({ sat: 1000, disp: 0, accRate: 0 }));
     resKw = g.nets.map(() => 0);
     for (const r of g.reservoirs) if (r.net >= 0) resKw[r.net] = resKw[r.net]! + r.demand();
+    netLoad = g.nets.map(() => undefined);
+    netR.clear();
     lastWeather = '';
     pendingBuilds = [...sim.ents.map.values()].filter((e) => e.builtAt > now).map((e) => e.builtAt).sort((a, b) => a - b);
   }
@@ -335,57 +343,76 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     });
   }
 
-  /** Per-grid power modes from current regimes and this epoch's weather. */
+  /**
+   * Per-grid power modes from current regimes and this epoch's weather. A new sun step re-solves
+   * every grid each epoch — 10 080 times 1 681 grids for a week of base20k — so the two inputs
+   * that rarely move are kept: a grid's load (demand, fuel: `netLoad`, summed again only when a
+   * regime on it changed, which marks it in `netDirty`) and its renewables per weather
+   * (`netR`, by `weatherKey`: a few dozen distinct weathers a week). Same numbers, same modes.
+   */
   function computeNetModes(force: boolean): boolean {
     // The same weather and generator functions as online (power/network.ts).
     const w = weatherAt(sim.absEpoch(now), sim.worldSeed, sim.mods);
     const weather = weatherKey(w);
     const all = force || weather !== lastWeather;
     lastWeather = weather;
+    let Rs = netR.get(weather);
+    if (!Rs) netR.set(weather, (Rs = new Float64Array(g.nets.length).fill(NaN)));
     let changed = false;
-    g.nets.forEach((net, n) => {
-      if (!all && !netDirty.has(n)) return;
-      const R = renewableKw(net, w);
-      let dAvg = resKw[n] ?? 0, dMax = resKw[n] ?? 0, F = 0, Feff = 0;
-      for (const run of netRuns[n]!) {
-        const reg = run.reg;
-        if (!reg) continue;
-        run.grp.nets.forEach((nn, j) => { if (nn === n) { dAvg += reg.dAvg[j]!; dMax += reg.dMax[j]!; } });
-        run.grp.gens.forEach((gen, j) => {
-          if (gen.net !== n) return;
-          F += gen.outKw;
-          Feff += Math.floor((gen.outKw * (reg.fueled[j] ?? 1000)) / 1000);
-        });
-      }
+    for (let n = 0; n < g.nets.length; n++) {
+      const dirty = netDirty.has(n);
+      if (!all && !dirty) continue;
+      const net = g.nets[n]!;
+      let R = Rs[n]!;
+      if (Number.isNaN(R)) Rs[n] = R = renewableKw(net, w); // not yet asked under this weather
+      let load = netLoad[n];
+      if (!load || dirty || force) netLoad[n] = load = loadOf(n);
+      const { dAvg, dMax, F, Feff } = load;
       let E = 0, cap = 0, rate = 0;
       for (const a of net.accs) { E += sim.accEnergy.get(a.ent) ?? 0; cap += a.cap; rate += a.rate; }
-      let m: NetMode;
+      let sat: number, disp: number, accRate: number;
       if (R >= dMax) {
-        m = { sat: 1000, disp: 0, accRate: E < cap ? Math.min(rate, Math.max(0, R - dAvg)) : 0 };
+        sat = 1000; disp = 0; accRate = E < cap ? Math.min(rate, Math.max(0, R - dAvg)) : 0;
       } else if (R + Feff >= dMax && F > 0) {
         const need = Math.max(0, dAvg - R);
-        m = { sat: 1000, disp: Math.min(1000, Math.max(SAT_STEP, Math.ceil(((need * 1000) / F) / SAT_STEP) * SAT_STEP)), accRate: 0 };
+        sat = 1000; disp = Math.min(1000, Math.max(SAT_STEP, Math.ceil(((need * 1000) / F) / SAT_STEP) * SAT_STEP)); accRate = 0;
       } else if (E > 0 && rate > 0) {
         const deficit = Math.max(0, dAvg - R - Feff);
         const dis = Math.min(rate, deficit);
         const served = R + Feff + dis;
-        const sat = served >= dAvg ? 1000 : Math.floor(((1000 * served) / Math.max(1, dAvg)) / SAT_STEP) * SAT_STEP;
-        m = { sat, disp: F > 0 ? 1000 : 0, accRate: -dis };
+        sat = served >= dAvg ? 1000 : Math.floor(((1000 * served) / Math.max(1, dAvg)) / SAT_STEP) * SAT_STEP;
+        disp = F > 0 ? 1000 : 0; accRate = -dis;
       } else {
         const served = R + Feff;
-        const sat = dAvg <= 0 ? 1000 : Math.min(1000, Math.floor(((1000 * served) / dAvg) / SAT_STEP) * SAT_STEP);
-        m = { sat, disp: F > 0 ? 1000 : 0, accRate: 0 };
+        sat = dAvg <= 0 ? 1000 : Math.min(1000, Math.floor(((1000 * served) / dAvg) / SAT_STEP) * SAT_STEP);
+        disp = F > 0 ? 1000 : 0; accRate = 0;
       }
       const old = netModes[n]!;
-      if (old.sat !== m.sat || old.disp !== m.disp) {
+      if (old.sat !== sat || old.disp !== disp) {
         changed = true;
         for (const run of netRuns[n]!) markDirty(run);
-        if (m.sat < 1000 && old.sat === 1000) rep.incidents.push({ tick: now, kind: 'brownout', ent: net.poles[0] });
+        if (sat < 1000 && old.sat === 1000) rep.incidents.push({ tick: now, kind: 'brownout', ent: net.poles[0] });
       }
-      netModes[n] = m;
-    });
+      old.sat = sat; old.disp = disp; old.accRate = accRate;
+    }
     netDirty.clear();
     return changed;
+  }
+
+  /** What grid n's groups and reservoir buildings draw, and its fuel generators, under the current regimes. */
+  function loadOf(n: number): NetLoad {
+    let dAvg = resKw[n] ?? 0, dMax = resKw[n] ?? 0, F = 0, Feff = 0;
+    for (const run of netRuns[n]!) {
+      const reg = run.reg;
+      if (!reg) continue;
+      run.grp.nets.forEach((nn, j) => { if (nn === n) { dAvg += reg.dAvg[j]!; dMax += reg.dMax[j]!; } });
+      run.grp.gens.forEach((gen, j) => {
+        if (gen.net !== n) return;
+        F += gen.outKw;
+        Feff += Math.floor((gen.outKw * (reg.fueled[j] ?? 1000)) / 1000);
+      });
+    }
+    return { dAvg, dMax, F, Feff };
   }
 
   function computeThrottles(): boolean {

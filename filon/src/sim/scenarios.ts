@@ -24,7 +24,8 @@
 //             Heart, fed by a small import order of plates: what the base builds with), the copper line, a beacon past the
 //             Crown, more wind and a coal generator — the whole tutorial factory running
 //   grown     later on: every plan of the tree, Mechanics and a few research nodes learnt for
-//             real, a gear press, a silo
+//             real, a gear press, a silo; then the cirque's deposits covered by drills and two more
+//             smelters on their lines (scenario-cirque.ts `mineCirque`, D82)
 //   late      the grown base with most of the tree granted outside the commands (so its log does
 //             not replay to it: `report.granted`), the Heart at level 4, an excavator on marked
 //             rock (its stone line with an overflow gate onto an incinerator), a drill on the
@@ -35,7 +36,8 @@
 //             avancée", D66): the Fabrique on the copper field (circuits, gears, servomotors in a
 //             tower workshop, Mechanics Data researched for real, thermal cores, round a second trade
 //             post), the potteries on the tarn's peak, the Ember Fields mine, coal and copper flown
-//             home, drifters between them, a geothermal plant where there is a vent, pylon lines
+//             home, drifters between them, a geothermal plant where there is a vent, pylon lines;
+//             last, a sand field of arc furnaces on the cirque's free floor (`fillCirque`, D82)
 //
 // Each level is founded at sunrise (`scenarioEpoch`) so its build runs in full sun: the early
 // base's power is the Heart's panel. From the tutorial level on, a level ends with its power
@@ -62,6 +64,7 @@ import { parcelAt } from './world/land';
 import { MapGen } from './world/mapgen';
 import { windSite } from './power/network';
 import { coalPit, copperHome, emberMine, geothermal, emberSite, fabrique, flyRoute, potteries, toward, waitKites } from './scenario-late';
+import { fillCirque, mineCirque } from './scenario-cirque';
 
 /** The longest the build waits for the Fabrique's first purchases (their quarter hour and the post's lift). */
 const FABRIQUE_WARM_MAX = 26 * EPOCH;
@@ -119,6 +122,8 @@ export function buildScenario(sim: Sim, id: ScenarioId, name: string): ScenarioR
   if (upTo >= 3) { crierCalls(b); tiredVein(b); firstPurchase(b); beyondCrown(b); fieldJournal(b); morePower(b); postLine(b); tradeLine(b); }
   if (upTo >= 4) grown(b);
   if (upTo >= 5) late(b);
+  // The rest of the cirque's floor (D82), last: the late base's works take their places first.
+  if (upTo >= 4) fillCirque(b);
   if (upTo >= 2) powerUp(b, id === 'late' ? LATE_TURBINES : undefined, id === 'late' ? LATE_POWER_MARGIN : undefined);
   sim.ensureCompiled();
   return b.report;
@@ -257,7 +262,7 @@ export class Builder {
    * entity `into`, or joining the line of role `into` from the side (`placeFeeding`). Kept as
    * `ids[role]` and `lines[role]`; its id (0: skipped).
    */
-  source(role: string, def: string, near: readonly [number, number], into: number | string, opts: { item?: string; r?: number } = {}): number {
+  source(role: string, def: string, near: readonly [number, number], into: number | string, opts: { item?: string; orePart?: number; r?: number } = {}): number {
     const target = typeof into === 'number' ? into : this.lines[into];
     if (!target) { this.skip(role); return 0; }
     this.affordAll([def, 1], this.spare);
@@ -755,6 +760,8 @@ function grown(b: Builder): void {
   b.recipe('gears', 'gear');
   b.wire('gears');
   b.fed('silo', 'silo', b.middle('glass'), [glass.length ? { lines: glass } : 0], null);
+  // Every cirque deposit covered, more smelters on their lines (D82).
+  mineCirque(b);
   b.run(2 * EPOCH);
 }
 
@@ -1084,18 +1091,31 @@ function swiftPlates(b: Builder): void {
 /** An excavator inside the zone within reach of the nearest soft rock, the rock around it marked, its stone into the Heart. */
 function excavate(b: Builder): void {
   const sim = b.sim, R = 40;
-  let best: [number, number, number] | null = null;
+  const rocks: Array<[number, number, number]> = [];
   for (let y = CENTER - R; y <= CENTER + R; y++) {
     for (let x = CENTER - R; x <= CENTER + R; x++) {
       if (sim.grid.terrain(x, y) !== T.Rock1 || !sim.revealed(x, y)) continue;
-      const d = (x - CENTER) * (x - CENTER) + (y - CENTER) * (y - CENTER);
-      if (!best || d < best[2]) best = [x, y, d]; // scanned row by row: ties keep the first (smallest y, then x)
+      rocks.push([x, y, (x - CENTER) * (x - CENTER) + (y - CENTER) * (y - CENTER)]);
     }
   }
-  if (!best) { b.skip('excavator:rock'); return; }
-  const [rx, ry] = best;
-  // It digs what it touches and the next row (D54): it stands against the rock, its line into the Heart.
-  if (!b.source('excavator', 'excavator', toward([rx, ry], b.heart, 3), b.H, { r: 4 })) return;
+  if (!rocks.length) { b.skip('excavator:rock'); return; }
+  // The soft rock nearest the Heart first (ties: smallest y, then x), then the next ones at least
+  // six tiles from those tried: the cirque worked to the full (D82) may leave no room at the first.
+  rocks.sort((p, q) => p[2] - q[2] || p[1] - q[1] || p[0] - q[0]);
+  const tried: Array<[number, number]> = [];
+  // It digs what it touches and the next row (D54): it stands against the rock, its line into the
+  // Heart — or, the Heart's sides all taken by the cirque's lines, joining a line that takes
+  // anything: the trade post's entrance line (stone sells), the glass line (the Heart, the silo).
+  const intos: Array<number | string> = [b.H, ...['post.in', 'glass'].filter((r) => b.lines[r])];
+  let placed = false;
+  for (const [rx, ry] of rocks) {
+    if (tried.length >= 8) break;
+    if (tried.some(([tx, ty]) => (tx - rx) * (tx - rx) + (ty - ry) * (ty - ry) < 36)) continue;
+    tried.push([rx, ry]);
+    const near = toward([rx, ry], b.heart, 3);
+    if (intos.some((into) => b.optional(() => b.source('excavator', 'excavator', near, into, { r: 4 })))) { placed = true; break; }
+  }
+  if (!placed) { b.skip('excavator'); return; }
   b.wire('excavator');
   // The rock within its reach marked (as the jobs measure it: from its footprint's edge, D54).
   const e = sim.ents.get(b.ids.excavator!)!;
