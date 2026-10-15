@@ -122,7 +122,11 @@ await step('power: the demo base is fully wired to the Heart’s grid', async ()
 });
 
 await step('build: pick a drill in the tray and click it onto a deposit', async () => {
-  await page.click('.bb-tab[data-cat="extraction"]');
+  // The tabs show only while building (D88): « Construire » first.
+  assert(!(await page.isVisible('.bb-tab[data-cat="extraction"]')), 'build tabs shown while not building');
+  await page.click('.hud-build');
+  await page.waitForSelector('.bb-tab[data-cat="extraction"]', { state: 'visible', timeout: 2000 });
+  if (!(await page.$('.bb-tab[data-cat="extraction"][data-on]'))) await page.click('.bb-tab[data-cat="extraction"]'); // « Construire » opens the last tab
   await settleView('plan');
   await page.click('.bb-slot[data-def="drill"]');
   const spot = await FL(() => {
@@ -394,11 +398,13 @@ await step('power: a wire too long is refused, with the reason', async () => {
   await FL(() => window.FL.linking(null));
 });
 
-await step('power: P shows the power overlay', async () => {
+await step('power: P shows the Électricité view (D88), P again the Normal one', async () => {
   await page.keyboard.press('p');
-  assert((await FL(() => window.FL.app.overlays.powerOn)) === true, 'overlay off');
+  await page.waitForFunction(() => { const v = window.FL.mapView(); return v.view === 'power' && v.marks > 0; }, undefined, { timeout: 3000 });
+  await page.waitForTimeout(300);
   await page.screenshot({ path: shot('smoke-power.png') });
   await page.keyboard.press('p');
+  assert((await FL(() => window.FL.mapView().view)) === 'normal', 'P did not go back to Normal');
 });
 
 await step('inspect: the grid module (D76) — a wind flower shows rated × factor = now, its factor unfolds why; a workshop shows what it draws, in the same card', async () => {
@@ -792,6 +798,63 @@ await step('debug bases: the menu page plays a ready-made base; the player’s b
   await FL(() => window.FL.pause());
   await page.click('[data-debug-back]');
   await page.waitForSelector('[data-debug-badge][hidden]', { state: 'attached', timeout: 2000 });
+  assert((await FL(() => window.FL.hash())) === own, 'the player’s base did not come back as it was');
+  await FL(() => window.FL.resume());
+});
+
+await step('views (D88): P, F, O and I show one system each over the base veiled, with their panel; a click opens the inspector on that view; Esc goes back to Normal', async () => {
+  const saves = await FL(() => window.FL.debugSaves());
+  if (!saves) { console.log('    (no debug page on this build)'); return; }
+  await FL(() => window.FL.pause());
+  const own = await FL(() => window.FL.hash());
+  const r = await FL(() => window.FL.debugSave('late'));
+  assert(r.ok, `late base: ${JSON.stringify(r)}`);
+  await FL(() => { window.FL.menu(false); window.FL.lookAt(512, 512, 0.62); window.FL.resume(); });
+  const log0 = await FL(() => window.FL.app.sim.log.length);
+  // Électricité (P): badges up, the side card with a grid card and its 24 h chart, the wires bold.
+  await page.keyboard.press('p');
+  await page.waitForFunction(() => { const v = window.FL.mapView(); return v.view === 'power' && v.marks > 0 && v.panel; }, undefined, { timeout: 3000 });
+  const pw = await FL(() => ({
+    grids: document.querySelectorAll('[data-screen="view"] .vp-grid').length,
+    chart: !!document.querySelector('[data-screen="view"] .vp-grid[data-open] canvas.vp-chart'),
+    lit: document.querySelector('[data-view="power"]')?.hasAttribute('data-on'),
+    chip: document.querySelector('[data-hud-power]')?.hasAttribute('data-on'),
+  }));
+  assert(pw.grids >= 1 && pw.chart && pw.lit && pw.chip, `Électricité: ${JSON.stringify(pw)}`);
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: shot('smoke-views-power.png') });
+  // A building clicked in the view: the inspector on its power part, over the card; Esc gives the card back, then Normal.
+  const wind = await FL(() => window.FL.app.sim.ents.sorted().find((e) => window.FL.entityAt(e.x, e.y)?.def === 'wind_flower' && e.builtAt === 0)?.id ?? 0);
+  assert(wind, 'no wind turbine on the late base');
+  await FL((id) => window.FL.selected(id), wind);
+  await page.waitForFunction(() => document.querySelector('[data-screen="inspector"]')?.getAttribute('data-facet') === 'power' && document.querySelector('[data-screen="view"]')?.hasAttribute('hidden'), undefined, { timeout: 2000 });
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => window.FL.mapView().panel && window.FL.mapView().view === 'power', undefined, { timeout: 2000 });
+  await page.keyboard.press('Escape');
+  assert((await FL(() => window.FL.mapView().view)) === 'normal', 'Esc did not go back to Normal');
+  // The HUD's energy chip opens it too.
+  await page.click('[data-hud-power]');
+  assert((await FL(() => window.FL.mapView().view)) === 'power', 'the energy chip did not open Électricité');
+  // Logistique (F): the lines read, the heat drawn; Production (O): the states read.
+  await page.keyboard.press('f');
+  await page.waitForFunction(() => window.FL.mapView().view === 'logistics' && (window.FL.app.views.data.ribbonSummary?.lines ?? 0) > 0, undefined, { timeout: 3000 });
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: shot('smoke-views-logistics.png') });
+  await page.keyboard.press('o');
+  await page.waitForFunction(() => window.FL.mapView().view === 'production' && (window.FL.app.views.data.production?.length ?? 0) > 0 && window.FL.mapView().panel, undefined, { timeout: 3000 });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: shot('smoke-views-production.png') });
+  // Terrain (I) is the land mode; another view ends it.
+  await page.keyboard.press('i');
+  await page.waitForFunction(() => window.FL.mapView().view === 'land' && window.FL.app.landTool.active, undefined, { timeout: 2000 });
+  await page.click('[data-view="power"]');
+  assert(!(await FL(() => window.FL.app.landTool.active)) && (await FL(() => window.FL.mapView().view)) === 'power', 'a view did not end the land mode');
+  await page.click('[data-view="normal"]');
+  assert((await FL(() => window.FL.mapView().view)) === 'normal', 'the Normal button');
+  // Views read the base and never change it: no command logged.
+  assert((await FL(() => window.FL.app.sim.log.length)) === log0, 'a view logged a command');
+  await FL(() => window.FL.pause());
+  await FL(() => window.FL.debugSave(null));
   assert((await FL(() => window.FL.hash())) === own, 'the player’s base did not come back as it was');
   await FL(() => window.FL.resume());
 });

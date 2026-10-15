@@ -421,7 +421,7 @@ export class Guide {
         }
         const btn = q('[data-tool="link"]') ?? q('[data-guide="link"]') ?? q('.bb-link');
         if (btn) return aimEl(btn, 'tool:link');
-        return aimEl(q('.bb-tab[data-cat="energy"]'), 'tab:energy') ?? aimEl(q('.hud-build'), 'hud:build');
+        return (this.host.category() ? aimEl(q('.bb-tab[data-cat="energy"]'), 'tab:energy') : null) ?? aimEl(q('.hud-build'), 'hud:build');
       }
       case 'research': {
         if (this.host.screen() === 'research') {
@@ -508,6 +508,8 @@ export class Guide {
       const slot = q(`.bb-slot[data-def="${def}"]`);
       if (slot) return aimEl(slot, `slot:${def}`);
     }
+    // The tabs show only while building (D88): « Construire » first.
+    if (!this.host.category()) return aimEl(q('.hud-build'), 'hud:build');
     return aimEl(q(`.bb-tab[data-cat="${cat}"]`), `tab:${cat}`);
   }
 }

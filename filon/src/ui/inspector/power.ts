@@ -4,10 +4,13 @@
 // a bolt and how well its grid serves it; a cut plug when no wire reaches it; a struck bolt and
 // 0 % when its grid has nothing to give; then its own part — a producer's nominal × coefficient =
 // now, with the reasons of its coefficient one click away. A building that takes no part in power
-// shows none of this.
+// shows none of this. Since D89 it is a section of the kit (tagged with the power facet: the
+// Électricité view lifts it, D88), the formula drawn as a bar too — the nominal's mark on a rail,
+// filled to what it gives now —, and « Relier » sits in the inspector's foot with the other
+// actions. A producer's hero (`producerHero`) puts what it gives now at the top.
 import { BAL } from '@/content/balance';
 import { BUILDING_KIND, buildingDef } from '@/content/registry';
-import { el, setAttr, setText } from '@/core/dom';
+import { el, setAttr, setStyle, setText } from '@/core/dom';
 import { num } from '@/i18n/format';
 import { locale, t } from '@/i18n/i18n';
 import { DAY_EPOCHS } from '@/sim/constants';
@@ -17,7 +20,7 @@ import { GeneratorNode } from '@/sim/flow/nodes';
 import { dayEpoch, producerKw, producerOf, sunPermille, weatherAt, windSite, type Producer, type WindSite } from '@/sim/power/network';
 import { St, type Ent } from '@/sim/types';
 import { glyph } from '../glyphs';
-import { progressBar, type PanelCtx } from './kit';
+import { kw as kwText, progressBar, stat, type PanelCtx } from './kit';
 
 /** « Poteau ×2, Cœur »: the buildings at the other end of some wires, by name. */
 function wireEnds(sim: Sim, ids: readonly number[]): string {
@@ -88,6 +91,23 @@ function outputOf(sim: Sim, e: Ent, node: PanelCtx['node']): Output | null {
   }
 }
 
+/** At the top of a wind turbine, a solar panel, a geothermal plant: the power it gives now, of its nominal. */
+export function producerHero({ sim, e, node, live }: PanelCtx): HTMLElement | null {
+  if (!outputOf(sim, e, node)) return null;
+  const now = el('b'), cap = t('insp.pw.now');
+  const s = stat(now, cap, glyph('power'));
+  const sub = s.querySelector('.kstat-cap')!;
+  live(() => {
+    const o = outputOf(sim, e, node);
+    if (!o) return;
+    const wired = sim.graph?.netOfEnt.get(e.id) !== undefined;
+    setText(now, kwText(wired ? o.kw : 0));
+    setAttr(now, 'data-tone', wired && o.kw > 0 ? null : 'bad');
+    setText(sub, t('insp.pw.ofNominal', { v: kwText(o.nominal) }));
+  });
+  return el('div.insp-hero', { 'data-hero': 'power' }, [s]);
+}
+
 /** The wind's ladder: a bar per kind of place, by its factor, the turbine's own inked. */
 function windLadder(site: WindSite): HTMLElement {
   const steps: Array<{ k: string; permille: number; label: string; on: boolean }> = [
@@ -135,12 +155,12 @@ function sunCurve(sim: Sim): HTMLElement {
  * pillar's wires and « Relier ». Hooks: `[data-power-card]`, `[data-power]` (on|dark|unwired) on
  * its head, `[data-pw=formula|draw|charge|wires]`, `.pw-coef`, `.pw-why`, `[data-pw-viz]`.
  */
-export function gridCard({ sim, e, node, host, live }: PanelCtx): HTMLElement[] {
+export function gridCard({ sim, e, node, host, live, action }: PanelCtx): HTMLElement[] {
   if (!linkable(e.def)) return [];
   const kind = BUILDING_KIND[e.def];
   const point = isLinkPoint(e.def);
   const marks: Record<PowerState, HTMLElement> = { on: glyph('power'), dark: glyph('noPower'), unwired: glyph('unwired'), asleep: glyph('noPower') };
-  const mark = el('span.pw-mark'), pct = el('b.pw-pct'), bar = progressBar(), totals = el('small.pw-totals');
+  const pwMark = el('span.pw-mark'), pct = el('b.pw-pct'), bar = progressBar(), totals = el('small.pw-totals');
   let shown: PowerState | null = null;
   const rows: HTMLElement[] = [];
   // Its own part: a producer's formula, or what it draws.
@@ -153,11 +173,14 @@ export function gridCard({ sim, e, node, host, live }: PanelCtx): HTMLElement[] 
   let open = false;
   coef.onclick = (): void => { open = !open; setAttr(whyBox, 'hidden', open ? null : ''); setAttr(coef, 'aria-expanded', String(open)); };
   const draw = el('b.pw-kw');
+  // The formula as a bar: a rail as long as the larger of nominal and now, the nominal's mark on
+  // it, filled to what it gives now in the coefficient's tone.
+  const yieldBar = progressBar(), tick = el('i.pw-tick');
   if (producer) {
     rows.push(el('div.pw-formula', { 'data-pw': 'formula' }, [
       nominal, el('span.pw-op', {}, '×'), coef, el('span.pw-op', {}, '='), now,
       el('small.pw-cap', {}, t('insp.pw.nominal')), el('span'), el('small.pw-cap', {}, t('insp.pw.coef')), el('span'), el('small.pw-cap', {}, t('insp.pw.now')),
-    ]), whyBox);
+    ]), el('div.pw-yield', { 'data-pw': 'yield', title: t('insp.pw.yield.tip') }, [yieldBar.root, tick]), whyBox);
   } else if (kind !== 'pole' && kind !== 'accumulator') {
     rows.push(el('div.pw-row', { 'data-pw': 'draw', title: t('insp.pw.draw.tip') }, [el('span.pw-label', {}, t('insp.pw.draw')), draw]));
   }
@@ -166,10 +189,11 @@ export function gridCard({ sim, e, node, host, live }: PanelCtx): HTMLElement[] 
   if (kind === 'accumulator') rows.push(el('div.pw-row', { 'data-pw': 'charge' }, [el('span.pw-label', {}, t('insp.charge')), charge.root, chargePct]));
   // A pillar's wires and the Link tool.
   const wires = el('b.pw-kw');
-  const btn = point && host.link ? el<'button'>('button.btn.insp-recipe.insp-link', { title: t('build.hint.link'), onclick: () => host.link!(e.id) }, t('insp.link')) : null;
-  if (point) rows.push(el('div.pw-row', { 'data-pw': 'wires' }, [el('span.pw-label', {}, t('insp.wires')), wires, btn]));
-  const head = el('header.pw-head', { 'data-power': '' }, [mark, el('span.pw-title', {}, t('insp.pw.title')), pct]);
-  const card = el('section.pw-card', { 'data-power-card': '' }, [head, el('div.pw-gridline', {}, [bar.root, totals]), ...rows]);
+  const btn = point && host.link ? el<'button'>('button.btn.insp-recipe.insp-link', { title: t('build.hint.link'), onclick: () => host.link!(e.id) }, [glyph('power'), ' ', t('insp.link')]) : null;
+  if (btn) action(btn);
+  if (point) rows.push(el('div.pw-row', { 'data-pw': 'wires' }, [el('span.pw-label', {}, t('insp.wires')), wires]));
+  const head = el('header.ksec-head.pw-head', { 'data-power': '' }, [el('span.ksec-icon', {}, pwMark), el('h4.ksec-title.lettering', {}, t('insp.pw.title')), el('span.ksec-aside', {}, pct)]);
+  const card = el('section.ksec.pw-card', { 'data-power-card': '', 'data-sec': 'power', 'data-group': 'power' }, [head, el('div.pw-gridline', {}, [bar.root, totals]), ...rows]);
   let whySig = '';
   live(() => {
     const net = sim.graph?.netOfEnt.get(e.id);
@@ -179,7 +203,7 @@ export function gridCard({ sim, e, node, host, live }: PanelCtx): HTMLElement[] 
     if (np && !source) for (const a of sim.graph.nets[net!]?.accs ?? []) if ((sim.accEnergy.get(a.ent) ?? 0) > 0) { source = true; break; }
     const v = np && source ? Math.round(np.sat / 10) : 0;
     const state: PowerState = !np ? (e.builtAt === 0 && sim.isDormant(e) ? 'asleep' : 'unwired') : v > 0 ? 'on' : 'dark';
-    if (state !== shown) { shown = state; mark.replaceChildren(marks[state]); setAttr(head, 'data-power', state); }
+    if (state !== shown) { shown = state; pwMark.replaceChildren(marks[state]); setAttr(head, 'data-power', state); }
     setText(pct, state === 'unwired' ? t('insp.pw.unwired') : state === 'asleep' ? t('insp.pw.asleep') : t('hud.powerPct', { v }));
     bar.set(v / 100, state === 'on' ? (v >= 100 ? 'good' : 'warn') : 'bad');
     const supply = np ? Math.round(np.renew + np.fuel) : 0, demand = np ? Math.round(np.demand) : 0;
@@ -193,10 +217,14 @@ export function gridCard({ sim, e, node, host, live }: PanelCtx): HTMLElement[] 
       if (o) {
         // Unwired, it would give this much, and gives nothing: « now » says 0.
         const kwNow = np ? o.kw : 0;
-        setText(nominal, t('insp.kw', { v: o.nominal }));
-        setText(now, t('insp.kw', { v: kwNow }));
+        setText(nominal, kwText(o.nominal));
+        setText(now, kwText(kwNow));
         setText(coefN, times(o.coef));
-        setAttr(coef, 'data-tone', o.coef >= 1000 || o.calm ? 'good' : o.coef > 0 ? 'warn' : 'bad');
+        const tone = o.coef >= 1000 || o.calm ? 'good' : o.coef > 0 ? 'warn' : 'bad';
+        setAttr(coef, 'data-tone', tone);
+        const top = Math.max(o.nominal, kwNow, 1);
+        yieldBar.set(kwNow / top, kwNow > 0 ? tone : 'bad');
+        setStyle(tick, 'left', `${Math.round((o.nominal / top) * 1000) / 10}%`);
         setAttr(now, 'data-tone', kwNow > 0 ? null : 'bad');
         if (o.sig !== whySig) {
           whySig = o.sig;
@@ -206,7 +234,7 @@ export function gridCard({ sim, e, node, host, live }: PanelCtx): HTMLElement[] 
         }
       }
     } else {
-      setText(draw, t('insp.kw', { v: Math.round(node?.demand() ?? 0) }));
+      setText(draw, kwText(node?.demand() ?? 0));
     }
     if (kind === 'accumulator') {
       const acc = net !== undefined ? sim.graph.nets[net]?.accs.find((q) => q.ent === e.id) : undefined;

@@ -10,7 +10,12 @@ export type ScreenId =
 
 export type ToolId = 'build' | 'belt' | 'deconstruct' | 'dig';
 
-export type OverlayId = 'zones' | 'power' | 'flow';
+/**
+ * The specialised views (D88): one at a time, each drawing one system bold over the base dimmed —
+ * Normal (none), Électricité, Logistique, Production, and Terrain (the land mode, D60).
+ */
+export type MapView = 'normal' | 'power' | 'logistics' | 'production' | 'land';
+export const MAP_VIEWS: readonly MapView[] = ['normal', 'power', 'logistics', 'production', 'land'];
 
 /** The two views of the colony: iso to look and manage, plan to build. */
 export type ViewMode = 'iso' | 'plan';

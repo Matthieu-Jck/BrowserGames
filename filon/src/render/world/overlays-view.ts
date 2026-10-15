@@ -4,26 +4,23 @@
 // amber frame, a sister claim's hatched coral — shown while building, and always in the land
 // mode, which adds the parcel grid over the land for sale and marks the hovered and the selected
 // parcel; only the parcels near the view are drawn, rebuilt when the held set, the view's parcels
-// or the zoom's step change, its lines a constant width on screen), the power overlay (P: each grid's
-// buildings washed in its colour — its wires take the same colour in the wires view —, the
-// buildings that make or use power but hang on no wire outlined in coral), the Link tool's
+// or the zoom's step change, its lines a constant width on screen), the Link tool's
 // marks (the source's reach, what a click would wire and is on no grid yet, what waits for a wire
 // beyond, its wires, the pillars to start from, and the tile of land that bars the hovered wire —
 // D78 —, flat in plan and on its rock top in iso) — the same reach and marks round a pole or a
 // pylon held to be placed —,
-// and the selection outline (both views: flat in plan; in iso on the rock top the building stands
+// and the selection outline (the grids by colour are the Électricité view's since D88:
+// world/views-view.ts) (both views: flat in plan; in iso on the rock top the building stands
 // on, as the dig marks are — owner, 2026-10-13: a turbine on the mountains showed its outline on
 // the ground below it, as if it stood somewhere else).
 import { Container, Graphics, Texture, TilingSprite } from 'pixi.js';
 import type { Sim } from '@/sim/state';
 import type { LinkPreview } from '@/input/link-tool';
 import { footprint } from '@/sim/entities';
-import { isLinkPoint, linkable } from '@/sim/power/links';
 import { BUILDING_KIND } from '@/content/registry';
 import { BAL } from '@/content/balance';
 import { C, num } from '../art/tokens';
 import { SHIFT } from '../relief';
-import { GRID_COLORS } from './wires-view';
 import { footLevel } from './stand';
 import { PARCEL_COLS, parcelAt, parcelRect } from '@/sim/world/land';
 import { WORLD } from '@/sim/constants';
@@ -35,8 +32,8 @@ function cellOf(x: number, y: number): [number, number] {
   return [p % PARCEL_COLS, Math.floor(p / PARCEL_COLS)];
 }
 
-/** Dashed coral frames round footprints [x, y, w, h] (tile units): "needs a wire" (the power overlay, the Link tool). */
-function needsWire(g: Graphics, rects: ReadonlyArray<readonly [number, number, number, number]>): void {
+/** Dashed coral frames round footprints [x, y, w, h] (tile units): "needs a wire" (the Link tool; the Électricité view draws the same). */
+export function needsWire(g: Graphics, rects: ReadonlyArray<readonly [number, number, number, number]>): void {
   for (const [x, y, w, h] of rects) {
     const pts: Array<[number, number]> = [[x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y]];
     for (let i = 0; i < 4; i++) {
@@ -98,12 +95,10 @@ export class OverlaysView {
   private readonly marksIso = new Graphics();
   private readonly routes = new Graphics();
   private readonly reach = new Graphics();
-  private readonly power = new Graphics();
   private readonly linkG = new Graphics();
   /** The tile that bars the Link tool's hovered wire (D78): flat in plan, on its rock top in iso (cross-faded). */
   private readonly blockPlan = new Graphics();
   private readonly blockIso = new Graphics();
-  private powerSig = '';
   private linkSig = '';
   private landSig = '';
   private landMarkSig = '';
@@ -116,8 +111,8 @@ export class OverlaysView {
   /** The land mode's hovered and selected parcels (−1: none), set by the shell each frame. */
   landHover = -1;
   landSel = -1;
-  /** The power overlay (P): grids by colour. */
-  powerOn = false;
+  /** The freight routes' dashes: hidden under a specialised view's veil (D88; the Logistique view draws them bold itself). */
+  routesOn = true;
   /** The Link tool's preview while it is in hand, else a pole's or pylon's held to be placed (set by the shell each frame), else null. */
   linking: LinkPreview | null = null;
 
@@ -127,7 +122,7 @@ export class OverlaysView {
     this.grid.tileScale.set(1 / 64);
     gridLayer.addChild(this.grid);
     landLayer.addChild(this.landGrid, this.landHeld, this.landMark);
-    overlayLayer.addChild(this.power, this.routes, this.marksPlan, this.marksIso, this.reach, this.linkG, this.blockPlan, this.blockIso, this.sel, this.selIso);
+    overlayLayer.addChild(this.routes, this.marksPlan, this.marksIso, this.reach, this.linkG, this.blockPlan, this.blockIso, this.sel, this.selIso);
   }
 
   /**
@@ -137,8 +132,8 @@ export class OverlaysView {
   update(sim: Sim, view: [number, number, number, number], t: number, zoom: number, selected: number, levelAt: (x: number, y: number) => number = () => 0, ghostReach: [number, number, number] | null = null): void {
     this.updateMarks(sim, t, levelAt);
     this.updateRoutes(sim);
+    this.routes.visible = this.routesOn;
     this.updateReach(sim, selected, ghostReach);
-    this.updatePower(sim);
     this.updateLinking(sim, levelAt);
     this.blockPlan.alpha = t;
     this.blockPlan.visible = t > 0.01;
@@ -359,37 +354,6 @@ export class OverlaysView {
     this.reach.circle(c[0], c[1], c[2]).fill({ color: num(C.coral), alpha: 0.05 }).stroke({ width: 0.12, color: num(C.coralD), alpha: 0.85 });
   }
 
-  /** The power overlay (P): each grid's buildings washed in its colour; unwired ones that need power outlined in coral. */
-  private updatePower(sim: Sim): void {
-    const g = sim.graph;
-    const sig = this.powerOn && g ? `${g.version}:${sim.links.version}` : '';
-    if (sig === this.powerSig) return;
-    this.powerSig = sig;
-    const p = this.power;
-    p.clear();
-    if (!sig) return;
-    const byColor = new Map<number, Array<[number, number, number, number]>>();
-    const loose: Array<[number, number, number, number]> = [];
-    for (const e of sim.ents.sorted()) {
-      if (!linkable(e.def)) continue;
-      const [w, h] = footprint(e.def, e.rot);
-      const net = g.netOfEnt.get(e.id);
-      if (net === undefined) {
-        if (e.builtAt === 0 && !isLinkPoint(e.def) && !sim.isDormant(e)) loose.push([e.x, e.y, w, h]);
-        continue;
-      }
-      const col = num(GRID_COLORS[net % GRID_COLORS.length]!);
-      let arr = byColor.get(col);
-      if (!arr) byColor.set(col, (arr = []));
-      arr.push([e.x, e.y, w, h]);
-    }
-    for (const [col, rects] of byColor) {
-      for (const [x, y, w, h] of rects) p.rect(x + 0.06, y + 0.06, w - 0.12, h - 0.12);
-      p.fill({ color: col, alpha: 0.3 }).stroke({ width: 0.09, color: col, alpha: 0.95 });
-    }
-    needsWire(p, loose);
-  }
-
   /**
    * The Link tool: with a source, its reach (its footprint grown by the wire range: the rounded
    * rectangle a footprint edge-to-edge range sweeps), the buildings a click would wire that are
@@ -427,7 +391,7 @@ export class OverlaysView {
       g.roundRect(x - r, y - r, w + 2 * r, h + 2 * r, r).fill({ color: num(C.turq), alpha: 0.07 }).stroke({ width: 0.12, color: num(C.turqD), alpha: 0.9 });
       g.rect(x - 0.12, y - 0.12, w + 0.24, h + 0.24).stroke({ width: 0.16, color: num(C.cyan), alpha: 1 });
     }
-    // What waits for a wire beyond the reach: the power overlay's dashed coral frame.
+    // What waits for a wire beyond the reach: a dashed coral frame (the Électricité view's « no wire »).
     needsWire(g, pv.loose.map(rectOf).filter((r): r is [number, number, number, number] => !!r));
     // In reach and on no grid yet: green, a click wires it (owner, 2026-10-14: "green only the machines that are not already connected").
     for (const id of pv.targets) {

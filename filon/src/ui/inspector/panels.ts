@@ -1,25 +1,50 @@
-// panels.ts — which panels the inspector shows for each building kind, in order (between the
-// header + status and the grid module + Demolish). A new kind gets its panels here; a kind
-// without an entry shows only the common parts. What a building makes, draws or stores of power is
-// the grid module's (power.ts `gridCard`, D76), the same card for every kind.
+// panels.ts — what the inspector shows for each building kind (D89): its `HERO`, at the top beside
+// the status line — what it does, at a glance (a recipe as an icon equation, a drill's ore a minute,
+// the power a turbine gives, a lab's project, a silo's fill, a trade post's facts, the Core's
+// level) — and its `PANELS`, the sections under it, in order (between the top block and the grid
+// card + the foot). A new kind gets its hero and panels here; a kind without an entry shows only
+// the common parts. What a building makes, draws or stores of power is the grid card's (power.ts
+// `gridCard`, D76), the same card for every kind.
 import type { BuildingKind } from '@/content/types';
-import { hearthPanel, landscapePanel } from './colony';
-import type { Panel } from './kit';
-import { dockPanel, forkPanel, outletsPanel, ribbonPanel, storePanel } from './logistics';
-import { drillPanel, generatorPanel, labPanel, machinePanel, serverPanel } from './production';
-import { tradePanel } from './trade';
+import { hearthHero, hearthPanel, landscapeHero, landscapePanel } from './colony';
+import type { Panel, PanelCtx } from './kit';
+import { dockPanel, forkPanel, outletsPanel, ribbonPanel, storeHero, storePanel } from './logistics';
+import { producerHero } from './power';
+import { drillHero, drillPanel, generatorHero, generatorPanel, labHero, labPanel, machineHero, machinePanel, serverHero, serverPanel } from './production';
+import { tradeHero, tradePanel } from './trade';
+
+/** What a kind does, at the top of its inspector (null: nothing to show, e.g. no recipe yet). */
+export type Hero = (c: PanelCtx) => HTMLElement | null;
+
+export const HERO: Partial<Record<BuildingKind, Hero>> = {
+  machine: machineHero,
+  drill: drillHero,
+  pump: drillHero,
+  generator: generatorHero,
+  wind: producerHero,
+  solar: producerHero,
+  geothermal: producerHero,
+  lab: labHero,
+  server: serverHero,
+  hearth: hearthHero,
+  storage: storeHero,
+  trade: tradeHero,
+  excavator: landscapeHero,
+  backfiller: landscapeHero,
+};
 
 export const PANELS: Partial<Record<BuildingKind, readonly Panel[]>> = {
   machine: [machinePanel],
   drill: [drillPanel],
-  generator: [generatorPanel], // its fuel; its output is the grid module's
+  pump: [drillPanel],
+  generator: [generatorPanel], // its fuel; its output is the grid card's
   lab: [labPanel],
   server: [serverPanel],
   belt: [ribbonPanel],
   conduit: [ribbonPanel],
   fork: [forkPanel],
   hearth: [hearthPanel], // no outlets to set: the Heart takes, it never gives (but its data outlet, D68)
-  storage: [storePanel],
+  storage: [storePanel], // a silo's one item is its hero; nothing more
   dock: [storePanel, outletsPanel, dockPanel],
   excavator: [landscapePanel],
   backfiller: [landscapePanel],

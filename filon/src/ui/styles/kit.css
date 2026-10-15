@@ -1,0 +1,115 @@
+/* kit.css — the panels' component kit (D89; ui/inspector/kit.ts), shared by the inspector, the
+   building card and the screens so they read as one family: section cards (an icon and a title on
+   a dashed rule, a figure on the right), the status line (a mark, one word in the state's colour,
+   the reason as icons), icon equations, meters, big figures, the actions' foot, the kit's marks.
+   Imported by kit.ts itself. One type scale: titles 15 px lettering, text 13 px, captions 11 px,
+   big figures 19 px lettering; numbers tabular and semibold. Colours: the tokens of base.css. */
+
+/* ── a section card ─────────────────────────────────────────────────────── */
+.ksec {
+  margin: 8px 0 0; padding: 6px 10px 8px; min-width: 0;
+  border: 1.5px solid var(--c-ink); border-radius: 10px 8px 11px 9px / 9px 11px 8px 10px;
+  background: color-mix(in srgb, var(--c-paper-d) 40%, var(--c-paper));
+}
+.ksec-head {
+  display: flex; align-items: center; gap: 6px; margin: 0 0 6px; padding-bottom: 4px;
+  border-bottom: 1.5px dashed color-mix(in srgb, var(--c-ink) 22%, transparent);
+}
+.ksec-icon { display: inline-flex; flex: none; }
+.ksec-icon > .kmark, .ksec-icon > .glyph { width: 1.25em; height: 1.25em; }
+.ksec-icon .imention-icon { margin: 0; vertical-align: middle; }
+.ksec-title { margin: 0; font-size: 15px; line-height: 1.05; font-weight: 400; }
+.ksec-aside { margin-left: auto; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
+/* A section of a facet the view on screen does not ask for (D88): faded until hovered. */
+.ksec[data-dim] { opacity: 0.55; transition: opacity 120ms ease; }
+.ksec[data-dim]:hover, .ksec[data-dim]:focus-within { opacity: 1; }
+
+/* ── the kit's marks ────────────────────────────────────────────────────── */
+.kmark { display: inline-block; width: 1.2em; height: 1.2em; vertical-align: -0.24em; flex: none; }
+.kmark svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.kmark .k-disc { stroke: var(--c-ink); stroke-width: 1.2; }
+.kmark .k-on { fill: var(--c-turq); }
+.kmark .k-pause { fill: var(--c-warn); }
+.kmark .k-off { fill: var(--c-coral); }
+.kmark .k-sleep { fill: var(--c-lilac); }
+.kmark .k-stroke { fill: none; stroke: var(--c-ink); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.kmark .k-light { stroke: var(--c-paper); }
+.kmark .k-thin { stroke: var(--c-ink-soft); stroke-width: 1.1; }
+.kmark .k-hot { stroke: var(--c-coral-d); }
+.kmark .k-dash { stroke-dasharray: 2 1.8; stroke: var(--c-ink-soft); }
+.kmark .k-in { stroke: var(--c-turq-d); }
+.kmark .k-out { stroke: var(--c-coral-d); }
+.kmark .k-fill-light { fill: var(--c-paper); }
+.kmark .k-fill-ink { fill: var(--c-ink); }
+.kmark .k-token { fill: var(--c-lilac-l); stroke: var(--c-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.kmark .k-ring { fill: var(--c-paper-d); stroke: var(--c-ink-soft); stroke-width: 1.3; stroke-dasharray: 2.4 1.8; }
+.kmark .k-node { fill: var(--c-turq-l); stroke: var(--c-ink); stroke-width: 1.1; }
+.kmark .k-box { fill: var(--c-peach-l); stroke: var(--c-ink); stroke-width: 1.2; stroke-linejoin: round; }
+.kmark .k-sheet { fill: var(--c-paper); stroke: var(--c-ink); stroke-width: 1.2; stroke-linejoin: round; }
+
+/* ── the status line: a mark, one word, the reason as icons ─────────────── */
+.kstatus { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 14px; line-height: 1.2; }
+.kstatus-mark { display: inline-flex; }
+.kstatus-mark .kmark { width: 1.35em; height: 1.35em; }
+.kstatus-word { font-weight: 700; letter-spacing: 0.01em; }
+.kstatus[data-state='on'] .kstatus-word { color: var(--c-turq-d); }
+.kstatus[data-state='pause'] .kstatus-word { color: color-mix(in srgb, var(--c-warn) 55%, var(--c-ink)); }
+.kstatus[data-state='off'] .kstatus-word { color: var(--c-coral-d); }
+.kstatus[data-state='build'] .kstatus-word { color: var(--c-ink-soft); }
+.kstatus[data-state='sleep'] .kstatus-word { color: var(--c-lilac-d); }
+.kstatus-why { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; }
+.kstatus-why:empty { display: none; }
+.kstatus-why > .glyph { width: 1.35em; height: 1.35em; }
+/* A reason that is an item: dashed peach while it is missing, ringed coral while it is full. */
+.kreason { position: relative; display: inline-flex; align-items: center; padding: 1px 3px; border-radius: 6px; }
+.kreason .imention-icon { margin: 0; vertical-align: middle; }
+.kreason[data-k='missing'] { outline: 1.5px dashed color-mix(in srgb, var(--c-warn) 70%, var(--c-ink)); background: var(--c-peach-l); }
+.kreason[data-k='full'] { outline: 1.5px solid var(--c-coral-d); background: color-mix(in srgb, var(--c-coral) 18%, var(--c-paper)); }
+.kreason > .kmark { position: absolute; right: -6px; top: -7px; width: 0.95em; height: 0.95em; }
+
+/* ── an icon equation: « [ore] 15 + [coal] 15 → [plate] 15 /min » ───────── */
+.keq { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 2px 5px; }
+.keq-term { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; min-width: 26px; }
+.keq-icon { display: inline-flex; font-size: 18px; line-height: 1; }
+.keq-icon .imention-icon { margin: 0; vertical-align: middle; }
+.keq-icon > .glyph, .keq-icon > .kmark { width: 1.35em; height: 1.35em; }
+.keq-n { font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.keq-op { align-self: flex-start; padding-top: 3px; font-size: 14px; color: var(--c-ink-soft); }
+.keq-to { font-size: 17px; color: var(--c-ink); padding-top: 1px; }
+.keq-unit { align-self: flex-end; margin-left: 1px; padding-bottom: 1px; font-size: 11px; color: var(--c-ink-soft); }
+/* On one line (a list of recipes): the figure beside its icon. */
+.keq[data-inline] { align-items: center; flex-wrap: nowrap; gap: 3px; }
+.keq[data-inline] .keq-term { flex-direction: row; gap: 2px; min-width: 0; }
+.keq[data-inline] .keq-icon { font-size: 15px; }
+.keq[data-inline] .keq-op { padding-top: 0; align-self: center; font-size: 11px; }
+.keq[data-inline] .keq-to { font-size: 14px; }
+
+/* ── a big figure and its caption ───────────────────────────────────────── */
+.kstat { display: inline-flex; align-items: center; gap: 7px; }
+.kstat-icon { display: inline-flex; font-size: 20px; }
+.kstat-icon > .glyph, .kstat-icon > .kmark { width: 1.2em; height: 1.2em; }
+.kstat-icon .imention-icon { margin: 0; }
+.kstat-body { display: flex; flex-direction: column; line-height: 1.05; }
+.kstat-body > b, .kstat-body > span:first-child { font-family: var(--f-title); font-size: 19px; font-weight: 400; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.kstat-cap { font-size: 11px; color: var(--c-ink-soft); }
+
+/* ── a meter: a gauge and its value ─────────────────────────────────────── */
+.kmeter { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; }
+.kmeter .insp-bar { flex: 1; min-width: 50px; margin: 0; max-width: none; }
+.kmeter-v { flex: none; min-width: 3.4em; text-align: right; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Bars (kit.ts progressBar, under every meter): an inked rail, the fill a scaleX in the state's tone. */
+.insp-bar { flex: 1; min-width: 60px; height: 9px; border: 1.5px solid var(--c-ink); border-radius: 5px; background: var(--c-paper-d); overflow: hidden; }
+.insp-bar-fill { height: 100%; transform: scaleX(0); transform-origin: left center; background: var(--c-turq); }
+.insp-bar[data-tone='warn'] .insp-bar-fill { background: var(--c-warn); }
+.insp-bar[data-tone='bad'] .insp-bar-fill { background: var(--c-coral); }
+.insp-bar[data-tone='idle'] .insp-bar-fill { background: var(--c-ink-soft); }
+.insp-bar[data-tone='lilac'] .insp-bar-fill { background: var(--c-lilac); }
+
+/* ── the foot: every action of a panel in one row, Demolish last ────────── */
+.kfoot { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 10px; padding-top: 8px; border-top: 1.5px solid color-mix(in srgb, var(--c-ink) 18%, transparent); }
+.kfoot > .btn { font-size: 14px; padding: 3px 11px; }
+.kfoot > .btn.danger { margin-left: auto; }
+
+/* ── a toast's mark (toasts.ts): the tone before the words ──────────────── */
+.toast > .kmark { margin-right: 6px; width: 1.15em; height: 1.15em; vertical-align: -0.2em; }

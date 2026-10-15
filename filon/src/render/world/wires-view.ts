@@ -10,8 +10,8 @@
 // powered ones, quicker the better the grid is served — always from the generators' side towards
 // what they feed (owner, 2026-10-13): each wire runs from its end nearer a generator, counted in
 // wires (`flowWays`); a wire whose ends are as near as each other (two generators, a loop's
-// middle) carries none. With the power overlay (P) each grid's
-// wires take its colour. While the Link tool is in hand, a preview wire runs from its source to
+// middle) carries none. In the Électricité view (D88: P) each grid's wires take its colour,
+// drawn bold over the veiled base. While the Link tool is in hand, a preview wire runs from its source to
 // the hovered building, terminal to terminal: turquoise (would wire), coral (would cut), red
 // (refused).
 //
@@ -24,6 +24,7 @@ import type { Sim } from '@/sim/state';
 import type { Ent } from '@/sim/types';
 import { buildingDef } from '@/content/registry';
 import { C, num } from '../art/tokens';
+import { GRID_COLORS } from '../art/view-icons';
 import { tileToIso } from '../iso';
 import { flowWays, pointAlong, polyLengths, wireCurve, wireEnds, type Anchor } from './wire-geom';
 
@@ -46,8 +47,8 @@ interface Wire {
 /** The kinds of building that put power into a grid (accumulators only give back what they took). */
 const SOURCE_KINDS: ReadonlySet<string> = new Set(['hearth', 'wind', 'solar', 'geothermal', 'generator']);
 
-/** Colours the power overlay gives the grids, in grid order. */
-export const GRID_COLORS: readonly string[] = [C.cyan, C.coral, C.brass, C.violetL, C.ledGreen, C.turqL, C.peachD, C.lilac, C.tealL, C.hazard];
+/** Colours the Électricité view gives the grids, in grid order (art/view-icons.ts: the panels show them too). */
+export { GRID_COLORS };
 
 const INK = num(C.ink);
 const LIT = num(C.ice);
@@ -58,11 +59,11 @@ const GLINT_TILES_PER_S = 2.4;
 /**
  * The wires' line (owner, 2026-10-12: thinner, slightly transparent): widths in iso px and in
  * tiles (plan), alphas of the dark line and of its light hair, live / dim / planned. Readable on
- * sand by day and under the night grade; the overlay's grid colours run a little wider.
+ * sand by day and under the night grade; in the Électricité view (D88) they run bold, in their grid's colour.
  */
 const LINE = {
-  iso: 1.8, isoGrid: 2.4, isoHi: 0.65, plan: 0.055, planGrid: 0.075, planHi: 0.02, hiOff: 0.8, planHiOff: 0.018,
-  on: 0.78, onHi: 0.55, off: 0.42, offHi: 0.2, planned: 0.36,
+  iso: 1.8, isoGrid: 4.2, isoHi: 0.65, plan: 0.055, planGrid: 0.15, planHi: 0.02, hiOff: 0.8, planHiOff: 0.018,
+  on: 0.78, onHi: 0.55, off: 0.42, offHi: 0.2, planned: 0.36, grid: 1,
 } as const;
 /** The Link tool's preview: a little bolder than a wire (it is a pointer), the same shape. */
 const PREVIEW = { iso: 2.4, isoDash: 1.7, plan: 0.075, planDash: 0.055, alpha: 0.85, endIso: 2.6, endPlan: 0.09 } as const;
@@ -128,7 +129,7 @@ export class WiresView {
 
   /**
    * Per frame. `te`: the eased plan-ness; `preview`: the Link tool's (null when not in hand);
-   * `byGrid`: the power overlay is on (wires take their grid's colour).
+   * `byGrid`: the Électricité view is on (D88: wires bold, in their grid's colour).
    */
   update(sim: Sim, te: number, dt: number, preview: LinkPreview | null, byGrid: boolean): void {
     this.time += dt;
@@ -208,7 +209,7 @@ export class WiresView {
       const color = byGrid ? num(GRID_COLORS[w.net % GRID_COLORS.length]!) : INK;
       const k = `${color}:${on ? 1 : 0}`;
       let grp = groups.get(k);
-      if (!grp) groups.set(k, (grp = { color, alpha: on ? LINE.on : LINE.off, hi: on ? LIT : DIM_HI, hiAlpha: on ? LINE.onHi : LINE.offHi, ws: [] }));
+      if (!grp) groups.set(k, (grp = { color, alpha: byGrid ? (on ? LINE.grid : LINE.on) : on ? LINE.on : LINE.off, hi: on ? LIT : DIM_HI, hiAlpha: on ? LINE.onHi : LINE.offHi, ws: [] }));
       grp.ws.push(w);
     }
     // The ends sit on the terminals the art draws (plan insulators included): no knots on top.

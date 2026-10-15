@@ -1,21 +1,32 @@
-// crier.ts — the Crier screen (M): « La Criée », the colony's window on the Crier Ring. The
-// orbital view stands on the left (the planet, the sister colonies, the arcs of the player's
-// trade) above the Gazette (events announced, with a countdown, and running, until when);
-// on the right, three tabs:
-//   · Prices: every tradable item with this minute's sell / buy price, a 24 h sparkline, the
-//     trend, what the Hearth holds and the player's own flow; items under an event are flagged;
-//   · Trade: per trade post what it does (it sells whatever its entrance brings, D64) and its
-//     standing import orders (state, next delivery, a form to add one), spot trades with a live
-//     quote (total, unit price, the price factor and the lasting shock), and the goods in flight;
-//   · What pays: the unlocked recipes by ◉ per raw tile-minute, their margin per machine, and
-//     what the player's own flow does to the output's price.
+// crier.ts — the Crier screen (M): « La Criée », the colony's window on the Crier Ring. Laid out by
+// the panels' kit (D89; owner, 2026-10-15: « Plus clair, plus séparé », and show, don't tell):
+// · the header: the purse as a big figure with its pace an hour, then the posts' facts as one bar of
+//   icon chips (level, CrierBelt's fee, what a post lifts a minute, the lift's delay, posts built) —
+//   the words on hover;
+// · on the left, the orbital view (the planet, the sister colonies, the arcs of the player's trade;
+//   its legend as two chips in its corner) over the Gazette: each event an item's icon (a rank's
+//   badge for a boom), its kind as a coloured chip, ▲ / ▼ and its factor, the host colony, and its
+//   countdown (announced) or what is left of it (running); the sentence on hover;
+// · on the right, three tabs, each a scroll of the kit's section cards:
+//   · Cours: a sticky column head, then one card per rank; one line per item — this minute's sell /
+//     buy price, a 24 h sparkline, the trend and (Market Planning) the hour's forecast as coloured
+//     arrow chips, the player's own flow as ↑ / ↓ chips, (Market Economy) the floor price in its own
+//     light column, ⇄ to trade it; an item under an event gets a badge and a coloured rule;
+//   · Échanges: one card per trade post (its icon, the minute's lift as a meter and what it earned in
+//     its head; what it does in words on hover, not on the card) with its standing orders as one-line
+//     rows (rate, cap, state chip, next delivery) and the form to add one; « Au comptant » (spot
+//     trades with a live quote both ways); « En route » by item and post (how many, the soonest
+//     arrival), not one line per shipment;
+//   · Ce qui rapporte: the unlocked recipes by ◉ per raw tile-minute, best first, each with a bar on
+//     that figure and a diverging bar on its margin per machine, its sparkline and what the player's
+//     flow (or one machine's) does to the price.
 // Every item named shows its icon (mention.ts), and every item choice is an item picker with icons
-// (item-picker.ts, through trade-view's `tradeSelect`); the header's chips say what they are on hover.
-// Built once (again only on a locale or world change); refresh() (4 Hz while open) writes
-// values through change-only setters, and each part rebuilds only when its signature changes
-// (posts, orders, unlocked recipes, events). Selects and inputs the player is
-// using are never rebuilt or overwritten. The sim decides: this shows, and asks through the
-// Sim's trade commands (refusals become toasts).
+// (item-picker.ts, through trade-view's `tradeSelect`).
+// Built once (again only on a locale or world change); refresh() (4 Hz while open) writes values
+// through change-only setters, and each part rebuilds only when its signature changes (posts,
+// orders, flights, unlocked recipes, events). Selects and inputs the player is using are never
+// rebuilt or overwritten. The sim decides: this shows, and asks through the Sim's trade commands
+// (refusals become toasts).
 import { BAL } from '@/content/balance';
 import { BUILDINGS } from '@/content/buildings';
 import { RECIPES } from '@/content/recipes';
@@ -30,11 +41,12 @@ import { EPOCH, TPS } from '@/sim/constants';
 import type { Sim } from '@/sim/state';
 import { maxPosts, type ImportOrder } from '@/sim/trade';
 import type { Ent } from '@/sim/types';
-import { itemIcon } from '../build-bar';
+import { buildingIcon } from '../build-bar';
 import { eventLine } from '../gazette';
-import { itemName } from '../inspector/kit';
+import { glyph } from '../glyphs';
+import { mark, meter, progressBar, section } from '../inspector/kit';
 import type { ItemPicker } from '../item-picker';
-import { itemMention, itemRef, plain } from '../mention';
+import { itemMention, itemRef, nameOf, plain } from '../mention';
 import {
   arrivalTick, feeText, minutes, nextArrival, nextBoundary, oc, ocNum, orderStateText, postFacts,
   refusalText, secondsTo, spct, TRADABLE, tradePerHour, tradeSelect, unitBuyCents, unitSellCents, type PostFacts,
@@ -59,11 +71,13 @@ const ENERGY_COST = BAL.market.energyCost;
 const ORDER_N = 10;
 const ORDER_OVER = 1100;
 const ORDER_ITEM = 'copper_ore';
-/** Shipments listed in the Trade tab before « and n more ». */
-const FLIGHT_MAX = 10;
+/** « En route »: lines (an item to a post) listed before « and n more ». */
+const FLIGHT_MAX = 8;
 /** Sparkline box (SVG user units = CSS px). */
 const SPARK_W = 96;
 const SPARK_H = 24;
+/** A change smaller than this (a ratio) is flat: no sign, a → arrow. */
+const FLAT = 0.005;
 
 interface Ctx { readonly atlas: Atlas; readonly host: CrierHost }
 
@@ -77,6 +91,10 @@ const colonyName = (c: ColonyView | undefined): string => (c ? c.name[locale()] 
 const capFirst = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 const round2 = (v: number): number => Math.round(v * 100) / 100;
 const itemOf = (id: string | null): number => (id ? ITEM_IDS.indexOf(id as never) : -1);
+/** The sign of a relative change, for `data-sign` (null: flat). */
+const signOf = (d: number): string | null => (d > FLAT ? '+' : d < -FLAT ? '-' : null);
+/** A relative change as an arrow and a signed percentage: « ↗ +18 % ». */
+const moveText = (d: number): string => `${d > FLAT ? '↗' : d < -FLAT ? '↘' : '→'} ${spct(d)}`;
 
 /** Write a control's value unless the player is using it. */
 function sync(n: HTMLSelectElement | HTMLInputElement, v: string): void {
@@ -114,6 +132,21 @@ function svg<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string,
   return n;
 }
 
+/** The tabs' inked icons on a 16 × 16 board (drawn in the text's colour, crier.css `.cr-ticon`): a price line, ⇄, a podium of bars. */
+const TAB_ICON: Readonly<Record<CrierTab, ReadonlyArray<readonly ['path' | 'rect', Record<string, string>]>>> = {
+  prices: [['path', { d: 'M1.6 14.4h12.8' }], ['path', { d: 'M1.8 11.4l3.2-3.8 3 2.6 3.6-5.6 2.8 2.4' }]],
+  trade: [['path', { d: 'M2.4 5.2h10.4M10.2 2.6l2.6 2.6-2.6 2.6' }], ['path', { d: 'M13.6 10.8H3.2M5.8 8.2l-2.6 2.6 2.6 2.6' }]],
+  board: [['rect', { x: '1.8', y: '9', width: '3.4', height: '5.4', rx: '0.6' }], ['rect', { x: '6.3', y: '5.4', width: '3.4', height: '9', rx: '0.6' }], ['rect', { x: '10.8', y: '1.8', width: '3.4', height: '12.6', rx: '0.6' }]],
+};
+function tabIcon(k: CrierTab): SVGSVGElement {
+  const s = svg('svg', { class: 'cr-ticon', viewBox: '0 0 16 16', 'aria-hidden': 'true' });
+  for (const [tag, a] of TAB_ICON[k]) s.append(svg(tag, a));
+  return s;
+}
+
+/** A building's plan icon (the trade post, the Heart) as a small canvas, or a kit mark when the atlas has none. */
+const bIcon = (atlas: Atlas, def: string, px: number): HTMLElement => buildingIcon(atlas, def, px) ?? mark('cargo');
+
 /** A 24 h price line: the hourly mids then the price now, over a dotted rule at the item's reference value. */
 class Spark {
   readonly root: SVGSVGElement;
@@ -147,6 +180,29 @@ class Spark {
   }
 }
 
+/**
+ * A diverging bar for a figure that may be negative (a margin): a rail with a mid rule, the
+ * fill running right in turquoise for a gain, left in coral for a loss, scaled to `max`. The
+ * fills are transforms, written only when they change.
+ */
+class DBar {
+  readonly root: HTMLElement;
+  private readonly neg = el('span.cr-dbar-neg');
+  private readonly pos = el('span.cr-dbar-pos');
+  private last = '';
+
+  constructor() { this.root = el('span.cr-dbar', { 'aria-hidden': 'true' }, [this.neg, this.pos]); }
+
+  set(v: number, max: number): void {
+    const f = max > 0 ? Math.round(Math.min(1, Math.abs(v) / max) * 1000) / 1000 : 0;
+    const key = `${v < 0 ? -f : f}`;
+    if (key === this.last) return;
+    this.last = key;
+    this.neg.style.transform = `scaleX(${v < 0 ? f : 0})`;
+    this.pos.style.transform = `scaleX(${v > 0 ? f : 0})`;
+  }
+}
+
 // ── Prices ────────────────────────────────────────────────────────────────────
 
 interface PriceRow {
@@ -157,7 +213,10 @@ interface PriceRow {
   readonly ask: HTMLElement;
   readonly spark: Spark;
   readonly trend: HTMLElement;
+  /** The player's flow: its cell, then what it sells (↑) and buys (↓) a minute. */
   readonly flow: HTMLElement;
+  readonly sold: HTMLElement;
+  readonly bought: HTMLElement;
   readonly badge: HTMLElement;
   /** Price Forecast (an_forecast): the mid price's move within the hour. */
   readonly fc: HTMLElement;
@@ -167,26 +226,36 @@ interface PriceRow {
 
 class PricesPane {
   readonly root: HTMLElement;
-  private readonly note = el('p.cr-note');
+  /** The column heads, sticky over the cards; the note on the prices on hover. */
+  private readonly head: HTMLElement;
   private readonly rows: PriceRow[] = [];
 
   constructor(private readonly ctx: Ctx, snap: MarketSnapshot, go: (item: number) => void) {
-    const kids: HTMLElement[] = [el('div.cr-row.cr-prow.cr-headrow', {}, [
+    this.head = el('div.cr-row.cr-prow.cr-headrow', {}, [
       el('span', {}, t('crier.col.item')),
       el('span.cr-num', {}, t('crier.col.stock')),
       el('span.cr-num', { title: t('crier.col.sell.tip') }, t('crier.col.sell')),
       el('span.cr-num', { title: t('crier.col.buy.tip') }, t('crier.col.buy')),
       el('span.cr-mid', {}, t('crier.col.spark')),
-      el('span.cr-num', {}, t('crier.col.trend')),
-      el('span.cr-num', { title: t('crier.col.flow.tip') }, t('crier.col.flow')),
+      el('span.cr-mid', {}, t('crier.col.trend')),
+      el('span.cr-mid.cr-fc-cell', { title: t('crier.forecast.tip') }, t('crier.col.forecast')),
+      el('span', { title: t('crier.col.flow.tip') }, t('crier.col.flow')),
+      el('span.cr-mid.cr-floor-cell', { title: t('crier.floor.tip') }, t('crier.col.floor')),
       el('span'),
-    ])];
-    let tier = 0;
+    ]);
+    // One card per rank, its items in registry order.
+    const tiers = new Map<number, HTMLElement[]>();
     for (const im of [...snap.items].sort((a, b) => a.tier - b.tier || a.idx - b.idx)) {
-      if (im.tier !== tier) { tier = im.tier; kids.push(el('div.cr-tier.lettering', {}, t('crier.tier', { n: tier }))); }
-      kids.push(this.row(snap, im, go));
+      let list = tiers.get(im.tier);
+      if (!list) { list = []; tiers.set(im.tier, list); }
+      list.push(this.row(snap, im, go));
     }
-    this.root = el('div.cr-pane.cartouche', { 'data-crier-pane': 'prices' }, [this.note, el('div.cr-table', {}, kids)]);
+    const cards = [...tiers].map(([n, rows]) => {
+      const s = section({ sec: `tier-${n}`, title: t('crier.tier', { n }) }, [el('div.cr-rows', {}, rows)]);
+      s.classList.add('cr-tiercard');
+      return s;
+    });
+    this.root = el('div.cr-pane.cr-prices', { 'data-crier-pane': 'prices' }, [this.head, ...cards]);
   }
 
   private row(snap: MarketSnapshot, im: ItemMarket, go: (item: number) => void): HTMLElement {
@@ -195,10 +264,12 @@ class PricesPane {
     const wanted = snap.colonies.filter((c) => c.needs.includes(im.item)).slice(0, 4).map(colonyName).join(', ');
     const title = [from && t('crier.sources', { list: from }), wanted && t('crier.buyers', { list: wanted })].filter(Boolean).join('\n');
     const stock = el('span.cr-num.cr-stock'), bid = el('span.cr-num.cr-bid'), ask = el('span.cr-num.cr-ask');
-    const spark = new Spark(), trend = el('span.cr-num.cr-trend'), flow = el('span.cr-num.cr-flow'), badge = el('span.cr-badge');
-    const fc = el('small.cr-fc', { hidden: '', title: t('crier.forecast.tip') });
+    const spark = new Spark(), trend = el('span.cr-move'), badge = el('span.cr-badge');
+    const fc = el('span.cr-move.cr-fc', { title: t('crier.forecast.tip') });
+    const sold = el('span.cr-flowchip', { 'data-dir': 'out' }), bought = el('span.cr-flowchip', { 'data-dir': 'in' });
+    const flow = el('span.cr-flow', { title: t('crier.col.flow.tip') }, [sold, bought]);
     const floor = el<'input'>('input.cr-input.cr-input-floor', {
-      type: 'text', inputmode: 'decimal', hidden: '', placeholder: t('crier.floor'), title: t('crier.floor.tip'), 'data-floor': im.item,
+      type: 'text', inputmode: 'decimal', placeholder: '—', title: t('crier.floor.tip'), 'aria-label': t('crier.col.floor'), 'data-floor': im.item,
       onchange: () => {
         const v = floor.value.trim() === '' ? null : parseOc(floor.value);
         if (!this.ctx.host.sim().setFloorPrice(im.item, v !== null && v > 0 ? v : null) && v !== null) floor.value = '';
@@ -206,16 +277,14 @@ class PricesPane {
     });
     const node = el('div.cr-row.cr-prow', { 'data-price-item': im.item }, [
       el('span.cr-item', { title }, [
-        itemIcon(this.ctx.atlas, im.idx, 20),
-        el('span.cr-stack', {}, [
-          el('span.cr-name', {}, [itemName(im.idx), im.unique ? el('span.cr-uniq', { title: t('crier.unique') }, ' ✦') : null]),
-          badge, fc, floor,
-        ]),
+        el('span.cr-name', {}, [itemMention(im.idx), im.unique ? el('span.cr-uniq', { title: t('crier.unique') }, ' ✦') : null]),
+        badge,
       ]),
-      stock, bid, ask, el('span.cr-mid', {}, [spark.root]), trend, flow,
-      el('button.cr-go', { title: t('crier.go'), 'data-trade-item': im.item, onclick: () => go(im.idx) }, '⇄'),
+      stock, bid, ask, el('span.cr-mid', {}, [spark.root]), el('span.cr-mid', {}, [trend]),
+      el('span.cr-mid.cr-fc-cell', {}, [fc]), flow, el('span.cr-floor-cell', {}, [floor]),
+      el('button.cr-go', { title: t('crier.go'), 'aria-label': t('crier.go'), 'data-trade-item': im.item, onclick: () => go(im.idx) }, '⇄'),
     ]);
-    this.rows.push({ idx: im.idx, node, stock, bid, ask, spark, trend, flow, badge, fc, floor });
+    this.rows.push({ idx: im.idx, node, stock, bid, ask, spark, trend, flow, sold, bought, badge, fc, floor });
     return node;
   }
 
@@ -224,45 +293,50 @@ class PricesPane {
   private fcMid: number[] | null = null;
 
   refresh(sim: Sim, snap: MarketSnapshot, items: ReadonlyMap<number, ItemMarket>, f: PostFacts): void {
-    setText(this.note, t('crier.prices.note', { fee: feeText(f.fee) }));
+    setAttr(this.head, 'title', t('crier.prices.note', { fee: feeText(f.fee) }));
     const forecast = sim.mods.flags.has('forecast'), floors = sim.mods.flags.has('floorPrices');
     if (forecast && this.fcEpoch !== sim.absEpoch()) {
       this.fcEpoch = sim.absEpoch();
       const p = sim.priceForecast(60);
       this.fcMid = p ? p.bid.map((b, i) => (b + p.ask[i]!) / 2) : null;
     }
+    // The optional columns: there only once researched (crier.css lays the grid by them).
+    const fcOn = forecast && !!this.fcMid;
+    setAttr(this.root, 'data-fc', fcOn ? '' : null);
+    setAttr(this.root, 'data-floors', floors ? '' : null);
+    const { active, announced } = snap.events;
     for (const r of this.rows) {
-      r.fc.hidden = !forecast || !this.fcMid;
       r.floor.hidden = !floors;
       if (floors && document.activeElement !== r.floor) {
         const fl = sim.trade.floors.get(r.idx);
         const v = fl ? ocNum(fl) : '';
         if (r.floor.value !== v) r.floor.value = v;
+        setAttr(r.floor, 'data-set', fl ? '' : null);
       }
       const im = items.get(r.idx);
-      if (!forecast || !this.fcMid || !im) continue;
-      const now = (im.bid + im.ask) / 2, then = this.fcMid[r.idx] ?? now;
-      const d = now > 0 ? then / now - 1 : 0;
-      setText(r.fc, t('crier.forecast', { v: `${d > 0.005 ? '↗' : d < -0.005 ? '↘' : '→'}\u00a0${spct(d)}` }));
-      setAttr(r.fc, 'data-sign', d > 0.005 ? '+' : d < -0.005 ? '-' : null);
-    }
-    const { active, announced } = snap.events;
-    for (const r of this.rows) {
-      const im = items.get(r.idx);
       if (!im) continue;
+      if (fcOn) {
+        const now = (im.bid + im.ask) / 2, then = this.fcMid![r.idx] ?? now;
+        const d = now > 0 ? then / now - 1 : 0;
+        setText(r.fc, moveText(d));
+        setAttr(r.fc, 'data-sign', signOf(d));
+      }
       const held = Math.floor((sim.stock[r.idx] ?? 0) / 1000);
       setText(r.stock, held > 0 ? compact(held) : '—');
+      setAttr(r.stock, 'data-zero', held > 0 ? null : '');
       setText(r.bid, ocNum(im.bid));
       setText(r.ask, ocNum(im.ask));
       setAttr(r.bid, 'title', t('crier.afterFee', { v: oc(unitSellCents(sim, r.idx)) }));
       setAttr(r.ask, 'title', t('crier.afterFee', { v: oc(unitBuyCents(sim, r.idx)) }));
       r.spark.set([...im.history, im.mid], im.value * 100);
-      const sign = im.trend > 0.005 ? '+' : im.trend < -0.005 ? '-' : null;
-      setText(r.trend, spct(im.trend));
+      const sign = signOf(im.trend);
+      setText(r.trend, moveText(im.trend));
       setAttr(r.trend, 'data-sign', sign);
       setAttr(r.node, 'data-trend', sign);
-      const flows = [im.flow.sold >= 0.05 ? `↑\u00A0${rate(im.flow.sold)}` : '', im.flow.bought >= 0.05 ? `↓\u00A0${rate(im.flow.bought)}` : ''].filter(Boolean);
-      setText(r.flow, flows.join(' ') || '—');
+      const out = im.flow.sold >= 0.05, inn = im.flow.bought >= 0.05;
+      setText(r.sold, out ? `↑ ${rate(im.flow.sold)}` : '');
+      setText(r.bought, inn ? `↓ ${rate(im.flow.bought)}` : '');
+      setAttr(r.flow, 'data-none', out || inn ? null : '');
       // The first event on it: running first, else announced (with its countdown).
       const now = active.find((ev) => hits(ev, im));
       const soon = now ? undefined : announced.find((ev) => hits(ev, im));
@@ -278,18 +352,25 @@ class PricesPane {
 
 // ── Trade: posts, spot, goods in flight ───────────────────────────────────────
 
-/** One trade post: what it sells, its standing orders and the form to add one. */
+/** One trade post: the minute's lift in its head, its standing orders and the form to add one. */
 class PostCard {
   readonly root: HTMLElement;
-  private readonly act = el('span.cr-post-act');
+  /** The head's figures (the minute's lift, what it earned), the minute in words on hover. */
+  private readonly act: HTMLElement;
+  private readonly lift = meter();
+  private readonly earn = el('span.cr-earn');
   private readonly ordersCount = el('span.cr-count');
   private readonly ordersEl = el('div.cr-orders');
-  private orders: Array<{ o: ImportOrder; state: HTMLElement; eta: HTMLElement }> = [];
+  private orders: Array<{ o: ImportOrder; state: HTMLElement; eta: HTMLElement; etaT: HTMLElement }> = [];
   private ordersSig: string | null = null;
   private readonly item: ItemPicker;
   private readonly n: HTMLInputElement;
   private readonly max: HTMLInputElement;
-  private readonly hint = el('small.cr-sub.cr-order-hint');
+  /** Under the form: the item's ask, when a purchase now would land, from where (chips; the sentence on hover). */
+  private readonly hint: HTMLElement;
+  private readonly hAsk = el('b');
+  private readonly hEta = el('b');
+  private readonly hFrom = el('b');
   private readonly form: OrderForm;
   /** Express Freight (cm_express): half the delay, a quarter dearer. */
   private readonly expressBox: HTMLInputElement;
@@ -315,22 +396,31 @@ class PostCard {
       type: 'text', inputmode: 'decimal', value: form.max, 'data-order-max': String(id), title: t('crier.order.max'),
       oninput: () => { this.form.max = this.max.value; this.form.touched = true; }, onkeydown: keys(add),
     });
-    this.root = el('article.cr-post', { 'data-post': String(id) }, [
-      el('header.cr-post-head', {}, [el('h3.lettering', {}, t('crier.post.name', { n: id })), this.act]),
-      el('p.cr-help', {}, t('crier.post.ribbons.tip', { fee: feeText(ctx.host.sim().mods.tradeFee) })),
-      el('section.cr-post-sec', {}, [
-        el('h4.lettering', {}, [t('crier.orders'), ' ', this.ordersCount]),
-        this.ordersEl,
+    this.hint = el('div.cr-hint.cr-order-hint', {}, [
+      el('span.cr-hchip', {}, [tabIcon('prices'), this.hAsk]),
+      el('span.cr-hchip', {}, [mark('flight'), this.hEta]),
+      el('span.cr-hchip', {}, [glyph('flagSister'), this.hFrom]),
+    ]);
+    this.act = el('span.cr-post-act', {}, [this.lift.root, this.earn]);
+    this.root = section({
+      sec: 'post', title: t('crier.post.name', { n: id }), icon: bIcon(ctx.atlas, 'trade_post', 24), aside: this.act,
+      tip: t('crier.post.ribbons.tip', { fee: feeText(ctx.host.sim().mods.tradeFee) }),
+    }, [
+      el('div.cr-subhead', {}, [mark('order'), el('span.lettering', {}, t('crier.orders')), this.ordersCount]),
+      this.ordersEl,
+      el('div.cr-order-new', {}, [
         el('div.cr-order-form', {}, [
           this.item.root,
           el('label.cr-field', {}, [this.n, el('span', {}, t('crier.order.perMin'))]),
-          el('label.cr-field', {}, [el('span', {}, t('crier.order.atMost')), this.max, el('span', {}, '◉')]),
+          el('label.cr-field', { title: t('crier.order.max') }, [el('span.cr-le', {}, '≤'), this.max, el('span', {}, '◉')]),
           this.express,
           el('button.btn.primary.cr-add', { 'data-order-add': String(id), onclick: add }, t('crier.order.add')),
         ]),
         this.hint,
       ]),
     ]);
+    this.root.classList.add('cr-post');
+    this.root.setAttribute('data-post', String(id));
   }
 
   /** A new item in the order form: its max price goes back to the default (the ask + 10 %). */
@@ -358,19 +448,23 @@ class PostCard {
     this.ctx.host.notify('good', t('crier.order.placed', { rate: rate(n), item: itemRef(it), max: oc(max) }));
   }
 
+  /** One line per order: the item, its rate, its cap, its state, the next delivery (or purchase), ✕. */
   private buildOrders(mine: readonly ImportOrder[]): void {
     this.orders = [];
     const rows = mine.map((o) => {
-      const state = el('span.cr-state'), eta = el('small.cr-sub');
-      this.orders.push({ o, state, eta });
+      const state = el('span.cr-state'), etaT = el('span');
+      const eta = el('span.cr-o-eta', {}, [mark('flight'), mark('order'), etaT]);
+      this.orders.push({ o, state, eta, etaT });
       return el('div.cr-order', { 'data-order': String(o.id) }, [
-        el('div.cr-order-main', {}, [
-          el('span.cr-name', {}, itemMention(o.item)),
-          el('span.cr-order-line', {}, t('crier.order.line', { rate: rate(o.perMin), max: oc(o.maxCents) })),
+        el('span.cr-o-item', {}, [
+          itemMention(o.item),
           o.express ? el('span.cr-tag', { title: t('crier.order.express.tip') }, t('crier.order.express')) : null,
-          el('button.cr-x', { title: t('crier.order.cancel'), 'aria-label': t('crier.order.cancel'), 'data-order-cancel': String(o.id), onclick: () => this.cancel(o) }, '✕'),
         ]),
-        el('div.cr-order-sub', {}, [state, eta]),
+        el('span.cr-o-rate', { title: t('crier.order.n') }, rate(o.perMin)),
+        el('span.cr-o-max', { title: t('crier.order.max') }, `≤ ${oc(o.maxCents)}`),
+        el('span.cr-o-state', {}, [state]),
+        eta,
+        el('button.cr-x', { title: t('crier.order.cancel'), 'aria-label': t('crier.order.cancel'), 'data-order-cancel': String(o.id), onclick: () => this.cancel(o) }, '✕'),
       ]);
     });
     this.ordersEl.replaceChildren(...(rows.length ? rows : [el('p.cr-empty', {}, t('crier.orders.none'))]));
@@ -380,10 +474,16 @@ class PostCard {
     if (this.ctx.host.sim().cancelImport(o.id)) this.ctx.host.notify('info', t('crier.order.cancelled', { item: itemRef(o.item) }));
   }
 
-  refresh(sim: Sim, e: Ent, f: PostFacts, colonies: readonly ColonyView[]): void {
+  refresh(sim: Sim, _e: Ent, f: PostFacts, colonies: readonly ColonyView[]): void {
+    // The minute that ended: what it lifted against what it may, and what that brought.
     const a = sim.trade.activity.get(this.id);
-    setText(this.act, a && a.epoch === sim.absEpoch() - 1
-      ? t('crier.post.last', { used: Math.round((a.soldMu + a.boughtMu) / 1000), max: f.perMin, cents: oc(a.cents, true) })
+    const last = a && a.epoch === sim.absEpoch() - 1 ? a : null;
+    const used = last ? Math.round((last.soldMu + last.boughtMu) / 1000) : 0;
+    this.lift.set(used, f.perMin, used > 0 ? 'good' : 'idle', `${num(used)}/${num(f.perMin)}`);
+    setText(this.earn, last && last.cents !== 0 ? oc(last.cents, true) : '');
+    setAttr(this.earn, 'data-sign', last ? signOf(last.cents) : null);
+    setAttr(this.act, 'title', last
+      ? t('crier.post.last', { used, max: f.perMin, cents: oc(last.cents, true) })
       : t('crier.post.idle'));
 
     // Standing orders: rows when the set changes; state and next delivery live.
@@ -398,8 +498,10 @@ class PostCard {
       setAttr(r.state, 'data-order-state', st.state);
       setAttr(r.state, 'title', st.why);
       const at = nextArrival(sim, this.id, r.o.item);
-      setText(r.eta, at !== null ? t('crier.order.eta', { d: duration(secondsTo(sim, at)) })
-        : st.state === 'active' ? t('crier.order.next', { d: duration(secondsTo(sim, nextBoundary(sim))) }) : '');
+      const d = at !== null ? duration(secondsTo(sim, at)) : st.state === 'active' ? duration(secondsTo(sim, nextBoundary(sim))) : '';
+      setText(r.etaT, d);
+      setAttr(r.eta, 'data-k', at !== null ? 'flight' : d ? 'next' : null);
+      setAttr(r.eta, 'title', at !== null ? t('crier.order.eta', { d }) : d ? t('crier.order.next', { d }) : null);
     }
 
     this.express.hidden = !sim.mods.flags.has('expressFreight');
@@ -407,22 +509,31 @@ class PostCard {
     this.item.set(itemOf(this.form.item));
     this.defaultMax(sim);
     const it = itemOf(this.form.item);
-    const src = it >= 0 ? sim.market.sources(it)[0] : undefined;
-    setText(this.hint, it < 0 ? '' : t('crier.order.hint', {
-      ask: oc(sim.prices.ask[it] ?? 0),
-      d: duration(secondsTo(sim, arrivalTick(sim, it, nextBoundary(sim)))),
-      colony: colonyName(src ? colonies[src.colony] : undefined),
-    }));
+    setAttr(this.hint, 'hidden', it < 0 ? '' : null);
+    if (it < 0) return;
+    const src = sim.market.sources(it)[0];
+    const ask = oc(sim.prices.ask[it] ?? 0), d = duration(secondsTo(sim, arrivalTick(sim, it, nextBoundary(sim)))), colony = colonyName(src ? colonies[src.colony] : undefined);
+    setText(this.hAsk, ask);
+    setText(this.hEta, `≈ ${d}`);
+    setText(this.hFrom, colony);
+    setAttr(this.hint, 'title', t('crier.order.hint', { ask, d, colony }));
   }
 }
+
+/** One side of the spot quote: its box, the total, the unit price, the lasting mark on the price, why it cannot be done. */
+interface Quote { box: HTMLElement; total: HTMLElement; sub: HTMLElement; shock: HTMLElement; why: HTMLElement }
 
 /** Spot trades: an item, a quantity, the live quote both ways, Sell / Buy. */
 class SpotBox {
   readonly root: HTMLElement;
   private readonly sel: ItemPicker;
   readonly n: HTMLInputElement;
-  private readonly have = el('small.cr-sub.cr-spot-have');
-  private readonly q: Record<'sell' | 'buy', { box: HTMLElement; total: HTMLElement; sub: HTMLElement; why: HTMLElement }>;
+  /** What the Hearth holds of it and its two prices, as three small figures (the sentence on hover). */
+  private readonly have: HTMLElement;
+  private readonly haveN = el('b');
+  private readonly haveBid = el('b');
+  private readonly haveAsk = el('b');
+  private readonly q: Record<'sell' | 'buy', Quote>;
 
   constructor(private readonly ctx: Ctx, private readonly forms: Forms) {
     this.sel = tradeSelect(itemOf(forms.spotItem), null, (v) => { if (v) { forms.spotItem = v; this.refresh(ctx.host.sim()); } }, { 'data-spot-item': '' }, ctx.host.sim(), t('crier.spot.item'));
@@ -434,15 +545,21 @@ class SpotBox {
       'data-spot-preset': key,
       onclick: () => { const x = v(); if (x > 0) { this.n.value = String(x); forms.spotN = this.n.value; this.refresh(ctx.host.sim()); } },
     }, label);
-    const side = (s: 'sell' | 'buy'): { box: HTMLElement; total: HTMLElement; sub: HTMLElement; why: HTMLElement } => {
-      const total = el('strong.cr-q-total'), sub = el('small.cr-sub'), why = el('small.cr-why');
+    const side = (s: 'sell' | 'buy'): Quote => {
+      const total = el('strong.cr-q-total'), sub = el('small.cr-sub'), shock = el('span.cr-move.cr-shock'), why = el('small.cr-why');
       const btn = el('button.btn.cr-q-btn', { cls: s === 'buy' ? 'primary' : null, [`data-spot-${s}`]: '', onclick: () => this.trade(s) }, t(s === 'sell' ? 'crier.spot.sell' : 'crier.spot.buy'));
-      const head = el('span.cr-q-head', {}, [total, el('span.cr-coin', {}, '◉')]);
-      return { box: el('div.cr-quote', { 'data-spot-quote': s }, [el('div.cr-q-text', {}, [head, sub, why]), btn]), total, sub, why };
+      const head = el('span.cr-q-head', {}, [total, el('span.cr-coin', {}, '◉'), shock]);
+      return { box: el('div.cr-quote', { 'data-spot-quote': s }, [el('div.cr-q-text', {}, [head, sub, why]), btn]), total, sub, shock, why };
     };
     this.q = { sell: side('sell'), buy: side('buy') };
-    this.root = el('section.cr-box.cr-spot', { 'data-crier-section': 'spot' }, [
-      el('h3.lettering', {}, t('crier.spot')),
+    const cell = (v: HTMLElement, cap: string, icon?: HTMLElement): HTMLElement =>
+      el('div.cr-have-cell', {}, [el('b.cr-have-v', {}, [icon ?? null, v]), el('small', {}, cap)]);
+    this.have = el('div.cr-have', {}, [
+      cell(this.haveN, t('crier.col.stock'), bIcon(ctx.atlas, 'hearth', 18)),
+      cell(this.haveBid, t('crier.col.sell')),
+      cell(this.haveAsk, t('crier.col.buy')),
+    ]);
+    this.root = section({ sec: 'spot', title: t('crier.spot'), icon: el('span.cr-coin', {}, '◉'), tip: t('crier.spot.help') }, [
       el('div.cr-spot-pick', {}, [this.sel.root, this.n]),
       el('div.cr-presets', {}, [
         preset('10', num(10), () => 10), preset('100', num(100), () => 100), preset('1000', num(1000), () => 1000),
@@ -450,8 +567,9 @@ class SpotBox {
       ]),
       this.have,
       this.q.sell.box, this.q.buy.box,
-      el('p.cr-help', {}, t('crier.spot.help')),
     ]);
+    this.root.classList.add('cr-spot');
+    this.root.setAttribute('data-crier-section', 'spot');
   }
 
   /** Put an item in the form (the Prices tab's ⇄). */
@@ -483,19 +601,26 @@ class SpotBox {
     const n = qty(this.n.value);
     const held = Math.floor((sim.stock[it] ?? 0) / 1000);
     const post = posts[0];
-    setText(this.have, t('crier.spot.have', { n: held, bid: oc(sim.prices.bid[it] ?? 0), ask: oc(sim.prices.ask[it] ?? 0) }));
+    const bid = oc(sim.prices.bid[it] ?? 0), ask = oc(sim.prices.ask[it] ?? 0);
+    setText(this.haveN, compact(held));
+    setText(this.haveBid, bid);
+    setText(this.haveAsk, ask);
+    setAttr(this.have, 'title', t('crier.spot.have', { n: held, bid, ask }));
     for (const s of ['sell', 'buy'] as const) {
       const q = this.q[s];
       const r = n > 0 ? sim.quoteSpot(it, s, n) : null;
       if (!r || !r.ok) {
-        setText(q.total, '—'); setText(q.sub, ''); setText(q.why, n > 0 ? refusalText('not_tradable') : refusalText('bad_amount'));
+        setText(q.total, '—'); setText(q.sub, ''); setText(q.shock, ''); setText(q.why, n > 0 ? refusalText('not_tradable') : refusalText('bad_amount'));
         setAttr(q.box, 'data-warn', '');
         continue;
       }
       setText(q.total, ocNum(s === 'sell' ? r.cents : -r.cents, true));
+      setText(q.sub, t('crier.spot.unit', { unit: oc(r.unitCents), factor: round2(r.factor) }));
       // The lasting mark on the price, when the trade is big enough to leave one.
-      const shock = Math.abs(r.shock - 1) >= 0.005 ? ` · ${t('crier.spot.shock', { pct: spct(r.shock - 1) })}` : '';
-      setText(q.sub, `${t('crier.spot.unit', { unit: oc(r.unitCents), factor: round2(r.factor) })}${shock}`);
+      const dent = r.shock - 1, marked = Math.abs(dent) >= FLAT;
+      setText(q.shock, marked ? moveText(dent) : '');
+      setAttr(q.shock, 'data-sign', marked ? signOf(dent) : null);
+      setAttr(q.shock, 'title', marked ? t('crier.spot.shock', { pct: spct(dent) }) : null);
       const why = !post ? refusalText('no_post')
         : s === 'sell' && held < n ? refusalText('stock')
           : s === 'buy' && sim.credits < r.cents ? refusalText('unaffordable') : '';
@@ -506,7 +631,10 @@ class SpotBox {
   }
 }
 
-/** Goods bought and on their way, soonest first. */
+/** One line of « En route »: an item on its way to a post, all its shuttles together. */
+interface FlightLine { post: number; item: number; mu: number; first: number; ships: number; colonies: number[] }
+
+/** Goods bought and on their way, by item and post (how many in all, the soonest arrival), soonest first. */
 class FlightBox {
   readonly root: HTMLElement;
   private readonly count = el('span.cr-count');
@@ -514,31 +642,44 @@ class FlightBox {
   private sig: string | null = null;
   private etas: Array<{ at: number; node: HTMLElement }> = [];
 
-  constructor() {
-    this.root = el('section.cr-box.cr-flight', { 'data-crier-section': 'flight' }, [el('h3.lettering', {}, [t('crier.flight'), ' ', this.count]), this.list]);
+  constructor(private readonly ctx: Ctx) {
+    this.root = section({ sec: 'flight', title: t('crier.flight'), icon: mark('flight'), aside: this.count }, [this.list]);
+    this.root.classList.add('cr-flight');
+    this.root.setAttribute('data-crier-section', 'flight');
   }
 
   refresh(sim: Sim, colonies: readonly ColonyView[]): void {
-    const ships = [...sim.trade.inflight].sort((a, b) => a.arrive - b.arrive || a.post - b.post || a.item - b.item);
-    const sig = ships.map((s) => `${s.post}:${s.item}:${s.mu}:${s.arrive}`).join(',');
+    const by = new Map<string, FlightLine>();
+    for (const s of sim.trade.inflight) {
+      const k = `${s.post}:${s.item}`;
+      let g = by.get(k);
+      if (!g) { g = { post: s.post, item: s.item, mu: 0, first: s.arrive, ships: 0, colonies: [] }; by.set(k, g); }
+      g.mu += s.mu;
+      g.ships++;
+      if (s.arrive < g.first) g.first = s.arrive;
+      if (!g.colonies.includes(s.colony)) g.colonies.push(s.colony);
+    }
+    const lines = [...by.values()].sort((a, b) => a.first - b.first || a.post - b.post || a.item - b.item);
+    const sig = lines.map((g) => `${g.post}:${g.item}:${g.mu}:${g.first}:${g.ships}`).join(',');
     if (sig !== this.sig) {
       this.sig = sig;
       this.etas = [];
-      const rows: HTMLElement[] = ships.slice(0, FLIGHT_MAX).map((s) => {
+      const rows: HTMLElement[] = lines.slice(0, FLIGHT_MAX).map((g) => {
         const eta = el('span.cr-num.cr-eta');
-        this.etas.push({ at: s.arrive, node: eta });
-        return el('div.cr-flight-row', { 'data-flight': `${s.post}:${ITEM_IDS[s.item]}` }, [
-          el('span.cr-flight-what', {}, [
-            el('span.cr-name', {}, [`${num(s.mu / 1000)} × `, itemMention(s.item)]),
-            el('small.cr-sub', {}, t('crier.flight.from', { colony: colonyName(colonies[s.colony]), post: s.post })),
-          ]),
+        this.etas.push({ at: g.first, node: eta });
+        const from = t('crier.flight.from', { colony: g.colonies.map((c) => colonyName(colonies[c])).join(', '), post: g.post });
+        return el('div.cr-flight-row', { 'data-flight': `${g.post}:${ITEM_IDS[g.item]}`, title: `${t('crier.flight.ships', { n: g.ships })} · ${from}` }, [
+          el('span.cr-fl-what', {}, [el('b.cr-fl-n', {}, `${num(g.mu / 1000)} ×`), itemMention(g.item)]),
+          el('span.cr-fl-post', { title: t('crier.post.name', { n: g.post }) }, [bIcon(this.ctx.atlas, 'trade_post', 16), t('crier.post.short', { n: g.post })]),
           eta,
         ]);
       });
-      if (ships.length > FLIGHT_MAX) rows.push(el('small.cr-sub', {}, t('crier.flight.more', { n: ships.length - FLIGHT_MAX })));
+      if (lines.length > FLIGHT_MAX) rows.push(el('small.cr-sub.cr-more', {}, t('crier.flight.more', { n: lines.length - FLIGHT_MAX })));
       this.list.replaceChildren(...(rows.length ? rows : [el('p.cr-empty', {}, t('crier.flight.none'))]));
     }
-    setText(this.count, ships.length ? String(ships.length) : '');
+    const n = sim.trade.inflight.length;
+    setText(this.count, n ? num(n) : '');
+    setAttr(this.count, 'title', n ? t('crier.flight.ships', { n }) : null);
     for (const r of this.etas) setText(r.node, t('crier.flight.eta', { d: duration(secondsTo(sim, r.at)) }));
   }
 }
@@ -554,11 +695,17 @@ class TradePane {
 
   constructor(private readonly ctx: Ctx, private readonly forms: Forms) {
     this.spot = new SpotBox(ctx, forms);
-    this.flight = new FlightBox();
-    this.nopost = el('div.cr-nopost', { 'data-crier-nopost': '' }, [el('h3.lettering', {}, t('crier.trade.none.title')), el('p', {}, t('crier.trade.none.text'))]);
-    this.root = el('div.cr-pane.cartouche', { 'data-crier-pane': 'trade' }, [
+    this.flight = new FlightBox(ctx);
+    this.nopost = el('div.cr-nopost', { 'data-crier-nopost': '' }, [
+      el('span.cr-nopost-i', {}, bIcon(ctx.atlas, 'trade_post', 40)),
+      el('div', {}, [el('h3.lettering', {}, t('crier.trade.none.title')), el('p', {}, t('crier.trade.none.text'))]),
+    ]);
+    this.root = el('div.cr-pane', { 'data-crier-pane': 'trade' }, [
       el('div.cr-trade', {}, [
-        el('div.cr-trade-posts', {}, [el('h3.lettering.cr-sec-title', {}, [t('crier.posts.title'), ' ', this.postsCount]), this.nopost, this.posts]),
+        el('div.cr-trade-posts', {}, [
+          el('h3.lettering.cr-sec-title', {}, [bIcon(ctx.atlas, 'trade_post', 26), t('crier.posts.title'), this.postsCount]),
+          this.nopost, this.posts,
+        ]),
         el('div.cr-trade-side', {}, [this.spot.root, this.flight.root]),
       ]),
     ]);
@@ -579,7 +726,17 @@ class TradePane {
 
 // ── What pays ─────────────────────────────────────────────────────────────────
 
-interface BoardView { readonly node: HTMLElement; readonly out: number; readonly margin: HTMLElement; readonly perTile: HTMLElement; readonly spark: Spark; readonly impact: HTMLElement }
+interface BoardView {
+  readonly node: HTMLElement;
+  readonly out: number;
+  readonly margin: HTMLElement;
+  readonly mbar: DBar;
+  readonly perTile: HTMLElement;
+  readonly pbar: ReturnType<typeof progressBar>;
+  readonly spark: Spark;
+  readonly impact: HTMLElement;
+  readonly impactT: HTMLElement;
+}
 
 /** One machine's output per minute for each recipe's output: the impact line when the player exports none yet. */
 function oneMachineFlows(ids: readonly string[], craftSpeed: number): Record<string, number> {
@@ -596,16 +753,16 @@ function oneMachineFlows(ids: readonly string[], craftSpeed: number): Record<str
 
 class BoardPane {
   readonly root: HTMLElement;
-  private readonly note = el('p.cr-note');
   private readonly head: HTMLElement;
-  private readonly table = el('div.cr-table');
+  private readonly count = el('span.cr-count');
+  private readonly table = el('div.cr-rows');
   private readonly rows = new Map<string, BoardView>();
   private ids: string | null = null;
   private key = '';
   private data: BoardRow[] = [];
   private hypo = new Map<string, BoardRow>();
 
-  constructor(private readonly ctx: Ctx) {
+  constructor() {
     this.head = el('div.cr-row.cr-brow.cr-headrow', {}, [
       el('span', {}, t('crier.col.recipe')),
       el('span.cr-num', { title: t('crier.col.margin.tip') }, t('crier.col.margin')),
@@ -613,27 +770,34 @@ class BoardPane {
       el('span.cr-mid', {}, t('crier.col.spark')),
       el('span', {}, t('crier.col.impact')),
     ]);
-    this.root = el('div.cr-pane.cartouche', { 'data-crier-pane': 'board' }, [this.note, this.table]);
+    const card = section({ sec: 'board', title: t('crier.board.title'), icon: tabIcon('board'), aside: this.count, tip: t('crier.board.note', { energy: num(ENERGY_COST) }) }, [this.head, this.table]);
+    card.classList.add('cr-board');
+    this.root = el('div.cr-pane', { 'data-crier-pane': 'board' }, [card]);
   }
 
   private row(id: string): BoardView {
     const r = (RECIPES as Record<string, RecipeDef>)[id]!;
     const out = itemOf(r.outs[0]![0]);
     const machine = (BUILDINGS as Record<string, BuildingDef>)[r.machines[0]!]?.name[locale()] ?? '';
-    const margin = el('span.cr-num.cr-margin'), perTile = el('span.cr-num.cr-pertile'), spark = new Spark(), impact = el('span.cr-impact');
+    const margin = el('span.cr-num.cr-margin'), perTile = el('span.cr-num.cr-pertile'), spark = new Spark();
+    const mbar = new DBar(), pbar = progressBar();
+    const impactT = el('span');
+    const impact = el('span.cr-impact', {}, [glyph('building'), impactT]);
     const node = el('div.cr-row.cr-brow', { 'data-board-recipe': id }, [
       el('span.cr-item', {}, [
-        itemIcon(this.ctx.atlas, out, 20),
+        itemMention(out, { name: false, big: true }),
         el('span.cr-stack', {}, [el('span.cr-name', {}, r.name[locale()]), el('small.cr-sub', {}, machine)]),
         el('span.cr-best', {}, t('crier.board.best')),
       ]),
-      margin, perTile, el('span.cr-mid', {}, [spark.root]), impact,
+      el('span.cr-barcell', {}, [mbar.root, margin]),
+      el('span.cr-barcell', {}, [pbar.root, perTile]),
+      el('span.cr-mid', {}, [spark.root]),
+      impact,
     ]);
-    return { node, out, margin, perTile, spark, impact };
+    return { node, out, margin, mbar, perTile, pbar, spark, impact, impactT };
   }
 
   refresh(sim: Sim, items: ReadonlyMap<number, ItemMarket>): void {
-    setText(this.note, t('crier.board.note', { energy: num(ENERGY_COST) }));
     const ids = CRECIPES.filter((r) => sim.unlocked(r.unlock)).map((r) => r.id);
     // The board only moves at a boundary (prices, flows), with research (recipes, craft speed).
     const key = `${sim.prices.epoch}|${ids.join(',')}|${sim.mods.craftSpeed}`;
@@ -649,26 +813,41 @@ class BoardPane {
       for (const id of [...this.rows.keys()]) if (!ids.includes(id)) this.rows.delete(id);
       for (const id of ids) if (!this.rows.has(id)) this.rows.set(id, this.row(id));
     }
+    setText(this.count, num(ids.length));
     const order = this.data.map((r) => this.rows.get(r.recipe)?.node).filter((n): n is HTMLElement => !!n);
     const kids = this.table.children;
-    if (kids.length !== order.length + 1 || kids[0] !== this.head || order.some((n, k) => kids[k + 1] !== n)) this.table.replaceChildren(this.head, ...order);
+    if (kids.length !== order.length || order.some((n, k) => kids[k] !== n)) this.table.replaceChildren(...order);
+    // The bars' scales: the best ◉ per tile-minute, the widest margin either way.
+    let maxPer = 0, maxM = 0;
+    for (const r of this.data) {
+      if (r.perTile !== null && r.perTile > maxPer) maxPer = r.perTile;
+      if (Math.abs(r.margin) > maxM) maxM = Math.abs(r.margin);
+    }
     let best = true;
     for (const r of this.data) {
       const v = this.rows.get(r.recipe);
       if (!v) continue;
+      const isBest = best && r.perTile !== null && r.perTile > 0;
       setText(v.margin, ocNum(r.margin * 100, true));
       setAttr(v.margin, 'data-sign', r.margin >= 0.005 ? '+' : r.margin <= -0.005 ? '-' : null);
+      v.mbar.set(r.margin, maxM);
       setText(v.perTile, r.perTile === null ? '—' : ocNum(r.perTile * 100));
       setAttr(v.perTile, 'title', r.perTile === null ? t('crier.board.bought') : null);
-      setAttr(v.node, 'data-best', best && r.perTile !== null && r.perTile > 0 ? '' : null);
+      v.pbar.set(r.perTile !== null && maxPer > 0 ? Math.max(0, r.perTile) / maxPer : 0, isBest ? 'warn' : 'good');
+      setAttr(v.node, 'data-best', isBest ? '' : null);
       if (r.perTile !== null) best = false;
       const im = items.get(v.out);
       if (im) v.spark.set([...im.history, im.mid], im.value * 100);
+      // What a flow does to the output's price: the player's own (↑, as in Cours), else one machine's.
       const own = r.flow >= 0.05;
       const h = this.hypo.get(r.recipe);
-      setText(v.impact, own ? t('crier.board.impact', { rate: rate(round2(r.flow)), pct: spct(r.impact) })
-        : h ? t('crier.board.oneMachine', { rate: rate(round2(h.flow)), pct: spct(h.impact) }) : '—');
+      const x = own ? r : h;
+      setText(v.impactT, x ? `${own ? '↑ ' : ''}${rate(round2(x.flow))} → ${spct(x.impact)}` : '—');
+      setAttr(v.impact, 'title', own ? t('crier.board.impact', { rate: rate(round2(r.flow)), pct: spct(r.impact) })
+        : h ? t('crier.board.oneMachine', { rate: rate(round2(h.flow)), pct: spct(h.impact) }) : null);
       setAttr(v.impact, 'data-own', own ? '' : null);
+      setAttr(v.impact, 'data-none', x ? null : '');
+      setAttr(v.impact, 'data-sign', x && x.impact <= -0.1 ? '-' : null);
       setAttr(v.node, 'title', t('crier.board.tip', {
         rev: oc(r.revenue * 100), ins: oc(r.inputs * 100), en: oc(r.energy * 100), cycles: round2(r.cycles), tiles: round2(r.tiles),
       }));
@@ -684,26 +863,43 @@ class GazetteBox {
   private sig: string | null = null;
   private live: Array<(sim: Sim) => void> = [];
 
-  constructor() {
+  constructor(private readonly atlas: Atlas) {
     this.root = el('section.cr-gazette.cartouche', { 'data-crier-section': 'gazette' }, [
       el('header.cr-gz-head', {}, [el('h2.lettering', {}, t('crier.gazette')), el('small', {}, t('crier.gazette.sub'))]),
       this.list,
     ]);
   }
 
+  /**
+   * One event: the item's icon (a rank's badge for a boom), what it is in short — its kind, ▲ / ▼
+   * and its factor, the colony it is at — and when (its countdown, or what is left of it); what
+   * the Hearth holds of a wanted item; the sentence on hover.
+   */
   private entry(ev: MarketEvent, when: 'now' | 'soon', colonies: readonly ColonyView[]): HTMLElement {
     const it = itemOf(ev.item);
-    const at = el('small.cr-gz-when'), held = el('small.cr-gz-held');
+    const at = el('span.cr-gz-when'), heldN = el('b');
+    const held = el('span.cr-gz-held', { hidden: '' }, [bIcon(this.atlas, 'hearth', 16), heldN]);
     this.live.push((sim) => {
       setText(at, when === 'soon' ? t('crier.gazette.starts', { d: duration(secsToEpoch(sim, ev.start)) }) : t('crier.gazette.ends', { d: duration(secsToEpoch(sim, ev.end)) }));
       // A demand event on something the Hearth holds: say so (the first trade is a sale).
       const n = it >= 0 && ev.side === 'demand' ? Math.floor((sim.stock[it] ?? 0) / 1000) : 0;
-      setText(held, n > 0 ? t('crier.gazette.held', { n }) : '');
+      setText(heldN, n > 0 ? compact(n) : '');
+      setAttr(held, 'hidden', n > 0 ? null : '');
+      setAttr(held, 'title', n > 0 ? t('crier.gazette.held', { n }) : null);
     });
-    return el('article.cr-gz', { 'data-gazette': ev.id, 'data-when': when, 'data-side': ev.side }, [
-      el('span.cr-gz-glyph', { title: t(`crier.kind.${ev.kind}` as MsgKey) }, ev.side === 'demand' ? '▲' : '▼'),
-      el('div.cr-gz-body', {}, [el('p.cr-gz-line', {}, capFirst(eventLine(ev, colonies))), el('div.cr-gz-meta', {}, [at, held])]),
-      it >= 0 ? null : el('span.cr-gz-tier.lettering', {}, t('crier.tier', { n: ev.tier })),
+    const col = ev.colony >= 0 ? colonies[ev.colony] : undefined;
+    const tier = t('crier.tier', { n: ev.tier });
+    return el('article.cr-gz', { 'data-gazette': ev.id, 'data-when': when, 'data-side': ev.side, 'data-kind': ev.kind, title: plain(capFirst(eventLine(ev, colonies))) }, [
+      el('span.cr-gz-icon', {}, it >= 0 ? itemMention(it, { name: false }) : el('b.cr-gz-tier.lettering', { title: tier }, num(ev.tier))),
+      el('div.cr-gz-body', {}, [
+        el('div.cr-gz-what', {}, it >= 0 ? nameOf(it) : tier),
+        el('div.cr-gz-meta', {}, [
+          el('span.cr-gz-kind', {}, t(`crier.kind.${ev.kind}` as MsgKey)),
+          el('span.cr-gz-mult', {}, `${ev.side === 'demand' ? '▲' : '▼'} ×${num(Math.round(ev.mult * 10) / 10)}`),
+          col ? el('span.cr-gz-where', {}, [glyph('flagSister'), colonyName(col)]) : null,
+        ]),
+      ]),
+      el('div.cr-gz-side', {}, [at, held]),
     ]);
   }
 
@@ -714,8 +910,12 @@ class GazetteBox {
       this.sig = sig;
       this.live = [];
       const kids: HTMLElement[] = [];
-      if (announced.length) kids.push(el('h3.cr-gz-sec.lettering', {}, t('crier.gazette.soon')), ...announced.map((e) => this.entry(e, 'soon', snap.colonies)));
-      if (active.length) kids.push(el('h3.cr-gz-sec.lettering', {}, t('crier.gazette.now')), ...active.map((e) => this.entry(e, 'now', snap.colonies)));
+      const group = (title: string, evs: readonly MarketEvent[], when: 'now' | 'soon'): void => {
+        if (!evs.length) return;
+        kids.push(el('h3.cr-gz-sec.lettering', {}, [title, el('span.cr-count', {}, num(evs.length))]), ...evs.map((e) => this.entry(e, when, snap.colonies)));
+      };
+      group(t('crier.gazette.soon'), announced, 'soon');
+      group(t('crier.gazette.now'), active, 'now');
       this.list.replaceChildren(...(kids.length ? kids : [el('p.cr-empty', {}, t('crier.gazette.empty'))]));
     }
     for (const f of this.live) f(sim);
@@ -724,15 +924,20 @@ class GazetteBox {
 
 // ── the screen ────────────────────────────────────────────────────────────────
 
+/** A fact of the header's bar: the chip (its words on hover) and its figure. */
+interface Fact { readonly chip: HTMLElement; readonly v: HTMLElement }
+
 interface Parts {
   readonly balance: HTMLElement;
   readonly rate: HTMLElement;
-  readonly level: HTMLElement;
-  readonly fee: HTMLElement;
-  readonly through: HTMLElement;
-  readonly lift: HTMLElement;
-  readonly posts: HTMLElement;
-  readonly legend: HTMLElement;
+  readonly level: Fact;
+  readonly fee: Fact;
+  readonly through: Fact;
+  readonly lift: Fact;
+  readonly posts: Fact;
+  /** The orbit's legend: the sister colonies, those the player trades with. */
+  readonly colonies: Fact;
+  readonly partners: Fact;
   readonly tabs: ReadonlyMap<CrierTab, HTMLButtonElement>;
   readonly prices: PricesPane;
   readonly trade: TradePane;
@@ -781,30 +986,42 @@ export class CrierScreen {
     const ctx: Ctx = { atlas: this.atlas, host: this.host };
     const tabs = new Map<CrierTab, HTMLButtonElement>();
     const nav = el('nav.cr-tabs', {}, TABS.map((k) => {
-      const b = el<'button'>('button.btn.cr-tab', { 'data-crier-tab': k, onclick: () => this.show(k) }, t(`crier.tab.${k}` as MsgKey));
+      const b = el<'button'>('button.btn.cr-tab', { 'data-crier-tab': k, onclick: () => this.show(k) }, [tabIcon(k), el('span', {}, t(`crier.tab.${k}` as MsgKey))]);
       tabs.set(k, b);
       return b;
     }));
+    const fact = (k: string, icon: Node, cls = 'cr-fact'): Fact => {
+      const v = el('b');
+      return { chip: el(`span.${cls}`, { 'data-fact': k }, [el(`span.${cls}-i`, {}, icon), v]), v };
+    };
     const p: Parts = {
-      balance: el('span.cr-balance', { 'data-crier-balance': '' }),
-      rate: el('span.cr-rate', { 'data-crier-rate': '', title: t('crier.rate.tip') }),
-      level: el('span.cr-fact'), fee: el('span.cr-fact'), through: el('span.cr-fact'), lift: el('span.cr-fact'), posts: el('span.cr-fact'),
-      legend: el('p.cr-legend'),
+      balance: el('b.cr-balance', { 'data-crier-balance': '' }),
+      rate: el('small.cr-rate', { 'data-crier-rate': '', title: t('crier.rate.tip') }),
+      level: fact('level', mark('level')),
+      fee: fact('fee', glyph('crier')),
+      through: fact('throughput', el('span.cr-sym', {}, '⇅')),
+      lift: fact('lift', el('span.cr-sym', {}, '⇡')),
+      posts: fact('posts', bIcon(this.atlas, 'trade_post', 22)),
+      colonies: fact('colonies', glyph('flagSister'), 'cr-lchip'),
+      partners: fact('partners', mark('route'), 'cr-lchip'),
       tabs,
       prices: new PricesPane(ctx, snap, (item) => this.tradeItem(item)),
       trade: new TradePane(ctx, this.forms),
-      board: new BoardPane(ctx),
-      gazette: new GazetteBox(),
+      board: new BoardPane(),
+      gazette: new GazetteBox(this.atlas),
     };
     this.root.replaceChildren(
       el('header.cr-head', {}, [
         el('h1.lettering', {}, t('screen.market')),
-        el('div.cr-purse', { title: t('crier.balance.tip') }, [el('span.cr-coin', {}, '◉'), p.balance, p.rate]),
-        el('div.cr-facts', {}, [p.level, p.fee, p.through, p.lift, p.posts]),
+        el('div.kstat.cr-purse', { title: t('crier.balance.tip') }, [el('span.kstat-icon.cr-coin', {}, '◉'), el('div.kstat-body', {}, [p.balance, p.rate])]),
+        el('div.cr-facts', {}, [p.level.chip, p.fee.chip, p.through.chip, p.lift.chip, p.posts.chip]),
         el('button.btn.rs-close', { onclick: () => this.host.close(), title: t('screen.close') }, '✕'),
       ]),
       el('div.cr-body', {}, [
-        el('aside.cr-side', {}, [el('div.cr-orbit', {}, [this.orbit.root]), p.legend, p.gazette.root]),
+        el('aside.cr-side', {}, [
+          el('div.cr-orbit', {}, [this.orbit.root, el('div.cr-legend', {}, [p.colonies.chip, p.partners.chip])]),
+          p.gazette.root,
+        ]),
         el('div.cr-main', {}, [nav, p.prices.root, p.trade.root, p.board.root]),
       ]),
     );
@@ -827,27 +1044,31 @@ export class CrierScreen {
     const ui = this.ui;
     this.orbit.setData({ snapshot: snap, epoch: sim.absEpoch(), lifts: this.host.takeLifts() });
 
-    // The purse and what every post does at this research.
+    // The purse, and what every post does at this research: a figure per chip, the words on hover.
     const f = postFacts(sim);
     setText(ui.balance, ocNum(sim.credits));
     const perHour = tradePerHour(sim);
     setText(ui.rate, Math.abs(perHour) >= 50 ? t('crier.rate', { v: oc(perHour, true, 0) }) : '');
     setAttr(ui.rate, 'data-sign', perHour >= 50 ? '+' : perHour <= -50 ? '-' : null);
-    setText(ui.level, t('crier.level', { n: f.level }));
-    setText(ui.fee, t('crier.fee', { v: feeText(f.fee) }));
-    setText(ui.through, t('crier.throughput', { rate: rate(f.perMin) }));
-    setText(ui.lift, t('crier.lift', { d: minutes(f.liftMin) }));
-    // What each chip means, on hover.
-    setAttr(ui.level, 'title', t('crier.level.tip'));
-    setAttr(ui.fee, 'title', t('crier.fee.tip', { v: feeText(f.fee) }));
-    setAttr(ui.through, 'title', t('crier.throughput.tip'));
-    setAttr(ui.lift, 'title', t('crier.lift.tip'));
-    setAttr(ui.posts, 'title', t('crier.posts.tip'));
+    const tip = (x: Fact, head: string, body: string): void => setAttr(x.chip, 'title', `${head}\n${body}`);
+    setText(ui.level.v, num(f.level));
+    tip(ui.level, t('crier.level', { n: f.level }), t('crier.level.tip'));
+    setText(ui.fee.v, feeText(f.fee));
+    tip(ui.fee, t('crier.fee', { v: feeText(f.fee) }), t('crier.fee.tip', { v: feeText(f.fee) }));
+    setText(ui.through.v, rate(f.perMin));
+    tip(ui.through, t('crier.throughput', { rate: rate(f.perMin) }), t('crier.throughput.tip'));
+    setText(ui.lift.v, minutes(f.liftMin));
+    tip(ui.lift, t('crier.lift', { d: minutes(f.liftMin) }), t('crier.lift.tip'));
     const posts = sim.tradePosts();
-    const np = posts.length;
-    setText(ui.posts, np ? t('crier.posts', { n: np, max: maxPosts(sim.mods) }) : t('crier.noPost'));
-    setAttr(ui.posts, 'data-none', np ? null : '');
-    setText(ui.legend, `${t('crier.orbit.legend', { n: snap.colonies.length })} · ${snap.trade.length ? t('crier.orbit.trading', { n: snap.trade.length }) : t('crier.orbit.none')}`);
+    const np = posts.length, mp = maxPosts(sim.mods);
+    setText(ui.posts.v, np ? `${np}/${mp}` : t('crier.noPost'));
+    setAttr(ui.posts.chip, 'data-none', np ? null : '');
+    tip(ui.posts, np ? t('crier.posts', { n: np, max: mp }) : t('crier.noPost'), t('crier.posts.tip'));
+    // The orbit's legend.
+    setText(ui.colonies.v, num(snap.colonies.length));
+    setAttr(ui.colonies.chip, 'title', t('crier.orbit.legend', { n: snap.colonies.length }));
+    setText(ui.partners.v, num(snap.trade.length));
+    setAttr(ui.partners.chip, 'title', snap.trade.length ? capFirst(t('crier.orbit.trading', { n: snap.trade.length })) : capFirst(t('crier.orbit.none')));
 
     ui.gazette.refresh(sim, snap);
     this.paintTabs(ui);

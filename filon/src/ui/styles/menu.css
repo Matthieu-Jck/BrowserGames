@@ -75,10 +75,21 @@ body[data-menu] #ui { opacity: 0; visibility: hidden; transition: opacity 260ms 
 @keyframes menu-in { from { opacity: 0; } }
 @keyframes menu-rise { from { opacity: 0; transform: translateY(12px); } }
 
-/* ── the settings page ────────────────────────────────────────────────────── */
-.set-row { display: grid; grid-template-columns: 10.5em minmax(0, 1fr); align-items: center; gap: 4px 16px; padding: 10px 0; border-top: 1.5px dashed rgba(30, 27, 46, 0.2); }
-.set-label { font-size: 20px; }
+/* ── the settings page: three kit sections (D89) — Affichage, Son, Sauvegarde ── */
+.settings .ksec, .about .ksec {
+  margin: 12px 0 0; padding: 8px 14px 10px; border-radius: var(--radius-ink);
+  background: color-mix(in srgb, var(--c-paper-d) 45%, var(--c-paper));
+}
+.settings .ksec-head, .about .ksec-head { gap: 8px; margin-bottom: 4px; }
+.settings .ksec-head[title] { cursor: help; }
+.settings .ksec-icon, .about .ksec-icon { font-size: 21px; }
+.settings .ksec-title, .about .ksec-title { font-size: 21px; }
+.set-row { display: grid; grid-template-columns: 9.6em minmax(0, 1fr); align-items: center; gap: 4px 14px; padding: 7px 0; border-top: 1px dashed rgba(30, 27, 46, 0.14); }
+.ksec-head + .set-row { border-top: none; }
+.set-row[title] { cursor: help; }
+.set-label { font-size: 18px; }
 .set-seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.set-ctl { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
 .set-opt {
   font: 600 14px/1.2 var(--f-body); padding: 5px 12px; cursor: pointer;
   border: 2px solid var(--c-ink); border-radius: 9px 7px 10px 8px / 8px 10px 7px 9px;
@@ -87,22 +98,34 @@ body[data-menu] #ui { opacity: 0; visibility: hidden; transition: opacity 260ms 
 }
 .set-opt:hover { background: var(--c-peach-l); }
 .set-opt:active { transform: translate(2px, 2px); box-shadow: 0 0 0 var(--c-ink); }
-/* The « Sauvegarde » row (M7): starting over reads as the one dangerous choice; nothing to do when the page keeps no base. */
+/* The « Sauvegarde » section (M7): starting over reads as the one dangerous choice, set apart on the right; nothing to do when the page keeps no base. */
 .set-danger { color: var(--c-coral-d); }
+.set-save .set-danger { margin-left: auto; }
 .set-opt[disabled] { opacity: 0.45; pointer-events: none; }
 .set-opt[data-on] { background: var(--c-turq); color: var(--c-paper); }
-.set-note { grid-column: 2; margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--c-ink-soft); }
+.set-note { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--c-ink-soft); }
+/* A short tag beside a control (« au prochain lancement »): a clock and two words. */
+.set-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--c-ink-soft); }
+.set-tag .kmark { width: 1.1em; height: 1.1em; }
+/* The volumes: a speaker whose waves follow the level, the slider, the figure. */
 .set-row[data-off] .set-label, .set-row[data-off] .set-gauge { opacity: 0.5; }
 .set-gauge { display: flex; align-items: center; gap: 10px; }
-.set-range { width: 170px; margin: 0; accent-color: var(--c-ink-soft); }
-.set-foot { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 12px; padding-top: 12px; border-top: 2px solid var(--c-ink); }
+.set-gauge > .kmark { width: 1.45em; height: 1.45em; }
+.kmark[data-mark='speaker'] .k-stroke { transition: opacity 120ms; }
+.kmark[data-level='0'] .set-w1, .kmark[data-level='0'] .set-w2, .kmark[data-level='0'] .set-w3,
+.kmark[data-level='1'] .set-w2, .kmark[data-level='1'] .set-w3, .kmark[data-level='2'] .set-w3 { opacity: 0.15; }
+.set-range { flex: 1; max-width: 190px; margin: 0; accent-color: var(--c-turq-d); }
+.set-val { min-width: 3em; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.settings [data-sound-note] { margin-top: 4px; color: var(--c-coral-d); }
+.set-when { display: flex; align-items: center; gap: 6px; margin: 2px 0 8px; font-size: 13px; color: var(--c-ink-soft); }
+.set-when .kmark { width: 1.2em; height: 1.2em; }
+.set-foot { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; padding-top: 12px; border-top: 2px solid var(--c-ink); }
 .set-foot .set-note { font-size: 12px; }
 .set-back { font-size: 19px; flex: none; }
 
-/* ── the credits ──────────────────────────────────────────────────────────── */
-.about p { margin: 0 0 8px; font-size: 14.5px; line-height: 1.5; }
+/* ── the credits: the lore, then the credits as a kit section ─────────────── */
+.about-lore p { margin: 0 0 8px; font-size: 14.5px; line-height: 1.5; }
 .about .about-lead { font-size: 22px; line-height: 1.2; margin-bottom: 10px; }
-.about h3 { margin: 14px 0 4px; font-size: 20px; font-weight: 400; }
 .about-credits { margin: 0; padding-left: 18px; font-size: 13.5px; line-height: 1.55; }
 .about-credits li::marker { color: var(--c-coral-d); }
 

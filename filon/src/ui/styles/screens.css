@@ -183,46 +183,108 @@
 .rs-respec[disabled] { opacity: 0.4; cursor: default; }
 
 /* ── stats ─────────────────────────────────────────────────────────────────── */
-.st-tabs { display: flex; gap: 6px; }
+/* Three kit sections (D89): the ledger on the left, the machines and the power beside it (they stay
+   in view while the ledger scrolls); one column on a narrow window. */
+.stats .rs-head { align-items: center; }
+.st-tabs { display: flex; align-items: center; gap: 6px; }
+.st-tabs > .kmark { width: 1.5em; height: 1.5em; margin-right: 2px; }
 .st-tab[data-on] { background: var(--c-turq); color: var(--c-paper); }
-.st-body { padding: 12px 16px; overflow: auto; max-width: 820px; }
-.st-row { display: grid; grid-template-columns: 1.8fr 0.8fr 0.8fr 0.8fr 130px; align-items: center; gap: 8px; padding: 3px 0; border-bottom: 1px dashed rgba(30, 27, 46, 0.15); font-size: 13px; }
-.st-headrow { font-weight: 700; border-bottom: 2px solid var(--c-ink); }
-.st-item { display: inline-flex; align-items: center; gap: 6px; }
-.st-item canvas { width: 18px; height: 18px; display: block; }
-.st-num { text-align: right; font-variant-numeric: tabular-nums; }
-.st-num[data-sign='+'] { color: var(--c-turq-d); font-weight: 600; }
-.st-num[data-sign='-'] { color: var(--c-coral-d); font-weight: 600; }
-.st-spark { width: 120px; height: 24px; }
+.st-body {
+  flex: 1; min-height: 0; overflow: auto; padding: 2px 8px 14px 2px; width: 100%; max-width: 1400px;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 430px); grid-template-areas: 'ledger side';
+  align-items: start; gap: 18px;
+}
+.st-body[data-solo] { grid-template-columns: minmax(0, 940px); grid-template-areas: 'ledger'; }
+.st-body[data-solo] .st-side { display: none; }
+.st-body > .ksec[data-st-part='ledger'] { grid-area: ledger; }
+.st-side { grid-area: side; position: sticky; top: 0; display: flex; flex-direction: column; gap: 18px; }
+/* The sections, on a full screen: inked paper cards, a larger title. */
+.stats .ksec { margin: 0; padding: 12px 16px 14px; border-width: 2px; border-radius: var(--radius-ink); background: var(--c-paper); box-shadow: var(--shadow-ink); }
+.stats .ksec-head { margin-bottom: 10px; padding-bottom: 6px; gap: 8px; }
+.stats .ksec-head[title] { cursor: help; }
+.stats .ksec-icon { font-size: 22px; }
+.stats .ksec-title { font-size: 22px; }
+.stats .ksec-aside { font-size: 14px; color: var(--c-ink-soft); font-weight: 600; }
+.st-aside { display: inline-flex; align-items: center; gap: 5px; }
+.st-aside .kmark { width: 1.15em; height: 1.15em; }
+.st-aside[data-tone] { padding: 1px 9px; border: 1.5px solid var(--c-ink); border-radius: 999px; color: var(--c-ink); font-family: var(--f-title); font-size: 17px; font-weight: 400; }
+.st-aside[data-tone='good'] { background: var(--c-turq-l); }
+.st-aside[data-tone='warn'] { background: var(--c-warn); }
+.st-aside[data-tone='bad'] { background: var(--c-coral); color: var(--c-paper); }
+.st-aside:empty { display: none; }
+
+/* The ledger: item · made · used (bars on one scale) · net (a diverging bar) · trend. */
+.st-row {
+  display: grid; grid-template-columns: minmax(150px, 1.25fr) minmax(110px, 1fr) minmax(110px, 1fr) minmax(130px, 1fr) 120px;
+  align-items: center; gap: 14px; padding: 4px 2px; border-bottom: 1px dashed rgba(30, 27, 46, 0.14); font-size: 13.5px;
+}
+.st-row:not(.st-headrow):hover { background: color-mix(in srgb, var(--c-peach-l) 55%, transparent); }
+.st-headrow {
+  position: sticky; top: 0; z-index: 1; padding-top: 4px; background: var(--c-paper);
+  font-size: 12px; font-weight: 700; color: var(--c-ink-soft); border-bottom: 2px solid var(--c-ink);
+}
+.st-col { display: inline-flex; align-items: center; gap: 6px; }
+.st-col-net { justify-content: center; }
+.st-swatch { display: inline-block; width: 14px; height: 8px; border: 1.5px solid var(--c-ink); border-radius: 3px; flex: none; }
+.st-swatch[data-tone='made'], .st-swatch[data-tone='supply'] { background: var(--c-turq); }
+.st-swatch[data-tone='used'], .st-swatch[data-tone='demand'] { background: var(--c-coral); }
+.st-item { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-weight: 600; }
+.st-item .imention { overflow: hidden; text-overflow: ellipsis; }
+.st-row .kmeter-v { font-size: 13px; min-width: 3em; }
+.st-row .insp-bar { height: 8px; min-width: 40px; }
+/* The net: a rail with zero in the middle, gains to the right in turquoise, losses to the left in coral. */
+.st-net { display: grid; grid-template-columns: minmax(50px, 1fr) 4.2em; align-items: center; gap: 6px; }
+.st-div {
+  position: relative; display: flex; height: 10px; border: 1.5px solid var(--c-ink); border-radius: 5px;
+  background: var(--c-paper-d); overflow: hidden;
+}
+.st-div::after { content: ''; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1.5px; margin-left: -0.75px; background: var(--c-ink); }
+.st-div > i { flex: 1; height: 100%; transform: scaleX(0); }
+.st-div-neg { background: var(--c-coral); transform-origin: right center; }
+.st-div-pos { background: var(--c-turq); transform-origin: left center; }
+.st-num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.st-num[data-sign='+'] { color: var(--c-turq-d); }
+.st-num[data-sign='-'] { color: var(--c-coral-d); }
+.st-spark { width: 120px; height: 24px; display: block; }
 .st-empty:empty { display: none; }
-.st-body h2 { font-size: 20px; margin: 16px 0 6px; }
-.st-power { width: 640px; height: 120px; border: 1.5px solid var(--c-ink); border-radius: 8px; display: block; }
-.st-legend { display: flex; gap: 16px; font-size: 13px; margin-top: 4px; color: var(--c-ink-soft); }
-/* Each line of the power history named in its own colour. */
-.st-leg { display: inline-flex; align-items: center; gap: 6px; }
-.st-leg::before { content: ''; width: 18px; height: 3px; border-radius: 2px; background: var(--c-coral-d); }
-.st-leg[data-tone='supply']::before { background: var(--c-turq-d); }
-.st-leg:empty { display: none; }
-/* What the numbers are, under each part's title. */
-.st-note { margin: 0 0 8px; font-size: 12.5px; line-height: 1.35; color: var(--c-ink-soft); }
-.st-part[data-st-part='ledger'] h2 { margin-top: 0; }
-.st-part[data-st-part='machines'] + .st-part[data-st-part='ledger'] h2 { margin-top: 16px; }
 .st-empty { margin: 10px 0; padding: 8px 10px; border-radius: 8px; background: var(--c-peach-l); color: var(--c-ink); }
-/* The Analytics path's parts of the stats (D41): shown once their plan is taken. */
-.st-part[hidden] { display: none; }
-.st-part[data-st-part='machines'] { margin-bottom: 12px; }
-.st-part[data-st-part='machines'] h2 { margin-top: 0; }
+
+/* The machines (D41's Diagnostics): one bar cut by state, then a chip per state. */
+.st-stack { display: flex; height: 18px; margin: 2px 0 12px; border: 2px solid var(--c-ink); border-radius: 7px 5px 8px 6px / 6px 8px 5px 7px; overflow: hidden; background: var(--c-paper-d); }
+.st-seg { min-width: 4px; border-right: 1.5px solid var(--c-ink); cursor: help; }
+.st-seg:last-child { border-right: none; }
+.st-seg[data-tone='good'] { background: var(--c-turq); }
+.st-seg[data-tone='warn'] { background: var(--c-warn); }
+.st-seg[data-tone='bad'] { background: var(--c-coral); }
+.st-seg[data-tone='idle'] { background: repeating-linear-gradient(135deg, var(--c-paper-d) 0 4px, color-mix(in srgb, var(--c-ink) 14%, var(--c-paper-d)) 4px 6px); }
 .st-states { display: flex; flex-wrap: wrap; gap: 6px; }
 .st-state {
-  display: inline-flex; align-items: baseline; gap: 6px; padding: 2px 10px; border-radius: 999px;
-  font-size: 13px; font-weight: 600; border: 1.5px solid var(--c-ink); cursor: help;
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 6px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 600; border: 1.5px solid var(--c-ink); cursor: help; background: var(--c-paper);
 }
-.st-state b { font: 400 17px/1 var(--f-title); }
+.st-state > .kmark, .st-state > .glyph { width: 1.3em; height: 1.3em; }
+.st-state b { font: 400 18px/1 var(--f-title); }
 .st-state[data-tone='good'] { background: var(--c-turq-l); }
-.st-state[data-tone='warn'] { background: var(--c-peach); }
-.st-state[data-tone='bad'] { background: var(--c-coral); color: var(--c-paper); }
+.st-state[data-tone='warn'] { background: var(--c-peach-l); }
+.st-state[data-tone='bad'] { background: color-mix(in srgb, var(--c-coral) 30%, var(--c-paper)); }
 .st-state[data-tone='idle'] { background: var(--c-paper-d); }
 .st-none { color: var(--c-ink-soft); font-size: 13px; }
+
+/* The power: the two figures now (in the colours of their lines), the history, its time axis. */
+.st-figures { display: flex; gap: 26px; margin: 0 0 10px; }
+.st-figures .kstat-icon .st-swatch { width: 18px; height: 10px; }
+.st-figures .kstat-body > b { font-size: 24px; }
+.st-figures .kstat-cap { font-size: 12px; }
+.st-power { display: block; width: 100%; height: auto; aspect-ratio: 460 / 150; border: 1.5px solid var(--c-ink); border-radius: 8px; background: var(--c-paper); }
+.st-axis { display: flex; justify-content: space-between; margin-top: 3px; font-size: 11.5px; color: var(--c-ink-soft); }
+
+/* Narrow windows: one column, the machines and the power first. */
+@media (max-width: 1120px) {
+  .st-body { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'side' 'ledger'; }
+  .st-side { position: static; display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); align-items: start; }
+  .st-row { grid-template-columns: minmax(130px, 1.3fr) minmax(90px, 1fr) minmax(90px, 1fr) minmax(110px, 1fr) 100px; gap: 10px; }
+  .st-spark { width: 100px; }
+}
 
 /* One tab at a time (ui/screens/conflict.ts): over the boot veil, or over the world in the tab that stepped aside. */
 .conflict { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: rgba(242, 198, 160, 0.55); backdrop-filter: blur(3px); }

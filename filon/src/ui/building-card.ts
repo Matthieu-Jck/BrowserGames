@@ -4,7 +4,9 @@
 // machine's recipes as icons per minute, its ports as its footprint with arrows in and out, then
 // its figures (building-facts.ts: power, throughput, stores, reach, where it may stand, what it
 // replaces) and its cost (each item's amount, icon and name, coral where the Hearth runs short).
-// Words only where nothing shows how it works: its description's first sentence (`brief`).
+// Words only where nothing shows how it works: its description's first sentence (`brief`). Built
+// from the panels' kit (D89): each block a section header (an icon, a title on a dashed rule), the
+// recipes as the kit's icon equations, each figure led by its icon; the inspector's look, shorter.
 //
 // It listens on the build bar's root by event delegation, so the bar knows nothing of it. A short
 // rest opens it; once one is open, the next slot's opens at once, and it closes a moment after the
@@ -20,6 +22,8 @@ import type { Atlas } from '@/render/art/atlas';
 import type { Side } from '@/content/types';
 import type { Sim } from '@/sim/state';
 import { buildingIcon } from './build-bar';
+import { glyph } from './glyphs';
+import { equation, itemTerm, mark, section } from './inspector/kit';
 import { itemMention } from './mention';
 import {
   buildingFacts, factCtx, type BuildingFacts, type ItemRate, type PortFact, type RecipeFact, type RuleFact, type RuleLegend, type RuleSide,
@@ -131,12 +135,12 @@ export class BuildingCard {
         el('div.bcard-titles', {}, [el('div.bcard-name.lettering', {}, f.name), el('div.bcard-sub', {}, f.sub)]),
       ]),
       f.brief ? el('p.bcard-desc', {}, f.brief) : null,
-      f.locked ? el('div.bcard-lock', {}, f.locked) : null,
-      f.rule ? ruleBlock(f.rule) : null,
+      f.locked ? el('div.bcard-lock', {}, [mark('tree'), ' ', f.locked]) : null,
+      f.rule ? section({ sec: 'rule', title: t('card.rule'), icon: mark('filter') }, [ruleBlock(f.rule)]) : null,
       f.recipes ? recipesBlock(f.recipes) : null,
-      f.ports ? portsBlock(f.ports) : null,
+      f.ports ? section({ sec: 'ports', title: t('card.ports'), icon: mark('gate') }, [portsBlock(f.ports)]) : null,
       f.rows.length ? el('dl.bcard-rows', {}, f.rows.map((r) => el('div.bcard-row', { 'data-k': r.k }, [
-        el('dt', {}, r.label),
+        el('dt', {}, [rowIcon(r.k), el('span', {}, r.label)]),
         el('dd', {}, [...(r.items ?? []).map((i) => itemMention(i, { name: false })), el('span', {}, r.text)]),
       ]))) : null,
       el('footer.bcard-cost', {}, [
@@ -168,21 +172,29 @@ export class BuildingCard {
 
 // ── recipes ────────────────────────────────────────────────────────────────
 
-/** « [ore] 30 + [coal] 6 → [plate] 15  Plaque de fer », one line per unlocked recipe, columns aligned. */
+/** « [ore] 30 + [coal] 6 → [plate] 15  Plaque de fer », one line per unlocked recipe: the kit's equation, on one line. */
 function recipesBlock(list: readonly RecipeFact[]): HTMLElement {
-  const chip = (r: ItemRate): HTMLElement => el('span.bcard-ir', {}, [itemMention(r.item, { name: false }), num(r.perMin)]);
-  const plus = (rates: readonly ItemRate[]): HTMLElement[] => rates.flatMap((r, i) => (i ? [el('span.bcard-plus', {}, '+'), chip(r)] : [chip(r)]));
-  return el('section.bcard-recipes', {}, [
-    el('div.bcard-h.lettering', {}, t('card.recipes')),
-    ...(list.length
-      ? list.map((r) => el('div.bcard-recipe', {}, [
-        el('span.bcard-ins', {}, plus(r.ins)),
-        el('span.bcard-to', {}, '→'),
-        el('span.bcard-outs', {}, plus(r.outs)),
-        el('span.bcard-rname', {}, r.name),
-      ]))
-      : [el('div.bcard-none', {}, t('card.recipes.none'))]),
-  ]);
+  const terms = (rates: readonly ItemRate[]) => rates.map((r) => itemTerm(r.item, num(r.perMin)));
+  return section({ sec: 'recipes', title: t('card.recipes'), icon: mark('recipe') }, list.length
+    ? list.map((r) => el('div.bcard-recipe', {}, [equation(terms(r.ins), terms(r.outs), undefined, true), el('span.bcard-rname', {}, r.name)]))
+    : [el('div.bcard-none', {}, t('card.recipes.none'))]);
+}
+
+/** Each figure's icon, by its row's key (building-facts.ts `kindRows` and the generic rows). */
+const ROW_ICON: Readonly<Record<string, () => HTMLElement>> = {
+  power: () => glyph('power'), wind: () => glyph('power'), wires: () => glyph('power'), grid: () => glyph('unwired'),
+  place: () => glyph('parcel'), reveal: () => glyph('fog'), replace: () => mark('build'),
+  fee: () => glyph('crier'), lift: () => mark('flight'), drifters: () => mark('route'), tokens: () => mark('order'),
+  mines: () => mark('job'), makes: () => mark('job'), yields: () => mark('job'), rate: () => mark('job'), speed: () => mark('job'), climb: () => mark('level'),
+  store: () => mark('store'), buffer: () => mark('store'), fills: () => mark('store'), takes: () => mark('store'),
+  reach: () => mark('filter'), fuel: () => mark('cargo'),
+};
+
+/** A figure's icon (an empty slot for a key without one: the column stays aligned). */
+function rowIcon(k: string): HTMLElement {
+  const icon = ROW_ICON[k]?.() ?? el('span.bcard-noicon');
+  icon.classList.add('bcard-ricon');
+  return icon;
 }
 
 // ── the routing rule diagram ───────────────────────────────────────────────

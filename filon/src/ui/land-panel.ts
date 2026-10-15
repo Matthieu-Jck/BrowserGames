@@ -91,7 +91,7 @@ export class LandPanel {
     for (const n of this.legend.querySelectorAll<HTMLElement>('[data-label]')) setText(n, t(n.dataset.label as MsgKey));
     setText(this.hint, t('land.hint'));
     setAttr(this.hint, 'hidden', p >= 0 ? '' : null);
-    setText(this.title, t('land.title'));
+    setText(this.title, p >= 0 ? t('land.title') : t('land.tool')); // the Terrain view (D88) until a parcel is picked
     setText(this.sub, p >= 0 ? parcelLabel(p) : t('land.tool.tip'));
     const sig = p >= 0 ? `${p}:${parcelState(sim, p)}:${contentsSig(parcelContents(sim, p))}:${locale()}:${sim.colonyName}:${sim.mods.flags.has('landResale')}` : '';
     if (sig !== this.sig) {

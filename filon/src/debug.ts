@@ -8,7 +8,7 @@ import type { SlotInfo } from '@/persist/slots';
 import { forecast } from '@/persist/colony';
 import { firstStop } from '@/ui/screens/report-panels';
 import type { MenuPage } from '@/ui/screens/menu';
-import type { Locale, ScreenId, ViewMode } from '@/core/kinds';
+import type { Locale, MapView, ScreenId, ViewMode } from '@/core/kinds';
 import { locale, setLocale, tr } from '@/i18n/i18n';
 import type { PerfStats } from '@/render/perf-overlay';
 import { gradeAt, MOMENTS, phaseAt } from '@/render/daynight';
@@ -38,6 +38,11 @@ export interface FilonDebug {
   view(mode?: ViewMode): { mode: ViewMode; t: number };
   /** Open a construction category (null closes building and returns to iso). */
   category(cat?: string | null): string | null;
+  /**
+   * The specialised view on show (D88: normal, power, logistics, production, land); with an
+   * argument, shows it first (its readings at once). `marks`: the badges up; `panel`: the side card shown.
+   */
+  mapView(v?: MapView): { view: MapView; marks: number; panel: boolean; version: number };
   /** Take a building in hand ('demolish' for the demolition tool, 'link' for the Link tool, null to drop it). */
   tool(def?: string | null): { k: string; def: string | null } | null;
   /** Screen px (CSS) of a tile's centre in the current view. */
@@ -221,6 +226,10 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
     category: (cat) => {
       if (cat !== undefined) app.build.open(cat as never);
       return app.build.category;
+    },
+    mapView: (v) => {
+      if (v !== undefined) { app.views.set(v); app.viewPanel.refresh(); }
+      return { view: app.views.current, marks: app.viewsView.count, panel: !app.viewPanel.root.hidden, version: app.views.data.version };
     },
     tool: (def) => {
       if (def === 'demolish') app.build.demolish();

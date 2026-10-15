@@ -1,7 +1,9 @@
 // build-bar.ts — the construction bar at the bottom: the category tabs and, once one is opened,
 // its tray of buildings (icons from the plan atlas, digit hotkeys, costs) with the demolish tool
 // and the way back to the view. Opening a tab switches to the plan view; the hint line under it
-// explains the current tool.
+// explains the current tool. It shows only while building (D88, hud.css: « Construire », B or a
+// digit opens the last category, Shift+digit the n-th); while it is closed, what a tray holds new
+// is a dot on « Construire » (`hasNew`).
 //
 // Only what is unlocked is shown (owner, D27): a building enters its tray once its plan or its
 // research is unlocked in the tech tree (D33), never greyed out before, and a category with
@@ -294,6 +296,12 @@ export class BuildBar {
       for (const c of s.chips) setAttr(c.node, 'data-poor', sim.stock[c.item]! < c.mu ? '' : null);
     }
     setText(this.hintEl, cat ? t(this.host.hint()) : '');
+  }
+
+  /** Does any tray hold a building unlocked but not seen yet (a dot on « Construire » while building is closed, D88)? */
+  hasNew(): boolean {
+    for (const c of this.shown) if (this.hasFresh(c)) return true;
+    return false;
   }
 
   /** The building in slot i (0..9) of the open tray. */

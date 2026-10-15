@@ -2,7 +2,7 @@
 // from Verrière with CrierBelt), the base's name, and « Jouer », « Paramètres », « À propos ».
 // The world keeps running and drifting behind a paper veil (the shell moves the camera and
 // hides the HUD: this component is plain DOM). The settings
-// and the credits open as a page beside the buttons; Esc goes back from a page to the buttons,
+// and the credits open as a page beside the buttons (their groups are kit sections, D89); Esc goes back from a page to the buttons,
 // then closes the menu (the shell's Esc chain calls `back()` first). Shown at boot, and in game
 // from the HUD's menu button or Esc when nothing else is open (D27).
 //
@@ -19,6 +19,7 @@
 import { el, setAttr, setText } from '@/core/dom';
 import { t, type MsgKey } from '@/i18n/i18n';
 import type { ScenarioId } from '@/sim/scenarios';
+import { mark, section } from '../inspector/kit';
 import type { SettingsScreen } from './settings';
 import { ForecastPage, type ForecastHost } from './forecast';
 
@@ -106,13 +107,19 @@ export class MainMenu {
       return b;
     };
     this.base = el('p.menu-base.lettering');
+    // The credits page: the lore, then the credits, each a kit section (D89).
+    const credits = section({ sec: 'about-credits', title: t('menu.about.credits'), icon: mark('recipe') }, [
+      el('ul.about-credits', {}, (['menu.about.art', 'menu.about.fonts', 'menu.about.tech'] as const).map((k) => this.label(el('li'), k))),
+    ]);
+    this.label(credits.querySelector<HTMLElement>('.ksec-title')!, 'menu.about.credits');
     this.about = el('section.about', { 'data-screen': 'about' }, [
       this.label(el('h2.lettering'), 'menu.about'),
-      this.label(el('p.about-lead.lettering'), 'menu.about.lead'),
-      this.label(el('p'), 'menu.about.text'),
-      this.label(el('p'), 'menu.about.drones'),
-      this.label(el('h3.lettering'), 'menu.about.credits'),
-      el('ul.about-credits', {}, (['menu.about.art', 'menu.about.fonts', 'menu.about.tech'] as const).map((k) => this.label(el('li'), k))),
+      el('div.about-lore', {}, [
+        this.label(el('p.about-lead.lettering'), 'menu.about.lead'),
+        this.label(el('p'), 'menu.about.text'),
+        this.label(el('p'), 'menu.about.drones'),
+      ]),
+      credits,
       el('div.set-foot', {}, [this.version, this.label(el<'button'>('button.btn.set-back', { type: 'button', onclick: () => this.show('home') }), 'menu.back')]),
     ]);
     this.debugBack = this.label(el<'button'>('button.btn.dbg-back', { type: 'button', 'data-debug-restore': '', onclick: () => host.debug?.restore() }), 'debug.back');

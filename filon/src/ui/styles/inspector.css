@@ -1,0 +1,171 @@
+/* inspector.css — the inspector (ui/inspector/*), laid out by the kit (kit.css, D89): its header,
+   the top block (the status line, what to do, what the building does), the kind's sections, the
+   grid card, the foot. Imported by inspector.ts itself, so it comes after hud.css in the bundle.
+   The land panel (land-panel.ts) borrows `.insp-head`, `.insp-x` and `.insp-note`. */
+
+.inspector {
+  position: fixed; right: 12px; top: 76px; width: 318px; max-height: calc(100vh - 220px);
+  overflow: auto; padding: 10px 12px 12px; font-size: 13px; line-height: 1.35;
+}
+.inspector[hidden] { display: none; }
+
+/* ── the header ─────────────────────────────────────────────────────────── */
+.insp-head { display: flex; align-items: center; gap: 10px; }
+.insp-head canvas { display: block; width: 46px; height: auto; flex: none; }
+.insp-titles { min-width: 0; }
+.insp-head h3 { margin: 0; font-size: 22px; line-height: 1.05; }
+.insp-head small { color: var(--c-ink-soft); font-size: 11.5px; }
+.insp-x { margin-left: auto; border: none; background: none; font-size: 18px; cursor: pointer; align-self: flex-start; color: var(--c-ink); }
+
+/* ── the top block: whether it works, why not, what it does ─────────────── */
+.insp-top { display: grid; gap: 6px; margin-top: 8px; }
+.insp-top:empty { display: none; }
+.insp-top > .kstatus[hidden] { display: none; }
+.insp-why {
+  margin: 0; padding: 4px 8px; font-size: 12.5px; line-height: 1.35;
+  border-left: 3px solid var(--c-warn); border-radius: 0 7px 7px 0; background: var(--c-peach-l);
+}
+.insp-why[hidden] { display: none; }
+.insp-why[data-state='off'] { border-left-color: var(--c-coral-d); background: color-mix(in srgb, var(--c-coral) 16%, var(--c-paper)); }
+.insp-why[data-state='build'], .insp-why[data-state='sleep'] { border-left-color: var(--c-lilac-d); background: color-mix(in srgb, var(--c-lilac-l) 40%, var(--c-paper)); }
+/* What it does: the hero, on a warm wash so it reads first. */
+.insp-hero {
+  display: grid; gap: 6px; padding: 7px 10px 8px;
+  border-radius: 9px 7px 10px 8px / 8px 10px 7px 9px; background: color-mix(in srgb, var(--c-peach-l) 55%, var(--c-paper));
+  border: 1.5px dashed color-mix(in srgb, var(--c-ink) 25%, transparent);
+}
+.insp-hero > .insp-note { margin: 0; }
+.insp-hero-line { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.insp-hero-line > .kmark { width: 1.3em; height: 1.3em; }
+.insp-hero-name { min-width: 0; font-size: 16px; font-weight: 400; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.insp-hero-name:not(.lettering) { font-size: 13.5px; font-weight: 600; }
+.insp-hero-pct { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.insp-hero .kstat-body > b[data-tone='bad'] { color: var(--c-coral-d); }
+.insp-hero .keq-n[data-tone='bad'], .insp-hero b[data-tone='bad'] { color: var(--c-coral-d); }
+/* The Core's level as steps. */
+.insp-steps { display: inline-flex; gap: 3px; margin-left: auto; }
+.insp-steps i { width: 14px; height: 9px; border: 1.5px solid var(--c-ink); border-radius: 3px; background: var(--c-paper); }
+.insp-steps i[data-on] { background: var(--c-turq); }
+/* A task under way (kit.ts progressBar): the current craft, the next item a drill cuts, a project. */
+.insp-progress { display: flex; }
+.insp-progress .insp-bar { height: 8px; margin-left: 0; max-width: none; }
+.insp-desc { margin: 0; font-size: 12.5px; line-height: 1.35; color: var(--c-ink-soft); }
+
+/* ── buffers: an icon and a meter per item ──────────────────────────────── */
+.kbuf { display: flex; align-items: center; gap: 7px; padding: 2px 0; }
+.kbuf[hidden] { display: none; }
+.kbuf-icon { display: inline-flex; flex: none; width: 22px; justify-content: center; font-size: 15px; }
+.kbuf-icon .imention-icon { margin: 0; vertical-align: middle; }
+.kbuf-icon .kmark { width: 1.2em; height: 1.2em; }
+.kbuf-cap { display: block; margin: 4px 0 1px; font-size: 10.5px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--c-ink-soft); }
+.kbuf-cap:first-of-type { margin-top: 0; }
+.kbuf-held { flex: none; min-width: 4.6em; text-align: right; font-size: 11px; color: var(--c-ink-soft); white-space: nowrap; }
+
+/* ── rows, notes, lists ─────────────────────────────────────────────────── */
+.inspector h4 { margin: 10px 0 4px; font-size: 15px; }
+.inspector .ksec h4.ksec-title { margin: 0; }
+.insp-note { margin: 1px 0 5px; font-size: 12px; line-height: 1.35; color: var(--c-ink-soft); }
+.insp-note[data-tone='bad'] { color: var(--c-coral-d); font-weight: 600; }
+.insp-note[hidden] { display: none; }
+.insp-row { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 2px 0; }
+.insp-row[hidden] { display: none; }
+.insp-row canvas { display: block; width: 18px; height: 18px; }
+.insp-label { color: var(--c-ink-soft); }
+.insp-value { margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; }
+.insp-itemrow .insp-label { color: var(--c-ink); min-width: 0; }
+.insp-compass { margin-left: 5px; font-size: 11px; color: var(--c-ink-soft); }
+.insp-list { font-size: 13px; line-height: 1.4; }
+/* Held items: chips of an icon and an amount (the name beside it in short lists). */
+.insp-held { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; }
+.insp-chip { display: inline-flex; align-items: center; gap: 3px; }
+.insp-chip b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.insp-empty { margin: 0; color: var(--c-ink-soft); font-size: 12.5px; }
+/* Recipe buttons; the foot's buttons share the look. */
+.insp-recipes { display: flex; flex-wrap: wrap; gap: 6px; }
+.insp-recipe { font-size: 14px; padding: 2px 10px; }
+.insp-recipe .imention { margin-right: 3px; }
+.insp-recipe[data-on] { background: var(--c-turq); color: var(--c-paper); }
+.insp-recipe .glyph, .insp-recipe .kmark { width: 1.1em; height: 1.1em; }
+.insp-recipe[disabled] { opacity: 0.55; cursor: not-allowed; }
+/* Controls for stores, docks, forks. */
+.insp-select { font: 13px var(--f-body); padding: 2px 4px; border: 1.5px solid var(--c-ink); border-radius: 6px; background: var(--c-paper); max-width: 150px; }
+.insp-row .insp-select { margin-left: auto; }
+.insp-row .ipick { margin-left: auto; max-width: 170px; }
+.insp-cost { display: flex; gap: 10px; flex-wrap: wrap; margin: 4px 0; font-size: 13px; }
+.insp-routes { display: flex; flex-direction: column; gap: 2px; margin: 4px 0; }
+.insp-routes .insp-row span { font-size: 12px; }
+.insp-route-form { flex-wrap: wrap; }
+/* A row whose value is a glyph and a figure. */
+.insp-gv { display: inline-flex; align-items: center; gap: 5px; }
+.insp-gv[data-tone='bad'] { color: var(--c-coral-d); font-weight: 600; }
+/* A buy button that carries its price (the skydock's drifters): « + » and the cost chips on one line. */
+.insp-buy { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.insp-buy > * { flex: none; }
+/* An item picker whose « none » choice is an empty slot (outlets): the glyph instead of a word. */
+.ipick-none:empty::before { content: ''; display: inline-block; width: 1.2em; height: 1.2em; vertical-align: -0.24em; border: 1.2px dashed var(--c-ink-soft); border-radius: 3px; opacity: 0.7; }
+
+/* ── the grid card (power.ts gridCard, D25, D76): a section of the kit ─── */
+.pw-card { background: color-mix(in srgb, var(--c-turq-l) 20%, var(--c-paper)); }
+.pw-mark { display: inline-flex; }
+.pw-mark .glyph { width: 1.3em; height: 1.3em; }
+.pw-pct { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pw-head[data-power='dark'] .pw-pct, .pw-head[data-power='unwired'] .pw-pct, .pw-head[data-power='asleep'] .pw-pct { color: var(--c-coral-d); }
+.pw-gridline { display: flex; align-items: center; gap: 8px; margin: 0 0 2px; }
+.pw-gridline .insp-bar { min-width: 60px; }
+.pw-totals { white-space: nowrap; font-size: 11px; color: var(--c-ink-soft); font-variant-numeric: tabular-nums; }
+.pw-row { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 4px 0 0; border-top: 1px dashed color-mix(in srgb, var(--c-ink) 22%, transparent); margin-top: 5px; }
+.pw-row .insp-bar { margin-left: auto; max-width: 50%; }
+.pw-label { color: var(--c-ink-soft); }
+.pw-kw { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pw-row > .pw-kw:nth-child(2) { margin-left: auto; }
+.pw-row[data-pw='charge'] > .pw-kw { margin-left: 0; min-width: 3.2em; text-align: right; }
+/* « 120 kW × [×1,6 i] = 192 kW », captions under each figure. */
+.pw-formula {
+  display: grid; grid-template-columns: auto auto auto auto auto; justify-content: space-between; align-items: center;
+  column-gap: 4px; row-gap: 0; margin-top: 6px; padding-top: 5px; border-top: 1px dashed color-mix(in srgb, var(--c-ink) 22%, transparent);
+}
+.pw-formula .pw-kw { font-size: 15px; text-align: center; }
+.pw-now { font-family: var(--f-title); font-size: 17px !important; }
+.pw-now[data-tone='bad'] { color: var(--c-coral-d); }
+.pw-op { color: var(--c-ink-soft); font-size: 14px; text-align: center; }
+.pw-cap { text-align: center; font-size: 10px; color: var(--c-ink-soft); white-space: nowrap; }
+.pw-coef {
+  display: inline-flex; align-items: center; gap: 4px; padding: 1px 4px 1px 8px; cursor: pointer;
+  font: 600 15px var(--f-body); font-variant-numeric: tabular-nums; color: var(--c-ink);
+  border: 1.5px solid var(--c-ink); border-radius: 9px 7px 10px 8px / 8px 10px 7px 9px; background: var(--c-turq-l);
+}
+.pw-coef[data-tone='warn'] { background: var(--c-peach); }
+.pw-coef[data-tone='bad'] { background: var(--c-coral); color: var(--c-paper); }
+.pw-coef:hover { filter: brightness(1.05); }
+.pw-coef[aria-expanded='true'] { box-shadow: inset 0 0 0 1px var(--c-ink); }
+.pw-i {
+  display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%;
+  font: italic 700 10px/1 Georgia, serif; color: var(--c-paper); background: var(--c-ink);
+}
+/* The formula as a bar: the rail is the larger of nominal and now, the tick the nominal. */
+.pw-yield { position: relative; margin: 6px 0 2px; }
+.pw-yield .insp-bar { height: 11px; }
+.pw-yield .insp-bar[data-tone='good'] .insp-bar-fill { background: var(--c-turq); }
+.pw-tick { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--c-ink); border-radius: 1px; }
+.pw-why {
+  margin: 5px 0 0; padding: 4px 8px 5px; font-size: 12px; line-height: 1.35;
+  border-left: 3px solid var(--c-turq-d); border-radius: 0 7px 7px 0; background: var(--c-paper);
+}
+.pw-why[hidden] { display: none; }
+.pw-why-viz:empty { display: none; }
+.pw-why-viz { margin-top: 5px; }
+/* The wind's ladder: a bar per place by its factor, the turbine's own inked. */
+.pw-ladder { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; height: 66px; }
+.pw-step { display: grid; grid-template-rows: auto 1fr auto; justify-items: center; min-width: 0; }
+.pw-step-f, .pw-step-l { font-size: 9.5px; line-height: 1.2; white-space: nowrap; overflow: hidden; max-width: 100%; color: var(--c-ink-soft); font-variant-numeric: tabular-nums; }
+.pw-step-bar { align-self: end; width: 70%; border: 1px solid var(--c-ink-soft); border-bottom: none; border-radius: 3px 3px 0 0; background: var(--c-paper-d); }
+.pw-step[data-on] .pw-step-bar { background: var(--c-turq); border-color: var(--c-ink); }
+.pw-step[data-on] .pw-step-f, .pw-step[data-on] .pw-step-l { color: var(--c-ink); font-weight: 700; }
+/* The sun's curve over a day, midnight to midnight; now inked. */
+.pw-sun-bars { display: flex; align-items: flex-end; gap: 1px; height: 26px; border-bottom: 1px solid var(--c-ink-soft); }
+.pw-sun-bars i { flex: 1; background: var(--c-peach); border-radius: 1px 1px 0 0; }
+.pw-sun-bars i[data-on] { min-height: 3px; background: var(--c-coral-d); box-shadow: 0 0 0 1px var(--c-ink); } /* at night, a stub on the line */
+.pw-sun-axis { display: flex; justify-content: space-between; font-size: 9.5px; color: var(--c-ink-soft); }
+
+/* ── the facet of a specialised view (D88): its part first; the root says which ── */
+.inspector[data-facet] .ksec:not([data-dim]) { box-shadow: 2px 2px 0 var(--c-ink); }

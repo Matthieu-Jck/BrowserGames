@@ -13,6 +13,7 @@ The shell boots the game, owns every part, wires them together and runs the fram
 | [app/debug-bases.ts](../src/app/debug-bases.ts) | `installDebugBases`: ready-made bases at a few stages of the game ([sim/scenarios.ts](../src/sim/scenarios.ts)) swapped in for the player's base, which is kept aside untouched, and the way back; `realSim()` is the base persistence must save (see *Debug bases* below) |
 | [app/intro.ts](../src/app/intro.ts) | `installIntro`: the intro's shell side ([D31](decisions.md)) — when it plays (a new, unnamed base, once the main menu closes; never under automation, `?nomenu` or `?demo`), the Heart hidden until it lands, the landing's camera, naming the claim, the bus events `intro:land` / `intro:done`. Returns the `IntroShell` that `FL.intro` drives |
 | [app/sim-events.ts](../src/app/sim-events.ts) | `drainSimEvents`: `SimEvent` → toasts, bus, view rebuild (one typed handler per kind) |
+| [app/views.ts](../src/app/views.ts) | `MapViews`: the specialised views (D88) — which one is on (Normal, Électricité, Logistique, Production, Terrain = the land mode), `set` / `toggle` / `cancel` (Esc) / `reset` (a colony swapped), and at 4 Hz the active view's readings (`Readouts`: [src/sim/readouts/](../src/sim/readouts/)) for the renderer's `ViewsView` and the side card; the ribbon lines sampled once a second in any view (see *Specialised views* below) |
 | [app/controls.ts](../src/app/controls.ts) | `Controls`: key actions and pointer routing (tools in plan, inspection on click) |
 | [app/sound.ts](../src/app/sound.ts) | `installSound`: what the base sounds like ([audio.md](audio.md)): the first click or key unlocks the audio, a hidden tab mutes it, each frame a world snapshot (the day/night look's hour, the gust level, zoom, items and machines in view, the base's activity) and the cues (bus `sfx`, screens, the morph, selection, button clicks, toasts by kind, spot trades read off the command log); sets `app.sound` |
 | [debug.ts](../src/debug.ts) | `window.FL`: the deterministic handle for the console and the smoke test ([testing.md](testing.md)) |
@@ -36,9 +37,9 @@ The shell boots the game, owns every part, wires them together and runs the fram
 
 ## The `App` hub
 
-`App` keeps references to everything, so the controllers (and `window.FL`) reach parts through it: `app.view`, `app.picker`, `app.build`, `app.screens`, `app.controls`, `app.tools`, `app.camera`, `app.sim`, the views (`terrain`, `relief`, `buildings`, `items`, `ghost`, `overlays`, `drifters`, `cargo`, `landing`, `lights`, `clouds`), `dayNight` (the time of day's grade and the `FL.dayPhase` offset) and the UI (`hud`, `bar`, `inspector`, `landPanel`, `toasts`, `tip`, `stats`, and the tutorial's `quests` log and `guide`), the tools (`tools`, `link`, `landTool`). Its own state is small: `selected` (the inspected entity), `paused`, the tick accumulator and the UI clock.
+`App` keeps references to everything, so the controllers (and `window.FL`) reach parts through it: `app.view`, `app.picker`, `app.build`, `app.screens`, `app.controls`, `app.tools`, `app.camera`, `app.sim`, the views (`terrain`, `relief`, `buildings`, `items`, `ghost`, `overlays`, `viewsView`, `drifters`, `cargo`, `landing`, `lights`, `clouds`), the specialised views (`views`, `viewBar`, `viewPanel`; `focus(id)`: select and glide there; `viewShown(v)`: offered yet), `dayNight` (the time of day's grade and the `FL.dayPhase` offset) and the UI (`hud`, `bar`, `inspector`, `landPanel`, `toasts`, `tip`, `stats`, and the tutorial's `quests` log and `guide`), the tools (`tools`, `link`, `landTool`). Its own state is small: `selected` (the inspected entity), `paused`, the tick accumulator and the UI clock.
 
-Hosts: UI components never import the shell. Each declares a small host interface (`HudHost`, `BuildBarHost`, `InspectorHost`, `LandHost`, `ResearchHost`, `StatsHost`, `QuestLogHost`, `GuideHost`), and the App passes closures for those. That keeps the UI testable in isolation, and makes it explicit which actions a component may trigger.
+Hosts: UI components never import the shell. Each declares a small host interface (`HudHost`, `BuildBarHost`, `InspectorHost`, `LandHost`, `ViewBarHost`, `ViewPanelHost`, `ResearchHost`, `StatsHost`, `QuestLogHost`, `GuideHost`), and the App passes closures for those. That keeps the UI testable in isolation, and makes it explicit which actions a component may trigger.
 
 ### The frame
 
@@ -49,8 +50,8 @@ frame(dt)
   tickSim(dt)              accumulate dt; run whole 100 ms ticks, ≤ 8 per frame; drop the rest
   drainSimEvents(...)      → if structure changed: buildings.rebuild, items.rebuild, lights.rebuild, bus 'sim:structure'
   grid.dirtyChunks         → terrain.invalidate + relief.invalidate (dug / filled tiles)
-  drawWorld(dt)            camera → terrain → relief → ghost (+ tip) → link hover → land hover → wires → overlays → day/night (dayNight, lights, clouds) → drifters → cargo → landing → buildings (deck lift, moving parts on game time, cast shadows by the grade) → items → stats.sample → stress
-  every 0.25 s             hud.refresh, bar.refresh, inspector.refresh, landPanel.refresh, screens.refresh, guide.refresh, quests.refresh
+  drawWorld(dt)            camera → terrain → relief → ghost (+ tip) → link hover → land hover → wires (bold by grid in Électricité) → overlays → the view's veil, marks and badges (`viewsView`, D88) → day/night (dayNight, lights, clouds) → drifters → cargo → landing → buildings (deck lift, moving parts on game time, cast shadows by the grade) → items → stats.sample → stress
+  every 0.25 s             views.refresh (the view's readings), hud.refresh, viewBar.refresh, bar.refresh, inspector.refresh, landPanel.refresh, viewPanel.refresh, screens.refresh, guide.refresh, quests.refresh
   guide.frame()            the tutorial's arrow follows its target (camera, panels)
   renderer.render(stage.root)
   reportPerf(...)          numbers for the perf overlay (` key)
@@ -68,6 +69,14 @@ frame(dt)
 - `view.building` (`te > 0.5`) is the switch for "the plan side is in effect": tools act, the grid shows, picking uses the tile's occupant.
 - `visibleTiles()` bounds the screen on the ground and, in iso, on the highest relief, which reveals tiles further down. Overlays and items cull with it.
 
+## Specialised views (`views.ts`, D88)
+
+- `current`: the view on show — the land mode's own state says Terrain (`landTool.active`); else the one chosen. `veiled`: Électricité, Logistique or Production (the base dimmed under them).
+- `set(v)`: Terrain turns the land mode on (`BuildMode.land(true)`: tools away, plan view, zoomed out, as always); any other view turns it off first. A view keeps the iso or plan view, the open category and the tool in hand. `toggle(v)` (the keys, the selector's buttons): back to Normal when it is already on. `cancel()` (Esc, after the selection): a veiled view back to Normal.
+- `refresh(dt)` at the UI's pace: Électricité `gridReports` + `powerMarks`; Logistique `RibbonSampler.read` + `ribbonSummary`; Production `prodMarks` with the buildings view's `WorkLook.isLit` (a passing stop keeps its grace, D83). Only the active part is filled, `version` bumps; the ribbon lines are sampled once a second in any view so Logistique opens on figures. Emits `mapview:changed` on the bus when the view changes.
+- The shell around it: the HUD's energy chip toggles Électricité (`HudHost.openPower`); the inspector's `facet()` is the veiled view (D89); the overlays' freight routes hide under the veil (`routesOn`); the night glows are dimmed by the veil and the wires faded under Logistique and Production; `setSim` resets the view.
+- Read-only: no command, nothing saved (the smoke checks the command log does not grow).
+
 ## Picking (`picking.ts`)
 
 - `tileAt(sx, sy)`: the ground tile under a screen point, for the current `P`.
@@ -81,7 +90,7 @@ frame(dt)
 - `demolish()` and `mark()` toggle the demolition tool and the landscaping brush; they open the build bar if needed.
 - `slot(n, shift)`: the digit row. Shift + digit opens the n-th category tab shown (`bar.categoryAt`: categories with nothing unlocked have no tab); a plain digit takes the n-th building of the open tray (only unlocked buildings are in it, [ui.md](ui.md#the-build-bar)).
 - `hint()`: the bar's help line for the tool in hand. `report(ToolResult)` turns placements, refusals (with the reason; off the claim's land, `outside_zone` or `sister_land`, the land mode's key after it: « · I : acheter ou louer »), removals and marks into toasts.
-- **The land mode** (D60, [ui.md](ui.md#the-land-mode-and-its-panel-d60), [input.md](input.md#4c-land-toolts-the-land-mode-d60)): `land(on?)` toggles it (I, the HUD's « Terrain »). On: the tool in hand and the Link tool put away, the selection dropped, `LandTool.start()`, the plan view, the camera glided out to zoom 0.36 at most (a parcel about 180 px; the zoom before is kept). Off: the zoom given back, and the iso view unless a category is open. `pick`, `demolish`, `mark`, `link` and `open` end it first (`endLand`, the view left to them). `landCancel()` is Esc's and the right click's step: the picked parcel, then the mode. Each frame `App.drawWorld` sets `LandTool.hover` from the pointer (`picker.tileAt` → `parcelUnder`), hands hover, pick and `landOn` to the overlays, and shows the parcel's price in the tip; the land panel (`App.landPanel`) refreshes at 4 Hz with the other cartouches; `setSim` ends the mode.
+- **The land mode** (D60, [ui.md](ui.md#the-land-mode-and-its-panel-d60), [input.md](input.md#4c-land-toolts-the-land-mode-d60)): `land(on?)` toggles it (through the Terrain view: I, the view selector's parcel; D88). On: the tool in hand and the Link tool put away, the selection dropped, `LandTool.start()`, the plan view, the camera glided out to zoom 0.36 at most (a parcel about 180 px; the zoom before is kept). Off: the zoom given back, and the iso view unless a category is open. `pick`, `demolish`, `mark`, `link` and `open` end it first (`endLand`, the view left to them). `landCancel()` is Esc's and the right click's step: the picked parcel, then the mode. Each frame `App.drawWorld` sets `LandTool.hover` from the pointer (`picker.tileAt` → `parcelUnder`), hands hover, pick and `landOn` to the overlays, and shows the parcel's price in the tip; the land panel (`App.landPanel`) refreshes at 4 Hz with the other cartouches; `setSim` ends the mode.
 - `ghostReach()`: the reach circle of an excavator or backfiller held in hand (drawn by the overlays view).
 
 ## Screens (`screens.ts`)
@@ -133,8 +142,8 @@ Most handlers also emit their sound cue on the bus (`sfx`, [audio.md](audio.md))
 ## Controls (`controls.ts`)
 
 - **Pointer**: with a tool in hand on the plan side, down / move / up go to `Tools`, and the result is reported. A plain left click with nothing active selects `picker.entityAt(...)` (only over the canvas, not over the UI) — or, while the Link tool is in hand (either view), goes to `link.click(id, shift)` and `BuildMode.reportLink`; in the land mode it picks the parcel under the cursor (`landTool.click`). A right press unwinds the Link tool (its source, then the tool), then the land mode (its parcel, then the mode), before anything else.
-- **Keys** (`input/bindings.ts` maps physical keys to `Action`s): perf overlay, home (glide to the Hearth), build toggle, rotate (Shift: back), pipette (A on AZERTY: copy the building under the cursor with its rotation), demolish, brush, the Link tool (L), research and stats screens, the land mode (I), power overlay (P), zoom.
-- **Esc** unwinds one layer at a time: open screen (a page of it first: `screens.back()`) → the Link tool (its source, then the tool) → the land mode (its parcel, then the mode) → tool → selection → build mode → the main menu (`screens.escapeTo`; not under automation).
+- **Keys** (`input/bindings.ts` maps physical keys to `Action`s): perf overlay, home (glide to the Hearth), build toggle, rotate (Shift: back), pipette (A on AZERTY: copy the building under the cursor with its rotation), demolish, brush, the Link tool (L), research and stats screens, the specialised views (D88: Électricité P, Logistique F, Production O, Terrain I — the land mode — each toggling with Normal through `MapViews.toggle`, offered once the tutorial has reached them: `App.viewShown`), zoom.
+- **Esc** unwinds one layer at a time: open screen (a page of it first: `screens.back()`) → the Link tool (its source, then the tool) → the land mode (its parcel, then the mode) → tool → selection → a specialised view (back to Normal: `MapViews.cancel`) → build mode → the main menu (`screens.escapeTo`; not under automation).
 - **The main menu is modal**: while it is open only Esc and the perf overlay act (see Screens).
 
 ## Recipes

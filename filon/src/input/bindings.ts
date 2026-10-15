@@ -6,7 +6,7 @@ export type Action =
   | 'panUp' | 'panDown' | 'panLeft' | 'panRight' | 'fast'
   | 'rotate' | 'pipette' | 'deconstruct' | 'cancel' | 'undo'
   | 'zoomIn' | 'zoomOut'
-  | 'ovPower' | 'ovFlow'
+  | 'viewPower' | 'viewLogistics' | 'viewProduction'
   | 'scrResearch' | 'scrMarket' | 'scrStats' | 'home' | 'perf' | 'build' | 'mark'
   | 'link' | 'land' | 'hideUi';
 
@@ -27,8 +27,12 @@ export const BINDINGS: Record<Action, Binding> = {
   // sits on the 6, a build slot); numpad + − everywhere.
   zoomIn: { codes: ['Equal', 'NumpadAdd'], keys: ['+'] },
   zoomOut: { codes: ['Minus', 'NumpadSubtract'] },
-  ovPower: { keys: ['p'] },
-  ovFlow: { keys: ['f'] },
+  // The specialised views (D88): Électricité on P (puissance, power — the power overlay's key
+  // before), Logistique on F (flux, flow — the flow overlay's), Production on O (ouvrages, output);
+  // Terrain is the land mode's I below. KeyP, KeyF and KeyO on both layouts.
+  viewPower: { keys: ['p'] },
+  viewLogistics: { keys: ['f'] },
+  viewProduction: { keys: ['o'] },
   scrResearch: { keys: ['t'] },
   scrMarket: { keys: ['m'] },
   scrStats: { keys: ['g'] },

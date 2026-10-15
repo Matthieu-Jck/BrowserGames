@@ -1,16 +1,20 @@
-// settings.ts (screen) — the player's preferences, a page of the main menu: the language (switches
-// live), the UI scale (zooms the whole interface), the performance mode (next launch) and the
-// three volumes (general, music, effects and ambience: live while the slider moves, stored when it
-// is released, and the effects slider plays a cue at its new level). Preferences, not the colony:
-// they live in the shell's `src/settings.ts` (localStorage), which the UI may not import, so the
-// page reads and writes them through its host, and the shell applies each change (D27, D30).
-// Where the browser has no Web Audio, the sliders grey out and a note says so. The « Sauvegarde »
-// row (M7) is the base itself, through the shell: when it was last saved, export to a `.ocelle`
-// file, import one, start over (each asks first, in the shell).
+// settings.ts (screen) — the player's preferences, a page of the main menu, in three kit sections
+// (D89: « Plus clair, plus séparé »):
+// · « Affichage » (a screen): the language (switches live), the UI scale (zooms the whole
+//   interface), the performance mode (next launch: a small tag says so, the rest in its tooltip);
+// · « Son » (a speaker): the three volumes (general, music, effects and ambience: live while the
+//   slider moves, stored when it is released, and the effects slider plays a cue at its new level),
+//   each with a speaker whose waves follow its level; how the sound works is the header's tooltip;
+// · « Sauvegarde » (a crate, M7): the base itself, through the shell — when it was last saved, export
+//   to a `.ocelle` file, import one, start over (each asks first, in the shell).
+// Preferences, not the colony: they live in the shell's `src/settings.ts` (localStorage), which the
+// UI may not import, so the page reads and writes them through its host, and the shell applies each
+// change (D27, D30). Where the browser has no Web Audio, the sliders grey out and a note says so.
 import { LOCALES, type Locale } from '@/core/kinds';
 import { el, setAttr, setText } from '@/core/dom';
 import { locale, t, type MsgKey } from '@/i18n/i18n';
 import { duration, pct } from '@/i18n/format';
+import { mark, section } from '../inspector/kit';
 
 /** The three volume sliders. */
 export type VolumeId = 'master' | 'music' | 'sfx';
@@ -67,21 +71,58 @@ const VOLUMES: ReadonlyArray<{ id: VolumeId; label: MsgKey; of: (v: SettingsValu
   { id: 'sfx', label: 'settings.sfx', of: (v) => v.volSfx },
 ];
 
+// ── the page's own inked marks (the kit's palette classes: styles/kit.css) ──
+
+const NS = 'http://www.w3.org/2000/svg';
+type Shape = readonly [string, Record<string, string>];
+
+/** A small inked mark on a 16 × 16 board, drawn with the kit's `k-*` classes. */
+function ink(id: string, shapes: readonly Shape[]): HTMLElement {
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const [tag, attrs] of shapes) {
+    const n = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    svg.append(n);
+  }
+  return el('span.kmark', { 'data-mark': id }, [svg]);
+}
+
+/** A screen on its stand: the display. */
+const screenMark = (): HTMLElement => ink('screen', [
+  ['rect', { class: 'k-sheet', x: '1.4', y: '2.2', width: '13.2', height: '9', rx: '1.2' }],
+  ['rect', { class: 'k-node', x: '3.2', y: '4', width: '9.6', height: '5.4', rx: '0.6' }],
+  ['path', { class: 'k-stroke', d: 'M8 11.2v2.6M5 14h6' }],
+]);
+
+/** A speaker and three waves; `data-level` (0–3) lights as many waves (styles/menu.css). */
+const speakerMark = (): HTMLElement => ink('speaker', [
+  ['path', { class: 'k-box', d: 'M1.8 6h2.8L8.2 3v10L4.6 10H1.8z' }],
+  ['path', { class: 'k-stroke set-w1', d: 'M10.2 6.3a2.4 2.4 0 0 1 0 3.4' }],
+  ['path', { class: 'k-stroke set-w2', d: 'M11.9 4.6a4.8 4.8 0 0 1 0 6.8' }],
+  ['path', { class: 'k-stroke set-w3', d: 'M13.6 2.9a7.2 7.2 0 0 1 0 10.2' }],
+]);
+
 type Seg<V> = Array<{ value: V; node: HTMLButtonElement }>;
-interface Gauge { id: VolumeId; label: MsgKey; of: (v: SettingsValues) => number; row: HTMLElement; input: HTMLInputElement; out: HTMLElement }
+interface Gauge { id: VolumeId; label: MsgKey; of: (v: SettingsValues) => number; row: HTMLElement; input: HTMLInputElement; out: HTMLElement; spk: HTMLElement }
 
 export class SettingsScreen {
   readonly root: HTMLElement;
   /** Labels built once and re-set on refresh, so they follow a language switch. */
   private readonly labels: Array<[HTMLElement, MsgKey]> = [];
+  /** Tooltips re-set on refresh. */
+  private readonly tips: Array<[HTMLElement, MsgKey]> = [];
   private readonly langs: Seg<Locale>;
   private readonly scales: Seg<number>;
   private readonly perfs: Seg<boolean>;
   private readonly gauges: Gauge[];
-  /** Under the volumes: how the sound works, or that there is none in this browser. */
+  /** The sound section's header: how the sound works, on hover. */
+  private readonly soundHead: HTMLElement;
+  /** Under the volumes when this browser has no sound (hidden otherwise). */
   private readonly soundNote = el('p.set-note', { 'data-sound-note': '' });
-  /** The save row's « dernière sauvegarde » line and its buttons. */
-  private readonly saveNote = el('p.set-note', { 'data-save-note': '' });
+  /** The save section's « dernière sauvegarde » line and its buttons. */
+  private readonly saveNote = el('span', { 'data-save-note': '' });
   private readonly saveButtons: HTMLButtonElement[] = [];
 
   constructor(private readonly host: SettingsHost) {
@@ -94,28 +135,38 @@ export class SettingsScreen {
     this.scales = seg('data-scale', UI_SCALES, (s) => host.setUiScale(s));
     this.perfs = seg('data-perf', [false, true], (on) => host.setPerf(on));
     const v = host.values();
-    const row = (label: MsgKey, control: HTMLElement, note?: HTMLElement | MsgKey): HTMLElement =>
-      el('div.set-row', {}, [
-        this.label(el('span.set-label.lettering'), label),
-        control,
-        typeof note === 'string' ? this.label(el('p.set-note'), note) : note ?? null,
-      ]);
+    const row = (label: MsgKey, control: HTMLElement, tip?: MsgKey): HTMLElement => {
+      const r = el('div.set-row', {}, [this.label(el('span.set-label.lettering'), label), control]);
+      if (tip) this.tips.push([r, tip]);
+      return r;
+    };
+    const group = (attrs: Record<string, unknown>, kids: HTMLElement[]): HTMLElement => el('div.set-seg', { role: 'group', ...attrs }, kids);
     this.gauges = VOLUMES.map(({ id, label, of }) => {
       const input = el<'input'>('input.set-range', {
         type: 'range', min: '0', max: '100', step: '1', value: String(Math.round(of(v) * 100)), 'data-vol': id,
         oninput: () => { host.setVolume(id, Number(input.value) / 100, false); this.refresh(); },
         onchange: () => { host.setVolume(id, Number(input.value) / 100, true); this.refresh(); },
       });
-      const out = el('span.set-note', { 'data-vol-value': id });
-      return { id, label, of, input, out, row: row(label, el('div.set-gauge', {}, [input, out]), id === 'sfx' ? this.soundNote : undefined) };
+      const out = el('span.set-val', { 'data-vol-value': id });
+      const spk = speakerMark();
+      return { id, label, of, input, out, spk, row: row(label, el('div.set-gauge', {}, [spk, input, out])) };
     });
+
+    const display = this.sec('display', screenMark(), 'settings.display', [
+      row('settings.language', group({}, this.langs.map((o) => o.node))),
+      row('settings.scale', group({}, this.scales.map((o) => o.node))),
+      row('settings.perf', el('div.set-ctl', {}, [
+        group({}, this.perfs.map((o) => o.node)),
+        el('span.set-tag', {}, [mark('order'), this.label(el('span'), 'settings.perf.next')]),
+      ]), 'settings.perf.note'),
+    ]);
+    const sound = this.sec('sound', speakerMark(), 'settings.sound', [...this.gauges.map((g) => g.row), this.soundNote]);
+    this.soundHead = sound.querySelector<HTMLElement>('.ksec-head')!;
     this.root = el('section.settings', { 'data-screen': 'settings' }, [
       this.label(el('h2.lettering'), 'screen.settings'),
-      row('settings.language', el('div.set-seg', { role: 'group' }, this.langs.map((o) => o.node))),
-      row('settings.scale', el('div.set-seg', { role: 'group' }, this.scales.map((o) => o.node))),
-      row('settings.perf', el('div.set-seg', { role: 'group' }, this.perfs.map((o) => o.node)), 'settings.perf.note'),
-      ...this.gauges.map((g) => g.row),
-      host.save ? this.saveRow(host.save, row) : null,
+      display,
+      sound,
+      host.save ? this.saveSection(host.save) : null,
       el('div.set-foot', {}, [
         this.label(el('p.set-note'), 'settings.stored'),
         this.label(el<'button'>('button.btn.set-back', { type: 'button', onclick: () => host.close() }), 'menu.back'),
@@ -124,7 +175,14 @@ export class SettingsScreen {
     this.refresh();
   }
 
-  private saveRow(save: SaveHost, row: (label: MsgKey, control: HTMLElement, note?: HTMLElement | MsgKey) => HTMLElement): HTMLElement {
+  /** A kit section of the page; its title follows the language. */
+  private sec(id: string, icon: HTMLElement, title: MsgKey, body: HTMLElement[]): HTMLElement {
+    const s = section({ sec: `set-${id}`, title: t(title), icon }, body);
+    this.label(s.querySelector<HTMLElement>('.ksec-title')!, title);
+    return s;
+  }
+
+  private saveSection(save: SaveHost): HTMLElement {
     const pick = el<'input'>('input', {
       type: 'file', accept: '.ocelle,application/json,text/plain', hidden: '', 'data-save-file': '',
       onchange: () => { const f = pick.files?.[0]; pick.value = ''; if (f) save.importFile(f); },
@@ -134,13 +192,17 @@ export class SettingsScreen {
       this.saveButtons.push(b);
       return b;
     };
-    const controls = el('div.set-seg.set-save', { role: 'group' }, [
-      button('settings.save.export', 'export', () => save.exportFile()),
-      button('settings.save.import', 'import', () => pick.click()),
-      button('settings.save.wipe', 'wipe', () => save.wipe(), true),
-      pick,
+    const s = this.sec('save', mark('store'), 'settings.save', [
+      el('p.set-when', {}, [mark('order'), this.saveNote]),
+      el('div.set-seg.set-save', { role: 'group' }, [
+        button('settings.save.export', 'export', () => save.exportFile()),
+        button('settings.save.import', 'import', () => pick.click()),
+        button('settings.save.wipe', 'wipe', () => save.wipe(), true),
+        pick,
+      ]),
     ]);
-    return row('settings.save', controls, this.saveNote);
+    this.tips.push([s.querySelector<HTMLElement>('.ksec-head')!, 'settings.save.note']);
+    return s;
   }
 
   private label<E extends HTMLElement>(node: E, key: MsgKey): E {
@@ -152,33 +214,37 @@ export class SettingsScreen {
   refresh(): void {
     const v = this.host.values();
     for (const [node, key] of this.labels) setText(node, t(key));
-    const mark = <V>(opts: Seg<V>, on: (x: V) => boolean, text: (x: V) => string): void => {
+    for (const [node, key] of this.tips) setAttr(node, 'title', t(key));
+    const markSeg = <V>(opts: Seg<V>, on: (x: V) => boolean, text: (x: V) => string): void => {
       for (const o of opts) {
         setText(o.node, text(o.value));
         setAttr(o.node, 'data-on', on(o.value) ? '' : null);
         setAttr(o.node, 'aria-pressed', on(o.value) ? 'true' : 'false');
       }
     };
-    mark(this.langs, (l) => l === locale(), (l) => t(ENDONYM[l]));
-    mark(this.scales, (s) => Math.abs(s - v.uiScale) < 0.001, (s) => pct(s));
-    mark(this.perfs, (on) => on === v.perf, (on) => t(on ? 'settings.on' : 'settings.off'));
+    markSeg(this.langs, (l) => l === locale(), (l) => t(ENDONYM[l]));
+    markSeg(this.scales, (s) => Math.abs(s - v.uiScale) < 0.001, (s) => pct(s));
+    markSeg(this.perfs, (on) => on === v.perf, (on) => t(on ? 'settings.on' : 'settings.off'));
     const sound = this.host.soundAvailable();
     for (const g of this.gauges) {
       const val = g.of(v);
       // Never fight the hand: a slider being dragged (focused) keeps its own position.
       if (document.activeElement !== g.input && Math.abs(Number(g.input.value) - val * 100) >= 0.5) g.input.value = String(Math.round(val * 100));
       setText(g.out, pct(val));
+      setAttr(g.spk, 'data-level', String(val <= 0.001 ? 0 : val < 0.34 ? 1 : val < 0.67 ? 2 : 3));
       setAttr(g.input, 'aria-label', t(g.label));
       setAttr(g.input, 'aria-valuetext', pct(val));
       setAttr(g.input, 'disabled', sound ? null : '');
       setAttr(g.row, 'data-off', sound ? null : '');
     }
-    setText(this.soundNote, t(sound ? 'settings.sound.note' : 'settings.sound.off'));
+    setAttr(this.soundHead, 'title', t('settings.sound.note'));
+    setText(this.soundNote, sound ? '' : t('settings.sound.off'));
+    setAttr(this.soundNote, 'hidden', sound ? '' : null);
     const save = this.host.save;
     if (save) {
       const kept = save.kept(), at = save.lastSaved();
       const when = at === null ? t('settings.save.never') : t('settings.save.last', { d: duration(Math.max(0, Date.now() - at) / 1000) });
-      setText(this.saveNote, kept ? `${when} · ${t('settings.save.note')}` : t('settings.save.off'));
+      setText(this.saveNote, kept ? when : t('settings.save.off'));
       for (const b of this.saveButtons) setAttr(b, 'disabled', kept ? null : '');
     }
   }

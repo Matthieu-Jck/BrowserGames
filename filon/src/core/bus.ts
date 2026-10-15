@@ -1,6 +1,6 @@
 // bus.ts — typed event bus (agora's pattern): the seam between the app shell, renderers,
 // DOM UI and persistence. The sim never imports it — it returns events, the app re-emits.
-import type { Locale, NotifyKind, OverlayId, ScreenId, ToolId, ViewMode } from './kinds';
+import type { Locale, MapView, NotifyKind, ScreenId, ToolId, ViewMode } from './kinds';
 
 /**
  * Sound cues: what just happened, as the ear should hear it. Anyone may emit `sfx`; the shell
@@ -27,7 +27,8 @@ export interface GameEvents {
   'screen:opened': { id: ScreenId };
   'screen:closed': { id: ScreenId };
   'tool:changed': { tool: ToolId | null; def: string | null };
-  'overlay:changed': { id: OverlayId; on: boolean };
+  /** The specialised view on show changed (D88). */
+  'mapview:changed': { view: MapView };
   'view:changed': { mode: ViewMode };
   'selection:changed': { entity: number | null };
   'notify': { kind: NotifyKind; key: string; params?: Record<string, string | number> };

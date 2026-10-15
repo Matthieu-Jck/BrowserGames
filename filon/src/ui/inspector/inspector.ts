@@ -1,12 +1,20 @@
-// inspector.ts — the panel for the selected building (click it in either view): what it is,
-// what it is doing and, when it is not working, why and what to do about it (the status from its
-// engine node, then a sentence: the inputs it waits for, the output that is full, the wire it
-// lacks…), then the panels of its kind (panels.ts: recipe and buffers, deposit, ribbon contents,
-// research project, stock and level, a store's contents, outlets, landscaping job, drifters and
-// routes, fork filters, modules…), the grid it is wired into and its wires (power.ts, D25), and
-// Demolish. Refreshed at 4 Hz: the DOM is rebuilt only when the inspection's signature changes;
-// in between, the panels' live updaters rewrite their values. A rebuild gives the focus back to
-// the control that had it (`data-pick`), so a keyboard player can set three filters in a row.
+// inspector.ts — the panel for the selected building (click it in either view), laid out by the
+// kit (D89; owner, 2026-10-15: « Plus clair, plus séparé »):
+// · the header: its icon, name, category and size, close;
+// · the top block answers three questions at a glance: what it does (the kind's `HERO`: a recipe
+//   as an icon equation, what a drill cuts a minute, the power it makes, the project it runs…),
+//   whether it works (the status line: a mark and one word — at work, a passing stop, stopped, as
+//   the world draws it, `workOf` D83; being built; asleep, D80), and why not (the reason as icons:
+//   the inputs it waits for, its full output, no power, no wire, no recipe; under it, the few words
+//   of what to do);
+// · the kind's sections (panels.ts: its recipe and buffers, its stores, its filters, its project's
+//   data…), each its own card, then the grid card (power.ts, D25/D76);
+// · the foot: every action of the panels (choose a research, open the Crier, take the Link tool,
+//   grow the Core) and Demolish.
+// A specialised view (D88) names its facet (`InspectorHost.facet`): that part is lifted under the
+// top block and the others fade. Refreshed at 4 Hz: the DOM is rebuilt only when the inspection's
+// signature changes; in between, the live updaters rewrite the values. A rebuild gives the focus
+// back to the control that had it (`data-pick`), so a keyboard player can set three filters in a row.
 import { BUILDING_IDS, BUILDING_KIND, buildingDef } from '@/content/registry';
 import type { BuildingDef, BuildingKind } from '@/content/types';
 import { el, setAttr, setText } from '@/core/dom';
@@ -17,55 +25,75 @@ import type { DrillNode, GeneratorNode, MachineNode } from '@/sim/flow/nodes';
 import type { Sim } from '@/sim/state';
 import { St, type Ent } from '@/sim/types';
 import { linkable } from '@/sim/power/links';
+import { LOOKS_AT_WORK, workOf } from '@/sim/systems/work';
 import { buildingIcon } from '../build-bar';
 import { firstSentence } from '../building-facts';
+import { glyph } from '../glyphs';
 import { itemList, itemRef } from '../mention';
-import { STATUS_TONE, type InspectorHost, type PanelCtx } from './kit';
-import { PANELS } from './panels';
+import { itemReason, mark, statusLine, type Facet, type InspectorHost, type PanelCtx, type StateWord } from './kit';
+import { HERO, PANELS } from './panels';
 import { gridCard } from './power';
 import { tradeSig } from '../trade-view';
+import '../styles/inspector.css';
 
 export type { InspectorHost } from './kit';
 
+/** The status in words (the line's tooltip and the why line's lead). */
 const STATUS: Record<number, MsgKey> = {
   [St.Ok]: 'insp.status.ok', [St.Starved]: 'insp.status.starved', [St.Blocked]: 'insp.status.blocked',
   [St.Unpowered]: 'insp.status.unpowered', [St.NoJob]: 'insp.status.nojob', [St.Idle]: 'insp.status.idle',
   [St.LowPower]: 'insp.status.lowpower', [St.NoFuel]: 'insp.status.nofuel', [St.Building]: 'insp.status.building',
   [St.Dormant]: 'insp.status.dormant',
 };
-const TONE = STATUS_TONE;
+
+/** The one word for a kind without a look of work (logistics, the Heart, stores): its engine status. */
+const WORD: Record<number, StateWord> = {
+  [St.Ok]: 'on', [St.Starved]: 'pause', [St.Blocked]: 'pause', [St.Idle]: 'pause', [St.LowPower]: 'pause',
+  [St.Unpowered]: 'off', [St.NoJob]: 'off', [St.NoFuel]: 'off', [St.Building]: 'build', [St.Dormant]: 'sleep',
+};
+
+/** Why it is not working, as things: the reason's icons and the few words of what to do. */
+interface Why { icons: () => Node[]; sig: string; text: string | null }
 
 /**
  * Under the status, what it needs — shown rather than told (owner, 2026-10-13): the items it
- * waits for, the one its full output holds, the fuel it lacks, as icons with their names; else a
- * few words of what to do. Null when the status says it all.
+ * waits for, the one its full output holds, the fuel it lacks, as icons (their names in the line
+ * below); a struck bolt, a cut plug, an empty slot, the land or the tree for a sleeper; else a few
+ * words of what to do. Nothing when the status says it all.
  */
-function why(node: FNode | undefined, kind: BuildingKind, st: number, unwired: boolean, asleep: 'research' | 'land' | null): string | null {
+function why(node: FNode | undefined, kind: BuildingKind, st: number, unwired: boolean, asleep: 'research' | 'land' | null): Why {
   const m = node?.kind === 'machine' ? (node as MachineNode) : null;
+  const none: Why = { icons: () => [], sig: '', text: null };
   switch (st) {
     case St.Starved: {
       const r = m?.recipe;
       const short = r ? r.ins.filter((s, j) => m!.inBuf[j]! < s.mu).map((s) => s.item) : [];
-      return short.length ? itemList(short) : null;
+      return short.length ? { icons: () => short.map((i) => itemReason(i, 'missing')), sig: `s${short.join('.')}`, text: itemList(short) } : none;
     }
     case St.Blocked: {
       const item = m?.recipe ? m.recipe.outs.find((s, j) => m.outBuf[j]! + s.mu > m.outCap[j]!)?.item ?? m.recipe.outs[0]?.item
         : node?.kind === 'drill' ? (node as DrillNode).item : undefined;
-      return item !== undefined && item >= 0 ? itemRef(item) : null;
+      return item !== undefined && item >= 0 ? { icons: () => [itemReason(item, 'full')], sig: `b${item}`, text: itemRef(item) } : none;
     }
-    case St.Unpowered: return t(unwired ? 'insp.why.unlinked' : 'insp.why.unpowered');
-    case St.NoJob: return t(kind === 'drill' ? 'insp.why.nojob.drill' : 'insp.why.nojob');
-    case St.LowPower: return t('insp.why.lowpower');
+    case St.Unpowered: return unwired
+      ? { icons: () => [glyph('unwired', t('insp.status.unlinked'))], sig: 'w', text: t('insp.why.unlinked') }
+      : { icons: () => [glyph('noPower', t('insp.status.unpowered'))], sig: 'p', text: t('insp.why.unpowered') };
+    case St.NoJob: return { icons: () => [glyph('empty', t('insp.status.nojob'))], sig: 'j', text: t(kind === 'drill' ? 'insp.why.nojob.drill' : 'insp.why.nojob') };
+    case St.LowPower: return { icons: () => [glyph('power', t('insp.status.lowpower'))], sig: 'l', text: t('insp.why.lowpower') };
     case St.NoFuel: {
       const g = node?.kind === 'generator' ? (node as GeneratorNode) : null;
-      return g ? itemRef(g.fuelItem) : null;
+      return g ? { icons: () => [itemReason(g.fuelItem, 'missing')], sig: `f${g.fuelItem}`, text: itemRef(g.fuelItem) } : none;
     }
     // Asleep, it is cut from its grid: the way to wake it, not a wire (owner, 2026-10-14: "I cannot
     // wire the solar panels here… it just puts a dot line and tells me the solar panels aren't wired").
-    case St.Dormant: return asleep === 'land' ? t('insp.why.dormantLand') : asleep === 'research' ? t('insp.why.dormant') : null;
-    default: return null;
+    case St.Dormant: return asleep === 'land' ? { icons: () => [glyph('parcel', t('insp.status.dormantLand'))], sig: 'dl', text: t('insp.why.dormantLand') }
+      : asleep === 'research' ? { icons: () => [mark('tree', t('insp.status.dormant'))], sig: 'dr', text: t('insp.why.dormant') } : none;
+    default: return none;
   }
 }
+
+/** The facet a section belongs to when it does not say (the kind's production panels: D88). */
+const PRODUCTION: ReadonlySet<BuildingKind> = new Set<BuildingKind>(['machine', 'drill', 'generator', 'lab', 'server', 'pump']);
 
 export class Inspector {
   readonly root: HTMLElement;
@@ -81,9 +109,9 @@ export class Inspector {
     this.root = el('aside.inspector.cartouche', { 'data-screen': 'inspector', hidden: true }, [this.body]);
   }
 
-  /** Everything a rebuild depends on: change it and the panels are built again (a trade post: also its streams and orders). */
+  /** Everything a rebuild depends on: change it and the panels are built again (a trade post: also its streams and orders; the view's facet). */
   private signature(sim: Sim, e: Ent): string {
-    const base = `${e.id}:${e.cfg}:${e.builtAt !== 0}:${sim.graph?.nodeByEnt.get(e.id) ? 1 : 0}:${locale()}:${(e.portItems ?? []).join('.')}:${sim.hearthLevel}:${sim.fleet.get(e.id) ?? 0}:${sim.done.size}`;
+    const base = `${e.id}:${e.cfg}:${e.builtAt !== 0}:${sim.graph?.nodeByEnt.get(e.id) ? 1 : 0}:${locale()}:${(e.portItems ?? []).join('.')}:${sim.hearthLevel}:${sim.fleet.get(e.id) ?? 0}:${sim.done.size}:${this.host.facet?.() ?? ''}`;
     return BUILDING_KIND[e.def] === 'trade' ? `${base}:${tradeSig(sim, e.id)}` : base;
   }
 
@@ -91,45 +119,69 @@ export class Inspector {
     const b = buildingDef(e.def) as BuildingDef;
     const kind = BUILDING_KIND[e.def] as BuildingKind;
     const node = sim.graph?.nodeByEnt.get(e.id);
+    const facet: Facet | null = this.host.facet?.() ?? null;
     // The control that has the focus (a picker), to give it back once rebuilt.
     const had = document.activeElement instanceof HTMLElement && this.body.contains(document.activeElement)
       ? document.activeElement.closest<HTMLElement>('[data-pick]')?.dataset.pick ?? null : null;
     this.live = [];
     this.anims = [];
-    const status = el('div.insp-status');
+    const actions: HTMLElement[] = [];
+    const ctx: PanelCtx = {
+      sim, e, kind, node, atlas: this.atlas, host: this.host,
+      live: (fn) => this.live.push(fn), anim: (fn) => this.anims.push(fn), action: (n) => { actions.push(n); },
+    };
+    // The status line and, while it is not working, what to do.
+    const status = statusLine();
     const whyEl = el('p.insp-why');
+    // A kind with no look of work (a ribbon, a store, the Heart) says its state only when it is not working.
+    const quiet = !LOOKS_AT_WORK.has(kind);
     this.live.push(() => {
       const asleep = e.builtAt !== 0 ? null : sim.dormancy(e);
       const st = e.builtAt !== 0 ? St.Building : asleep ? St.Dormant : node ? node.status : St.Ok;
       // Unpowered because no wire reaches it (D25) says so: the fix is a wire, not more power.
       const unwired = st === St.Unpowered && sim.graph?.netOfEnt.get(e.id) === undefined;
-      setText(status, t(unwired ? 'insp.status.unlinked' : asleep === 'land' ? 'insp.status.dormantLand' : STATUS[st] ?? 'insp.status.ok'));
-      setAttr(status, 'data-tone', TONE[st] ?? 'good');
+      const word: StateWord = st === St.Building ? 'build' : st === St.Dormant ? 'sleep' : quiet ? WORD[st] ?? 'on' : workOf(sim, e);
+      const label = t(unwired ? 'insp.status.unlinked' : asleep === 'land' ? 'insp.status.dormantLand' : STATUS[st] ?? 'insp.status.ok');
       const w = why(node, kind, st, unwired, asleep);
-      setText(whyEl, w ?? '');
-      setAttr(whyEl, 'hidden', w ? null : '');
-      setAttr(whyEl, 'data-tone', TONE[st] ?? 'good');
+      status.set(word, w.icons, w.sig, label);
+      setAttr(status.root, 'hidden', quiet && word === 'on' ? '' : null);
+      // The why line: the status in words, then what to do (or the items, by name).
+      const text = word === 'on' ? null : w.text ? `${label} · ${w.text}` : st !== St.Ok ? label : null;
+      setText(whyEl, text ?? '');
+      setAttr(whyEl, 'hidden', text ? null : '');
+      setAttr(whyEl, 'data-state', word);
     });
-    const ctx: PanelCtx = { sim, e, kind, node, atlas: this.atlas, host: this.host, live: (fn) => this.live.push(fn), anim: (fn) => this.anims.push(fn) };
+    const hero = HERO[kind]?.(ctx) ?? null;
     const L = locale();
-    const parts: Array<HTMLElement | null> = [
-      el('header.insp-head', {}, [
-        buildingIcon(this.atlas, BUILDING_IDS[e.def]!, 46),
-        el('div', {}, [
-          el('h3.lettering', {}, b.name[L]),
-          el('small', {}, `${t(`build.cat.${b.category}` as MsgKey)} · ${t('card.size', { n: b.w * b.h, w: b.w, h: b.h })}`),
-        ]),
-        el('button.insp-x', { title: t('insp.close'), 'aria-label': t('insp.close'), onclick: () => this.host.select(0) }, '✕'),
+    const head = el('header.insp-head', {}, [
+      buildingIcon(this.atlas, BUILDING_IDS[e.def]!, 46),
+      el('div.insp-titles', {}, [
+        el('h3.lettering', {}, b.name[L]),
+        el('small', {}, `${t(`build.cat.${b.category}` as MsgKey)} · ${t('card.size', { n: b.w * b.h, w: b.w, h: b.h })}`),
       ]),
-      // What it is for, in words, only when nothing below shows it — no panel, no grid module (its card in the tray says the rest).
-      (PANELS[kind] ?? []).length || linkable(e.def) ? null : el('p.insp-desc', {}, firstSentence(b.desc[L])),
-      el('div.insp-state', {}, [status, whyEl]),
-      ...(PANELS[kind] ?? []).flatMap((panel) => panel(ctx)),
-    ];
-    // The grid module: its grid, its own part in it, its wires (nothing for a building outside power).
-    parts.push(...gridCard(ctx));
-    if (kind !== 'hearth') parts.push(el('footer.insp-foot', {}, [el('button.btn.danger', { onclick: () => this.host.remove(e.id) }, t('insp.remove'))]));
-    this.body.replaceChildren(...parts.filter((p): p is HTMLElement => !!p));
+      el('button.insp-x', { title: t('insp.close'), 'aria-label': t('insp.close'), onclick: () => this.host.select(0) }, '✕'),
+    ]);
+    const panels = PANELS[kind] ?? [];
+    // What it is for, in words, only when nothing below shows it — no panel, no grid card, no hero (its card in the tray says the rest).
+    const desc = panels.length || linkable(e.def) || hero ? null : el('p.insp-desc', {}, firstSentence(b.desc[L]));
+    const top = el('div.insp-top', {}, [status.root, whyEl, hero, desc]);
+    // The kind's sections, then the grid card; each tagged with its facet.
+    const sections = [...panels.flatMap((panel) => panel(ctx)), ...gridCard(ctx)].filter((p): p is HTMLElement => !!p);
+    for (const s of sections) if (!s.dataset.group && PRODUCTION.has(kind) && s.matches('.ksec')) s.dataset.group = 'production';
+    // The view's facet first (D88), the others faded; production's own facet also lights the top block.
+    let ordered = sections;
+    if (facet) {
+      const mine = sections.filter((s) => s.dataset.group === facet);
+      ordered = [...mine, ...sections.filter((s) => s.dataset.group !== facet)];
+      for (const s of sections) if (s.matches('.ksec') && s.dataset.group !== facet) s.dataset.dim = '';
+    }
+    const foot = el('footer.insp-foot.kfoot', {}, [
+      ...actions,
+      kind !== 'hearth' ? el('button.btn.danger', { onclick: () => this.host.remove(e.id) }, t('insp.remove')) : null,
+    ]);
+    setAttr(this.root, 'data-facet', facet);
+    setAttr(this.root, 'data-kind', kind);
+    this.body.replaceChildren(head, top, ...ordered, ...(foot.children.length ? [foot] : []));
     if (had) this.body.querySelector<HTMLElement>(`[data-pick="${CSS.escape(had)}"]`)?.focus();
   }
 

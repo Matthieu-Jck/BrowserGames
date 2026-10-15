@@ -35,7 +35,8 @@ atlases baked on the main thread. Render reads the sim and never mutates it.
 | [world/heart-flag.ts](../src/render/world/heart-flag.ts), [art/emblem.ts](../src/render/art/emblem.ts) | The claim's flag on the Heart (D58): baked wave frames bearing the emblem, laid and stepped by the buildings view; the emblem's ink drawing (shared with the register's designer) |
 | [world/ghost-view.ts](../src/render/world/ghost-view.ts) | Build ghost, demolition / marking boxes, hover outline; the flow arrows of a directional routing block being placed; a face cutter's working side (D87: the tiles behind it turquoise where they hold quartz, coral where not, an arrow into the wall); a ribbon drag's plan as a faint placeholder until the release (D73: `DRAG_ALPHA`), a dashed line over each bridge pair's leap |
 | [world/flow-arrows.ts](../src/render/world/flow-arrows.ts) | Pure: which blocks take in at their back only (`isDirectional`) and their flow arrows (`flowArrows`) |
-| [world/overlays-view.ts](../src/render/world/overlays-view.ts) | Grid, the claim's land in parcels (D60: held, leased, a sister claim's; the land mode's grid and marks), the power overlay (P), the Link tool's marks, selection, dig/fill marks, freight routes, reach circles |
+| [world/overlays-view.ts](../src/render/world/overlays-view.ts) | Grid, the claim's land in parcels (D60: held, leased, a sister claim's; the land mode's grid and marks), the Link tool's marks, selection, dig/fill marks, freight routes (hidden under a specialised view's veil), reach circles |
+| [world/views-view.ts](../src/render/world/views-view.ts) | The specialised views (D88): the paper veil over the base, the view's flat marks (grids by colour, ribbon heat, work states, routes) and its badges (sources and their output bars, consumers' gauges, troubles, jams, stops), from the shell's `Readouts` ([src/sim/readouts/](../src/sim/readouts/)) |
 | [world/wires-view.ts](../src/render/world/wires-view.ts) | The power wires (D25), terminal to terminal: fine catenaries in iso, straight inked lines in plan, glints, the Link tool's preview wire |
 | [world/wire-geom.ts](../src/render/world/wire-geom.ts) | Pure wire geometry: a building's terminals in the world (`terminalsAt`, lifted with a building on the mountains), the one a wire hangs from (`wireAnchor`, `wireEnds`), sag, catenary points, points along a polyline |
 | [world/drifters-view.ts](../src/render/world/drifters-view.ts) | Freight balloons shuttling between skydocks |
@@ -47,6 +48,7 @@ atlases baked on the main thread. Render reads the sim and never mutates it.
 | [art/shapes.ts](../src/render/art/shapes.ts), [iso-shapes.ts](../src/render/art/iso-shapes.ts) | Machine vocabulary seen from above (`Frame`) / in iso volume (`IsoFrame`, `Scene`) |
 | [art/terminals.ts](../src/render/art/terminals.ts) | Where the power wires meet each building: the terminal table (`TERMINALS`, one point or a few per building, in its unrotated frame), the poles' heads (`POLE`, `PYLON`), the Heart's link masts; `turnsArt` / `artRot` (which rotation a building's art is drawn in), `rotLocal` (the art's rotation rule) |
 | [art/recipes/](../src/render/art/recipes/) | One drawing per building (iso + plan), belts, item glyphs, status icons; `fx.ts`: the light spy, night rigs, glow / haze / cloud textures, solar panel petals, PV states; `moving.ts`: the buildings with a moving part and the geometry their two views share (D87: the face cutter's cutting drum, `CUTTER`, which turns while it works). The face cutter (D87) is a crawler rig whose toothed drum on its back overhangs the footprint about 0.2 tile into the wall it stands against, a ramp of cut quartz behind, a conveyor up to its output chute at the front left, an ochre power house with an amber beacon and a floodlight on the rock; the quartz workshop a saw bench and a winding spindle at its back, a lapping wheel and a tray of oscillators by its output. Item glyphs: `crystal` is quartz (two milky points on a grey stone, apart from the singing quartz's three lilac prisms), `oscillator` a silver can on two copper leads |
+| [art/view-icons.ts](../src/render/art/view-icons.ts) | The views' marks (D88) in ink on a paper badge (`drawViewIcon`, `viewIconCanvas` for the DOM), their colours (`GRID_COLORS`, `SOURCE_COLOR`, `heatColor` / `HEAT`): one drawing for the world and the panels |
 | [art/silhouette.ts](../src/render/art/silhouette.ts) | A context that paints a drawing's solid fills in one colour (cast-shadow masks) |
 | [art/unlit.ts](../src/render/art/unlit.ts), [art/recipes/off.ts](../src/render/art/recipes/off.ts) | A building's art switched off (D83): `unlitCtx` (lamps drawn as dark glass, their halos left out; `isUnlit` for a recipe to leave out its fire and steam), `switchOff` (greyed, darker, a touch of lilac); `drawOff` runs a building's own recipe through both |
 | [art/solar.ts](../src/render/art/solar.ts) | `PV` (the solar-cell colour) and `pvPanel`: draw cells with them and they get their day / night states |
@@ -72,9 +74,10 @@ which drives render in this order (details in [app.md](app.md)):
 4. **Views**, in this order (relief reads the chunks terrain found visible):
    `terrain.update(cam, w, h, dpr, P, te)` → `relief.update(cam, w, h, terrain.visible, P, te)` →
    `ghost.draw(preview, sim, hover, show)` (the preview is null outside build mode) →
-   `wires.update(sim, te, dt, linkPreview, overlays.powerOn)` (the Link tool's preview and
+   `wires.update(sim, te, dt, linkPreview, view === 'power')` (the Link tool's preview and
    `overlays.linking` are set first, its hover from `picker.entityAt`) →
    `overlays.update(sim, viewTiles, te, zoom, selected, relief.level, ghostReach)` →
+   `viewsView.update(sim, frame, readouts)` (the specialised view's veil, marks and badges, D88) →
    `dayNight.update(worldTick, te)` → `lights.update(grade, P, te, seconds)` →
    `clouds.update(grade, P, te, tx, ty, zoom, seconds)` (§10, *Day and night*) →
    `drifters.update(sim, P, te, seconds)` → `buildings.setPlanness(te)` → `buildings.animate(sim,
@@ -181,12 +184,14 @@ stage.root                          eventMode 'none'
    │  ├─ planPlane    P   × planA   plan     (plan building sprites; sorted: rock ribbons' copies, items over them, buildings)
    │  ├─ volumes [rg] M   × isoA    objects  (iso buildings + cliff columns + items above the floor, z-sorted)
    │  ├─ itemsOver    —     [rg]    items riding a junction's deck or a skybridge, over every building
+   │  ├─ veilPlane    P             veil     (a specialised view's paper wash over the base, D88)
    │  ├─ wiresIso     M   × isoA    wires [rg]      (power wires)
    │  ├─ wiresPlanPlane P × planA   wiresPlan [rg]
    │  └─ shade        —             cloud shadows (multiply; CloudShadows sets P itself)
    ├─ lights    [render group]      night glows, additive (LightsView: iso under M, plan under P)
-   ├─ top             P             grid · overlays · fog · land · ghost [rg]
+   ├─ top             P             grid · viewFlat [rg] · overlays · fog · land · ghost [rg]
    ├─ status    [rg]  —             drifters (view world px)
+   ├─ viewMarks [rg]  —             a specialised view's badges (view world px, untinted)
    ├─ fxTop           —             the cargo drones' containers, the intro's landing (under M), M0 stress spike
    └─ fxGlow          —             the landing's and the cargo drones' flames and their light (untinted); the cargo drones over their flames (tinted by hand)
 ```
@@ -207,6 +212,9 @@ stage.root                          eventMode 'none'
 | `fog` | TerrainChunks fog masks | Above the overlays |
 | `ghost` | GhostView | Render group |
 | `status` | DriftersView | Named for status icons, which do not exist yet |
+| `veil` | ViewsView: a paper sprite over the visible tiles while Électricité, Logistique or Production is on (`VEIL` alpha, eased in 0.22 s) | Inside `lit` (graded with the world), over the buildings, ribbons and items, under the wires — so the Électricité view's bold wires stay on top; the shell multiplies the night glows (`lights`) by 1 − veil, and fades the wires to 0.3 under the other two views |
+| `viewFlat` | ViewsView: the view's flat marks, two copies (flat in plan, lifted onto the rock tops in iso, cross-faded) | In `top`, untinted, under the overlays: colours read the same day and night |
+| `viewMarks` | ViewsView: the view's badges and gauges | View world px, above the drifters, untinted; placed when the projection or the zoom moves |
 | `fxTop` | CargoView (the deck's iris, shadows, dust, the container, cables), LandingView (the Heart, the crane, cables, dust, shadow), `StressSpike` (`FL.stress`) | |
 | `fxGlow` | LandingView and CargoView: thruster flames, nozzle halos, the plumes' light on the ground; the cargo drones themselves, over their flames, and their own lights at night | Above everything and outside the day / night grade, so emitted light stays bright at night. A cargo drone sits here so its hub, beams and pods hide its plumes (the back engine's burns behind the hub); it copies `fxTop`'s tint every frame to stay graded |
 | `shade` | CloudShadows | Inside `lit` (graded), above everything in it; multiply blend |
@@ -732,7 +740,7 @@ rebuilt only when its signature changes. The z-order inside `overlays` follows t
   with `landHover` and `landSel`, from `LandTool` each frame) it adds the parcel grid over the
   whole range (ink, 1.2 px) and marks the hovered parcel (a paper wash, an ink frame) and the
   picked one (a cyan frame with ink corner ticks), rebuilt on their own signature.
-- *Freight routes*: violet dashes between dock centres.
+- *Freight routes*: violet dashes between dock centres (`routesOn`: hidden under a specialised view's veil; the Logistique view draws them bold).
 - *Dig / fill marks*: coral (dig) or cyan (fill) squares with two hatch strokes, brighter with a
   progress bar where a machine works. The flat copy fades in with `te`; the iso copy is lifted onto
   rock tops by `levelAt(x, y)·SHIFT` and fades out.
@@ -742,14 +750,12 @@ rebuilt only when its signature changes. The z-order inside `overlays` follows t
 - *Selection outline*: cyan with ink corner ticks around the inspected building's footprint; a flat
   copy fades in with `te`, and an iso copy, shifted onto the rock top it stands on (`footLevel` of
   `levelAt` × `SHIFT`), fades out (owner, 2026-10-13: a turbine's outline lay on the ground below it).
-- *Power overlay* (`powerOn`, the P key): each grid's buildings washed and outlined in its colour
-  (`GRID_COLORS[net % n]`, shared with the wires view, which colours the wires the same way);
-  buildings that make or use power but hang on no wire get a dashed coral frame. Rebuilt on
-  `graph.version` / `links.version`.
+- *The grids by colour* were the power overlay (P) until D88: they are the Électricité view's now
+  (**ViewsView**, below). `needsWire` (the dashed coral « no wire » frame) is exported for it.
 - *Link tool marks* (`linking`: the tool's `LinkPreview`, set by the shell): with a source, its
   reach as the rounded rectangle its footprint sweeps out to the range, the source outlined in
   cyan, the buildings a click would wire that are on no grid yet in turquoise (D80), the ones waiting
-  for a wire beyond the reach in the power overlay's dashed coral (`needsWire`), its wires' other
+  for a wire beyond the reach in a dashed coral frame (`needsWire`), its wires' other
   ends in ink; without one, a cyan ring on every pillar and on the Heart, and the hovered pillar's
   reach and marks; a pole or pylon held to be placed shows its reach and marks the same way
   (`LinkTool.ghost`, set by the shell when no Link tool is in hand); the hovered building outlined in the colour of the
@@ -758,6 +764,33 @@ rebuilt only when its signature changes. The z-order inside `overlays` follows t
   (`blockPlan` / `blockIso`, lifted by `levelAt` × `SHIFT`, cross-faded). Rebuilt on the preview's
   `sig` and the barring tile.
 - *Selection*: a cyan footprint outline with ink corner ticks, readable in both views.
+
+**ViewsView** (D88, [world/views-view.ts](../src/render/world/views-view.ts)). The specialised
+views draw one system bold over the base dimmed; `update(sim, frame, readouts)` each frame, the
+readings (`Readouts`, [src/sim/readouts/](../src/sim/readouts/)) taken by the shell at 4 Hz
+([app.md](app.md)). Read-only, like every view.
+- *The veil*: a paper sprite (`Texture.WHITE` tinted `C.paper`) over the visible tile rect (its
+  projection covers the screen), on `veil`: over the buildings, ribbons and items, under the wires.
+  Its alpha eases to `VEIL[view]` (Électricité 0.66, Logistique 0.62, Production 0.5; Normal and
+  Terrain 0) in `VEIL_FADE` 0.22 s; the view's marks fade with it.
+- *Flat marks* (`viewFlat`, tile units): two Graphics, flat (alpha `te`) and lifted onto the rock
+  tops (`liftOf` × `SHIFT`, alpha `1 − te`), rebuilt when their signature changes. Électricité: each
+  grid's buildings washed and outlined in `GRID_COLORS[net % n]`, its pillars ringed (ink under the
+  grid's colour), the unwired in `needsWire`'s dashed coral, the asleep and the sites in lilac; a
+  pillar's reach (the Link tool's rounded rectangle) under the cursor. Logistique: each chain as a
+  path through its tiles' centres (from its tail's edge to its head's; a leap — a bridge, a
+  junction's pass — left out), an ink edge under a stroke in `heatColor(util)` by tenths, jams
+  `ledRed`, idle lines paper; the routes bold violet dashes with an arrow halfway, the skydocks
+  washed violet. Production: footprints washed by state (`on` turquoise, `pause` amber, `off` coral).
+- *Badges* (`viewMarks`, view world px): pooled containers of an icon sprite (the marks of
+  [art/view-icons.ts](../src/render/art/view-icons.ts), baked on first use) and a bar (ink frame,
+  paper inside, a fill). Each hangs over its building's head in iso (`liftOf` + `isoHead` levels,
+  × `LH` × (1 − te)) and on its footprint in plan, sized `MARK_PX` 30 × √zoom (bounded) on screen;
+  rebuilt with each reading, placed when the projection or the zoom moves. Électricité: a source's
+  kind with its output / rating as a turquoise bar, an accumulator's charge, a consumer's upright
+  gauge (height by rating, log; fill by draw; coral on a grid short of power; left out below zoom
+  0.3), a trouble instead (`unwired`, `asleep`, `dark`, `site`). Logistique: `jam` / `dead` at a
+  line's head, `dock` with its drifters as a bar. Production: why a building stops or waits.
 
 **WiresView** (D25). Each wire of `sim.links` is drawn twice, once per view, above every building,
 from terminal to terminal:
@@ -786,8 +819,8 @@ from terminal to terminal:
   translucent dark line (1.8 px iso at 78 %, 0.055 tile plan) with a hair of light just above it
   (`C.ice`, 55 %); readable on sand by day and under the night grade. A grid with no supply (no
   renewables, no fuelled generator, no charged accumulator: night on the Heart's panel alone)
-  gets dim lines; a wire to a construction site or a dormant building is dashed; with the power
-  overlay each grid's wires take its colour, a little wider. One batched stroke per style.
+  gets dim lines; a wire to a construction site or a dormant building is dashed; in the Électricité
+  view (D88) each grid's wires take its colour, bold (4.2 px iso, 0.15 tile plan), fully opaque. One batched stroke per style.
 - *Glints*: one small additive spark per powered wire (at most 400), always running from the
   generators' side towards what they feed (owner, 2026-10-13): `flowWays` (world/wire-geom) counts
   each end's distance in wires from the nearest generator (the Heart, turbines, panels, plants,
@@ -1077,8 +1110,8 @@ windows. `set(key, v)` adds stats (`tickMs`, `renderMs`, `chunks`, `chunksMissin
    marks: a flat one (alpha `te`) and one lifted by `levelAt(x, y)·SHIFT` along −x−y
    (alpha `1 − te`).
 5. **Toggle:** add a key action ([input.md](input.md#recipe-adding-a-key-action)) handled by the
-   app that flips a public flag, like `powerOn` (P) or `landOn` (set by the land mode). `ovFlow` (F) is already bound
-   but not handled.
+   app that flips a public flag, like `landOn` (set by the land mode). A whole system shown on its
+   own belongs in a specialised view instead (D88: `ViewsView`, `app/views.ts`, a `Readouts` part).
 6. If it shows what a click *would* do, it belongs in `Preview` + GhostView instead.
 
 ## 14. Pitfalls
@@ -1134,7 +1167,7 @@ windows. `set(key, v)` adds stats (`tickMs`, `renderMs`, `chunks`, `chunksMissin
   chunks and do not follow the clock. The stretch about the foot is one linear map: on the far
   side of the seam the shadow of a wide, low base runs up to 2.2× too long at dawn and dusk and
   0.6× too short at noon (only tall parts above the foot are exact).
-- **Standing on the mountains (D44):** the overlays (the power overlay, the Link tool's marks; not
+- **Standing on the mountains (D44):** the overlays (the Link tool's marks; not
   the selection outline nor the dig marks, lifted) and the guide's ring (`Picker.tileToScreen`) still lie on the ground plane,
   under a lifted building; the painted relief (far zoom) lies under every volume, so there a higher
   ridge in front never hides a lifted building; a lifted building's shadow is planar at its own

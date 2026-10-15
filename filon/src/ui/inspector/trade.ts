@@ -14,7 +14,8 @@
 // · « En route »: by item, × how many, when the first lands, what they cost, the total in the head;
 // · « Ordres »: one card line per order — its rate and what a minute of it costs at today's ask,
 //   then its state and its price cap — with ✕; and the Crier's button, where orders are placed.
-// Words on hover; numbers tabular. Shared helpers: ../trade-view.ts.
+// Words on hover; numbers tabular. Shared helpers: ../trade-view.ts. Laid out by the kit (D89): the
+// facts at the top (`tradeHero`, what it does), each card a section, « Ouvrir la Criée » in the foot.
 import { ITEM_IDS } from '@/content/registry';
 import { el, setAttr, setText } from '@/core/dom';
 import { duration, num, rate } from '@/i18n/format';
@@ -25,17 +26,20 @@ import type { Ent } from '@/sim/types';
 import type { Sim } from '@/sim/state';
 import { glyph } from '../glyphs';
 import { itemMention, itemRef } from '../mention';
-import { progressBar, type InspectorHost, type Panel, type PanelCtx } from './kit';
+import { mark, progressBar, section, type InspectorHost, type MarkId, type Panel, type PanelCtx } from './kit';
 import { feeText, minutes, oc, orderStateText, postFacts, secondsTo, unitBuyCents, type PostFacts } from '../trade-view';
 
 /** An InspectorHost that can open the Crier on a tab (optional: the shell may provide it). */
 type CrierLink = InspectorHost & { openCrier?: (tab?: 'trade') => void };
 
-export const tradePanel: Panel = ({ sim, e, host, live }) => {
+/** At the top, what the post does: what it lifts a minute, CrierBelt's cut, the lift's delay. */
+export const tradeHero = ({ sim }: PanelCtx): HTMLElement => el('div.insp-hero', { 'data-hero': 'trade' }, [factChips(postFacts(sim))]);
+
+export const tradePanel: Panel = ({ sim, e, host, live, action }) => {
   const f = postFacts(sim);
-  const out: Array<HTMLElement | null> = [factChips(f), gateRows(sim, e, live), cargoCard(sim, e, live), flightCard(sim, e, live), ordersCard(sim, e, live, f)];
+  const out: Array<HTMLElement | null> = [gateRows(sim, e, live), cargoCard(sim, e, live), flightCard(sim, e, live), ordersCard(sim, e, live, f)];
   const open = (host as CrierLink).openCrier;
-  if (open) out.push(el('button.btn.insp-recipe.tp-crier', { 'data-insp-crier': '', onclick: () => open.call(host, 'trade') }, t('insp.trade.openCrier')));
+  if (open) action(el('button.btn.primary.insp-recipe.tp-crier', { 'data-insp-crier': '', onclick: () => open.call(host, 'trade') }, [glyph('crier'), ' ', t('insp.trade.openCrier')]));
   return out;
 };
 
@@ -50,9 +54,12 @@ function factChips(f: PostFacts): HTMLElement {
   ]);
 }
 
-/** One card: its title and, on the right of its head, a total; then its body. */
-function card(hook: string, title: string, total: HTMLElement | null, body: Array<HTMLElement | null>): HTMLElement {
-  return el('section.tp-card', { 'data-tp': hook }, [el('header.tp-head', {}, [el('h4.lettering', {}, title), total]), ...body]);
+/** One card: a section of the kit, its title and, on the right of its head, a total; then its body. */
+function card(hook: string, icon: MarkId, title: string, total: HTMLElement | null, body: Array<HTMLElement | null>): HTMLElement {
+  const s = section({ sec: hook, title, icon: mark(icon), aside: total }, body);
+  s.classList.add('tp-card');
+  s.dataset.tp = hook;
+  return s;
 }
 
 function cargoCard(sim: Sim, e: Ent, live: PanelCtx['live']): HTMLElement {
@@ -69,7 +76,7 @@ function cargoCard(sim: Sim, e: Ent, live: PanelCtx['live']): HTMLElement {
     setText(fill, full ? t('insp.trade.containerFull') : t('insp.trade.container', { n: num(held), cap: num(cap) }));
     setAttr(fill, 'data-full', full ? '' : null);
   });
-  return card('cargo', t('insp.trade.cargo'), total, [
+  return card('cargo', 'cargo', t('insp.trade.cargo'), total, [
     liveRows(live, () => cargoRows(sim, e), t('insp.trade.cargo.empty')),
     el('div.tp-fill', { title: t('insp.trade.containerHint') }, [bar.root, fill]),
   ]);
@@ -81,7 +88,7 @@ function flightCard(sim: Sim, e: Ent, live: PanelCtx['live']): HTMLElement {
     const ships = sim.trade.inflight.filter((s) => s.post === e.id);
     setText(total, ships.length ? oc(ships.reduce((s, x) => s + (x.cents ?? 0), 0)) : '');
   });
-  return card('flight', t('insp.trade.flight'), total, [liveRows(live, () => flightRows(sim, e), t('crier.flight.none'))]);
+  return card('flight', 'flight', t('insp.trade.flight'), total, [liveRows(live, () => flightRows(sim, e), t('crier.flight.none'))]);
 }
 
 /** Its standing orders (placed in the Crier), each on a two-line card row: rate and cost a minute; state and cap. */
@@ -104,7 +111,7 @@ function ordersCard(sim: Sim, e: Ent, live: PanelCtx['live'], f: PostFacts): HTM
       el('span.tp-sub', {}, [state, el('small.tp-cap', {}, t('insp.trade.order.cap', { max: oc(o.maxCents) }))]),
     ]);
   });
-  return card('orders', t('insp.trade.orders', { used: sim.trade.orders.length, max: f.orders }), null,
+  return card('orders', 'order', t('insp.trade.orders', { used: sim.trade.orders.length, max: f.orders }), null,
     rows.length ? rows : [el('span.insp-empty', {}, t('insp.trade.noOrder'))]);
 }
 
@@ -178,12 +185,12 @@ function liveRows(live: PanelCtx['live'], read: () => RecapRow[], empty: string)
  * `handsOut`). Hooks: `[data-gate="in|out"]`, `[data-gate-linked]` on the exit.
  */
 function gateRows(sim: Sim, e: Ent, live: PanelCtx['live']): HTMLElement {
-  const inRow = el('div.tr-gate.tp-gate', { 'data-gate': 'in', title: t('insp.trade.gate.in.tip') }, [
+  const inRow = el('div.tp-gate', { 'data-gate': 'in', title: t('insp.trade.gate.in.tip') }, [
     glyph('gateIn'), el('span.tp-gate-name', {}, t('insp.trade.gate.in')), el('span.tp-gate-what', {}, t('insp.trade.gate.sells')), el('span'),
   ]);
   const turn = glyph('turn', t('insp.trade.gate.turn'));
   const cut = glyph('noLink', t('insp.trade.gate.unlinked'));
-  const outRow = el('div.tr-gate.tp-gate', { 'data-gate': 'out', title: t('insp.trade.gate.out.tip') }, [
+  const outRow = el('div.tp-gate', { 'data-gate': 'out', title: t('insp.trade.gate.out.tip') }, [
     glyph('gateOut'), el('span.tp-gate-name', {}, t('insp.trade.gate.out')), el('span.tp-gate-what', {}, t('insp.trade.gate.hands')), el('span.tp-gate-marks', {}, [turn, cut]),
   ]);
   live(() => {
@@ -192,5 +199,7 @@ function gateRows(sim: Sim, e: Ent, live: PanelCtx['live']): HTMLElement {
     setAttr(cut, 'hidden', linked ? '' : null);
     setAttr(turn, 'hidden', sim.cargoOf(e.id).length > 1 ? null : '');
   });
-  return el('div.tp-gates', {}, [inRow, outRow]);
+  const sec = section({ sec: 'gates', title: t('insp.trade.gates'), icon: mark('gate'), group: 'logistics' }, [el('div.tp-gates', {}, [inRow, outRow])]);
+  sec.classList.add('tp-card');
+  return sec;
 }

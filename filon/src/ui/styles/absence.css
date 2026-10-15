@@ -1,50 +1,137 @@
 /* absence.css — « Pendant ton absence » (ui/screens/absence.ts): a comic page over the base — CrierBelt's
-   header on a cartouche, then inked panels (the Heart, what was made, the Crier, the log), like the intro's strip. */
+   header on a cartouche, then inked panels (kit sections, D89: the Heart, what was made, the Crier, the log),
+   like the intro's strip; and « Avant de partir » (ui/screens/forecast.ts), the same panels in a menu page.
+   The panels' numbers are kit meters on each panel's scale; the log is a time line of numbered dots over
+   the absence, then a row per incident with its number, its time chip and its mark. */
 .absence { align-items: center; overflow: auto; padding-top: 26px; }
-.ab-page { width: min(1080px, 100%); display: grid; gap: 16px; }
+.ab-page { width: min(1120px, 100%); display: grid; gap: 16px; }
 .ab-head { position: relative; padding: 14px 22px 16px; }
 .ab-head h2 { margin: 2px 0 6px; font-size: 40px; font-weight: 400; }
 .ab-head .rs-close { position: absolute; top: 12px; right: 12px; }
 .ab-from { margin: 0; font-size: 15px; color: var(--c-turq-d); letter-spacing: 0.06em; }
 .ab-lead { margin: 0; font-size: 18px; font-style: italic; color: var(--c-ink-soft); }
-.ab-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
-.ab-panel {
+.ab-panels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
+
+/* A panel: a kit section drawn as a comic panel (a thick ink frame, its shadow). */
+.ab-panel.ksec {
   margin: 0; padding: 12px 16px 14px; min-width: 0;
   border: 3px solid var(--c-ink); border-radius: 7px 5px 8px 6px / 6px 8px 5px 7px;
   background: var(--c-paper); box-shadow: 4px 5px 0 var(--c-ink);
 }
-.ab-panel[data-absence-panel="log"] { grid-column: 1 / -1; }
-.ab-panel h3 { margin: 0 0 8px; font-size: 22px; font-weight: 400; border-bottom: 1.5px solid var(--c-ink); padding-bottom: 4px; }
-.ab-rows { display: grid; gap: 5px; }
-/* A value too long to sit beside its label (« 101 273 Minerai de fer ») wraps under it, to the right. */
-.ab-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; column-gap: 12px; font-size: 15px; }
-.ab-label { min-width: 0; }
-.ab-value { margin-left: auto; max-width: 100%; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
-.ab-panel[data-absence-panel="log"] .ab-value { font-weight: 400; color: var(--c-ink-soft); }
-.ab-row[data-tone="up"] .ab-value { color: var(--c-turq-d); }
-.ab-row[data-tone="down"] .ab-value { color: var(--c-coral-d); }
-.ab-none, .ab-more, .ab-lost { margin: 2px 0 0; font-size: 14px; color: var(--c-ink-soft); }
-.ab-lost { color: var(--c-coral-d); }
+.ab-panel .ksec-head { margin-bottom: 10px; padding-bottom: 6px; gap: 8px; }
+.ab-panel .ksec-icon { font-size: 22px; }
+.ab-panel .ksec-title { font-size: 22px; }
+.ab-panel[data-absence-panel="log"], .ab-panel[data-absence-panel="changes"] { grid-column: 1 / -1; }
+.ab-rows { display: grid; gap: 7px; }
+
+/* A row: its label (an item: its icon and name) on the left, a meter (a bar and its figure) on the right. */
+.ab-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(100px, 1fr); align-items: center; column-gap: 12px; font-size: 14.5px; }
+.ab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ab-row .kmeter-v { min-width: 4.4em; font-size: 14px; font-weight: 700; }
+.ab-row .insp-bar { height: 10px; min-width: 40px; }
+.ab-row[data-tone="good"] .kmeter-v { color: var(--c-turq-d); }
+.ab-row[data-tone="bad"] .kmeter-v { color: var(--c-coral-d); }
+/* The Crier's goods: item chips (the icon, how many). */
+.ab-goods { grid-template-columns: auto minmax(0, 1fr); }
+.ab-goods .ab-label { font-weight: 600; color: var(--c-ink-soft); }
+.ab-chips { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
+.ab-chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px 1px 4px; font-size: 13px;
+  border: 1.5px solid var(--c-ink); border-radius: 999px; background: var(--c-paper-d);
+}
+.ab-chip .imention-icon { margin: 0; vertical-align: middle; }
+.ab-chip b { font-variant-numeric: tabular-nums; }
+/* The Crier's net, in its header. */
+.ab-net { padding: 1px 10px; border: 1.5px solid var(--c-ink); border-radius: 999px; font-family: var(--f-title); font-size: 17px; font-weight: 400; }
+.ab-net[data-tone="good"] { background: var(--c-turq-l); }
+.ab-net[data-tone="bad"] { background: color-mix(in srgb, var(--c-coral) 35%, var(--c-paper)); }
+.ab-none { margin: 2px 0 0; font-size: 14px; color: var(--c-ink-soft); font-style: italic; }
+.ab-calm { display: flex; align-items: center; gap: 6px; font-style: normal; }
+
+/* ── the log: a time line, then the rows ───────────────────────────────── */
+.ab-count { display: inline-flex; gap: 5px; }
+.ab-count-n { min-width: 1.7em; padding: 0 6px; text-align: center; border: 1.5px solid var(--c-ink); border-radius: 999px; font-size: 12.5px; }
+.ab-count-n[data-tone="bad"] { background: var(--c-coral); color: var(--c-paper); }
+.ab-count-n[data-tone="good"] { background: var(--c-turq-l); }
+.ab-time { margin: 2px 6px 10px; }
+/* The axis of the absence; each dot on it (or a lane above, when the one before is too close). */
+.ab-track { position: relative; height: calc(24px + (var(--lanes) - 1) * 19px); border-bottom: 2.5px solid var(--c-ink); }
+.ab-track::before, .ab-track::after { content: ''; position: absolute; bottom: -7px; width: 2.5px; height: 12px; background: var(--c-ink); }
+.ab-track::before { left: 0; }
+.ab-track::after { right: 0; }
+.ab-dot {
+  position: absolute; bottom: calc(-9px + var(--lane) * 19px); transform: translateX(-50%); z-index: 1;
+  display: grid; place-items: center; width: 18px; height: 18px; border: 1.5px solid var(--c-ink); border-radius: 50%;
+  font: 700 10.5px/1 var(--f-body); background: var(--c-paper-d); color: var(--c-ink); cursor: help;
+}
+/* A dot on a higher lane hangs from a stem down to the axis. */
+.ab-dot::after { content: ''; position: absolute; top: 100%; left: 50%; width: 1.5px; margin-left: -0.75px; height: max(0px, calc(var(--lane) * 19px - 8px)); background: var(--c-ink); }
+.ab-dot[data-tone="bad"] { background: var(--c-coral); color: var(--c-paper); }
+.ab-dot[data-tone="good"] { background: var(--c-turq); color: var(--c-paper); }
+.ab-ends { display: flex; justify-content: space-between; margin-top: 11px; font-size: 12px; font-weight: 600; color: var(--c-ink-soft); font-variant-numeric: tabular-nums; }
+/* The rows read down, then across (in time order), in as many columns as fit. */
+.ab-incs { list-style: none; margin: 0; padding: 0; column-width: 400px; column-gap: 26px; }
+.ab-inc { display: grid; grid-template-columns: 18px 6.6em 1.3em minmax(0, 1fr); align-items: center; gap: 8px; margin-bottom: 5px; font-size: 14px; min-width: 0; break-inside: avoid; }
+.ab-n { display: grid; place-items: center; width: 18px; height: 18px; border: 1.5px solid var(--c-ink); border-radius: 50%; font-size: 10.5px; font-weight: 700; background: var(--c-paper-d); }
+.ab-inc[data-tone="bad"] .ab-n { background: var(--c-coral); color: var(--c-paper); }
+.ab-inc[data-tone="good"] .ab-n { background: var(--c-turq); color: var(--c-paper); }
+.ab-at { justify-self: start; padding: 0 7px; border-radius: 6px; background: var(--c-paper-d); font-size: 12.5px; font-weight: 600; color: var(--c-ink-soft); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ab-inc-icon { display: inline-flex; }
+.ab-inc-icon > .kmark, .ab-inc-icon > .glyph { width: 1.3em; height: 1.3em; }
+.ab-inc-text { min-width: 0; }
+.ab-inc[data-tone="bad"] .ab-inc-text { color: var(--c-coral-d); }
+.ab-more { margin: 6px 0 0; font-size: 13px; color: var(--c-ink-soft); }
+/* Lost for want of room: a full box and the items as chips, on coral paper. */
+.ab-lost {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 10px; padding: 6px 10px;
+  border: 1.5px dashed var(--c-coral-d); border-radius: 8px; background: color-mix(in srgb, var(--c-coral) 10%, var(--c-paper));
+}
+.ab-lost > .ab-label { font-size: 13.5px; font-weight: 600; color: var(--c-coral-d); }
+.ab-lost .ab-chips { justify-content: flex-start; }
+
 .ab-foot { display: flex; align-items: center; gap: 16px; justify-content: flex-end; }
 .ab-approx { margin: 0; margin-right: auto; font-size: 13px; color: var(--c-ink-soft); }
 .ab-ok { font-size: 22px; padding: 6px 26px; }
-.ab-panel[data-absence-panel="changes"] { grid-column: 1 / -1; background: var(--c-peach-l); }
+.ab-panel[data-absence-panel="changes"] { background: var(--c-peach-l); }
 .ab-panel[data-absence-panel="changes"] p { margin: 2px 0; font-size: 14px; }
 
+/* Narrow windows: two panels a row, then one. */
+@media (max-width: 980px) { .ab-panels { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .ab-panels { grid-template-columns: minmax(0, 1fr); } }
+
 /* « Avant de partir » (ui/screens/forecast.ts): a page of the main menu, the same panels, smaller. */
-.menu-page:has(.forecast) { width: min(720px, 100%); }
-.fc-lead { margin: 0 0 4px; font-size: 14px; line-height: 1.45; color: var(--c-ink-soft); }
-.fc-body { display: grid; gap: 12px; margin-top: 6px; min-height: 140px; }
+.menu-page:has(.forecast) { width: min(760px, 100%); }
+.forecast > h2[title] { cursor: help; }
+.fc-for { display: flex; align-items: center; gap: 10px; padding: 8px 0 10px; border-top: 1.5px dashed rgba(30, 27, 46, 0.2); }
+.fc-for > .kmark { width: 1.4em; height: 1.4em; }
+.fc-for .set-label { font-size: 19px; margin-right: 4px; }
+.fc-body { display: grid; gap: 12px; margin-top: 2px; min-height: 140px; }
 .fc-body[data-busy] { opacity: 0.6; }
 .fc-busy { margin: 18px 0; font-style: italic; color: var(--c-ink-soft); }
-.fc-head { display: grid; gap: 3px; padding: 10px 14px; border: 2px dashed rgba(30, 27, 46, 0.25); border-radius: var(--radius-ink); background: var(--c-paper); }
-.fc-head p { margin: 0; }
-.fc-stop { font-size: 16px; font-weight: 600; }
-.fc-stop[data-tone="down"] { color: var(--c-coral-d); }
-.fc-stop[data-tone="up"] { color: var(--c-turq-d); }
-.fc-stop[data-tone="warn"] { color: var(--c-ink); }
-.fc-credits { font-size: 14px; }
-.forecast .ab-panels { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
-.forecast .ab-panel { padding: 9px 12px 11px; border-width: 2px; box-shadow: 3px 4px 0 var(--c-ink); }
-.forecast .ab-panel h3 { font-size: 18px; }
+/* The two figures: the first stop (or none), the ocelles at the return. */
+.fc-head { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 12px; }
+.fc-stop, .fc-credits {
+  display: flex; align-items: center; gap: 10px; padding: 9px 14px; min-width: 0;
+  border: 2px solid var(--c-ink); border-radius: var(--radius-ink); background: var(--c-paper);
+}
+.fc-stop > .kmark { width: 2em; height: 2em; flex: none; }
+.fc-stop[data-tone="down"] { background: color-mix(in srgb, var(--c-coral) 14%, var(--c-paper)); }
+.fc-stop[data-tone="up"] { background: color-mix(in srgb, var(--c-turq) 14%, var(--c-paper)); }
+.fc-stop[data-tone="warn"] { background: var(--c-peach-l); }
+.fc-fig { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fc-fig > b { font: 400 22px/1.05 var(--f-title); }
+.fc-fig > small { font-size: 12.5px; line-height: 1.3; color: var(--c-ink-soft); }
+.fc-stop[data-tone="down"] .fc-fig > b { color: var(--c-coral-d); }
+.fc-stop[data-tone="up"] .fc-fig > b { color: var(--c-turq-d); }
+.fc-delta { margin-left: 8px; padding: 0 7px; border: 1.5px solid var(--c-ink); border-radius: 999px; font-size: 15px; vertical-align: 2px; }
+.fc-delta[data-tone="up"] { background: var(--c-turq-l); }
+.fc-delta[data-tone="down"] { background: color-mix(in srgb, var(--c-coral) 35%, var(--c-paper)); }
+.forecast .ab-panels { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.forecast .ab-panel[data-absence-panel="crier"] { grid-column: 1 / -1; }
+.forecast .ab-panel.ksec { padding: 9px 12px 11px; border-width: 2px; box-shadow: 3px 4px 0 var(--c-ink); }
+.forecast .ab-panel .ksec-title { font-size: 18px; }
+.forecast .ab-panel .ksec-icon { font-size: 18px; }
 .forecast .ab-row { font-size: 13.5px; }
+.forecast .ab-row .kmeter-v { font-size: 13px; }
+.forecast .ab-incs { column-width: auto; columns: 1; }
+.forecast .ab-inc { font-size: 13.5px; }

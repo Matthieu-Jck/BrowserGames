@@ -7,6 +7,7 @@ import '@fontsource-variable/atkinson-hyperlegible-next';
 import './ui/styles/base.css';
 import './ui/styles/screens.css';
 import './ui/styles/hud.css';
+import './ui/styles/views.css';
 import './ui/styles/crier.css';
 import './ui/styles/orbit.css';
 import './ui/styles/menu.css';

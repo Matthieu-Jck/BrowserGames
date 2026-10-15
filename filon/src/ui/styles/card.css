@@ -31,18 +31,24 @@
   background: var(--c-coral); color: var(--c-paper); font-weight: 600; font-size: 12px;
 }
 
-/* Each block below the description opens on a faint inked rule. */
-.bcard-rule, .bcard-recipes, .bcard-rows, .bcard-cost {
+/* Each block below the description is a section of the panels' kit (kit.css, D89), short: its
+   header (an icon, a title on a dashed rule) without the card around it; the figures and the cost
+   open on a faint inked rule. */
+.bcard .ksec { margin: 9px 0 0; padding: 0; border: none; border-radius: 0; background: none; }
+.bcard .ksec-head { margin-bottom: 5px; padding-bottom: 3px; }
+.bcard .ksec-title { font-size: 14px; color: var(--c-ink-soft); }
+.bcard-rows, .bcard-cost {
   margin: 8px 0 0; padding-top: 7px; border-top: 1.5px dashed rgba(30, 27, 46, 0.22);
 }
 .bcard-h { font-size: 14px; color: var(--c-ink-soft); }
+.bcard-lock .kmark { width: 1.1em; height: 1.1em; }
 
 /* Small item glyphs inline with text. */
 .bcard canvas { display: block; flex: none; }
-.bcard-rows canvas, .bcard-ir canvas, .bcard-chip canvas { width: 16px; height: 16px; }
+.bcard-rows canvas, .bcard-chip canvas { width: 16px; height: 16px; }
 
 /* ── a routing block's rule: the diagram and its legend ─────────────────── */
-.bcard-rule { display: flex; align-items: center; gap: 10px; }
+.bcard-rule { display: flex; align-items: center; gap: 10px; margin: 0; padding: 0; border: none; }
 .bc-diagram { display: block; flex: none; width: 74px; height: 74px; }
 .bc-diagram.bc-wide { width: 112px; height: 60px; }
 .bcard-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; line-height: 1.25; }
@@ -65,21 +71,19 @@ circle.bc-mark { fill: var(--c-turq-l); stroke-width: 1.6; }
 .bc-store rect { fill: var(--c-peach); stroke: var(--c-ink); stroke-width: 1.6; }
 .bc-store path { fill: none; stroke: var(--c-ink); stroke-width: 1.2; opacity: 0.6; }
 
-/* ── a machine's recipes: inputs → outputs per minute, columns aligned ──── */
-.bcard-recipes { display: grid; grid-template-columns: auto auto auto 1fr; align-items: center; gap: 3px 6px; }
-.bcard-recipes > .bcard-h, .bcard-recipes > .bcard-none { grid-column: 1 / -1; }
+/* ── a machine's recipes: the kit's equations on one line, the recipe's name after ── */
 .bcard-none { color: var(--c-ink-soft); font-style: italic; }
-.bcard-recipe { display: contents; }
-.bcard-ins, .bcard-outs { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
-.bcard-ir { display: inline-flex; align-items: center; gap: 2px; font-variant-numeric: tabular-nums; }
-.bcard-plus { color: var(--c-ink-soft); font-size: 11px; }
-.bcard-to { color: var(--c-ink-soft); }
-.bcard-rname { font-size: 12px; color: var(--c-ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bcard-recipe { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 1px 0; }
+.bcard-recipe + .bcard-recipe { border-top: 1px dotted rgba(30, 27, 46, 0.18); }
+.bcard-recipe .keq { flex: none; }
+.bcard-rname { margin-left: auto; min-width: 0; font-size: 12px; color: var(--c-ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ── figures: label | value ─────────────────────────────────────────────── */
 .bcard-rows { display: grid; grid-template-columns: max-content 1fr; gap: 3px 10px; }
 .bcard-row { display: contents; }
-.bcard-row dt { color: var(--c-ink-soft); font-size: 12px; padding-top: 1px; }
+.bcard-row dt { display: flex; align-items: center; gap: 5px; color: var(--c-ink-soft); font-size: 12px; padding-top: 1px; }
+.bcard-ricon { width: 1.15em; height: 1.15em; flex: none; }
+.bcard-noicon { display: inline-block; }
 .bcard-row dd { margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 3px; font-size: 12.5px; }
 .bcard-row dd > span { min-width: 0; }
 

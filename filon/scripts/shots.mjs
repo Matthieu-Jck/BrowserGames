@@ -53,7 +53,7 @@ console.log('✓ shot-crown.png');
 // Build mode: the plan view, a drill in hand over a free deposit spot, and the morph halfway.
 await page.evaluate(() => window.FL.lookAt(512, 506, 1.1));
 await settle(800);
-await page.click('.bb-tab[data-cat="extraction"]');
+await page.evaluate(() => window.FL.category('extraction')); // the tabs show only while building (D88)
 await page.waitForTimeout(250);
 await page.screenshot({ path: shot('shot-morph.png') });
 console.log('✓ shot-morph.png');

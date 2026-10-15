@@ -3,14 +3,18 @@
 // that will pay the absence (sim/offline) on a copy of the base, so the forecast is the engine's
 // own answer, not a guess — the Crier's prices and the weather are the world's, functions of the
 // world clock. It holds as long as the player changes nothing (and the market stays the NPC one).
-// The player picks how long (1 h, 8 h, 24 h, 3 days); the page says what stops first and when,
-// the ocelles at the return, then the same panels as « Pendant ton absence » (report-panels.ts).
-// Each choice computes once (« La copie tourne… » paints first); nothing runs at the 4 Hz refresh.
+// The player picks how long (1 h, 8 h, 24 h, 3 days: a clock and a segmented choice); the page
+// shows two figures — what stops first and when (a coral stop mark, or a turquoise tick when
+// nothing does) and the ocelles at the return with their change — then the same panels as
+// « Pendant ton absence » (report-panels.ts). What the page is, in words, is the title's tooltip
+// (D89: fewer words). Each choice computes once (« La copie tourne… » paints first); nothing runs
+// at the 4 Hz refresh.
 import { el, setAttr, setText } from '@/core/dom';
 import { t, type MsgKey } from '@/i18n/i18n';
 import { credits } from '@/i18n/format';
 import type { AwayReport } from '@/sim/offline/report';
 import type { Sim } from '@/sim/state';
+import { mark } from '../inspector/kit';
 import { approxNote, firstStop, incidentText, reportPanels, sinceStart } from './report-panels';
 
 export interface ForecastHost {
@@ -30,6 +34,7 @@ export class ForecastPage {
   /** Static labels, re-set on refresh (language). */
   private readonly labels: Array<[HTMLElement, MsgKey]> = [];
   private readonly opts: Array<{ hours: number; node: HTMLButtonElement }>;
+  private readonly title = el('h2.lettering');
   private readonly body = el('div.fc-body', { 'data-forecast-body': '' });
   /** Bumped by each computation: a slower earlier one never overwrites a later choice. */
   private run = 0;
@@ -40,9 +45,9 @@ export class ForecastPage {
       node: el<'button'>('button.set-opt', { type: 'button', 'data-forecast-hours': String(hours), onclick: () => this.pick(hours) }),
     }));
     this.root = el('section.forecast', { 'data-screen': 'forecast' }, [
-      this.label(el('h2.lettering'), 'forecast.title'),
-      this.label(el('p.fc-lead'), 'forecast.lead'),
-      el('div.set-row.fc-for', {}, [
+      this.label(this.title, 'forecast.title'),
+      el('div.fc-for', {}, [
+        mark('order'),
         this.label(el('span.set-label.lettering'), 'forecast.for'),
         el('div.set-seg', { role: 'group' }, this.opts.map((o) => o.node)),
       ]),
@@ -90,13 +95,23 @@ export class ForecastPage {
     const stop = firstStop(r);
     // Nothing stops, yet a full store may still turn production away (the log says what).
     const loses = r.lostMu.some((mu) => mu >= 1000);
+    const up = r.creditsDelta >= 0;
     const head = el('div.fc-head', {}, [
       stop
-        ? el('p.fc-stop', { 'data-tone': 'down', 'data-forecast-stop': stop.kind }, t('forecast.stop', { d: sinceStart(r, stop.tick), what: incidentText(sim, stop) }))
-        : el('p.fc-stop', { 'data-tone': loses ? 'warn' : 'up', 'data-forecast-stop': '' }, t(loses ? 'forecast.noStopLoss' : 'forecast.noStop')),
-      el('p.fc-credits', {}, t('forecast.credits', {
-        v: `${credits(sim.credits)} (${r.creditsDelta >= 0 ? '+' : '−'}${credits(Math.abs(r.creditsDelta))})`,
-      })),
+        ? el('div.fc-stop', { 'data-tone': 'down', 'data-forecast-stop': stop.kind }, [
+          mark('off'),
+          el('div.fc-fig', {}, [el('b', {}, t('forecast.stopIn', { d: sinceStart(r, stop.tick) })), el('small', {}, incidentText(sim, stop))]),
+        ])
+        : el('div.fc-stop', { 'data-tone': loses ? 'warn' : 'up', 'data-forecast-stop': '' }, [
+          mark(loses ? 'full' : 'on'),
+          el('div.fc-fig', {}, [el('b', {}, t('forecast.noStopShort')), el('small', {}, t(loses ? 'forecast.noStopLoss' : 'forecast.noStop'))]),
+        ]),
+      el('div.fc-credits', {}, [
+        el('div.fc-fig', {}, [
+          el('b', {}, [credits(sim.credits), el('span.fc-delta', { 'data-tone': up ? 'up' : 'down' }, `${up ? '+' : '−'}${credits(Math.abs(r.creditsDelta))}`)]),
+          el('small', {}, t('forecast.creditsCap')),
+        ]),
+      ]),
     ]);
     return [head, el('div.ab-panels', {}, reportPanels(r, sim)), approxNote(r)].filter((x): x is HTMLElement => !!x);
   }
@@ -104,6 +119,7 @@ export class ForecastPage {
   /** Change-only writes: labels (language), the chosen duration. */
   refresh(): void {
     for (const [node, key] of this.labels) setText(node, t(key));
+    setAttr(this.title, 'title', t('forecast.lead'));
     for (const o of this.opts) {
       setText(o.node, o.hours % 24 === 0 && o.hours > 24 ? t('forecast.days', { n: o.hours / 24 }) : t('forecast.hours', { n: o.hours }));
       setAttr(o.node, 'data-on', o.hours === this.hours ? '' : null);

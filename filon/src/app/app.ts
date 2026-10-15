@@ -2,11 +2,11 @@
 // views and the in-game UI, wires them, and runs the frame. The parts live next door:
 // view.ts (iso ⇄ plan morph), picking.ts (screen ⇄ world), build-mode.ts (construction),
 // screens.ts (full screens), sim-events.ts (colony events → feedback), controls.ts (keys and
-// pointer). The sim ticks at a fixed 10 Hz inside the render loop (≤ 8 ticks per frame;
+// pointer), views.ts (the specialised views, D88). The sim ticks at a fixed 10 Hz inside the render loop (≤ 8 ticks per frame;
 // longer gaps are the offline catch-up's job); the DOM UI refreshes at 4 Hz.
 //
 // One frame: morph → input → sim ticks → drain events → camera → terrain & relief → ghost,
-// overlays, drifters, items → tip → stats sample → (4 Hz) HUD, bar, inspector, screen →
+// overlays, the view's marks, drifters, items → tip → stats sample → (4 Hz) the view's readings, HUD, bar, inspector, screen →
 // render → perf.
 import { reliefSun } from '@/render/world/cast-shadows';
 import { SHADOW_REACH } from '@/render/art/terrain';
@@ -23,6 +23,7 @@ import { BuildingsView } from '@/render/world/buildings-view';
 import { ReliefView } from '@/render/world/relief-view';
 import { GhostView } from '@/render/world/ghost-view';
 import { OverlaysView } from '@/render/world/overlays-view';
+import { VEIL, ViewsView } from '@/render/world/views-view';
 import { ItemsView } from '@/render/world/items-view';
 import { DriftersView } from '@/render/world/drifters-view';
 import { CargoView } from '@/render/world/cargo-view';
@@ -41,6 +42,10 @@ import { Inspector } from '@/ui/inspector/inspector';
 import { Toasts } from '@/ui/toasts';
 import { Tip } from '@/ui/tip';
 import { LandPanel } from '@/ui/land-panel';
+import { ViewBar } from '@/ui/views/view-bar';
+import { ViewPanel } from '@/ui/views/view-panel';
+import type { MapView } from '@/core/kinds';
+import { revealed } from '@/sim/systems/quests';
 import { parcelUnder } from '@/ui/land-facts';
 import { BuildingCard } from '@/ui/building-card';
 import { Guide } from '@/ui/guide';
@@ -66,6 +71,7 @@ import { ScreenHost } from './screens';
 import { drainSimEvents } from './sim-events';
 import type { SoundShell } from './sound';
 import { ViewState } from './view';
+import { MapViews } from './views';
 
 const MAX_TICKS_PER_FRAME = 8;
 
@@ -83,6 +89,8 @@ export class App {
   readonly relief: ReliefView;
   readonly ghost: GhostView;
   readonly overlays: OverlaysView;
+  /** The specialised views' veil, flat marks and badges (D88). */
+  readonly viewsView: ViewsView;
   /** The power wires, above the buildings in both views (D25). */
   readonly wires: WiresView;
   readonly items: ItemsView;
@@ -103,6 +111,10 @@ export class App {
   readonly landTool = new LandTool();
   /** The land mode's card (where the inspector sits): the legend, the picked parcel, buy / lease. */
   readonly landPanel: LandPanel;
+  /** The specialised views (D88): which one is on show and what it reads; the selector; the side card. */
+  readonly views: MapViews;
+  readonly viewBar: ViewBar;
+  readonly viewPanel: ViewPanel;
   readonly build: BuildMode;
   readonly controls: Controls;
   readonly screens: ScreenHost;
@@ -170,6 +182,7 @@ export class App {
     this.relief = new ReliefView(this.layers.get('objects'), land);
     this.ghost = new GhostView(this.layers.get('ghost'), atlas);
     this.overlays = new OverlaysView(this.layers.get('grid'), this.layers.get('overlays'), this.layers.get('land'));
+    this.viewsView = new ViewsView(this.layers.get('veil'), this.layers.get('viewFlat'), this.layers.get('viewMarks'));
     this.wires = new WiresView(this.layers.get('wires'), this.layers.get('wiresPlan'));
     this.items = new ItemsView(this.layers.get('items'), atlas, this.layers.get('itemsOver'), this.layers.get('belts'), { volumes: this.layers.get('objects'), plan: this.layers.get('plan') });
     this.buildings.carHeight = (x, y) => this.items.lift.carAt(x, y); // the traction elevators' cars ride with their items
@@ -191,6 +204,7 @@ export class App {
       land: this.landTool,
       zoom: { get: () => this.camera.target.zoom, glide: (z) => this.camera.glideTo(this.camera.target.tx, this.camera.target.ty, z) },
     });
+    this.views = new MapViews({ sim: () => this.sim, land: this.landTool, setLand: (on) => this.build.land(on), lit: (id) => this.buildings.work.isLit(id) });
     this.screens = new ScreenHost(document.getElementById('screens'));
     const notify = (k: 'good' | 'bad' | 'info' | 'warn', txt: string): void => this.toasts.show(k, txt);
     this.screens.register('research', new ResearchScreen(atlas, { sim: () => this.sim, close: () => this.screens.open(null), notify, focus: () => this.guide?.focusNode() ?? null }));
@@ -204,7 +218,11 @@ export class App {
       if (tab) this.crier.show(tab);
       if (this.screens.current !== 'market') this.screens.open('market');
     };
-    this.hud = new Hud(atlas, { sim: () => this.sim, building: () => !!this.build.category, toggleBuild: () => this.build.toggle(), openResearch: () => this.screens.open('research'), openCrier: () => openCrier(), openMenu: () => this.screens.open('menu'), worldTick: () => this.dayNight.worldTick(this.sim), openStats: () => this.screens.open('stats'), covered: () => !!this.screens.current || this.quests.modalOpen, toggleLand: () => this.build.land(), landOn: () => this.landTool.active });
+    this.hud = new Hud(atlas, { sim: () => this.sim, building: () => !!this.build.category, toggleBuild: () => this.build.toggle(), openResearch: () => this.screens.open('research'), openCrier: () => openCrier(), openMenu: () => this.screens.open('menu'), worldTick: () => this.dayNight.worldTick(this.sim), openStats: () => this.screens.open('stats'), covered: () => !!this.screens.current || this.quests.modalOpen,
+      openPower: () => { if (this.viewShown('power')) this.views.toggle('power'); }, powerOn: () => this.views.current === 'power', buildNew: () => this.bar?.hasNew() ?? false,
+    });
+    this.viewBar = new ViewBar({ current: () => this.views.current, pick: (v) => (v === 'normal' ? this.views.set('normal') : this.views.toggle(v)), shows: (v) => this.viewShown(v) });
+    this.hud.views.append(this.viewBar.root);
     this.bar = new BuildBar(atlas, {
       sim: () => this.sim,
       category: () => this.build.category,
@@ -231,11 +249,17 @@ export class App {
       notify,
       link: (id) => this.build.link(id),
       linkSource: () => (this.link.active ? this.link.source : 0),
+      // A building clicked in a view opens on that view's part (D88).
+      facet: () => { const v = this.views.current; return v === 'power' || v === 'logistics' || v === 'production' ? v : null; },
     });
     this.landPanel = new LandPanel({ sim: () => this.sim, active: () => this.landTool.active, selected: () => this.landTool.selected, close: () => this.build.land(false), notify });
+    this.viewPanel = new ViewPanel(atlas, {
+      sim: () => this.sim, view: () => this.views.current, data: () => this.views.data, covered: () => !!this.selected,
+      close: () => this.views.set('normal'), focus: (id) => this.focus(id), goTo: (x, y) => this.camera.glideTo(x, y),
+    });
     const tipNode = document.getElementById('tooltip') ?? document.body.appendChild(document.createElement('div'));
     this.tip = new Tip(tipNode, atlas);
-    document.getElementById('ui')?.append(this.hud.root, this.inspector.root, this.landPanel.root, this.bar.root, this.toasts.root);
+    document.getElementById('ui')?.append(this.hud.root, this.inspector.root, this.landPanel.root, this.viewPanel.root, this.bar.root, this.toasts.root);
     // The building card listens on the bar (event delegation). It lives on <body> above the
     // tutorial's guide (the player is reading it), below the naming modal and the tip.
     this.card = new BuildingCard(atlas, { sim: () => this.sim, covered: () => !!this.screens.current }, this.bar.root);
@@ -265,6 +289,25 @@ export class App {
     this.selected = id;
     this.inspector?.refresh();
     bus.emit('selection:changed', { entity: id || null });
+  }
+
+  /** Select a building and bring the camera to it (a view's panel: the next one in trouble). */
+  focus(id: number): void {
+    const e = this.sim.ents.get(id);
+    if (!e) return;
+    const [w, h] = footprint(e.def, e.rot);
+    this.camera.glideTo(e.x + w / 2, e.y + h / 2);
+    this.select(id);
+  }
+
+  /**
+   * Is a view offered yet? The tutorial reveals them with what they show: Électricité with the
+   * power readout, the others (and Terrain, the land mode) with building.
+   */
+  viewShown(v: MapView): boolean {
+    const rv = revealed(this.sim);
+    if (!rv || v === 'normal') return true;
+    return rv.has(v === 'power' ? 'power' : 'build');
   }
 
   removeEntity(id: number): void {
@@ -311,6 +354,7 @@ export class App {
     this.tools.state = null;
     this.link.stop();
     this.build.land(false);
+    this.views.reset();
     this.buildings.rebuild(sim);
     this.items.rebuild(sim);
     this.lights.rebuild(sim);
@@ -371,11 +415,14 @@ export class App {
     this.uiClock += dt;
     if (this.uiClock >= 0.25) {
       this.uiClock = 0;
+      this.views.refresh(0.25);
       this.hud.refresh(performance.now());
+      this.viewBar.refresh();
       this.bar.refresh();
       this.card.refresh();
       this.inspector.refresh();
       this.landPanel.refresh();
+      this.viewPanel.refresh();
       this.screens.refresh();
       this.guide.refresh();
       this.quests.refresh();
@@ -424,8 +471,17 @@ export class App {
     this.overlays.landOn = land.active;
     this.overlays.landHover = land.hover;
     this.overlays.landSel = land.selected;
-    this.wires.update(this.sim, te, dt, linkPre, this.overlays.powerOn);
+    const view = this.views.current;
+    this.overlays.routesOn = !this.views.veiled;
+    // Under the Logistique and Production views the wires fade with the base (Électricité draws them bold).
+    const wiresA = this.views.veiled && view !== 'power' ? 0.3 : 1;
+    this.layers.get('wires').alpha = wiresA;
+    this.layers.get('wiresPlan').alpha = wiresA;
+    this.wires.update(this.sim, te, dt, linkPre, view === 'power');
     this.overlays.update(this.sim, vt, te, cam.zoom, this.selected, (x, y) => this.relief.level(x, y), this.build.ghostReach());
+    // The view's marks (D88): Électricité shows a pillar's reach under the cursor (the Link tool's own hover when it is in hand).
+    const hover = view !== 'power' ? 0 : this.link.active ? this.link.hover : over && pointer ? this.picker.entityAt(pointer.sx, pointer.sy) : 0;
+    this.viewsView.update(this.sim, { view, P, te, zoom: cam.zoom, dt, tiles: vt, levelAt: (x, y) => this.relief.level(x, y), hover }, this.views.data);
     const simTicks = this.sim.tick + (this.paused ? 0 : this.acc / TICK_MS); // interpolated game time
     // Day / night from the world clock (the sun the sim uses): grade, night lights, solar panels, clouds.
     const worldTick = this.dayNight.worldTick(this.sim, simTicks);
@@ -434,6 +490,7 @@ export class App {
     this.terrain.setSun(...sun);
     this.relief.setSun(...sun);
     this.lights.update(grade, P, te, worldTick / 10);
+    if (this.views.veiled) this.layers.get('lights').alpha *= 1 - (VEIL[view] ?? 0); // night glows under the view's veil
     this.clouds.update(grade, P, te, this.camera.cur.tx, this.camera.cur.ty, cam.zoom, worldTick / 10);
     this.drifters.update(this.sim, P, te, simTicks / 10);
     this.cargo.update(P, te, this.paused ? 0 : dt, grade.night);
@@ -460,6 +517,7 @@ export class App {
     this.perf.set('items', this.items.count);
     this.perf.set('lights', this.lights.count);
     this.perf.set('wires', this.wires.count);
+    this.perf.set('viewMarks', this.viewsView.count);
     this.perf.frame(frameMs, dt);
   }
 }

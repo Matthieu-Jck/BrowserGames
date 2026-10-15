@@ -36,6 +36,10 @@ describe('key bindings', () => {
     expect(resolveKey(k('KeyB', 'b'))).toEqual({ action: 'build' });
     expect(resolveKey(k('KeyT', 't'))).toEqual({ action: 'scrResearch' });
     expect(resolveKey(k('KeyI', 'i'))).toEqual({ action: 'land' }); // the land mode (D60), both layouts
+    // The specialised views (D88): P, F, O on both layouts (I is the Terrain view: the land mode).
+    expect(resolveKey(k('KeyP', 'p'))).toEqual({ action: 'viewPower' });
+    expect(resolveKey(k('KeyF', 'f'))).toEqual({ action: 'viewLogistics' });
+    expect(resolveKey(k('KeyO', 'o'))).toEqual({ action: 'viewProduction' });
   });
 
   it('with Ctrl / Cmd only undo exists (by letter: AZERTY Ctrl+Z is not a pan), and Z alone is not undo', () => {

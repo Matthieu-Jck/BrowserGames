@@ -1,35 +1,50 @@
-/* crier.css — the Crier screen (prices, trade, What pays, the Gazette) and the trade post panel.
-   The screen: a header (title, purse, the posts' facts), then two columns — the orbital view
-   over the Gazette on the left, the tabs on the right. Paper cartouches, inked borders, hard
-   shadows, Patrick Hand SC for titles and Atkinson Hyperlegible Next (tabular) for figures. */
+/* crier.css — the Crier screen (Cours, Échanges, Ce qui rapporte, the Gazette) and the trade post
+   panel. The screen (D89; owner, 2026-10-15: « Plus clair, plus séparé »): a header (the title, the
+   purse as a big figure, the posts' facts as one inked bar of icon chips), then two columns — the
+   orbital view (its legend as chips in its corner) over the Gazette on the left, the tabs on the
+   right. Each tab is a scroll of the kit's section cards (kit.css), scaled up here for a full
+   screen: a card per rank of prices, per trade post, for spot trades, for what is in flight, for
+   the board. Figures as chips coloured by their sign (turquoise up, coral down), bars for what
+   ranks. Paper cards, inked borders, hard shadows; Patrick Hand SC for titles, Atkinson
+   Hyperlegible Next (tabular) for figures. */
 
 /* ── frame ──────────────────────────────────────────────────────────────────── */
 .crier { gap: 12px; }
-.cr-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.cr-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .cr-head h1 { margin: 0; font-size: 34px; line-height: 1; }
+.cr-coin { color: var(--c-coral-d); line-height: 1; }
+/* The purse: a big figure (kit.css `.kstat`), its pace an hour under it. */
 .cr-purse {
-  display: inline-flex; align-items: baseline; gap: 7px; padding: 4px 14px 5px;
+  padding: 4px 16px 5px 11px; gap: 9px;
   border: 2px solid var(--c-ink); border-radius: var(--radius-ink); background: var(--c-paper);
   box-shadow: 2px 3px 0 var(--c-ink);
 }
-.cr-coin { color: var(--c-coral-d); font-size: 20px; line-height: 1; }
-.cr-balance { font-family: var(--f-title); font-size: 25px; line-height: 1; white-space: nowrap; }
-.cr-rate { font-size: 12px; font-weight: 600; color: var(--c-ink-soft); white-space: nowrap; }
+.cr-purse .kstat-icon { font-size: 27px; }
+.cr-purse .cr-balance { font-size: 27px; line-height: 1; }
+.cr-rate { font-size: 12px; font-weight: 700; color: var(--c-ink-soft); white-space: nowrap; }
 .cr-rate:empty { display: none; }
 .cr-rate[data-sign='+'] { color: var(--c-turq-d); }
 .cr-rate[data-sign='-'] { color: var(--c-coral-d); }
-.cr-facts { display: flex; gap: 6px; flex-wrap: wrap; }
-.cr-fact {
-  font-size: 12px; padding: 2px 9px; white-space: nowrap;
-  border: 1.5px solid var(--c-ink); border-radius: 999px; background: var(--c-paper-d);
+/* The posts' facts: one inked bar, a chip per fact (an icon, a figure; the words on hover). */
+.cr-facts {
+  display: inline-flex; align-items: stretch; overflow: hidden;
+  border: 2px solid var(--c-ink); border-radius: 12px 8px 13px 9px / 9px 12px 8px 13px;
+  background: var(--c-paper); box-shadow: 2px 3px 0 var(--c-ink);
 }
-.cr-fact:empty { display: none; }
-.cr-fact[data-none] { background: var(--c-coral); color: var(--c-paper); border-color: var(--c-coral-d); }
+.cr-fact { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; font-size: 14px; white-space: nowrap; cursor: help; }
+.cr-fact + .cr-fact { border-left: 1.5px dashed color-mix(in srgb, var(--c-ink) 30%, transparent); }
+.cr-fact:hover { background: var(--c-peach-l); }
+.cr-fact b { font-weight: 700; font-variant-numeric: tabular-nums; }
+.cr-fact-i { display: inline-flex; align-items: center; font-size: 17px; }
+.cr-fact-i > .glyph, .cr-fact-i > .kmark { width: 1.2em; height: 1.2em; }
+.cr-fact-i canvas { display: block; width: 22px; height: 22px; }
+.cr-sym { font-weight: 700; line-height: 1; color: var(--c-ink-soft); }
+.cr-fact[data-none] { background: var(--c-coral); color: var(--c-paper); }
 
-.cr-body { flex: 1; min-height: 0; display: grid; grid-template-columns: clamp(300px, 34vw, 540px) minmax(0, 1fr); gap: 16px; }
+.cr-body { flex: 1; min-height: 0; display: grid; grid-template-columns: clamp(290px, 31vw, 520px) minmax(0, 1fr); gap: 16px; }
 
 /* ── left: the orbit and the Gazette ──────────────────────────────────────── */
-.cr-side { display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; }
+.cr-side { display: flex; flex-direction: column; gap: 10px; min-height: 0; min-width: 0; }
 .cr-orbit {
   position: relative; flex: 1 1 auto; min-height: 190px; overflow: hidden;
   border: 2px solid var(--c-ink); border-radius: var(--radius-ink); box-shadow: var(--shadow-ink);
@@ -39,70 +54,147 @@
     linear-gradient(180deg, #2b2548, #1b1830);
 }
 .cr-orbit > .orbit { position: absolute; inset: 0; }
-.cr-legend { margin: 0 4px; font-size: 12px; color: var(--c-ink-soft); }
+/* Its legend: two chips in the corner — the sister colonies, those you trade with. */
+.cr-legend { position: absolute; left: 10px; bottom: 10px; z-index: 1; display: flex; gap: 6px; pointer-events: none; }
+.cr-lchip {
+  pointer-events: auto; cursor: help; display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px 2px 7px;
+  font-size: 13px; border: 1.5px solid var(--c-ink); border-radius: 999px; background: var(--c-paper); box-shadow: 1px 2px 0 var(--c-ink);
+}
+.cr-lchip b { font-weight: 700; font-variant-numeric: tabular-nums; }
+.cr-lchip-i { display: inline-flex; }
+.cr-lchip-i > .glyph, .cr-lchip-i > .kmark { width: 1.2em; height: 1.2em; }
 
-.cr-gazette { flex: 0 1 auto; max-height: 46%; overflow: auto; padding: 8px 12px 8px; }
+/* The Gazette: a newspaper's head, then its events by « announced » and « running ». */
+.cr-gazette { flex: 0 1 auto; max-height: 48%; overflow: auto; padding: 8px 12px 8px; }
 .cr-gz-head { display: flex; align-items: baseline; gap: 8px; border-bottom: 3px double var(--c-ink); padding-bottom: 2px; }
 .cr-gz-head h2 { margin: 0; font-size: 23px; line-height: 1.1; }
 .cr-gz-head small { font-family: var(--f-title); font-size: 15px; color: var(--c-ink-soft); }
-.cr-gz-sec { margin: 7px 0 1px; font-size: 14px; color: var(--c-ink-soft); letter-spacing: 0.06em; }
+.cr-gz-sec { display: flex; align-items: baseline; gap: 6px; margin: 8px 0 1px; font-size: 14px; color: var(--c-ink-soft); letter-spacing: 0.06em; }
 .cr-gz {
-  display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 9px; align-items: center;
-  padding: 5px 0; border-bottom: 1px dashed rgba(30, 27, 46, 0.2);
+  display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px; align-items: center;
+  padding: 6px 2px; border-bottom: 1px dashed rgba(30, 27, 46, 0.2);
 }
 .cr-gz:last-child { border-bottom: none; }
-.cr-gz-glyph {
-  width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 10px;
-  border: 1.5px solid var(--c-ink); background: var(--c-lilac-l);
+.cr-gz-icon {
+  display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%;
+  border: 1.5px solid var(--c-ink); background: var(--c-paper-d); font-size: 16px;
 }
-.cr-gz[data-side='demand'] .cr-gz-glyph { background: var(--c-coral); color: var(--c-paper); }
-.cr-gz-line { margin: 0; font-size: 13px; line-height: 1.3; }
-.cr-gz[data-when='now'] .cr-gz-line { font-weight: 600; }
-.cr-gz-meta { display: flex; gap: 10px; flex-wrap: wrap; font-size: 11.5px; color: var(--c-ink-soft); }
-.cr-gz-when { font-weight: 700; color: var(--c-coral-d); }
-.cr-gz[data-when='now'] .cr-gz-when { color: var(--c-turq-d); }
-.cr-gz-held:empty { display: none; }
-.cr-gz canvas { display: block; width: 24px; height: 24px; }
-.cr-gz-tier { font-size: 13px; padding: 0 6px; border: 1.5px solid var(--c-ink); border-radius: 8px; background: var(--c-paper-d); }
+.cr-gz[data-side='demand'] .cr-gz-icon { background: color-mix(in srgb, var(--c-coral) 28%, var(--c-paper)); }
+.cr-gz[data-side='supply'] .cr-gz-icon { background: var(--c-lilac-l); }
+.cr-gz-icon .imention-icon { margin: 0; vertical-align: middle; }
+.cr-gz-tier { font-size: 18px; font-weight: 400; line-height: 1; }
+.cr-gz-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cr-gz-what { font-size: 13.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cr-gz-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 6px; font-size: 11.5px; }
+.cr-gz-kind { padding: 0 7px; border-radius: 999px; font-weight: 700; border: 1px solid var(--c-ink-soft); background: var(--c-paper-d); }
+.cr-gz[data-kind='shortage'] .cr-gz-kind, .cr-gz[data-kind='storm'] .cr-gz-kind { background: var(--c-coral); border-color: var(--c-coral-d); color: var(--c-paper); }
+.cr-gz[data-kind='boom'] .cr-gz-kind { background: var(--c-warn); border-color: var(--c-peach-d); }
+.cr-gz[data-kind='glut'] .cr-gz-kind, .cr-gz[data-kind='caravan'] .cr-gz-kind { background: var(--c-lilac-l); border-color: var(--c-lilac-d); }
+.cr-gz-mult { font-weight: 700; white-space: nowrap; }
+.cr-gz[data-side='demand'] .cr-gz-mult { color: var(--c-coral-d); }
+.cr-gz[data-side='supply'] .cr-gz-mult { color: var(--c-lilac-d); }
+.cr-gz-where { display: inline-flex; align-items: center; gap: 3px; color: var(--c-ink-soft); white-space: nowrap; }
+.cr-gz-where .glyph { width: 1.15em; height: 1.15em; }
+.cr-gz-side { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.cr-gz-when {
+  font-size: 11.5px; font-weight: 700; padding: 0 8px; border-radius: 999px; white-space: nowrap;
+  color: var(--c-coral-d); border: 1.5px dashed var(--c-coral-d);
+}
+.cr-gz[data-when='now'] .cr-gz-when { color: var(--c-turq-d); border: 1.5px solid var(--c-turq-d); background: color-mix(in srgb, var(--c-turq-l) 40%, var(--c-paper)); }
+.cr-gz-held { display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; cursor: help; }
+.cr-gz-held[hidden] { display: none; }
+.cr-gz-held canvas { display: block; width: 16px; height: 16px; }
 
 /* ── right: tabs and panes ────────────────────────────────────────────────── */
-.cr-main { display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; }
+.cr-main { display: flex; flex-direction: column; gap: 10px; min-height: 0; min-width: 0; }
 .cr-tabs { display: flex; gap: 6px; }
+.cr-tab { display: inline-flex; align-items: center; gap: 7px; }
 .cr-tab[data-on] { background: var(--c-turq); color: var(--c-paper); }
-.cr-pane { flex: 1; min-height: 0; overflow: auto; padding: 10px 14px 14px; }
+/* Inked icons drawn in the text's colour (the tabs', and where they stand for the same thing). */
+.cr-ticon { display: inline-block; width: 1.15em; height: 1.15em; flex: none; overflow: visible; }
+.cr-ticon path, .cr-ticon rect { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.cr-ticon rect { fill: currentColor; fill-opacity: 0.22; }
+/* A pane: a scroll of section cards (room on the right and below for their shadows). */
+.cr-pane { flex: 1; min-height: 0; overflow: auto; padding: 0 8px 10px 0; }
 .cr-pane[hidden] { display: none; }
-.cr-note { margin: 0 0 8px; font-size: 12.5px; line-height: 1.4; color: var(--c-ink-soft); max-width: 92ch; }
-.cr-sub { font-size: 11.5px; color: var(--c-ink-soft); }
-.cr-help { margin: 4px 0 0; font-size: 11.5px; line-height: 1.35; color: var(--c-ink-soft); }
-.cr-empty { margin: 2px 0; font-size: 12.5px; font-style: italic; color: var(--c-ink-soft); }
-.cr-count { font-family: var(--f-body); font-size: 12px; font-weight: 400; color: var(--c-ink-soft); letter-spacing: 0; }
-.cr-count:empty { display: none; }
 
-/* Tables (prices, What pays): grid rows like the stats screen. */
-.cr-row {
-  display: grid; align-items: center; gap: 8px; padding: 3px 4px; min-height: 30px;
-  border-bottom: 1px dashed rgba(30, 27, 46, 0.15); font-size: 13px;
-}
-.cr-headrow {
-  position: sticky; top: -10px; z-index: 1; min-height: 0; padding-top: 5px; align-items: end;
-  background: var(--c-paper); font-weight: 700; line-height: 1.15; border-bottom: 2px solid var(--c-ink);
-}
-.cr-headrow .cr-num { white-space: normal; }
-.cr-prow { grid-template-columns: minmax(170px, 1.7fr) 62px 68px 68px 100px 58px minmax(92px, 1fr) 28px; }
-.cr-brow { grid-template-columns: minmax(190px, 1.5fr) 96px 96px 100px minmax(170px, 1.7fr); }
+/* The kit's section cards, scaled up for a full screen. */
+.crier .ksec { margin: 0 0 14px; padding: 7px 14px 9px; border-width: 2px; background: var(--c-paper); box-shadow: 2px 3px 0 var(--c-ink); }
+.crier .ksec-head { margin-bottom: 4px; }
+.crier .ksec-title { font-size: 20px; }
+.crier .ksec-icon { font-size: 17px; align-items: center; }
+.crier .ksec-icon > canvas { display: block; width: 24px; height: 24px; }
+.crier .ksec-icon > .cr-ticon { width: 1.2em; height: 1.2em; }
+.crier .ksec-icon > .cr-coin { font-size: 20px; }
+
+.cr-sub { font-size: 11.5px; color: var(--c-ink-soft); }
+.cr-empty { margin: 2px 0; font-size: 12.5px; font-style: italic; color: var(--c-ink-soft); }
+.cr-count { font-family: var(--f-body); font-size: 12.5px; font-weight: 700; color: var(--c-ink-soft); letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.cr-count:empty { display: none; }
 .cr-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .cr-mid { display: flex; justify-content: center; }
-.cr-item { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
-.cr-item canvas { display: block; width: 20px; height: 20px; flex: none; }
-.cr-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+/* Tables (prices, What pays): grid rows, one line each, in their cards. */
+.cr-row {
+  display: grid; align-items: center; column-gap: 8px; padding: 3px 4px; min-height: 32px;
+  border-bottom: 1px dashed rgba(30, 27, 46, 0.14); font-size: 13.5px;
+}
+.cr-rows > .cr-row:last-child { border-bottom: none; }
+.cr-headrow { min-height: 0; padding: 4px; align-items: end; font-size: 12px; font-weight: 700; line-height: 1.15; color: var(--c-ink-soft); }
+.cr-headrow .cr-num { white-space: normal; }
+.cr-headrow > [title] { cursor: help; }
+.cr-item { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.cr-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cr-stack { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; line-height: 1.2; }
-.cr-tier { font-size: 15px; margin: 10px 0 0; padding: 0 4px 1px; color: var(--c-ink-soft); border-bottom: 1.5px solid var(--c-ink-soft); }
+.cr-stack > .cr-name { max-width: 100%; }
+
+/* ── Cours ────────────────────────────────────────────────────────────────── */
+/* The column heads: an inked strip that stays on top; its cells line up with the cards' rows
+   (the card's border and padding, then the row's: 2 + 14 + 4 px). */
+.cr-prices > .cr-headrow {
+  position: sticky; top: 0; z-index: 2; margin: 0 0 10px; padding: 6px 18px 5px;
+  color: var(--c-ink); background: var(--c-paper-d); border: 2px solid var(--c-ink);
+  border-radius: 10px 8px 11px 9px / 9px 11px 8px 10px; box-shadow: 2px 3px 0 var(--c-ink);
+}
+/* The columns: item, held, sell, buy, 24 h, trend, [forecast], your flow, [floor], ⇄ — the bracketed
+   ones only once researched (Market Planning, Market Economy). */
+.cr-prices { --pcols: minmax(150px, 1.6fr) 56px 60px 60px 96px 74px minmax(118px, 1fr) 28px; }
+.cr-prices[data-fc] { --pcols: minmax(150px, 1.6fr) 56px 60px 60px 96px 74px 74px minmax(118px, 1fr) 28px; }
+.cr-prices[data-floors] { --pcols: minmax(150px, 1.6fr) 56px 60px 60px 96px 74px minmax(118px, 1fr) 60px 28px; }
+.cr-prices[data-fc][data-floors] { --pcols: minmax(140px, 1.2fr) 56px 60px 60px 96px 74px 74px minmax(128px, 1fr) 60px 28px; }
+.cr-prow { grid-template-columns: var(--pcols); }
+.cr-prices:not([data-fc]) .cr-fc-cell, .cr-prices:not([data-floors]) .cr-floor-cell { display: none; }
 .cr-uniq { color: var(--c-lilac-d); font-size: 12px; }
 .cr-stock { color: var(--c-ink-soft); }
-.cr-bid, .cr-ask { font-weight: 600; }
-.cr-trend[data-sign='+'] { color: var(--c-turq-d); font-weight: 600; }
-.cr-trend[data-sign='-'] { color: var(--c-coral-d); font-weight: 600; }
-.cr-flow { font-size: 12px; }
+.cr-stock[data-zero] { opacity: 0.45; }
+.cr-bid, .cr-ask { font-weight: 700; }
+/* A move as a chip (the 24 h trend, the hour's forecast, a spot trade's lasting mark): an arrow and
+   a signed percentage, turquoise up, coral down; the forecast dashed (it has not happened). */
+.cr-move {
+  display: inline-block; font-size: 12px; font-weight: 700; line-height: 1.5; padding: 0 7px; white-space: nowrap;
+  border-radius: 999px; border: 1.5px solid color-mix(in srgb, var(--c-ink) 22%, transparent); background: var(--c-paper-d); color: var(--c-ink-soft);
+}
+.cr-move:empty { display: none; }
+.cr-move[data-sign='+'] { color: var(--c-turq-d); border-color: var(--c-turq-d); background: color-mix(in srgb, var(--c-turq-l) 45%, var(--c-paper)); }
+.cr-move[data-sign='-'] { color: var(--c-coral-d); border-color: var(--c-coral-d); background: color-mix(in srgb, var(--c-coral) 16%, var(--c-paper)); }
+.cr-fc { border-style: dashed; }
+.cr-fc[data-sign] { background: var(--c-paper); }
+/* Your flow: ↑ what you sell, ↓ what you buy, a minute. */
+.cr-flow { display: flex; flex-wrap: wrap; gap: 3px 4px; min-width: 0; }
+.cr-flowchip { font-size: 11.5px; font-weight: 700; padding: 0 5px; border-radius: 6px; white-space: nowrap; }
+.cr-flowchip:empty { display: none; }
+.cr-flowchip[data-dir='out'] { color: var(--c-turq-d); background: color-mix(in srgb, var(--c-turq-l) 35%, var(--c-paper)); }
+.cr-flowchip[data-dir='in'] { color: var(--c-lilac-d); background: color-mix(in srgb, var(--c-lilac-l) 45%, var(--c-paper)); }
+.cr-flow[data-none]::before { content: '—'; color: var(--c-ink-soft); opacity: 0.45; }
+/* The floor price: a light field in its own column, inked once a floor is set. */
+.cr-input.cr-input-floor {
+  width: 100%; padding: 1px 5px; font-size: 12.5px; text-align: right;
+  border: 1.5px dashed transparent; background: transparent;
+}
+.cr-prow:hover .cr-input.cr-input-floor { border-color: color-mix(in srgb, var(--c-ink) 35%, transparent); }
+.cr-input.cr-input-floor:hover, .cr-input.cr-input-floor:focus { border-color: var(--c-ink); border-style: solid; background: var(--c-paper); }
+.cr-input.cr-input-floor[data-set] { border-style: solid; border-color: var(--c-turq-d); background: color-mix(in srgb, var(--c-turq-l) 40%, var(--c-paper)); font-weight: 700; }
+.cr-input-floor::placeholder { color: var(--c-ink-soft); opacity: 0.45; }
 .cr-go {
   width: 26px; height: 22px; padding: 0; cursor: pointer; font-size: 13px; line-height: 1;
   border: 1.5px solid var(--c-ink); border-radius: 7px; background: var(--c-paper); box-shadow: 1px 1px 0 var(--c-ink);
@@ -115,7 +207,7 @@
 .cr-prow[data-event='on'] { background: linear-gradient(90deg, rgba(232, 115, 90, 0.2), rgba(232, 115, 90, 0.03) 70%); box-shadow: inset 3px 0 0 var(--c-coral); }
 .cr-prow[data-event='soon'] { box-shadow: inset 3px 0 0 var(--c-warn); }
 .cr-badge {
-  margin-top: 1px; font-size: 10.5px; font-weight: 700; line-height: 1.35; padding: 0 7px; border-radius: 999px; white-space: nowrap;
+  flex: none; font-size: 10.5px; font-weight: 700; line-height: 1.5; padding: 0 7px; border-radius: 999px; white-space: nowrap;
   background: var(--c-coral); color: var(--c-paper);
 }
 .cr-badge:empty { display: none; }
@@ -128,96 +220,155 @@
 .cr-spark-ref { stroke: var(--c-ink-soft); stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.5; }
 .cr-spark-dot { fill: var(--c-ink); }
 
-/* ── Trade ────────────────────────────────────────────────────────────────── */
-.cr-trade { display: grid; grid-template-columns: minmax(0, 1fr) minmax(270px, 330px); gap: 16px; align-items: start; }
+/* ── Échanges ─────────────────────────────────────────────────────────────── */
+.cr-trade { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: 16px; align-items: start; }
 .cr-trade-posts { min-width: 0; }
-.cr-sec-title { margin: 0 0 6px; font-size: 21px; }
+.cr-sec-title { display: flex; align-items: center; gap: 8px; margin: 2px 0 10px; font-size: 22px; line-height: 1; }
+.cr-sec-title canvas { display: block; width: 26px; height: 26px; }
+.cr-sec-title .cr-count { font-size: 14px; }
 .cr-nopost {
-  padding: 10px 14px; border: 2px dashed var(--c-ink-soft); border-radius: var(--radius-ink); background: var(--c-paper-d);
+  display: flex; align-items: center; gap: 14px; margin: 0 0 14px; padding: 10px 14px;
+  border: 2px dashed var(--c-ink-soft); border-radius: var(--radius-ink); background: var(--c-paper-d);
 }
 .cr-nopost[hidden] { display: none; }
+.cr-nopost-i canvas { display: block; width: 40px; height: 40px; }
 .cr-nopost h3 { margin: 0 0 4px; font-size: 18px; }
 .cr-nopost p { margin: 0; font-size: 13px; line-height: 1.45; }
-.cr-post-list { display: flex; flex-direction: column; gap: 12px; }
-.cr-post, .cr-box {
-  padding: 8px 12px 10px; background: #fffaf2;
-  border: 2px solid var(--c-ink); border-radius: 12px 8px 13px 9px / 9px 12px 8px 13px; box-shadow: 2px 3px 0 var(--c-ink);
+/* A trade post's card: in its head, the minute's lift (a meter) and what it earned. */
+.cr-post-act { display: inline-flex; align-items: center; gap: 8px; cursor: help; }
+.cr-post-act .kmeter { flex: none; width: 150px; }
+.cr-earn { font-size: 13px; font-weight: 700; padding: 0 8px; border-radius: 999px; white-space: nowrap; background: var(--c-paper-d); }
+.cr-earn:empty { display: none; }
+.cr-earn[data-sign='+'] { color: var(--c-turq-d); background: color-mix(in srgb, var(--c-turq-l) 40%, var(--c-paper)); }
+.cr-earn[data-sign='-'] { color: var(--c-coral-d); background: color-mix(in srgb, var(--c-coral) 16%, var(--c-paper)); }
+.cr-subhead { display: flex; align-items: center; gap: 6px; margin: 2px 0 5px; }
+.cr-subhead .lettering { font-size: 16px; }
+.cr-orders { display: grid; grid-template-columns: minmax(64px, 1fr) auto auto auto auto auto; row-gap: 4px; }
+.cr-orders > .cr-empty { grid-column: 1 / -1; }
+/* An order, one line: the item, its rate, its cap, its state, the next delivery (or purchase), ✕ —
+   on the list's columns (a subgrid), so the figures line up from one order to the next. */
+.cr-order {
+  grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; column-gap: 9px;
+  padding: 3px 6px 3px 8px; min-height: 30px; font-size: 13px;
+  border: 1.5px solid color-mix(in srgb, var(--c-ink) 22%, transparent); border-radius: 8px;
+  background: color-mix(in srgb, var(--c-paper-d) 35%, var(--c-paper));
 }
-.cr-post-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding-bottom: 4px; border-bottom: 1.5px solid var(--c-ink); }
-.cr-post-head h3 { margin: 0; font-size: 20px; }
+.cr-o-item { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cr-o-item > .cr-tag { margin-left: 6px; }
+.cr-o-rate { font-weight: 700; text-align: right; white-space: nowrap; }
+.cr-o-max { text-align: right; white-space: nowrap; color: var(--c-ink-soft); }
+.cr-o-state { display: flex; min-width: 0; }
+.cr-o-eta { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; font-size: 12px; font-weight: 600; white-space: nowrap; color: var(--c-ink-soft); }
+.cr-o-eta > .kmark { display: none; }
+.cr-o-eta[data-k='flight'] > .kmark[data-mark='flight'], .cr-o-eta[data-k='next'] > .kmark[data-mark='order'] { display: inline-block; }
+.cr-x { padding: 0 2px; border: none; background: none; cursor: pointer; font-size: 14px; }
+.cr-x:hover { color: var(--c-coral-d); }
 .cr-tag { font-size: 11px; font-weight: 700; padding: 0 8px; border-radius: 999px; background: var(--c-turq-l); border: 1.5px solid var(--c-turq-d); }
 .cr-tag[hidden] { display: none; }
-.cr-post-act { margin-left: auto; font-size: 12px; color: var(--c-ink-soft); }
-.cr-post-sec h4 { margin: 8px 0 4px; font-size: 16px; }
-.cr-slots { display: flex; flex-direction: column; gap: 4px; }
-.cr-slot { display: grid; grid-template-columns: 20px minmax(120px, 190px) minmax(0, 1fr); align-items: center; gap: 8px; }
-.cr-slot-n { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font: 700 11px var(--f-body); background: var(--c-ink); color: var(--c-paper); }
-.cr-slot .insp-select, .cr-spot-pick .insp-select { max-width: none; width: 100%; }
-.cr-slot .ipick, .cr-spot-pick .ipick { max-width: none; width: 100%; }
-.cr-orders { display: flex; flex-direction: column; gap: 4px; }
-.cr-order { padding: 4px 6px; border: 1.5px solid rgba(30, 27, 46, 0.25); border-radius: 8px; background: var(--c-paper); }
-.cr-order-main { display: flex; align-items: center; gap: 6px; font-size: 13px; }
-.cr-order-main canvas { display: block; width: 18px; height: 18px; flex: none; }
-.cr-order-line { color: var(--c-ink-soft); white-space: nowrap; }
-.cr-order-sub { display: flex; align-items: center; gap: 8px; margin-top: 2px; padding-left: 24px; }
-.cr-x { margin-left: auto; padding: 0 4px; border: none; background: none; cursor: pointer; font-size: 14px; }
-.cr-x:hover { color: var(--c-coral-d); }
 .cr-state, .tr-state {
   font-size: 11px; font-weight: 700; padding: 0 7px; border-radius: 999px; white-space: nowrap;
   background: var(--c-paper-d); border: 1px solid var(--c-ink-soft);
 }
+.cr-state { overflow: hidden; text-overflow: ellipsis; cursor: help; }
 .cr-state[data-state='active'], .tr-state[data-state='active'] { background: var(--c-turq-l); border-color: var(--c-turq-d); }
 .cr-state[data-state='paused'], .tr-state[data-state='paused'] { background: var(--c-peach); border-color: var(--c-peach-d); }
 .cr-state[data-state='poor'], .tr-state[data-state='poor'] { background: var(--c-coral); border-color: var(--c-coral-d); color: var(--c-paper); }
 .cr-state[data-state='outlet'], .tr-state[data-state='outlet'],
 .cr-state[data-state='full'], .tr-state[data-state='full'] { background: var(--c-lilac-l); border-color: var(--c-lilac-d); }
-.cr-order-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 8px; }
-.cr-order-form .insp-select { max-width: 170px; }
-.cr-order-form .ipick { max-width: 190px; }
+/* A new order: the form on a dashed ground, then what it would cost and when it would land. */
+.cr-order-new {
+  margin-top: 8px; padding: 7px 9px;
+  border: 1.5px dashed color-mix(in srgb, var(--c-ink) 32%, transparent); border-radius: 9px;
+  background: color-mix(in srgb, var(--c-peach-l) 30%, var(--c-paper));
+}
+.cr-order-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.cr-order-form .ipick { max-width: 210px; }
 .cr-field { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--c-ink-soft); }
+.cr-le { font-size: 15px; font-weight: 700; color: var(--c-ink); }
 .cr-input {
   font: 13px var(--f-body); padding: 2px 6px; color: var(--c-ink); user-select: text;
   border: 1.5px solid var(--c-ink); border-radius: 6px; background: var(--c-paper);
 }
-.cr-input:focus, .cr-order-form .insp-select:focus, .cr-slot .insp-select:focus, .cr-spot-pick .insp-select:focus { outline: 2px solid var(--c-turq); outline-offset: 1px; }
+.cr-input:focus { outline: 2px solid var(--c-turq); outline-offset: 1px; }
 .cr-input-n { width: 74px; }
+.cr-order-form .cr-input-n { width: 60px; }
 .cr-input-oc { width: 66px; text-align: right; }
-.cr-add { font-size: 15px; padding: 2px 10px; }
-.cr-order-hint { display: block; margin-top: 4px; }
+.cr-add { font-size: 15px; padding: 2px 12px; margin-left: auto; }
+.cr-hint { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; cursor: help; }
+.cr-hint[hidden] { display: none; }
+.cr-hchip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; font-size: 12px; white-space: nowrap; color: var(--c-ink-soft);
+  border: 1px solid color-mix(in srgb, var(--c-ink) 22%, transparent); border-radius: 999px; background: var(--c-paper);
+}
+.cr-hchip b { font-weight: 600; color: var(--c-ink); }
+.cr-hchip .cr-ticon, .cr-hchip .kmark, .cr-hchip .glyph { width: 1.1em; height: 1.1em; }
 
-.cr-trade-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.cr-box h3 { margin: 0 0 6px; font-size: 19px; }
+.cr-trade-side { display: flex; flex-direction: column; min-width: 0; }
+/* Au comptant: the item and how many, presets, what the Heart holds and the prices, the two quotes. */
 .cr-spot-pick { display: grid; grid-template-columns: minmax(0, 1fr) 80px; gap: 6px; }
+.cr-spot-pick .ipick { max-width: none; width: 100%; }
 .cr-presets { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 2px; }
 .cr-preset { font-size: 12.5px; padding: 0 8px; border-width: 1.5px; box-shadow: 1px 1px 0 var(--c-ink); }
-.cr-spot-have { display: block; margin: 2px 0 4px; }
+.cr-have { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 8px 0 4px; cursor: help; }
+.cr-have-cell { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 3px 4px; border-radius: 8px; background: var(--c-paper-d); min-width: 0; }
+.cr-have-v { display: inline-flex; align-items: center; gap: 4px; font-size: 13.5px; font-weight: 700; white-space: nowrap; }
+.cr-have-v canvas { display: block; width: 18px; height: 18px; }
+.cr-have-cell small { font-size: 11px; color: var(--c-ink-soft); }
 .cr-quote { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px dashed rgba(30, 27, 46, 0.22); }
 .cr-q-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.cr-q-head { display: inline-flex; align-items: baseline; gap: 5px; }
+.cr-q-head { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 .cr-q-total { font-family: var(--f-title); font-size: 21px; line-height: 1.1; font-weight: 400; }
 .cr-q-head .cr-coin { font-size: 14px; }
 [data-spot-quote='sell'] .cr-q-total { color: var(--c-turq-d); }
 [data-spot-quote='buy'] .cr-q-total { color: var(--c-coral-d); }
+.cr-shock { margin-left: 2px; cursor: help; }
 .cr-why { font-size: 11.5px; color: var(--c-ink-soft); }
 .cr-quote[data-warn] .cr-why { color: var(--c-coral-d); font-weight: 600; }
 .cr-quote[data-warn] .cr-q-btn { opacity: 0.6; }
 .cr-q-btn { min-width: 86px; }
-.cr-flight-list { display: flex; flex-direction: column; gap: 4px; }
-.cr-flight-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 7px; font-size: 12.5px; }
-.cr-flight-row canvas { display: block; width: 18px; height: 18px; }
-.cr-flight-what { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
-.cr-eta { font-size: 12px; font-weight: 600; }
+/* En route: a line per item and post — how many, the post, the soonest arrival. */
+.cr-flight-list { display: flex; flex-direction: column; }
+.cr-flight-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto 70px; align-items: center; gap: 8px;
+  min-height: 28px; font-size: 13px; border-bottom: 1px dashed rgba(30, 27, 46, 0.15); cursor: help;
+}
+.cr-flight-row:last-of-type { border-bottom: none; }
+.cr-fl-what { display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; white-space: nowrap; }
+.cr-fl-n { font-weight: 700; font-variant-numeric: tabular-nums; }
+.cr-fl-post { display: inline-flex; align-items: center; gap: 3px; padding: 0 7px 0 4px; font-size: 11.5px; white-space: nowrap; color: var(--c-ink-soft); border-radius: 999px; background: var(--c-paper-d); }
+.cr-fl-post canvas { display: block; width: 16px; height: 16px; }
+.cr-eta { font-size: 12.5px; font-weight: 700; }
+.cr-more { display: block; margin-top: 4px; }
 
-/* ── What pays ────────────────────────────────────────────────────────────── */
+/* ── Ce qui rapporte ─────────────────────────────────────────────────────── */
+.cr-brow { grid-template-columns: minmax(190px, 1.5fr) 150px 150px 100px minmax(150px, 1.1fr); }
+.cr-board .cr-headrow { position: sticky; top: 0; z-index: 1; background: var(--c-paper); border-bottom: 2px solid var(--c-ink); }
+.cr-brow:not(.cr-headrow) { min-height: 38px; }
+.cr-brow .imention[data-big] .imention-icon { margin: 0; }
 .cr-best { display: none; flex: none; font-size: 10.5px; font-weight: 700; padding: 0 7px; border-radius: 999px; background: var(--c-warn); }
 .cr-brow[data-best] .cr-best { display: inline-block; }
 .cr-brow[data-best] { background: rgba(240, 160, 75, 0.13); }
-.cr-brow:not(.cr-headrow) { min-height: 38px; }
+/* A figure with its bar: the bar first, the number right-aligned after it. */
+.cr-barcell { display: grid; grid-template-columns: minmax(0, 1fr) 4.6em; align-items: center; gap: 6px; }
+.cr-barcell .insp-bar { min-width: 30px; height: 9px; }
 .cr-margin[data-sign='+'] { color: var(--c-turq-d); }
 .cr-margin[data-sign='-'] { color: var(--c-coral-d); }
 .cr-pertile { font-size: 14px; font-weight: 700; }
-.cr-impact { font-size: 12px; font-style: italic; color: var(--c-ink-soft); }
-.cr-impact[data-own] { font-style: normal; font-weight: 600; color: var(--c-ink); }
+/* A margin's diverging bar: losses run left in coral, gains right in turquoise, from a mid rule. */
+.cr-dbar {
+  position: relative; display: flex; height: 9px; min-width: 30px; overflow: hidden;
+  border: 1.5px solid var(--c-ink); border-radius: 5px; background: var(--c-paper-d);
+}
+.cr-dbar > span { flex: 1; height: 100%; transform: scaleX(0); }
+.cr-dbar-neg { transform-origin: right center; background: var(--c-coral); }
+.cr-dbar-pos { transform-origin: left center; background: var(--c-turq); }
+.cr-dbar::after { content: ''; position: absolute; left: calc(50% - 0.75px); top: 0; bottom: 0; border-left: 1.5px solid var(--c-ink); }
+/* What a flow does to the price: yours (↑, inked) or one machine's (the works' glyph, muted). */
+.cr-impact { display: inline-flex; align-items: center; gap: 5px; justify-self: start; font-size: 12px; white-space: nowrap; color: var(--c-ink-soft); cursor: help; }
+.cr-impact .glyph { width: 1.2em; height: 1.2em; opacity: 0.75; }
+.cr-impact[data-own] .glyph, .cr-impact[data-none] .glyph { display: none; }
+.cr-impact[data-own] { font-weight: 700; color: var(--c-ink); }
+.cr-impact[data-sign='-'] > span { color: var(--c-coral-d); }
 
 /* ── the trade post's inspector panel ─────────────────────────────────────── */
 .tr-where { margin: 6px 0 2px; padding: 4px 8px; font-size: 12px; line-height: 1.35; border-radius: 8px; background: var(--c-paper-d); }
@@ -233,17 +384,10 @@
 .tr-order .tr-state { margin-left: auto; }
 .tr-order .insp-x { margin-left: 0; font-size: 14px; }
 .tr-lines { white-space: pre-line; }
-/* Its two gates (D62): the glyph, the word, then the items' icons right after it (what goes in,
-   what comes out in turn), the cut ribbon at the far end while the exit is linked to nothing. */
-.tr-gate { gap: 5px; }
-.tr-gate > .glyph:first-child { width: 1.45em; height: 1.45em; }
-.tr-gate .insp-label { min-width: 3.6em; }
-.tr-gate .tr-gate-items { margin-left: 2px; text-align: left; gap: 3px 10px; }
-.tr-gate .glyph[data-glyph='noLink'] { margin-left: auto; width: 1.35em; height: 1.35em; }
-.tr-gate:not([data-gate-linked])[data-gate='out'] .insp-label { color: var(--c-coral-d); font-weight: 600; }
-/* The trade post's recap (D64): separate inked cards on grids that keep their columns — an icon,
-   a middle that shrinks with an ellipsis, a value that never breaks; two lines only where meant. */
-.tp-facts { display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0 6px; }
+/* The trade post's recap (D64): separate inked cards (the kit's sections, kit.css, D89) on grids
+   that keep their columns — an icon, a middle that shrinks with an ellipsis, a value that never
+   breaks; two lines only where meant. Its facts sit in the inspector's top block. */
+.tp-facts { display: flex; flex-wrap: wrap; gap: 5px; margin: 0; }
 .tp-fact {
   display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; font-size: 12px; font-variant-numeric: tabular-nums;
   padding: 1px 7px; border: 1.5px solid var(--c-ink); border-radius: 9px 7px 10px 8px / 8px 10px 7px 9px; background: var(--c-paper);
@@ -256,14 +400,12 @@
 .tp-gate-what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-ink-soft); font-size: 12px; }
 .tp-gate-marks { display: inline-flex; gap: 3px; }
 .tp-gate-marks .glyph { width: 1.3em; height: 1.3em; }
-.tr-gate.tp-gate:not([data-gate-linked])[data-gate='out'] .tp-gate-name { color: var(--c-coral-d); }
-.tp-card {
-  margin: 8px 0 0; padding: 4px 8px 6px; border: 1.5px solid var(--c-ink);
-  border-radius: 10px 8px 11px 9px / 9px 11px 8px 10px; background: color-mix(in srgb, var(--c-paper-d) 45%, var(--c-paper));
-}
-.tp-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
-.inspector .tp-head h4 { margin: 2px 0 3px; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tp-total { font-family: var(--f-title); font-size: 15px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* Its two gates (D62): the glyph, the word, what it does, the marks (« in turn », the cut ribbon
+   while the exit leads nowhere). Not `.tr-gate`: the tech tree's tier gate has that name. */
+.tp-gate:not([data-gate-linked])[data-gate='out'] .tp-gate-name { color: var(--c-coral-d); }
+/* A card's total, on the right of its header (`.ksec-aside`). */
+.tp-total { font-family: var(--f-title); font-size: 15px; font-weight: 400; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tp-card .ksec-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .tp-recap { display: flex; flex-direction: column; }
 .tp-line, .tp-order { display: grid; align-items: center; column-gap: 6px; font-size: 12.5px; }
 .tp-line { grid-template-columns: 22px minmax(0, 1fr) auto; min-height: 22px; }
@@ -285,7 +427,6 @@
 .tp-sub { grid-area: sub; display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
 .tp-sub .tr-state { flex: none; margin: 0; }
 .tp-cap { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--c-ink-soft); font-size: 11px; }
-.tp-crier { margin-top: 8px; }
 
 /* ── HUD: the ocelles chip opens the Crier ─────────────────────────────────── */
 .hud-credits[data-hud-crier] { cursor: pointer; margin: -2px -6px; padding: 2px 6px; border-radius: 8px; transition: background 120ms; }

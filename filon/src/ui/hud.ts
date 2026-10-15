@@ -1,8 +1,11 @@
-// hud.ts — the top bar: the Hearth's stocks (glyph, amount, change per minute), the ocelles
-// (with the recurring trade per hour; a click opens the Crier when the shell allows it) and
-// the Hearth grid's power, the time of day with the cirque's air temperature (the sun's % in
-// its tooltip), plus the button that opens building (the plan view) or goes back to the view,
-// and left of it « Terrain » (D60: the land mode, I — the parcels to buy or lease).
+// hud.ts — the top bar, in separate inked cartouches (D88; owner, 2026-10-15: « Plus clair, plus
+// séparé »): the Heart's stocks (glyph, amount, change per minute — the first few, the rest behind
+// a « +n » chip that opens a drawer under them), the economy (the ocelles with the recurring trade
+// per hour; a click opens the Crier when the shell allows it), the energy (the Heart grid's power
+// and a bar of it; a click opens the Électricité view), the time of day with the cirque's air
+// temperature (the sun's % in its tooltip). On the right, the view selector (ui/views/view-bar.ts,
+// the shell puts it in `views`), the button that opens building (the plan view) or goes back to
+// the view — a coral dot on it when something new may be built — and the main menu.
 // Under them, the tech tree's chip (D33: plans and research, T; a badge counts the plans the
 // Heart can pay for right now), the Statistics chip (G) once the ledger is unlocked, and one chip
 // per research project.
@@ -16,7 +19,7 @@
 // item, what the Heart holds, what came in over the last minute).
 // Refreshed at 4 Hz; the DOM is only written when something changed.
 import { ITEM_IDS, itemIdx, N_ITEMS } from '@/content/registry';
-import { el, setAttr, setText } from '@/core/dom';
+import { el, setAttr, setStyle, setText } from '@/core/dom';
 import { locale, t, tr } from '@/i18n/i18n';
 import type { Atlas } from '@/render/art/atlas';
 import type { Sim } from '@/sim/state';
@@ -34,12 +37,13 @@ import type { MsgKey } from '@/i18n/i18n';
 import { oc, tradePerHour } from './trade-view';
 import { ANALYTICS_REVEALS, UnlockWatch, analyticsOn } from './analytics';
 import { Spotlight, type FocusShot } from './focus';
-import { glyph } from './glyphs';
 
-/** Items shown first when held (the early chain), then anything else in stock. */
 /** More ticks than this between two one-second samples: a catch-up ran (play runs `TPS` a second). */
 const CATCH_UP_TICKS = 3 * TPS;
+/** Items shown first when held (the early chain), then anything else in stock. */
 const ORDER = ['iron_ore', 'iron_plate', 'sand', 'glass', 'coal', 'copper_ore', 'copper_wire', 'journal_1', 'journal_2', 'gear', 'circuit', 'ceramic', 'stone', 'salt'];
+/** Stocks on the bar itself (the most stocked); the rest wait behind the « +n » chip (D88). */
+const MAIN_STOCKS = 5;
 
 const compact = (n: number): string => {
   const L = locale();
@@ -96,9 +100,11 @@ export interface HudHost {
   openStats?(): void;
   /** Is something over the HUD (a full screen, the menu, a modal)? A reveal waits until it is gone. */
   covered?(): boolean;
-  /** The land mode (D60, I): take / put away, and whether it is on; when given, « Terrain » sits left of « Construire ». */
-  toggleLand?(): void;
-  landOn?(): boolean;
+  /** The energy chip's click: the Électricité view (D88), and whether it is on. */
+  openPower?(): void;
+  powerOn?(): boolean;
+  /** Is something newly unlocked waiting in the build bar's trays (a dot on « Construire »)? */
+  buildNew?(): boolean;
 }
 
 export class Hud {
@@ -107,16 +113,22 @@ export class Hud {
   private readonly chips = new Map<number, { node: HTMLElement; val: HTMLElement; delta: HTMLElement }>();
   private readonly credits: HTMLElement;
   private readonly creditsChip: HTMLElement;
-  private readonly bar!: HTMLElement;
-  private readonly sep!: HTMLElement;
+  /** The bar's cartouches (D88): stocks, economy, energy, time. */
+  private readonly stocksGrp: HTMLElement;
+  private readonly ecoGrp: HTMLElement;
+  private readonly timeGrp: HTMLElement;
+  /** « +n »: the stocks not on the bar, in a drawer under it. */
+  private readonly moreBtn: HTMLButtonElement;
+  private readonly drawer: HTMLElement;
+  private drawerOpen = false;
+  /** Where the shell puts the view selector (ui/views/view-bar.ts), left of « Construire ». */
+  readonly views: HTMLElement;
   /** The colony's recurring trade, ◉ per hour (streams and orders). */
   private readonly creditsRate: HTMLElement;
   private readonly power: HTMLElement;
   private readonly powerVal: HTMLElement;
+  private readonly powerFill: HTMLElement;
   private readonly buildBtn: HTMLButtonElement;
-  /** The land mode's button (D60): the parcel glyph, « Terrain » and its key cap. */
-  private readonly landBtn: HTMLButtonElement | null;
-  private readonly landLabel = el('span.lettering');
   /** The main menu (three inked strokes), right of the build button. */
   private readonly menuBtn: HTMLButtonElement | null;
   private readonly research: HTMLElement;
@@ -153,11 +165,13 @@ export class Hud {
     const open = host.openCrier ? (): void => host.openCrier?.() : null;
     this.creditsChip = el('div.hud-chip.hud-credits', { 'data-hud-crier': open ? '' : null, onclick: open }, [el('span.hud-coin', {}, '◉'), this.credits, this.creditsRate]);
     this.powerVal = el('span.hud-val');
-    this.power = el('div.hud-chip.hud-power', {}, [el('span.hud-bolt', {}, '⚡'), this.powerVal]);
+    this.powerFill = el('span.hud-pbar-fill');
+    const openPower = host.openPower ? (): void => host.openPower?.() : null;
+    this.power = el(openPower ? 'button.hud-grp.hud-power.cartouche' : 'div.hud-grp.hud-power.cartouche', { type: openPower ? 'button' : null, 'data-hud-power': '', onclick: openPower }, [
+      el('span.hud-chip', {}, [el('span.hud-bolt', {}, '⚡'), this.powerVal]),
+      el('span.hud-pbar', {}, [this.powerFill]),
+    ]);
     this.buildBtn = el('button.btn.primary.hud-build', { onclick: () => host.toggleBuild() }, t('view.toPlan')) as HTMLButtonElement;
-    this.landBtn = host.toggleLand
-      ? el<'button'>('button.btn.hud-land', { type: 'button', 'data-hud-land': '', onclick: () => host.toggleLand?.() }, [glyph('parcel'), this.landLabel, el('span.bb-key', {}, 'I')])
-      : null;
     this.menuBtn = host.openMenu
       ? el<'button'>('button.btn.hud-menu', { type: 'button', onclick: () => host.openMenu?.() }, [el('i'), el('i'), el('i')])
       : null;
@@ -174,19 +188,29 @@ export class Hud {
     this.clockTime = el('span.hud-time');
     this.clockTemp = el('span.hud-temp');
     this.clock = el('div.hud-chip.hud-clock', {}, [this.clockTime, this.clockTemp]);
+    this.moreBtn = el<'button'>('button.hud-more', { type: 'button', 'data-hud-more': '', onclick: () => { this.drawerOpen = !this.drawerOpen; this.refreshDrawer(); } });
+    this.drawer = el('div.hud-drawer.cartouche', { 'data-hud-drawer': '', hidden: true });
+    this.stocksGrp = el('div.hud-grp.hud-stocks-grp.cartouche', {}, [this.stocks, this.moreBtn]);
+    this.ecoGrp = el('div.hud-grp.cartouche', { 'data-hud-eco': '' }, [this.creditsChip]);
+    this.timeGrp = el('div.hud-grp.cartouche', { 'data-hud-time': '' }, [this.clock]);
+    this.views = el('div.hud-views');
     this.root = el('header.hud', { 'data-screen': 'hud' }, [
       el('div.hud-left', {}, [
-        this.bar = el('div.hud-bar.cartouche', {}, [
-          this.stocks,
-          this.sep = el('div.hud-sep'),
-          this.creditsChip,
-          this.power,
-          this.clock,
-        ]),
+        el('div.hud-row', {}, [this.stocksGrp, this.ecoGrp, this.power, this.timeGrp]),
+        this.drawer,
         this.research,
       ]),
-      el('div.hud-right', {}, [this.landBtn, this.buildBtn, this.menuBtn]),
+      el('div.hud-right', {}, [this.views, this.buildBtn, this.menuBtn]),
     ]);
+  }
+
+  /** The drawer of the stocks not on the bar: shown while open and there are some. */
+  private refreshDrawer(): void {
+    const extra = this.extra.length;
+    if (!extra) this.drawerOpen = false;
+    setAttr(this.drawer, 'hidden', this.drawerOpen && extra ? null : '');
+    setAttr(this.moreBtn, 'data-on', this.drawerOpen ? '' : null);
+    setAttr(this.moreBtn, 'aria-expanded', this.drawerOpen ? 'true' : 'false');
   }
 
   private chip(item: number): { node: HTMLElement; val: HTMLElement; delta: HTMLElement } {
@@ -249,8 +273,9 @@ export class Hud {
     }
   }
 
-  /** The stock chips on show (refresh picks them; `counts` keeps their numbers live). */
+  /** The stock chips on show (refresh picks them; `counts` keeps their numbers live): on the bar, in the drawer. */
   private shown: number[] = [];
+  private extra: number[] = [];
 
   /**
    * Every frame, the stock counts alone (change-only writes): an item lands in the Heart whole,
@@ -259,6 +284,7 @@ export class Hud {
   counts(): void {
     const sim = this.host.sim();
     for (const i of this.shown) setText(this.chip(i).val, compact(Math.floor(sim.stock[i]! / 1000)));
+    if (this.drawerOpen) for (const i of this.extra) setText(this.chip(i).val, compact(Math.floor(sim.stock[i]! / 1000)));
   }
 
   refresh(nowMs: number): void {
@@ -288,27 +314,32 @@ export class Hud {
     // has made some itself: nothing on screen before it means something to the player.
     const rv = revealed(sim);
     const tele = analyticsOn(sim, 'rates');
-    const want = held.filter((i) => !rv || rv.has(`stock:${ITEM_IDS[i]}`) || sim.produced[i]! > 0).slice(0, 9);
-    setAttr(this.creditsChip, 'hidden', rv && !rv.has('credits') ? '' : null);
+    const all = held.filter((i) => !rv || rv.has(`stock:${ITEM_IDS[i]}`) || sim.produced[i]! > 0);
+    // On the bar: the most stocked (a stock of one is no headline), kept in the chain's order so the chips never shuffle.
+    const top = new Set([...all].sort((a, b) => sim.stock[b]! - sim.stock[a]! || a - b).slice(0, MAIN_STOCKS));
+    const want = all.filter((i) => top.has(i));
+    // The groups (D88): each cartouche shows once the tutorial has introduced what it holds.
+    setAttr(this.stocksGrp, 'hidden', want.length ? null : '');
+    setAttr(this.ecoGrp, 'hidden', rv && !rv.has('credits') ? '' : null);
     setAttr(this.power, 'hidden', rv && !rv.has('power') ? '' : null);
-    setAttr(this.clock, 'hidden', rv && !rv.has('clock') ? '' : null);
+    setAttr(this.timeGrp, 'hidden', rv && !rv.has('clock') ? '' : null);
     setAttr(this.research, 'hidden', rv && !rv.has('research') ? '' : null);
-    // Nothing to show yet: no empty pill, no lone separator, no Build button with nothing to build.
-    const chips = !rv || rv.has('credits') || rv.has('power') || rv.has('clock');
-    setAttr(this.sep, 'hidden', want.length && chips ? null : '');
-    setAttr(this.bar, 'hidden', want.length || chips ? null : '');
+    // No Build button with nothing to build; a coral dot on it when a tray holds something new.
     setAttr(this.buildBtn, 'hidden', !rv || rv.has('build') ? null : '');
-    if (this.landBtn) {
-      // The land mode comes with building (the tutorial's `build` reveal): before, there is nothing to put on new land.
-      setAttr(this.landBtn, 'hidden', !rv || rv.has('build') ? null : '');
-      setAttr(this.landBtn, 'data-on', this.host.landOn?.() ? '' : null);
-      setAttr(this.landBtn, 'title', t('land.tool.tip'));
-      setText(this.landLabel, t('land.tool'));
-    }
+    setAttr(this.buildBtn, 'data-new', !this.host.building() && this.host.buildNew?.() ? '' : null);
+    setAttr(this.buildBtn, 'title', !this.host.building() && this.host.buildNew?.() ? t('build.newHud') : null);
     this.shown = want;
+    this.extra = all.filter((i) => !top.has(i));
     const nodes = want.map((i) => this.chip(i).node);
     if (nodes.length !== this.stocks.children.length || nodes.some((n, k) => this.stocks.children[k] !== n)) this.stocks.replaceChildren(...nodes);
-    for (const i of want) {
+    // The rest behind « +n »: a drawer under the bar, built from the same chips.
+    setText(this.moreBtn, this.extra.length ? t('hud.more', { n: this.extra.length }) : '');
+    setAttr(this.moreBtn, 'hidden', this.extra.length ? null : '');
+    setAttr(this.moreBtn, 'title', t('hud.more.tip'));
+    const more = this.extra.map((i) => this.chip(i).node);
+    if (more.length !== this.drawer.children.length || more.some((n, k) => this.drawer.children[k] !== n)) this.drawer.replaceChildren(...more);
+    this.refreshDrawer();
+    for (const i of all) {
       const c = this.chip(i);
       setText(c.val, compact(Math.floor(sim.stock[i]! / 1000)));
       // Rates are an unlock: the telemetry, the Analytics path's first plan (D41).
@@ -333,13 +364,16 @@ export class Hud {
       const pct = Math.round(np.sat / 10);
       setText(this.powerVal, t('hud.powerPct', { v: pct }));
       setAttr(this.power, 'data-low', pct < 100 ? '' : null);
-      setAttr(this.power, 'title', t('hud.powerTip', { d: Math.round(np.demand), s: Math.round(np.renew + np.fuel) }));
+      setAttr(this.power, 'data-out', pct <= 0 ? '' : null);
+      setStyle(this.powerFill, 'transform', `scaleX(${(pct / 100).toFixed(3)})`);
+      setAttr(this.power, 'title', `${t('hud.powerTip', { d: Math.round(np.demand), s: Math.round(np.renew + np.fuel) })}${this.host.openPower ? ` · ${t('hud.power.open')}` : ''}`);
     }
+    setAttr(this.power, 'data-on', this.host.powerOn?.() ? '' : null);
     // Accumulators on the Hearth's grid.
     if (np && net !== undefined) {
       let E = 0, cap = 0;
       for (const a of sim.graph.nets[net]?.accs ?? []) { E += sim.accEnergy.get(a.ent) ?? 0; cap += a.cap; }
-      if (cap > 0) setAttr(this.power, 'title', `${t('hud.powerTip', { d: Math.round(np.demand), s: Math.round(np.renew + np.fuel) })} · ${t('hud.gourds', { v: Math.round((E * 100) / cap) })}`);
+      if (cap > 0) setAttr(this.power, 'title', `${t('hud.powerTip', { d: Math.round(np.demand), s: Math.round(np.renew + np.fuel) })} · ${t('hud.gourds', { v: Math.round((E * 100) / cap) })}${this.host.openPower ? ` · ${t('hud.power.open')}` : ''}`);
     }
     // Time of day: a 36-minute day on a 24-hour clock (midnight mid-night), from the world clock
     // (the shell may shift it for FL.dayPhase); the air temperature of the cirque; the sun in the tooltip.

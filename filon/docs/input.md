@@ -115,11 +115,12 @@ There are two kinds of binding:
 | `rotate` | `r` | key | `tools.rotate(±1)` (Shift+R reverses) |
 | `pipette` | KeyQ (AZERTY A) | code | Takes the building under the cursor in hand, with its rotation (not the Hearth) |
 | `deconstruct` | `x` | key | Toggles the demolition tool |
-| `cancel` | Escape | code | Unwinds one layer: screen (a page of it first) → drag or tool → selection → build mode → the main menu (not under automation, [app.md](app.md)) |
+| `cancel` | Escape | code | Unwinds one layer: screen (a page of it first) → drag or tool → selection → a specialised view (back to Normal, D88) → build mode → the main menu (not under automation, [app.md](app.md)) |
 | `undo` | `z` + Ctrl/Cmd | key | Not handled (M8) |
 | `zoomIn` / `zoomOut` | codes `Equal` `NumpadAdd` (+ key `+`) / `Minus` `NumpadSubtract` | code | ×1.25 / ×0.8 about the screen centre. By position: `-` `=` on QWERTY, `)` `=` on AZERTY (whose `-` is the 6, a build slot) |
-| `ovPower` | `p` | key | Toggles the power overlay (grids by colour, unwired buildings in coral; [render.md](render.md)) |
-| `ovFlow` | `f` | key | Not handled (M8 overlay) |
+| `viewPower` | `p` | key | The **Électricité** view (D88: the grids, their sources and draw, the troubles; [ui.md](ui.md#the-specialised-views-d88)), or back to Normal — P was the power overlay's key, which the view replaces; offered once the tutorial shows the power. KeyP on both layouts |
+| `viewLogistics` | `f` | key | The **Logistique** view (D88: the ribbons' throughput as a heat, jams, dead ends, drifter routes), or back to Normal — F (flux, flow) was kept for a flow overlay. KeyF on both layouts |
+| `viewProduction` | `o` | key | The **Production** view (D88: at work, waiting, stopped and why), or back to Normal — O for ouvrages / output; free on both layouts (KeyO) |
 | `scrResearch` / `scrStats` | `t` / `g` | key | Opens the screen (the tree once the tutorial has revealed it; the Statistics once the ledger plan is unlocked, D41) |
 | `scrMarket` | `m` | key | Not handled (M6) |
 | `home` | `h` | key | Glides back to the Hearth |
@@ -127,8 +128,8 @@ There are two kinds of binding:
 | `build` | `b` | key | Toggles build mode (plan view) |
 | `mark` | `c` | key | Toggles the dig/fill brush |
 | `link` | `l` | key | Toggles the Link tool (« Relier » / Link: power wires, §4b) — KeyL on both layouts |
-| `land` | `i` | key | Toggles the land mode (« Terrain » / Land: the parcels, buy or lease, §4c) — « immobilier »; the key the zones' overlay had, the map of where one may build that the parcels replace (D60). KeyI on both layouts |
-| `hideUi` | `u` | key | Hides the interface to look at the base (`body[data-noui]`; owner, 2026-10-12: the menus hide the game). Panning, zoom, `home` and the overlays keep it hidden; Escape or any other action brings it back first — KeyU on both layouts |
+| `land` | `i` | key | Toggles the land mode (« Terrain » / Land: the parcels, buy or lease, §4c), which is the **Terrain** view (D88) — « immobilier »; the key the zones' overlay had, the map of where one may build that the parcels replace (D60). KeyI on both layouts |
+| `hideUi` | `u` | key | Hides the interface to look at the base (`body[data-noui]`; owner, 2026-10-12: the menus hide the game). Panning, zoom, `home` and the views' keys (P, F, O) keep it hidden; Escape or any other action brings it back first — KeyU on both layouts |
 | *(slots)* | Digit1 … Digit0 | code (`slotOf`) | Tray slot; Shift+digit = category |
 
 Space (pan modifier) is hard-coded in `input.ts`, not in the table.
@@ -263,7 +264,7 @@ nothing is placed, a left drag still pans, and it is driven by the shell.
 
 | | |
 |---|---|
-| Take it | I, or the HUD's « Terrain » (`BuildMode.land`, [app.md](app.md)): every tool goes away, the selection is dropped, the view turns to plan and zooms out to a few parcels. Taking any tool, opening a category or the Link tool ends it |
+| Take it | I, or the view selector's parcel (the Terrain view, D88; `MapViews.set('land')` → `BuildMode.land`, [app.md](app.md)): every tool goes away, the selection is dropped, the view turns to plan and zooms out to a few parcels. Taking any tool, opening a category or the Link tool ends it |
 | Hover | Each frame the shell sets `hover` to the parcel under the cursor (`picker.tileAt` → `parcelUnder`, the tile clamped to the world; −1 over the UI). The overlays mark it and the tip shows its price |
 | Pick | A plain left click → `click(p)`: it becomes `selected` (true if it changed); the land panel shows it ([ui.md](ui.md#the-land-mode-and-its-panel-d60)), whose buttons call `buyLand` / `rentLand` / `endLease` |
 | Unwind | Esc or a right click: the picked parcel first, then the mode (`cancel()`, through `BuildMode.landCancel`, which gives the zoom back and stands the colony up in iso unless a category is open); the app's Esc chain asks it after the Link tool and before the build tools |
@@ -287,7 +288,9 @@ The smoke test ([testing.md](testing.md)) drives the real mouse at `FL.tileToScr
 covers: click a drill onto a deposit (tip visible); drag an L of 7 ribbons, then box-demolish them
 with X (refunded); see a kiln refused off the claim's land, with its reason and the land mode's
 key; open and close build mode with B; mark rock with the brush; open the inspector by clicking
-the Hearth in iso; open the land mode with I, pick a parcel by mouse and buy it from the panel.
+the Hearth in iso; open the land mode with I, pick a parcel by mouse and buy it from the panel; on
+the late debug base, P, F, O and I switch the views, a click inspects on the view's facet, Esc and
+the selector's Normal go back (D88).
 
 ## 6. Recipes
 
