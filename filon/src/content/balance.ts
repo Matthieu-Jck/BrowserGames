@@ -143,7 +143,7 @@ export const BAL = {
   // ── market (see market/) ─────────────────────────────────────────────────
   tradeFee: 200, // ‰ CrierBelt takes on every trade: it holds the Ring's monopoly, and nothing lowers it (owner, 2026-10-14, D64)
   tradeThroughput: [120, 240, 480], // items/min
-  liftDelayMin: [10, 6, 3], // minutes from a purchase to the lift-off, by trade-post level
+  liftDelayMin: [3, 2, 1], // minutes from a purchase to the lift-off, by trade-post level (D113: was 10, 6, 3)
   tradeOrders: 2,           // standing import orders (Standing Orders: +4)
   importHysteresis: 30,     // ‰: an order paused above its max resumes once the ask is 3 % below it
   // The starter contract (D101): CrierBelt's one-time offer for a new base's first purchase, off
@@ -182,7 +182,9 @@ export const BAL = {
     shockFloor: 0.25,
     // Sister colonies: delivery delay by distance band; T3/T4 markets ramp up over the colony's
     // first days (rampSupply: depth ramps and prices stay at V; false: demand alone ramps).
-    delayMin: { near: 15, medium: 45, far: 120, veryFar: 240 },
+    // D113 (owner, 2026-10-17: a 10/min order's first ore 20 minutes away « it's way too long »):
+    // was 15, 45, 120, 240. Near goods land within minutes; the far uniques still take an hour.
+    delayMin: { near: 2, medium: 8, far: 25, veryFar: 60 },
     rampFrom: 0.2,
     rampDays: [0, 0, 0, 30, 45], // by tier (index = tier; 0 = no ramp)
     rampSupply: true,

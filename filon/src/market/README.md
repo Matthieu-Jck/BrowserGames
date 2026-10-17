@@ -55,7 +55,7 @@ All the knobs are in `BAL.market`:
 - timing and spread: `blockMin`, `tauMin`, `eventTauMin`, `spread`;
 - noise: `noiseSigma`, `noiseOctaves`;
 - spot trades: `spotKappaMin`, `shockFloor`;
-- colonies and growth: `delayMin` (15 / 45 / 120 / 240 min by band), `rampFrom`, `rampDays`, `rampSupply`, `growthCapDays`, `growthSkew`;
+- colonies and growth: `delayMin` (2 / 8 / 25 / 60 min by band, D113), `rampFrom`, `rampDays`, `rampSupply`, `growthCapDays`, `growthSkew`;
 - views: `historyPoints`, `historyEveryMin`, `tradeEmaMin`;
 - events: `eventWindowMin`, `eventChance` (‰), `eventLeadMin`, `eventTierWeights`, `events` (per kind: weight, side, mult, hours), `stormItem`, `firstTrade`;
 - the board: `tileCapPerMin`.

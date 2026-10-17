@@ -246,9 +246,9 @@ describe('market: sister colonies', () => {
       expect(svc.sources(it.item)).toEqual(tr.sources);
     }
     const copper = svc.sources('copper_ore')[0]!;
-    expect(copper.delayMin).toBe(15); // a mining camp, near
+    expect(copper.delayMin).toBe(BAL.market.delayMin.near); // a mining camp, near
     expect(svc.snapshot().colonies[copper.colony]!.profile).toBe('mining');
-    expect(svc.sources('resin_canvas')[0]!.delayMin).toBe(240); // only the drifter guilds weave it
+    expect(svc.sources('resin_canvas')[0]!.delayMin).toBe(BAL.market.delayMin.veryFar); // only the drifter guilds weave it
     expect(svc.sources('water')).toEqual([]);
   });
 
