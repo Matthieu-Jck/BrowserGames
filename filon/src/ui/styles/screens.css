@@ -23,9 +23,12 @@
 .art-grid.terrain canvas { width: 512px; height: auto; border: 1.5px solid var(--c-ink); border-radius: 6px; }
 
 /* ── shared full screens (research, stats) ─────────────────────────────────── */
+/* Opaque, with no backdrop blur: the world under a full screen is drawn at a lower rate (D100),
+   and through a see-through page its frames showed as flashes (owner, 2026-10-17: « the tech tree
+   is visually glitched, the map appears by flash »). The blur also cost a recomposite a frame. */
 .screen {
   position: fixed; inset: 0; z-index: 25; display: flex; flex-direction: column; gap: 10px;
-  padding: 18px 22px; background: rgba(251, 241, 228, 0.94); backdrop-filter: blur(2px);
+  padding: 18px 22px; background: rgb(251, 241, 228);
   overflow: hidden;
 }
 .rs-head { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; }
