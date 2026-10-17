@@ -1,7 +1,8 @@
-// kit.test.ts — the panels' kit (D89): numbers written one way everywhere, in both languages.
+// kit.test.ts — the panels' kit (D89): numbers written one way everywhere, in both languages; a
+// label given as a function follows a language switch by itself (`lang`), for every panel at once.
 import { afterAll, describe, expect, it } from 'vitest';
-import { setLocale } from '@/i18n/i18n';
-import { fmt, kw, perMin } from './kit';
+import { setLocale, t } from '@/i18n/i18n';
+import { fmt, kw, lang, perMin } from './kit';
 
 /** French groups thousands with U+202F and puts U+00A0 before a unit: compare with plain spaces. */
 const plain = (s: string): string => s.replace(/[  ]/g, ' ');
@@ -26,5 +27,39 @@ describe('the kit’s number formats', () => {
     setLocale('en');
     expect(kw(6482.4)).toBe('6,482 kW');
     expect(perMin(13.4)).toBe('13.4/min');
+  });
+});
+
+describe('the kit’s live labels', () => {
+  afterAll(() => setLocale('fr'));
+
+  /** Just enough of an element for `lang` (node has no DOM): its text and its attributes. */
+  const fake = () => {
+    const attrs = new Map<string, string>();
+    return { textContent: '', attrs, setAttribute: (k: string, v: string) => { attrs.set(k, v); }, removeAttribute: (k: string) => { attrs.delete(k); } };
+  };
+
+  it('says a function label again at each language switch, its text or its tooltip; a plain string stays as given', () => {
+    setLocale('fr');
+    const title = fake(), tip = fake(), fixed = fake();
+    const doc = globalThis as { document?: unknown };
+    // The document the kit re-reads on a switch: every node marked `data-lang`.
+    doc.document = { querySelectorAll: () => [title, tip, fixed].filter((n) => n.attrs.has('data-lang')) };
+    try {
+      lang(title as unknown as Element, () => t('kit.state.on'));
+      lang(tip as unknown as Element, () => t('kit.state.off'), 'title');
+      lang(fixed as unknown as Element, 'Essai');
+      expect(title.textContent).toBe('En marche');
+      expect(tip.attrs.get('title')).toBe('À l’arrêt');
+      expect(fixed.attrs.has('data-lang')).toBe(false);
+      setLocale('en');
+      expect(title.textContent).toBe('Working');
+      expect(tip.attrs.get('title')).toBe('Stopped');
+      expect(fixed.textContent).toBe('Essai');
+      setLocale('fr');
+      expect(title.textContent).toBe('En marche');
+    } finally {
+      delete doc.document;
+    }
   });
 });

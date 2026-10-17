@@ -16,6 +16,7 @@
 // (unrotated) tile frame; the IsoFrame rotates the footprint so light and shading always fall the
 // same way, and a Scene queue draws parts far to near (big neighbours are ordered by which one
 // the rotation brings nearer). Ports come from the content (back ones first, front ones last).
+import { fenceIso } from './gleaners';
 import { BAL } from '@/content/balance';
 import { BUILDINGS, type BuildingId } from '@/content/buildings';
 import type { BuildingDef, PortDef } from '@/content/types';
@@ -32,7 +33,7 @@ import {
   latheIso, pipeIso, portIso, prismIso, slab, sphereIso, spireIso, terminalIso, trussIso, vaultIso, wheelIso, type Face, type Faces, type RRect,
 } from '../iso-shapes';
 import { CHARGER_BUSHING, HEART_MASTS, INSULATOR, KIT_K, POLE, PYLON, kitDrawn, onArm, terminalProbe, terminalsOf, turnsArt } from '../terminals';
-import { BIG_ROTOR, CUTTER, PITCH_ROTOR, SAND_WHEEL, TURBINE, bucketFull, vaneAt, type HRotor } from './moving';
+import { BIG_ROTOR, BORE, CUTTER, PITCH_ROTOR, SAND_WHEEL, TURBINE, boreLeg, boreSquare, bucketFull, vaneAt, type HRotor } from './moving';
 import { QZ, crystal } from '../rock';
 
 /** Top of the foundation slab (levels). */
@@ -761,8 +762,9 @@ export type HeartPiece = 'outlet' | 'archive' | 'station';
 /**
  * The Heart's four corner tiles (local) and the level that mounts a piece on each (D86): level 2
  * the data outlet, on its out port's tile (south-east, the nearest in iso); level 3 the expertise
- * archive (south-west); level 4 the grid station (north-east); the north-west one, behind the
- * depot, stays bare. Levels 3 and 4 are placeholders: their pieces unlock nothing yet.
+ * archive (south-west) — the way into the Expertise window (D93: a click on it, app/picking.ts
+ * `heartPieceAt`); level 4 the grid station (north-east), a placeholder that unlocks nothing yet;
+ * the north-west one, behind the depot, stays bare.
  */
 export const HEART_CORNERS: ReadonlyArray<{ tx: number; ty: number; lv: number; piece: HeartPiece | null }> = (() => {
   const out = (BUILDINGS.hearth as BuildingDef).ports.find((p) => p.io === 'out')!;
@@ -798,8 +800,8 @@ function ringArc(f: IsoFrame, cx: number, cy: number, r: number, z: number, near
 }
 
 /**
- * The expertise archive (D86, level 3 — a placeholder: it unlocks nothing yet): where the base
- * keeps the record of what it has learnt to do well. A squat drum of white enamel banded in violet
+ * The expertise archive (D86, level 3): where the base keeps the record of what it has learnt to do
+ * well — its expertises (D93); a click on it opens their window. A squat drum of white enamel banded in violet
  * on a steel plinth, a glazed band showing its stack of brass memory platters, a ring of
  * indicator dots, a cap with a stub antenna and its cyan lamp; a conduit from the depot's wall.
  */
@@ -2440,6 +2442,39 @@ const DRUM = mix(C.steelL, C.ice, 0.35);
 export const COPPER = '#d9844a';
 /** The oscillators' tin cans (content colour of `oscillator`), their lit top. */
 export const CAN = '#b9c3cc', CAN_L = mix('#b9c3cc', '#ffffff', 0.4);
+
+/** The electric smelter (D106): its slab, its crucible's place and radius (local tiles), its ceramic, its cabinet's roof (levels). */
+export const ES_SLAB = mix(C.steel, C.teal, 0.22);
+export const ES_POT = { x: 0.72, y: 1.0, r: 0.47, coil: 1.3, top: 1.44 } as const;
+export const ES_CERAMIC = mix(C.peachL, C.ice, 0.35);
+export const ES_CAB_Z = 1.42;
+
+/**
+ * An electric arc between two screen points: a jagged line, seeded, its halo translucent and its
+ * core in the cold light token (the night finds it). Drawn only while the machine works: callers
+ * skip it when `isUnlit`.
+ */
+export function sparkIso(ctx: Ctx, a: Pt, b: Pt, n: number, s: number): void {
+  const rng = makeRng(s);
+  const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1, nx = -dy / len, ny = dx / len;
+  const pts: Pt[] = [a];
+  for (let i = 1; i < n; i++) {
+    const t = i / n, k = (rng.next() - 0.5) * Math.min(9, len * 0.45);
+    pts.push([a[0] + dx * t + nx * k, a[1] + dy * t + ny * k]);
+  }
+  pts.push(b);
+  ink(ctx, pts, { w: 6, color: C.glowCyan, alpha: 0.3, shade: false, taper: 0.4, jitter: 0, seed: s });
+  ink(ctx, pts, { w: 2, color: C.glowCyan, shade: false, taper: 0.3, jitter: 0, seed: s + 1 });
+  ink(ctx, pts, { w: 0.8, color: '#ffffff', alpha: 0.9, shade: false, taper: 0.3, jitter: 0, seed: s + 2 });
+}
+
+/** A high-voltage sign on a face: a hazard-yellow triangle with an ink bolt. */
+function hvSignIso(ctx: Ctx, f: IsoFrame, rr: RRect, face: Face, u: number, z: number, s: number): void {
+  const du = 0.16, dz = 0.14;
+  const tri = [facePt(f, rr, face, u, z + dz), facePt(f, rr, face, u + du, z - dz), facePt(f, rr, face, u - du, z - dz)];
+  shape(ctx, tri, C.hazard, { w: 1.2, shade: false, jitter: 0, seed: s });
+  ink(ctx, [facePt(f, rr, face, u + 0.02, z + dz * 0.55), facePt(f, rr, face, u - 0.04, z - dz * 0.05), facePt(f, rr, face, u + 0.04, z + dz * 0.05), facePt(f, rr, face, u - 0.02, z - dz * 0.7)], { w: 1.3, shade: false, taper: 0.2, jitter: 0, seed: s + 1 });
+}
 /** Quartz as a solid's faces (a bar, a blade): rock crystal's own tones (rock.ts `QZ`). */
 const QZ_FACES: Faces = { top: QZ.lit, left: QZ.body, right: QZ.shade };
 
@@ -2647,6 +2682,271 @@ function quartzWorkshopIso(ctx: Ctx, f: IsoFrame, s: number): void {
   sc.run();
 }
 
+// ── the deep bore (moving.ts `BORE`) ─────────────────────────────────────────
+
+/** What the deep bore brings up from far below the sand: violet heartrock spoil. */
+export const SPOIL = mix(C.rock3, C.dug, 0.3);
+/** Its footings and collar: pale cast concrete. */
+const CONCRETE = TOWER;
+
+/**
+ * The bore's derrick leg nearest the viewer in this rotation (0 NW, 1 NE, 2 SE, 3 SW): it stands
+ * in front of the kelly, so the moving part draws it, over the table and the kelly.
+ */
+export function boreNearLeg(f: IsoFrame): number {
+  let best = 0, d = -Infinity;
+  for (let k = 0; k < 4; k++) {
+    const [x, y] = boreLeg(k, 0), e = f.depth(x, y);
+    if (e > d) { d = e; best = k; }
+  }
+  return best;
+}
+
+/** One leg of the bore's derrick: a heavy steel tube from its footing up to the crown. */
+function boreLegIso(ctx: Ctx, f: IsoFrame, k: number, s: number): void {
+  pipeIso(ctx, f, [boreLeg(k, BORE.foot), boreLeg(k, BORE.top)], 4.4, C.steel, s + 300 + k * 3, false);
+}
+
+/**
+ * A straight rod between two canvas points, plainly stroked — an ink edge under its colour, round
+ * ends — for lattice bars by the hundred (the deep bore's derrick), where ink's ribbons would
+ * cost the atlas's bake for no visible wobble.
+ */
+export function rod(ctx: Ctx, a: Pt, b: Pt, w: number, col: string): void {
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]);
+  ctx.strokeStyle = C.ink; ctx.lineWidth = w + 2; ctx.stroke();
+  ctx.strokeStyle = col; ctx.lineWidth = w; ctx.stroke();
+  ctx.restore();
+}
+
+/** One face of the derrick, between legs k and k + 1: X-braces in every bay above the open portal, coral girts. */
+function boreFaceIso(ctx: Ctx, f: IsoFrame, k: number): void {
+  const j = (k + 1) % 4, zs = [...BORE.girts, BORE.top];
+  const bar = (a: V3, b: V3, w: number, col: string): void => rod(ctx, f.p(...a), f.p(...b), w, col);
+  for (let i = 0; i + 1 < zs.length; i++) {
+    bar(boreLeg(k, zs[i]!), boreLeg(j, zs[i + 1]!), 1.1, C.steelL);
+    bar(boreLeg(j, zs[i]!), boreLeg(k, zs[i + 1]!), 1.1, C.steelL);
+  }
+  for (const z of BORE.girts) bar(boreLeg(k, z), boreLeg(j, z), 2.6, C.coral);
+}
+
+/** A heap of spoil on the ground at local (x, y): radius r tiles, h levels high, lumps of deep rock on its flanks. */
+function spoilIso(ctx: Ctx, f: IsoFrame, x: number, y: number, r: number, h: number, s: number): void {
+  const c = f.p(x, y, 0), [ex, ey] = f.ell(r), hp = h * ILH, rng = makeRng(s);
+  const pts: Pt[] = [];
+  for (let i = 0; i <= 16; i++) { const a = (i / 16) * Math.PI; pts.push([c[0] + Math.cos(a) * ex, c[1] + Math.sin(a) * ey]); }
+  for (let i = 1; i < 16; i++) {
+    const a = Math.PI - (i / 16) * Math.PI, k = 1 + rng.range(-0.1, 0.1);
+    pts.push([c[0] + Math.cos(a) * ex * (1 - 0.1 * Math.sin(a)), c[1] + Math.cos(a) * ey * 0.15 - Math.pow(Math.sin(a), 0.8) * hp * k]);
+  }
+  castShadow(ctx, pts, 4 + h * 4, 0.25);
+  flat(ctx, pts, SPOIL);
+  ctx.save(); pathOf(ctx, pts); ctx.clip();
+  const shade: Pt[] = [[c[0] + ex * 0.1, c[1] - hp - 4], [c[0] + ex + 4, c[1] - hp - 4], [c[0] + ex + 4, c[1] + ey + 4], [c[0] - ex * 0.25, c[1] + ey + 4]];
+  flat(ctx, shade, mix(SPOIL, C.ink, 0.3));
+  hatch(ctx, shade, Math.PI / 3, 3, { alpha: 0.3, seed: s + 1 });
+  stipple(ctx, c[0] - ex, c[1] - hp, ex * 2, hp + ey, Math.round(ex * 1.2), { color: C.rock4, alpha: 0.7, seed: s + 2, r: 1 });
+  ctx.restore();
+  ink(ctx, pts, { closed: true, w: 1.5, seed: s + 3 });
+  // Lumps of deep rock on its flanks, a few pale glints.
+  for (let k = 0; k < 5; k++) {
+    const u = rng.range(-0.7, 0.7), v = rng.range(0.25, 0.75);
+    const lx = c[0] + u * ex, ly = c[1] - Math.pow(1 - Math.abs(u), 0.8) * hp * v + ey * 0.25, lr = rng.range(2.2, 3.6);
+    const lump = ellipsePts(lx, ly, lr, lr * 0.8, s + 10 + k, 0.25, 7);
+    shape(ctx, lump, mix(C.rock4, C.ink, 0.15), { w: 1, shade: false, jitter: 0, seed: s + 10 + k });
+    flat(ctx, ellipsePts(lx - lr * 0.35, ly - lr * 0.3, lr * 0.3, lr * 0.25, s + 20 + k, 0, 6), C.rock2);
+  }
+  for (let k = 0; k < 2; k++) flat(ctx, ellipsePts(c[0] + rng.range(-0.5, 0.5) * ex, c[1] - hp * rng.range(0.3, 0.7), 1.2, 1.2, s + 30 + k, 0, 6), C.paper);
+}
+
+/** The wellhead collar sunk in the ground: a concrete ring flush with the land, bolted, the dark mouth of the hole round the table. */
+function boreCollarIso(ctx: Ctx, f: IsoFrame, s: number): void {
+  const { cx, cy, collar, table } = BORE;
+  cylinder(ctx, f, cx, cy, collar, 0, 0.08, CONCRETE, s, { top: mix(CONCRETE, '#ffffff', 0.3) });
+  const c = f.p(cx, cy, 0.08), [ex, ey] = f.ell(table + 0.1), [bx, by] = f.ell(collar - 0.06);
+  flat(ctx, ellipsePts(c[0], c[1], ex, ey, s + 1, 0, 32), C.steelDD);
+  for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2 + 0.3; rivet(ctx, c[0] + Math.cos(a) * bx, c[1] + Math.sin(a) * by, 1.6, C.steelD); }
+  stipple(ctx, c[0] - bx, c[1] - by, bx * 2, by * 2, 14, { clip: ellipsePts(c[0], c[1], bx, by, s + 2, 0, 24), color: C.rock4, alpha: 0.6, seed: s + 3, r: 1.1 });
+}
+
+/** The racking board on the derrick's east face at `BORE.board`: a railed steel platform, two work lamps at its edge. */
+function boreBoardIso(ctx: Ctx, f: IsoFrame, s: number): void {
+  const z = BORE.board, x0 = boreLeg(1, z)[0] - 0.02, x1 = x0 + 0.24, y0 = 1.3, y1 = 1.7;
+  box(ctx, f, x0, y0, x1, y1, z - 0.06, z, { top: C.steelL, left: C.steel, right: C.steelD }, s, { outline: 1.4, shadow: false });
+  const rail = (a: V3, b: V3, n: number): void => ink(ctx, [f.p(...a), f.p(...b)], { w: 1.3, color: C.steelDD, shade: false, taper: 0, jitter: 0, seed: s + n });
+  rail([x0, y0, z + 0.24], [x1, y0, z + 0.24], 1); rail([x1, y0, z + 0.24], [x1, y1, z + 0.24], 2); rail([x1, y1, z + 0.24], [x0, y1, z + 0.24], 3);
+  for (const [i, [x, y]] of ([[x1, y0], [x1, y1], [x0, y0], [x0, y1]] as const).entries()) rail([x, y, z], [x, y, z + 0.24], 5 + i);
+  for (const y of [y0 + 0.05, y1 - 0.05]) {
+    const p = f.p(x1 + 0.02, y, z + 0.3);
+    ink(ctx, [[p[0] - 2.5, p[1] - 1], [p[0] + 2.5, p[1] + 1]], { w: 4.2, color: C.steelDD, shade: false, taper: 0, jitter: 0, seed: s + 12 });
+    light(ctx, p[0], p[1] + 1.6, 2.1, C.ledWarm);
+  }
+}
+
+/** The crown: the coral crown block on the legs' heads, its sheave cluster, work lamps on the side legs' heads, the red beacon on top. */
+function boreCrownIso(ctx: Ctx, f: IsoFrame, near: number, s: number): void {
+  const { cx, cy, top, crown } = BORE, w = crown + 0.03;
+  const rr = box(ctx, f, cx - w, cy - w, cx + w, cy + w, top - 0.04, top + 0.2, { top: C.steelD, left: C.coral, right: mix(C.coral, C.ink, 0.4) }, s, { outline: 1.8, shadow: false });
+  faceHazard(ctx, f, rr, 'L', 0.06, 0.94, top + 0.02, top + 0.09, s + 1);
+  drumIso(ctx, f, cx, cy, top + 0.4, 0.1, 0.14, 'y', C.brass, s + 2, { bands: [-0.45, 0, 0.45], shadow: false });
+  for (const k of [(near + 1) % 4, (near + 3) % 4]) {
+    const p = f.p(...boreLeg(k, top - 0.14));
+    ink(ctx, [[p[0] - 3, p[1]], [p[0] + 3, p[1]]], { w: 4.4, color: C.steelDD, shade: false, taper: 0, jitter: 0, seed: s + 3 + k });
+    light(ctx, p[0], p[1] + 2, 2.2, C.ledWarm);
+  }
+  beaconIso(ctx, f, cx, cy, top + 0.6, top + 0.86, C.ledRed, s + 8);
+}
+
+/**
+ * The deep bore's body (`deep_bore`; its part is `boreTable`): a heavy rig over its own hole. A
+ * tall steel derrick on four concrete footings — coral girts, X-braced bays over an open portal,
+ * a racking board with work lamps on its east face, the coral crown block, its sheaves and a red
+ * beacon on top — stands over the wellhead collar sunk in the ground, spoil from the deep heaped
+ * round it between the legs; the hoisting lines run down from the crown to the travelling block.
+ * Round it: the draw-works on the west (a teal motor house, the big brass drum whose drilling
+ * line runs up to the crown), the coral power house on the south (where the wires come in), a
+ * rack of drill pipe on the east, and at the front the outlet works on a skid: a belt up from the
+ * collar to a splitter that tips the ore down two chutes into the hoppers over the two outlets.
+ */
+function boreBody(ctx: Ctx, f: IsoFrame, s: number): void {
+  const { cx, cy, top, foot } = BORE;
+  const near = boreNearLeg(f), far = (near + 2) % 4, dC = f.depth(cx, cy);
+  const legD = (k: number): number => { const [x, y] = boreLeg(k, 0); return f.depth(x, y); };
+  // Flat on the ground first: the outlet works' skid, the collar, the draw-works' and power house's skids.
+  slab(ctx, f, C.steelD, 0.04, 0.14, s, true, [0, 0, 3, 0.54]);
+  boreCollarIso(ctx, f, s + 10);
+  box(ctx, f, 0.04, 0.8, 0.6, 2.2, 0, 0.12, { top: C.steelD }, s + 11, { outline: 1.4 });
+  box(ctx, f, 0.74, 2.4, 2.06, 2.96, 0, 0.12, { top: C.steelD }, s + 12, { outline: 1.4 });
+  const sc = new Scene();
+  for (let k = 0; k < 4; k++) {
+    const [x, y] = boreLeg(k, 0);
+    sc.add(legD(k) - 0.02, () => box(ctx, f, x - 0.11, y - 0.11, x + 0.11, y + 0.11, 0, foot, { top: CONCRETE }, s + 20 + k, { outline: 1.4 }));
+  }
+  // Spoil heaped round the collar between the legs, two bigger heaps in the back corners.
+  const heaps = [[0.95, 0.95, 0.24, 0.28], [2.05, 0.95, 0.24, 0.26], [2.05, 2.05, 0.25, 0.32], [0.95, 2.05, 0.24, 0.3], [2.66, 2.66, 0.27, 0.4], [0.36, 2.66, 0.25, 0.34]] as const;
+  for (const [i, [x, y, r, h]] of heaps.entries()) sc.add(f.depth(x, y), () => spoilIso(ctx, f, x, y, r, h, s + 40 + i * 9));
+  // The derrick: its far leg (behind the far heap), its two far faces, the table's housing on the
+  // collar (its turning top is the part), the hoisting lines, the near faces and the two side legs.
+  sc.add(legD(far) + 0.01, () => boreLegIso(ctx, f, far, s));
+  sc.add(dC - 0.05, () => { for (const k of [far, (far + 3) % 4]) boreFaceIso(ctx, f, k); });
+  sc.add(dC - 0.02, () => cylinder(ctx, f, cx, cy, BORE.table + 0.04, 0.04, BORE.t0, C.steelD, s + 80, { top: C.steel }));
+  sc.add(dC, () => {
+    for (const dx of [-0.06, -0.02, 0.02, 0.06]) rod(ctx, f.p(cx + dx, cy, top - 0.04), f.p(cx + dx * 0.7, cy, 4.08), 0.9, C.steelL);
+  });
+  // The drilling line from the draw-works drum to the crown's fast sheave: inside the derrick when the drum is behind it.
+  sc.add(f.depth(0.32, 1.7) < dC ? dC - 0.01 : dC + 0.45, () => {
+    rod(ctx, f.p(0.36, 1.7, 1.0), f.p(cx - 0.1, cy, top + 0.42), 1.1, C.steelL);
+  });
+  sc.add(dC + 0.3, () => {
+    for (const k of [near, (near + 3) % 4]) boreFaceIso(ctx, f, k);
+    for (const k of [(near + 1) % 4, (near + 3) % 4]) boreLegIso(ctx, f, k, s);
+  });
+  sc.add(f.depth(2.03, 1.5), () => boreBoardIso(ctx, f, s + 330));
+  sc.add(dC + 0.6, () => boreCrownIso(ctx, f, near, s + 340));
+  // The draw-works (W): the motor house, the drum between its two stands.
+  sc.add(f.depth(0.32, 1.06), () => {
+    const rr = box(ctx, f, 0.08, 0.84, 0.56, 1.28, 0.12, 1.05, C.teal, s + 360);
+    faceGrille(ctx, f, rr, 'R', 0.12, 0.88, 0.24, 0.9, s + 361, 4);
+    faceGrille(ctx, f, rr, 'L', 0.12, 0.5, 0.24, 0.8, s + 362, 3);
+    faceLeds(ctx, f, rr, 'L', 0.92, 0.62, 0.88, 2, [C.ledGreen, C.led], 1.7);
+  });
+  for (const [i, y] of [1.33, 2.07].entries()) sc.add(f.depth(0.32, y), () => box(ctx, f, 0.14, y - 0.03, 0.5, y + 0.03, 0.12, 0.74, { top: C.steelD, left: C.steel, right: mix(C.steel, C.ink, 0.4) }, s + 365 + i, { outline: 1.3, shadow: false }));
+  sc.add(f.depth(0.32, 1.7), () => drumIso(ctx, f, 0.32, 1.7, 0.62, 0.2, 0.33, 'y', C.brass, s + 370, { bands: [-0.66, -0.33, 0, 0.33, 0.66] }));
+  // The power house (S): coral, grilles and LEDs, a hazard band at its foot, a radiator fan on its roof.
+  sc.add(f.depth(1.4, 2.68), () => {
+    const rr = box(ctx, f, 0.8, 2.44, 2.0, 2.92, 0.12, 1.15, C.coral, s + 380);
+    for (const face of ['L', 'R'] as const) {
+      faceGrille(ctx, f, rr, face, 0.08, 0.42, 0.28, 0.98, s + 381, 4);
+      faceLeds(ctx, f, rr, face, 1.0, 0.56, 0.9, 3, [C.ledWarm, C.led, C.ledGreen], 1.8);
+      faceHazard(ctx, f, rr, face, 0.02, 0.98, 0.14, 0.23, s + 382);
+    }
+    fanIso(ctx, f, 1.5, 2.68, 1.15, 0.17, s + 383);
+  });
+  // The pipe rack (E): drill pipe on three trestles.
+  sc.add(f.depth(2.68, 1.5) - 0.01, () => {
+    for (const [i, y] of [0.95, 1.5, 2.05].sort((a, b) => f.depth(2.68, a) - f.depth(2.68, b)).entries()) {
+      for (const x of [2.48, 2.88]) pipeIso(ctx, f, [[x, y, 0], [x, y, 0.42]], 3, C.steelD, s + 390 + i, false);
+      ink(ctx, [f.p(2.44, y, 0.42), f.p(2.92, y, 0.42)], { w: 3.2, color: C.steelD, shade: false, taper: 0, jitter: 0, seed: s + 394 + i });
+    }
+  });
+  sc.add(f.depth(2.68, 1.5), () => {
+    const tubes = [[2.56, 0.5], [2.68, 0.5], [2.8, 0.5], [2.62, 0.62], [2.74, 0.62], [2.68, 0.74]] as const;
+    for (const [i, [x, z]] of [...tubes].sort((a, b) => f.depth(a[0], 1.5) - f.depth(b[0], 1.5) || a[1] - b[1]).entries()) {
+      drumIso(ctx, f, x, 1.5, z, 0.05, 0.62, 'y', i % 2 ? C.steelL : C.ice, s + 400 + i, { shadow: false, hub: false });
+    }
+  });
+  // The outlet works (N): the belt up from the collar, the splitter, its chutes, the two hoppers.
+  sc.add(f.depth(1.5, 0.75), () => boreBeltIso(ctx, f, s + 420));
+  sc.add(f.depth(1.5, 0.32), () => {
+    const rr = box(ctx, f, 1.2, 0.14, 1.8, 0.5, 0.14, 0.82, { top: C.steelD, left: C.steelL, right: mix(C.steelL, C.ink, 0.4) }, s + 430);
+    faceHazard(ctx, f, rr, 'L', 0.04, 0.96, 0.62, 0.72, s + 431);
+    faceHazard(ctx, f, rr, 'R', 0.04, 0.96, 0.62, 0.72, s + 432);
+    faceLeds(ctx, f, rr, 'L', 0.4, 0.3, 0.7, 2, [C.ledGreen, C.ledWarm], 1.6);
+    frustumIso(ctx, f, 1.26, 0.18, 1.74, 0.46, 0.82, 0.96, -0.04, { top: C.steel }, s + 433, { open: C.steelDD, shadow: false });
+  });
+  for (const [i, x] of [0.5, 2.5].entries()) {
+    sc.add(f.depth(x, 0.33), () => {
+      const mouth = frustumIso(ctx, f, x - 0.32, 0.14, x + 0.32, 0.52, 0.14, 0.6, -0.04, { top: C.steel }, s + 440 + i * 5, { open: C.steelDD });
+      rubble(ctx, mouth, s + 442 + i * 5);
+    });
+    const xa = x < 1.5 ? 1.2 : 1.8, xb = x < 1.5 ? x + 0.26 : x - 0.26;
+    sc.add(f.depth((xa + xb) / 2, 0.32) + 0.01, () => pipeIso(ctx, f, [[xa, 0.32, 0.74], [xb, 0.32, 0.62]], 7, C.steelL, s + 450 + i));
+  }
+  sc.run();
+}
+
+/** The belt from the collar's edge up to the splitter (along local y), ore riding it, on one trestle. */
+function boreBeltIso(ctx: Ctx, f: IsoFrame, s: number): void {
+  const x0 = 1.37, x1 = 1.63, ya = 0.98, za = 0.12, yb = 0.48, zb = 0.92;
+  const P = (x: number, u: number, dz = 0): Pt => f.p(x, ya + (yb - ya) * u, za + (zb - za) * u + dz);
+  for (const x of [x0 + 0.04, x1 - 0.04]) { const y = ya + (yb - ya) * 0.55; pipeIso(ctx, f, [[x, y, 0], [x, y, za + (zb - za) * 0.55 - 0.08]], 2.6, C.steelD, s + x * 10, false); }
+  for (const x of [x0, x1]) flat(ctx, [P(x, 0), P(x, 1), P(x, 1, -0.1), P(x, 0, -0.1)], x === x1 ? mix(C.steel, C.ink, 0.4) : C.steel);
+  const belt: Pt[] = [P(x0, 0), P(x1, 0), P(x1, 1), P(x0, 1)];
+  flat(ctx, belt, C.steelDD);
+  for (let i = 1; i < 8; i++) ink(ctx, [P(x0 + 0.02, i / 8), P(x1 - 0.02, i / 8)], { w: 0.9, color: C.steel, alpha: 0.8, shade: false, taper: 0, jitter: 0, seed: s + i });
+  for (const [i, u] of [0.18, 0.46, 0.74].entries()) {
+    const [px, py] = P((x0 + x1) / 2 + (i - 1) * 0.04, u, 0.04);
+    shape(ctx, ellipsePts(px, py - 1.5, 3.4, 2.6, s + 20 + i, 0.25, 8), C.dug, { w: 1, shade: false, jitter: 0, seed: s + 20 + i });
+  }
+  ink(ctx, belt, { closed: true, w: 1.4, seed: s + 30 });
+  for (const x of [x0, x1]) ink(ctx, [P(x, 0, 0.03), P(x, 1, 0.03)], { w: 2.4, color: C.steelL, shade: false, taper: 0, jitter: 0, seed: s + 31 });
+}
+
+/**
+ * The deep bore's moving part at phase t (a quarter turn, moving.ts `BORE`): the rotary table's
+ * turning top on the collar — brass, its teeth and four slots turning — the kelly bushing and the
+ * square kelly turning with it, up to the swivel; the hook and the travelling block it hangs from
+ * (still, on the axis); and last the derrick leg in front of them all (`boreNearLeg`). No lamp on
+ * it: its night lights and its switched-off look come from the body.
+ */
+function boreTable(ctx: Ctx, f: IsoFrame, s: number, t: number): void {
+  const { cx, cy, table, t0, t1, kelly, swivel } = BORE, a = (t * Math.PI) / 2;
+  cylinder(ctx, f, cx, cy, table, t0, t1, C.brass, s + 500, { top: C.brassL });
+  for (let i = 0; i < 24; i++) {
+    const b = a + (i / 24) * Math.PI * 2, co = Math.cos(b), si = Math.sin(b);
+    const p = (k: number): Pt => { const [px, py] = f.p(cx + co * table * k, cy + si * table * k, t1); return [px, py]; };
+    ink(ctx, [p(0.82), p(0.97)], { w: 1.4, color: C.steelDD, shade: false, taper: 0, jitter: 0, seed: s + 501 + i });
+  }
+  for (let i = 0; i < 4; i++) {
+    const b = a + (i * Math.PI) / 2, co = Math.cos(b), si = Math.sin(b), nx = -si * 0.045, ny = co * 0.045;
+    const q = (k: number, side: number): Pt => f.p(cx + co * table * k + nx * side, cy + si * table * k + ny * side, t1);
+    shape(ctx, [q(0.48, -1), q(0.72, -1), q(0.72, 1), q(0.48, 1)], C.steelDD, { w: 0.9, shade: false, jitter: 0, seed: s + 530 + i });
+  }
+  prismIso(ctx, f, boreSquare(a, 0.13), t1, t1 + 0.08, { top: C.steelD }, s + 540, { outline: 1.4, shadow: false });
+  prismIso(ctx, f, boreSquare(a, kelly), t1 + 0.08, swivel, { top: C.brass }, s + 550, { outline: 1.6, shadow: false });
+  // The swivel, its coral gooseneck, the brass hook and the hazard-yellow travelling block.
+  cylinder(ctx, f, cx, cy, 0.09, swivel - 0.02, swivel + 0.24, C.steelL, s + 560, { top: C.steel });
+  pipeIso(ctx, f, [[cx + 0.06, cy, swivel + 0.16], [cx + 0.16, cy, swivel + 0.24], [cx + 0.2, cy, swivel + 0.1]], 3, C.coral, s + 561, false);
+  const hk = (z: number, dx = 0): Pt => f.p(cx + dx, cy, z);
+  ink(ctx, [hk(swivel + 0.24), hk(swivel + 0.38, 0.05), hk(3.62)], { w: 3.4, color: C.ink, shade: false, taper: 0, jitter: 0, seed: s + 562 });
+  ink(ctx, [hk(swivel + 0.24), hk(swivel + 0.38, 0.05), hk(3.62)], { w: 1.8, color: C.brassL, shade: false, taper: 0, jitter: 0, seed: s + 563 });
+  const rr = box(ctx, f, cx - 0.1, cy - 0.08, cx + 0.1, cy + 0.08, 3.6, 4.1, { top: C.steelD, left: C.hazard, right: mix(C.hazard, C.ink, 0.38) }, s + 564, { outline: 1.6, shadow: false });
+  faceHazard(ctx, f, rr, 'L', 0.05, 0.95, 3.66, 3.74, s + 565);
+  boreLegIso(ctx, f, boreNearLeg(f), s);
+}
+
 const R: Partial<Record<BuildingId, Recipe>> = {
   // ── colony ────────────────────────────────────────────────────────────────
   hearth: {
@@ -2761,42 +3061,11 @@ const R: Partial<Record<BuildingId, Recipe>> = {
     },
   },
   deep_bore: {
-    head: 5.0,
-    draw(ctx, f, s) {
-      // A heavy rig: a drill floor on its sub-structure, a tall derrick with crown block and
-      // drill string over a geared rotary table, a pipe rack beside it and a power house with
-      // its stack at the back.
-      slab(ctx, f, C.steelD, 0.05, SZ, s, true);
-      const sc = new Scene();
-      sc.add(f.depth(2.62, 1.25), () => {
-        for (const y of [0.45, 2.05]) {
-          pipeIso(ctx, f, [[2.45, y, SZ], [2.45, y, 0.75]], 3, C.steelD, s + 30 + y * 10, false);
-          pipeIso(ctx, f, [[2.8, y, SZ], [2.8, y, 0.75]], 3, C.steelD, s + 31 + y * 10, false);
-        }
-        const tubes = [[2.5, 0.82], [2.62, 0.82], [2.74, 0.82], [2.56, 0.95], [2.68, 0.95], [2.62, 1.08]] as const;
-        for (const [i, [x, z]] of [...tubes].sort((a, b) => f.depth(a[0], 1) - f.depth(b[0], 1) || a[1] - b[1]).entries()) {
-          drumIso(ctx, f, x, 1.25, z, 0.06, 0.95, 'y', i % 2 ? C.steelL : C.ice, s + 40 + i, { shadow: false, hub: false });
-        }
-      });
-      sc.add(f.depth(1.3, 1.4), () => {
-        const rr = box(ctx, f, 0.3, 0.45, 2.3, 2.3, SZ, 0.85, C.steel, s + 2);
-        faceHazard(ctx, f, rr, 'L', 0.04, 0.96, 0.72, 0.82, s + 3);
-        faceGrille(ctx, f, rr, 'R', 0.1, 0.9, SZ + 0.1, 0.65, s + 4, 3);
-        cylinder(ctx, f, 1.3, 1.38, 0.36, 0.85, 1.02, C.steelD, s + 5, { top: C.brass });
-        gearTeeth(ctx, f, 1.3, 1.38, 0.36, 1.02, 22, s + 6);
-        trussIso(ctx, f, 1.3, 1.38, 0.72, 0.16, 0.85, 4.55, 7, C.steelL, s + 7, 3.6);
-        pipeIso(ctx, f, [[1.3, 1.38, 4.45], [1.3, 1.38, 1.05]], 5.5, C.brassL, s + 8, false);
-        box(ctx, f, 1.12, 1.2, 1.48, 1.56, 4.5, 4.75, { top: C.steelD }, s + 9, { outline: 1.6, shadow: false });
-        light(ctx, ...f.p(1.3, 1.38, 4.85), 3.2, C.ledRed);
-      });
-      sc.add(f.depth(0.9, 2.62), () => {
-        const rr = box(ctx, f, 0.22, 2.38, 1.6, 2.85, SZ, 1.15, C.coral, s + 10);
-        faceGrille(ctx, f, rr, 'L', 0.08, 0.5, SZ + 0.12, 1.0, s + 11);
-        faceLeds(ctx, f, rr, 'L', 0.9, 0.6, 0.92, 3, [C.ledWarm, C.led, C.ledWarm]);
-        stackIso(ctx, f, 1.32, 2.62, 0.13, 2.2, s + 12);
-      });
-      sc.run();
-    },
+    // A heavy rig over its own hole (moving.ts `BORE`): the derrick over the wellhead collar and its
+    // spoil, the draw-works, the power house, the pipe rack, the outlet works (`boreBody`); the
+    // rotary table and the kelly turn while it works (`boreTable`), always the nearer part.
+    head: 6.4,
+    moving: { body: boreBody, part: boreTable, over: () => true },
   },
   excavator: {
     head: 3.9,
@@ -3448,6 +3717,8 @@ const R: Partial<Record<BuildingId, Recipe>> = {
   // ── energy ────────────────────────────────────────────────────────────────
   // The pole and the pylon: their wires' terminals are their crossarm insulators (art/terminals.ts).
   mast: { head: POLE.top + INSULATOR + 0.1, draw: poleIso },
+  // The fence (D103, recipes/gleaners.ts): a low mesh cage that keeps the Gleaners off.
+  fence: { head: 0.8, draw: fenceIso },
   pylon: { head: PYLON.apex + 0.3, draw: pylonIso },
   brazier: {
     head: 3.3,
@@ -3786,6 +4057,78 @@ const R: Partial<Record<BuildingId, Recipe>> = {
         }
         cableIso(ctx, f, [1.6, 0.6, 1.38], [1.62, 1.45, 2.25], 4.2, s + 55);
         cableIso(ctx, f, [1.75, 0.5, 1.38], [1.78, 1.5, 2.2], 4.2, s + 56);
+      });
+      sc.run();
+    },
+  },
+  electric_smelter: {
+    head: 2.3,
+    draw(ctx, f, s) {
+      // An induction furnace (D106): a squat crucible in a copper induction coil under laminated
+      // steel yokes, the melt glowing in its ceramic mouth, a pour lip at the front; copper bus
+      // bars on porcelain stand-offs from the teal inverter cabinet (its high-voltage sign, the
+      // heavy cable from its terminal into a gland on its roof); a bank of capacitor cans by the
+      // intake. No stack, no smoke: power, not coal — cyan arcs at the coil's leads while it works.
+      slab(ctx, f, ES_SLAB, 0.05, SZ, s);
+      const sc = new Scene();
+      const { x: cx, y: cy } = ES_POT;
+      // The inverter cabinet on the east side, its cable gland and the heavy cable to its terminal.
+      sc.add(f.depth(1.63, 0.56), () => {
+        const rr = cabinetIso(ctx, f, 1.38, 0.14, 1.88, 0.98, ES_CAB_Z, C.teal, s + 1, 2);
+        faceHazard(ctx, f, rr, 'R', 0.06, 0.94, ES_CAB_Z - 0.16, ES_CAB_Z - 0.06, s + 2);
+        hvSignIso(ctx, f, rr, 'L', 0.5, 0.62, s + 3);
+        cylinder(ctx, f, 1.56, 0.72, 0.075, ES_CAB_Z, ES_CAB_Z + 0.1, C.brass, s + 4, { top: C.steelDD });
+        cableIso(ctx, f, [1.74, 0.3, ES_CAB_Z + 0.22], [1.56, 0.72, ES_CAB_Z + 0.08], 5, s + 5);
+      });
+      // The crucible: its base drum, the coil (each turn a seam), the yokes over it, the collar and the melt.
+      sc.add(f.depth(cx, cy), () => {
+        const { r, coil, top } = ES_POT;
+        cylinder(ctx, f, cx, cy, r - 0.02, SZ, 0.44, C.steelD, s + 10, { top: C.steelD });
+        cylinder(ctx, f, cx, cy, r, 0.44, coil, COPPER, s + 11, { rings: 8 });
+        const c = f.p(cx, cy, 0), [ex, ey] = f.ell(r + 0.03);
+        for (const a of [0.32, 0.9, 1.5, 2.1, 2.7]) {
+          const px = c[0] + Math.cos(a) * ex, py = c[1] + Math.sin(a) * ey;
+          ink(ctx, [[px, py - 0.4 * ILH], [px, py - (coil + 0.04) * ILH]], { w: 5.5, color: C.steelDD, shade: false, taper: 0, jitter: 0, seed: s + 12 });
+          ink(ctx, [[px - 1.2, py - 0.42 * ILH], [px - 1.2, py - (coil + 0.02) * ILH]], { w: 1, color: C.steelL, alpha: 0.6, shade: false, taper: 0, jitter: 0, seed: s + 13 });
+        }
+        cylinder(ctx, f, cx, cy, r - 0.02, coil, top, C.steelD, s + 14, { top: ES_CERAMIC });
+        // The pour lip, towards the front (the outlet).
+        prismIso(ctx, f, [[cx - 0.1, cy - r + 0.1], [cx + 0.1, cy - r + 0.1], [cx + 0.06, cy - r - 0.12], [cx - 0.06, cy - r - 0.12]], coil, [top, top, top - 0.06, top - 0.06], { top: ES_CERAMIC, left: C.steelD, right: mix(C.steelD, C.ink, 0.4) }, s + 15, { outline: 1.3 });
+        // The melt: orange-hot, its core paler, a few dark crusts of slag.
+        const m = f.p(cx, cy, top), [mx, my] = f.ell(r * 0.74);
+        shape(ctx, ellipsePts(m[0], m[1], mx, my, s + 16, 0.004, 32), C.ledWarm, { w: 1.4, shade: false, seed: s + 16 });
+        flat(ctx, ellipsePts(m[0] - mx * 0.16, m[1] + my * 0.1, mx * 0.4, my * 0.36, s + 17, 0.01, 24), C.glowPeach);
+        for (const [dx, dy] of [[-0.5, -0.25], [0.32, 0.4], [0.55, -0.35]] as const) flat(ctx, ellipsePts(m[0] + dx * mx, m[1] + dy * my, 2.6, 1.4, s + 18, 0, 10), mix(C.coralD, C.ink, 0.3), 0.85);
+        if (!isUnlit(ctx)) {
+          // Over the melt: arcs jumping across it.
+          sparkIso(ctx, [m[0] - mx * 0.85, m[1] - 1], [m[0] + mx * 0.2, m[1] - 9], 5, s + 20);
+          sparkIso(ctx, [m[0] + mx * 0.15, m[1] - 8], [m[0] + mx * 0.8, m[1] - 2], 4, s + 21);
+        }
+      });
+      // The bus bars, coil leads to the cabinet, on porcelain stand-offs; arcs at the leads.
+      sc.add(f.depth(1.4, 1.32), () => {
+        for (const [i, [x, y]] of ([[1.62, 1.32], [1.62, 1.04]] as const).entries()) {
+          cylinder(ctx, f, x, y, 0.05, SZ, 0.82, C.steelD, s + 30 + i, { top: C.steel });
+          latheIso(ctx, f, x, y, [[0.82, 0.06], [0.86, 0.085], [0.9, 0.06], [0.94, 0.085], [0.98, 0.05]], C.ice, s + 32 + i, { top: C.brassL, shadow: false, seams: false });
+        }
+        for (const [k, z] of [1.0, 1.12].entries()) {
+          const run: Array<[number, number, number]> = [[1.62 - k * 0.06, 0.98, z], [1.62 - k * 0.06, 1.32 - k * 0.06, z], [cx + 0.38 - k * 0.04, 1.32 - k * 0.06, z]];
+          pipeIso(ctx, f, run, 3.6, COPPER, s + 34 + k, false);
+        }
+        if (!isUnlit(ctx)) for (const [k, z] of [1.0, 1.12].entries()) {
+          const a = f.p(cx + 0.38 - k * 0.04, 1.32 - k * 0.06, z), b = f.p(cx + 0.18, cy + 0.44, z + 0.2 + k * 0.08);
+          sparkIso(ctx, a, b, 5, s + 40 + k);
+        }
+      });
+      // The capacitor bank by the intake: cans on a low rack, a brass bus strap across their caps.
+      sc.add(f.depth(1.6, 1.68), () => {
+        const rr = box(ctx, f, 1.26, 1.46, 1.9, 1.88, SZ, 0.44, { top: C.steelDD, left: C.steel, right: mix(C.steel, C.ink, 0.4) }, s + 50, { outline: 1.6 });
+        faceLeds(ctx, f, rr, 'L', 0.37, 0.15, 0.4, 2, [C.ledGreen, C.led], 1.4);
+        const cans: Array<[number, number]> = [];
+        for (let j = 0; j < 2; j++) for (let i = 0; i < 3; i++) cans.push([1.38 + i * 0.2, 1.56 + j * 0.2]);
+        cans.sort((p, q) => f.depth(p[0], p[1]) - f.depth(q[0], q[1]));
+        for (const [i, [x, y]] of cans.entries()) cylinder(ctx, f, x, y, 0.07, 0.44, 0.74, CAN, s + 51 + i, { top: CAN_L, rings: 1 });
+        ink(ctx, [f.p(1.36, 1.66, 0.76), f.p(1.8, 1.66, 0.76)], { w: 2.4, color: C.brass, shade: false, taper: 0, jitter: 0, seed: s + 58 });
       });
       sc.run();
     },

@@ -3,6 +3,7 @@ import { QUEST_IDS } from '@/content/quests';
 import { PLAN_IDS, RESEARCH } from '@/content/research';
 import { itemIdx } from '@/content/registry';
 import { WORLD_SEED } from '@/content/world';
+import { timed } from '@/core/cpu-time';
 import { replay } from './commands';
 import { DAY_EPOCHS, SOLAR, WORLD_EPOCH0 } from './constants';
 import { foundScenario, idleAfter, scenarioEpoch, SCENARIO_IDS, type ScenarioId } from './scenarios';
@@ -14,21 +15,22 @@ import { MapGen } from './world/mapgen';
 const SEEDS = [1, 2, 3];
 const NEAR = WORLD_EPOCH0 + 1000;
 
+/** A level founded, and its time on the CPU (core/cpu-time.ts: other test runs on the machine do not count) and on the wall. */
 const build = (id: ScenarioId, seed: number) => {
-  const t0 = performance.now();
-  const r = foundScenario(id, { playerSeed: seed, near: NEAR, name: 'Essai' });
-  return { ...r, ms: performance.now() - t0 };
+  const { value, ms, wall } = timed(() => foundScenario(id, { playerSeed: seed, near: NEAR, name: 'Essai' }));
+  return { ...value, ms, wall };
 };
 
 /** The quest each level leaves current (null: the tutorial is over). */
-const AT: Record<ScenarioId, string | null> = { claim: 'first_strike', smelter: 'bloom_kiln', survey: 'crier_calls', tutorial: null, grown: null, late: null };
+const AT: Record<ScenarioId, string | null> = { claim: 'first_strike', smelter: 'bloom_kiln', survey: 'crier_trade', tutorial: 'synth_parts', grown: null, late: null };
 
 /** The roles each level must have built (positions are never pinned: they come from the map). */
 const BUILT: Record<ScenarioId, readonly string[]> = {
   claim: [],
-  smelter: ['iron1', 'iron2'],
+  smelter: ['iron1'],
   survey: ['iron1', 'iron2', 'kiln1', 'coal', 'wind1', 'wind2', 'kiln2', 'sand1', 'sand2'],
-  tutorial: ['post', 'kiln1', 'kiln2', 'collector', 'observatory', 'mill', 'copper', 'beacon', 'wind3', 'wind4', 'cutter1', 'cutter2', 'osc'],
+  // No data collector in the tutorial (D101): its lab runs on the Core's own data; the collector comes at the grown level.
+  tutorial: ['post', 'kiln1', 'kiln2', 'observatory', 'mill', 'copper', 'beacon', 'wind3', 'wind4', 'cutter1', 'cutter2', 'osc'],
   grown: ['post', 'kiln1', 'kiln2', 'collector', 'observatory', 'mill', 'copper', 'cutter1', 'cutter2', 'osc'],
   // The late base's works (scenario-late.ts): the potteries on the tarn's peak, the Fabrique on
   // the copper field — on every land (the Ember Fields mine and its thermal cores where the land has
@@ -61,14 +63,14 @@ describe('debug bases (scenarios)', () => {
   it.each(SEEDS)('every level builds on the real map of player %i, the tutorial ones with every quest met on its own', (seed) => {
     const times: string[] = [];
     for (const id of SCENARIO_IDS) {
-      const { sim, report, ms } = build(id, seed);
-      times.push(`${id} ${Math.round(ms)} ms`);
+      const { sim, report, ms, wall } = build(id, seed);
+      times.push(`${id} ${Math.round(ms)} ms (${Math.round(wall)} on the wall)`);
       expect(sim.colonyName).toBe('Essai');
       expect(sim.quests.done[0]).toBe('claim');
       expect(QUEST_IDS[sim.quests.cur] ?? null, id).toBe(AT[id]);
       for (const role of BUILT[id]) expect(report.ids[role], `${id}: ${role}`).toBeGreaterThan(0);
       for (const role of BUILT[id]) expect(sim.ents.get(report.ids[role]!), `${id}: ${role} standing`).toBeTruthy();
-      expect(ms, `${id} built in ${Math.round(ms)} ms`).toBeLessThan(3000);
+      expect(ms, `${id} built in ${Math.round(ms)} ms of CPU (${Math.round(wall)} ms on the wall)`).toBeLessThan(3000);
       // Every line laid leads somewhere: into a building or on along another ribbon (owner,
       // 2026-10-14: a bridge fed from its side "doesn't work" — D55: entered from straight behind).
       sim.ensureCompiled();
@@ -77,9 +79,10 @@ describe('debug bases (scenarios)', () => {
       if (id === 'late') {
         expect(report.granted).toEqual(expect.arrayContaining(['tr2', 'tr4', 'tr6', 'tr8', 'ex5', 'ex8', 'xp_far', 'dn_etcher', 'dn8', 'enK', 'cm3', 'an_servers']));
         expect(sim.hearthLevel).toBe(4);
-        // Over half the tree done (D66, D69: 44 of 77), the Research Queue and the Compute Plan researched for real.
+        // Over half the tree done (D66, D69: 44 of 77), the Research Queue researched for real.
         expect(Object.keys(RESEARCH).filter((r) => sim.done.has(r)).length, 'late: research done').toBeGreaterThanOrEqual(44);
-        expect(sim.projects.map((p) => p.id).sort(), 'late: research under way').toEqual(['an_queue', 'cm_plan']);
+        // The first lab on the Research Queue (D107: the Compute Plan comes learnt with the Wider Wharf).
+        expect(sim.projects.map((p) => p.id).sort(), 'late: research under way').toEqual(['an_queue']);
         // The Ember Fields mine where the land has the site, its embersalt flown to the Fabrique's thermal cores.
         if (report.ids.boreE) for (const role of ['dockE', 'cores']) expect(report.ids[role], `late: ${role}`).toBeGreaterThan(0);
         // Nothing the map refused (each part of the works is laid whole, or skipped by name) but the
@@ -95,14 +98,18 @@ describe('debug bases (scenarios)', () => {
       }
       expect(report.granted, `${id}: nothing outside the commands`).toEqual([]);
       if (id === 'tutorial') {
-        // The whole factory runs: plates, glass, data files, copper wire, the vein's quartz all made.
+        // The whole factory runs: plates, glass, data files (the Core's), copper wire, the vein's quartz all made.
         for (const it of ['iron_plate', 'glass', 'journal_1', 'copper_wire', 'quartz']) expect(sim.produced[itemIdx(it)], it).toBeGreaterThan(0);
-        expect(sim.done.has('ex_quartz'), 'the Face Cutter learnt').toBe(true);
+        expect(sim.done.has('ex_quartz'), 'the Face Cutter’s plan').toBe(true);
+        // The Core raised by the player's command (D101), Mechanics begun on its data (learnt by now: D107).
+        expect(sim.hearthLevel).toBe(2);
+        expect(sim.log.filter((l) => l.cmd.k === 'hearthUp')).toHaveLength(1);
+        expect(sim.projects.map((p) => p.id).concat([...sim.done].filter((id) => id === 'tr1'))).toContain('tr1');
       }
       if (id === 'grown') {
         expect(PLAN_IDS.every((p) => sim.done.has(p))).toBe(true);
         expect(sim.produced[itemIdx('oscillator')], 'grown: oscillators made').toBeGreaterThan(0);
-        for (const r of ['tr1', 'en_pitch', 'xp_swift']) expect(sim.done.has(r), `learnt ${r}`).toBe(true);
+        for (const r of ['tr1', 'an_data', 'en_pitch', 'xp_swift']) expect(sim.done.has(r), `learnt ${r}`).toBe(true);
         expect(idle(sim), 'grown: idle three minutes on end').toEqual([]);
       }
     }

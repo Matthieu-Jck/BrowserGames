@@ -9,8 +9,11 @@ import type { Loc } from './types';
 /** Shared seed: the cirque, the weather and world events are the same for every colony. */
 export const WORLD_SEED = 0x51f3a7;
 
-/** Deposit blob in the cirque, offsets from the centre (tiles). rich = cap in 10 mu/epoch per tile. */
-export interface CirqueDeposit { item: string; dx: number; dy: number; radius: number; rich: number }
+/**
+ * Deposit blob in the cirque, offsets from the centre (tiles). rich = cap in 10 mu/epoch per tile.
+ * `shape` (map 4, D104): the seed of its patch's wobble in whole blocks (mapgen.ts `blocksOf`).
+ */
+export interface CirqueDeposit { item: string; dx: number; dy: number; radius: number; rich: number; shape?: number }
 
 /**
  * A cirque template (D40, D45, D63): the floor, the Crown's terraces round it, its deposits and
@@ -80,6 +83,24 @@ const CIRQUE_DEPOSITS: readonly CirqueDeposit[] = [
 ];
 
 /**
+ * Map 4's cirque deposits (D104): the template's, in whole 2 × 2 blocks (`MapParams.oreBlock`):
+ * 9 blocks of iron (36 tiles), 6 of coal (24), 2 of copper (8), each at most a tile off. Each is a
+ * patch of its own shape (owner, 2026-10-17: « it's not the point, it still has to look natural »),
+ * the same for every player: `shape` seeds its wobble, picked (scratch search) for a compact patch
+ * that is no rectangle, sticks out by one block at most, its middle within 1.5 tiles of the
+ * template's, and keeps, shifted a block along the Crown either way (mapgen: never towards the
+ * Heart), three tiles from the others and the tutorial's distances (mapgen.test.ts: the coal and
+ * the copper a pole away, a drill spot within r 18); of those, the north-west iron's lets the debug
+ * bases' lines reach the most of it.
+ */
+const BLOCK_DEPOSITS: readonly CirqueDeposit[] = [
+  { item: 'iron_ore', dx: 1, dy: -9, radius: 3.4, rich: 500, shape: 2 },
+  { item: 'coal', dx: -16, dy: 1, radius: 2.9, rich: 300, shape: 3 },
+  { item: 'copper_ore', dx: 4, dy: 15, radius: 1.7, rich: 75, shape: 3 },
+  { item: 'iron_ore', dx: -11, dy: -11, radius: 3.4, rich: 500, shape: 25 },
+];
+
+/**
  * The cirque of map 1 (D40: a third of its first area, radii × 0.58; D45: closed all round): the
  * Crown three levels high all round, two tiles a terrace, its crest H2 (lilac) out to r 30 or so,
  * its foot at r 34; the lake on the floor. Bases founded before D63 keep it: a land never changes
@@ -129,6 +150,9 @@ export const CIRQUE: CirqueTemplate = {
   // 21 tiles, 9 of them deep; the crest's rim reaches r 33 round it (mound: its edge at r 34).
   lake: { dx: 27, dy: 13, radius: 2.3, deep: 1.5, onCrest: true, mound: 5 },
 };
+
+/** Map 4's cirque (D104): map 2–3's, its deposits in whole blocks. */
+export const CIRQUE_V4: CirqueTemplate = { ...CIRQUE, deposits: BLOCK_DEPOSITS };
 
 export const RINGS = {
   near: 160,   // Proche couronne: from the Crown's foot (r 29; r 34 on map 1) to 160
@@ -270,7 +294,152 @@ export interface QuartzVein {
   readonly corridor: number;
 }
 
-/** What a map version reads (D63): its cirque, its Crown's foot by archetype, its mountains' hardness, its quartz vein (map 3). */
+/**
+ * The land's obstacles (map 4, D94; owner, 2026-10-16: « il faut que la place soit parfois un enjeu
+ * critique, donc pour ça on va rajouter des obstacles. Montagnes énormes avec falaises, précipices,
+ * cours d'eau... »): massifs that rise straight to a sheer cliff, chasms and rivers across the
+ * plains, and a corridor of floor kept clear from the Crown's foot to each site the land guarantees.
+ * Widths are in quarter tiles: a band takes the tiles whose centre lies within `width` of its
+ * line, so 4–5 make it two or three tiles wide (a skybridge pair leaps three: D73), 6–7 three or four.
+ */
+export interface Obstacles {
+  /**
+   * Massifs: an elevation of their own (the world's noise near the cirque, the player's farther
+   * out, plus the archetype's `mountains` bias), rising from `from` to its full height at `full`
+   * (`fade` taken off per tile short of it). Past `threshold` the land stands at `rim` at once — a
+   * sheer cliff — and one level more every `step` above, up to 5. A massif's tiles never settle (its
+   * cliffs stay sheer) but in its **ramps**: where a second noise (`ramps`) rises past its `from`,
+   * a massif comes down to the land round it half a level a tile, terraces two tiles deep (an
+   * elevator and its flat tile, D65). Kept `clear` tiles off the clearings, the corridors and the
+   * quartz vein, and sunk in water like the mountains (`shore`, `shoreSlope`).
+   */
+  readonly massif: {
+    readonly scale: number; readonly octaves: number;
+    readonly from: number; readonly full: number; readonly fade: number;
+    readonly threshold: number; readonly rim: number; readonly step: number;
+    readonly clear: number; readonly slope: number; readonly shore: number; readonly shoreSlope: number;
+    readonly ramps: { readonly scale: number; readonly from: number };
+  };
+  /**
+   * Chasms (« précipices », crevasses: the owner, 2026-10-16: « il faut que ça ressemble à une
+   * crevasse »): long narrow cracks a random walk traces across the open floor, `count` of them
+   * from `r` (the first `near` from `rNear`, the rings of parcels just past the starting square),
+   * `steps` steps of `stride` tiles (min, span), turning by up to `turn` 64ths a step. Each is
+   * `width` wide (quarter tiles, min + 0 … span − 1), pinching and widening along its length by up
+   * to `pinch` either way (the shared noise read along the walk: a spot here and there beyond a plain
+   * skybridge's leap), its ends tapered to `taper`; from a point in `branch.chance` ‰ a side crack
+   * runs off at `branch.angle` (min + 0 … span − 1, 64ths, either side) for `branch.steps`, narrowing
+   * to the taper. A walk stops at raised land, water, the Crown or anything kept clear; one shorter
+   * than `minSteps` is dropped.
+   */
+  readonly chasm: {
+    readonly count: number; readonly near: number;
+    readonly r: readonly [number, number]; readonly rNear: readonly [number, number];
+    readonly steps: readonly [number, number]; readonly minSteps: number; readonly stride: number; readonly turn: number;
+    readonly width: readonly [number, number]; readonly pinch: number; readonly taper: number;
+    readonly branch: { readonly chance: number; readonly steps: readonly [number, number]; readonly angle: readonly [number, number] };
+  };
+  /**
+   * The rivers (owner, 2026-10-16: « les rivières doivent avoir du sens : être de petits ruisseaux qui
+   * partent de grandes montagnes au début, puis se rejoindre pour devenir un grand courant en bas »):
+   * a drainage network, found once on a lattice a node every `grid` tiles out to `radius` (each node
+   * moved up to `jitter` tiles by a hash, so the lattice does not show). A node's elevation is the
+   * land's height ×4, its massif's raw level ×`massifWeight`, its mountains' ×`mountainWeight`, plus
+   * `tilt` a tile of distance to the sea's coast: the land slopes to the sea. A flood from the sea in
+   * (lowest first, ties by order) gives every node the neighbour it drains to, through the hollows
+   * too; rain falls on each node — `rain.plain`, `rain.mountain` on raised land, `rain.massif` on a
+   * massif (its springs and snowmelt) — and gathers downstream. A stream runs where `channel` has
+   * gathered: so the streams begin up on the massifs. Its half width (quarter tiles) by the flow it
+   * carries: `widths`, ascending [flow, half width] — a tile or two up on the massif, a broad current of
+   * 5–8 tiles down in the lowlands — and it meanders by up to `meander` tiles across on flat ground. A
+   * hollow `lake.depth` deep or more that a stream fills holds a lake (`lake.radius`, tiles). The network
+   * keeps `keep` tiles off the Crown, the clearings and the quartz vein. On a massif a stream runs at
+   * the massif's level, never climbing (a step down is a fall); off it, on the floor, at level 0.
+   */
+  readonly drainage: {
+    readonly grid: number; readonly radius: number; readonly jitter: number;
+    readonly massifWeight: number; readonly mountainWeight: number; readonly tilt: number;
+    readonly rain: { readonly plain: number; readonly mountain: number; readonly massif: number };
+    readonly channel: number;
+    readonly widths: ReadonlyArray<readonly [number, number]>;
+    readonly meander: number;
+    readonly lake: { readonly depth: number; readonly radius: readonly [number, number] };
+    readonly keep: number;
+  };
+  /**
+   * The sea (owner: « il faudra rajouter une mer, loin quelque part »), the shared world's: past a
+   * coast `distance` tiles from the cirque along a bearing the world seed picks (the same for every
+   * claim, so all their rivers drain towards it), the coast moving in and out by up to `coast` tiles
+   * (the world's noise along it, feature size `scale`): shallows `shallow` tiles out, then deep water.
+   * A river meeting it widens into its mouth (`estuary` ‰ of its width). Never over a unique site.
+   */
+  readonly sea: { readonly distance: number; readonly coast: number; readonly scale: number; readonly shallow: number; readonly estuary: number };
+  /**
+   * The floor kept from the Crown's foot to each guaranteed site (the copper field, the unique
+   * sites, the vents): a line `half` tiles each side, bent every `every` tiles by up to `wobble`
+   * across; no massif, mountain, water, chasm or river on it, so the way to each site is floor.
+   * The rivers and chasms keep `margin` tiles further off.
+   */
+  readonly corridor: { readonly half: number; readonly every: number; readonly wobble: number; readonly margin: number };
+  /**
+   * Tiles round the copper field's centre the obstacles keep off (the mountains keep `MOUNTAINS.clear.copper`),
+   * and where the land is never rougher than middling (`rugged`: no lift): the first works past the Crown
+   * stand there — the late debug base's Fabrique, 20 × 25 tiles, among them. The one place where ore and
+   * room go together, by design.
+   */
+  readonly copper: number;
+  /**
+   * Space or ore (owner, 2026-10-16: « Dans les grandes étendues de désert, il ne devrait pas y avoir
+   * beaucoup de minéraux, mais au moins il y a de la place. Alors que sur les parcelles où il y a des
+   * minéraux, il faut qu'il y ait peu de place »): a slow field of the land's roughness (0..255, the
+   * world's noise near the cirque and the player's farther out, as the land's height; `scale` tiles,
+   * plus the archetype's `mountains` bias) lifts the massifs' and the mountains' elevation where it is
+   * high and sinks it where it is low, by `gain` / 64 a unit off 128 (`mountainGain` for the
+   * mountains): stretches of open desert, and broken ground. The chasms keep to ground of `chasmMin` or more.
+   */
+  readonly rugged: { readonly scale: number; readonly gain: number; readonly mountainGain: number; readonly chasmMin: number };
+  /**
+   * The common deposits past the Crown (in place of `DEPOSIT_CHANCE`'s one blob a chunk): `cells` × `cells`
+   * candidates a chunk, each read for how broken the ground round it is — of 8 points on a circle of
+   * `near` tiles and 8 on one of `far`, how many stand raised, in a gap or in water, each counting two —
+   * and taken at `open` ‰ plus `perBroken` ‰ a broken count, at most `max`; a vein hidden in rock at the same chance.
+   * On open ground (`thin` broken points or fewer) a blob is thin, `thinRadius` tenths of a tile (in
+   * whole blocks, D104: one block or two, a drill's worth or two); in broken ground `radius` tenths and
+   * `richRough` ‰ as rich. None in the quartz vein's parcel (its price, the tutorial's first
+   * purchase, stays within the purse).
+   */
+  readonly ore: {
+    readonly cells: number; readonly near: number; readonly far: number;
+    readonly open: number; readonly perBroken: number; readonly max: number;
+    readonly thin: number; readonly thinRadius: readonly [number, number]; readonly radius: readonly [number, number]; readonly richRough: number;
+  };
+}
+
+/** Map 4's obstacles (D94). */
+export const OBSTACLES: Obstacles = {
+  massif: {
+    scale: 48, octaves: 2, from: 37, full: 45, fade: 4, threshold: 140, rim: 3, step: 8,
+    clear: 4, slope: 8, shore: 64, shoreSlope: 3, ramps: { scale: 11, from: 150 },
+  },
+  chasm: {
+    count: 20, near: 12, r: [56, 150], rNear: [38, 24], steps: [10, 12], minSteps: 5, stride: 2, turn: 3,
+    width: [4, 2], pinch: 3, taper: 3, branch: { chance: 140, steps: [3, 3], angle: [12, 10] },
+  },
+  drainage: {
+    grid: 6, radius: 420, jitter: 2, massifWeight: 80, mountainWeight: 30, tilt: 3,
+    rain: { plain: 1, mountain: 3, massif: 14 }, channel: 300,
+    widths: [[300, 2], [600, 3], [1200, 4], [2400, 6], [4500, 9], [7500, 12], [11000, 15]], meander: 3,
+    lake: { depth: 60, radius: [4, 6] }, keep: 12,
+  },
+  sea: { distance: 360, coast: 28, scale: 70, shallow: 4, estuary: 1600 },
+  corridor: { half: 3, every: 12, wobble: 3, margin: 2 },
+  copper: 26,
+  rugged: { scale: 72, gain: 44, mountainGain: 36, chasmMin: 120 },
+  // D104: `thin` 3 → 5 and `thinRadius` [15, 8] → [10, 8] (thin blobs of 5 or 9 tiles: one block or two), so whole blocks keep the desert's few and the rough ground's many apart (r −0.41 … −0.57 on lands 1–5).
+  ore: { cells: 2, near: 6, far: 11, open: 15, perBroken: 32, max: 800, thin: 5, thinRadius: [10, 8], radius: [25, 21], richRough: 1250 },
+};
+
+/** What a map version reads (D63): its cirque, its Crown's foot by archetype, its mountains' hardness, its quartz vein (map 3), its obstacles (map 4). */
 export interface MapParams {
   readonly cirque: CirqueTemplate;
   /** The Crown's foot (tiles from the centre) on these archetypes; the others take `cirque.crownOuter`. */
@@ -278,6 +447,17 @@ export interface MapParams {
   readonly hardness: { readonly near: readonly number[]; readonly reaches: readonly number[]; readonly far: readonly number[] };
   /** The quartz vein in the nearest mountain (map 3, D87); absent: none (maps 1–2, whose bases buy quartz at the Crier). */
   readonly quartz?: QuartzVein;
+  /** Massifs, chasms, rivers and the corridors to the sites (map 4, D94); absent: none (maps 1–3). */
+  readonly obstacles?: Obstacles;
+  /**
+   * Deposits in whole `oreBlock` × `oreBlock` squares on the world's grid, the drill's footprint
+   * (map 4, D104; owner, 2026-10-17: « les ressources disponibles ne sont pas des multiples de la
+   * taille des machines qui les extraient »): the cirque's, the copper field, the sites' and the
+   * common ones (not the quartz face, a wall), each the size and richness of its disc, so drills
+   * cover a deposit with none of its tiles left over and none of theirs on sand. The cirque's
+   * per-player shift moves by whole blocks too. Absent: discs tile by tile (maps 1–3).
+   */
+  readonly oreBlock?: number;
 }
 
 /**
@@ -292,7 +472,7 @@ export const QUARTZ_VEIN: QuartzVein = {
 };
 
 /** The map version a new base is founded on (saved as `mapV`; a save without it is on map 1). */
-export const MAP_VERSION = 3;
+export const MAP_VERSION = 4;
 
 /**
  * Every map version, kept for the bases founded on it: a land never changes under a base. A new
@@ -317,6 +497,17 @@ export const MAPS: Readonly<Record<number, MapParams>> = {
     crownOuter: { closed: 31, steppe: 27 },
     hardness: MOUNTAINS.hardness,
     quartz: QUARTZ_VEIN,
+  },
+  // Map 3's land with obstacles beyond the Crown (D94): massifs and their cliffs, chasms, rivers;
+  // the cirque, the Crown, the vein and the sites as on map 3, a floor corridor to each site; its
+  // deposits in whole 2 × 2 blocks (D104).
+  4: {
+    cirque: CIRQUE_V4,
+    crownOuter: { closed: 31, steppe: 27 },
+    hardness: MOUNTAINS.hardness,
+    quartz: QUARTZ_VEIN,
+    obstacles: OBSTACLES,
+    oreBlock: 2,
   },
 };
 

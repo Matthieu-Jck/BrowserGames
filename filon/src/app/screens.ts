@@ -80,6 +80,12 @@ export class ScreenHost {
     if (!sc?.back?.()) this.open(null);
   }
 
+  /** Is a full screen open over the world (`.screen`: the tree, the statistics, the Crier, the absence report…)? The main menu is not: the base shows through it. */
+  get covers(): boolean {
+    const sc = this.current ? this.screens.get(this.current) : undefined;
+    return !!sc && sc.root.classList.contains('screen');
+  }
+
   /** Is a modal screen (the main menu) up? The game's keys wait. */
   get modal(): boolean {
     return !!this.current && !!this.screens.get(this.current)?.modal;
@@ -126,6 +132,7 @@ export function installMenu(app: App, auto: boolean, debug = debugOffered()): Me
     setLocale: (l) => { settings.locale = l; saveSettings(); setLocale(l); menu.refresh(); },
     setUiScale: (s) => { settings.uiScale = s; saveSettings(); applyUiScale(); },
     setPerf: (on) => { settings.perf = on; saveSettings(); },
+    setLowPower: (on) => { settings.lowPower = on; saveSettings(); }, // main.ts's loop reads it every frame (D100)
     // The sound reads the volumes every frame (app/sound.ts): moving a slider is heard at once;
     // releasing it stores it, and the effects sliders play a cue at the new level.
     setVolume: (which, v, done) => {

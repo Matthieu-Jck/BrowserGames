@@ -1,7 +1,8 @@
 # Input (`src/input/**`)
 
 `Input` turns DOM events into camera moves, which it applies itself, and into key actions, digit
-slots and pointer events, which it hands to the app. The app converts pointer positions to tiles
+slots and pointer events, which it hands to the app. Fingers (D96) become the same pointer events
+through the touch gestures (§2b). The app converts pointer positions to tiles
 and feeds them to `Tools`. `Tools` turns tile gestures into sim commands, plus a `Preview` that the
 ghost and the tip draw. Movement-like keys bind by physical position (AZERTY native); mnemonics
 bind by the layout's letter.
@@ -10,9 +11,10 @@ bind by the layout's letter.
 
 | Path | Role |
 |---|---|
-| [input.ts](../src/input/input.ts) | `Input`: DOM listeners, drag-pan, wheel zoom, keyboard pan, dispatch through `InputHooks` |
+| [input.ts](../src/input/input.ts) | `Input`: DOM listeners, drag-pan, wheel zoom, keyboard pan, the fingers through `TouchGestures`, dispatch through `InputHooks` |
+| [touch.ts](../src/input/touch.ts) | `TouchGestures` (D96, pure): touch pointers → pan, pinch zoom, tap, a tool's drag, long press as the right button; `SLOP`, `LONG_MS`, `TouchEffect`, `TouchTool` ([touch.test.ts](../src/input/touch.test.ts)) |
 | [bindings.ts](../src/input/bindings.ts) | `Action` union, `BINDINGS` table, `actionOf`, `slotOf`, `HELD` |
-| [tools.ts](../src/input/tools.ts) | `Tools`: tool states, gestures → sim commands, `Preview`, `ToolResult`, `originFor` |
+| [tools.ts](../src/input/tools.ts) | `Tools`: tool states, gestures → sim commands, `Preview`, `ToolResult`, `originFor`, `snapOrigin` (a drill onto the deposits' blocks, D104) |
 | [belt-path.ts](../src/input/belt-path.ts) | `beltPath`: the L a ribbon drag lays; `dirTo` |
 | [link-tool.ts](../src/input/link-tool.ts) | `LinkTool`: the « Relier » tool (power wires, D25) — source, clicks → `link` / `unlink`, `LinkPreview` |
 | [land-tool.ts](../src/input/land-tool.ts) | `LandTool`: the land mode (« Terrain », D60) — on / off, the hovered parcel, the one a click picks; the land panel buys and leases (§4c) |
@@ -54,6 +56,7 @@ DOM events ─▶ Input ─┬─ pan drags, wheel, held keys ──────
 | canvas | `contextmenu` | Suppressed: the right button is a tool button |
 | window | `keydown`, `keyup` | See the dispatch below |
 | window | `blur` | Clears held keys and Space, so panning never sticks after Alt-Tab |
+| canvas · window | `pointerdown` · `pointermove` · `pointerup` · `pointercancel` of `pointerType: 'touch'` | The touch gestures (§2b) instead of the above |
 
 **Pan drags and clicks.** A press starts a camera drag on the middle button, on the left button
 with Space held, or on the left button when `toolActive()` is false. The last kind is a click
@@ -95,6 +98,30 @@ read by the app yet.
 | `onAction(a, e)` | The controls' action switch |
 | `onSlot(slot, shift)` | Build mode: a tray slot, or a category with Shift |
 | `onPointerDown/Move/Up(p)` | Picks the tile through the current projection, calls `Tools`, reports the result |
+| `touchTool()` (optional) | What one finger does with the tool in hand: `none` (nothing, or the iso side), `tap` (a building: placed by a tap), `drag` (a ribbon, the demolition box, the brush) |
+| `onPointerCancel()` (optional) | A second finger came down: `Tools.dropDrag` drops the drag or right box under way, the tool stays in hand |
+
+## 2b. Touch (D96)
+
+Fingers on the canvas go through [touch.ts](../src/input/touch.ts), a pure state machine that
+`Input` feeds (`down` / `move` / `up`, the times from `performance.now()`) and whose effects it
+applies: `hover` / `down` / `move` / `up` reach the app as the mouse's `PointerInfo` (`overCanvas`
+true), `pan` and `zoom` go to the camera, `cancel` to `onPointerCancel`, `long` to a short vibration
+where the device has one. Mouse, pen and keyboard never come here.
+
+| Fingers | Nothing in hand (or the iso side) | A building in hand (`tap`) | A ribbon, the box, the brush (`drag`) |
+|---|---|---|---|
+| One, a tap (moved < `SLOP` = 10 px) | A click: select, the Link tool's click, the land mode's parcel | Placed where the finger was (a press and a release) | One tile: a ribbon tile, a one-tile box |
+| One, a drag | Pans the camera | Pans (no building laid by a finger that meant to pan) | The tool's drag, from where the finger came down |
+| One, still for `LONG_MS` (480 ms) | The right button: a right click (in build mode: demolish; unwinds the Link tool and the land mode); moving on drags a right box | The right button: the tool put away | The right button: the drag dropped, else the tool put away |
+| Two | Pinch: zoom about their middle, pan with it; what one finger had started is dropped (`cancel`, `Tools.dropDrag`); the finger left after a pinch pans and never clicks | ← | ← |
+
+A touch that came down on a panel is the panel's: only fingers pressed on the canvas are tracked.
+The long-press timer runs in `Input` (`armLong`) while one finger is pending. On the interface,
+`touch-action: pan-x pan-y` keeps a pinch from zooming the page ([ui.md](ui.md#the-responsive-layout-d96));
+the canvas has `touch-action: none`. Without R, « Tourner » in the build bar turns the building in
+hand on a touch screen. [touch.test.ts](../src/input/touch.test.ts) covers each row; the
+responsive script drives real touch events at 390 × 844 ([testing.md](testing.md)).
 
 ## 3. `bindings.ts`
 
@@ -121,7 +148,9 @@ There are two kinds of binding:
 | `viewPower` | `p` | key | The **Électricité** view (D88: the grids, their sources and draw, the troubles; [ui.md](ui.md#the-specialised-views-d88)), or back to Normal — P was the power overlay's key, which the view replaces; offered once the tutorial shows the power. KeyP on both layouts |
 | `viewLogistics` | `f` | key | The **Logistique** view (D88: the ribbons' throughput as a heat, jams, dead ends, drifter routes), or back to Normal — F (flux, flow) was kept for a flow overlay. KeyF on both layouts |
 | `viewProduction` | `o` | key | The **Production** view (D88: at work, waiting, stopped and why), or back to Normal — O for ouvrages / output; free on both layouts (KeyO) |
+| `viewWind` | `v` | key | The **Vent** view (D95: where the wind blows, from where, the turbines; [ui.md](ui.md#the-specialised-views-d88)), or back to Normal — V for vent; offered once the Anémométrie plan is learnt (`App.viewShown`). KeyV on both layouts |
 | `scrResearch` / `scrStats` | `t` / `g` | key | Opens the screen (the tree once the tutorial has revealed it; the Statistics once the ledger plan is unlocked, D41) |
+| `scrExpertise` | `e` | key | Opens the Expertise window once the Core mounts its Archive (level 3, D93); a click on the Archive does too |
 | `scrMarket` | `m` | key | Not handled (M6) |
 | `home` | `h` | key | Glides back to the Hearth |
 | `perf` | Backquote, IntlBackslash | code | Perf overlay |
@@ -142,7 +171,7 @@ Space (pan modifier) is hard-coded in `input.ts`, not in the table.
 | `state.k` | Fields | Entered by |
 |---|---|---|
 | `build` | `def`, `rot` | `select(def, rot = lastRot)` for ordinary buildings |
-| `belt` | `def`, `rot`, `from`, `flip` | `select` when `isBeltDef(def)` (kind `belt` or `conduit`, from the registry) |
+| `belt` | `def`, `rot`, `from`, `flip` | `select` when `isDragDef(def)` (kind `belt`, `conduit` or `fence` — D103: a fence line is dragged like a ribbon and planned by `planBelts`, one fence a free tile) |
 | `remove` | `from` | `demolish()` |
 | `mark` | `from`, `clear` | `mark()` |
 | `null` | — | Nothing in hand |
@@ -158,7 +187,12 @@ Space (pan modifier) is hard-coded in `input.ts`, not in the table.
 | none | (Input pans or selects) | — | Starts a right box | Removes the box → `{removed}` |
 
 - **Placement.** `originFor(def, rot, hx, hy)` centres the rotated footprint on the cursor; for even
-  sizes the cursor is on the upper-left of the two middle tiles.
+  sizes the cursor is on the upper-left of the two middle tiles. `snapOrigin` is what the ghost, the
+  click and R use: on a land whose deposits come in whole blocks (map 4, D104), a 2 × 2 or 4 × 4 drill
+  whose footprint would cover ore there moves its corner down onto the blocks' grid (`oreSnap`,
+  [sim/ore-blocks.ts](../src/sim/ore-blocks.ts)): it always keeps the cursor's tile, and a deposit is
+  covered whole drill by drill. The 3 × 3 deep bore, a sand collector, a face cutter and anything off
+  the ore stay where the cursor puts them.
 - **Placing over things** (decision D24, rules in [engine.md](engine.md#placement-and-replacement)).
   A building may go over buildings of its own replace group that lie wholly inside its footprint:
   a router over a ribbon, a swift ribbon over a ribbon, a distributor over four ribbons or routers,
@@ -178,8 +212,8 @@ Space (pan modifier) is hard-coded in `input.ts`, not in the table.
     `junction_chain`): a ribbon runs between two of them;
   - **a step** a plain ribbon would face takes a **traction ribbon** by itself once `traction` is
     learnt (D73); never two steps in a row (`lift_room`, D65);
-  - **an obstacle** — a run of tiles refused as `occupied`, `terrain` (water…), `sister_land` or
-    `junction_chain` (two lines side by side) — is leapt by a **bridge pair** on the ribbon tiles
+  - **an obstacle** — a run of tiles refused as `occupied`, `terrain` (water…), `chasm` or `river`
+    (map 4, D94), `sister_land` or `junction_chain` (two lines side by side) — is leapt by a **bridge pair** on the ribbon tiles
     just before and after it, when `bridge` is learnt, the run is straight, the start is fed from
     straight behind, the pair is within reach (`4 + bridgeSpan`) on one level and no other bridge of
     that direction on the line would take the leap; what lies between stays as it is (`leapt`);
@@ -190,9 +224,15 @@ Space (pan modifier) is hard-coded in `input.ts`, not in the table.
     bridge pair can leap; the rest is laid and the toast counts what was left out.
 - **Rotation.** `rotate(dir)` flips the bend during a ribbon drag, turns a build or ribbon tool
   otherwise (remembered in `lastRot` for the next pick), and does nothing for remove and mark.
-  After a drag, the ribbon tool keeps the last tile's direction.
+  After a drag, the ribbon tool keeps the last tile's direction. A building turns from the rotation
+  its ghost shows (`sim.placementRot` at the hover): over a ribbon a directional routing block shows
+  the way the items enter that tile (D98), a face cutter the turn that puts its back to the wall.
+  R also sets the build tool's `turned`: from then on, while that building stays in hand, its
+  rotation is the player's over a ribbon too — the preview passes it to `placementRot` and the click
+  to `place(…, turned)`. Taking a building again (the bar, the pipette) or Esc clears it.
 - **Cancel.** `cancel()` (Esc) drops the right box first, then a drag in progress, then the tool.
-  It returns `true` if it dropped anything, so the app's Esc chain stops there.
+  It returns `true` if it dropped anything, so the app's Esc chain stops there. `dropDrag()` drops
+  only the right box or the drag, keeping the tool (a second finger: a pinch, §2b).
 - **Demolition box.** Every entity touching the inclusive box, except the Hearth, is removed with
   `sim.remove`; the engine refunds it. A click is a 1-tile box. In build mode with nothing in hand,
   a right click demolishes the building under the cursor.
@@ -289,8 +329,9 @@ covers: click a drill onto a deposit (tip visible); drag an L of 7 ribbons, then
 with X (refunded); see a kiln refused off the claim's land, with its reason and the land mode's
 key; open and close build mode with B; mark rock with the brush; open the inspector by clicking
 the Hearth in iso; open the land mode with I, pick a parcel by mouse and buy it from the panel; on
-the late debug base, P, F, O and I switch the views, a click inspects on the view's facet, Esc and
-the selector's Normal go back (D88).
+the late debug base, P, F, O, V and I switch the views, a click inspects on the view's facet, Esc and
+the selector's Normal go back (D88); at 390 × 844 the HUD folds, the inspector is a bottom sheet and
+the build bar scrolls (D96). Real fingers are driven by `scripts/responsive.mjs`'s touch step.
 
 ## 6. Recipes
 
@@ -337,10 +378,13 @@ the selector's Normal go back (D88).
 - **Layouts** (fixed in the architecture pass, guarded by `bindings.test.ts`): zoom keys are
   positional (no more AZERTY `-` on the 6 slot), Ctrl/Cmd chords only mean undo (by letter, so
   AZERTY Ctrl+Z is not a pan), selects keep their keys, a focused button no longer eats Space.
-- **Hints follow the language, not the layout.** The English hint says "Q: pipette" and the French
-  one says "A : pipette", so an English AZERTY or a French QWERTY player reads the wrong key
-  (`navigator.keyboard.getLayoutMap()` could fix it). (The remove tool's hint now says that the
-  right button demolishes too, and Esc puts the tool away.)
+- **The pipette's hint names the layout's key** (fixed 2026-10-15, [ui/keycap.ts](../src/ui/keycap.ts)):
+  the build hint says `{pip}`, the letter at `KeyQ` on this keyboard — from the browser's layout
+  map (`navigator.keyboard.getLayoutMap()`, Chromium), else from the keys the player presses
+  (AZERTY's A⇄Q, Z⇄W swap tells it from the first pan), else the language's guess (`key.pipette`:
+  A in French, Q in English) until the keyboard has said. Other hints name mnemonic keys (bound by
+  letter), which need nothing. (The remove tool's hint says that the right button demolishes too,
+  and Esc puts the tool away.)
 - **`wheel` ignores `deltaMode`**: a browser that reports line deltas would zoom very slowly.
 - **Mark preview:** `n` does not apply the sim's "occupied tiles are not filled" rule, so it can
   overcount fills. Tile indices hard-code `1024` (`boxTiles`, the mark preview).
@@ -350,4 +394,4 @@ the selector's Normal go back (D88).
   `edgeScroll` setting exists but nothing implements it.
 - **Replaced buildings in the ghost:** GhostView draws `doomed` only inside a demolition box, so the
   entities a placement or drag would replace are listed in the preview but not highlighted yet.
-- **Tests:** `belt-path.ts` and `bindings.ts` (`resolveKey`, both layouts) have unit tests; `Tools` has none yet (the smoke test drives it). The drag plan it shows is the sim's `planBelts`, tested in [replace.test.ts](../src/sim/replace.test.ts).
+- **Tests:** `belt-path.ts` and `bindings.ts` (`resolveKey`, both layouts) have unit tests; `Tools` is driven by the smoke test, and its build-tool rotation (the ghost over a ribbon, R, `turned`, D98) by [entry-rot.test.ts](../src/sim/entry-rot.test.ts). The drag plan it shows is the sim's `planBelts`, tested in [replace.test.ts](../src/sim/replace.test.ts).

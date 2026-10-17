@@ -25,7 +25,9 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Verrière | Verriere | — | The planet's only human city, where the player lives; never drawn. |
 | CrierBelt | CrierBelt | — | The company that runs the Crier Ring and its cargo lifts; the player's partner (it takes the trade fee). |
 | concession · base | claim · base | `Sim.colonyName` | The player's single persistent base, fully automated and piloted from afar (code says "colony"). |
-| le Souffle | the Sough | gust levels in `constants.ts` | The constant wind. Also the French name of the Energy branch. |
+| le Souffle | the Sough | `windAt`, `BAL.wind` ([world/wind.ts](../src/sim/world/wind.ts)) | The wind (D95): the day's curve × the day's mood × the gust window, from a prevailing bearing; strong on tops and open ground, calm in the lee and in bowls. Also the French name of the Energy branch. |
+| exposition | exposure | `WindField`, `windSite` | How much of the wind a tile catches (‰), read off the land as the world made it: height above its surroundings, the fetch upwind, the lee, the bowl, a pass (D95). |
+| Anémométrie | Wind Survey | `anemometry` (plan, flag) | The analytics plan that shows the wind: the Vent view (V), a turbine's wind in its card, its output while placing one (D95). |
 | Cirque de Bonne-Veine | the cirque | `CIRQUE` | The starting basin (r ≤ 23), the same for every colony. |
 | la Couronne | the Crown | `CIRQUE`, `crownOuter`, `crownReach` | The closed mountain ring round the cirque (D45). Map 2 (D63): a sandstone ridge two levels high from the floor's rim (r ≈ 23) to its foot (r ≈ 29), rising in a few places to lilac level-3 peaks; the biggest holds the tarn. Map 1 (older bases): three levels to r 34 |
 | le lac perché / the tarn | the tarn | `CIRQUE.lake`, `TerrainSource.tarn` | The cirque's lake, up on the Crown's biggest peak at its level (D63): a pump on its edge, a ceramic works beside it on the rock |
@@ -35,7 +37,15 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | archétype | archetype | `ARCHETYPES` (`closed`, `steppe`, `lagoons`, `mesas`, `embers`) | A per-player environment: Cirque fermé / Closed Cirque, Grande Steppe / Wide Steppe, Lagunes de sel / Salt Lagoons, Mesas sifflantes / Whistling Mesas, Champs de braise / Ember Fields. |
 | biome unique | unique biome | `UNIQUE_BIOMES` | A site that yields one unique resource. T3: Bosquet de verre / Glassgrove, Falaises à résine / Resin Cliffs, Champs de braise / Ember Fields. T4: Marais d'encre / Inkmarsh, Mer de nacre / Nacre Seabed, Les Orgues / Organ Peaks. |
 | gisement | deposit | per-tile `ore` and `rich` ([grid.ts](../src/sim/world/grid.ts)) | Ore tiles: infinite, but capped per tile per minute. Only drills extract them. |
+| bloc de gisement | deposit block | `MapParams.oreBlock`, `blocksOf` ([mapgen.ts](../src/sim/world/mapgen.ts)), `oreSnap` ([ore-blocks.ts](../src/sim/ore-blocks.ts)) | Map 4 (D104): a deposit is an irregular patch of whole 2 × 2 squares on the world's even grid, a drill's footprint; a drill held over ore snaps onto them. |
 | paroi · veine de quartz | face · quartz vein | `QUARTZ_VEIN`, `TerrainSource.quartzVein`, `isFaceOre` ([face.ts](../src/sim/face.ts)) | A face is the wall between floor ground and higher rock. Map 3 (D87) guarantees a quartz vein in the nearest mountain past the Crown, in the parcel west or north of the starting square: eight face tiles holding quartz, floor at their foot. Only a face cutter works it; no drill takes it, no excavator digs it. |
+| massif · falaise · rampe | massif · cliff · ramp | `OBSTACLES.massif`, `MASSIF` / `RAMP` flags, `settle4` ([mapgen.ts](../src/sim/world/mapgen.ts)) | Map 4 (D94): a big mountain past the Crown that rises straight to level 3 — a sheer cliff no traction ribbon climbs (`steep`) — and on up to 5; here and there a ramp brings it down half a level a tile, terraces two deep. |
+| précipice · crevasse | chasm | `T.Chasm`, `OBSTACLES.chasm`, refusal `chasm` | Map 4 (D94): a crevasse 1–3 tiles wide winding across broken ground at level 0, pinching and widening, with side cracks. Nothing stands in it, nothing fills it; a skybridge pair leaps it, a wire passes over. |
+| désert ouvert · terres accidentées | open desert · broken ground | `OBSTACLES.rugged`, `oreCell` ([mapgen.ts](../src/sim/world/mapgen.ts)) | Map 4 (D94: space or ore): wide stretches of flat floor with little or no ore, and ground cut by massifs, mountains and crevasses where the deposits lie, against the walls. |
+| rivière · ruisseau · chute | river · stream · fall | `T.River`, `OBSTACLES.drainage`, refusal `river` | Map 4 (D94): a drainage network — streams a tile or two wide springing on the massifs (their water at the massif's level, stepping down in falls), joining into rivers that widen to a broad current of 5–8 tiles down to the sea. Nothing stands in it, nothing fills it; a skybridge pair leaps a narrow one; a pump on its bank draws from it. |
+| mer | sea | `OBSTACLES.sea`, `seaAt`, `FL.sea` | Map 4 (D94): the shared world's sea, past a coast about 360 tiles out along a bearing the world seed picks; the rivers drain to it. |
+| couloir | corridor | `LineKind.Corridor` ([world/obstacles.ts](../src/sim/world/obstacles.ts)) | Map 4 (D94): the way kept from the Crown's foot to each guaranteed site, clear of massifs, chasms, rivers and water. |
+| sol constructible | usable floor | `usableFloor`, `parcelFloor` ([world/floor.ts](../src/sim/world/floor.ts)) | A floor tile a 2 × 2 machine can stand on at one level (D94); a parcel's share of it is its figure in the land panel and its gauge in the Terrain view, and what its price pays most for. |
 | vue (Normale, Électricité, Logistique, Production, Terrain) | view (Normal, Power, Logistics, Production, Land) | `MapView` ([core/kinds.ts](../src/core/kinds.ts)), `MapViews` ([app/views.ts](../src/app/views.ts)), `Readouts` ([sim/readouts/](../src/sim/readouts/)) | A specialised view (D88): one system drawn bold over the base dimmed under a paper veil, with its side card; P, F, O, I (Terrain is the land mode); Esc back to Normal. Not the iso / plan *view* (`ViewMode`), which it keeps |
 | roche H1–H4 | rock H1–H4 | `T.Rock1`…`T.Rock4` | Diggable rock by hardness: sandstone, basalt, lilac obsidian (ex4), heartrock (ex7). |
 | évent | vent | `T.Vent` | The tile a geothermal plant must stand on. |
@@ -61,7 +71,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Pompe à eau | Water Pump | `pump` [pump] | 60 water/min at the water's edge. |
 | Remblayeuse | Backfiller | `backfiller` [backfiller] | Fills marked water and salt flats with stone, making new floor. |
 | Ruban · Ruban vif · Ruban express | Ribbon · Swift Ribbon · Express Ribbon | `ribbon`, `swift_ribbon`, `express_ribbon` [belt] | Conveyors: 60, 120 and 240 items/min. |
-| Routeur | Router | `router` [fork] | Takes in at its back only and deals out in turn to its front and sides; a filter per side keeps that side for one item (D35). Dropped onto a ribbon, it takes the ribbon's way. |
+| Routeur | Router | `router` [fork] | Takes in at its back only and deals out in turn to its front and sides; a filter per side keeps that side for one item (D35). Dropped onto a ribbon, its back takes the way the items enter there (on a curve too), unless turned with R (D98). |
 | Trieur / Trieur inversé | Sorter / Inverted Sorter | `sorter`, `inverted_sorter` [fork] | Directional: the chosen item straight on, others to the sides (inverted: the opposite). |
 | Vanne de trop-plein / de sous-débit | Overflow / Underflow Gate | `overflow_gate`, `underflow_gate` [fork] | Directional: straight on first, then the sides (underflow: the opposite). |
 | Déchargeur | Unloader | `unloader` [fork] | Against a store: takes its chosen item out to the ribbons and machines around. |
@@ -74,6 +84,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Silo | Silo | `silo` [storage] | Buffers 1 000 items of a single kind. |
 | Embarcadère | Skydock | `skydock` [dock] | Hosts drifters; the end of a freight route. |
 | Fonderie (compacte) | (Compact) Smelter | `kiln`, `kiln_compact` [machine] | Smelts ore and sand by burning coal; needs no grid. |
+| Fonderie électrique · Fonderie à arc | Electric Smelter · Arc Furnace | `electric_smelter`, `arc_furnace` [machine] | Smelt ore and sand on grid power, no coal (D106): the electric smelter at the smelter's pace for 300 kW (Tier 1), the arc furnace twice as fast (Mechanics). Their recipes keep the ids `arc_plate`, `arc_glass`. |
 | Tréfileuse | Wire Mill | `wire_mill` [machine] | Copper ore → copper wire. |
 | Atelier d’électronique · Graveuse · Fonderie de puces | Electronics Workshop · Etcher · Chip Fab | `workshop`, `etcher`, `chip_fab` [machine] | The electronics family: circuits, servomotors and robot arms (D70: at most three recipes per machine). |
 | Atelier d’assemblage (compact) · Tour d’assemblage | (Compact) Assembly Workshop · Assembly Tower | `great_workshop`, `great_workshop_compact`, `tower_workshop` [machine] | 3-input assembly: batteries, thermal cores, resonators; the tower at 4× speed. |
@@ -82,7 +93,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Four à céramique | Ceramic Oven | `ceramic_oven` [machine] | Stone + water → ceramic. |
 | Chargeur | Cell Charger | `cell_charger` [machine] | Charges cells: exportable energy. |
 | Laboratoire de recherche | Research Lab | `observatory` [lab] | 3×3 since D84 (the 2×2 one retired, `observatory_2x2`). Where research runs: takes its data on its ribbons (three inputs along its back) (Survey Data, Mechanics Data, atlases, codices by tier) and holds the research slots (D68). Its plan is the gate after every other plan, and brings the data collector (D71). |
-| Collecteur de données · Relais de données | Data Collector · Data Relay | `data_collector`, `data_relay` [machine, `drill.anywhere`] | Powered makers of Survey Data, set anywhere (no deposit): 2 and 6 a minute. |
+| Collecteur de données · Relais de données | Data Collector · Data Relay | `data_collector`, `data_relay` [machine, `drill.anywhere`] | Powered makers of Survey Data, set anywhere (no deposit): 2 and 6 a minute. The collector comes with « Traitement des données » (`an_data`, D101): the tutorial's first lab runs on the Core's own data. |
 | Laboratoire autonome | Autonomous Lab | `auto_lab` [lab] | A research lab that also makes 3 Survey Data a minute into its own store (Analytics · Data Mining). |
 | Serveur · Serveur refroidi · Supercalculateur | Server · Cooled Server · Supercomputer | `server`, `cooled_server`, `supercomputer` [server] | The claim's own compute: tokens a minute for its research while powered (2 000, 6 000, 20 000), billed before CrierBelt's (D70). |
 | Poteau | Pole | `mast` [pole] | A pillar: up to 8 wires, each up to 6 tiles long (edge to edge), climbing and clearing one terrace (D78). A new one wires itself to the nearest pillar or Cœur in reach. |
@@ -91,7 +102,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | pilier | pillar | content `pole` (`mast`, `pylon`, and the Cœur) | A link point: a building that carries wires — its `range` (how far, edge to edge), `slots` (how many) and `climb` (how many terraces up, down and over, D78). |
 | réseau | grid | `Net` | The buildings joined by wires: one satisfaction for all; « hors réseau » = on no wire. |
 | Générateur à charbon | Coal Generator | `brazier` [generator] | +300 kW, burning 10 coal/min. |
-| Éolienne | Wind Turbine | `wind_flower` [wind] | +120 kW × local wind (0.7 in the cirque). |
+| Éolienne | Wind Turbine | `wind_flower` [wind] | Up to 360 kW on its curve at the local wind: nothing below ×0.4, full from ×1.4, stopped from ×3.6 (D95). |
 | Panneau solaire | Solar Panel | `sun_bulb` [solar] | +150 kW in full sun. |
 | Accumulateur | Accumulator | `accumulator` [accumulator] | Stores 1 200 kW·min, delivers 300 kW. |
 | Centrale géothermique | Geothermal Plant | `fumarole_tap` [geothermal] | +1.5 MW on a vent. |
@@ -115,7 +126,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Quartz | Quartz | `quartz` (item `face: true`) | T1 raw ore set in cliff faces (D87): the face cutter's; traded at the Crier (what a land founded before map 3 buys). Not the T4 unique Singing Quartz. |
 | Oscillateur à quartz | Quartz Oscillator | `oscillator` | A part (D87): 1 quartz + 2 copper wire at the quartz workshop; Mechanics Data takes one a test, a server costs four. |
 | Lentille · Toile de résine · Cœur thermique · Résonateur · Treillis de nacre | Lens · Resin Canvas · Thermal Core · Resonator · Nacre Lattice | `lens`, `resin_canvas`, `thermal_core`, `resonator`, `nacre_lattice` | T3–T4 parts. |
-| Données d'arpentage · Données mécaniques | Survey Data · Mechanics Data | `journal_1`, `journal_2` | Research's data (D71): Survey Data from the data collectors, the Core once analysed and the autonomous labs; Mechanics Data from the test bench (2 gears + 2 circuits). A node uses its tier's kinds: T1 Survey Data, T2 + Mechanics Data, T3 + atlases, T4 + codices (`SCIENCE`). |
+| Données d'arpentage · Données mécaniques | Survey Data · Mechanics Data | `journal_1`, `journal_2` | Research's data (D71): Survey Data from the Core (2 a minute from its level 2, D101; more with « Traitement des données »), the data collectors and the autonomous labs; Mechanics Data from the test bench (2 gears + 2 circuits). A node uses its tier's kinds: T1 Survey Data, T2 + Mechanics Data, T3 + atlases, T4 + codices (`SCIENCE`). |
 | Banc d'essai | Test Bench | `test_bench` [machine] | Load-tests gears and circuits, clocked by a quartz oscillator, into Mechanics Data (Mechanics, tr1; three inputs since D87). |
 | Atlas · Codex | Atlas · Codex | `atlas`, `codex` | T3 science (needs 2 uniques) and T4 science (needs 5). |
 | Servomoteur | Servomotor | `pace_bell` | A part (D81; once the speed module, gone): 4 circuits + 2 gears; the advanced machines of the Machines family are built of it, and the Crier trades it. |
@@ -133,7 +144,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | révélation | reveal | `Spotlight`, `ANALYTICS_REVEALS`, `FL.focusReveal` | The short « black out » that lifts a newly unlocked readout out of the dimmed base, with CrierBelt's line (D41). |
 | Réserve de relance | Restart reserve | `reserveNeed`, `planBlock` → `reserve`, `BOOTSTRAP` | What the Heart and its buildings must always cover so the base can rebuild its production: the bootstrap (a smelter line, then the copper line) less what an earlier stage makes. A plan never eats into it (D36). |
 | Tronc | Trunk | `tr1`…`tr8` | The spine: gates the tiers (T2 after tr1, T3 after tr6, T4 after tr8). |
-| famille | family | `FamilyId`, `FAMILIES` (`en`, `ex`, `dn`, `cm`, `an`, `xp`) | The six research families (D69): Energy, Extraction, Machines, Commerce, Analytics, Expansion. A family's name changes with the tier (Commerce: Échange · Exchange, Finance, Économie de marché · Market Economy; `familyName`). |
+| famille | family | `FamilyId`, `FAMILIES` (`en`, `ex`, `dn`, `cm`, `an`, `xp`) | The six research families (D69): Energy, Extraction, Machines, Commerce, Analytics, Logistics (`xp`, Expansion until D107). Each carries on a plan path's theme ([research.md](research.md)). A family's name changes with the tier (Commerce: Échange · Exchange, Finance, Économie de marché · Market Economy; `familyName`). |
 | palier | tier | `ResearchDef.tier`, `tierOfDepth` | T1–T4: a column of the tree, opened by a trunk node; each tier adds a kind of data (D71). |
 | spécialité | speciality | `ResearchDef.spec`, `FAMILIES[f].specs` | From T3 a family splits in two (Machines: Électronique · Electronics or Mécanique · Mechanics); a node's prerequisites stay inside its speciality. |
 | clé de voûte | keystone | depth 9, id `<family>K` | A family's last node. |
@@ -142,8 +153,17 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | token | token | `tokens`, `tokenEpoch`, `BAL.tokenCentsPerK` | AI compute a research uses while it runs (D70). Never owned nor stored: billed each minute for what was used, to the claim's own servers first, then bought from CrierBelt's. Called « token » in French too, never « jeton ». |
 | forfait de calcul | compute plan | `tokenPlan`, `setTokenPlan` | CrierBelt's hourly plan: tokens at half price for a fee an hour. |
 | recherche suspendue | research held | `researchHeld` | Purse in debt after the token bill: every project stops until credits are back above zero. |
-| reconversion | reconversion (respec) | `respec`, `respec:<family>` | Gives a family up, deepest node first. Half its science comes back as archive notes after a wait. |
+| reconversion | reconversion (respec) | `respec:<family>` | Retired (D107: its button left the tree). Gave a family up, deepest node first; half its science came back as archive notes after a wait. A save's reconversion under way still runs out. |
 | notes d'archive | archive notes | `Sim.notes` | Non-tradable credit (centi-◉ of science value) that pre-pays new research. |
+| Synthèse | Synthesis | `tr_synth`, `TIER1_WHOLE` | The node that closes Tier 1 (D93): it needs every other Tier 1 node, gives the Core's level 3 and opens Tier 2 (with two expertises). |
+| expertise | expertise | `EXPERTISES`, `Sim.expertise` | What the base has learnt to do well (D93): earned by a feat (`FeatKind`), ranks I–III, two held at a time; a production number or one family's research, by a percentage. |
+| les Glaneurs | the Gleaners | `systems/gleaners.ts`, `world/reach.ts`, `Chain.gleanStep`, `Sim.gleaned` | The small desert people that takes shiny things off the ribbons it reaches, at night (D103). |
+| exposé la nuit, à l'abri | exposed at night, kept safe (guarded) | `Graph.glean.exposed`, `.guarded` | A ribbon tile beside desert floor the Gleaners reach; one under glass or beside a fenced-in pocket. |
+| grille | fence | `fence` (kind `fence`) | A 1×1 mesh cage the Gleaners do not cross, laid by dragging (D103). |
+| ruban vitré | glazed ribbon | `glazed_ribbon` (`BuildingDef.glazed`) | A ribbon under glass: the Gleaners take nothing it carries (D103). |
+| exploit | feat | `featValue`, `FeatKind` | What earns an expertise: a counter of what the base did (ore extracted, ◉ of sales, the Core's grid held at 95 % in a row…), read at each minute's boundary. |
+| Archive des expertises | Expertise Archive | `HEART_CORNERS` `archive`, `heartPieceAt` | The Core's level-3 corner piece (D86): the way into the Expertise window (E). |
+| réorientation | reorientation | `reorient`, `reorientCost`, `BAL.expertise` | Replacing an expertise in place: paid, dearer each time, the new one in place 24 h later. |
 | en sommeil | dormant | `St.Dormant`, `isDormant` | A building whose unlock was reconverted away, or that needs land and stands off the claim's (a lease lapsed or given up): no flow, grey wash. |
 | ocelle ◉ | ocelli (HUD) | `Sim.credits` in **centi-ocelles** | The currency. `BAL` and the UI speak ◉, the engine ×100. |
 | la Criée | the Crier Ring | M6 | CrierBelt's orbital exchange, where every claim trades (`screen.crier`). |
@@ -160,7 +180,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | ‰ (permille) | Multipliers, speeds and satisfaction: 1000 = ×1. | throughout; `permille` in [fixed.ts](../src/core/fixed.ts) |
 | tick | 1/10 s (`TPS = 10`). The sim's step. | constants.ts |
 | epoch | 600 ticks = one minute (the sim runs in real time at 10 Hz): weather steps and (M6) market settlement. "Per epoch" = per minute. | `EPOCH` |
-| day · gust window | 36 epochs (12 dark, 3 dawn, 18 sun, 3 dusk) · 10 epochs at one of 5 wind levels. | `DAY_EPOCHS`, `SOLAR`, `GUST_*` |
+| day · gust window | 36 epochs (12 dark, 3 dawn, 18 sun, 3 dusk) · 10 epochs at one of 5 gust levels, part of the wind (D95). | `DAY_EPOCHS`, `SOLAR`, `GUST_*` |
 | world epoch | Absolute minute since `WORLD_EPOCH0`. Weather depends only on it and `WORLD_SEED`. | constants.ts; `foundingEpoch` |
 | `CYCLE_LCM` · `PERIOD_MAX` | Every recipe cycle divides 1 200 ticks · the warm-up's period window (2 400). | constants.ts, [validate.ts](../src/content/validate.ts) |
 | centi-ocelle | The engine's money unit (1 ◉ = 100). | `Sim.credits`, `credits()` in [format.ts](../src/i18n/format.ts) |
@@ -231,7 +251,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 - **grid**: the tile grid (`Grid`), or a power grid (`Net`).
 - **port**: a building's in/out opening (`PortDef`), or an unloader outlet (`portItems`).
 - **parcel**: a square of land (`PARCEL`, [world/land.ts](../src/sim/world/land.ts)), or, in older text and comments, a conduit's run (`Run`) or a ribbon's item before D57.
-- **Arpentage / Analytique / Commerce**: plan paths (D41), but also the names of research families (Expansion's T1 name, Analytics, Commerce); the families are `FamilyId`s, the paths `PLAN_PATHS`.
+- **Logistique / Énergie / Analytique / Commerce**: plan paths (D41), and also research families of the same theme (D107: a plan path leads into its family); the families are `FamilyId`s, the paths `PLAN_PATHS`. « Arpentage » is the survey path only since D107 (Logistics' Tier 1 was named so before).
 - **Heart / Core / Hearth**: one building, `hearth`: « le Cœur » in French, the Core in English (since D68; older docs say the Heart), the Hearth in code.
 - **Champs de braise**: both the `embers` archetype and the `emberfields` T3 biome.
 - **Content id vs kind vs English name**:

@@ -9,7 +9,7 @@
 // the canvas `viewIconCanvas` creates), so the UI may use it (it is part of the art kit).
 import { C, mix } from './tokens';
 import { ellipsePts, ink, roundRectPts, shape, type Ctx, type Pt } from './ink';
-import type { Source } from '@/sim/readouts/power';
+import type { PowerGroup, Source } from '@/sim/readouts/power';
 
 /** Every mark the views draw. */
 export type ViewIcon =
@@ -19,6 +19,8 @@ export type ViewIcon =
   | 'unwired' | 'asleep' | 'dark' | 'low' | 'site' | 'inputs' | 'output' | 'recipe' | 'idle' | 'gear'
   // logistics
   | 'jam' | 'dead' | 'dock'
+  // the Gleaners (D103): a ribbon they reach at night (the crescent over a hatch), one kept from them (a glass hood)
+  | 'moon' | 'guard'
   // the view selector: Normal (an eye), Électricité (the bolt), Logistique (a ribbon running)
   | 'eye' | 'bolt' | 'flow';
 
@@ -26,6 +28,7 @@ export type ViewIcon =
 const GROUND: Partial<Record<ViewIcon, string>> = {
   unwired: C.coral, dark: C.coral, output: C.coral, jam: C.ledRed, dead: C.coral,
   low: C.warn, inputs: C.warn, recipe: C.paperD, idle: C.paperD, asleep: C.lilacL, site: C.peachL,
+  moon: C.inkSoft, guard: C.paper,
 };
 
 const R = 26; // the badge's radius on the 64 board
@@ -185,11 +188,43 @@ const SYMBOL: Record<ViewIcon, (g: Ctx) => void> = {
     line(g, [[22, 36], [28, 46]], 2); line(g, [[42, 36], [36, 46]], 2);
     shape(g, roundRectPts(26, 45, 12, 8, 1.5), C.peachD, { w: 2 });
   },
+  // Exposed at night (D103): a crescent moon over the ribbon's hatch, as the Logistique view marks the tiles.
+  moon: (g) => {
+    for (const x of [16, 26, 36]) line(g, [[x, 50], [x + 12, 38]], 2.4, C.lilacL);
+    const pts: Pt[] = [];
+    for (let i = 0; i <= 16; i++) { const a = -0.3 * Math.PI + (i / 16) * 1.6 * Math.PI; pts.push([30 + Math.cos(a) * 14, 26 + Math.sin(a) * 14]); }
+    for (let i = 16; i >= 0; i--) { const a = -0.15 * Math.PI + (i / 16) * 1.3 * Math.PI; pts.push([36 + Math.cos(a) * 10, 22 + Math.sin(a) * 10]); }
+    shape(g, pts, C.glowPeach, { w: 2.4 });
+  },
+  // Kept from them: a glass hood over a ribbon.
+  guard: (g) => {
+    shape(g, roundRectPts(8, 38, 48, 10, 3), C.tealL, { w: 2.4 });
+    const hood: Pt[] = [];
+    for (let i = 0; i <= 16; i++) { const a = Math.PI + (i / 16) * Math.PI; hood.push([32 + Math.cos(a) * 22, 40 + Math.sin(a) * 20]); }
+    shape(g, hood, C.ice, { w: 2.6 });
+    line(g, [[18, 30], [24, 24]], 3, '#ffffff');
+  },
 };
 
 /** Each power source's colour (the 24 h chart, the supply bars) and mark, shared by the world and the panels. */
 export const SOURCE_COLOR: Readonly<Record<Source, string>> = { core: C.turq, geo: C.violet, wind: C.steelL, solar: C.warn, fuel: C.peachD, acc: C.lilacL };
 export const SOURCE_ICON: Readonly<Record<Source, ViewIcon>> = { core: 'core', geo: 'geo', wind: 'wind', solar: 'solar', fuel: 'fuel', acc: 'acc' };
+
+/**
+ * The Électricité view's wash by what a building is to power (owner, 2026-10-16: « differentiate in
+ * color between what produces electricity, what consumes it, what isn't linked, and what doesn't
+ * need electricity »): warm gold for what makes it, turquoise for what stores it (the accumulators give
+ * and take), slate blue for what draws it on a grid, the trouble's coral for what needs it and
+ * reaches no grid, a neutral grey for what needs none. `[fill, stroke]`; the grids keep their own
+ * colours on the wires and the pillars' rings.
+ */
+export const POWER_GROUP_COLOR: Readonly<Record<PowerGroup | 'none', readonly [string, string]>> = {
+  producer: [C.brassL, C.brass],
+  storage: [C.turqL, C.turqD],
+  consumer: [C.steelL, C.steel],
+  unlinked: [C.coral, C.coralD],
+  none: [mix(C.paperD, C.inkSoft, 0.3), mix(C.paperD, C.inkSoft, 0.45)],
+};
 
 /**
  * Each grid's colour in the Électricité view (D88), in grid order (`net % n`): the wires, the
@@ -204,6 +239,23 @@ export const GRID_COLORS: readonly string[] = [C.cyan, C.violetL, C.ledGreen, C.
  * panel's key read the same stops.
  */
 export const HEAT: ReadonlyArray<readonly [number, string]> = [[0, C.turqL], [350, C.turq], [650, C.warn], [900, C.coral]];
+
+/**
+ * The Vent view's ramp (D95): a tile's exposure ‰, calm to windy — the paper of the veil, pale
+ * turquoise, turquoise, deep teal, near ink on the windiest crests. Sequential and single-hued so
+ * the zones read at a glance; the world's heat and the panel's key read the same stops.
+ */
+export const WIND_RAMP: ReadonlyArray<readonly [number, string]> = [[250, C.paperD], [700, C.turqL], [1200, C.turq], [1700, C.turqD], [2200, mix(C.turqD, C.ink, 0.45)]];
+
+/** The colour of an exposure ‰ on the Vent view's ramp, as '#rrggbb'. */
+export function windColor(e: number): string {
+  if (e <= WIND_RAMP[0]![0]) return WIND_RAMP[0]![1];
+  for (let i = 1; i < WIND_RAMP.length; i++) {
+    const [a, ca] = WIND_RAMP[i - 1]!, [b, cb] = WIND_RAMP[i]!;
+    if (e <= b) return mix(ca, cb, (e - a) / (b - a));
+  }
+  return WIND_RAMP[WIND_RAMP.length - 1]![1];
+}
 
 /** The heat of a utilisation ‰ (0–1000), as '#rrggbb'. */
 export function heatColor(util: number): string {

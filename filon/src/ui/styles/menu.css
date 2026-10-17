@@ -4,10 +4,12 @@
    « Débogage » page and the badge shown while a debug base is in play. */
 
 /* ── UI scale ─────────────────────────────────────────────────────────────────
-   CSS zoom scales px sizes too (most of the UI is in px). The body's font-size calc (base.css)
-   is neutralised here so text is not scaled twice. The cursor tip (#tooltip) is placed in screen
-   px from the pointer, so it stays at 1. */
-#ui, #screens { zoom: var(--ui-scale); font-size: 15px; }
+   CSS zoom scales px sizes too (most of the UI is in px). The zoom is the player's scale times the
+   window's fit (D96: `--ui-zoom`, app/layout.ts). The body's font-size calc (base.css) is
+   neutralised here so text is not scaled twice. The cursor tip (#tooltip) is placed in screen px
+   from the pointer, so it stays at 1. Chrome scales vw / vh by the zoom too: inside #ui and
+   #screens, size against the window with % (a fixed element's) or the layout's variables. */
+#ui, #screens { zoom: var(--ui-zoom); font-size: 15px; }
 
 /* ── the HUD steps aside while the menu is up (the world keeps running behind) ── */
 #ui { transition: opacity 260ms ease; }

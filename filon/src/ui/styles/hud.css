@@ -1,4 +1,4 @@
-/* hud.css — in-game UI: the top bar (its cartouches: stocks, economy, energy, time; the research
+/* hud.css — in-game UI: the top bar (its cartouches: the Stock button — its panel in stock.css —, economy, energy, time; the research
    row; the view selector's place, build button and menu), the construction bar (category tabs,
    tray, hint), toasts, the cursor tip, the glyphs and the land mode's panel. Inked paper
    cartouches over the world; nothing here blocks the canvas except the panels themselves. The
@@ -17,7 +17,6 @@
 .hud-row { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; }
 .hud-grp { display: flex; align-items: center; gap: 8px; padding: 4px 11px; min-height: 40px; }
 .hud-grp[hidden] { display: none; }
-.hud-stocks { display: flex; align-items: center; gap: 10px; }
 .hud-chip { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .hud-chip canvas { display: block; }
 .hud-val { font-family: var(--f-title); font-size: 18px; line-height: 1; }
@@ -26,19 +25,13 @@
 .hud-delta[data-sign='-'] { color: var(--c-coral-d); }
 .hud-coin { font-size: 19px; line-height: 1; }
 .hud-bolt { font-size: 15px; }
-/* « +n »: the stocks not on the bar, in a drawer under it. */
-.hud-more {
-  font: 600 12px/1 var(--f-body); padding: 4px 7px; border-radius: 999px; cursor: pointer;
-  border: 1.5px solid var(--c-ink); background: var(--c-paper-d); color: var(--c-ink);
-}
-.hud-more:hover, .hud-more[data-on] { background: var(--c-peach-l); }
-.hud-more[hidden] { display: none; }
-.hud-drawer { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 6px 12px; max-width: min(760px, calc(100vw - 420px)); }
-.hud-drawer[hidden] { display: none; }
+/* The Heart's stock is behind the « Stock » button (D96): stock.css. */
 /* The energy: the Heart grid's % and a bar of it; a click opens the Électricité view. */
 .hud-power { flex-direction: column; justify-content: center; align-items: stretch; gap: 3px; padding: 3px 12px; font: inherit; color: inherit; cursor: default; }
 button.hud-power { cursor: pointer; }
-button.hud-power:hover { background: var(--c-peach-l); }
+button.hud-power:not([aria-disabled]):hover { background: var(--c-peach-l); }
+/* Électricité not offered yet by the tutorial (D32): a readout, not a button. */
+button.hud-power[aria-disabled] { cursor: default; }
 .hud-power[data-on] { background: var(--c-turq-l); }
 .hud-power[data-low] .hud-val { color: var(--c-coral-d); }
 .hud-pbar { display: block; height: 5px; min-width: 64px; border: 1.2px solid var(--c-ink); border-radius: 3px; background: var(--c-paper-d); overflow: hidden; }
@@ -92,7 +85,7 @@ button.hud-power:hover { background: var(--c-peach-l); }
 
 .bb-tray {
   display: none; gap: 6px; padding: 8px 10px; flex-wrap: wrap; justify-content: center;
-  max-width: min(calc(100vw - 24px), 960px); /* ten slots on one row */
+  max-width: 960px; /* ten slots on one row (and the bar's width: responsive.css) */
   background: var(--c-paper); border: 2px solid var(--c-ink); border-radius: var(--radius-ink);
   box-shadow: var(--shadow-ink);
 }
@@ -133,7 +126,7 @@ button.hud-power:hover { background: var(--c-peach-l); }
 
 /* ── toasts ──────────────────────────────────────────────────────────────── */
 .toasts {
-  position: fixed; top: 104px; left: 50%; transform: translateX(-50%);
+  position: fixed; top: 104px; left: 50%; transform: translateX(-50%); /* under the HUD: responsive.css (D96) */
   display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none;
 }
 .toast { padding: 5px 14px; font-size: 14px; transition: opacity 300ms ease, transform 300ms ease; }
@@ -150,6 +143,7 @@ button.hud-power:hover { background: var(--c-peach-l); }
 .tip-chip canvas { display: block; width: 16px; height: 16px; }
 .tip-chip[data-poor] { color: var(--c-coral-d); font-weight: 700; }
 .tip-why { margin-top: 3px; color: var(--c-coral-d); font-weight: 600; }
+.tip-wind { display: flex; align-items: center; gap: 5px; margin-top: 3px; font-weight: 600; font-variant-numeric: tabular-nums; } /* a turbine in hand (D95) */
 .tip[data-bad] { border-color: var(--c-coral-d); }
 
 /* ── research chips & clock ───────────────────────────────────────────────── */
@@ -168,6 +162,9 @@ body[data-noui] #ui { opacity: 0; visibility: hidden; transition: opacity 200ms 
 }
 .hud-rs-name { font-size: 15px; }
 .hud-rs-eta { color: var(--c-ink-soft); font-size: 12px; }
+/* A project's tokens a minute (D102): the token mark and the figure; ◉ and the servers' share in the tooltip. */
+.hud-rs-tok { display: inline-flex; align-items: center; gap: 2px; font-size: 11.5px; font-weight: 600; color: var(--c-lilac-d); }
+.hud-rs-tok .kmark { width: 1.1em; height: 1.1em; }
 /* Held: the purse is in the red, its tokens cannot be paid (D68). */
 .hud-rs[data-held] { border-color: var(--c-coral-d); box-shadow: inset 0 0 0 1.5px var(--c-coral-d); }
 .hud-rs[data-held] .hud-ring { background: conic-gradient(var(--c-coral-d) var(--p), var(--c-paper-d) 0); }
@@ -209,6 +206,10 @@ body[data-noui] #ui { opacity: 0; visibility: hidden; transition: opacity 200ms 
 .glyph .g-salt { fill: var(--c-salt); stroke: var(--c-ink); stroke-width: 1.1; stroke-linejoin: round; }
 .glyph .g-vent { fill: var(--t-vent, #6e4f6c); stroke: var(--c-ink); stroke-width: 1.1; }
 .glyph .g-steam { fill: none; stroke: var(--c-coral); stroke-width: 1.2; stroke-linecap: round; }
+.glyph .g-chasm { fill: var(--c-sand); stroke: var(--c-ink); stroke-width: 1.1; stroke-linejoin: round; }
+.glyph .g-gap { fill: #2a2236; }
+.glyph .g-river { fill: none; stroke: #5ab7cf; stroke-width: 3; stroke-linecap: round; }
+.glyph .g-ore { fill: #9b5a3c; stroke: var(--c-ink); stroke-width: 1.1; stroke-linejoin: round; }
 .glyph .g-fog { fill: var(--t-fog, #f5e9d6); stroke: var(--c-ink-soft); stroke-width: 1.1; stroke-dasharray: 2 1.4; }
 .glyph .g-dunes { fill: var(--c-dune); stroke: var(--c-ink); stroke-width: 1.1; stroke-linejoin: round; }
 .glyph .g-works { fill: var(--t-steelL, #6c84b6); stroke: var(--c-ink); stroke-width: 1.2; stroke-linejoin: round; }
@@ -227,7 +228,7 @@ body[data-noui] #ui { opacity: 0; visibility: hidden; transition: opacity 200ms 
 /* ── the land mode (D60, the Terrain view: its button is the view selector's) and the land panel (ui/land-panel.ts) ── */
 /* Where the inspector sits (the land mode drops the selection, so the two never show together). */
 .land {
-  position: fixed; right: 12px; top: 76px; width: 300px; max-height: calc(100vh - 220px);
+  position: fixed; right: 12px; top: 76px; width: 300px; /* placed and sized by responsive.css (D96) */
   overflow: auto; padding: 10px 12px 12px;
 }
 .land[hidden] { display: none; }
@@ -255,6 +256,20 @@ body[data-noui] #ui { opacity: 0; visibility: hidden; transition: opacity 200ms 
 .land-tag[data-state='leased'] { background: var(--c-peach); }
 .land-tag[data-state='sister'] { background: var(--c-coral); color: var(--c-paper); }
 .land-holds { display: flex; flex-wrap: wrap; gap: 5px 12px; margin: 10px 0 4px; font-size: 13.5px; }
+/* Usable floor (D94): a gauge of the share where a 2 × 2 machine stands, and the figure. */
+.land-floor { display: flex; align-items: center; gap: 6px; margin-top: 9px; font-size: 13px; }
+.land-floor .glyph { width: 1.35em; height: 1.35em; flex: none; }
+.land-floor .land-bar { max-width: 140px; }
+.land-floor .land-bar-fill { background: var(--c-turq-d); }
+.land-floor[data-low] .land-bar-fill { background: var(--c-peach-d); }
+.land-floor b { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 3.2em; text-align: right; }
+/* Its ore (D94: space or ore): three pips, filled up to its tier in the colour of the ore it holds most. */
+.land-ore { display: flex; align-items: center; gap: 6px; margin-top: 5px; font-size: 13px; }
+.land-ore .glyph { width: 1.35em; height: 1.35em; flex: none; }
+.land-pips { display: inline-flex; gap: 5px; margin-left: 4px; }
+.land-pip { width: 0.62em; height: 0.62em; transform: rotate(45deg); border: 1.5px solid rgba(30, 27, 46, 0.35); background: var(--c-paper); }
+.land-pip[data-on] { border-color: var(--c-ink); background: var(--pip, #9b5a3c); }
+.land-ore b { font-weight: 700; font-variant-numeric: tabular-nums; margin-left: auto; }
 .land-chip { display: inline-flex; align-items: center; gap: 3px; }
 .land-chip[hidden] { display: none; }
 .land-chip b { font-weight: 600; font-variant-numeric: tabular-nums; }

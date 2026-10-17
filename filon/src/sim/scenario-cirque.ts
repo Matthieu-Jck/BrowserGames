@@ -6,8 +6,8 @@
 //   - every cirque deposit covered by as many drills as its lines carry (D85: a line takes what a
 //     ribbon moves — 60 a minute, 120 once swift — and no more, so no drill stands backed up; a
 //     line that leads into machines only, the coal into the kilns, what they burn, D87), each
-//     joining the line off it with the most room, or a new one: the second iron field's ore sold
-//     through the trade post;
+//     joining a line off it with room, the most first, or a new one: the second iron field's ore
+//     sold through the trade post; on map 4 each drill wholly on its ore's blocks (D104);
 //   - once the arc furnace is researched, smelters on the iron lines (no coal: the cirque's coal
 //     is the tutorial's kilns' already), their plates into the Heart;
 //   - a sand field on the free floor feeding arc furnaces, their glass onto the glass line;
@@ -22,6 +22,7 @@ import { CIRQUE } from '@/content/world';
 import { footprint } from './entities';
 import { checkpoint, join, rollback, type BeltTiles } from './dev';
 import { MachineNode } from './flow/nodes';
+import { oreBlockOf } from './ore-blocks';
 import type { FNode } from './flow/node';
 import type { Builder } from './scenarios';
 import { tileIndex } from './world/grid';
@@ -39,7 +40,7 @@ const DRILLS_PER_DEPOSIT = 12;
 const DEPOSIT_R = 6;
 /** A drill astride a deposit's rim: at least this many of its four tiles on the ore (the second pass). */
 const RIM_ORE = 2;
-/** Arc furnaces for the ore the extra drills bring (30 plates a minute each, on power alone). */
+/** Smelters on power for the ore the extra drills bring: arc furnaces (20 plates a minute each), else electric smelters (10, D106). */
 const EXTRA_SMELTERS = 2;
 /** Sand collectors (15 a minute each) an arc furnace's glass takes (60 a minute); one with fewer than half of them is taken back up. */
 const SAND_PER_ARC = 4;
@@ -150,6 +151,8 @@ function guarded(b: Builder, roles: readonly string[], f: () => unknown): boolea
 
 /** Arc furnaces (Mechanics' Arc Furnace, D70) smelt with power alone: the cirque's coal no longer bounds its plates and glass. */
 const arc = (b: Builder): boolean => b.sim.unlocked('dn_arc');
+/** The best smelter on power the base has learnt: the arc furnace, else the electric smelter (Tier 1, D106), else none. */
+const powerSmelter = (b: Builder): string | null => (arc(b) ? 'arc_furnace' : b.sim.unlocked('dn_esmelt') ? 'electric_smelter' : null);
 
 /** The drill roles of the base standing on a deposit (within `DEPOSIT_R` of its centre) whose lines were kept. */
 function drillsOn(b: Builder, at: readonly [number, number]): string[] {
@@ -209,14 +212,18 @@ function mineDeposits(b: Builder): void {
       return null;
     };
     if (!load.size && !newLine()) continue;
-    // Whole on the ore first, then astride its rim (a drill mines the ore tiles under it).
+    // Whole on the ore first, then astride its rim (a drill mines the ore tiles under it) — not on a
+    // land of whole blocks (D104): there a deposit has no rim, and a drill half on sand is what it ends.
+    const rims = oreBlockOf(b.sim.grid) === 1;
     for (let n = 0, misses = 0, part: number | undefined; n < DRILLS_PER_DEPOSIT && misses < 4; n++) {
-      if (misses === 2 && part === undefined) part = RIM_ORE;
-      let into = [...load.keys()].filter((r) => (cap.get(r) ?? 0) - load.get(r)! >= whole)
-        .sort((p, q) => ((cap.get(q) ?? 0) - load.get(q)!) - ((cap.get(p) ?? 0) - load.get(p)!) || (p < q ? -1 : 1))[0];
-      if (!into) { if (fresh >= 2) break; const r = newLine(); if (!r) break; into = r; }
+      if (misses === 2 && part === undefined && rims) part = RIM_ORE;
+      // The lines with room, the most first: a drill boxed in from one may still reach another.
+      const intos = [...load.keys()].filter((r) => (cap.get(r) ?? 0) - load.get(r)! >= whole)
+        .sort((p, q) => ((cap.get(q) ?? 0) - load.get(q)!) - ((cap.get(p) ?? 0) - load.get(p)!) || (p < q ? -1 : 1));
+      if (!intos.length) { if (fresh >= 2) break; const r = newLine(); if (!r) break; intos.push(r); }
       const role = `${tag}.f${n + 1}`;
-      if (!guarded(b, [role], () => b.optional(() => b.source(role, 'drill', at, into!, { item: d.item, orePart: part, r: DEPOSIT_R })))) { misses++; continue; }
+      const into = intos.find((i) => guarded(b, [role], () => b.optional(() => b.source(role, 'drill', at, i, { item: d.item, orePart: part, r: DEPOSIT_R }))));
+      if (!into) { misses++; continue; }
       b.wireByPole(role);
       load.set(into, load.get(into)! + rateOf(b, b.ids[role]!));
     }
@@ -224,16 +231,18 @@ function mineDeposits(b: Builder): void {
 }
 
 /**
- * Arc furnaces on the iron lines (a router on each), their plates into the Heart — once researched
- * only: before it, a kiln more would share the cirque's coal, which the tutorial's two kilns
- * already burn (about two dozen a minute), and stand cold.
+ * Smelters on power on the iron lines (a router on each), their plates into the Heart: arc
+ * furnaces, or electric smelters before them (D106) — once researched only: before it, a kiln more
+ * would share the cirque's coal, which the tutorial's two kilns already burn (about two dozen a
+ * minute), and stand cold.
  */
 function moreSmelters(b: Builder): void {
   const iron = b.laid(...Object.keys(b.lines).filter((r) => /^iron\d?(\.a\d*)?$/.test(r)));
-  if (!iron.length || !arc(b)) return;
+  const def = powerSmelter(b);
+  if (!iron.length || !def) return;
   for (let k = 0; k < EXTRA_SMELTERS; k++) {
     const role = `smelter${k + 1}`;
-    if (!guarded(b, [role, `plates.s${k + 1}`], () => b.fed(role, 'arc_furnace', b.mid(b.deposit('iron_ore'), b.deposit('iron_ore', 1)), [{ lines: iron }], b.H, `plates.s${k + 1}`, false))) continue;
+    if (!guarded(b, [role, `plates.s${k + 1}`], () => b.fed(role, def, b.mid(b.deposit('iron_ore'), b.deposit('iron_ore', 1)), [{ lines: iron }], b.H, `plates.s${k + 1}`, false))) continue;
     b.recipe(role, 'arc_plate');
     b.wireByPole(role);
   }

@@ -98,3 +98,6 @@ export const isBeltDef = (def: string): boolean => {
   const k = BUILDING_KIND[buildingIdx(def)];
   return k === 'belt' || k === 'conduit';
 };
+
+/** Laid by dragging a line (the build tool's drag, planned whole by `planBelts`): ribbons, conduits and fences (D103). */
+export const isDragDef = (def: string): boolean => isBeltDef(def) || BUILDING_KIND[buildingIdx(def)] === 'fence';

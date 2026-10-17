@@ -12,7 +12,7 @@
 //    Cached per (building, rotation).
 // 2. **Night rigs**: what a machine adds at night from its kind and footprint only (no art
 //    positions): a pool of work-lamp light on the ground (amber round hot machines), the
-//    Heart's pulsing uplink beacon on top (`isoHead`).
+//    Heart's pulsing uplink beacon on top (`isoHead`: its uplink's feed horn, `beaconSpot`).
 // 3. **Textures**: a white glow with a hot core (LEDs), a soft one (pools, beacons), cloud
 //    blobs for the drifting cloud shadows. Tinted per sprite: one white texture, every colour.
 // 4. **Sun bulbs**: flowers of mirror. At night their petals close over the dish into a bud; at
@@ -29,6 +29,7 @@ import { ellipsePts, flat, hatch, ink, pathOf, shape, type Ctx, type Pt } from '
 import { IsoFrame } from '../iso-shapes';
 import { Frame, light } from '../shapes';
 import { PV } from '../solar';
+import { tileToIso } from '../../iso';
 import { drawBuilding, isoHead } from './buildings';
 import { drawBuildingTop, TOP_MARGIN, TOP_PX } from './buildings-top';
 
@@ -229,7 +230,7 @@ export const HOT: ReadonlySet<BuildingId> = new Set<BuildingId>(['kiln', 'kiln_c
 export interface NightRig {
   /** A pool of work-lamp light on the ground round the footprint: radius (tiles), strength; amber when hot. */
   pool?: { r: number; alpha: number; warm: boolean };
-  /** A beacon (the Heart's uplink to Verrière), pulsing on the art's highest light — or, with none, at this share of `isoHead` — size (tiles across), strength. */
+  /** A beacon (the Heart's uplink to Verrière), pulsing over the footprint's centre at this share of `isoHead` — on the light baked there (`beaconSpot`) — size (tiles across), strength. */
   beacon?: { at: number; d: number; alpha: number };
 }
 
@@ -254,6 +255,27 @@ export function nightRig(id: BuildingId, def: BuildingDef): NightRig {
     default:
       return {};
   }
+}
+
+/** How far (sprite px) a beacon's point may lie from a baked light and still take it: about a light's own size. */
+const BEACON_SNAP = 8;
+
+/**
+ * Where a beacon blinks on a building's iso sprite, in sprite px from its anchor: on the baked
+ * light nearest the point (cx, cy) tiles into the footprint and z levels up — for the Heart the
+ * centre at `isoHead`, its uplink's feed horn (recipes/buildings.ts `uplinkIso`) — when one lies
+ * within `BEACON_SNAP`, else on that point. Not « the art's highest light », as it was: the Heart's
+ * west link mast's insulator projects 2 px over the feed and took the pulse (found in D86).
+ */
+export function beaconSpot(art: SpriteArt, cx: number, cy: number, z: number): [number, number] {
+  const [X, Y] = tileToIso(cx, cy, z);
+  const px = X * 2, py = Y * 2; // world px → sprite px
+  let best: Emitter | null = null, bd = BEACON_SNAP * BEACON_SNAP;
+  for (const em of art.emitters) {
+    const d = (em.x - px) * (em.x - px) + (em.y - py) * (em.y - py);
+    if (d <= bd) { bd = d; best = em; }
+  }
+  return best ? [best.x, best.y] : [px, py];
 }
 
 // ── 3. textures ─────────────────────────────────────────────────────────────────

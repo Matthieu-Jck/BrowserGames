@@ -1,6 +1,7 @@
 // glyphs.ts — small inked symbols the panels show instead of words (D53, owner 2026-10-13:
 // "rather show than tell"): power served, no power, no wire, an empty slot; and the land's (D60):
-// a parcel, its grounds (floor, rock, water, salt flats, a vent, the dune sea, the fog), the buildings on
+// a parcel, its grounds (floor, rock, water, salt flats, a vent, the dune sea, the fog; a chasm and a
+// river, D94), the buildings on
 // it, an owner's flag (the claim's, a sister claim's), CrierBelt's ringed planet, a lease's
 // hourglass; the trade post's gates (D62): its entrance and exit, « in turn », a ribbon linked to
 // nothing. Inline SVG drawn in
@@ -9,7 +10,7 @@
 
 export type GlyphId =
   | 'power' | 'noPower' | 'unwired' | 'empty'
-  | 'parcel' | 'floor' | 'rock' | 'water' | 'salt' | 'vent' | 'dunes' | 'fog' | 'building' | 'flag' | 'flagSister' | 'crier' | 'lease'
+  | 'parcel' | 'floor' | 'rock' | 'water' | 'salt' | 'vent' | 'dunes' | 'fog' | 'chasm' | 'river' | 'ore' | 'building' | 'flag' | 'flagSister' | 'crier' | 'lease'
   | 'gateIn' | 'gateOut' | 'turn' | 'noLink';
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -66,6 +67,18 @@ const SHAPES: Readonly<Record<GlyphId, ReadonlyArray<readonly [string, Record<st
   dunes: [['path', { class: 'g-dunes', d: 'M1 12.6c2.4-4.4 5-4.4 7.2 0zM6.8 12.6c2.6-5.6 5.8-5.6 8.2 0z' }]],
   // Land not explored yet: a bank of fog.
   fog: [['path', { class: 'g-fog', d: 'M3.4 12.6a2.6 2.6 0 0 1 .4-5.2 3.6 3.6 0 0 1 6.8-1.2 2.9 2.9 0 0 1 2.4 5.2c-.4.8-1 1.2-1.8 1.2z' }]],
+  // A chasm (D94): two lips of ground and the dark between them.
+  chasm: [
+    ['path', { class: 'g-chasm', d: 'M1.4 6.4L6 5.2 7.2 8.4 5.6 11.8 1.4 12.8zM14.6 5.4L10 4.6 9.2 8 10.8 11.4 14.6 12.2z' }],
+    ['path', { class: 'g-gap', d: 'M6.2 5.4l3.6-.6-.6 3.2 1.4 3.4-4.8.4 1.6-3.4z' }],
+  ],
+  // A river (D94): a winding band of running water.
+  river: [['path', { class: 'g-river', d: 'M2 2.4c4.6 1.2 1.2 5 5 6.2s4.4 3.4 7 5' }]],
+  // Ore (D94): three nuggets in a heap.
+  ore: [
+    ['path', { class: 'g-ore', d: 'M2 13.6l1.4-3.4 3-.8 1.8 2.4-.6 2.4zM8.2 13.8l.8-3.6 3.2-1.2 2.4 2.6-.8 2.2zM5 9.2l1-3.8 3.4-1.4 2.2 2.8-1.4 2.8z' }],
+    ['path', { class: 'g-thin', d: 'M6.4 6.4l1.4 1M10.6 10.6l1.2.8' }],
+  ],
   // Buildings: a small works with a saw-tooth roof.
   building: [['path', { class: 'g-works', d: 'M2 13.8V7.4l3.6 2.2V7.4l3.6 2.2V3.6h3.6v10.2z' }]],
   // An owner's flag: the claim's (turquoise), a sister claim's (coral).

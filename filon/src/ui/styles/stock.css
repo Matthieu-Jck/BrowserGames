@@ -1,0 +1,52 @@
+/* stock.css — the Heart's stock (D96): the HUD's « Stock » button (an inked crate, the word, a badge
+   when the base lacks an item: coral when one ran out, peach when short) and its panel, the kit's
+   sections by kind, one row an item (icon, name, amount, what came in a minute, the shortfall).
+   Imported by ui/stock-panel.ts itself. Where the panel stands (under the HUD on the left; a bottom
+   sheet on a narrow window) is responsive.css's. */
+
+/* ── the button ─────────────────────────────────────────────────────────── */
+.hud-stock { position: relative; gap: 7px; padding: 4px 13px 4px 9px; cursor: pointer; font: inherit; color: inherit; }
+.hud-stock:hover { background: var(--c-peach-l); }
+.hud-stock[data-on] { background: var(--c-peach); }
+.hud-stock-label { font-size: 18px; line-height: 1; }
+.hud-crate, .stk-crate { display: block; flex: none; width: 24px; height: 24px; overflow: visible; }
+.stk-crate { width: 40px; height: 40px; }
+.crate-box { fill: var(--c-peach-d); stroke: var(--c-ink); stroke-width: 1.5; }
+.crate-line { fill: none; stroke: var(--c-ink); stroke-width: 1.15; stroke-linecap: round; }
+.hud-stock-badge {
+  position: absolute; top: -7px; right: -7px; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 10px;
+  text-align: center; font: 700 11px/16px var(--f-body); border: 1.5px solid var(--c-ink); box-shadow: 1px 1px 0 var(--c-ink);
+}
+.hud-stock-badge:empty { display: none; }
+.hud-stock-badge[data-tone='out'] { background: var(--c-coral); color: var(--c-paper); }
+.hud-stock-badge[data-tone='short'] { background: var(--c-warn); color: var(--c-ink); }
+
+/* ── the panel ──────────────────────────────────────────────────────────── */
+.stockp { position: fixed; overflow: auto; padding: 10px 12px 12px; font-size: 13px; line-height: 1.35; }
+.stockp[hidden] { display: none; }
+.stk-head h3 { margin: 0; font-size: 22px; line-height: 1.05; }
+.stk-kinds { color: var(--c-ink-soft); font-size: 11.5px; }
+.stk-empty { margin: 8px 0 0; }
+.stk-empty[hidden] { display: none; }
+.stk-body { display: grid; gap: 8px; margin-top: 8px; }
+.stk-body .ksec { margin: 0; }
+.stk-body .ksec-icon canvas { display: block; }
+.stk-list { display: grid; }
+/* A row: icon, name, the shortfall, amount, the minute's intake (an empty cell stays a cell: the columns line up). */
+.stk-row {
+  display: grid; grid-template-columns: 22px minmax(0, 1fr) auto auto 4.6em; align-items: center; gap: 2px 8px;
+  padding: 3px 4px; border-bottom: 1px dashed rgba(30, 27, 46, 0.12); border-radius: 5px;
+}
+.stk-row:last-child { border-bottom: none; }
+.stk-row > canvas { display: block; }
+.stk-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stk-val { font: 400 17px/1 var(--f-title); text-align: right; font-variant-numeric: tabular-nums; }
+.stk-rate { min-width: 0; font-size: 11.5px; font-weight: 600; color: var(--c-turq-d); text-align: right; white-space: nowrap; }
+.stockp:not([data-tele]) .stk-row { grid-template-columns: 22px minmax(0, 1fr) auto auto 0; }
+.stk-need:not(:empty) { font-size: 11.5px; font-weight: 700; padding: 0 7px; border-radius: 999px; border: 1.5px solid var(--c-ink); cursor: help; }
+/* What the base lacks: ran out (coral), short (peach); the row tinted, the shortfall as a chip. */
+.stk-row[data-lack='out'] { background: color-mix(in srgb, var(--c-coral) 13%, transparent); }
+.stk-row[data-lack='out'] .stk-val { color: var(--c-coral-d); }
+.stk-row[data-lack='out'] .stk-need { background: var(--c-coral); color: var(--c-paper); }
+.stk-row[data-lack='short'] { background: color-mix(in srgb, var(--c-warn) 16%, transparent); }
+.stk-row[data-lack='short'] .stk-need { background: var(--c-peach-l); }

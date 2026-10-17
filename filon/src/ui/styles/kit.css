@@ -53,7 +53,9 @@
 .kstatus-mark .kmark { width: 1.35em; height: 1.35em; }
 .kstatus-word { font-weight: 700; letter-spacing: 0.01em; }
 .kstatus[data-state='on'] .kstatus-word { color: var(--c-turq-d); }
-.kstatus[data-state='pause'] .kstatus-word { color: color-mix(in srgb, var(--c-warn) 55%, var(--c-ink)); }
+.kstatus[data-state='pause'] .kstatus-word, .kstatus[data-state='slow'] .kstatus-word { color: color-mix(in srgb, var(--c-warn) 55%, var(--c-ink)); }
+/* At work but slowed by a weak grid (D91): an amber wash under the line, so it reads as a warning. */
+.kstatus[data-state='slow'] { padding: 2px 6px 2px 3px; margin-left: -3px; border-radius: 8px; background: color-mix(in srgb, var(--c-warn) 26%, var(--c-paper)); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--c-warn) 70%, var(--c-ink)); }
 .kstatus[data-state='off'] .kstatus-word { color: var(--c-coral-d); }
 .kstatus[data-state='build'] .kstatus-word { color: var(--c-ink-soft); }
 .kstatus[data-state='sleep'] .kstatus-word { color: var(--c-lilac-d); }
@@ -66,6 +68,10 @@
 .kreason[data-k='missing'] { outline: 1.5px dashed color-mix(in srgb, var(--c-warn) 70%, var(--c-ink)); background: var(--c-peach-l); }
 .kreason[data-k='full'] { outline: 1.5px solid var(--c-coral-d); background: color-mix(in srgb, var(--c-coral) 18%, var(--c-paper)); }
 .kreason > .kmark { position: absolute; right: -6px; top: -7px; width: 0.95em; height: 0.95em; }
+/* The weak grid (D91): the Électricité view's half-bolt and the share its grid serves. */
+.kreason[data-k='weak'] { gap: 3px; padding: 0; }
+.kreason[data-k='weak'] > .vicon { display: block; }
+.kreason-n { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; color: color-mix(in srgb, var(--c-warn) 55%, var(--c-ink)); }
 
 /* ── an icon equation: « [ore] 15 + [coal] 15 → [plate] 15 /min » ───────── */
 .keq { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 2px 5px; }

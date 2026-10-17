@@ -2,8 +2,9 @@
 // (fades in with the plan view, out when zoomed far), the claim's land (D60, docs/land.md: the
 // parcels it holds for good washed turquoise inside one solid border, leased ones in a dashed
 // amber frame, a sister claim's hatched coral — shown while building, and always in the land
-// mode, which adds the parcel grid over the land for sale and marks the hovered and the selected
-// parcel; only the parcels near the view are drawn, rebuilt when the held set, the view's parcels
+// mode, which adds the parcel grid over the land for sale, each parcel's usable floor as a gauge at
+// its middle and its ore as three pips beside it (D94: space or ore, sim/world/floor.ts) and marks the hovered
+// and the selected parcel; only the parcels near the view are drawn, rebuilt when the held set, the view's parcels
 // or the zoom's step change, its lines a constant width on screen), the Link tool's
 // marks (the source's reach, what a click would wire and is on no grid yet, what waits for a wire
 // beyond, its wires, the pillars to start from, and the tile of land that bars the hovered wire —
@@ -22,7 +23,9 @@ import { BAL } from '@/content/balance';
 import { C, num } from '../art/tokens';
 import { SHIFT } from '../relief';
 import { footLevel } from './stand';
-import { PARCEL_COLS, parcelAt, parcelRect } from '@/sim/world/land';
+import { itemDef } from '@/content/registry';
+import { parcelFloor, parcelOre } from '@/sim/world/floor';
+import { PARCEL_COLS, parcelAt, parcelCentre, parcelRect } from '@/sim/world/land';
 import { WORLD } from '@/sim/constants';
 import { TOP } from '../projection';
 
@@ -87,6 +90,8 @@ export class OverlaysView {
   private readonly landHeld = new Graphics();
   private readonly landGrid = new Graphics();
   private readonly landMark = new Graphics();
+  /** The land mode's gauges: each parcel's usable floor (D94). */
+  private readonly landFloor = new Graphics();
   /** The selection outline: flat in plan, lifted onto the rock top in iso (cross-faded). */
   private readonly sel = new Graphics();
   private readonly selIso = new Graphics();
@@ -121,7 +126,7 @@ export class OverlaysView {
     this.grid = new TilingSprite({ texture: gridTexture(), width: 1, height: 1 });
     this.grid.tileScale.set(1 / 64);
     gridLayer.addChild(this.grid);
-    landLayer.addChild(this.landGrid, this.landHeld, this.landMark);
+    landLayer.addChild(this.landGrid, this.landHeld, this.landFloor, this.landMark);
     overlayLayer.addChild(this.routes, this.marksPlan, this.marksIso, this.reach, this.linkG, this.blockPlan, this.blockIso, this.sel, this.selIso);
   }
 
@@ -153,7 +158,7 @@ export class OverlaysView {
     this.updateLand(sim, view, zoom);
     this.landHeld.alpha = Math.max(t, this.landOn ? 1 : 0);
     this.landHeld.visible = this.landHeld.alpha > 0.01;
-    this.landGrid.visible = this.landMark.visible = this.landOn;
+    this.landGrid.visible = this.landMark.visible = this.landFloor.visible = this.landOn;
 
     this.marksPlan.alpha = t;
     this.marksPlan.visible = t > 0.01;
@@ -201,7 +206,7 @@ export class OverlaysView {
     const [c0a, r0a] = cellOf(view[0], view[1]), [c1a, r1a] = cellOf(view[2], view[3]);
     const c0 = Math.max(0, c0a - 1), r0 = Math.max(0, r0a - 1), c1 = Math.min(PARCEL_COLS - 1, c1a + 1), r1 = Math.min(PARCEL_COLS - 1, r1a + 1);
     const ids = (set: Iterable<number>): string => [...set].sort((a, b) => a - b).join(',');
-    const sig = `${c0},${r0},${c1},${r1}|${zq}|${L.reach}|${ids(L.bought)}|${ids(L.granted)}|${ids(L.leases.keys())}|${this.landOn ? 1 : 0}`;
+    const sig = `${c0},${r0},${c1},${r1}|${zq}|${L.reach}|${ids(L.bought)}|${ids(L.granted)}|${ids(L.leases.keys())}|${this.landOn ? `1:${sim.grid.terrainDiff.size}:${sim.grid.levelDiff.size}` : 0}`;
     if (sig !== this.landSig) {
       this.landSig = sig;
       const g = this.landHeld, grid = this.landGrid;
@@ -266,6 +271,7 @@ export class OverlaysView {
         for (let r = r0; r <= r1 + 1; r++) { const y = r <= r1 ? parcelRect(at(c0, r)).y0 : b.y1; grid.moveTo(a.x0, y).lineTo(b.x1, y); }
         grid.stroke({ width: 1.2 * px, color: num(C.ink), alpha: 0.28 });
       }
+      this.drawFloors(sim, c0, r0, c1, r1, px);
     }
     // The hovered and the selected parcel (land mode).
     const msig = this.landOn ? `${this.landHover}:${this.landSel}:${zq}` : '';
@@ -286,6 +292,43 @@ export class OverlaysView {
           g.moveTo(cx, cy + dy * k).lineTo(cx, cy).lineTo(cx + dx * k, cy);
         }
         g.stroke({ width: 4.5 * px, color: num(C.ink), alpha: 0.9 });
+      }
+    }
+  }
+
+  /**
+   * The land mode's gauges (D94: space or ore): at each parcel's middle a paper disc, ink-ringed, its
+   * share of usable floor filled clockwise from the top in turquoise — amber under a third, land cut
+   * up by cliffs, chasms or rivers — and to its right three pips stacked, its ore's tier (`parcelOre`:
+   * none, a thin blob, a field, a rich one) filled in the colour of the ore it holds most, the rest
+   * empty rings: « beaucoup de place, peu de minerai » or the reverse at a glance across the map.
+   * 1.6 tiles across, at least 8 screen pixels (far zooms).
+   */
+  private drawFloors(sim: Sim, c0: number, r0: number, c1: number, r1: number, px: number): void {
+    const g = this.landFloor;
+    g.clear();
+    if (!this.landOn) return;
+    const R = Math.max(1.6, 8 * px), top = -Math.PI / 2;
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        const p = r * PARCEL_COLS + c, [mx, my] = parcelCentre(p), x = mx + 0.5, y = my + 0.5;
+        const f = parcelFloor(sim.grid, p).permille;
+        g.circle(x, y, R).fill({ color: num(C.paper), alpha: 0.9 });
+        if (f > 0) {
+          if (f < 1000) g.moveTo(x, y).arc(x, y, R * 0.8, top, top + (2 * Math.PI * f) / 1000).closePath();
+          else g.circle(x, y, R * 0.8);
+          g.fill({ color: num(f < 333 ? C.peachD : C.turqD), alpha: 0.95 });
+        }
+        g.circle(x, y, R).stroke({ width: 1.6 * px, color: num(C.ink), alpha: 0.85 });
+        // The ore: three diamonds stacked by the disc's right, bottom up, filled up to its tier.
+        const ore = parcelOre(sim.grid, p), pr = R * 0.36, px0 = x + R * 1.42;
+        const tint = ore.item >= 0 ? itemDef(ore.item).color : C.ink, col = num(tint.startsWith('#') ? tint : ((C as Record<string, string>)[tint] ?? C.ink));
+        for (let k = 0; k < 3; k++) {
+          const py = y + R * 0.72 - k * pr * 2.2;
+          g.poly([px0, py - pr, px0 + pr * 0.8, py, px0, py + pr, px0 - pr * 0.8, py]);
+          if (k < ore.tier) g.fill({ color: col, alpha: 1 }).stroke({ width: 1.3 * px, color: num(C.ink), alpha: 0.9 });
+          else g.fill({ color: num(C.paper), alpha: 0.75 }).stroke({ width: 1 * px, color: num(C.ink), alpha: 0.35 });
+        }
       }
     }
   }

@@ -29,6 +29,19 @@ export const RESEARCH_RENAMED: Readonly<Record<string, readonly string[]>> = {
   observatory: ['observatory', 'data_collector'],
 };
 
+/**
+ * The research nodes of Tier 2 and beyond in saves 1–10, frozen: the tree may change, these may
+ * not. The 10 → 11 step (`expertiseArc`, persist/migrate.ts) grants the Synthesis to a claim holding
+ * one, and `tierTwoOpen` (sim/systems/expertise.ts) keeps Tier 2 open for it — a node moved into
+ * Tier 2 later (the Sifter and the Standing Orders, D107) opens nothing.
+ */
+export const TIER2_UP_V10: ReadonlySet<string> = new Set([
+  'tr2', 'tr3', 'tr4', 'tr5', 'tr6', 'tr7', 'tr8', 'en_heavyacc', 'en4', 'en_solarfarm', 'en_bigwind', 'en_tower', 'en5', 'en_cellgen', 'enK',
+  'ex3', 'ex4', 'ex_fastdrill', 'ex5', 'ex_hppump', 'ex_giant', 'ex7', 'ex_heavyexc', 'ex8', 'dn4', 'dn_compact', 'dn_etcher', 'dn7', 'dn_chipfab',
+  'dn_forge', 'dn_arc', 'dn8', 'cm3', 'cm_plan', 'cm8', 'cm_express', 'cm_rent', 'cmK', 'an_servers', 'an_queue', 'an_cooled', 'an_slot', 'an_super',
+  'an_mining', 'an_forecast', 'an_autolab', 'xp_bridges', 'xp4', 'xp_distrib', 'xp_express', 'xp_bigdock', 'xp_resell', 'xp_treaties', 'xp_far',
+]);
+
 /** Buildings taken out of the game: what each cost ([item id, items]), refunded to the Heart when a save still holds one. */
 export const RETIRED_COSTS: Readonly<Record<string, ReadonlyArray<readonly [string, number]>>> = {
   // The waystation, retired when land became parcels bought and rented (D60, docs/land.md): its

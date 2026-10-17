@@ -13,6 +13,7 @@
 //   A lease that lapsed (D60: the purse could not pay its hour) names its parcel, and counts as a
 //   stop: what stood on it is dormant.
 // Plain DOM built once per report; the styles are absence.css (`ab-*`).
+import { viewIconCanvas } from '@/render/art/view-icons';
 import { el } from '@/core/dom';
 import { locale, t } from '@/i18n/i18n';
 import { credits, duration, num } from '@/i18n/format';
@@ -23,7 +24,7 @@ import type { AwayReport, Incident, IncidentKind } from '@/sim/offline/report';
 import type { RemapNote } from '@/sim/save-remap';
 import type { Sim } from '@/sim/state';
 import { glyph } from '../glyphs';
-import { mark, meter, section } from '../inspector/kit';
+import { mark, meter, section, type Label } from '../inspector/kit';
 import { itemMention, itemRef } from '../mention';
 import { parcelLabel } from '../land-facts';
 
@@ -51,7 +52,7 @@ function top(values: Float64Array, n: number, keep: (v: number) => boolean = (v)
 }
 
 /** A panel: a kit section with its icon, `data-absence-panel` its hook; « Rien n’a bougé » when it has no rows. */
-function panel(id: PanelId, title: string, icon: HTMLElement, rows: Array<HTMLElement | null>, aside?: Node | null): HTMLElement {
+function panel(id: PanelId, title: Label, icon: HTMLElement, rows: Array<HTMLElement | null>, aside?: Node | null): HTMLElement {
   const body = rows.filter((x): x is HTMLElement => !!x);
   const s = section({ sec: `ab-${id}`, title, icon, aside: aside ?? null }, [
     body.length ? el('div.ab-rows', {}, body) : el('p.ab-none', {}, t('away.nothing')),
@@ -159,7 +160,7 @@ export function reportPanels(r: AwayReport, sim: Sim): HTMLElement[] {
   // ── the Heart: gains and losses on one scale ──
   const hearth = top(r.hearthDelta, ROWS);
   const hMax = Math.max(1, ...hearth.map((i) => Math.abs(r.hearthDelta[i]!)));
-  const heart = panel('heart', t('away.heart'), mark('store'), hearth.map((i) => {
+  const heart = panel('heart', () => t('away.heart'), mark('store'), hearth.map((i) => {
     const v = r.hearthDelta[i]!;
     return barRow(itemMention(i), v, hMax, v > 0 ? 'good' : 'bad', signed(v));
   }));
@@ -167,7 +168,7 @@ export function reportPanels(r: AwayReport, sim: Sim): HTMLElement[] {
   // ── what was made ──
   const madeItems = top(r.produced, ROWS, (v) => v >= 1000);
   const mMax = Math.max(1, ...madeItems.map((i) => r.produced[i]!));
-  const made = panel('made', t('away.made'), mark('recipe'), madeItems.map((i) => barRow(itemMention(i), r.produced[i]!, mMax, 'good', num(r.produced[i]! / 1000))));
+  const made = panel('made', () => t('away.made'), mark('recipe'), madeItems.map((i) => barRow(itemMention(i), r.produced[i]!, mMax, 'good', num(r.produced[i]! / 1000))));
 
   // ── the Crier: the goods as chips, the ocelles as bars, the net in the header ──
   const trade: Array<HTMLElement | null> = [];
@@ -181,7 +182,7 @@ export function reportPanels(r: AwayReport, sim: Sim): HTMLElement[] {
   const net = moved
     ? el('span.ab-net', { 'data-tone': r.creditsDelta >= 0 ? 'good' : 'bad', title: t('away.net') }, `${r.creditsDelta >= 0 ? '+' : '−'}${credits(Math.abs(r.creditsDelta))}`)
     : null;
-  const crier = panel('crier', t('away.crier'), glyph('crier'), trade, net);
+  const crier = panel('crier', () => t('away.crier'), glyph('crier'), trade, net);
 
   // ── the log: the time line, then a row per incident; what was lost for want of room ──
   const lines = distinct(r);
@@ -199,6 +200,9 @@ export function reportPanels(r: AwayReport, sim: Sim): HTMLElement[] {
   if (lines.length > LOG_ROWS) log.push(el('p.ab-more', {}, t('away.more', { n: lines.length - LOG_ROWS })));
   const lost = top(r.lostMu, 5, (v) => v >= 1000);
   if (lost.length) log.push(el('div.ab-lost', { title: t('away.lost', { list: list(lost.map((i) => `${num(r.lostMu[i]! / 1000)} ${itemRef(i)}`)) }) }, [mark('full'), el('span.ab-label', {}, t('away.lost.label')), chips(r.lostMu, lost)]));
+  // What the Gleaners took off the ribbons by night (D103): counted, never silent.
+  const taken = r.gleaned ? top(r.gleaned, 5, (v) => v >= 1000) : [];
+  if (taken.length) log.push(el('div.ab-lost.ab-gleaned', { title: t('away.gleaned', { list: list(taken.map((i) => `${num(r.gleaned[i]! / 1000)} ${itemRef(i)}`)) }) }, [viewIconCanvas('moon', 16, false), el('span.ab-label', {}, t('stats.gleaned')), chips(r.gleaned, taken)]));
   if (!log.length) log.push(el('p.ab-none.ab-calm', {}, [mark('on'), t('away.calm')]));
   const logAside = lines.length ? el('span.ab-count', {}, [
     ...(['bad', 'good'] as const).map((tone) => {
@@ -206,7 +210,7 @@ export function reportPanels(r: AwayReport, sim: Sim): HTMLElement[] {
       return n ? el('span.ab-count-n', { 'data-tone': tone }, num(n)) : null;
     }),
   ]) : null;
-  return [heart, made, crier, panel('log', t('away.log'), mark('order'), log, logAside)];
+  return [heart, made, crier, panel('log', () => t('away.log'), mark('order'), log, logAside)];
 }
 
 /** An approximate catch-up's honest error line (null: exact, or off by less than an item). */
@@ -223,5 +227,5 @@ export function changesPanel(c: RemapNote): HTMLElement {
   if (c.removed.length) rows.push(el('p', {}, t('away.changes.removed', { list: list(c.removed.map((b) => `${b.id} ×${b.n}`)) })));
   if (c.lost.length) rows.push(el('p', {}, t('away.changes.lost', { list: list(c.lost.map((l) => `${num(l.mu / 1000)} ${l.id}`)) })));
   if (c.reset.length) rows.push(el('p', {}, t('away.changes.reset', { list: list(c.reset) })));
-  return panel('changes', t('away.changes'), mark('build'), rows);
+  return panel('changes', () => t('away.changes'), mark('build'), rows);
 }

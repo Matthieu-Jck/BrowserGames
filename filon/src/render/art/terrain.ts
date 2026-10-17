@@ -1,51 +1,39 @@
 // terrain.ts — paints one 32×32-tile chunk in the BD-Moebius idiom, top-down; the renderer
 // lays it flat under the view projection (iso or plan). Two textures per chunk:
 // · the GROUND (both views): a soft pastel field, water and hardpan cut by marching squares
-//   with inked shores, rock as a flat map (fills by hardness, contour lines, slope hachures,
-//   a bold cliff edge), stippled grain, dune ripples, salt crackle, deposits, biome decor;
+//   with inked shores, rock as a relief map of its levels (`paintRockMap`: each step's fill in
+//   the rock of its height, hillshaded lips, strata lines along its edges like contours, textured
+//   tops, talus at the cliffs' foot, its silhouette inked), stippled grain, dune ripples, salt
+//   crackle, deposits (ore.ts, D99), biome decor;
 // · the RELIEF paint (iso only): rock columns painted obliquely (each level lifts a column by
-//   a ground shift along −x −y) with their cast shadows, so that laid in iso the terraces
-//   stand up exactly as the relief sprites draw them — the far-zoom stand-in for the sprites.
-//   Water up on the rock (the Crown's tarn, D63) is a column too, topped by its pool
-//   (`columnLook`): in iso it lies at its level, in plan the ground shows it within the rock.
+//   a ground shift along −x −y), so that laid in iso the terraces stand up exactly as the relief
+//   sprites draw them — the far-zoom stand-in for the sprites, from the same seed (rock.ts
+//   `columnSeed`: the very same rim). Water up on the rock (the Crown's tarn, D63) and a stream up
+//   on a massif (D94) are columns too, topped by their water (`columnLook`): in iso they lie at
+//   their level, a stream's fall down its wall; in plan the ground shows them within the rock.
+// Map 4's gaps (D94), at the floor's level: a river as running water a little bluer than the
+// lakes, its shores inked, short strokes along the way it flows (the chunk's biome code holds it);
+// a chasm as a cut in the ground, its far wall lit and streaked (the side the iso camera looks
+// into: the cut's −x −y edges), the rest a dark that deepens away from it, its lips inked.
 // A face ore (D87: quartz set in the cliff, `isFaceOre`) is no hidden vein: in iso its columns wear
 // a crystal seam on their walls (rock.ts `drawColumn`'s `vein`), in plan its tiles a sparkling
 // seam of crystals along every edge that drops to lower ground (`faceSeam`), where a face cutter
 // stands to work it.
 // Every random choice is hashed from WORLD coordinates and every shape reads a border window,
 // so chunks join seamlessly. Runs in a worker (OffscreenCanvas) — no DOM, no Pixi.
-import { ITEMS } from '@/content/items';
-import { ITEM_IDS } from '@/content/registry';
 import { hash32, hashUnit } from '@/core/hash';
 import { isFaceOre } from '@/sim/face';
 import { T } from '@/sim/types';
 import { C, mix, rgba } from './tokens';
-import { columnShadow, crystal, drawColumn, QZ, topColor, type Proj, type TopLook } from './rock';
-import { isRockT, isWaterT, levelOf, maskAt, masksAt, MAX_LEVEL, MAX_TERRACE, SHIFT, slabOutline, SMOOTH, STEP_LEVELS } from '../relief';
+import { BORDER, WIN, fillPolys, march, strokeSegs, type ChunkArrays, type Ctx2, type PaintData } from './paint-kit';
+import { paintChasms, paintWater, RIVER_BIOME } from './gaps';
+import { paintDeposits } from './ore';
+import { columnSeed, columnShadow, columnVariant, crystal, drawColumn, QZ, ROCK, SAND_POCKET, topColor, type Foot, type Proj, type TopLook } from './rock';
+import { isRiverT, isRockT, isWaterT, levelOf, maskAt, masksAt, MAX_TERRACE, SHIFT, slabOutline, SMOOTH, STEP_LEVELS, type OutlinePt } from '../relief';
 
-type Ctx2 = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D;
-
-/**
- * Border of the paint window: relief columns up to MAX_LEVEL·SHIFT tiles in front of the chunk
- * lean back into it, and their levels need the smoothing ring plus one for the masks.
- */
-export const BORDER = Math.ceil(MAX_LEVEL * SHIFT) + SMOOTH + 1;
-export const WIN = 32 + 2 * BORDER;
-
-export interface PaintData {
-  cx: number;
-  cy: number;
-  terrain: Uint8Array; // WIN×WIN
-  ore: Uint8Array;
-  rich: Uint16Array;
-  height: Uint8Array;
-  biome: Uint8Array;
-  /** The land's level (D45): the relief's terraces. */
-  level: Uint8Array;
-}
-
-/** The chunk arrays a window is cut from (a Grid chunk, or test data). */
-export interface ChunkArrays { terrain: Uint8Array; ore: Uint8Array; rich: Uint16Array; height: Uint8Array; biome: Uint8Array; level: Uint8Array }
+export { BORDER, WIN } from './paint-kit';
+export type { ChunkArrays, PaintData } from './paint-kit';
+export { RIVER_BIOME } from './gaps';
 
 /** Cut the paint window of chunk (cx, cy): the chunk plus BORDER tiles all round. */
 export function buildWindow(chunkAt: (cx: number, cy: number) => ChunkArrays, cx: number, cy: number, worldTiles: number): PaintData {
@@ -84,89 +72,6 @@ const hex = (h: string): [number, number, number] => {
   return [(p >> 16) & 255, (p >> 8) & 255, p & 255];
 };
 
-/**
- * Marching squares with linear interpolation over a SMOOTHED membership field (3×3 mean of a
- * per-tile predicate), so shores are soft curves instead of tile staircases. The field reads
- * the border, so both sides of a chunk seam compute identical values. Samples sit at tile
- * centres; chunk px of sample i: (i - BORDER + 0.5) * ppt. Only cells near the chunk march.
- */
-function march(inside: (i: number, j: number) => boolean, ppt: number): { polys: number[][]; segs: number[][] } {
-  const polys: number[][] = [];
-  const segs: number[][] = [];
-  const raw = new Float32Array(WIN * WIN);
-  for (let j = 0; j < WIN; j++) for (let i = 0; i < WIN; i++) raw[j * WIN + i] = inside(i, j) ? 1 : 0;
-  const v = new Float32Array(WIN * WIN);
-  let any = false;
-  for (let j = 1; j < WIN - 1; j++) {
-    for (let i = 1; i < WIN - 1; i++) {
-      let s = 0;
-      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) s += raw[(j + dj) * WIN + i + di]! * (di === 0 && dj === 0 ? 4 : di === 0 || dj === 0 ? 2 : 1);
-      v[j * WIN + i] = s / 16;
-      if (s > 0) any = true;
-    }
-  }
-  if (!any) return { polys, segs };
-  const X = (i: number): number => (i - BORDER + 0.5) * ppt;
-  const lerp = (a: number, b: number): number => { const d = b - a; return d === 0 ? 0.5 : (0.5 - a) / d; };
-  const lo = BORDER - 2, hi = BORDER + 33;
-  for (let j = lo; j < hi; j++) {
-    for (let i = lo; i < hi; i++) {
-      const a = v[j * WIN + i]!, b = v[j * WIN + i + 1]!, c = v[(j + 1) * WIN + i + 1]!, d = v[(j + 1) * WIN + i]!;
-      const code = (a >= 0.5 ? 8 : 0) | (b >= 0.5 ? 4 : 0) | (c >= 0.5 ? 2 : 0) | (d >= 0.5 ? 1 : 0);
-      if (code === 0) continue;
-      const x0 = X(i), x1 = X(i + 1), y0 = X(j), y1 = X(j + 1);
-      const T_: [number, number] = [x0 + (x1 - x0) * lerp(a, b), y0];
-      const R: [number, number] = [x1, y0 + (y1 - y0) * lerp(b, c)];
-      const B: [number, number] = [x0 + (x1 - x0) * lerp(d, c), y1];
-      const L: [number, number] = [x0, y0 + (y1 - y0) * lerp(a, d)];
-      const A: [number, number] = [x0, y0], Bc: [number, number] = [x1, y0], Cc: [number, number] = [x1, y1], D: [number, number] = [x0, y1];
-      const P = (...pts: Array<[number, number]>): void => { polys.push(pts.flat()); };
-      const S = (p: [number, number], q: [number, number]): void => { segs.push([p[0], p[1], q[0], q[1]]); };
-      switch (code) {
-        case 15: P(A, Bc, Cc, D); break;
-        case 8: P(A, T_, L); S(T_, L); break;
-        case 4: P(T_, Bc, R); S(T_, R); break;
-        case 2: P(R, Cc, B); S(R, B); break;
-        case 1: P(L, B, D); S(L, B); break;
-        case 12: P(A, Bc, R, L); S(L, R); break;
-        case 6: P(T_, Bc, Cc, B); S(T_, B); break;
-        case 3: P(L, R, Cc, D); S(L, R); break;
-        case 9: P(A, T_, B, D); S(T_, B); break;
-        case 14: P(A, Bc, Cc, B, L); S(L, B); break;
-        case 13: P(A, Bc, R, B, D); S(R, B); break;
-        case 11: P(A, T_, R, Cc, D); S(T_, R); break;
-        case 7: P(T_, Bc, Cc, D, L); S(T_, L); break;
-        case 10: P(A, T_, R, Cc, B, L); S(T_, R); S(B, L); break;
-        case 5: P(T_, Bc, R, B, D, L); S(T_, L); S(R, B); break;
-      }
-    }
-  }
-  return { polys, segs };
-}
-
-function fillPolys(ctx: Ctx2, polys: number[][], color: string, dx = 0, dy = 0): void {
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  for (const p of polys) {
-    ctx.moveTo(p[0]! + dx, p[1]! + dy);
-    for (let k = 2; k < p.length; k += 2) ctx.lineTo(p[k]! + dx, p[k + 1]! + dy);
-    ctx.closePath();
-  }
-  ctx.fill();
-}
-
-function strokeSegs(ctx: Ctx2, segs: number[][], color: string, w: number, alpha = 1): void {
-  ctx.save();
-  ctx.strokeStyle = color;
-  ctx.globalAlpha = alpha;
-  ctx.lineWidth = w;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  for (const s of segs) { ctx.moveTo(s[0]!, s[1]!); ctx.lineTo(s[2]!, s[3]!); }
-  ctx.stroke();
-  ctx.restore();
-}
-
 export function paintChunk(ctx: Ctx2, d: PaintData, ppt: number, scratch: (w: number, h: number) => OffscreenCanvas): void {
   const at = (i: number, j: number): number => j * WIN + i; // window index
   const t = (i: number, j: number): number => d.terrain[at(i, j)]!;
@@ -200,7 +105,7 @@ export function paintChunk(ctx: Ctx2, d: PaintData, ppt: number, scratch: (w: nu
   for (let j = B; j < B + 32; j++) {
     for (let i = B; i < B + 32; i++) {
       const tt = t(i, j);
-      if (isRockT(tt) || isWaterT(tt)) continue;
+      if (isRockT(tt) || isWaterT(tt) || tt === T.Chasm || tt === T.River) continue;
       const wx = wx0 + i, wy = wy0 + j;
       const px = (i - B) * ppt, py = (j - B) * ppt;
       const n = tt === T.Salt ? 1 : tt === T.Hardpan ? 2 : dots;
@@ -264,103 +169,19 @@ export function paintChunk(ctx: Ctx2, d: PaintData, ppt: number, scratch: (w: nu
     strokeSegs(ctx, pan.segs, C.ink, 1 * k, 0.35);
   }
 
-  // ── 3. water: shallow ring, deep heart, inked shore, ripples ─────────────
-  const water = march((i, j) => isWaterT(t(i, j)), ppt);
-  if (water.polys.length) {
-    fillPolys(ctx, water.polys, C.shallow);
-    const deep = march((i, j) => t(i, j) === T.Deep, ppt);
-    fillPolys(ctx, deep.polys, C.deep);
-    strokeSegs(ctx, deep.segs, C.turqL, 1.6 * k, 0.8);
-    strokeSegs(ctx, water.segs, C.paper, 3.6 * k, 0.75);
-    strokeSegs(ctx, water.segs, C.ink, 2.2 * k, 1);
-    if (ppt >= 16) {
-      ctx.save();
-      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-      ctx.lineWidth = 1.2 * k;
-      ctx.lineCap = 'round';
-      for (let j = B; j < B + 32; j++) for (let i = B; i < B + 32; i++) {
-        if (!isWaterT(t(i, j))) continue;
-        const wx = wx0 + i, wy = wy0 + j;
-        if (hashUnit(wx, wy, 0x91) > 0.3) continue;
-        const px = (i - B + hashUnit(wx, wy, 0x92) * 0.5) * ppt, py = (j - B + 0.3 + hashUnit(wx, wy, 0x93) * 0.4) * ppt;
-        ctx.beginPath();
-        ctx.moveTo(px, py);
-        ctx.quadraticCurveTo(px + 0.2 * ppt, py - 0.1 * ppt, px + 0.4 * ppt, py);
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-  }
+  // ── 3. water, still and running, and the chasms (D94): gaps.ts ──
+  paintWater(ctx, d, ppt);
+  paintChasms(ctx, d, ppt);
 
   // ── 4. rock, as a map of its LEVELS (owner, 2026-10-14: « les montagnes sont différentes en 2d
   //    et en 2d isométriques… difficile de construire dessus correctement »): the very terraces the
-  //    iso columns stand on (the sim's level per tile, `levelOf`), each filled with the colour its
-  //    columns' tops wear in iso (`topColor`: hardness and height), each step inked where it drops
-  //    and casting a short shadow on the terrace below it. No contour or hatching from the smoothed
-  //    height field any more: they drew a relief the land does not have. ─────────────────────────
-  const lvAt = (i: number, j: number): number => levelOf(t(i, j), d.level[at(i, j)]!);
-  // The relief level of a window tile as the iso columns read it (rock only; 0 off the window).
-  const rl = (i: number, j: number): number => (i < 0 || j < 0 || i >= WIN || j >= WIN || !isRockT(t(i, j)) ? 0 : lvAt(i, j));
-  const rock = march((i, j) => isRockT(t(i, j)), ppt);
-  if (rock.polys.length) {
-    // The rock's own shadow on the floor (soft, under everything).
-    ctx.save();
-    ctx.globalAlpha = 0.3;
-    fillPolys(ctx, rock.polys, C.inkSoft, 4 * k, 6 * k);
-    ctx.restore();
-    // Each tile's terrace slabs, outlined as the iso columns are (relief.ts `slabOutline`: the
-    // tile, its corners chamfered by its neighbours), step by step from the foot up across the
-    // window: a step's shadow on the terrace below, its fill (`topColor`), its silhouette inked.
-    const tiles: Array<{ i: number; j: number; cls: number; masks: number[] }> = [];
-    let steps = 0;
-    for (let j = B - 1; j <= B + 32; j++) for (let i = B - 1; i <= B + 32; i++) {
-      if (!isRockT(t(i, j))) continue;
-      const masks = masksAt(rl, i, j);
-      if (masks.length > steps) steps = masks.length;
-      tiles.push({ i, j, cls: t(i, j) - T.Rock1, masks });
-    }
-    const path = (pts: ReadonlyArray<{ u: number; v: number }>, i: number, j: number, dx = 0, dy = 0): void => {
-      pts.forEach((p, n) => { const x = (i - B + p.u) * ppt + dx, y = (j - B + p.v) * ppt + dy; if (n) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
-      ctx.closePath();
-    };
-    for (let s = 0; s < steps; s++) {
-      const here = tiles.filter((q) => q.masks.length > s);
-      if (s > 0) {
-        ctx.save();
-        ctx.globalAlpha = 0.3;
-        ctx.fillStyle = C.inkSoft;
-        ctx.beginPath();
-        for (const q of here) path(slabOutline(q.masks, s), q.i, q.j, 3 * k, 4.5 * k);
-        ctx.fill();
-        ctx.restore();
-      }
-      for (const q of here) {
-        ctx.fillStyle = topColor(q.cls, (s + 1) * STEP_LEVELS);
-        ctx.beginPath();
-        path(slabOutline(q.masks, s), q.i, q.j);
-        ctx.fill();
-      }
-      ctx.save();
-      ctx.strokeStyle = C.ink;
-      ctx.lineCap = 'round';
-      ctx.lineWidth = (s === 0 ? 2.7 : 1.9) * k;
-      ctx.globalAlpha = s === 0 ? 1 : 0.85;
-      ctx.beginPath();
-      for (const q of here) {
-        const pts = slabOutline(q.masks, s);
-        pts.forEach((p, n) => {
-          if (!p.sil) return;
-          const r = pts[(n + 1) % pts.length]!;
-          ctx.moveTo((q.i - B + p.u) * ppt, (q.j - B + p.v) * ppt);
-          ctx.lineTo((q.i - B + r.u) * ppt, (q.j - B + r.v) * ppt);
-        });
-      }
-      ctx.stroke();
-      ctx.restore();
-    }
-  }
+  //    iso columns stand on, drawn as a relief map (owner, 2026-10-16: the mountains must read in
+  //    plan too): `paintRockMap`. ──────────────────────────────────────────────────────────────
+  paintRockMap(ctx, d, ppt);
 
-  // ── 5. vents, deposits, biome decor ───────────────────────────────────────
+  // ── 5. deposits (ore.ts, D99: each ore its own material, denser where richer), then vents,
+  //    face seams and biome decor ─────────────────────────────────────────────
+  paintDeposits(ctx, d, ppt, (i, j) => bared(d, i, j));
   for (let j = B; j < B + 32; j++) {
     for (let i = B; i < B + 32; i++) {
       const tt = t(i, j);
@@ -375,35 +196,312 @@ export function paintChunk(ctx: Ctx2, d: PaintData, ppt: number, scratch: (w: nu
         continue;
       }
       const o = d.ore[at(i, j)]!;
-      // A face ore on rock bared by a drop beside it: its seam along the face (else a hidden vein, below).
+      // A face ore on rock bared by a drop beside it: its seam along the face (else a hidden vein: ore.ts).
       if (o > 0 && bared(d, i, j)) { faceSeam(ctx, d, i, j, ppt); continue; }
-      if (o > 0 && !isWaterT(tt)) {
-        const id = ITEM_IDS[o - 1]!;
-        const col = (ITEMS as Record<string, { color: string }>)[id]!.color;
-        const rich = d.rich[at(i, j)]!;
-        const hidden = isRockT(tt); // veins inside rock: only a hint
-        const n = hidden ? 1 : ppt < 16 ? 1 : Math.max(1, Math.min(4, Math.round(rich / 140)));
-        for (let q = 0; q < n; q++) {
-          const cx = px + (0.2 + hashUnit(wx, wy, 0xd0 + q) * 0.6) * ppt, cy = py + (0.2 + hashUnit(wx, wy, 0xe0 + q) * 0.6) * ppt;
-          const r = (hidden ? 0.08 : 0.11 + hashUnit(wx, wy, 0xf0 + q) * 0.07) * ppt;
-          ctx.save();
-          ctx.globalAlpha = hidden ? 0.5 : 1;
-          ctx.fillStyle = rgba(C.inkSoft, 0.25);
-          ctx.beginPath(); ctx.ellipse(cx + r * 0.3, cy + r * 0.45, r, r * 0.8, 0, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = col;
-          ctx.beginPath(); ctx.ellipse(cx, cy, r, r * 0.8, hashUnit(wx, wy, q) * 3, 0, Math.PI * 2); ctx.fill();
-          if (ppt >= 16) {
-            ctx.strokeStyle = C.ink; ctx.lineWidth = 1 * k; ctx.stroke();
-            ctx.fillStyle = 'rgba(255,255,255,0.7)';
-            ctx.beginPath(); ctx.arc(cx - r * 0.35, cy - r * 0.3, r * 0.25, 0, Math.PI * 2); ctx.fill();
-          }
-          ctx.restore();
-        }
-      }
       const b = d.biome[at(i, j)]!;
       if (b >= 1 && b <= 6 && ppt >= 16 && hashUnit(wx, wy, 0x101) < 0.18 && o === 0 && !isWaterT(tt)) decor(ctx, b, px + ppt / 2, py + ppt / 2, ppt, hashUnit(wx, wy, 0x102));
     }
   }
+}
+
+/** Light in plan: from the top-left of the screen (−x −y), as everywhere (ink.ts `LIGHT`). */
+const PLAN_LIGHT = [-Math.SQRT1_2, -Math.SQRT1_2] as const;
+
+/** Consecutive silhouette segments of an outline as polylines (`closed`: the whole outline is one). */
+function silChains(pts: readonly OutlinePt[]): Array<{ pts: OutlinePt[]; closed: boolean }> {
+  if (pts.every((p) => p.sil)) return [{ pts: [...pts], closed: true }];
+  const n = pts.length, out: Array<{ pts: OutlinePt[]; closed: boolean }> = [];
+  const start = pts.findIndex((p) => !p.sil);
+  let cur: OutlinePt[] | null = null;
+  for (let s = 1; s <= n; s++) {
+    const i = (start + s) % n, p = pts[i]!;
+    if (p.sil) {
+      if (!cur) { cur = [p]; out.push({ pts: cur, closed: false }); }
+      cur.push(pts[(i + 1) % n]!);
+    } else cur = null;
+  }
+  return out;
+}
+
+/**
+ * A chain moved `d` tiles inwards (the outline runs clockwise: inwards is (−dv, du)), its corners
+ * mitred, an open chain's ends run on `d` along the edge (into the next tile's chain, which meets
+ * it there: a diagonal front's insets join across its staircase).
+ */
+function insetChain(c: { pts: readonly OutlinePt[]; closed: boolean }, d: number): Array<[number, number]> {
+  const p = c.pts, m = c.closed ? p.length : p.length - 1;
+  const seg = (i: number): { tu: number; tv: number; nu: number; nv: number } => {
+    const a = p[i % p.length]!, b = p[(i + 1) % p.length]!, l = Math.hypot(b.u - a.u, b.v - a.v) || 1;
+    const tu = (b.u - a.u) / l, tv = (b.v - a.v) / l;
+    return { tu, tv, nu: -tv, nv: tu };
+  };
+  const out: Array<[number, number]> = [];
+  for (let i = 0; i <= (c.closed ? m - 1 : m); i++) {
+    const a = p[i % p.length]!;
+    if (!c.closed && i === 0) { const s = seg(0); out.push([a.u + (s.nu - s.tu) * d, a.v + (s.nv - s.tv) * d]); continue; }
+    if (!c.closed && i === m) { const s = seg(m - 1); out.push([a.u + (s.nu + s.tu) * d, a.v + (s.nv + s.tv) * d]); continue; }
+    const s0 = seg((i - 1 + m) % m), s1 = seg(i);
+    const dot = s0.nu * s1.nu + s0.nv * s1.nv, f = d / (1 + dot);
+    out.push([a.u + (s0.nu + s1.nu) * f, a.v + (s0.nv + s1.nv) * f]);
+  }
+  if (c.closed && out.length) out.push(out[0]!);
+  return out;
+}
+
+/**
+ * The rock in plan, a relief map of its levels (both views show it: in iso it is the ground under
+ * the columns, and the foot of every cliff). Each rock tile's terrace slabs are outlined exactly as
+ * the iso columns are (relief.ts `slabOutline`: the tile, its corners chamfered by its neighbours),
+ * step by step from the foot up, so what is drawn is what the rules read; per step:
+ * · the step's shadow on the terrace below and the occlusion at its foot (soft strokes along its
+ *   edge, half covered by its fill); at the floor, talus (≥ 32 px a tile): blocks and gravel
+ *   fallen at the foot of the cliffs;
+ * · its fill, its hardness's top colour, paler and cooler a step higher (`topColor`: the plan,
+ *   which sees only tops, tells the levels apart);
+ * · inside its edges (≥ 16 px a tile): a lit lip where the edge faces the light, a shaded one where
+ *   it faces away (hillshading), and one or two fine lines following the edge, the strata seen from
+ *   above, like contours;
+ * · its tops' surface (≥ 16 px a tile): sand pockets, slabs, cracks, boulders by hardness, hashed
+ *   from world coordinates;
+ * · its silhouette inked, boldest at the floor.
+ */
+function paintRockMap(ctx: Ctx2, d: PaintData, ppt: number): void {
+  const B = BORDER, k = ppt / 32;
+  const tt = (i: number, j: number): number => d.terrain[j * WIN + i]!;
+  // The relief level of a window tile as the iso columns read it (rock only; 0 off the window).
+  const rl = (i: number, j: number): number => (i < 0 || j < 0 || i >= WIN || j >= WIN || !isRockT(tt(i, j)) ? 0 : levelOf(tt(i, j), d.level[j * WIN + i]!));
+  const rock = march((i, j) => isRockT(tt(i, j)), ppt);
+  if (!rock.polys.length) return;
+  // The rock's own shadow on the floor (soft, under everything).
+  ctx.save();
+  ctx.globalAlpha = 0.3;
+  fillPolys(ctx, rock.polys, C.inkSoft, 4 * k, 6 * k);
+  ctx.restore();
+  const tiles: Array<{ i: number; j: number; cls: number; layers: number[]; masks: number[]; outs: OutlinePt[][]; wx: number; wy: number }> = [];
+  const rockAt = (i: number, j: number): number => (i < 0 || j < 0 || i >= WIN || j >= WIN || !isRockT(tt(i, j)) ? -1 : tt(i, j) - T.Rock1);
+  let steps = 0;
+  for (let j = B - 1; j <= B + 32; j++) for (let i = B - 1; i <= B + 32; i++) {
+    if (!isRockT(tt(i, j))) continue;
+    const masks = masksAt(rl, i, j), cls = tt(i, j) - T.Rock1;
+    if (masks.length > steps) steps = masks.length;
+    // Each step in the rock of its height (`layersOf`), as the iso columns draw it.
+    tiles.push({ i, j, cls, layers: layersOf(rockAt, rl, i, j, cls, masks.length), masks, outs: masks.map((_, s) => slabOutline(masks, s)), wx: d.cx * 32 - B + i, wy: d.cy * 32 - B + j });
+  }
+  const X = (i: number, u: number): number => (i - B + u) * ppt, Y = (j: number, v: number): number => (j - B + v) * ppt;
+  const path = (pts: ReadonlyArray<{ u: number; v: number }>, i: number, j: number, dx = 0, dy = 0): void => {
+    pts.forEach((p, n) => { const x = X(i, p.u) + dx, y = Y(j, p.v) + dy; if (n) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+    ctx.closePath();
+  };
+  const sils = (q: (typeof tiles)[number], s: number): void => {
+    const pts = q.outs[s]!;
+    pts.forEach((p, n) => {
+      if (!p.sil) return;
+      const r = pts[(n + 1) % pts.length]!;
+      ctx.moveTo(X(q.i, p.u), Y(q.j, p.v));
+      ctx.lineTo(X(q.i, r.u), Y(q.j, r.v));
+    });
+  };
+  const stroke = (color: string, w: number, alpha: number, cap: CanvasLineCap = 'round'): void => {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = w;
+    ctx.lineCap = cap;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    ctx.restore();
+  };
+  for (let s = 0; s < steps; s++) {
+    const here = tiles.filter((q) => q.masks.length > s);
+    if (s > 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.3;
+      ctx.fillStyle = C.inkSoft;
+      ctx.beginPath();
+      for (const q of here) path(q.outs[s]!, q.i, q.j, 3 * k, 4.5 * k);
+      ctx.fill();
+      ctx.restore();
+    }
+    // Occlusion at the foot of the step: its fill covers the inner half.
+    ctx.beginPath();
+    for (const q of here) sils(q, s);
+    stroke(C.inkSoft, 0.36 * ppt, 0.07);
+    stroke(C.inkSoft, 0.14 * ppt, 0.09);
+    if (s === 0 && ppt >= 32) for (const q of here) floorTalus(ctx, d, q, ppt);
+    for (const q of here) {
+      ctx.fillStyle = topColor(q.layers[s]!, (s + 1) * STEP_LEVELS);
+      ctx.beginPath();
+      path(q.outs[s]!, q.i, q.j);
+      ctx.fill();
+    }
+    if (ppt >= 16) {
+      ctx.save();
+      ctx.beginPath();
+      for (const q of here) path(q.outs[s]!, q.i, q.j);
+      ctx.clip();
+      for (const q of here) {
+        const look = ROCK[q.layers[s]!]!, pts = q.outs[s]!;
+        // Hillshading: the lip lit where the edge faces the light, shaded where it faces away.
+        pts.forEach((p, n) => {
+          if (!p.sil) return;
+          const r = pts[(n + 1) % pts.length]!, du = r.u - p.u, dv = r.v - p.v, l = Math.hypot(du, dv) || 1;
+          const facing = (dv / l) * PLAN_LIGHT[0] + (-du / l) * PLAN_LIGHT[1];
+          if (Math.abs(facing) < 0.3) return;
+          ctx.beginPath();
+          ctx.moveTo(X(q.i, p.u), Y(q.j, p.v));
+          ctx.lineTo(X(q.i, r.u), Y(q.j, r.v));
+          if (facing > 0) stroke(look.rim, 0.17 * ppt, 0.6, 'butt');
+          else stroke(look.dark, 0.24 * ppt, 0.22, 'butt');
+        });
+        // The strata seen from above: fine lines following the edge.
+        for (const c of silChains(pts)) {
+          for (const [dd, a] of ppt >= 32 ? [[0.17, 0.26], [0.32, 0.15]] : [[0.2, 0.22]]) {
+            const line = insetChain(c, dd!);
+            ctx.beginPath();
+            line.forEach(([u, v], n) => (n ? ctx.lineTo(X(q.i, u), Y(q.j, v)) : ctx.moveTo(X(q.i, u), Y(q.j, v))));
+            stroke(look.line, 0.85 * k, a!);
+          }
+        }
+      }
+      ctx.restore();
+      for (const q of here) if (q.masks.length === s + 1) topMarksPlan(ctx, q, ppt);
+    }
+    ctx.beginPath();
+    for (const q of here) sils(q, s);
+    stroke(C.ink, (s === 0 ? 2.7 : 1.9) * k, s === 0 ? 1 : 0.85);
+  }
+}
+
+/** A stone seen from above, (cx, cy) px, radius r px: its shadow down-right, its lit body, inked. */
+function planStone(ctx: Ctx2, cx: number, cy: number, r: number, lit: string, k: number, h: (m: number) => number): void {
+  const ring: Array<[number, number]> = [];
+  for (let n = 0; n < 6; n++) {
+    const a = (n / 6) * Math.PI * 2 + h(n) * 0.5, rr = r * (0.7 + h(10 + n) * 0.5);
+    ring.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]);
+  }
+  const shape = (dx: number, dy: number): void => { ctx.beginPath(); ring.forEach(([x, y], n) => (n ? ctx.lineTo(x + dx, y + dy) : ctx.moveTo(x + dx, y + dy))); ctx.closePath(); };
+  ctx.fillStyle = rgba(C.ink, 0.28);
+  shape(r * 0.45, r * 0.55);
+  ctx.fill();
+  ctx.fillStyle = lit;
+  shape(0, 0);
+  ctx.fill();
+  ctx.save();
+  ctx.strokeStyle = C.ink;
+  ctx.globalAlpha = 0.6;
+  ctx.lineWidth = 0.8 * k;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Talus on the floor at the foot of a rock tile's cliffs (plan and iso ground, ≥ 32 px a tile):
+ * along every side of its first step that drops to the floor (its very foot: a chamfer's diagonal
+ * too), blocks fallen off the face, the biggest against it, and gravel; none into water or a
+ * chasm. Hashed from world coordinates and kept off a side's ends, so tiles join.
+ */
+function floorTalus(ctx: Ctx2, d: PaintData, q: { i: number; j: number; layers: number[]; outs: OutlinePt[][]; wx: number; wy: number }, ppt: number): void {
+  const B = BORDER, k = ppt / 32, look = ROCK[q.layers[0]!]!, pts = q.outs[0]!;
+  const lit = mix(look.lit, '#ffffff', 0.18);
+  pts.forEach((p, n) => {
+    if (!p.sil) return;
+    const r = pts[(n + 1) % pts.length]!, du = r.u - p.u, dv = r.v - p.v, len = Math.hypot(du, dv);
+    if (len < 0.1) return;
+    const ou = dv / len, ov = -du / len;
+    // What lies beyond the foot: the floor, not water nor a gap.
+    const bi = q.i + Math.floor((p.u + r.u) / 2 + ou * 0.15), bj = q.j + Math.floor((p.v + r.v) / 2 + ov * 0.15);
+    if (bi < 0 || bj < 0 || bi >= WIN || bj >= WIN) return;
+    const bt = d.terrain[bj * WIN + bi]!;
+    if (isWaterT(bt) || isRockT(bt) || bt === T.Chasm || bt === T.River) return;
+    const h = (m: number): number => hashUnit(q.wx, q.wy, 0x7a1 + n * 97 + m);
+    const margin = Math.min(0.45, 0.08 / len);
+    const at = (f: number, dd: number): [number, number] => [(q.i - B + p.u + du * f + ou * dd) * ppt, (q.j - B + p.v + dv * f + ov * dd) * ppt];
+    ctx.fillStyle = rgba(look.line, 0.45);
+    for (let g = 0; g < Math.round(len * 7); g++) {
+      const [x, y] = at(margin + h(200 + g) * (1 - 2 * margin), 0.03 + h(230 + g) ** 1.5 * 0.34);
+      ctx.beginPath(); ctx.arc(x, y, (0.5 + h(260 + g) * 0.7) * k, 0, Math.PI * 2); ctx.fill();
+    }
+    const nb = Math.round(len * (2 + h(0) * 3));
+    for (let b = 0; b < nb; b++) {
+      const dd = 0.05 + h(10 + b) ** 1.7 * 0.24, rr = (0.06 - dd * 0.12) * (0.6 + h(30 + b) * 0.6);
+      const [x, y] = at(margin + h(50 + b) * (1 - 2 * margin), dd);
+      planStone(ctx, x, y, rr * ppt, lit, k, (m) => h(100 + b * 17 + m));
+    }
+  });
+}
+
+/**
+ * A top's surface in plan, by hardness (≥ 16 px a tile), clipped to its outline and kept inside the
+ * tile: sand pockets in the soft rock, raised slabs and cracks in the harder, boulders on the hard
+ * crests, facets and a glint on the heartrock; a few grains everywhere. Hashed from world coordinates.
+ */
+function topMarksPlan(ctx: Ctx2, q: { i: number; j: number; cls: number; masks: number[]; outs: OutlinePt[][]; wx: number; wy: number }, ppt: number): void {
+  const B = BORDER, k = ppt / 32, look = ROCK[q.cls]!, base = topColor(q.cls, q.masks.length * STEP_LEVELS);
+  const h = (m: number): number => hashUnit(q.wx, q.wy, 0x5c3 + m);
+  const at = (u: number, v: number): [number, number] => [(q.i - B + u) * ppt, (q.j - B + v) * ppt];
+  const pos = (m: number): [number, number] => [0.18 + h(m) * 0.64, 0.18 + h(m + 1) * 0.64];
+  const blobAt = (u: number, v: number, r: number, n: number, m: number): Array<[number, number]> => {
+    const out: Array<[number, number]> = [];
+    for (let e = 0; e < n; e++) {
+      const a = (e / n) * Math.PI * 2 + h(m + e) * 0.4, rr = r * (0.72 + h(m + 20 + e) * 0.5);
+      out.push(at(u + Math.cos(a) * rr, v + Math.sin(a) * rr));
+    }
+    return out;
+  };
+  const shape = (pts: ReadonlyArray<readonly [number, number]>): void => { ctx.beginPath(); pts.forEach(([x, y], n) => (n ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); };
+  const pen = (pts: ReadonlyArray<readonly [number, number]>, color: string, w: number, alpha: number): void => {
+    ctx.save();
+    ctx.strokeStyle = color; ctx.globalAlpha = alpha; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath(); pts.forEach(([x, y], n) => (n ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke();
+    ctx.restore();
+  };
+  ctx.save();
+  ctx.beginPath();
+  q.outs[q.outs.length - 1]!.forEach((p, n) => { const [x, y] = at(p.u, p.v); if (n) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+  ctx.closePath();
+  ctx.clip();
+  if (h(0) < [0.35, 0.16, 0.08, 0][q.cls]!) {
+    const [u, v] = pos(1), r = 0.1 + h(3) * 0.1, ring = blobAt(u, v, r, 9, 10);
+    ctx.fillStyle = mix(base, SAND_POCKET, 0.55);
+    shape(ring);
+    ctx.fill();
+    if (ppt >= 32) {
+      pen(ring.slice(0, 5), look.line, 0.7 * k, 0.25);
+      for (let e = 0; e < 2; e++) pen([at(u - r * 0.45, v - r * 0.2 + e * r * 0.45), at(u, v - r * 0.32 + e * r * 0.45), at(u + r * 0.45, v - r * 0.2 + e * r * 0.45)], C.dune, 0.9 * k, 0.8);
+    }
+  }
+  const slabs = [0, h(40) < 0.5 ? 1 : 0, h(40) < 0.3 ? 1 : 0, 1 + (h(40) < 0.4 ? 1 : 0)][q.cls]!;
+  for (let e = 0; e < slabs; e++) {
+    const [u, v] = pos(41 + e * 3), ring = blobAt(u, v, 0.08 + h(43 + e * 3) * 0.08, 6, 50 + e * 40);
+    ctx.fillStyle = q.cls === 3 ? mix(base, look.rim, 0.25) : mix(base, '#ffffff', 0.12);
+    shape(ring);
+    ctx.fill();
+    pen([ring[1]!, ring[2]!, ring[3]!, ring[4]!], look.line, 0.75 * k, 0.32);
+    pen([ring[4]!, ring[5]!, ring[0]!, ring[1]!], look.rim, 0.75 * k, 0.55);
+  }
+  const cracks = [h(130) < 0.4 ? 1 : 0, 1, 2, 1][q.cls]!;
+  for (let e = 0; e < cracks; e++) {
+    let [u, v] = pos(131 + e * 2), a = h(135 + e) * 6.283;
+    const pts: Array<[number, number]> = [at(u, v)];
+    for (let n = 0; n < 3; n++) {
+      a += (h(140 + e * 9 + n) - 0.5) * 1.4;
+      const dd = 0.06 + h(150 + e * 9 + n) * 0.06;
+      u = Math.min(0.9, Math.max(0.1, u + Math.cos(a) * dd)); v = Math.min(0.9, Math.max(0.1, v + Math.sin(a) * dd));
+      pts.push(at(u, v));
+    }
+    pen(pts, look.line, 0.8 * k, 0.38);
+  }
+  if (ppt >= 32 && h(170) < [0.05, 0.1, 0.45, 0.12][q.cls]!) {
+    const [u, v] = pos(171), [x, y] = at(u, v);
+    planStone(ctx, x, y, (0.05 + h(173) * 0.035) * ppt, mix(look.lit, '#ffffff', 0.22), k, (m) => h(180 + m));
+  }
+  ctx.fillStyle = rgba(look.line, 0.25);
+  for (let e = 0; e < 4; e++) {
+    const [x, y] = at(0.1 + h(200 + e) * 0.8, 0.1 + h(210 + e) * 0.8);
+    ctx.beginPath(); ctx.arc(x, y, (0.5 + h(220 + e) * 0.6) * k, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
 }
 
 /** The sides of a tile (N, E, S, W): the neighbour's offset, the edge's ends and its inward normal (tile-local). */
@@ -520,25 +618,93 @@ export function windowLevels(d: PaintData): { lv: Uint8Array; masks: Uint8Array[
  * on the rock, D63: the hardest rock round it, its basin) and its top when it is not plain rock —
  * water or reclaimed ground, or rock in whose corner three tiles of water at its height meet —
  * with which of its 3×3 hold water and deep water at its height (art/rock.ts `TopLook`); `vein`:
- * its rock holds a face ore (D87), worn as a crystal seam on its walls.
+ * its rock holds a face ore (D87), worn as a crystal seam on its walls. A stream up on a massif
+ * (D94) is water that runs: its top a `river` with the way it flows (the chunk's biome code,
+ * `RIVER_BIOME` + the eighth of a turn) and how far it falls to the next tile along it (`fall`,
+ * relief levels: the waterfall down its wall).
  */
 export function columnLook(d: PaintData, lv: Uint8Array, o: number): { cls: number; top: TopLook | null; vein: boolean } {
   const t = d.terrain[o]!, L = lv[o]!;
-  let wet = 0, deep = 0, cls = isRockT(t) ? t - T.Rock1 : 0;
+  let wet = 0, deep = 0, run = false, cls = isRockT(t) ? t - T.Rock1 : 0;
   for (let j = -1; j <= 1; j++) {
     for (let i = -1; i <= 1; i++) {
       const n = o + j * WIN + i, u = d.terrain[n] ?? T.Sand, bit = 1 << (3 * (j + 1) + i + 1);
-      if (isWaterT(u) && lv[n] === L) { wet |= bit; if (u === T.Deep) deep |= bit; }
+      if ((isWaterT(u) || isRiverT(u)) && lv[n] === L) { wet |= bit; if (u === T.Deep) deep |= bit; if (isRiverT(u)) run = true; }
       if (!isRockT(t) && isRockT(u) && u - T.Rock1 > cls) cls = u - T.Rock1;
     }
   }
-  if (isWaterT(t)) return { cls, top: { kind: 'water', wet, deep }, vein: false };
+  if (isRiverT(t)) {
+    const code = d.biome[o]! - RIVER_BIOME, flow = code >= 0 && code < 8 ? code : 0;
+    const next = o + FLOW_DY[flow]! * WIN + FLOW_DX[flow]!, fall = Math.max(0, L - (lv[next] ?? 0));
+    return { cls, top: { kind: 'river', wet, deep: 0, flow, fall }, vein: false };
+  }
+  if (isWaterT(t)) return { cls, top: { kind: 'water', wet, deep, run }, vein: false };
   if (!isRockT(t)) return { cls, top: { kind: 'ground', wet, deep }, vein: false };
   // Rock: a top of its own only where a corner of it is under water (its three other tiles wet);
   // a crystal seam on its walls where it holds a face ore (D87).
   const corner = (a: number, b: number, c: number): boolean => (wet & (1 << a)) !== 0 && (wet & (1 << b)) !== 0 && (wet & (1 << c)) !== 0;
+  // Where a stream steps diagonally past it (its two neighbours meeting at a corner hold the
+  // stream, the third tile there does not), a wedge of the stream crosses its corner (rock.ts).
+  const has = (b: number): boolean => (wet & (1 << b)) !== 0;
+  const wedge = run && ((has(1) && has(3) && !has(0)) || (has(1) && has(5) && !has(2)) || (has(5) && has(7) && !has(8)) || (has(7) && has(3) && !has(6)));
   const vein = isFaceOre(d.ore[o]! - 1);
-  return { cls, top: corner(0, 1, 3) || corner(1, 2, 5) || corner(5, 7, 8) || corner(3, 6, 7) ? { kind: 'rock', wet, deep } : null, vein };
+  return { cls, top: corner(0, 1, 3) || corner(1, 2, 5) || corner(5, 7, 8) || corner(3, 6, 7) || wedge ? { kind: 'rock', wet, deep, run } : null, vein };
+}
+
+/** A river's way (the eighth of a turn its biome code holds, 0 = +x, 2 = +y): the next tile along it. */
+const FLOW_DX = [1, 1, 0, -1, -1, -1, 0, 1], FLOW_DY = [0, 1, 1, 1, 0, -1, -1, -1];
+
+/** The tiles round a tile, nearest first (5 × 5 less itself). */
+const ROUND5: ReadonlyArray<readonly [number, number]> = [-2, -1, 0, 1, 2]
+  .flatMap((j) => [-2, -1, 0, 1, 2].map((i) => [i, j] as const))
+  .filter(([i, j]) => i || j)
+  .sort((a, b) => a[0] * a[0] + a[1] * a[1] - (b[0] * b[0] + b[1] * b[1]) || a[1] - b[1] || a[0] - b[0]);
+
+/**
+ * The rock of each step of a raised tile (`n` steps, its own class `cls` on top): the hardness of
+ * the rock round it whose top stands at that step's height — the land's hardness follows its
+ * level, so a tall column's lower steps are the softer layers its lower neighbours are made of, and
+ * its ledges and walls carry on theirs (owner, 2026-10-16: a ledge wore the high top's colour in
+ * the middle of a terrace of another, a zigzag of tiles). A step with no neighbour at its height
+ * takes the rock of the step above. `rockAt`: a tile's class (−1 off rock), `levelAt` its relief level.
+ */
+export function layersOf(rockAt: (i: number, j: number) => number, levelAt: (i: number, j: number) => number, i: number, j: number, cls: number, n: number): number[] {
+  const out = new Array<number>(n).fill(-1);
+  out[n - 1] = cls;
+  for (let t = 0; t + 1 < n; t++) {
+    const want = (t + 1) * STEP_LEVELS;
+    for (const [di, dj] of ROUND5) {
+      const c = rockAt(i + di, j + dj);
+      if (c >= 0 && levelAt(i + di, j + dj) === want) { out[t] = c; break; }
+    }
+  }
+  for (let t = n - 2; t >= 0; t--) if (out[t]! < 0) out[t] = out[t + 1]!;
+  return out;
+}
+
+/**
+ * Where the walls of the higher neighbours behind a raised window tile (north and west: the ones
+ * facing the camera) rise from its top (rock.ts `Foot`): the stretch of the neighbour's own side
+ * there, at the step standing on this top — its chamfers take the wall off the edge (a diagonal
+ * front stands on the neighbour's own lower step, which gets its talus from its own sprite).
+ */
+export function footOf(lv: Uint8Array, masks: readonly Uint8Array[], o: number): Foot | null {
+  const L = lv[o]!;
+  const side = (n: number, east: boolean): [number, number] | null => {
+    if (lv[n]! <= L) return null;
+    const ms = tileMasks(lv, masks, n), t = L / STEP_LEVELS;
+    if (t >= ms.length) return null;
+    const pts = slabOutline(ms, t);
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i]!, b = pts[(i + 1) % pts.length]!;
+      if (!a.sil) continue;
+      if (!east && a.v > 1 - 1e-6 && b.v > 1 - 1e-6) return [Math.min(a.u, b.u), Math.max(a.u, b.u)];
+      if (east && a.u > 1 - 1e-6 && b.u > 1 - 1e-6) return [Math.min(a.v, b.v), Math.max(a.v, b.v)];
+    }
+    return null;
+  };
+  const n = side(o - WIN, false), w = side(o - 1, true);
+  return n || w ? { n, w } : null;
 }
 
 /** The per-step masks of one window tile. */
@@ -582,9 +748,24 @@ export function paintRelief(ctx: Ctx2, d: PaintData, ppt: number, scratch: (w: n
   for (const [i, j] of cols) {
     const o = j * WIN + i, { cls, top, vein } = columnLook(d, lv, o);
     const wx = d.cx * 32 - B + i, wy = d.cy * 32 - B + j;
-    drawColumn(ctx, proj(i, j), cls, tileMasks(lv, masks, o), { detail, seed: hash32(wx, wy, 0x2c), k, top, vein });
+    // The sprite's own seed (its look's): the paint draws the very rim the sprite does, so nothing
+    // of it shows round a sprite's bitten edge where both are drawn.
+    const ms = tileMasks(lv, masks, o);
+    const layers = top ? null : windowLayers(d, lv, o, cls, ms.length);
+    drawColumn(ctx, proj(i, j), cls, ms, { detail, seed: columnSeed(cls, ms, columnVariant(wx, wy)), k, top, vein, layers });
   }
   return true;
+}
+
+/** A window column's layers (`layersOf`) from the window's terrain and relief levels. */
+export function windowLayers(d: PaintData, lv: Uint8Array, o: number, cls: number, n: number): number[] {
+  const i0 = o % WIN, j0 = Math.floor(o / WIN);
+  const rockAt = (i: number, j: number): number => {
+    if (i < 0 || j < 0 || i >= WIN || j >= WIN) return -1;
+    const t = d.terrain[j * WIN + i]!;
+    return isRockT(t) ? t - T.Rock1 : -1;
+  };
+  return layersOf(rockAt, (i, j) => (i < 0 || j < 0 || i >= WIN || j >= WIN ? 0 : lv[j * WIN + i]!), i0, j0, cls, n);
 }
 
 /** How far a column's shadow may reach on the ground (tiles): the casters a paint window holds lie this far round its chunk. */

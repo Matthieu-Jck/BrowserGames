@@ -52,9 +52,16 @@ Then grep for an existing comparable kind (`grep -rn "'dock'" src`) and check ev
 
 1. [src/content/research.ts](../src/content/research.ts): `node(branch, depth, [fr, en], [descFr, descEn], effects)`. Depth gives the base cost and duration from the plan's table; prerequisites follow the branch and the trunk gates.
 2. Effects: `add(stat, n)`, `mul(stat, ‰)`, `flag(name)`. A new stat or flag is declared in `Mods` ([sim/research/modifiers.ts](../src/sim/research/modifiers.ts)): the stat list, the defaults in `computeMods`, any clamp at the end. Engine code reads `sim.mods.<stat>` or `sim.mods.flags.has(name)`, never the research ids.
-3. A unlock: buildings and recipes name the node in `unlock`. A reconversion that removes the node makes those buildings **dormant** automatically (`isDormant`).
+3. A unlock: buildings and recipes name the node in `unlock`. A building whose node a save no longer holds (a reconversion from before D107) stands **dormant** automatically (`isDormant`).
 4. `modsKey` (part of the catch-up's regime cache key) covers every stat, so a new stat needs nothing more there; check it if you add a non-numeric effect.
 5. Tests: `research.test.ts` pins the table's costs. Add one for the effect where it applies.
+
+### 5b. Add an expertise (D93)
+
+1. [src/content/expertises.ts](../src/content/expertises.ts): a row in `EXPERTISES` — its family, a `feat` of its own (a new `FeatKind` needs its case in `featValue`, [systems/expertise.ts](../src/sim/systems/expertise.ts), read only from what is exact at a minute's boundary: a cumulative counter, what stands, the ledger), three rising thresholds, its effect (`mod` targets of `Mods`, or one `research` aspect) and its ‰ by rank, an icon. `expertiseProblems` keeps one production and one research per family.
+2. A new `mod` target: in `ModTarget` and `baseMods` ([modifiers.ts](../src/sim/research/modifiers.ts)), read where the engine computes that number (the compiler for a node's rate: a change of the Mods recompiles the graph, online and in the catch-up). A cost or a delay goes in `LOWER_IS_BETTER`.
+3. i18n: `exp.feat.<kind>` and, for a new target, `exp.fx.<target>`; the window's effect icon (`effectIcon`) and the feat's unit (`featText`).
+4. Tests: expertise.test.ts — the feat at a boundary, the effect where the engine reads it, and the online ≈ offline twin if it changes a flow.
 
 ## 6. Add a mechanic that runs over time (a new system)
 

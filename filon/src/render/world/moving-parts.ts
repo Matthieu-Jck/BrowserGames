@@ -1,9 +1,10 @@
 // moving-parts.ts — how fast the buildings' moving parts turn, as pure functions of what the sim
 // knows (BuildingsView.animate steps their baked phases; recipes/moving.ts lists the parts).
-// A wind turbine on a grid turns with the wind its generator sees — the local wind ‰ (sheltered
-// cirque, plain, windy mesa) times the gust ‰ of the moment — so a gusty hour shows as faster
-// crowns and a mesa's turbines outspin the cirque's. One on no grid stands still, braked and
-// switched off (D83: a building that does not work shows no motion); wiring it sets it going. A
+// A wind turbine on a grid turns with the local wind its generator sees (D95: the weather's wind ×
+// its place's exposure), so a gusty hour shows as faster crowns, a crest's turbines outspin the
+// cirque's, one below its cut-in barely drifts and one stopped by a storm stands braked. One on no
+// grid stands still, braked and switched off (D83: a building that does not work shows no motion);
+// wiring it sets it going. A
 // machine's part (the sand collector's wheel) turns while it works, slower on a short grid, and
 // stops when it starves, backs up or loses power. Speeds are turns per second of game time: a
 // paused game stands still.
@@ -13,13 +14,14 @@ import { St } from '@/sim/types';
 export const WORK_TURNS = 0.14;
 
 /**
- * A wind turbine's crown on a grid (turns per second) for its local wind and the gust (both ‰):
- * on the mountains (D44: the Crown's ridge, standing on the rock top) it sees the Sough's full
- * strength and spins far faster than on the sheltered cirque floor.
+ * A wind turbine's crown on a grid (turns per second) for the local wind it sees (‰ of the
+ * reference wind, D95) and its curve's bounds: a slow drift below its cut-in (the place tells on
+ * itself), braked at its cut-out (a storm), else faster the stronger the wind, within bounds.
  */
-export function windTurns(local: number, gust: number): number {
-  const wind = (local * gust) / 1e6; // 0.18 (sheltered cirque floor, a lull) … 2.6 (a ridge or a mesa top, a strong gust)
-  return Math.min(0.75, Math.max(0.1, 0.06 + 0.26 * wind));
+export function windTurns(wind: number, cutIn = 0, cutOut = Infinity): number {
+  if (wind >= cutOut) return 0;
+  if (wind < cutIn) return 0.03;
+  return Math.min(0.75, Math.max(0.1, 0.06 + (0.26 * wind) / 1000));
 }
 
 /** A machine's part (turns per second) from its node's status and its grid's satisfaction ‰. */

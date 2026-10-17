@@ -5,10 +5,13 @@
 // accumulators simulated epoch by epoch through the same solver the tick uses), its biggest
 // consumers; and each building's part in power (a source and what it gives, an accumulator and its
 // charge, a pillar, a consumer and what it draws) with the flag a view raises over it (no wire,
-// asleep, no power, short of power, still being built). The renderer draws the marks from it, the
+// asleep, no power, short of power, still being built), and its group (owner, 2026-10-16: « the grid
+// view of electricity should differentiate in color between what produces electricity, what
+// consumes it, what isn't linked, and what doesn't need electricity »: producers, accumulators,
+// consumers, the not linked; what needs no power is every other building, `needsNoPower`). The renderer draws the marks from it, the
 // view's side panel the charts: they live here, below both (ui may not reach render/world).
 // Integers only (kW, ‰), like the engine.
-import { BUILDING_KIND } from '@/content/registry';
+import { BUILDING_IDS, BUILDING_KIND, buildingDef, isBeltDef } from '@/content/registry';
 import { DAY_EPOCHS, EPOCH } from '../constants';
 import { GeneratorNode } from '../flow/nodes';
 import { isLinkPoint, linkable } from '../power/links';
@@ -74,7 +77,26 @@ export type Role =
 /** The flag raised over a building in the view: no wire, asleep (its land or its research), no power, short of power, still being built. */
 export type PowerFlag = 'unwired' | 'asleep' | 'dark' | 'low' | 'site' | null;
 
-export interface PowerMark { ent: number; net: number; role: Role; flag: PowerFlag }
+/**
+ * How the Électricité view washes a building (D95's note on D88): what makes power (the turbines,
+ * the panels, the fuel generators, the ground's heat, the Core), what stores it (the accumulators,
+ * their own tone: they give and take), what draws it on a grid, and what needs it but reaches no
+ * grid — no wire, or asleep (the trouble's coral). A pillar is none of them (its grid's ring).
+ */
+export type PowerGroup = 'producer' | 'storage' | 'consumer' | 'unlinked';
+export const POWER_GROUPS: readonly PowerGroup[] = ['producer', 'storage', 'consumer', 'unlinked'];
+
+export interface PowerMark { ent: number; net: number; role: Role; flag: PowerFlag; group: PowerGroup | null }
+
+/** A building that takes no part in power (ribbons, routing blocks, stores…): the view greys it out. */
+export const needsNoPower = (def: number): boolean => !linkable(def);
+
+/** How many buildings need no power, the ribbons left out (one a tile, they would drown the count). */
+export function idleCount(sim: Sim): number {
+  let n = 0;
+  for (const e of sim.ents.sorted()) if (needsNoPower(e.def) && !isBeltDef(BUILDING_IDS[e.def]!)) n++;
+  return n;
+}
 
 /** A producer's output now split by source (the Core's panel follows the sun, its isotope core is steady). */
 function addProducer(out: BySource, p: Producer, w: Weather): void {
@@ -159,7 +181,8 @@ export function powerMarks(sim: Sim): PowerMark[] {
   for (const e of sim.ents.sorted()) {
     if (!linkable(e.def)) continue;
     const net = g.netOfEnt.get(e.id) ?? -1;
-    out.push({ ent: e.id, net, role: roleOf(sim, e, net, prodOf.get(e.id), w), flag: flagOf(sim, e, net) });
+    const role = roleOf(sim, e, net, prodOf.get(e.id), w), flag = flagOf(sim, e, net);
+    out.push({ ent: e.id, net, role, flag, group: groupOf(e, role, flag) });
   }
   return out;
 }
@@ -183,6 +206,16 @@ function roleOf(sim: Sim, e: Ent, net: number, p: Producer | undefined, w: Weath
     return { k: 'acc', charge: acc && acc.cap > 0 ? Math.floor(((sim.accEnergy.get(e.id) ?? 0) * 1000) / acc.cap) : 0 };
   }
   return { k: 'consumer', kw: node ? Math.round(node.demand()) : 0, full: node?.kw ?? 0 };
+}
+
+/** Its group: no wire or asleep first; else by what the building is (a site by what it will be). */
+function groupOf(e: Ent, role: Role, flag: PowerFlag): PowerGroup | null {
+  if (role.k === 'pillar') return null;
+  if (flag === 'unwired' || flag === 'asleep') return 'unlinked';
+  const b = buildingDef(e.def);
+  if (b.accumulator) return 'storage';
+  if (b.gen || BUILDING_KIND[e.def] === 'hearth') return 'producer';
+  return 'consumer';
 }
 
 function flagOf(sim: Sim, e: Ent, net: number): PowerFlag {

@@ -84,7 +84,6 @@
   font: 700 11px/16px var(--f-body); color: var(--c-paper); background: var(--path);
 }
 .tr-lane[data-full] .tr-pathcount::after { content: ' ✓'; }
-.tr-lane .rs-respec { align-self: flex-start; }
 /* Links, from a prerequisite's right edge to what it opens. */
 .tr-links { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
 .tr-link { fill: none; stroke: var(--c-ink); stroke-width: 2; stroke-linecap: round; opacity: 0.8; }
@@ -109,6 +108,9 @@
 .tr-node[data-state='locked'] { opacity: 0.5; border-style: dashed; box-shadow: none; }
 .tr-node[data-state='locked']:hover { opacity: 0.75; }
 .tr-node[data-state='waiting'] { opacity: 0.85; }
+/* A plan the tutorial has not reached yet (D101): its shape only — faint, no cost, no button. */
+.tr-node[data-state='later'] { opacity: 0.32; border-style: dotted; box-shadow: none; filter: grayscale(0.7); }
+.tr-node[data-state='later'] .tr-line { visibility: hidden; }
 .tr-node[data-state='active'] { background: #fff6c9; }
 .tr-node[data-state='ready'] { animation: tr-ready 2.4s ease-in-out infinite; }
 @keyframes tr-ready { 0%, 100% { box-shadow: 2px 2px 0 var(--c-ink); } 50% { box-shadow: 2px 2px 0 var(--c-ink), 0 0 0 4px rgba(63, 184, 175, 0.35); } }
@@ -178,9 +180,6 @@
 .rs-actions { margin-top: 14px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .rs-why { color: var(--c-coral-d); }
 .rs-tag { padding: 3px 10px; border-radius: 999px; background: var(--c-turq-l); font-weight: 600; }
-.rs-respec { font: 600 11px var(--f-body); padding: 2px 8px; border: 1.5px solid var(--c-ink); border-radius: 8px; background: var(--c-paper-d); cursor: pointer; }
-.rs-respec[data-armed] { background: var(--c-coral); color: var(--c-paper); }
-.rs-respec[disabled] { opacity: 0.4; cursor: default; }
 
 /* ── stats ─────────────────────────────────────────────────────────────────── */
 /* Three kit sections (D89): the ledger on the left, the machines and the power beside it (they stay

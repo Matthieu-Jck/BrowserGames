@@ -14,12 +14,12 @@ atlases baked on the main thread. Render reads the sim and never mutates it.
 | [iso.ts](../src/render/iso.ts) | Iso constants `TW`/`TH`/`LH`, `tileToIso`/`isoToTile` (+ legacy iso-only helpers) |
 | [camera.ts](../src/render/camera.ts), [camera-math.ts](../src/render/camera-math.ts) | Smoothed camera centred in tile space; pure world ↔ screen maths |
 | [layers.ts](../src/render/layers.ts) | The fixed container tree, `LayerName`, `setView` (projection + cross-fade) |
-| [relief.ts](../src/render/relief.ts) | Pure maths of the tiered rock relief (levels, masks, slabs, walls); `tileTop`, the one height of a tile's top every lift reads; `surfaceTile`, the tile a view ray meets first |
+| [relief.ts](../src/render/relief.ts) | Pure maths of the tiered rock relief (levels, masks, slabs, walls, `ledges`); `tileTop`, the one height of a tile's top every lift reads; `surfaceTile`, the tile a view ray meets first |
 | [perf-overlay.ts](../src/render/perf-overlay.ts) | Frame timing, draw-call counter, `FL.perf()` stats |
 | [stress.ts](../src/render/stress.ts) | `StressSpike`: the M0 particle spike kept as a perf tool (`FL.stress`) on `fxTop` |
 | [daynight.ts](../src/render/daynight.ts) | The time of day's look: keyframes → `Grade` (tint, night factor, sun, clouds); `DayNight` applies it and holds the `FL.dayPhase` offset |
 | [world/terrain-chunks.ts](../src/render/world/terrain-chunks.ts) | Streams painted ground / relief-paint chunk textures; fog |
-| [world/relief-view.ts](../src/render/world/relief-view.ts) | Near-zoom rock columns as depth-sorted sprites; `level(x, y)` (= `tileTop`) |
+| [world/relief-view.ts](../src/render/world/relief-view.ts) | Near-zoom rock columns as depth-sorted sprites (cut at their ledges, each part shaded at its height; talus decals); `level(x, y)` (= `tileTop`) |
 | [world/buildings-view.ts](../src/render/world/buildings-view.ts) | Building sprites (iso + plan, lifted onto the rock top when they stand on the mountains), ribbon pieces; moving parts turning (`animate`); a production building switched off when it does not work (D83: its unlit picture, baked on demand); the incinerators' pits and their flames; the cast shadows |
 | [world/work-look.ts](../src/render/world/work-look.ts) | Pure (no Pixi): which production buildings look at work (D83) — `workOf` (at work, a passing stop, stopped, per kind; it lives in the sim's [systems/work.ts](../src/sim/systems/work.ts) since D85, the debug bases' check reads it too, and is re-exported here), `WorkLook` (sampled once per game tick, a passing stop kept lit `WORK_GRACE` ticks, the flips for the views) |
 | [world/stand.ts](../src/render/world/stand.ts) | Pure: how high a building stands and how it sorts (D44): `computeStands` once per rebuild, `standOf` / `liftOf` for the other views, `standLevel` for the ghost, `drawnLevel` (a ribbon: its tile's top) for picking; the depth keys `rockZ`, `buildingZ`, `standZ`, `beltZ`, `liftZ` |
@@ -35,11 +35,15 @@ atlases baked on the main thread. Render reads the sim and never mutates it.
 | [world/heart-flag.ts](../src/render/world/heart-flag.ts), [art/emblem.ts](../src/render/art/emblem.ts) | The claim's flag on the Heart (D58): baked wave frames bearing the emblem, laid and stepped by the buildings view; the emblem's ink drawing (shared with the register's designer) |
 | [world/ghost-view.ts](../src/render/world/ghost-view.ts) | Build ghost, demolition / marking boxes, hover outline; the flow arrows of a directional routing block being placed; a face cutter's working side (D87: the tiles behind it turquoise where they hold quartz, coral where not, an arrow into the wall); a ribbon drag's plan as a faint placeholder until the release (D73: `DRAG_ALPHA`), a dashed line over each bridge pair's leap |
 | [world/flow-arrows.ts](../src/render/world/flow-arrows.ts) | Pure: which blocks take in at their back only (`isDirectional`) and their flow arrows (`flowArrows`) |
-| [world/overlays-view.ts](../src/render/world/overlays-view.ts) | Grid, the claim's land in parcels (D60: held, leased, a sister claim's; the land mode's grid and marks), the Link tool's marks, selection, dig/fill marks, freight routes (hidden under a specialised view's veil), reach circles |
-| [world/views-view.ts](../src/render/world/views-view.ts) | The specialised views (D88): the paper veil over the base, the view's flat marks (grids by colour, ribbon heat, work states, routes) and its badges (sources and their output bars, consumers' gauges, troubles, jams, stops), from the shell's `Readouts` ([src/sim/readouts/](../src/sim/readouts/)) |
+| [world/rivers-view.ts](../src/render/world/rivers-view.ts) | The rivers' running water at near zooms (D94): dashes drifting downstream on the ground plane |
+| [world/overlays-view.ts](../src/render/world/overlays-view.ts) | Grid, the claim's land in parcels (D60: held, leased, a sister claim's; the land mode's grid, marks and usable-floor gauges, D94), the Link tool's marks, selection, dig/fill marks, freight routes (hidden under a specialised view's veil), reach circles |
+| [world/views-view.ts](../src/render/world/views-view.ts) | The specialised views (D88): the paper veil over the base, the view's flat marks (grids by colour, ribbon heat, work states, routes; the Vent view's wash of exposure and its arrows, D95) and its badges (sources and their output bars, consumers' gauges, troubles, jams, stops, turbines), from the shell's `Readouts` ([src/sim/readouts/](../src/sim/readouts/)) |
+| [world/wind-hints-view.ts](../src/render/world/wind-hints-view.ts) | `WindHints` (D95): the wind's rare hints on the land — hairline ink flicks of a gust, low streaks of sand and ripples on open desert floor, downwind, only in clearly strong wind — the only sign of the wind before the Anémométrie plan |
 | [world/wires-view.ts](../src/render/world/wires-view.ts) | The power wires (D25), terminal to terminal: fine catenaries in iso, straight inked lines in plan, glints, the Link tool's preview wire |
 | [world/wire-geom.ts](../src/render/world/wire-geom.ts) | Pure wire geometry: a building's terminals in the world (`terminalsAt`, lifted with a building on the mountains), the one a wire hangs from (`wireAnchor`, `wireEnds`), sag, catenary points, points along a polyline |
 | [world/drifters-view.ts](../src/render/world/drifters-view.ts) | Freight balloons shuttling between skydocks |
+| [world/gleaners-view.ts](../src/render/world/gleaners-view.ts) | The Gleaners at night (wanderers by the exposed lines, takers running off with what they took) and the glazed ribbons' glass hoods (D103) |
+| [art/recipes/gleaners.ts](../src/render/art/recipes/gleaners.ts) | A Gleaner (four walk frames, carrying or not), its lantern-eye glow, the glass hood (straight and corner), the fence in iso and from above (D103) |
 | [world/landing-view.ts](../src/render/world/landing-view.ts) | `LandingView`: the intro's landing (D31) — the Heart lowered into the cirque by a CrierBelt sky-crane (`drawCrane` with `SKY_CRANE`, the drawing the cargo drone shares): descent, flames, dust, touchdown, the crane's exit |
 | [world/cargo-view.ts](../src/render/world/cargo-view.ts) | `CargoView`: at each trade, a CrierBelt cargo drone (the sky-crane at 0.9 scale) works the trade post's deck — hauls a container up (a sale), sets one down (a purchase) — and the deck's lift iris takes it in or brings it up |
 | [world/cargo-flight.ts](../src/render/world/cargo-flight.ts) | Pure: the cargo drone's choreography (`poseAt`), the deck's place on a trade post (`deckCentre`, mirrored from its art: the middle of its 5 × 5 pad and apron, D62) |
@@ -47,13 +51,14 @@ atlases baked on the main thread. Render reads the sim and never mutates it.
 | [art/tokens.ts](../src/render/art/tokens.ts), [ink.ts](../src/render/art/ink.ts) | Palette; inked strokes, flat fills, hatching, stipple, shadows |
 | [art/shapes.ts](../src/render/art/shapes.ts), [iso-shapes.ts](../src/render/art/iso-shapes.ts) | Machine vocabulary seen from above (`Frame`) / in iso volume (`IsoFrame`, `Scene`) |
 | [art/terminals.ts](../src/render/art/terminals.ts) | Where the power wires meet each building: the terminal table (`TERMINALS`, one point or a few per building, in its unrotated frame), the poles' heads (`POLE`, `PYLON`), the Heart's link masts; `turnsArt` / `artRot` (which rotation a building's art is drawn in), `rotLocal` (the art's rotation rule) |
-| [art/recipes/](../src/render/art/recipes/) | One drawing per building (iso + plan), belts, item glyphs, status icons; `fx.ts`: the light spy, night rigs, glow / haze / cloud textures, solar panel petals, PV states; `moving.ts`: the buildings with a moving part and the geometry their two views share (D87: the face cutter's cutting drum, `CUTTER`, which turns while it works). The face cutter (D87) is a crawler rig whose toothed drum on its back overhangs the footprint about 0.2 tile into the wall it stands against, a ramp of cut quartz behind, a conveyor up to its output chute at the front left, an ochre power house with an amber beacon and a floodlight on the rock; the quartz workshop a saw bench and a winding spindle at its back, a lapping wheel and a tray of oscillators by its output. Item glyphs: `crystal` is quartz (two milky points on a grey stone, apart from the singing quartz's three lilac prisms), `oscillator` a silver can on two copper leads |
+| [art/recipes/](../src/render/art/recipes/) | One drawing per building (iso + plan), belts, item glyphs, status icons; `fx.ts`: the light spy, night rigs, glow / haze / cloud textures, solar panel petals, PV states; `moving.ts`: the buildings with a moving part and the geometry their two views share (D87: the face cutter's cutting drum, `CUTTER`, which turns while it works; the deep bore's rig, `BORE`, its rotary table and kelly turning while it works, §9 note 13). The face cutter (D87) is a crawler rig whose toothed drum on its back overhangs the footprint about 0.2 tile into the wall it stands against, a ramp of cut quartz behind, a conveyor up to its output chute at the front left, an ochre power house with an amber beacon and a floodlight on the rock; the quartz workshop a saw bench and a winding spindle at its back, a lapping wheel and a tray of oscillators by its output. Item glyphs: `crystal` is quartz (two milky points on a grey stone, apart from the singing quartz's three lilac prisms), `oscillator` a silver can on two copper leads |
 | [art/view-icons.ts](../src/render/art/view-icons.ts) | The views' marks (D88) in ink on a paper badge (`drawViewIcon`, `viewIconCanvas` for the DOM), their colours (`GRID_COLORS`, `SOURCE_COLOR`, `heatColor` / `HEAT`): one drawing for the world and the panels |
 | [art/silhouette.ts](../src/render/art/silhouette.ts) | A context that paints a drawing's solid fills in one colour (cast-shadow masks) |
 | [art/unlit.ts](../src/render/art/unlit.ts), [art/recipes/off.ts](../src/render/art/recipes/off.ts) | A building's art switched off (D83): `unlitCtx` (lamps drawn as dark glass, their halos left out; `isUnlit` for a recipe to leave out its fire and steam), `switchOff` (greyed, darker, a touch of lilac); `drawOff` runs a building's own recipe through both |
 | [art/solar.ts](../src/render/art/solar.ts) | `PV` (the solar-cell colour) and `pvPanel`: draw cells with them and they get their day / night states |
 | [art/atlas.ts](../src/render/art/atlas.ts), [dyn-atlas.ts](../src/render/art/dyn-atlas.ts) | Static atlas baked at boot; on-demand atlas for relief columns |
 | [art/terrain.ts](../src/render/art/terrain.ts), [terrain.worker.ts](../src/render/art/terrain.worker.ts), [rock.ts](../src/render/art/rock.ts) | Chunk painters (ground, relief paint) and the rock-column painter, worker-safe |
+| [art/ore.ts](../src/render/art/ore.ts) | The ore deposits on the ground (D99): `paintDeposits` (terrain.ts calls it once, pass 5), each ore's material `ORE_LOOK` (the item glyphs read the same tones), `richness`, `nodulesOf`; worker-safe |
 
 Related: [app.md](app.md) (frame loop, view state, picking), [input.md](input.md), [content.md](content.md),
 [engine.md](engine.md), [testing.md](testing.md), [glossary.md](glossary.md), [extending.md](extending.md)
@@ -67,8 +72,8 @@ which drives render in this order (details in [app.md](app.md)):
 1. **View morph.** The view state moves a linear `t` towards its goal (0 iso, 1 plan) over 0.5 s;
    `te = ease(t)`; `P = proj(te)`. P goes to `camera.P` and to `layers.setView(P, te)`.
 2. **Sim and events.** Fixed-step ticks; chunks in `grid.dirtyChunks` → `terrain.invalidate(ck)` and
-   `relief.invalidate(ck)`; a structural change → `buildings.rebuild(sim)`, `items.rebuild(sim)` and
-   `lights.rebuild(sim)`.
+   `relief.invalidate(ck)`; a structural change → `buildings.rebuild(sim)` (only the entities whose
+   drawing changed are re-drawn, D92), `items.rebuild(sim)` and `lights.rebuild(sim)`.
 3. **Camera.** `camera.update(dt)`, then `camera.apply(world, w, h, resolution, snap)`, with `snap`
    only when `te` is exactly 0 or 1.
 4. **Views**, in this order (relief reads the chunks terrain found visible):
@@ -80,8 +85,9 @@ which drives render in this order (details in [app.md](app.md)):
    `viewsView.update(sim, frame, readouts)` (the specialised view's veil, marks and badges, D88) →
    `dayNight.update(worldTick, te)` → `lights.update(grade, P, te, seconds)` →
    `clouds.update(grade, P, te, tx, ty, zoom, seconds)` (§10, *Day and night*) →
-   `drifters.update(sim, P, te, seconds)` → `buildings.setPlanness(te)` → `buildings.animate(sim,
-   gameSeconds, grade)` (moving parts, cast shadows) → `items.update(sim, fractionalTick, P, te, zoom, viewTiles)`.
+   `drifters.update(sim, P, te, seconds)` → `buildings.setPlanness(te)` → `buildings.cull(viewTiles)`
+   (off-screen buildings culled, D92) → `items.update(sim, fractionalTick, P, te, zoom, viewTiles)` (first:
+   it moves the elevators' cars) → `buildings.animate(sim, gameSeconds, grade)` (moving parts, cast shadows).
    The dev `StressSpike` updates last, if active.
 5. `renderer.render(stage.root)`, then perf stats.
 
@@ -102,7 +108,7 @@ unprojected through P⁻¹, plus the relief headroom.
 ## 2. Stage ([stage.ts](../src/render/stage.ts))
 
 `createStage(host, { perf })` calls `autoDetectRenderer` with `preference: 'webgl'`,
-`resolution = min(2, devicePixelRatio)` (1 in perf mode), `autoDensity`, antialias off in perf
+`resolution = min(2, devicePixelRatio)` (1 in perf mode), `powerPreference` `'high-performance'` (`'low-power'` with « Basse consommation », D100: the integrated GPU on a computer with two), `autoDensity`, antialias off in perf
 mode, a sand background, and **`textureGCActive: false`**. The atlas is permanent and terrain
 textures are evicted by their own LRU, so lifetimes are managed by hand ([Pitfalls](#14-pitfalls)).
 `root.eventMode = 'none'`: picking goes through the sim's occupancy grid and the app's volume
@@ -178,16 +184,17 @@ stage.root                          eventMode 'none'
 └─ world        [render group]      camera transform (scale = zoom, position)
    ├─ lit       [render group]      the graded world: DayNight's tint, one uniform
    │  ├─ plane        P             terrain · decals · belts
-   │  ├─ items        —     [rg]    item particles on the floor, in view world px
+   │  ├─ items        —     [rg]    item particles on the floor, in view world px; the Gleaners' figures (D103)
+   │  ├─ glassPlane   P             glass [rg] (the glazed ribbons' glass hoods over their items, D103)
    │  ├─ shadowsIso   M   × isoA    shadows  (the buildings' cast shadows on the ground)
    │  ├─ reliefPlane  P   × isoA    relief   (painted relief chunks)
-   │  ├─ planPlane    P   × planA   plan     (plan building sprites; sorted: rock ribbons' copies, items over them, buildings)
+   │  ├─ planPlane    P   × planA   plan [rg] (plan building sprites; sorted: rock ribbons' copies, items over them, buildings)
    │  ├─ volumes [rg] M   × isoA    objects  (iso buildings + cliff columns + items above the floor, z-sorted)
    │  ├─ itemsOver    —     [rg]    items riding a junction's deck or a skybridge, over every building
    │  ├─ veilPlane    P             veil     (a specialised view's paper wash over the base, D88)
    │  ├─ wiresIso     M   × isoA    wires [rg]      (power wires)
    │  ├─ wiresPlanPlane P × planA   wiresPlan [rg]
-   │  └─ shade        —             cloud shadows (multiply; CloudShadows sets P itself)
+   │  └─ shade        —             cloud shadows (multiply; CloudShadows sets P itself), the wind's hints (WindHints sets P itself, D95)
    ├─ lights    [render group]      night glows, additive (LightsView: iso under M, plan under P)
    ├─ top             P             grid · viewFlat [rg] · overlays · fog · land · ghost [rg]
    ├─ status    [rg]  —             drifters (view world px)
@@ -200,10 +207,11 @@ stage.root                          eventMode 'none'
 |---|---|---|
 | `terrain` | TerrainChunks: ground chunks, sand placeholders | |
 | `decals` | — | Declared, unused |
-| `belts` | BuildingsView: ribbon and conduit pieces on the floor (JunctionsView: the passages) | Flat in both views. A piece on rock goes to `objects` (iso, key `beltZ`) and `plan` instead (D56) |
+| `belts` | BuildingsView: ribbon and conduit pieces on the floor, in its own render group sorted by rank (`buildings:belts`, D92); JunctionsView: the passages, after it | Flat in both views. A piece on rock goes to `objects` (iso, key `beltZ`) and `plan` instead (D56) |
 | `items` | ItemsView: the items on the floor | Drawn above belts, below relief paint, plan sprites and volumes. Items above the floor (on rock, in an elevator's shaft) or at an incinerator are drawn among the volumes in iso (`objects`) and over their ribbons on `plan` |
 | `itemsOver` | ItemsView: items riding a junction's deck or a skybridge (the model's `o`) | Over every building in both views (render group) |
-| `shadows` | BuildingsView: the cast shadows | Iso px under M, faded with the volumes; above ribbons and items (they fall over them), under the relief paint and every volume (a shadow never falls on a building) |
+| `glass` | GleanersView: a glass hood over each glazed ribbon on the floor (D103) | Under P, over the items riding them, under the shadows and volumes; laid at each new graph |
+| `shadows` | BuildingsView: the cast shadows (its container a render group sorted by rank, its alpha set when its 8-bit value changes, D92) | Iso px under M, faded with the volumes; above ribbons and items (they fall over them), under the relief paint and every volume (a shadow never falls on a building) |
 | `relief` | TerrainChunks: relief-paint chunks | The *painted* relief; relief *sprites* are in `objects` |
 | `plan` | BuildingsView: plan sprites; ItemsView: the items above the floor (a container drawn through P⁻¹, so in view px) | `sortableChildren` in bands (stand.ts `PLAN_Z`): the plan copies of ribbons and junction passages on rock (−2), the elevators' marks (−1.5), the items riding them (−1), every building sprite at 0 in the order laid — so items on rock show over their ribbons and go under a building, as on the floor |
 | `objects` | BuildingsView iso sprites (the incinerators' pits in two parts with their flames), ReliefView columns, ItemsView: pooled sprites of the items above the floor, in a shaft or at an incinerator | `sortableChildren`, shared zIndex keys (§7.4). Its parent `volumes` is a render group: an item crossing a tile changes its key, and the re-sort and re-batch stay inside the volumes |
@@ -217,8 +225,8 @@ stage.root                          eventMode 'none'
 | `viewMarks` | ViewsView: the view's badges and gauges | View world px, above the drifters, untinted; placed when the projection or the zoom moves |
 | `fxTop` | CargoView (the deck's iris, shadows, dust, the container, cables), LandingView (the Heart, the crane, cables, dust, shadow), `StressSpike` (`FL.stress`) | |
 | `fxGlow` | LandingView and CargoView: thruster flames, nozzle halos, the plumes' light on the ground; the cargo drones themselves, over their flames, and their own lights at night | Above everything and outside the day / night grade, so emitted light stays bright at night. A cargo drone sits here so its hub, beams and pods hide its plumes (the back engine's burns behind the hub); it copies `fxTop`'s tint every frame to stay graded |
-| `shade` | CloudShadows | Inside `lit` (graded), above everything in it; multiply blend |
-| `lights` | LightsView glows | Above `lit` so the grade never dims them; additive; its alpha is the night factor |
+| `shade` | CloudShadows; WindHints (D95) | Inside `lit` (graded), above everything in it; the clouds' plane multiplied, the hints' plane normal |
+| `lights` | LightsView glows; GleanersView: the Gleaners' lantern eyes and the halo of what they carry (their own additive container) | Above `lit` so the grade never dims them; additive; its alpha is the night factor |
 | `wires` | WiresView, iso: wires, preview wire, glints | Under M with the volumes, faded by `isoA`; above every building and cliff (not depth-sorted: a wire may pass over a building) |
 | `wiresPlan` | WiresView, plan: lines, preview, glints | Tile units under P, faded by `planA`, above the plan sprites |
 
@@ -239,7 +247,9 @@ The views fade their own content: grid `te × zoom ramp × 0.55`; the land `max(
 marks `te`, lifted marks `1 − te`. Items on the floor float `(3 + z)·(1 − te)` px above ribbons (z: a skybridge deck or a junction's hump). Above the floor, in an elevator's shaft or at an incinerator, an item is drawn among the volumes while `te < 0.6`, at its iso px `tileToIso(x, y) − (3 + z + lv·LH)` (lv: the land's height under it, belt-lift.ts) like any volume, so M carries it with the ribbon it rides, its sprite drawn through M⁻¹ so it stays upright; and on `plan` from `te > 0.3`, flat over the ribbons' plan copies (`(3 + z)·(1 − te)`): it cross-fades as its ribbon does. Drifters fly at
 80 px (±3) in iso and 6 px in plan. Relief-paint sprites show and relief columns stream only
 while `te < 0.6`. Render groups (`world`, `items`, `itemsOver`, `volumes`, `ghost`, `status`) keep the transforms on the
-GPU and isolate rebuilds of fast-changing content.
+GPU and isolate rebuilds of fast-changing content; `plan`, and inside the buildings view the floor
+ribbons and the shadows, are render groups for the opposite reason (D92): big and rarely changed, they
+are not re-batched when the terrain streams chunks in.
 
 ## 6. Terrain chunks ([terrain-chunks.ts](../src/render/world/terrain-chunks.ts), [terrain.ts](../src/render/art/terrain.ts), [terrain.worker.ts](../src/render/art/terrain.worker.ts))
 
@@ -287,15 +297,62 @@ disc edge. Chunks fully inside a disc have no sprite. A mask is rebuilt when the
 touching its chunk changes (discs only grow).
 
 **`paintChunk` passes:** (1) a smoothly upscaled pastel field with biome tints and height
-whitening; (2) world-hashed stipple; (2b) hardpan plateaus; (3) water with an inked shore; (4) rock
-as a map of its **levels** (owner, 2026-10-14: the mountains looked different in plan and in iso, and
-were hard to build on): each rock tile's terrace slabs outlined exactly as the iso columns are
-(relief.ts `masksAt` / `slabOutline`: the tile, its corners chamfered by its neighbours), step by
-step from the foot up — the step's shadow on the terrace below, its fill in the colour its columns'
-tops wear in iso (`topColor`: hardness, lighter by 0.075 a relief level so the plan, which sees only
-tops, tells the levels apart), its silhouette inked (bold at the floor) — over the rock's soft cast
-shadow; the old contours and hatching drawn from the smoothed height field are gone; (5) vents, ore
-deposits, biome decor. An ore under rock is a hidden vein, a faint dot — but a face ore (D87: quartz
+whitening; (2) world-hashed stipple; (2b) hardpan plateaus; (3) water with an inked shore — a
+**river** (map 4, D94) first, its bed `C.river` (bluer than the still lakes) and, from 16 px/tile, a
+paper-white stroke and a darker one along the way it flows (the chunk's biome code: `RIVER_BIOME` +
+the eighth of a turn, mapgen's `BIOME.river`), and where it steps down (the next tile along its way
+stands lower: a stream falling off a massif) a band of foam across it and spray below — the plan
+view's fall —, then the still water over it, one inked shore round both so a river opens into its
+lake; the open sea (`SEA_BIOME`) a little bluer and darker in its deep water, two broken lines of
+surf following its coast (`paintSurf`); (3b) a **chasm** drawn as a crevasse (D94; the owner: « il faut que ça ressemble à une
+crevasse »): its rim points moved by a hash of their world position (broken lips that join across
+chunk seams), clipped to its shape the far wall — the −x −y side, the one the iso camera looks
+into — lit at the lip in the Crown's ochres and darker band by band down the slope (the shape moved
++x +y a little more each band: the walls converge), strata lines along the lip, cracks down the
+face, a pebble on a ledge, hatching down the slope in the shade (grooves in iso, a drop in plan; its
+lattice whole fractions of a tile so chunks meet), a cool haze over the deep bands and only a thin
+near-black strip under the near lip (`CREVASSE`); its lips inked over a paper halo, heavier on the
+near lip; on the floor beside it loose stones and side cracks. Water, rivers and chasms are
+[art/gaps.ts](../src/render/art/gaps.ts) (`paintWater`, `paintChasms`), the window and the marching
+squares [art/paint-kit.ts](../src/render/art/paint-kit.ts); both march with `keep` (a tile inside
+stays inside however thin its band: drawn as the rules read it); (4) rock
+as a relief map of its **levels** (`paintRockMap`; owner, 2026-10-14: the mountains looked different
+in plan and in iso, and were hard to build on; 2026-10-16: « les montagnes ne sont pas très belles »):
+each rock tile's terrace slabs outlined exactly as the iso columns are (relief.ts `masksAt` /
+`slabOutline`: the tile, its corners chamfered by its neighbours), step by step from the foot up,
+over the rock's soft cast shadow. Per step: its shadow on the terrace below and the occlusion at its
+foot (wide soft strokes along its edge, half covered by its fill); at the floor (≥ 32 px/tile) talus,
+blocks and gravel fallen at the very foot of each cliff (`floorTalus`: along its first step's
+silhouette, a chamfer's diagonal too, none into water or a gap); its fill in the colour its columns'
+tops wear in iso (`topColor`: the rock of that step's height, `layersOf`, paler and cooler a level
+up, so the plan, which sees only tops, tells the levels apart); inside its edges (≥ 16 px/tile)
+hillshading — a lit lip where the edge faces the light (−x −y), a shaded one where it faces away —
+and one or two fine lines following the edge (`insetChain`: the silhouette chains moved inwards,
+mitred, run on into the next tile's), the strata seen from above, like contours; its tops' surface
+(`topMarksPlan`: sand pockets, slabs, cracks, boulders by hardness, hashed from world coordinates,
+kept off the tile's edges); its silhouette inked, bold at the floor; (5) the ore
+deposits ([art/ore.ts](../src/render/art/ore.ts) `paintDeposits`, D99; owner, 2026-10-16: « i cannot
+distinguish copper resources from iron on the ground »), then vents and biome decor. Each ground ore
+wears its own material (`ORE_LOOK`), told apart first by colour — what carries at the far zoom —
+then by shape: **iron** heavy angular nodules, rust-red and grey-black (magnetite), faceted, steel
+flecks, rust bleeding into the sand; **copper** bright copper-orange crusts of grape-like lobes with
+malachite-green blotches on them and on the ground between, a native-copper glint; **coal** black
+glossy slabs along one grain (hashed per 8-tile stretch), a sheen on their lit edge, a seam across
+its rich tiles; **salt** white crusts on its flats, lilac-rimmed, cubes and sparkle; any other item
+(a unique's site) a pebble of its colour. Two layers: a **stain**, the deposit's ground tinted in
+its ore's colour (marching squares with `keep` over its tiles, each corner moved by a hash of its
+world position so the edge is organic and joins across seams — on map 4 too, whose deposits come
+in whole drill blocks, D104: the stain rounds them into natural patches, and a drill in hand snaps
+onto their grid), darker again over its tiles at or
+above the ore's base richness; then the **nodules**, tile by tile, more and bigger the richer the
+tile (`richness`: its `rich` against `BAL.depositRich`, ‰ — a near deposit's rim 700, its heart
+1000, the far ring's heart 1600; `nodulesOf`: 2, 3, 5 at ≥ 32 px/tile), a rich tile's first a
+boulder in its middle, each a top over a side extruded towards +x +y (straight down in iso: a lump
+with a side) over its cast shadow, the ink stroked under the fills so only the silhouette is inked.
+By texels per tile: 8 a coloured blob a tile; 16 a few outlined nodules; 32 and 64 the facets, the
+grit, the glints. Nodules may hang over their tile's edge, so the painter walks one tile past the
+chunk all round, in world order: both sides of a seam draw the same strokes ([ore.test.ts](../src/render/art/ore.test.ts)).
+An ore under rock is a hidden vein, a faint mark of its ore's colour — but a face ore (D87: quartz
 set in a cliff, `isFaceOre`) on a rock tile with a drop beside it is drawn as its seam: crystal
 clusters with glints along every edge that drops to lower ground, kept inside the tile's own
 footprint (the ground texture shows in iso too: crystals overhanging the edge stood on the floor in
@@ -311,7 +368,7 @@ Shared by the worker and the main thread; no DOM, no Pixi.
 
 | Concept | Rule |
 |---|---|
-| Level | `levelOf(terrain, level)`: 0 off rock. On rock it is the sim's own level (D45, `grid.level`, the paint windows' `level` array), clamped 1..5 (`MAX_TERRACE`), × `STEP_LEVELS` (2): 2 to 10 relief levels. Water and reclaimed ground (`Filled`) above the floor — the Crown's tarn (D63), the one water up there — stand at their level too, a column like the rock round them; any other ground has relief level 0. Since D52 (2026-10-13) it no longer comes from a smoothed height, so the drawn terraces are the levels placement, ribbons and wires obey, and a footprint the rules call level ground is drawn flat. 1 level = `LH` = 16 world px; a terrace is a one-tile-high wall. |
+| Level | `levelOf(terrain, level)`: 0 off rock. On rock it is the sim's own level (D45, `grid.level`, the paint windows' `level` array), clamped 1..5 (`MAX_TERRACE`), × `STEP_LEVELS` (2): 2 to 10 relief levels. Water and reclaimed ground (`Filled`) above the floor — the Crown's tarn (D63) — and a river tile above it — a stream up on a massif (map 4's drainage, D94; `isRiverT`) — stand at their level too, a column like the rock round them; any other ground has relief level 0. Since D52 (2026-10-13) it no longer comes from a smoothed height, so the drawn terraces are the levels placement, ribbons and wires obey, and a footprint the rules call level ground is drawn flat. 1 level = `LH` = 16 world px; a terrace is a one-tile-high wall. |
 | Tile top | `tileTop(land, x, y)`: THE height of a tile's top (levels; 0 = the floor), where whatever stands on it stands. Every lift reads it, so all move together when it changes: buildings on the mountains, their moving parts, shadows, night lights and wire anchors (through world/stand.ts), the build ghost, the iso picking, the overlays' marks on rock (`ReliefView.level`). Today `levelAt` over the land (a height of 0 off the world, as the paint windows read it), so it is exactly the level the sprites and the paint draw; meant to become the sim's `grid.level(x, y)` × one terrace's height. |
 | Ray | `surfaceTile(land, px, py)`: the tile a view ray meets first, from its ground point (where it crosses z = 0). A point `lv` levels up on the same ray lies `lv·SHIFT` tiles further along +x+y, so walking down from `MAX_LEVEL`, the first tile whose top reaches the ray is the rock top or cliff it hits; else the ground tile. |
 | Mask | `maskAt(level, x, y, at)`, 8 bits. `M_E/M_S/M_W/M_N`: that side drops below the threshold. `M_NE/M_SE/M_SW/M_NW`: the diagonal neighbour stands as high; kept only at convex corners, so columns that look alike share one sprite. |
@@ -319,16 +376,52 @@ Shared by the worker and the main thread; no DOM, no Pixi.
 | Chamfers | A convex corner is cut 0.38 tile along each side, or all the way to the next corner where a diagonal neighbour carries the edge on. Diagonal fronts become straight walls instead of staircases. |
 | Outline | `slabOutline(masks, t)`: the unit tile clipped by the half-planes of every chamfer of steps 0..t. Upper slabs nest inside lower ones and never leave the tile. Each segment carries a silhouette flag (its side drops, or it is a chamfer). |
 | Walls | `wallRuns(outline)`: runs of silhouette segments that face the camera (`facesCamera`: normal towards +x+y), each with open-air ends. `shadeOf(a)`: 0 for the lit +y face, 1 for the shaded +x face. |
+| Ledges | `ledges(masks, min)`: the steps whose top shows in front of the step above (a chamfer sets it back) by at least `min` tiles² since the last, and the last step: where the relief sprites cut a column in parts (§7.3). A diagonal front's staircase has one (half a tile); a corner's 0.38 chamfer does not count at `min` 0.2. |
 
 ### 7.2 Painter ([rock.ts](../src/render/art/rock.ts))
 
-`drawColumn(ctx, proj, cls, masks, {detail, seed, k, top})` draws the slabs bottom-up. Walls come first:
-per-segment shade, occlusion at the foot, and hardness marks (`cls` 0 sandstone strata, 1 basalt
-joints, 2 obsidian facets and glints, 3 heartrock with glowing veins), hatched on shaded faces at
-detail 2. Next a flat top, lighter with height, with grain. The ink goes last: lit lip,
-silhouettes, ground contact, open-air verticals, folds. `columnShadow` casts along +x. Detail is
-0 (flat), 1 (worker, ≥ 32 px/tile) or 2 (sprites). The caller's `proj` picks the projection, so
-one painter serves both renderings and they always agree.
+`drawColumn(ctx, proj, cls, masks, {detail, seed, k, top, vein, layers, slabs})` draws the slabs
+bottom-up in the manner of Moebius's desert mesas (owner, 2026-10-16: « les montagnes ne sont pas
+très belles, il faut faire mieux »: the cliffs read like crates, the high massif lilac boxes). Detail
+is 0 (far paint, < 32 px/tile), 1 (worker, ≥ 32 px/tile) or 2 (sprites); the caller's `proj` picks
+the projection, and the seed comes from the look (`columnSeed(cls, masks, columnVariant(x, y))`), so
+the sprites and the paint draw the very same rim.
+
+- **The rock is layered, not boxed.** The strata are one table by absolute height for every column
+  (`BEDS`: thin beds of uneven thickness, a bed every half level or so, a thick bed's base every one
+  to two levels, each thick bed paler or darker than the last), so a bed runs on from tile to tile at
+  its height and a long cliff reads as one face. Each plane wanders a hair along the wall — nil where
+  a tile meets the next. A wall is filled bed by bed in flat tones (`wallColor(cls, shade, z, tone)`:
+  the hardness, the face's light, deeper with height, the bed's tone), and a slab whose wall carries
+  on the wall below (`flush`) has no crease at its foot nor ink on the rim below it (`slabTop`: a
+  side the step above carries on up is no silhouette). Walls run a hair past a tile's edge where the
+  next tile carries them on (`OVERRUN`): no hairline between sprites.
+- **Hardness reads in the texture** as much as in the colour (`ROCK`, H1–H4; the excavator's research
+  gates by it): the soft sandstone shows every thin bed, cross-bedding and weathering pits; the
+  red-bed thicker beds broken by joints; the sienna rock massive beds split by long jagged fractures
+  with a lit edge; the heartrock dark plum, faceted, glinting, its veins glowing (`C.cyan`/`C.led`:
+  they light at night). Each step wears the rock of its height (`layers`, terrain.ts `layersOf`: the
+  class of the land round it at that height — hardness follows level — else the step above's), so a
+  tall column's lower walls and ledges carry on its neighbours' layers.
+- **A lip open to the sky** (`lips`: not carried on up by the step above) has a caprock band over a
+  shadowed overhang, a rim bitten a little inwards with its corners rounded (`ROUND`) and, now and
+  then, a notch with its gully cut down the face (the rim's knee, `KNEE`); the bite is nil at a side's
+  ends, so rims meet across tiles, and only inwards, so the top never leaves its tile. Down the face:
+  desert-varnish streaks from the lip (a pale one now and then), grooves with a lit edge, a fallen
+  block's pale scar, occlusion at the foot, pen hatching hung from under the caprock on the shaded
+  faces. Lit lip, silhouettes (ink ribbons, the ground contact heaviest), open-air verticals up the
+  knee, folds.
+- **Tops** (`topMarks`, kept off the tile's edges): sand pockets with ripples in the soft rock, raised
+  slabs and cracks in the harder, a boulder now and then on the hard crests, facets and glints on
+  the heartrock — no grid of dots. `topColor(cls, level)`: the hardness's top, paler and cooler a
+  level up (aerial perspective, never another material).
+- **Talus**: on a step's top where the step above stands back (a ledge in front of a chamfered wall:
+  drawn with the ledge, so it takes the ledge's shade), the occlusion of the wall's foot, fallen
+  blocks (`stone`: a lit top over a shaded body, inked) and gravel; where a higher neighbour's wall
+  rises from a top, the same as a decal (`drawFoot`, `Foot`: the stretch of the neighbour's own side
+  standing there, terrain.ts `footOf`).
+
+`columnShadow` casts a footprint along the light.
 
 **The quartz vein** (D87: a face ore set in a cliff; `ColumnOpts.vein`, from `columnLook`: rock
 holding a face ore). Its column wears a milky seam that wanders across its camera-facing wall runs
@@ -354,6 +447,20 @@ the pool dug away), so tiles of water join without a seam. Reclaimed ground is f
 drawn at its level in both renderings, never as a hole down to the floor; in plan the ground
 paint shows it within the rock (water before rock in `paintChunk`).
 
+**A stream up on a massif** (D94: map 4's drainage; a river tile above the floor). Its column's top is
+a `river` (`TopLook.flow`, the eighth of a turn it runs to, from the chunk's biome code `RIVER_BIOME` +
+flow; `fall`, the relief levels down to the next tile along it), its walls the hardest rock round it.
+The tile is running water (`C.river`) with strokes along its way (`streamMarks`), its banks inked
+where the land beside is not water at its height; its corners that touch no water are cut half a
+tile along each side (`WEDGE`; never at the lip of its fall), and a rock tile at its height where it
+steps on diagonally past a corner takes a wedge of it (`streamWedges`; `TopLook.run`: some water round
+it runs), on the line the rock tiles' corners of water already follow where three tiles of it meet:
+a stream that steps, orthogonally or diagonally, is one straight channel. Where it falls (its way
+faces a camera-facing wall, `fallsDown`), a sheet of running water covers that wall down to the lower
+tile (`waterfall`: white and pale-blue streaks, long on a tall fall, broken into rapids on a fall of
+one level; the lip's curl), foam across the stream at the lip, and foam and spray at the foot of the
+wall (`splash`). The plan view's fall marks are gaps.ts's.
+
 ### 7.3 Two renderings of the same columns
 
 | | Far: relief paint | Near: relief sprites |
@@ -367,14 +474,28 @@ supplies the cast shadows, which the sprites lack (hence the 32 px/tile cap). Pa
 threshold the sprites go and only the line work changes.
 
 **ReliefView.** Columns stream in 8 × 8-tile blocks, culled with `tileBoxBounds` plus the relief
-headroom. Per-chunk relief (levels, per-step masks, rock class, top) is computed with the worker's
-own `buildWindow` + `windowLevels` + `columnLook` and cached. A sprite's atlas key is
-`${cls}:${masks}:${variant}:${topKey}` (`:q` added for a vein column, D87: its own sprite, with
-headroom above for the crystal points on its lip, `VEIN_HEAD`), with two hashed variants. Baking is capped at 8 ms per frame. A block appears only when all of its
-columns are baked; otherwise it is retried next frame and the paint shows meanwhile (`pending`
-counts the waiting columns). Sprites are 2× (scale 0.5), anchored on the tile's back corner at
-`tileToIso(x, y)`. `invalidate(ck)` drops the 3 × 3 neighbourhood, because masks and smoothing read
-neighbours. `stats()` feeds perf `reliefSprites` and `reliefBaked`. `level(x, y)` returns a tile's
+headroom. Per-chunk relief (levels, per-step masks, rock class, top, vein, `foot`, `layers`) is
+computed with the worker's own `buildWindow` + `windowLevels` + `columnLook` + `footOf` +
+`windowLayers` and cached. A sprite's atlas key is `${cls}:${masks}:${variant}:${topKey}` (`:q` added
+for a vein column, D87: its own sprite, with headroom above for the crystal points on its lip,
+`VEIN_HEAD`; `:l…` for a column whose steps are not all its own rock; `:p<t0>-<t1>` for a part),
+with two hashed variants (`columnVariant`). **Parts**: a column is cut at its ledges (relief.ts
+`ledges`, at least `LEDGE_MIN` 0.2 tile² of a lower top showing: a diagonal front's staircase), its
+parts at the same depth key, bottom first (equal keys keep their order), each tinted by the sun's
+shade at its own top — a ledge belongs to the terrace in front, shaded with it, not lit with the high
+top behind (owner, 2026-10-16: the terraces under a cliff were a checkerboard of diamonds); a part's
+frame spans its own heights only. **Talus decals**: where a higher neighbour's wall rises from a top
+(`foot`), a decal of its own (`t:${cls}:${footKey}:${variant}`, a few dozen looks for the whole land,
+rock.ts `drawFoot`) lifted onto the top, at its column's key + 0.01, tinted as its top. Baking is
+capped at 8 ms per frame. A block appears only when all of its sprites are baked; otherwise it is
+retried next frame and the paint shows meanwhile (`pending` counts the waiting ones). Sprites are 2×
+(scale 0.5), anchored on the tile's back corner at `tileToIso(x, y)`. `invalidate(ck)` drops the 3 ×
+3 neighbourhood, because masks and smoothing read neighbours. `stats()` feeds perf `reliefSprites`
+and `reliefBaked`. **The tint** (`setSun`): a part's top in the shadow of higher rock, from samples
+on its top (a ledge's on the ledge only) walked back towards the sun against the rock as drawn
+(`heightAt`: a chamfered column stands where its outlines are, so the tops along one straight wall
+take the same shade), cached per tile and height for the sun of the moment and smoothed over the
+tops and ledges round it at that height (5 × 5). `level(x, y)` returns a tile's
 top (0 = floor): `tileTop`, the one height function, today the level the columns are drawn at. The
 overlays use it to lift iso marks onto rock tops: shifting `level·SHIFT` tiles along −x−y moves a
 point exactly `level·LH` px up in iso.
@@ -382,7 +503,11 @@ point exactly `level·LH` px up in iso.
 **DynAtlas** ([dyn-atlas.ts](../src/render/art/dyn-atlas.ts)) grows on demand. `add(key, w, h,
 ox, oy, draw)` bakes through a temp canvas onto shelf-packed 2048² pages (6 px padding) and
 accumulates `spent` ms. `flush()` uploads dirty pages once per frame and resets the budget. It
-never evicts: the key space is bounded (4 hardnesses × mask combinations × 2 variants).
+never evicts: the key space is bounded (4 hardnesses × mask combinations × 2 variants × the few
+layer, part and top looks; the talus decals a few dozen). The mesas of 2026-10-16 cost about a
+fifth more atlas than the boxes did over the same views (a sweep of eight mid-zoom views round
+the cirque: 488 frames, 15.9 Mpx on 7 pages before; 667 frames, 18.9 Mpx on 9 after — the ledge
+parts, the layers, the decals). A step's layer is keyed only where it shows (a wall or a ledge).
 
 ### 7.4 Depth sorting with buildings
 
@@ -485,30 +610,37 @@ Style rules, as the code applies them:
    (`'R'`) is shaded and hatched. Cast shadows are flat ink at low alpha, offset down-right
    (`castShadow`), and highlights sit upper-left. Frames rotate positions, never the light.
 4. **Palette** ([tokens.ts](../src/render/art/tokens.ts)): the land is in warm desert pastels
-   (sand, dune, mesa, peach, salt, hardpan; rock runs from peach sandstone to violet heartrock).
+   (sand, dune, mesa, peach, salt, hardpan; rock, H1–H4, one warm family from pale ochre sandstone
+   through terracotta and sienna to plum heartrock, deeper on its walls with height, its tops paler
+   and cooler up high; violet only in the shade — `C.rock1…4`, rock.ts `ROCK`, §7.2).
    Machinery is cold painted metal (steel blues, teal, violet, ice) with hot accents (coral, brass,
    hazard) and glowing lights (`led`, `ledWarm`, `ledRed`, `ledGreen`, `glow*`). Ports: turquoise
    intakes, coral nozzles. `num()` gives a Pixi tint, `mix()`/`rgba()` blend, and
    `pushTokensToCss()` exposes `--t-<token>` so the DOM and the canvas agree.
 5. **Deterministic.** Strokes are seeded (`makeRng`, `hash32`); terrain randomness is hashed from
    world coordinates; atlas packing is ordered.
-6. **Detail by scale.** Ground details appear at ≥ 16 px/tile; rock detail is 0/1/2 (§7.2).
+6. **Detail by scale.** Ground details appear at ≥ 16 px/tile; rock detail is 0/1/2 (§7.2). Nothing per
+   tile that repeats as a grid: marks are scattered and kept off a tile's edges, and what crosses tiles
+   (strata, rims, a stream's banks) meets the next tile's exactly (owner, 2026-10-16: no crates, no
+   grid of dots, no checkerboard).
 7. **Item glyphs are precise vector icons** (owner, 2026-10-12: "we need something precise, recognizable"): plain paths, each part drawn by `part()` in [recipes/items.ts](../src/render/art/recipes/items.ts): a flat body, a shaded and a lit crescent (`rim()`, light from the top-left), one 1.6 px ink outline (`OUT`); no wobble and no hatching. They must read at 12–20 px, on a ribbon and in the HUD; a new item gets a silhouette no other item has.
 8. **Power reads as power** (owner, 2026-10-12: "poles should look more like poles"; wires to "a precise place on every building"). The pole is a utility pole — a slim weathered-steel post on a concrete footing, a crossarm level across the screen (the local diagonal (1, −1)) on two braces, porcelain pin insulators, a junction box with its light, a drop cable (nobody climbs it: no pegs); the pylon a square steel lattice with a crossarm and suspension strings. Every building that takes part in power shows where its wires clamp: an insulator from [art/terminals.ts](../src/render/art/terminals.ts) — glazed porcelain (`C.ice`), a brass clamp, on a short dark service mast — at the point its table gives (§10, *WiresView*). The first pole's petal-cup drawing is kept, unused (`petalMastIso`, `petalMastTop`).
 9. **The CrierBelt mark** (owner, 2026-10-12: "simpler, more sci-fi"): a ringed planet — a teal world with a crisp shadow crescent, a brass belt rising to the right, its far half behind the planet, its near half across it; two colours, one precise ink line, flat fills, no wobble (`crierMarkMapped` in [shapes.ts](../src/render/art/shapes.ts)). It reads at 8 px (the crescent drops out below 7). One drawing through a `map(u, v)`: a sign from above (`crierMark`), a deck or a wall in iso (`crierMarkIso`, `crierMarkFace`), the Heart's curved uplink dish (`dish3d`), the intro's register (a canvas), the landing crane's hub. It wore it on the trade post and the Heart's dish until 2026-10-13 (owner: "the planet icons are not needed", D58); it is left on CrierBelt's own things: the register's heading, the freight container, the landing crane.
 10. **The trade post keeps a flame apron** (owner, 2026-10-14: "should block any construction in a 1 case radius around it because of the flames of the drones… a special ribbon at the entrance, and on the other side for the imports, that can resist to the flames", D62). Its 5 × 5 footprint is drawn in three parts, the same in iso (`trade_post` in [recipes/buildings.ts](../src/render/art/recipes/buildings.ts)) and in plan ([recipes/buildings-top.ts](../src/render/art/recipes/buildings-top.ts)). **The pad** (`TP_PAD`, the middle 3 × 3): the D58 platform on a `slab` / `plinth` over that rect only (their `at` argument), its hazard edge broken by the exit's hood, the deck (`TP_DECK` at local (2.5, 2.5), radius `TP_DECK_R`, height `DECK_Z`), three lamp posts (`TP_LAMPS`) and the power pedestal (`TP_PED`) with its wire terminal ([terminals.ts](../src/render/art/terminals.ts)). **The scorched apron** (the outer ring, `tpApron` / `scorchTop`): baked ground at the edge, ragged burns darkening towards the pad (`SCORCH`: baked, burnt, soot), blast streaks fanning out, stipple soot, cracks with a pale lip, sand fused to lilac glass, a few coral embers (paint, not LED tokens: the night would light them white), and CrierBelt's keep-out line in hazard dashes, half burnt off; its marks come from one seeded `apronMarks()` in local tiles, so both views and all four rotations agree. **The two flame-proof ribbons** (`TP_RIBBON`: the entrance across local (2, 4), the exit across (2, 0), at rotation 0; `tpRibbon` / `tpRibbonTop`): a dark-steel chute ramping from the ground at the apron's edge up to the pad (iso), its band (`TP_BAND`, a ribbon's width) laid with ceramic heat-shield plates, low riveted shield walls (`TP_WALL`) tempered along their length (`TP_TEMPER`: straw at the cool end, bronze, purple, blue at the pad), chevrons in the port's colour (cyan in, coral out) pointing the way the items go, and at the pad an armoured hood (`tpHood` / `tpHoodTop`) whose dark mouth faces the ribbon. The far ribbon is drawn before the pad, the near one after everything on it. The apron and the ribbons lie on the ground and **cast no shadow** (the recipe skips them in a `ShadowFrame`: a cast shadow is stretched from the foot with the day, and would drag a 5 × 5 decal across the sand).
 
 11. **The incinerator is a pit that burns what falls in** (owner, 2026-10-14: "the incinerator should have a style that shows more clearly that it will destroy the item. Maybe a hole in the ground with a flame that activates when an item falls in it?", D51). One tile, the same in iso (`pitIso` in [recipes/buildings.ts](../src/render/art/recipes/buildings.ts)) and plan (`pitTop` in [recipes/buildings-top.ts](../src/render/art/recipes/buildings-top.ts)), its geometry in `PIT` (local tiles, levels: the collar's radii and top, the throat's floor below the ground, the chutes' width and lip): scorched ground (`pitMarks`: soot blotches and cracks, seeded once for both views); a low riveted collar whose top is tempered by the heat (`PIT_TEMPER`: brass at its edge to blue at the throat); a dark throat whose far wall darkens into a coral glow down to a grate over the fire bed (`EMBER`, paint, not LED tokens: the pit's night glow is its fire's, lights-view.ts); on every side a steel chute from the tile's edge up over the collar to a lip above the throat, a turquoise band at its mouth (the way in, as every in-port) and a cyan chevron pointing in. It is drawn in parts (`PitPart`): the `back` (ground, throat, the collar's far half, the far chutes) and the `front` (the collar's near half, the near chutes), so the world can put an item falling in and the flame's root behind the near rim; the atlas sprite is both (`all`: icons, picking). **The flame** (`pitFlameIso`, `PIT_FLAMES` heights × two flickers, and the embers at level 0): flat tongues, coral outside, orange, a pale core, inked in dark coral, sparks over the tallest; embers rising and a wisp of smoke as it dies. In plan, the flame seen from above (`pitFlameTop`): a ragged star of coral tongues over the throat, faded in with the fire. The ground and the hole cast no shadow (a `ShadowFrame` skips them): only the collar and the chutes do.
-12. **The Core grows with its level** (owner, 2026-10-15: « par défaut le cœur ne devrait rien avoir dans ses angles, et chaque niveau rajoute un truc… Il faudrait que le style du cœur s'améliore à chaque niveau. », D86). The Heart has one look per level (`artLevels('hearth')` = 4; `artLevelOf(id, sim.hearthLevel)` picks it; other buildings have one). Its recipe takes the level (`draw(ctx, f, seed, lv)`, the plan's `(ctx, f, seed, lv)`), the same in both views. At level 1 its four slab corners are bare, each with a mounting plate stencilled on it (`mountPlateIso` / `mountPlateTop`: paint and four bolts, nothing standing). Each level mounts one piece on a corner (`HEART_CORNERS`, local tiles): 2 the data outlet on its out port's tile (south-east; its nozzle is drawn only from then, `portDrawn`), 3 the expertise archive (south-west: a white enamel drum banded in violet, a glazed band of brass memory platters, indicator dots, a domed cap and antenna; `archiveIso` / `archiveTop`), 4 the grid station (north-east: a lattice mast with a copper coil ring and a red aviation light behind a teal transformer cabinet with bushings; `stationIso` / `stationTop`, its spots in `stationSpots`); the north-west corner, behind the depot, stays bare. The trims fill out with it (`heartLook(lv)`): one roof beacon and one LED strip a face at level 1 (`HEART_BEACONS`, the nearest first); a coral cornice under the roof's edge, a second beacon and strip at 2; brass pilasters at the depot's corners, a third beacon and a drone at work over the roof hatch at 3; a hazard-striped skirt at the depot's foot and floodlights on the slab (`HEART_FLOODS`, between the ports' aprons) at 4. The solar rows never change, so the solar overlays stay keyed by building and rotation. Levels 3 and 4's pieces are placeholders. Review: `node scripts/heart-shots.mjs`.
+12. **The Core grows with its level** (owner, 2026-10-15: « par défaut le cœur ne devrait rien avoir dans ses angles, et chaque niveau rajoute un truc… Il faudrait que le style du cœur s'améliore à chaque niveau. », D86). The Heart has one look per level (`artLevels('hearth')` = 4; `artLevelOf(id, sim.hearthLevel)` picks it; other buildings have one). Its recipe takes the level (`draw(ctx, f, seed, lv)`, the plan's `(ctx, f, seed, lv)`), the same in both views. At level 1 its four slab corners are bare, each with a mounting plate stencilled on it (`mountPlateIso` / `mountPlateTop`: paint and four bolts, nothing standing). Each level mounts one piece on a corner (`HEART_CORNERS`, local tiles): 2 the data outlet on its out port's tile (south-east; its nozzle is drawn only from then, `portDrawn`), 3 the expertise archive (south-west: a white enamel drum banded in violet, a glazed band of brass memory platters, indicator dots, a domed cap and antenna; `archiveIso` / `archiveTop`; the way into the Expertise window since D93 — a click on it in either view, `Picker.heartPieceAt` in app/picking.ts: its corner tile in plan, its drum's volume in iso), 4 the grid station (north-east: a lattice mast with a copper coil ring and a red aviation light behind a teal transformer cabinet with bushings; `stationIso` / `stationTop`, its spots in `stationSpots`); the north-west corner, behind the depot, stays bare. The trims fill out with it (`heartLook(lv)`): one roof beacon and one LED strip a face at level 1 (`HEART_BEACONS`, the nearest first); a coral cornice under the roof's edge, a second beacon and strip at 2; brass pilasters at the depot's corners, a third beacon and a drone at work over the roof hatch at 3; a hazard-striped skirt at the depot's foot and floodlights on the slab (`HEART_FLOODS`, between the ports' aprons) at 4. The solar rows never change, so the solar overlays stay keyed by building and rotation. Level 4's piece is a placeholder (level 3's opens the expertises, D93). Review: `node scripts/heart-shots.mjs`.
+13. **The deep bore is a heavy rig over its own hole** (owner, 2026-10-16: « the Deep Bore should have a more impressive design »). The big brother of the 2×2 drill, about twice its height, the same family (a lattice derrick, a brass drill string, a geared table, a coral power house), drawn the same in iso (`boreBody` / `boreTable` in [recipes/buildings.ts](../src/render/art/recipes/buildings.ts)) and plan (`boreBodyTop` / `boreTableTop` in [recipes/buildings-top.ts](../src/render/art/recipes/buildings-top.ts)) from one geometry, `BORE` in [recipes/moving.ts](../src/render/art/recipes/moving.ts). **The derrick**: four steel legs on concrete footings, from `base` tiles either side of the axis at the ground to the crown at `top` (`boreLeg`), coral girts (`girts`), X-braces in every bay above an open portal (plain strokes, `rod`: the lattice is a few hundred bars and ink's ribbons cost the bake for no visible wobble), a racking board with two work lamps on its east face (`board`), the coral crown block with its sheave cluster, work lamps on the side legs' heads and a red beacon on top; the hoisting lines down to the hazard-yellow travelling block, its hook and the swivel. **At its heart**: the wellhead collar sunk in the ground (pale concrete, bolted, the hole's dark mouth), the rotary table on it, the square brass kelly from the table up to the swivel; violet heartrock spoil (`SPOIL`) heaped round the collar between the legs and in the back corners. No slab under the rig: the ground and the deposit's ore show between the footings, so the plan tells what it mines. **Round it**: the draw-works on the west (a teal motor house, the big brass drum, the drilling line up to the crown's fast sheave), the coral power house on the south (grilles, LEDs, a radiator fan; the wires' terminal on its roof, off the derrick's diagonals), a rack of drill pipe on the east, and at the front, on a skid, the outlet works: a belt up from the collar to a splitter that tips the ore down two chutes into the hoppers over the two outlets. **Its moving part** (`MOVING` 8 phases, `sym` 4): the table's teeth and four slots and the kelly's square turn a quarter turn a period while it works (`workTurns`), still and greyed when switched off (D83). The kelly stands inside the derrick, so in every rotation one leg is exactly in front of it (`boreNearLeg`): the part carries that leg, with the hook and the travelling block, and is always the nearer (`over: () => true`); the body keeps everything else that stands tall off the diagonals' columns (the power house, its terminal — deep-bore.test.ts checks it —, the draw-works), and only low things in the corners (the hoppers, the spoil). The kelly's square is the drill family's brass string, the near leg crosses it in front: what a rig looks like. No lamp on the part in iso (the night lights and the unlit picture come from the body); in plan the part is the table with the derrick round the axis redrawn over it (clipped to a disc) and the crown with its beacon on the axis. In plan the derrick shows its legs and two girts only: all five and the braces meshed into a lid over the collar, the spoil and the table. Cost: about 2.3 Mpx of atlas (the full sprite, the body and 8 phases in 4 rotations, both views; it was 0.8) and about 130 ms of the boot bake; the atlas went from 12 to 13 pages with it (the 12th was full).
+14. **The electric smelter is an induction furnace** (D106; it must read apart from the coal smelter's brick shaft and stacks and from the arc furnace's electrodes on their mast). Drawn the same in iso (`electric_smelter` in [recipes/buildings.ts](../src/render/art/recipes/buildings.ts)) and plan ([recipes/buildings-top.ts](../src/render/art/recipes/buildings-top.ts)) from one geometry (`ES_POT`: the crucible's place, radius, coil and rim heights; `ES_CAB_Z`, the cabinet's roof; `ES_SLAB`, `ES_CERAMIC`): a squat crucible wrapped in a copper induction coil (`COPPER`, a seam each turn) under five laminated steel yokes, a ceramic mouth and a pour lip towards the outlet, the melt orange-hot in it (`ledWarm` with a `glowPeach` core and slag crusts: lamp tokens, so it goes dark when the furnace stops and glows at night); copper bus bars on two porcelain stand-offs from the teal inverter cabinet (`cabinetIso`, a hazard band, a high-voltage sign — `hvSignIso`) to the coil's leads; on the cabinet's roof its wire terminal and the heavy cable from it down into a brass gland, the big cable inlet; a bank of capacitor cans (`CAN`) by the intake. No stack, no smoke. While it works, cyan arcs (`sparkIso`: a jagged seeded line, a translucent halo, a core in the cold lamp token, a white thread) jump across the melt and at the bus bars' leads; switched off (D83) the recipe leaves them out (`isUnlit`) and the melt is dark glass. Not in `HOT`: its night pool is cold, its lamps cyan but the melt.
 
 | Module | Draws | Frame |
 |---|---|---|
 | [shapes.ts](../src/render/art/shapes.ts) | Seen from above: plinth (over the footprint, or a part of it: `at`), dome, bulb, pipe, rotor, petals, antenna, arm, spire, vault, port, grille, dish, LEDs, cable, hull, chevron, tankTop, stack, crate, drumTop, truss, `terminalTop` (a power terminal), the CrierBelt mark (`crierMarkMapped`, `crierMark`)… | `Frame(S, M, w, h, rot)`: `p(x, y)` maps unrotated tile coords → px, `l(len)`, `dir(side)` |
 | [iso-shapes.ts](../src/render/art/iso-shapes.ts) | Iso volumes: `box`, `slab` (over the footprint, or a part of it: `at`), `cylinder`, `domeIso`, `vaultIso`, `rotorIso`, `mastIso`, `dishIso`, `sphereIso`, `wheelIso`, `bucketWheelIso` (turning by a phase), `cupIso`, `pipeIso`, `portIso`, `prismIso`, `frustumIso`, `latheIso`, `drumIso`, `trussIso`, `chevronIso`, `terminalIso` (a power terminal: service mast, porcelain, clamp), `crierMarkIso` / `crierMarkFace`, `face*` / `faceInk` details | `IsoFrame(w, h, rot, head)` at 2× (`IS` 64, `IH` 32, `ILH` 32 px/level, margin 14): `p(x, y, z)`, `rect`, `ell`, `depth`; `Scene` = painter's queue; `ShadowFrame` lays every point on the ground along the light (cast shadows) |
-| [recipes/buildings.ts](../src/render/art/recipes/buildings.ts) | `R[id] = {head, draw(ctx, f, seed, lv)}` (`lv`: the look's level, 1 but for the Heart: `artLevels`, `artLevelOf`, `portDrawn`, `heartLook`, `HEART_CORNERS`, D86), or `{head, moving: {body, part(…, t), over(f), shadow?}}` for a building with a moving part; `drawBuilding` adds ports from content (far sides under the body, near over it) and the kit's power terminals (last); `drawBuildingMoving` (body and phases apart); `shadowFrameOf` / `drawBuildingShadow` (the cast shadow); `fallback`; `isoHead`; `needsRotations`; `petalMastIso` (the first pole's art, kept, unused) | IsoFrame |
+| [recipes/buildings.ts](../src/render/art/recipes/buildings.ts) | `R[id] = {head, draw(ctx, f, seed, lv)}` (`lv`: the look's level, 1 but for the Heart: `artLevels`, `artLevelOf`, `portDrawn`, `heartLook`, `HEART_CORNERS`, D86), or `{head, moving: {body, part(…, t), over(f), shadow?}}` for a building with a moving part; `drawBuilding` adds ports from content (far sides under the body, near over it) and the kit's power terminals (last); `drawBuildingMoving` (body and phases apart); `rod` (a plainly stroked bar, for lattices by the hundred); `boreNearLeg` (the deep bore's leg its part draws); `shadowFrameOf` / `drawBuildingShadow` (the cast shadow); `fallback`; `isoHead`; `needsRotations`; `petalMastIso` (the first pole's art, kept, unused) | IsoFrame |
 | [recipes/buildings-top.ts](../src/render/art/recipes/buildings-top.ts) | `R[id] = (ctx, f, seed, lv)`, or `MOVING_TOP[id] = {body, part}`; `drawBuildingTop`, `drawBuildingTopMoving`; ports via `shapes.port`, the kit's power terminals via `terminalTop`; `needsRotationsTop`; `petalMastTop` (kept, unused) | `Frame(TOP_PX 64, TOP_MARGIN 14)` |
-| [recipes/moving.ts](../src/render/art/recipes/moving.ts) | `MOVING[id] = {frames, sym}` (phases baked per period, periods per turn); the shared geometry: `TURBINE` + `vaneAt` (the crown), `SAND_WHEEL` + `bucketFull` (the bucket wheel), `HRotor` with `PITCH_ROTOR` and `BIG_ROTOR` (the pitch-control and big turbines' rotors, D69) | — |
-| [recipes/belts.ts](../src/render/art/recipes/belts.ts) | `BELT_TIERS` colours; `drawStraight`, `drawCorner` (rails overrun the edges for seamless joins), `drawInlet` (a side merge), `drawDeck` (skybridge span) | 64 px canvas |
+| [recipes/moving.ts](../src/render/art/recipes/moving.ts) | `MOVING[id] = {frames, sym}` (phases baked per period, periods per turn); the shared geometry: `TURBINE` + `vaneAt` (the crown), `SAND_WHEEL` + `bucketFull` (the bucket wheel), `HRotor` with `PITCH_ROTOR` and `BIG_ROTOR` (the pitch-control and big turbines' rotors, D69); `BORE` + `boreLeg`, `boreSquare` (the deep bore's derrick, collar, table and kelly) | — |
+| [recipes/belts.ts](../src/render/art/recipes/belts.ts) | `BELT_TIERS` colours (and rails: the glazed ribbon's glass-edged, D103); `drawStraight`, `drawCorner` (rails overrun the edges for seamless joins), `drawInlet` (a side merge), `drawDeck` (skybridge span) | 64 px canvas |
 | [recipes/items.ts](../src/render/art/recipes/items.ts), [icons.ts](../src/render/art/recipes/icons.ts) | One glyph per `Glyph` kind, coloured by `ItemDef.color`; `ICON_IDS` cartouches | 32 / 40 px |
 
 Worker-safe modules (no DOM, no Pixi): `terrain.ts`, `rock.ts`, `ink.ts`, `tokens.ts` (except
@@ -516,7 +648,8 @@ Worker-safe modules (no DOM, no Pixi): `terrain.ts`, `rock.ts`, `ink.ts`, `token
 
 ## 10. World views
 
-**BuildingsView.** `rebuild(sim)` (on structural change) destroys and recreates every sprite. A
+**BuildingsView.** `rebuild(sim)` (on structural change) re-draws only what changed (D92, *Updates
+and culling* below). A
 building gets an iso sprite in `objects` (`bKey(id, rot, lv)`, falling back to rot 0; `lv` the Heart's level, D86, else 1; scale `k`;
 anchored at `tileToIso(e.x, e.y)`; zIndex `buildingZ`) and a plan sprite on `plan` (`btKey`, in tile
 units). Pending construction (`builtAt ≠ 0`) draws at alpha 0.45; dormant buildings
@@ -558,16 +691,17 @@ camera only the steps whose wall faces it (climbing away from it, or coming down
 the shaft; the others stand behind the high column and only their heads peek over.
 
 **Moving parts** ([recipes/moving.ts](../src/render/art/recipes/moving.ts), [world/moving-parts.ts](../src/render/world/moving-parts.ts)).
-A building listed in `MOVING` (the wind turbines' crowns and rotors, the sand collector's bucket wheel) shows
+A building listed in `MOVING` (the wind turbines' crowns and rotors, the sand collector's bucket wheel, the face cutter's drum, the deep bore's rotary table and kelly) shows
 its body (`bodyKey`) and, as a second sprite, its part (`partKey(key, k)`), in both views: in iso
 at the body's key ± 0.2 (over the body when `Atlas.moving` says the part is the nearer one in that
 rotation, under it otherwise; lifted with it on the mountains), in plan over it. `animate(sim, seconds, grade)`, per frame with the
 game time (paused: nothing turns), moves each part's phase at its rate (periods per second =
 turns per second × `sym` × the building's own factor 0.92–1.08, `spinSeed`) and swaps its two
 textures when the phase index changes — a few texture swaps on one atlas page, no repaint, no
-upload. Turns per second: a turbine on a grid follows the wind its generator sees
-(`windTurns(local ‰, gust ‰)`: the producer's local wind from `graph.nets`, cached per graph
-version, times `gustPermille` of the moment; 0.1–0.75), a turbine on no grid stands still
+upload. Turns per second: a turbine on a grid follows the local wind its generator sees (D95:
+`windTurns(wind ‰, cutIn, cutOut)`, the wind `turbineWind(producer.local, weatherAt(now))` — the
+producers cached per graph version —; 0.1–0.75, a slow drift 0.03 below its cut-in, braked at its
+cut-out), a turbine on no grid stands still
 (switched off, D83: wiring it sets it going), a machine's part turns while its node works (`workTurns`:
 0.14 × the grid's satisfaction when `Ok` / `LowPower`, else 0); a site under construction, a
 dormant building or one switched off (`WorkLook`) stands still. Speeds ease towards their target (about a second), so a gust
@@ -597,6 +731,33 @@ texture swap), at most `OFF_BAKE_MS` (6 ms) a frame; until its picture is baked 
 `OFF_TINT` instead. A moving part is greyed with `OFF_TINT` and stands still; at night the lights
 view hides the building's glows and work lamp and greys a panel's petals and cells. A rebuild keeps
 what is known (a building switched off is drawn so at once). `FL.workLook(id?)` counts them.
+
+**Updates and culling** (D92). Each entity keeps its sprites (both views, its shadow, its moving
+part, its look, its pit, its elevator) in a record with what they were drawn from (`sigOf`: a
+building's kind, place, turn, built or not, dormant or not, its stand, the look it wears (the Heart's
+level, D86), its chosen item; a ribbon's kind, place, piece, inlets, tile height and elevator). On a
+structural change `rebuild` works the stands out again and compares: an entity whose signature is
+unchanged keeps its sprites, one that changed or is new is laid again, one gone is dropped; the
+skybridges' spans and the flag are two groups with their own signature. Placing a ribbon re-draws it
+and the neighbours whose bend or inlet it changed. Dropped sprites leave each layer in one pass when
+there are many (`removeMany`: `removeChild` searches the layer, so removing 40 000 one by one was
+quadratic). Equal depth keys keep the order a rebuild from scratch lays them in: every sprite sorts at
+`tie(key, rank)` = key − 2⁻³⁶·(2²⁸ − rank), rank = entity id × 16 + the order its sprites are laid,
+then the spans, then the flag — a hair (at most 2⁻⁸) under its key, so another view's sprite at the
+very key (the lights' solar overlays, the junctions' passages) still sorts after the buildings. The
+floor ribbons have their own sorted container on `belts` (`buildings:belts`), the shadows' container is
+sorted too; both are render groups, as is `plan` (layers.ts), so the terrain's chunks streaming in as the
+camera pans re-batch the graded world without the tens of thousands of pieces, shadows and plan sprites
+of a big base, and a cull or a building laid re-batches only its own group. `rebuildAll(sim)` throws everything away and draws from scratch; another colony
+(`setSim`) starts from nothing. `lastUpdate` counts the sprites laid and removed.
+*Culling*: records are bucketed by the 16-tile square of their origin; `cull(viewTiles)`, per frame,
+compares the range of squares within `CULL_MARGIN` (12 tiles: art standing on the mountains, lifts, the
+longest shadows) of the view with the last one and flips `culled` (a Pixi flag apart from `visible`, so
+the views' own visibility — a pit's flame, a lifted shadow at night, the intro's hidden Heart — is kept)
+on the records of the squares that changed side. A culled moving part keeps turning but swaps no
+texture; it shows its phase when it comes back. *Shadows*: their container's alpha (a render group's
+uniform) is set only when its 8-bit value changes, to ⌊α·255⌋ / 255 — what the batcher packed when it
+was a plain container, whose alpha set every frame walked and re-packed every shadow under it.
 
 **Incinerators** ([world/pits.ts](../src/render/world/pits.ts); the art: §9, note 11). An
 incinerator's iso sprite is its pit's `back` at its key, its flame at + 0.12 (hidden until
@@ -694,7 +855,10 @@ container transform, so glyphs stay upright and undistorted; those among the vol
 Sprites at their iso px drawn through M⁻¹ (one decomposition a frame: scale and skew), and in
 plan particles in a container on `plan` drawn through P⁻¹ (§5). Items use the `ib:` belt frames:
 a bit under half a tile across (21 world px in iso, 0.5 × 32 in plan, growing up to ×1.33 when
-zoomed out); hidden below zoom 0.28 and culled outside `viewTiles` ± 1. Particles are pooled, one
+zoomed out); hidden below zoom 0.28 and culled outside `viewTiles` ± 1 — and the lines whose box
+(their tiles and their paths' ends, worked out with the graph) lies more than `BOX_MARGIN` (8 tiles) from
+the view are not read at all (D92: room for an item gliding in from the tile before, and for the line
+out of a routing block drawing what the line into it took through it). Particles are pooled, one
 `ParticleContainer` per atlas page, the particle list rebuilt only when the count changes. For the
 trace rigs, `debugOn` / `debugSnapshot()` (`FL.itemsTrace(on)`) record every drawn item: its rank
 this frame, tile coords, height, item, whether it rides a deck (`over`), its depth key among the
@@ -712,7 +876,8 @@ with the doomed footprints, and a white hover outline when nothing else shows. O
 (a separate `Graphics`), since they are refunded, not destroyed. See [input.md](input.md) for
 `Preview`. A directional routing block (`isDirectional`: router, sorter, inverted sorter, both
 gates — in from the back only) shows its flow over its ghost (`flowArrows`, from the piece's own
-rotation, which is the ribbon's when it is dropped onto one: `Sim.placementRot`): a big turquoise
+rotation, which over a ribbon is the way the items enter that tile, its back to the feed even on a
+curve, until R turns it: `Sim.placementRot`, D98): a big turquoise
 arrow (`glowTurq`, inked, on a soft shadow) from the tile behind into its back, and small coral
 arrows out of its front and sides; dimmed when the placement is refused. A building in hand
 that would stand above the floor (`standLevel`, from `tileTop`) is shown where it would stand: the
@@ -738,8 +903,20 @@ rebuilt only when its signature changes. The z-order inside `overlays` follows t
   pixel), so a border reads the same zoomed in or out. Alpha `max(te, landOn)`: shown while
   building, as the zones were, and always in the land mode. With `landOn` (the shell sets it,
   with `landHover` and `landSel`, from `LandTool` each frame) it adds the parcel grid over the
-  whole range (ink, 1.2 px) and marks the hovered parcel (a paper wash, an ink frame) and the
-  picked one (a cyan frame with ink corner ticks), rebuilt on their own signature.
+  whole range (ink, 1.2 px), each parcel's **usable floor** as a gauge at its middle (D94,
+  `drawFloors`: a paper disc ringed in ink, its share of usable floor — `parcelFloor`, sim/world/floor.ts
+  — filled clockwise from the top in `turqD`, `peachD` under a third, and to its right three
+  diamonds stacked, its ore's tier — `parcelOre` — filled in the colour of the ore it holds most,
+  the rest empty: space or ore at a glance; 1.6 tiles across, 8 screen px at least; the land's diffs
+  in the signature, so a dug tile redraws it) and marks the hovered
+  parcel (a paper wash, an ink frame) and the picked one (a cyan frame with ink corner ticks),
+  rebuilt on their own signature.
+- *Running water* ([world/rivers-view.ts](../src/render/world/rivers-view.ts), D94, `decals`): from zoom 0.8,
+  a paper-white dash drifts down each river tile on the floor in view along its way (a stream up on a
+  massif stands on its column: the relief draws it) (the biome code), fading in
+  and out over a 0.6-tile run (three strokes a frame, by band of alpha); the river tiles in view
+  are found again only when the view moves by a block of 8 tiles (at most 900). On the ground
+  plane, under the relief and the buildings and under the fog.
 - *Freight routes*: violet dashes between dock centres (`routesOn`: hidden under a specialised view's veil; the Logistique view draws them bold).
 - *Dig / fill marks*: coral (dig) or cyan (fill) squares with two hatch strokes, brighter with a
   progress bar where a machine works. The flat copy fades in with `te`; the iso copy is lifted onto
@@ -771,17 +948,32 @@ readings (`Readouts`, [src/sim/readouts/](../src/sim/readouts/)) taken by the sh
 ([app.md](app.md)). Read-only, like every view.
 - *The veil*: a paper sprite (`Texture.WHITE` tinted `C.paper`) over the visible tile rect (its
   projection covers the screen), on `veil`: over the buildings, ribbons and items, under the wires.
-  Its alpha eases to `VEIL[view]` (Électricité 0.66, Logistique 0.62, Production 0.5; Normal and
-  Terrain 0) in `VEIL_FADE` 0.22 s; the view's marks fade with it.
+  Its alpha eases to `VEIL[view]` (Électricité 0.66, Logistique 0.62, Production 0.5, Vent 0.55;
+  Normal and Terrain 0) in `VEIL_FADE` 0.22 s; the view's marks fade with it.
 - *Flat marks* (`viewFlat`, tile units): two Graphics, flat (alpha `te`) and lifted onto the rock
   tops (`liftOf` × `SHIFT`, alpha `1 − te`), rebuilt when their signature changes. Électricité: each
-  grid's buildings washed and outlined in `GRID_COLORS[net % n]`, its pillars ringed (ink under the
-  grid's colour), the unwired in `needsWire`'s dashed coral, the asleep and the sites in lilac; a
+  building washed by what it is to power (owner, 2026-10-16; `PowerMark.group`, art/view-icons.ts
+  `POWER_GROUP_COLOR`): what makes it (turbines, panels, fuel generators, the ground's heat, the Core)
+  gold, the accumulators turquoise (a fifth tone: they give and take), what draws it on a grid slate
+  blue, what needs it and reaches no grid (no wire, asleep) coral — the unwired also in `needsWire`'s
+  dashed frame —, what needs none (ribbons, routing blocks, stores: `needsNoPower`) greyed out under
+  the rest; each grid keeps its colour (`GRID_COLORS[net % n]`) on its pillars' rings (ink under the
+  grid's colour) and its wires (wires-view.ts); a
   pillar's reach (the Link tool's rounded rectangle) under the cursor. Logistique: each chain as a
   path through its tiles' centres (from its tail's edge to its head's; a leap — a bridge, a
   junction's pass — left out), an ink edge under a stroke in `heatColor(util)` by tenths, jams
   `ledRed`, idle lines paper; the routes bold violet dashes with an arrow halfway, the skydocks
-  washed violet. Production: footprints washed by state (`on` turquoise, `pause` amber, `off` coral).
+  washed violet; the Gleaners' night (D103, `Graph.glean`): each exposed ribbon tile hatched in
+  ink with a night badge (a midnight disc, a peach crescent: `crescent`), each guarded one ringed in
+  glass blue. Production: footprints washed by state (`on` turquoise, `pause` amber — a weak grid's too, D91 —, `off` coral).
+  Vent (D95; its own pair of Graphics, `heatPlan` / `heatIso`, under the flat marks): the visible
+  land washed by today's exposure (`windField(sim.grid.source).at(x, y, bearing)`) in cells of 1, 2
+  or 4 tiles by the zoom, grouped by the colour's tenth (`windColor`: art/view-icons.ts `WIND_RAMP`,
+  calm paper → pale turquoise → turquoise → deep teal), each cell lifted by the land's level in
+  iso; ink arrows on a lattice (every 9 cells) pointing the way the wind blows, longer where it blows
+  harder; the turbines' footprints inked. The field's chunks not read yet are read
+  `WIND_CHUNKS_PER_FRAME` (6) a frame; the wash is redrawn when more are in, the rect passes its
+  16-cell margin, the cell size, the bearing or the turbines change.
 - *Badges* (`viewMarks`, view world px): pooled containers of an icon sprite (the marks of
   [art/view-icons.ts](../src/render/art/view-icons.ts), baked on first use) and a bar (ink frame,
   paper inside, a fill). Each hangs over its building's head in iso (`liftOf` + `isoHead` levels,
@@ -790,7 +982,9 @@ readings (`Readouts`, [src/sim/readouts/](../src/sim/readouts/)) taken by the sh
   kind with its output / rating as a turquoise bar, an accumulator's charge, a consumer's upright
   gauge (height by rating, log; fill by draw; coral on a grid short of power; left out below zoom
   0.3), a trouble instead (`unwired`, `asleep`, `dark`, `site`). Logistique: `jam` / `dead` at a
-  line's head, `dock` with its drifters as a bar. Production: why a building stops or waits.
+  line's head, `dock` with its drifters as a bar. Production: why a building stops or waits — a
+  building at work on a grid under 100 % waits under the half-bolt (`low`, D91: `weakGrid`). Vent:
+  each turbine's `wind` mark with what it gives now against its rating (coral when nothing).
 
 **WiresView** (D25). Each wire of `sim.links` is drawn twice, once per view, above every building,
 from terminal to terminal:
@@ -832,7 +1026,9 @@ from terminal to terminal:
   it would make, terminal to terminal (picked as the wire will be), a little bolder than a wire —
   turquoise (would wire), coral (would cut), dashed red (refused) — and a dot on the hovered
   building's terminal.
-- *Cost*: geometry rebuilt only when `links.version` or `graph.version` moves; restyled when a
+- *Cost*: geometry rebuilt only when `links.version` or `graph.version` moves, and redrawn only when a
+  wire's ends, grid, way or curve differ from what is drawn (`sameWires`, D92: every structural change
+  recompiles the graph, and re-tessellating thousands of strokes cost a big base ~30 ms); restyled when a
   wired grid's powered state flips or the overlay toggles. `count` feeds perf `wires`.
 
 **LandingView** (D31, driven by `app/intro.ts`). The intro's last beat, pure decoration: the
@@ -883,6 +1079,32 @@ container's 12 steps on one sheet of trimmed frames sharing an anchor, the iris,
 dust); sprites are pooled (40 dust puffs behind the load, 40 in front); `update(P, te, dt, night)`
 allocates nothing and never touches the sim. `seek(age)` poses every live drone for review (pause
 the game to hold it).
+
+**GleanersView** (D103; [world/gleaners-view.ts](../src/render/world/gleaners-view.ts), art in
+[recipes/gleaners.ts](../src/render/art/recipes/gleaners.ts); owner, 2026-10-17: « il faut qu'on les
+voie quand même, la nuit, venir prendre les objets »). Render only: the sim holds what they take;
+this shows the whole act where and when it happens. At each new graph (`rebuild`): a glass hood over
+each glazed ribbon on the floor (the belt's own piece and matrix: `beltPiece`, `beltMatrix`; none on
+rock yet); **every try of the window** on each exposed chain (`gleanSchedule`, the very rule
+`gleanStep` runs: a tick of the 1 200-tick window and a cell), each with its tile's open side; one
+glazed tile in five beside open floor (`Graph.glean.glass`) and one fence-side floor tile in six
+(`Graph.glean.prowl`) to visit. Per frame, only while they are out (`gleanNight` now, or a try's
+approach or tail across dusk and dawn), culled to the visible tiles, at most 48 figures: for each try
+within 110 ticks ahead a Gleaner comes out of the dunes (7.5 tiles out, fading in), walks up and
+leans over the ribbon at that very tick; past it, the sim's log (`Sim.gleaners.recent`) says whether
+it took something — if so the item rises off the belt from its cell into the hand (the belt's own
+token is gone at that tick: the cells) and it runs back into the desert holding it up, glowing; if
+not it peers 14 ticks and walks back empty-handed. A glazed tile's visit (every 2 400 ticks, 170 on
+show): up to the hood, two taps with a glint on the glass, away; a fence's: in, pacing along the
+outside, sniffing, away. So what the player sees is what the morning report counts, a try now and then
+on each exposed line, never a crowd. Figures are pooled sprites on `items` (view px, upright, flipped
+to the way they go; 42 px tall in iso, 24 in plan; poses `walk`, `carry`, `reach`): a dark hooded
+silhouette, readable against its own soft halo. On `lights` (additive, their own container) each has
+a halo, its lantern eyes and the glow of what it carries, sized to stay visible from afar (world px
+over the zoom: small moving lights at far zoom). Textures baked at construction (four walk frames per
+pose, at twice their size). `FL.gleaners()` counts the figures (carrying, tapping, prowling) and lists
+the next tries; [scripts/gleaner-shots.mjs](../scripts/gleaner-shots.mjs) pauses the game and steps
+a real theft frame by frame.
 
 **DriftersView.** Pure decoration on `status`. Each ship's phase over a round trip (load, fly out,
 unload, fly back) comes from `routeDistance`, `BAL.drifter*` and the game clock; the shadow sits at
@@ -938,7 +1160,9 @@ building stays clear. A multiply tint cannot brighten: what glows does so on `li
 - *Night rigs* (`nightRig`, from the kind and footprint only, never from art positions): a pool
   of work-lamp light on the ground (cold round the Heart, the landing pads of skydocks and trade
   posts — a post's pool covers its pad, not its apron — and, faintly, big machines; amber round hot machines), and the Heart's pulsing uplink
-  beacon on the highest light its art draws (else at the top of its `isoHead`). Small blocks, ribbons, masts and the sleeping solar panels get
+  beacon over its footprint's centre at its `isoHead` — its dish's feed horn — on the light baked there (`beaconSpot`: the nearest
+  emitter within 8 sprite px, else the point; it took « the highest light » until 2026-10-15, which was the west link mast's
+  insulator, 15 px over the feed; heart-look.test.ts checks every level and turn). Small blocks, ribbons, masts and the sleeping solar panels get
   none.
 - *The incinerators' fire.* Each pit gets a warm haze on its throat, a tall amber one up its flame
   and a core (iso), a haze in plan; per frame their alpha is 0.12 (the bed smoulders) + 0.88 × its
@@ -951,7 +1175,15 @@ building stays clear. A multiply tint cannot brighten: what glows does so on `li
   (`groups`); while the buildings view's `WorkLook` says it is switched off they are hidden, and a
   solar panel's petals and cells are greyed (`OFF_TINT`). Re-applied only when the look's
   `version` moves (a flip somewhere): one pass over the groups, writing only those that changed.
-- *Cost.* Pooled sprites, rebuilt on structural changes only. Per frame: the `lights` render
+- *Cost.* Pooled sprites, laid on structural changes only and building by building (D92): each
+  building keeps its glows, beacon, pit glows and solar overlays in a record with what they were laid
+  from (`sigOf`: kind, place, turn, built, dormant, hidden, stand, the Heart's art level); a change lays
+  again only the buildings whose record changed, their old glows back to the free pools. The glow
+  containers are sorted by rank (the building's id × 256 + the order its glows are laid): added light
+  rounds a little differently in another order where many glows stack (up to 60 levels on a server
+  rack's LEDs), so they keep the order a rebuild from scratch lays them in (`rebuildAll`). The solar
+  overlays sort a hair after their key (+ 2⁻³⁶ × rank), after every sprite at it, in entity order.
+  Base20k: 21 → 2.9 ms a structural change. Per frame: the `lights` render
   group's alpha (= `night`; invisible by day), the beacon's pulse, the pits' fire, and during a morph the two
   containers' transforms (iso under M with `isoA`, plan under P with `planA × 0.55`).
 
@@ -967,9 +1199,29 @@ such a building shows up. Textures swap only when the stage changes.
 low, short and dark at noon, gone at night (BuildingsView, *Cast shadows* above).
 
 **Cloud shadows** (`CloudShadows`). Nine soft blobs (three shapes) in tile units on `shade`,
-multiplied in a cool blue-violet. They drift east-south-east with the Sough (0.21, 0.08 tiles
-per world second) on a 224-tile torus wrapped round the camera, so the sky is a function of the
-world clock. Strength `clouds × (1 − te) × 0.5`, faded out below zoom 0.4 (the torus's seams).
+multiplied in a cool blue-violet. They drift downwind of the world's prevailing wind (D95: the shell
+calls `setDrift` with the bearing's unit vector; 0.22 tiles per world second) on a 224-tile torus
+wrapped round the camera, so the sky is a function of the world clock. Strength
+`clouds × (1 − te) × 0.5`, faded out below zoom 0.4 (the torus's seams).
+
+**The wind's hints** (`WindHints`, D95, [world/wind-hints-view.ts](../src/render/world/wind-hints-view.ts)).
+Before the Anémométrie plan the player reads the wind only off the land and off what a turbine
+gives; these are its rare signs (owner, on the first draft: the sand « ne devrait pas être sur les
+montagnes, c'est pour le désert. Et il y en a trop », « les traits sont trop gros »). Pen work, no
+sprite: one Graphics on its own P plane in `shade` (graded: darker at night), redrawn each frame
+while a hint is up. A **gust**: two or three hairline ink flicks, uneven (0.9–2.3 tiles), staggered
+along the wind and a little apart across it, gently bent, a soft start and a tapered end, each
+drawing itself out then thinning away from its start, drifting downwind; on the floor or high up.
+**Sand**, on open desert floor only (sand, dunes, hardpan, worked ground; never rock, water, a chasm
+or under a building): two or three low streaks of the dune's brown skimming the ground downwind,
+and small ripple arcs across the wind behind them. Widths are screen pixels (`HAIR` 1.1, the sand's
+1.4, divided by the projection's scale and the zoom), so a flick stays a hairline when zoomed in.
+Rare and only in clearly strong wind: about one try a second per 1 000 visible tiles (0.5–4; the
+tries off screen dropped by the shell's `onScreen`), one taken with a chance growing with the square
+of its local wind from 1 500 ‰ (sure at 2 700); high ground at a third of that, gusts only; at most
+four up at once; nothing in a calm hour. Lifted onto their rock in iso (level × `SHIFT` × (1 − te)).
+The draws come from a small LCG of their own (render only). `FL.app.windHints.count` says how many
+are up; `boost` (more tries, never more up) and `spawnAt` are the shots' levers (scripts/wind-shots.mjs).
 
 **Debug.** `FL.dayPhase(h | 'dawn' | 'noon' | 'dusk' | 'night' | null)` shifts the clock that
 the look and the HUD read (never the sim's) and returns `{ hour, sun, night, tempC, shifted }`.
@@ -984,7 +1236,7 @@ the look and the HUD read (never the sim's) and returns `{ hour, sun, night, tem
 | 0.3 → 0.65 | Grid fades in (plan only) |
 | 1 → 0.75 | Item glyphs grow from 0.42 to 0.56 tile, then stay |
 
-Buildings have no LOD. The plan's L1 ("objects as dots, animations at 15 Hz below 0.55") and L2
+Buildings have no LOD, but those off screen are culled (D92, §10 *Updates and culling*). The plan's L1 ("objects as dots, animations at 15 Hz below 0.55") and L2
 levels are not built.
 
 ## 12. Perf overlay ([perf-overlay.ts](../src/render/perf-overlay.ts))
@@ -992,8 +1244,75 @@ levels are not built.
 `PerfMeter` wraps the WebGL2 draw calls (`drawElements`, `drawArrays`, and their `Instanced`
 variants) to count them per frame. `frame(ms, dt)` computes fps and the max frame time over 0.5 s
 windows. `set(key, v)` adds stats (`tickMs`, `renderMs`, `chunks`, `chunksMissing`, `vramMB`,
-`reliefSprites`, `reliefBaked`, `items`, `lights`, `atlasMs`). `toggle()` (Backquote) shows a `.perf` panel;
+`reliefSprites`, `reliefBaked`, `items`, `lights`, `wires`, `culled` (buildings culled, D92), `atlasMs`). `toggle()` (Backquote) shows a `.perf` panel;
 `FL.perf()` returns a copy for the smoke test.
+
+### Frame costs on big bases (D92)
+
+`node scripts/render-bench.mjs` (headless Chrome, 1440 × 900, dpr 1; medians of three 2-second
+recordings; the machine shared with other runs, so ±0.5 ms is noise). Frame = the frame's JS time
+(sim ticks, views, UI, the render call); render = the render call alone. Every case ran at 60 fps
+before and after, but the Électricité view on base20k (53–56 fps: its 4 Hz readings, p95 32–42 ms,
+untouched). The p95 of the other cases is the frame that carries a 10 Hz sim tick and the work look's
+sample (5–13 ms on base20k, untouched).
+
+| Base, case | Before: frame (render) ms | After: frame (render) ms |
+|---|---|---|
+| late (922 entities), iso near / mid / far | 2.2 (0.7) / 2.1 (0.7) / 2.0 (0.8) | 2.0 (0.6) / 2.1 (0.6) / 2.0 (0.7) |
+| late, plan mid · night · a view (P / F / O) | 1.8 (0.6) · 1.8 (0.5) · 2.0–2.2 | 1.8 (0.5) · 1.9 (0.5) · 1.9–2.0 |
+| late, a structural change: the buildings' rebuild · the frame | 4.4 ms · 16–17 ms | 0.6 ms (4.1 from scratch) · 12–13 ms |
+| base20k (25 201 entities), iso near / mid / far | 5.5 (3.1) / 5.6 (3.0) / 4.3 (3.1) | 1.1 (0.3) / 1.6 (0.4) / 3.2 (1.4) |
+| base20k, plan near / mid / far | 6.5 (3.7) / 6.6 (3.7) / 5.4 (3.8) | 3.1 (1.5) / 3.3 (1.5) / 3.5 (1.7) |
+| base20k, iso mid by night · a view (P / F / O) | 3.8 (0.9) · 4.2 / 5.6 / 5.5 | 1.8 (0.5) · 1.3 / 1.5 / 1.8 |
+| base20k, panning: iso near · plan near · iso far | 5.3 (2.9) · 6.3 (3.5) · 4.6 (3.2) | 1.1 (0.2) · 3.1 (1.5) · 2.1 (0.6) |
+| base20k, a structural change: the buildings' rebuild · the lights' · the frame | 286 ms · 21 ms · 437–444 ms | 11.3 ms (81 from scratch) · 2.9 ms · 68–75 ms |
+
+What is left in base20k's structural frame: the graph's compile (~25 ms), the buildings' signatures
+(~11 ms), the items' paths (~3–4 ms), the lights' signatures (~3 ms), the render groups re-batched. In plan at far zoom everything is
+on screen: culling cannot help, the moving parts' texture swaps and the plan sprites are the cost.
+
+### Long sessions and the cost of a frame (D100)
+
+`node scripts/soak.mjs` plays a debug base (grown) for half an hour in headless Chrome at dpr 2, as a
+player would (the camera moving, the views and screens opened, buildings placed and removed),
+sampling every minute after a forced garbage collection. Nothing grows without bound that matters:
+
+| What | Over 30 minutes of play |
+|---|---|
+| JS heap kept | 50 → 57–66 MB in the first five minutes (the statistics and ledger filling their windows), then flat (1.5 MB an hour, noise) |
+| DOM nodes, event listeners | flat (±40 an hour; open a screen five times: the same counts after a collection) |
+| Pixi's live textures | 85–117: the terrain's chunks, kept under their 256 MB budget by their LRU (it is full within five minutes at dpr 2) |
+| Pixi's texture table | +3 400 slots an hour: Pixi 8 keeps a null slot for each texture it ever managed (the terrain's chunks come and go) — a few hundred KB an hour |
+| The command log (`sim.log`) | +430 entries an hour of building: kept for replay, not saved, ~40 KB an hour |
+| Unlit pictures (D83), atlas pages | 5 → 8 pictures, one page; the shadows' and the relief's pages bounded by their key spaces |
+
+What a long session costs is the frames: the whole browser (its process tree in `ps`: the renderer's
+main thread ~18–21 % of a core, the GPU process ~8 %, the compositors ~6 %, the sound ~1 %) spends
+~30 % of a core at 60 frames a second on the grown base, playing or paused alike (the scene redraws
+either way). Measured with `AB=` (two builds in alternating windows, the medians; the machine's
+load drifts a lot):
+
+| State | Before D100 | After D100 | Battery saver (« Basse consommation ») |
+|---|---|---|---|
+| Playing | 31 % | 31 % | 25 % |
+| Paused | 29 % | 29 % | 24 % |
+| A full screen open (the tree) | 39 % | 21 % | 21 % |
+
+- **Under a full screen** (`ScreenHost.covers`: the tree, the statistics, the Crier, the absence
+  report, the expertises — 94 % paper and a backdrop blur) the world is drawn 10 times a second
+  (`App.frame`, `COVERED_S`), the time it did not draw handed to the next `drawWorld`: it still moves
+  behind the paper, and the browser no longer re-blurs a fresh canvas at every frame. The sim, its
+  events and the DOM keep their pace.
+- **« Basse consommation »** (settings, live): at most 30 frames drawn a second (`FramePacer` in
+  main.ts's loop; the frames in between are not even asked for: a timer waits until one is nearly
+  due), and from the next launch the economical GPU (`powerPreference: 'low-power'`). A frame's
+  rendering is only part of the cost: the cap saves about a fifth.
+- **A hidden tab** costs nothing but two timers: no animation frame, so no tick and no drawing (the
+  catch-up pays the time back on return), and the sound suspends (audio/sound.ts). Headless Chrome
+  keeps every page visible, so the soak cannot measure it.
+- Not changed (each would change the look): the main menu's backdrop blur over the whole live base
+  (the base drifts behind it at 60 frames a second, re-blurred at each), the 2× resolution and the antialiasing (the
+  « Mode performance » setting), a cap by default on displays faster than 60 Hz.
 
 ## 13. Recipes
 
@@ -1064,7 +1383,9 @@ windows. `set(key, v)` adds stats (`tickMs`, `renderMs`, `chunks`, `chunksMissin
     instead of `draw`: body and part must be parted by a plane (a vertical one, or the horizontal
     one under a crown) so one is wholly nearer the viewer in each rotation — `over(f)` says when
     the part is. Optionally `shadow(ctx, f, s)` for what the part casts (a spinning crown casts a
-    solid band). In `buildings-top.ts` add `MOVING_TOP[id] = {body, part}` (the part goes over).
+    solid band). A part boxed in by its body (the deep bore's kelly inside its derrick) can carry the
+    still piece in front of it and be always the nearer (`over: () => true`): the body then keeps
+    everything else off the part's screen column, in every rotation. In `buildings-top.ts` add `MOVING_TOP[id] = {body, part}` (the part goes over).
     Keep LEDs off the moving part, or on its axis: night lights are placed from phase 0. Say how
     fast it turns in `BuildingsView.animate` / [world/moving-parts.ts](../src/render/world/moving-parts.ts)
     (a turbine: the wind; anything else: while its node works). The atlas bakes the body and the
@@ -1139,7 +1460,12 @@ windows. `set(key, v)` adds stats (`tickMs`, `renderMs`, `chunks`, `chunksMissin
   zoom 1 at dpr 2.
 - **Z-sorting keys** (§7.4). Anything added to `objects` must use `4 × doubled depth + kind` or it
   sorts arbitrarily against cliffs. The relief view relies on BuildingsView having set
-  `sortableChildren`. Every add or remove re-sorts the whole layer.
+  `sortableChildren`. Every add or remove re-sorts the whole layer. The buildings view lays its
+  sprites a hair under their key (`tie`, D92): another view's sprite at the very same key sorts after
+  them, as when the buildings were rebuilt first; never give a key a smaller offset than 0.004.
+- **Removing many children one by one is quadratic.** `removeChild` searches the layer for the child:
+  tearing down 40 000 sprites one by one cost a 25 000-entity base 0.3 s. Remove them in one pass
+  (the buildings view's `removeMany`: the layer emptied and refilled), or keep them.
 - **Ground-plane picking.** `screenTile` works at z = 0. This suits the tools (plan half only);
   iso building picking uses volume hulls `isoHead · LH` high instead — lifted for a building
   standing on the mountains (from `level·LH`, its sprite's pixels lifted too), ranked by the
@@ -1151,7 +1477,7 @@ windows. `set(key, v)` adds stats (`tickMs`, `renderMs`, `chunks`, `chunksMissin
 
 ## 15. Known gaps
 
-- **Unused or misnamed layers.** `decals` is never filled; `status` holds the drifters. Status cartouches (`ic:*`)
+- **Unused or misnamed layers.** `decals` holds only the rivers' running water (D94, `world/rivers-view.ts`); `status` holds the drifters. Status cartouches (`ic:*`)
   are baked but only the artboard shows them; no in-world status view exists.
 - **Not built (M8):** FX, the flow overlay (F is bound but not handled), the other animated
   parts (drill arms, excavator wheels, pulsing kilns: the moving-part mechanism is there, see
@@ -1191,8 +1517,11 @@ windows. `set(key, v)` adds stats (`tickMs`, `renderMs`, `chunks`, `chunksMissin
   kept small, it reads as scatter); cloud shadows lie on the ground plane, not on volumes in
   height; the solar panel's petals mirror `sunDish`'s numbers (`BULB_DISH`, `BULB_TOP` in fx.ts) and
   must follow any change to the bulb's dish; `FL.dayPhase` shifts the look and the HUD clock,
-  not the sim (power still follows the world clock). Building sprites are never culled: every building
-  keeps both sprites, and each structural change rebuilds all of them.
+  not the sim (power still follows the world clock).
+- **Culling and updates (D92):** every building keeps both its sprites (iso and plan) while in view,
+  culled by 16-tile squares, not one by one, with a 12-tile margin; the skybridges' spans and the flag
+  are never culled. The night glows (lights view) and the specialised views' marks are not culled. A change
+  that touches many entities at once (a lease lapsing, the Heart's level) re-draws them all, in one pass.
 - **Plan differences.** Camera bounds cover the whole map, not the revealed area. The placeholder
   is flat sand, not the chunk's average colour. The LRU budget is 256 MB, not 192 MB, and does not
   count mipmaps. Atlas and relief sprites are baked on the main thread, not in an art worker.
@@ -1225,6 +1554,7 @@ windows. `set(key, v)` adds stats (`tickMs`, `renderMs`, `chunks`, `chunksMissin
 | [daynight.test.ts](../src/render/daynight.test.ts) | The 24-hour clock on the world day; the grade never goes black and turns smoothly; lights only at night, clouds only by day; the seen sun follows SOLAR; the plan view's lighter grade |
 | [art/recipes/fx.test.ts](../src/render/art/recipes/fx.test.ts) | The light spy turns LED fills into emitters and `PV` fills into cell polygons; every building recipe runs on the spy; night rigs (the Heart's beacon, amber only on hot machines) |
 | [art/recipes/heart-look.test.ts](../src/render/art/recipes/heart-look.test.ts) | D86: the Heart has one look per level; its pieces stand on four distinct corner tiles, the data outlet on its out port's from `BAL.hearthDataLevel` (its nozzle drawn only then); each level lights more than the last in iso and plan, its solar cells the same at every level |
+| [art/recipes/deep-bore.test.ts](../src/render/art/recipes/deep-bore.test.ts) | The deep bore stands far taller than the drill; its part carries no lamp in iso and only the beacon on its axis in plan (night lights and the switched-off look right in any phase); the leg its part draws is the one exactly in front of the kelly, and its terminal stays clear of that column; the kelly's square repeats every quarter turn |
 | [art/recipes/moving.test.ts](../src/render/art/recipes/moving.test.ts) | Moving parts draw their body and every phase in every baked rotation (iso and plan); the turbine's red light sits on its axis in every phase; the sand wheel stays behind its split plane; the silhouette context keeps solid fills only, in one colour; every building draws as its own cast shadow |
 | [world/wire-geom.test.ts](../src/render/world/wire-geom.test.ts) | Every building that takes part in power has terminals on its footprint and under its head; the art (iso and plan, every baked rotation) draws each one; an anchor lands on a terminal, turned exactly as the art turns it (IsoFrame); a building drawn once keeps its rot-0 points; a pole takes a wire along its arm on the end pin, across it on the top pin; the Heart its nearer link mast; a building on the mountains hangs its wires from its terminals lifted by its level (a pole on the floor keeps its own); the catenary sags most at mid-span, capped, never to the ground even from the lowest terminal |
 | [art/recipes/cargo.test.ts](../src/render/art/recipes/cargo.test.ts) | The sky-crane keeps the intro's numbers; the cargo drone is the same drawing (red to port, green to starboard, LEDs on the hub) and fits its canvas; the container passes through the deck's iris and the iris fits the deck (`TP_DECK_R`); the cables splay out from the container's eyes to the winches; the container draws at any depth in the iris and not at all once sunk |
@@ -1232,6 +1562,7 @@ windows. `set(key, v)` adds stats (`tickMs`, `renderMs`, `chunks`, `chunksMissin
 | [world/moving-parts.test.ts](../src/render/world/moving-parts.test.ts) | Turbines turn faster in stronger wind (bounded, a mesa outspins the cirque, a turbine on the mountains the cirque floor in any gust), machines only while they work; each building's start phase and speed factor are stable and spread |
 | [world/work-look.test.ts](../src/render/world/work-look.test.ts) | D83, on the real engine: a wire mill looks at work while it crafts, keeps the look `WORK_GRACE` ticks once its ore runs out, then is switched off; a drill whose wire is cut is off at once; only flips are reported, once per tick; a turbine off on no grid, on once wired; a lab with no project off; logistics, the Heart and the excavator never watched |
 | [art/unlit.test.ts](../src/render/art/unlit.test.ts) | D83: through `unlitCtx` an opaque lamp is dark glass, its halo is left out, other paint goes through and the style is put back; `switchOffPixels` greys and darkens, keeps alpha |
+| [art/rock.test.ts](../src/render/art/rock.test.ts) | The mesas (2026-10-16): the strata are one rising, uneven table up past the highest rock, the soft rock showing every bed; tops pale and walls deepen with height, harder rock darker; a step's rim bites only inwards (never leaves its tile, whatever the seed), meets the next tile's at a side's ends, and is no silhouette where the step above carries the wall on; a column is cut at a diagonal front's ledge, not at a corner's chamfer (`ledges`); each step wears the rock of its height (`layersOf`); a stream up on a massif (D94) stands at its level, its top running water with its way and fall, and pours a sheet down the wall it runs off (none where it does not fall) |
 | [art/vein.test.ts](../src/render/art/vein.test.ts) | D87: a rock tile holding a face ore is a vein column (`columnLook`), drawn with its seam and crystals on its walls (the far paint only the seam at its lightest detail); in plan a vein shows its crystals along the edges that drop to lower ground, a buried ore keeps the faint hidden dot |
 | [world/cast-shadows.test.ts](../src/render/world/cast-shadows.test.ts) | The shadow map is the identity for the reference light, sends the reference displacement to the sun's and keeps the cross direction; no shadow at night, shortest at noon, long and soft in a low sun, smooth through the day; at every hour a shadow runs straight away from the sun and nothing drawn (the far side of the seam) lies past a building's sun-side edge, which the stretch alone did at dawn; the bake's clip is exactly the far side; no shadow of the day reaches past `shadowReach` |
 | [world/stand.test.ts](../src/render/world/stand.test.ts) | A building stands at 0 on the floor, on the rock top on the mountains (`tileTop`, the highest under its footprint; the ghost asks the same, ribbons lie flat); it sorts after every column under it (its front corner too), past the flat rock its shadow falls on, never past a higher column or a building on the floor ahead (a ribbon there changes nothing), behind the lifted buildings in front of it |

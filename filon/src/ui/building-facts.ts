@@ -228,12 +228,13 @@ function kindRows(def: number, b: BuildingDef, m: Readonly<Mods>): FactRow[] {
       add('fuel', t('card.fuel'), text);
       break;
     }
-    case 'wind':
-      add('wind', t('card.wind'), t('card.wind.local', {
-        cirque: num(BAL.windCirque / 1000), plain: num(BAL.windPlain / 1000), mesa: num((BAL.windMesa[0] ?? 1000) / 1000),
-        low: num(BAL.windHeight[0]! / 1000), high: num(BAL.windHeight[BAL.windHeight.length - 1]! / 1000),
-      }));
+    case 'wind': {
+      // Where the wind blows in words, never a figure for a spot (D95: the Vent view tells that), and its curve.
+      const c = b.gen?.wind, f = (v: number): string => `×${num(Math.round(v / 10) / 100)}`;
+      add('wind', t('card.wind'), t('card.wind.where'));
+      if (c) add('curve', t('card.wind.curve'), t(c.cutOut !== undefined ? 'card.wind.curveOut' : 'card.wind.curveOn', { a: f(c.cutIn), b: f(c.rated), c: f(c.cutOut ?? 0) }));
       break;
+    }
     case 'trade': {
       const level = tradeLevel(m);
       add('rate', t('card.rate'), t('insp.trade.throughput', { rate: rate(throughputMu(level) / 1000) }));

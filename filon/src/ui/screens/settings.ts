@@ -23,6 +23,7 @@ export type VolumeId = 'master' | 'music' | 'sfx';
 export interface SettingsValues {
   readonly uiScale: number;
   readonly perf: boolean;
+  readonly lowPower: boolean;
   readonly volMaster: number;
   readonly volMusic: number;
   readonly volSfx: number;
@@ -36,6 +37,8 @@ export interface SettingsHost {
   setUiScale(scale: number): void;
   /** Lighter rendering (no antialiasing, 1× resolution) from the next launch. */
   setPerf(on: boolean): void;
+  /** Basse consommation (D100): at most 30 frames a second, at once. */
+  setLowPower(on: boolean): void;
   /** A volume slider moved (0–1): heard at once; `done` when it is released (remember it). */
   setVolume(which: VolumeId, value: number, done: boolean): void;
   /** Can this browser play sound at all? */
@@ -116,6 +119,7 @@ export class SettingsScreen {
   private readonly langs: Seg<Locale>;
   private readonly scales: Seg<number>;
   private readonly perfs: Seg<boolean>;
+  private readonly lows: Seg<boolean>;
   private readonly gauges: Gauge[];
   /** The sound section's header: how the sound works, on hover. */
   private readonly soundHead: HTMLElement;
@@ -134,6 +138,7 @@ export class SettingsScreen {
     this.langs = seg('data-lang', LOCALES, (l) => host.setLocale(l));
     this.scales = seg('data-scale', UI_SCALES, (s) => host.setUiScale(s));
     this.perfs = seg('data-perf', [false, true], (on) => host.setPerf(on));
+    this.lows = seg('data-low-power', [false, true], (on) => host.setLowPower(on));
     const v = host.values();
     const row = (label: MsgKey, control: HTMLElement, tip?: MsgKey): HTMLElement => {
       const r = el('div.set-row', {}, [this.label(el('span.set-label.lettering'), label), control]);
@@ -159,6 +164,7 @@ export class SettingsScreen {
         group({}, this.perfs.map((o) => o.node)),
         el('span.set-tag', {}, [mark('order'), this.label(el('span'), 'settings.perf.next')]),
       ]), 'settings.perf.note'),
+      row('settings.lowPower', group({}, this.lows.map((o) => o.node)), 'settings.lowPower.note'),
     ]);
     const sound = this.sec('sound', speakerMark(), 'settings.sound', [...this.gauges.map((g) => g.row), this.soundNote]);
     this.soundHead = sound.querySelector<HTMLElement>('.ksec-head')!;
@@ -175,11 +181,9 @@ export class SettingsScreen {
     this.refresh();
   }
 
-  /** A kit section of the page; its title follows the language. */
+  /** A kit section of the page; its title follows the language (the kit's `lang`). */
   private sec(id: string, icon: HTMLElement, title: MsgKey, body: HTMLElement[]): HTMLElement {
-    const s = section({ sec: `set-${id}`, title: t(title), icon }, body);
-    this.label(s.querySelector<HTMLElement>('.ksec-title')!, title);
-    return s;
+    return section({ sec: `set-${id}`, title: () => t(title), icon }, body);
   }
 
   private saveSection(save: SaveHost): HTMLElement {
@@ -225,6 +229,7 @@ export class SettingsScreen {
     markSeg(this.langs, (l) => l === locale(), (l) => t(ENDONYM[l]));
     markSeg(this.scales, (s) => Math.abs(s - v.uiScale) < 0.001, (s) => pct(s));
     markSeg(this.perfs, (on) => on === v.perf, (on) => t(on ? 'settings.on' : 'settings.off'));
+    markSeg(this.lows, (on) => on === v.lowPower, (on) => t(on ? 'settings.on' : 'settings.off'));
     const sound = this.host.soundAvailable();
     for (const g of this.gauges) {
       const val = g.of(v);

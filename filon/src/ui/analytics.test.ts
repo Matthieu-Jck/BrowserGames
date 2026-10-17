@@ -12,7 +12,7 @@ describe('the Analytics path (D41): what each plan turns on', () => {
     const sim = testSim(undefined, { plans: false });
     sim.grant('iron_plate', 100); sim.grant('copper_wire', 40); sim.grant('glass', 20);
     const features = Object.keys(ANALYTICS) as AnalyticsFeature[];
-    expect(features).toEqual(['rates', 'ledger', 'power', 'machines']);
+    expect(features).toEqual(['rates', 'ledger', 'power', 'machines', 'wind']);
     for (const f of features) expect(analyticsOn(sim, f), f).toBe(false);
     for (const [k, f] of features.entries()) {
       expect(sim.unlockPlan(ANALYTICS[f]).ok, f).toBe(true);

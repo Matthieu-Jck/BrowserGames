@@ -3,11 +3,12 @@
 // touches research), never out of CrierBelt's restart reserve (D36, systems/reserve.ts: a plan
 // must leave the base able to rebuild its production). Research: starting a node in an idle
 // research lab (one project per lab, slots from the Mods), cancelling it (the data it paid stays
-// in its lab), queueing the next one (the Research Queue feature), reconverting a family (its
-// nodes go at once, half their data returns as archive notes when the reconversion — which
-// holds a slot — completes; buildings they unlocked stand dormant), and the online tick: each
+// in its lab), queueing the next one (the Research Queue feature), and the online tick: each
 // project pays its data under the allowance of runtime.ts, so the offline catch-up can drive the
-// same projects as pseudo-flows (docs/offline.md).
+// same projects as pseudo-flows (docs/offline.md). Reconverting a family is retired (D107: its
+// button left the tree); a save's reconversion under way (`respec:<family>`, no lab) still runs
+// out and pays its archive notes, which the next projects spend; its family's buildings stand
+// dormant until relearnt (`isDormant`).
 //
 // AI tokens (D68) are never owned: a project uses them as it runs (the same allowance), and each
 // minute boundary bills what was used (`tokenEpoch`, online and offline alike) — the claim's
@@ -15,26 +16,22 @@
 // servers the rest, from the purse. A purse in the red holds every research until it is back
 // above zero. Data files also come out of the Heart (the Analytics research) and out of the
 // autonomous labs: steady sim-level inflows into a store (`dataTick`), exact offline.
+import { book } from '../purse';
 import { BAL } from '@/content/balance';
-import { BUILDING_KIND, buildingDef, hasResearch, itemIdx, toMu } from '@/content/registry';
+import { BUILDING_KIND, buildingDef, buildingIdx, hasResearch, itemIdx, toMu } from '@/content/registry';
 import { planDef } from '@/content/research';
-import { TPS } from '../constants';
 import { ReservoirNode } from '../flow/nodes';
 import {
-  advanceProject, applyNotes, def as researchDef, effectiveCost, owedItems, prereqsMet, projectDone, respecOrder,
-  respecRefund, respecTicks, takeTokens, type BranchId, type Project, type StartBlock,
+  advanceProject, applyNotes, def as researchDef, effectiveCost, owedItems, prereqsMet, projectDone,
+  takeTokens, type Project, type StartBlock,
 } from '../research/runtime';
 import type { Ent } from '../types';
 import { EPOCH } from '../constants';
 import { LAB_CAP } from '../graph/compile';
 import type { Sim } from '../state';
 import { reserveShort } from './reserve';
+import { tierTwoOpen } from './expertise';
 
-/** Reconversion cooldown, and the grace window at the start of a colony (ticks). */
-const RESPEC_COOLDOWN = 14 * 24 * 3600 * TPS;
-const RESPEC_GRACE = 7 * 24 * 3600 * TPS;
-
-export type RespecBlock = 'empty' | 'cooldown' | 'active' | 'slots';
 
 // ── plans (D33) ─────────────────────────────────────────────────────────────
 
@@ -101,15 +98,28 @@ export function researchBlock(sim: Sim, id: string): StartBlock | null {
   if (sim.done.has(id)) return 'done';
   if (sim.projects.some((p) => p.id === id)) return 'active';
   if (!prereqsMet(id, sim.done)) return 'prereq';
+  // Tier 2 and on wait for two expertises chosen at the Core's Archive (D93).
+  if (researchDef(id).tier >= 2 && !tierTwoOpen(sim)) return 'expertise';
   if (sim.projects.length >= sim.mods.slots) return 'slots';
   if (!idleLabs(sim).length) return 'no_lab';
   if (sim.credits < 0) return 'debt';
   return null;
 }
 
+/**
+ * Whether research is billed AI tokens: only once the claim can place servers, its way to make
+ * its own (D105; owner, 2026-10-17: « les premières techs ne devraient pas coûter de tokens. Elles
+ * devraient commencer à en coûter quand le joueur peut commencer à placer des serveurs »). Read off
+ * the server's unlock in the content. A project keeps what it started at.
+ */
+export function tokensBilled(sim: Sim): boolean {
+  return sim.unlocked(buildingDef(buildingIdx('server')).unlock);
+}
+
 /** A project for a node, in a lab (no checks). */
 function openProject(sim: Sim, id: string, lab: number): Project {
-  const { cost, tokens, ticks } = effectiveCost(id);
+  const e = effectiveCost(id, sim.mods); // the expertises in place take their share off (D93)
+  const { cost, ticks } = e, tokens = tokensBilled(sim) ? e.tokens : 0;
   const p: Project = { id, lab, cost, paid: cost.map(() => 0), dur: ticks, el: 0, tokens, tokUsed: 0 };
   sim.notes -= applyNotes(p, sim.notes);
   sim.projects.push(p);
@@ -192,36 +202,6 @@ function startQueued(sim: Sim): void {
   }
 }
 
-/** Can a branch be reconverted now? */
-export function respecBlock(sim: Sim, branch: BranchId): RespecBlock | null {
-  if (!respecOrder(branch, sim.done).length) return 'empty';
-  if (sim.projects.some((p) => p.id === `respec:${branch}` || (!p.id.startsWith('respec:') && researchDef(p.id).branch === branch))) return 'active';
-  const grace = sim.respecs === 0 && sim.tick < RESPEC_GRACE;
-  if (!grace && sim.lastRespec >= 0 && sim.tick - sim.lastRespec < RESPEC_COOLDOWN) return 'cooldown';
-  if (sim.projects.length >= sim.mods.slots) return 'slots';
-  return null;
-}
-
-/**
- * Reconvert a branch: its nodes go at once (deepest first; buildings they unlocked stand
- * dormant), half their science comes back as archive notes once the reconversion — which
- * holds a research slot for a quarter of their durations — completes.
- */
-export function respec(sim: Sim, branch: BranchId): boolean {
-  if (respecBlock(sim, branch)) return false;
-  const removed = respecOrder(branch, sim.done);
-  const notes = respecRefund(removed);
-  const ticks = respecTicks(removed);
-  for (const id of removed) sim.done.delete(id);
-  sim.projects.push({ id: `respec:${branch}`, lab: 0, cost: [], paid: [], dur: ticks, el: 0, notes });
-  sim.respecs++;
-  sim.lastRespec = sim.tick;
-  sim.log.push({ tick: sim.tick, cmd: { k: 'respec', branch } });
-  sim.rebuildDerived();
-  sim.events.push({ k: 'structure' });
-  return true;
-}
-
 /** The observatory store a project draws from (null for a reconversion or a missing node). */
 export function projectStock(sim: Sim, p: Project): Float64Array | null {
   if (!p.lab) return null;
@@ -297,15 +277,18 @@ export function tokenEpoch(sim: Sim): boolean {
   const bought = used - fromServers;
   const cents = Math.ceil((bought * tokenPriceK(sim)) / 1000);
   sim.credits -= cents;
+  book(sim, 'tokens', -cents);
   let rental = 0;
   if (sim.mods.flags.has('serverRental') && supply > fromServers) {
     rental = Math.floor(((supply - fromServers) * BAL.tokenCentsPerK * BAL.serverRental) / 1e6);
     sim.credits += rental;
+    book(sim, 'rental', rental);
   }
   let fee = 0;
   if (sim.tokenPlan && sim.absEpoch() % 60 === 0) {
     fee = BAL.tokenPlan.feeCentsPerHour;
     sim.credits -= fee;
+    book(sim, 'fee', -fee);
   }
   const st = sim.tokenStats;
   st.used = used; st.fromServers = fromServers; st.bought = bought; st.cents = cents; st.supply = supply; st.rental = rental;
@@ -339,7 +322,7 @@ export function dataMakers(sim: Sim, satOfProject: (p: Project) => number): Arra
     const e = sim.ents.get(p.lab);
     const per = e ? buildingDef(e.def).lab?.dataPerMin ?? 0 : 0;
     const st = sim.stores.get(p.lab);
-    if (per > 0 && st) out.push({ ent: p.lab, stock: st, rate: per * 1000, sat: satOfProject(p) });
+    if (per > 0 && st) out.push({ ent: p.lab, stock: st, rate: Math.floor((per * 1000 * sim.mods.dataRate) / 1000), sat: satOfProject(p) });
   }
   return out;
 }

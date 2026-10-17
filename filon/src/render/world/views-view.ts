@@ -6,18 +6,29 @@
 // - **The veil.** A paper wash over the graded world (layers.ts `veil`: over the buildings, the
 //   ribbons and their items, under the wires), so the base fades to a pale print and the view's
 //   own marks, drawn untinted above it, stand out. It fades in and out with the view.
-// - **Électricité** (`power`): each grid in its colour (art/view-icons.ts `GRID_COLORS`): its
-//   buildings' footprints washed and outlined in it, its pillars ringed (the wires go bold in their
-//   grid's colour: wires-view.ts), a pillar's reach on hover. Badges above the buildings: a source
+// - **Électricité** (`power`): each building washed by what it is to power (art/view-icons.ts
+//   `POWER_GROUP_COLOR`; owner, 2026-10-16): what makes it gold, the accumulators turquoise, what draws
+//   it slate blue, what needs it and reaches no grid coral (dashed when a wire is missing), what
+//   needs none — ribbons, routing blocks, stores — greyed out most; each grid keeps its colour
+//   (`GRID_COLORS`) on its pillars' rings and its wires (bold: wires-view.ts); a pillar's reach on
+//   hover. Badges above the buildings: a source
 //   by what it catches or burns (sun, wind, fuel, the ground's heat, the Core) with its output
 //   against its rating as a small bar; an accumulator with its charge; a consumer by a short gauge
 //   of what it draws (its height its rating). A building with no wire, asleep, without power or
 //   short of it, or still being built carries that flag instead (dashed frames for the first two).
 // - **Logistique** (`logistics`): every ribbon line as a heat (art/view-icons.ts `heatColor`) of
 //   its throughput against its tier's pace, a jammed line red with a stop badge at its head, a dead
-//   end's head marked; the skydocks and their drifter routes bold violet, arrowed.
+//   end's head marked; the skydocks and their drifter routes bold violet, arrowed. The night (D103):
+//   each ribbon tile the Gleaners reach from the desert hatched in midnight ink with a crescent
+//   moon, each one kept from them (under glass, behind a fence) ringed in glass blue.
 // - **Production** (`production`): each production building washed by its state (at work
-//   turquoise, a passing stop amber, stopped coral) and, when it does not work, why as a badge.
+//   turquoise, a passing stop amber, stopped coral) and, when it does not work, why as a badge;
+//   one at work on a grid under 100 % waits amber under the half-bolt (D91: `weakGrid`).
+// - **Vent** (`wind`, D95): the land washed by its exposure to today's wind (art/view-icons.ts
+//   `windColor`: calm paper to deep teal), in cells of one to four tiles by the zoom; ink arrows on
+//   a lattice pointing the way the wind blows, longer where it blows harder; each turbine's
+//   footprint inked, its badge with what it gives against its rating. The field is read chunk by
+//   chunk (sim/world/wind.ts), a few chunks a frame, the wash redrawn as they come in.
 //
 // Space: flat marks in tile units on `viewFlat` (a P plane), in two copies like the overlays — flat
 // in plan, lifted onto the rock top in iso (`levelAt` × `SHIFT`), cross-faded; badges in view world
@@ -31,14 +42,17 @@ import type { BuildingId } from '@/content/buildings';
 import type { MapView } from '@/core/kinds';
 import { footprint } from '@/sim/entities';
 import { linkPoint } from '@/sim/power/links';
-import type { PowerMark } from '@/sim/readouts/power';
+import { needsNoPower, type PowerGroup, type PowerMark } from '@/sim/readouts/power';
 import type { Readouts } from '@/sim/readouts/readouts';
 import type { ProdMark, StopWhy } from '@/sim/readouts/production';
 import type { RibbonLook } from '@/sim/readouts/ribbons';
+import type { WindReport } from '@/sim/readouts/wind';
 import type { Sim } from '@/sim/state';
 import type { Ent } from '@/sim/types';
 import { C, num } from '../art/tokens';
-import { GRID_COLORS, drawViewIcon, heatColor, type ViewIcon } from '../art/view-icons';
+import { GRID_COLORS, POWER_GROUP_COLOR, drawViewIcon, heatColor, windColor, type ViewIcon } from '../art/view-icons';
+import { COS64, SIN64 } from '@/content/world';
+import { windField } from '@/sim/world/wind';
 import { isoHead } from '../art/recipes/buildings';
 import { LH } from '../iso';
 import { apply, type Lin } from '../projection';
@@ -63,7 +77,11 @@ export interface ViewFrame {
 }
 
 /** How strongly each view veils the base (paper, alpha). */
-export const VEIL: Readonly<Record<MapView, number>> = { normal: 0, land: 0, power: 0.66, logistics: 0.62, production: 0.5 };
+export const VEIL: Readonly<Record<MapView, number>> = { normal: 0, land: 0, power: 0.66, logistics: 0.62, production: 0.5, wind: 0.55 };
+/** The Vent view (D95): chunks of the wind field read a frame at most, the wash's alpha, the arrows' spacing (cells). */
+const WIND_CHUNKS_PER_FRAME = 6;
+const WIND_ALPHA = 0.78;
+const ARROW_EVERY = 9;
 /** Seconds the veil takes to come or go. */
 const VEIL_FADE = 0.22;
 /** A badge's size on screen (CSS px) at zoom 1; it follows √zoom within these bounds. */
@@ -73,7 +91,7 @@ const MARK_ZOOM: readonly [number, number] = [0.55, 1.2];
 const GAUGE_MIN_ZOOM = 0.3;
 
 /** The icon a production stop shows. */
-const STOP_ICON: Record<StopWhy, ViewIcon> = { power: 'dark', unwired: 'unwired', inputs: 'inputs', output: 'output', recipe: 'recipe', asleep: 'asleep', site: 'site', idle: 'idle' };
+const STOP_ICON: Record<StopWhy, ViewIcon> = { power: 'dark', unwired: 'unwired', inputs: 'inputs', output: 'output', recipe: 'recipe', asleep: 'asleep', site: 'site', idle: 'idle', weak: 'low' };
 /** The wash of a production state. */
 const WORK_COL = { on: C.turq, pause: C.warn, off: C.coral } as const;
 
@@ -88,6 +106,19 @@ interface Mark {
   x: number;
   y: number;
   head: number;
+}
+
+/** A crescent moon of radius r round (cx, cy), opening to the lower right: the Gleaners' night (D103). */
+function crescent(g: Graphics, cx: number, cy: number, r: number): void {
+  // The lit limb: the outer circle round its left between the two points where a circle of the same
+  // radius, shifted right by `off`, meets it; then back round that circle's left.
+  const off = 0.55 * r, h = Math.sqrt(r * r - (off * off) / 4), n = 14;
+  const a0 = Math.atan2(-h, off / 2), a1 = Math.atan2(h, off / 2);
+  const b0 = Math.atan2(h, -off / 2), b1 = Math.atan2(-h, -off / 2) + 2 * Math.PI;
+  const pts: number[] = [];
+  for (let i = 0; i <= n; i++) { const a = a0 - (i / n) * (2 * Math.PI - (a1 - a0)); pts.push(cx + Math.cos(a) * r, cy + Math.sin(a) * r); }
+  for (let i = 0; i <= n; i++) { const b = b0 + (i / n) * (b1 - b0); pts.push(cx + off + Math.cos(b) * r, cy + Math.sin(b) * r); }
+  g.poly(pts);
 }
 
 /** A badge's texture: the mark on its paper disc, 64 px. */
@@ -105,6 +136,10 @@ export class ViewsView {
   private readonly flatIso = new Graphics();
   private readonly ringPlan = new Graphics();
   private readonly ringIso = new Graphics();
+  /** The Vent view's wash and arrows (D95), apart from the flat marks: redrawn as the field comes in. */
+  private readonly heatPlan = new Graphics();
+  private readonly heatIso = new Graphics();
+  private heatSig = '';
   private readonly marks = new Container();
   private readonly pool: Mark[] = [];
   private used = 0;
@@ -121,7 +156,7 @@ export class ViewsView {
     this.veil.alpha = 0;
     this.veil.visible = false;
     veilLayer.addChild(this.veil);
-    flatLayer.addChild(this.flatIso, this.flatPlan, this.ringIso, this.ringPlan);
+    flatLayer.addChild(this.heatIso, this.heatPlan, this.flatIso, this.flatPlan, this.ringIso, this.ringPlan);
     markLayer.addChild(this.marks);
   }
 
@@ -136,7 +171,7 @@ export class ViewsView {
 
   /** Per frame. */
   update(sim: Sim, f: ViewFrame, d: ViewData): void {
-    const on = f.view === 'power' || f.view === 'logistics' || f.view === 'production';
+    const on = f.view === 'power' || f.view === 'logistics' || f.view === 'production' || f.view === 'wind';
     // The veil: over the visible tiles (their projection covers the screen), easing to the view's strength.
     const target = VEIL[f.view] ?? 0;
     const step = f.dt / VEIL_FADE;
@@ -151,19 +186,22 @@ export class ViewsView {
     }
     if (f.view !== this.shown) { this.shown = f.view; this.flatSig = ''; this.markVersion = -1; this.ringSig = ''; }
     const fade = target > 0 ? this.veilA / target : 0;
-    for (const g of [this.flatPlan, this.ringPlan]) { g.alpha = f.te * fade; g.visible = on && g.alpha > 0.01; }
-    for (const g of [this.flatIso, this.ringIso]) { g.alpha = (1 - f.te) * fade; g.visible = on && g.alpha > 0.01; }
+    for (const g of [this.flatPlan, this.ringPlan, this.heatPlan]) { g.alpha = f.te * fade; g.visible = on && g.alpha > 0.01; }
+    for (const g of [this.flatIso, this.ringIso, this.heatIso]) { g.alpha = (1 - f.te) * fade; g.visible = on && g.alpha > 0.01; }
     this.marks.alpha = fade;
     this.marks.visible = on && fade > 0.01;
     if (!on) {
       if (this.flatSig) { this.flatSig = ''; this.flatPlan.clear(); this.flatIso.clear(); }
       if (this.ringSig) { this.ringSig = ''; this.ringPlan.clear(); this.ringIso.clear(); }
+      if (this.heatSig) { this.heatSig = ''; this.heatPlan.clear(); this.heatIso.clear(); }
       if (this.used) this.hideMarks(0);
       return;
     }
+    if (f.view !== 'wind' && this.heatSig) { this.heatSig = ''; this.heatPlan.clear(); this.heatIso.clear(); }
     if (f.view === 'power' && d.power) this.drawPower(sim, d.power.marks, f);
     else if (f.view === 'logistics' && d.ribbons) this.drawLogistics(sim, d.ribbons, f);
     else if (f.view === 'production' && d.production) this.drawProduction(sim, d.production, f);
+    else if (f.view === 'wind' && d.wind) this.drawWind(sim, d.wind, f);
     if (d.version !== this.markVersion) {
       this.markVersion = d.version;
       this.buildMarks(sim, f, d);
@@ -183,31 +221,39 @@ export class ViewsView {
   }
 
   private drawPower(sim: Sim, marks: readonly PowerMark[], f: ViewFrame): void {
-    const sig = `p${sim.graph?.version}:${sim.links.version}:${marks.map((m) => `${m.net}${m.flag ?? ''}`).join(',')}`;
+    const sig = `p${sim.graph?.version}:${sim.links.version}:${sim.ents.size}:${marks.map((m) => `${m.net}${m.flag ?? ''}${m.group ?? ''}`).join(',')}`;
     if (sig !== this.flatSig) {
       this.flatSig = sig;
       this.both((g, d) => {
-        const byNet = new Map<number, Array<[number, number, number, number]>>();
+        type R = [number, number, number, number];
+        const rect = (e: Ent): R => { const [w, h] = footprint(e.def, e.rot), o = d(liftOf(e)); return [e.x - o, e.y - o, w, h]; };
+        // What needs no power first, greyed out under the rest (its ribbons, routing blocks, stores).
+        for (const e of sim.ents.sorted()) {
+          if (!needsNoPower(e.def)) continue;
+          const [x, y, w, h] = rect(e);
+          g.rect(x + 0.04, y + 0.04, w - 0.08, h - 0.08);
+        }
+        const [nf, ns] = POWER_GROUP_COLOR.none;
+        g.fill({ color: num(nf), alpha: 0.6 }).stroke({ width: 0.05, color: num(ns), alpha: 0.5 });
+        // Then each group in its tone; the unwired dashed over it; the pillars ringed in their grid's colour.
+        const byGroup = new Map<PowerGroup, R[]>();
         const rings: Array<[number, number, number, number, number]> = [];
-        const loose: Array<[number, number, number, number]> = [];
-        const asleep: Array<[number, number, number, number]> = [];
+        const loose: R[] = [];
         for (const m of marks) {
           const e = sim.ents.get(m.ent);
           if (!e) continue;
-          const [w, h] = footprint(e.def, e.rot), o = d(liftOf(e));
-          const r: [number, number, number, number] = [e.x - o, e.y - o, w, h];
-          if (m.flag === 'unwired') { loose.push(r); continue; }
-          if (m.flag === 'asleep' || m.flag === 'site') { asleep.push(r); continue; }
-          if (m.net < 0) continue;
-          let arr = byNet.get(m.net);
-          if (!arr) byNet.set(m.net, (arr = []));
+          const r = rect(e);
+          if (m.role.k === 'pillar') { if (m.net >= 0) rings.push([...r, m.net]); continue; }
+          if (m.flag === 'unwired') loose.push(r);
+          if (!m.group) continue;
+          let arr = byGroup.get(m.group);
+          if (!arr) byGroup.set(m.group, (arr = []));
           arr.push(r);
-          if (m.role.k === 'pillar') rings.push([...r, m.net]);
         }
-        for (const [net, rects] of byNet) {
-          const col = num(GRID_COLORS[net % GRID_COLORS.length]!);
+        for (const [grp, rects] of byGroup) {
+          const [fc, sc] = POWER_GROUP_COLOR[grp];
           for (const [x, y, w, h] of rects) g.rect(x + 0.06, y + 0.06, w - 0.12, h - 0.12);
-          g.fill({ color: col, alpha: 0.32 }).stroke({ width: 0.11, color: col, alpha: 1 });
+          g.fill({ color: num(fc), alpha: grp === 'unlinked' ? 0.5 : 0.55 }).stroke({ width: 0.11, color: num(sc), alpha: 1 });
         }
         // The pillars: a ring in their grid's colour over an ink one, hugging the footprint.
         for (const [x, y, w, h, net] of rings) {
@@ -216,8 +262,6 @@ export class ViewsView {
           g.circle(x + w / 2, y + h / 2, r).stroke({ width: 0.11, color: num(GRID_COLORS[net % GRID_COLORS.length]!), alpha: 1 });
         }
         needsWire(g, loose);
-        for (const [x, y, w, h] of asleep) g.rect(x + 0.08, y + 0.08, w - 0.16, h - 0.16);
-        if (asleep.length) g.fill({ color: num(C.lilacL), alpha: 0.35 }).stroke({ width: 0.08, color: num(C.lilacD), alpha: 0.8 });
       });
     }
     // A pillar's reach on hover (the Link tool's ring: its footprint swept out to its range).
@@ -279,6 +323,31 @@ export class ViewsView {
           gr.rect(e.x - o + 0.08, e.y - o + 0.08, w - 0.16, h - 0.16);
         }
         gr.fill({ color: num(C.violetL), alpha: 0.3 }).stroke({ width: 0.14, color: num(C.violet), alpha: 1 });
+        // The Gleaners' night (D103): the tiles they reach, hatched, a crescent on each; those kept from them, ringed.
+        const glean = g?.glean;
+        if (glean) {
+          for (const v of glean.exposed) {
+            const x = v & 1023, y = v >> 10, o = d(f.levelAt(x, y));
+            for (const k of [0.3, 0.7]) gr.moveTo(x - o + k - 0.12, y - o + 0.82).lineTo(x - o + k + 0.12, y - o + 0.18);
+          }
+          if (glean.exposed.length) gr.stroke({ width: 0.06, color: num(C.inkSoft), alpha: 0.85, cap: 'round' });
+          // A night badge on each: the midnight disc, the crescent on it.
+          for (const v of glean.exposed) {
+            const x = v & 1023, y = v >> 10, o = d(f.levelAt(x, y));
+            gr.circle(x - o + 0.5, y - o + 0.5, 0.3);
+          }
+          if (glean.exposed.length) gr.fill({ color: num(C.inkSoft), alpha: 1 }).stroke({ width: 0.05, color: num(C.ink), alpha: 1 });
+          for (const v of glean.exposed) {
+            const x = v & 1023, y = v >> 10, o = d(f.levelAt(x, y));
+            crescent(gr, x - o + 0.5, y - o + 0.5, 0.21);
+          }
+          if (glean.exposed.length) gr.fill({ color: num(C.glowPeach), alpha: 1 });
+          for (const v of glean.guarded) {
+            const x = v & 1023, y = v >> 10, o = d(f.levelAt(x, y));
+            gr.roundRect(x - o + 0.1, y - o + 0.1, 0.8, 0.8, 0.22);
+          }
+          if (glean.guarded.length) gr.stroke({ width: 0.09, color: num(C.ice), alpha: 1 });
+        }
       });
     }
     if (this.ringSig) { this.ringSig = ''; this.ringPlan.clear(); this.ringIso.clear(); }
@@ -325,6 +394,71 @@ export class ViewsView {
         }
       });
     }
+    if (this.ringSig) { this.ringSig = ''; this.ringPlan.clear(); this.ringIso.clear(); }
+  }
+
+  /**
+   * The Vent view (D95): the wash of today's exposure over the visible land in cells (1, 2 or 4
+   * tiles by the zoom), the arrows, the turbines' footprints. The field's chunks not read yet are
+   * read a few a frame; the wash is redrawn when more are in, the view moves past its margin, or
+   * the bearing changes.
+   */
+  private drawWind(sim: Sim, w: WindReport, f: ViewFrame): void {
+    const field = windField(sim.grid.source), b = w.bearing;
+    const cell = f.zoom >= 0.9 ? 1 : f.zoom >= 0.26 ? 2 : 4;
+    const span = 16 * cell;
+    const [vx0, vy0, vx1, vy1] = f.tiles;
+    const x0 = Math.max(0, Math.floor((vx0 - 8) / span) * span), y0 = Math.max(0, Math.floor((vy0 - 8) / span) * span);
+    const x1 = Math.min(1024, Math.ceil((vx1 + 8) / span) * span), y1 = Math.min(1024, Math.ceil((vy1 + 8) / span) * span);
+    // Read the chunks the rect needs, a few a frame.
+    let ready = 0, total = 0, budget = WIND_CHUNKS_PER_FRAME;
+    for (let cy = y0 >> 5; cy <= (y1 - 1) >> 5; cy++) for (let cx = x0 >> 5; cx <= (x1 - 1) >> 5; cx++) {
+      total++;
+      if (field.hasChunk(cx, cy, b)) { ready++; continue; }
+      if (budget-- > 0) { field.chunk(cx, cy, b); ready++; }
+    }
+    const turbines = w.turbines.map((t) => t.ent).join(',');
+    const sig = `${b}:${cell}:${x0},${y0},${x1},${y1}:${ready}/${total}:${turbines}:${sim.graph?.version}`;
+    if (sig !== this.heatSig) {
+      this.heatSig = sig;
+      for (const [g, lift] of [[this.heatPlan, false], [this.heatIso, true]] as const) {
+        g.clear();
+        // The wash: cells grouped by their colour's step (one fill each).
+        const groups = new Map<number, number[]>();
+        for (let y = y0; y < y1; y += cell) for (let x = x0; x < x1; x += cell) {
+          if (!field.hasChunk(x >> 5, y >> 5, b)) continue;
+          const cxm = Math.min(1023, x + (cell >> 1)), cym = Math.min(1023, y + (cell >> 1));
+          const k = Math.round(field.at(cxm, cym, b) / 100);
+          let arr = groups.get(k);
+          if (!arr) groups.set(k, (arr = []));
+          arr.push(x, y, lift ? f.levelAt(cxm, cym) * SHIFT : 0);
+        }
+        for (const [k, cells] of groups) {
+          for (let i = 0; i < cells.length; i += 3) g.rect(cells[i]! - cells[i + 2]!, cells[i + 1]! - cells[i + 2]!, cell, cell);
+          g.fill({ color: num(windColor(k * 100)), alpha: WIND_ALPHA });
+        }
+        // The arrows: the way the wind blows (from bearing b, towards b + 32), longer where it blows harder.
+        const ux = -COS64[b]! / 1024, uy = -SIN64[b]! / 1024, step = ARROW_EVERY * cell;
+        for (let y = Math.ceil(y0 / step) * step + (step >> 1); y < y1; y += step) for (let x = Math.ceil(x0 / step) * step + (step >> 1); x < x1; x += step) {
+          if (!field.hasChunk(x >> 5, y >> 5, b)) continue;
+          const e = field.at(x, y, b), len = (1.2 + (2.6 * Math.min(e, 2400)) / 2400) * cell, o = lift ? f.levelAt(x, y) * SHIFT : 0;
+          const ax = x + 0.5 - o - (ux * len) / 2, ay = y + 0.5 - o - (uy * len) / 2, bx = ax + ux * len, by = ay + uy * len;
+          const hw = 0.42 * cell;
+          g.moveTo(ax, ay).lineTo(bx, by);
+          g.moveTo(bx - ux * hw * 1.4 - uy * hw, by - uy * hw * 1.4 + ux * hw).lineTo(bx, by).lineTo(bx - ux * hw * 1.4 + uy * hw, by - uy * hw * 1.4 - ux * hw);
+        }
+        g.stroke({ width: 0.17 * cell, color: num(C.ink), alpha: 0.85, cap: 'round', join: 'round' });
+        // The turbines' footprints, inked over the wash.
+        for (const t of w.turbines) {
+          const e = sim.ents.get(t.ent);
+          if (!e) continue;
+          const [fw, fh] = footprint(e.def, e.rot), o = lift ? liftOf(e) * SHIFT : 0;
+          g.rect(e.x - o + 0.06, e.y - o + 0.06, fw - 0.12, fh - 0.12);
+        }
+        g.stroke({ width: 0.14, color: num(C.ink), alpha: 1 });
+      }
+    }
+    if (this.flatSig) { this.flatSig = ''; this.flatPlan.clear(); this.flatIso.clear(); }
     if (this.ringSig) { this.ringSig = ''; this.ringPlan.clear(); this.ringIso.clear(); }
   }
 
@@ -427,6 +561,15 @@ export class ViewsView {
         this.anchor(m, e);
         const fleet = sim.fleet.get(e.id) ?? 0;
         this.badge(m, 'dock', fleet > 0 ? Math.min(1, fleet / 4) : null, C.violetL);
+      }
+    } else if (f.view === 'wind' && d.wind) {
+      // Each turbine: the wind mark, its output against its rating (coral when it gives nothing).
+      for (const tl of d.wind.turbines) {
+        const e = sim.ents.get(tl.ent);
+        if (!e) continue;
+        const m = this.mark(n++);
+        this.anchor(m, e);
+        this.badge(m, 'wind', tl.full > 0 ? tl.kw / tl.full : 0, tl.kw > 0 ? C.turq : C.coral);
       }
     } else if (f.view === 'production' && d.production) {
       for (const pm of d.production) {

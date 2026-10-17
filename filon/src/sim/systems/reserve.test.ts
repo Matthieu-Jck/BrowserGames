@@ -324,7 +324,7 @@ describe('CrierBelt’s restart reserve (D36): a base can always rebuild its pro
     expect(sim.unlockPlan('kiln').ok).toBe(true);
     // Short of the cost itself still reads « unaffordable » first.
     sim.stock[PLATE()] = mu(5);
-    expect(sim.planBlock('workshop')).toBe('unaffordable');
+    expect(sim.planBlock('wire_mill')).toBe('unaffordable'); // 15 plates, its prerequisite (the smelter) taken
   });
 
   it('buildings count, so placing and removing never move the verdict; production and rewards lift it', () => {

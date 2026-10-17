@@ -11,8 +11,11 @@ import type { RecipeDef } from './types';
 export const MAX_RECIPES = 3;
 
 const KILNS = ['kiln', 'kiln_compact'] as const;
-/** The arc furnace: plates and glass from power, without coal (Mechanics, D70). */
-const ARC = ['arc_furnace'] as const;
+/**
+ * Plates and glass from power, without coal: the electric smelter at the smelter's pace (Tier 1,
+ * D106), the arc furnace twice as fast (Mechanics, D70).
+ */
+const ARC = ['electric_smelter', 'arc_furnace'] as const;
 const WIRE = ['wire_mill', 'wire_mill_double'] as const;
 /** Gears: the press and its forging press. */
 const PRESSES = ['press', 'forge_press'] as const;
@@ -29,7 +32,9 @@ const SCRIPTORIUM = ['scriptorium'] as const;
 
 export const RECIPES = {
   iron_plate: {
-    name: { fr: 'Plaque de fer', en: 'Iron Plate' }, machines: KILNS, seconds: 4,
+    // 6 s: 10 ore and 10 coal a minute, what one cirque iron drill (11–18/min) and its coal drill
+    // (~10/min) give — one smelter fed by one drill pair (D97; owner, 2026-10-16: it drew too much iron).
+    name: { fr: 'Plaque de fer', en: 'Iron Plate' }, machines: KILNS, seconds: 6,
     ins: [['iron_ore', 1], ['coal', 1]], outs: [['iron_plate', 1]], unlock: 'start', // as much coal as ore (owner, 2026-10-12)
   },
   glass: {
@@ -120,14 +125,17 @@ export const RECIPES = {
     name: { fr: 'Cuivre tamisé', en: 'Sifted Copper' }, machines: ['sifter'], seconds: 6,
     ins: [['stone', 8]], outs: [['copper_ore', 1]], unlock: 'ex_sifter',
   },
-  // The arc furnace melts with power where the smelter burns coal.
+  // The electric smelter and the arc furnace melt with power where the smelter burns coal (D106).
+  // The ids are the arc furnace's (saves carry them); the names say what differs from the coal
+  // recipes. The coal smelter's pace, 6 s (D97): 10 a minute in the electric smelter, 20 in the
+  // arc furnace (speed 2000); both unlocked with the electric smelter, the first of the two.
   arc_plate: {
-    name: { fr: 'Plaque de fer (arc)', en: 'Iron Plate (arc)' }, machines: ARC, seconds: 4,
-    ins: [['iron_ore', 1]], outs: [['iron_plate', 1]], unlock: 'dn_arc',
+    name: { fr: 'Plaque de fer (électrique)', en: 'Iron Plate (electric)' }, machines: ARC, seconds: 6,
+    ins: [['iron_ore', 1]], outs: [['iron_plate', 1]], unlock: 'dn_esmelt',
   },
   arc_glass: {
-    name: { fr: 'Verre (arc)', en: 'Glass (arc)' }, machines: ARC, seconds: 6,
-    ins: [['sand', 3]], outs: [['glass', 1]], unlock: 'dn_arc',
+    name: { fr: 'Verre (électrique)', en: 'Glass (electric)' }, machines: ARC, seconds: 6,
+    ins: [['sand', 3]], outs: [['glass', 1]], unlock: 'dn_esmelt',
   },
   // ── appended (D87): the quartz workshop's one recipe ──────────────────────
   // A blade cut from the face cutter's quartz, mounted on two copper leads: what Mechanics Data

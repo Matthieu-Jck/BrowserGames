@@ -9,19 +9,19 @@
 // first, CrierBelt's the rest. A node costs what its table says, whatever else the claim owns:
 // the spread penalty and the lineage discount of D69 are gone (owner, 2026-10-15, D72), so no
 // family is dearer for researching another. Integer maths throughout.
-import { BAL } from '@/content/balance';
 import { FAMILY_IDS, RESEARCH, researchNode, type ResearchId } from '@/content/research';
-import { RESEARCH_IDS, itemDef, itemIdx } from '@/content/registry';
+import { itemDef, itemIdx } from '@/content/registry';
 import type { FamilyId, ResearchDef } from '@/content/types';
 import { mulDiv } from '@/core/fixed';
 import { TPS } from '../constants';
+import type { Mods } from './modifiers';
 
-/** A research family (D69); `BranchId` is its old name, kept for the reconversion's command. */
+/** A research family (D69); `BranchId` is its old name, kept for the reconversion's logged command (a no-op since D107). */
 export type BranchId = FamilyId;
 export const BRANCHES: readonly BranchId[] = FAMILY_IDS;
 
 export interface Project {
-  /** Research id, or `respec:<family>` for a reconversion in progress. */
+  /** Research id, or `respec:<family>` for a reconversion in progress (a save's from before D107: none starts now). */
   id: string;
   /** Lab entity (0 for a reconversion: it holds a slot but no lab). */
   lab: number;
@@ -50,10 +50,21 @@ export function branchCounts(done: ReadonlySet<string>): Record<BranchId, number
   return c;
 }
 
-/** A node's cost (milli-items, whole items), AI tokens and minimum duration (ticks): its table's, whatever the claim owns (D72). */
-export function effectiveCost(id: string): { cost: Array<{ item: number; mu: number }>; tokens: number; ticks: number } {
+/**
+ * A node's cost (milli-items, whole items), AI tokens and minimum duration (ticks): its table's,
+ * whatever else the claim owns (D72) — less what an expertise in place takes off its family's
+ * research (D93: `mods.fam`, ‰ of each; whole items, at least one of each kind). Without `mods`, the
+ * table's alone (a save's rebase). A project keeps what it started at.
+ */
+export function effectiveCost(id: string, mods?: Pick<Mods, 'fam'>): { cost: Array<{ item: number; mu: number }>; tokens: number; ticks: number } {
   const r = def(id);
-  return { cost: r.cost.map(([it, q]) => ({ item: itemIdx(it), mu: q * 1000 })), tokens: r.tokens, ticks: r.minutes * 60 * TPS };
+  const f = mods && r.branch !== 'trunk' ? mods.fam[r.branch] : null;
+  if (!f) return { cost: r.cost.map(([it, q]) => ({ item: itemIdx(it), mu: q * 1000 })), tokens: r.tokens, ticks: r.minutes * 60 * TPS };
+  return {
+    cost: r.cost.map(([it, q]) => ({ item: itemIdx(it), mu: Math.max(1, Math.ceil((q * f.data) / 1000)) * 1000 })),
+    tokens: Math.floor((r.tokens * f.tokens) / 1000),
+    ticks: Math.max(1, Math.floor((r.minutes * 60 * TPS * f.time) / 1000)),
+  };
 }
 
 /** AI tokens a project has used by its elapsed time (the allowance, D68). */
@@ -74,14 +85,11 @@ export function takeTokens(p: Project): number {
 }
 
 /** Why a node cannot start right now (null = it can). */
-export type StartBlock = 'done' | 'active' | 'prereq' | 'slots' | 'no_lab' | 'unknown' | 'debt';
+export type StartBlock = 'done' | 'active' | 'prereq' | 'expertise' | 'slots' | 'no_lab' | 'unknown' | 'debt';
 
 export function prereqsMet(id: string, done: ReadonlySet<string>): boolean {
   return def(id).prereq.every((p) => done.has(p));
 }
-
-/** Science value (centi-◉) of milli-items of an item — the unit of archive notes. */
-export const noteValue = (item: number, mu: number): number => Math.floor((mu * Math.round((itemDef(item).value ?? 0) * 100)) / 1000);
 
 /**
  * Apply archive notes to a fresh project: each cost entry is pre-paid as far as the notes
@@ -139,24 +147,3 @@ export function owedItems(p: Project): number[] {
   return p.cost.filter((c, i) => p.paid[i]! < c.mu).map((c) => c.item);
 }
 
-/** The deepest owned nodes of a family, deepest first (the order a reconversion removes them). */
-export function respecOrder(branch: BranchId, done: ReadonlySet<string>): string[] {
-  return RESEARCH_IDS.filter((id) => done.has(id) && def(id).branch === branch).sort((a, b) => def(b).depth - def(a).depth || (a < b ? 1 : a > b ? -1 : 0));
-}
-
-/** Ticks a reconversion holds a slot: 25 % of the removed nodes' durations, at most 48 h. */
-export function respecTicks(removed: readonly string[]): number {
-  let t = 0;
-  for (const id of removed) t += effectiveCost(id).ticks;
-  return Math.min(Math.floor(t / 4), 48 * 3600 * TPS);
-}
-
-/** Archive notes refunded for removed nodes: 50 % of their data files' value (25 % keystones); tokens are spent compute, never refunded. */
-export function respecRefund(removed: readonly string[]): number {
-  let notes = 0;
-  for (const id of removed) {
-    const share = def(id).depth === 9 ? BAL.respecRefund / 2 : BAL.respecRefund;
-    for (const c of effectiveCost(id).cost) notes += Math.floor((noteValue(c.item, c.mu) * share) / 1000);
-  }
-  return notes;
-}

@@ -19,23 +19,30 @@ import { createStage } from '@/render/stage';
 import { bakeAtlas } from '@/render/art/atlas';
 import { pushTokensToCss } from '@/render/art/tokens';
 import { App } from './app/app';
+// The responsive layer (D96) after every component's styles (App's imports bring the inspector's, the kit's…).
+import './ui/styles/responsive.css';
 import { installMenu } from './app/screens';
 import { installIntro } from './app/intro';
 import { installSound } from './app/sound';
 import { bootColony, installPersistence } from './app/persistence';
 import { installDebug } from './debug';
+import { installLayout } from './app/layout';
 import { installCoins } from './ui/coin';
 import { installMentions } from './ui/mention';
 import { applyUiScale, settings } from './settings';
 import { locale, pickLocale, setLocale, t, onLocale } from '@/i18n/i18n';
 import { el, qs, screenText, setText } from '@/core/dom';
 import { updateTweens } from '@/core/tween';
+import { FramePacer } from '@/core/pace';
 import { Sim } from '@/sim/state';
 import { MapGen } from '@/sim/world/mapgen';
 import { MAP_VERSION, WORLD_SEED } from '@/content/world';
 import { WORLD_EPOCH0 } from '@/sim/constants';
 import { validateContent } from '@/content/validate';
 import { buildDemo } from '@/sim/dev';
+
+/** The frame cap of « Basse consommation » (D100). */
+const LOW_POWER_FPS = 30;
 
 function applyLocaleToDocument(): void {
   document.documentElement.lang = locale();
@@ -76,7 +83,7 @@ async function boot(): Promise<void> {
   ]);
   document.body.append(veil);
 
-  const stage = await createStage(qs('#stage'), { perf: settings.perf });
+  const stage = await createStage(qs('#stage'), { perf: settings.perf, lowPower: settings.lowPower });
   const atlas = bakeAtlas();
   installMentions(document.body, atlas); // every item the UI names shows its icon (ui/mention.ts)
   // The player's base: its newest whole save, caught up for the time away (« Jouer » then opens
@@ -87,6 +94,7 @@ async function boot(): Promise<void> {
   // ?demo: a working base around the Hearth (drills, ribbons, kiln, wind, a trade post) to look at.
   if (q.has('demo')) buildDemo(sim);
   const app = new App(stage, atlas, sim);
+  installLayout(app); // the responsive layout's numbers (D96): the zoom, where the HUD and the bar end, the canvas on a resize
   if (q.has('paused')) app.paused = true; // tests: the base as it was opened, until `FL.resume()`
   installCoins(document.body); // every « ◉ » the UI writes is drawn as the ocelle sign
   // The main menu over the live colony (D27): it is up when the boot veil lifts.
@@ -111,14 +119,26 @@ async function boot(): Promise<void> {
       worker.postMessage(msg);
     });
 
+  // Basse consommation (D100): at most 30 frames drawn a second, whatever the display's rate (the
+  // sim's ticks keep their pace: they follow dt). The frames in between are not even asked for (a
+  // timer waits until one is nearly due), so the browser's frame pipeline rests. Read every frame:
+  // the setting acts at once.
+  const pacer = new FramePacer();
   let last = performance.now();
+  const next = (now: number, cap: number): void => {
+    const wait = pacer.wait(now, cap);
+    if (wait > 0) setTimeout(() => requestAnimationFrame(loop), wait);
+    else requestAnimationFrame(loop);
+  };
   const loop = (now: number): void => {
+    const cap = settings.lowPower ? LOW_POWER_FPS : 0;
+    if (!pacer.due(now, cap)) { next(now, cap); return; }
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     updateTweens(dt);
     app.frame(dt);
     sound.frame(dt);
-    requestAnimationFrame(loop);
+    next(now, cap);
   };
   requestAnimationFrame(loop);
 

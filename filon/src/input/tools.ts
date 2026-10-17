@@ -1,5 +1,7 @@
 // tools.ts — the build tools, between raw pointer events (in tiles) and sim commands: place a
-// building (the cursor sits in the middle of its footprint, R turns it), drag a ribbon (an L
+// building (the cursor sits in the middle of its footprint, R turns it; dropped on a ribbon a
+// routing block takes the way the items enter there until R turns it, D98; a drill held over a
+// deposit of whole blocks snaps onto their grid, D104), drag a ribbon (an L
 // from press to release, R flips the corner), demolish (a click, or a box dragged with the
 // tool or with the right button), and the pipette (pick the building under the cursor). A
 // placement may go over buildings it replaces (same replace group, wholly inside); a ribbon
@@ -8,8 +10,9 @@
 // then the ghost is a transparent placeholder of that plan; one laid in part says how many tiles
 // it left out and why. The preview tells the ghost what would happen — what it replaces, what it
 // costs net — and why not.
-import { BUILDING_IDS, BUILDING_KIND, buildingIdx, costOf, isBeltDef } from '@/content/registry';
+import { BUILDING_IDS, BUILDING_KIND, buildingIdx, costOf, isDragDef } from '@/content/registry';
 import { footprint, forTiles } from '@/sim/entities';
+import { oreSnap } from '@/sim/ore-blocks';
 import type { PlaceCheck, PlaceReason, Sim } from '@/sim/state';
 import { isRock, T, type Rot } from '@/sim/types';
 import { beltPath } from './belt-path';
@@ -18,7 +21,8 @@ import { beltPath } from './belt-path';
 const BRIDGE_ID = BUILDING_IDS[BUILDING_KIND.indexOf('bridge')] ?? '';
 
 export type ToolState =
-  | { k: 'build'; def: string; rot: Rot }
+  /** `turned`: R pressed since this building was taken in hand: its rotation is the player's, over a ribbon too (D98). */
+  | { k: 'build'; def: string; rot: Rot; turned?: boolean }
   | { k: 'belt'; def: string; rot: Rot; from: [number, number] | null; flip: boolean }
   | { k: 'remove'; from: [number, number] | null }
   | { k: 'mark'; from: [number, number] | null; clear: boolean };
@@ -65,6 +69,12 @@ export function originFor(def: string, rot: Rot, hx: number, hy: number): [numbe
   return [hx - Math.floor((w - 1) / 2), hy - Math.floor((h - 1) / 2)];
 }
 
+/** `originFor`, a drill held over a deposit of whole blocks snapped onto their grid (D104: `oreSnap`). */
+export function snapOrigin(sim: Sim, def: string, rot: Rot, hx: number, hy: number): [number, number] {
+  const [ox, oy] = originFor(def, rot, hx, hy);
+  return oreSnap(sim.grid, buildingIdx(def), ox, oy, rot);
+}
+
 export class Tools {
   state: ToolState | null = null;
   hover: [number, number] | null = null;
@@ -84,7 +94,7 @@ export class Tools {
   }
 
   select(def: string, rot: Rot = this.lastRot): void {
-    this.state = isBeltDef(def) ? { k: 'belt', def, rot, from: null, flip: false } : { k: 'build', def, rot };
+    this.state = isDragDef(def) ? { k: 'belt', def, rot, from: null, flip: false } : { k: 'build', def, rot };
   }
 
   demolish(): void {
@@ -101,12 +111,27 @@ export class Tools {
     return true;
   }
 
-  /** R: turn the building (or flip a ribbon drag's corner). */
+  /** Drop a drag or a right box under way, keeping the tool in hand (a second finger came down, D96). */
+  dropDrag(): boolean {
+    if (this.rbox) { this.rbox = null; return true; }
+    const s = this.state;
+    if (s && (s.k === 'belt' || s.k === 'remove' || s.k === 'mark') && s.from) { s.from = null; return true; }
+    return false;
+  }
+
+  /**
+   * R: turn the building (or flip a ribbon drag's corner). A building turns from the way its ghost
+   * shows it — over a ribbon a routing block takes the way the items enter (D98), a face cutter
+   * faces its wall — and from then on, while it stays in hand, its rotation is the player's.
+   */
   rotate(dir: 1 | -1 = 1): void {
     const s = this.state;
     if (!s || s.k === 'remove' || s.k === 'mark') return;
     if (s.k === 'belt' && s.from) { s.flip = !s.flip; return; }
-    s.rot = ((s.rot + dir + 4) & 3) as Rot;
+    const h = this.hover;
+    const shown = s.k === 'build' && h ? this.sim().placementRot(s.def, ...snapOrigin(this.sim(), s.def, s.rot, h[0], h[1]), s.rot, !!s.turned) : s.rot;
+    s.rot = ((shown + dir + 4) & 3) as Rot;
+    if (s.k === 'build') s.turned = true;
     this.lastRot = s.rot;
   }
 
@@ -137,8 +162,8 @@ export class Tools {
     }
     if (!s) return {};
     if (s.k === 'build') {
-      const [ox, oy] = originFor(s.def, s.rot, x, y);
-      const r = this.sim().place(s.def, ox, oy, s.rot);
+      const [ox, oy] = snapOrigin(this.sim(), s.def, s.rot, x, y);
+      const r = this.sim().place(s.def, ox, oy, s.rot, undefined, !!s.turned);
       return r.ok ? { placed: 1 } : { refused: r.reason };
     }
     if (s.k === 'mark') { s.from = [x, y]; s.clear = false; return {}; }
@@ -254,8 +279,8 @@ export class Tools {
       }
     };
     if (s.k === 'build') {
-      const [ox, oy] = originFor(s.def, s.rot, h[0], h[1]);
-      const rot = sim.placementRot(s.def, ox, oy, s.rot); // a router over a ribbon follows it
+      const [ox, oy] = snapOrigin(sim, s.def, s.rot, h[0], h[1]);
+      const rot = sim.placementRot(s.def, ox, oy, s.rot, !!s.turned); // a router over a ribbon takes the way its items enter, unless turned (D98)
       add(s.def, ox, oy, rot, sim.canPlace(s.def, ox, oy, rot));
     } else {
       // Exactly what the release will lay (the sim's plan, D73): kept tiles, ribbons, junctions,

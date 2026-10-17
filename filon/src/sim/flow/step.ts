@@ -48,5 +48,7 @@ export function makeCtx(g: Graph, nNets: number, nItems: number): TickCtx {
     produced: new Float64Array(nItems),
     consumed: new Float64Array(nItems),
     hearthIn: new Float64Array(nItems),
+    glean: 0,
+    gleaned: new Float64Array(nItems),
   };
 }

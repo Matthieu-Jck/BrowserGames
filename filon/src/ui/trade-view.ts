@@ -10,7 +10,7 @@ import { locale, t, tr, type MsgKey } from '@/i18n/i18n';
 import { afterFee, valueCents } from '@/market/pricing';
 import { EPOCH, TPS } from '@/sim/constants';
 import type { Sim } from '@/sim/state';
-import { containerMu, orderHold, tradable } from '@/sim/systems/trade';
+import { containerMu, orderHold, orderUnitCents, tradable } from '@/sim/systems/trade';
 import { deliveryTicks, orderSlots, throughputMu, tradeLevel, type ImportOrder, type TradeRefusal } from '@/sim/trade';
 import { seenBy } from './inspector/kit';
 import { itemPicker, type ItemPicker } from './item-picker';
@@ -99,12 +99,12 @@ export const unitSellCents = (sim: Sim, item: number): number =>
  * it resumes 3 % under it), waiting for an outlet (none of its post's is set to the item), held
  * by a full container (D43: nothing bought, nothing paid), or short of ocelles.
  */
-export type OrderState = 'active' | 'paused' | 'outlet' | 'full' | 'poor';
+export type OrderState = 'active' | 'paused' | 'outlet' | 'full' | 'poor' | 'fulfilled';
 export function orderState(sim: Sim, o: ImportOrder): OrderState {
   const hold = orderHold(sim, o);
   if (hold === 'price') return 'paused';
   if (hold) return hold;
-  return sim.credits < unitBuyCents(sim, o.item) ? 'poor' : 'active';
+  return sim.credits < orderUnitCents(sim, o) ? 'poor' : 'active';
 }
 
 /** The ask under which a paused order resumes (the hysteresis of trade.ts). */
@@ -115,10 +115,11 @@ export function orderStateText(sim: Sim, o: ImportOrder): { state: OrderState; t
   const state = orderState(sim, o);
   const ask = sim.prices.ask[o.item] ?? 0;
   const why = state === 'paused' ? t('crier.order.paused.tip', { ask: oc(ask), resume: oc(resumeCents(o)) })
-    : state === 'poor' ? t('crier.order.poor.tip', { cost: oc(unitBuyCents(sim, o.item)) })
+    : state === 'poor' ? t('crier.order.poor.tip', { cost: oc(orderUnitCents(sim, o)) })
       : state === 'outlet' ? t('crier.order.outlet.tip')
         : state === 'full' ? t('crier.order.full.tip', { n: Math.round(containerMu(sim) / 1000) })
-          : t('crier.order.active.tip', { ask: oc(ask) });
+          : state === 'fulfilled' ? t('crier.order.fulfilled.tip', { n: BAL.starter.n })
+            : t('crier.order.active.tip', { ask: oc(o.starter !== undefined ? BAL.starter.cents : ask) });
   return { state, text: t(`crier.order.${state}` as MsgKey), why };
 }
 

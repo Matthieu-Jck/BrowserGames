@@ -9,14 +9,18 @@
 // plans and research: no loop, every node reachable from the start, every building with it. And
 // a base can always rebuild its production (D36): the bootstrap and CrierBelt's restart reserve
 // hold together (`reserveProblems`, content/reserve.ts). The plans' paths (D41) each read as one
-// line from one entry, and the analytics plans each turn on their own flag (`pathProblems`).
+// line from one entry, and the analytics plans each turn on their own flag (`pathProblems`). And
+// nothing the tree unlocks is unusable when it does (D107, `usabilityProblems`, content/usable.ts):
+// its buildings can be paid for and run, its recipes' inputs extracted, made or bought by then.
 import { BAL } from './balance';
 import { BUILDINGS } from './buildings';
 import { ITEMS } from './items';
 import { questProblems } from './quests';
 import { MAX_RECIPES, RECIPES } from './recipes';
 import { reserveProblems } from './reserve';
-import { FAMILIES, PLANS, RESEARCH, TIER_GATE, buildingsUnlockedBy, isPlan, isResearch, isTreeNode, pathProblems, treePrereq } from './research';
+import { usabilityProblems } from './usable';
+import { FAMILIES, FAMILY_IDS, PLANS, RESEARCH, TIER1_WHOLE, TIER_GATE, buildingsUnlockedBy, isPlan, isResearch, isTreeNode, pathProblems, treePrereq } from './research';
+import { expertiseProblems } from './expertises';
 import { CIRQUE, UNIQUE_BIOMES } from './world';
 import type { BuildingDef, ItemDef, PlanDef, RecipeDef, ResearchDef } from './types';
 
@@ -59,6 +63,9 @@ export function makeableWith(known: ReadonlySet<string>): Set<string> {
   const has = (unlock: string): boolean => unlock === 'start' || known.has(unlock);
   const fromPower = new Map<string, boolean>();
   for (const [, b] of buildings) if (b.drill?.anywhere) fromPower.set(b.drill.anywhere, (fromPower.get(b.drill.anywhere) ?? false) || has(b.unlock));
+  // The Core's own Survey Data (D101): from the level that mounts its data outlet, if that level is open.
+  const outletLevel = BAL.hearthUpgrades[BAL.hearthDataLevel - 2];
+  if (BAL.hearthDataBase > 0 && outletLevel && has(outletLevel.unlock)) fromPower.set('journal_1', true);
   const have = new Set(RAW.filter((it) => fromPower.get(it) ?? true));
   for (let changed = true; changed;) {
     changed = false;
@@ -208,7 +215,8 @@ export function validateContent(): string[] {
   // Every building can be had: from the start, or through a node the tree reaches.
   for (const [id, b] of buildings) if (b.unlock !== 'start' && b.unlock !== 'never' && !learnt.has(b.unlock)) errs.push(`building ${id}: out of the tree's reach (${b.unlock})`);
   for (const [id, r] of recipes) if (r.unlock !== 'start' && !learnt.has(r.unlock)) errs.push(`recipe ${id}: out of the tree's reach (${r.unlock})`);
-  for (const [i, up] of BAL.hearthUpgrades.entries()) if (!learnt.has(up.unlock)) errs.push(`Heart level ${i + 2}: unknown unlock ${up.unlock}`);
+  // A level gated by a tree node, or the player's from the start (D101: level 2).
+  for (const [i, up] of BAL.hearthUpgrades.entries()) if (up.unlock !== 'start' && !learnt.has(up.unlock)) errs.push(`Heart level ${i + 2}: unknown unlock ${up.unlock}`);
   // The plans' paths (D41): one theme each, one entry each, the analytics flags.
   errs.push(...pathProblems());
 
@@ -242,10 +250,23 @@ export function validateContent(): string[] {
     if (gate && !r.prereq.includes(gate)) errs.push(`research ${id}: a Tier ${r.tier} node needs ${gate}`);
   }
 
+  // Tier 1 is completed whole before the Core's level 3 and the expertises (D93): its closing node
+  // needs every other Tier 1 node, and opens Tier 2.
+  const t1 = research.filter(([id, r]) => r.tier === 1 && id !== TIER1_WHOLE).map(([id]) => id);
+  const whole = (RESEARCH as Record<string, ResearchDef>)[TIER1_WHOLE];
+  if (!whole || whole.tier !== 1) errs.push(`research ${TIER1_WHOLE}: the node closing Tier 1 is missing`);
+  else for (const id of t1) if (!whole.prereq.includes(id)) errs.push(`research ${TIER1_WHOLE}: does not need ${id} (Tier 1 is completed whole)`);
+  if (TIER_GATE[2] !== TIER1_WHOLE) errs.push(`Tier 2 must open with ${TIER1_WHOLE}`);
+  errs.push(...expertiseProblems(FAMILY_IDS));
+
   // Designed scarcity and the need to trade.
   if (tiredVeinPerMin() * 2 >= wirePerElectronicsWorkshop()) errs.push('the tired vein must not feed one electronics workshop');
   if (uniquesNeeded('atlas').size < 2) errs.push('an atlas must need ≥ 2 distinct uniques');
   if (uniquesNeeded('codex').size !== 5) errs.push('a codex must need 5 distinct uniques');
+
+  // Nothing unusable (D107): what a node unlocks — buildings, recipes, a Heart level, a feature —
+  // works with what the base can extract, make or buy by then, in the order the tree imposes.
+  errs.push(...usabilityProblems());
 
   // No dead end (D36): the bootstrap rebuilds production from the land through plans alone, and
   // the starting stock covers CrierBelt's restart reserve (with the first ring of plans bought).

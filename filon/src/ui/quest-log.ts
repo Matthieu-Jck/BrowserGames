@@ -1,7 +1,10 @@
-// quest-log.ts — the tutorial on screen (decision D28). The quest log on the left, under the
-// HUD's research chips: the base's name, CrierBelt's current objective (its message, the
-// objectives with their progress, the reward, the guide's hint for the step at hand), the
-// objectives already met, ticked; collapsible. Also the wording of the completion toast, and
+// quest-log.ts — the tutorial on screen (decisions D28 and D101). The quest log on the left, under
+// the HUD's research chips: the base's name, CrierBelt's current objective (its message, the
+// objectives each with its icon and progress bar, the reward; for a guided quest the guide's hint
+// for the step at hand, for a goal an « Indice » button and, once asked for, its one hint), the
+// optional objectives (`SIDE_GOALS`: what the player may find alone, ticks without reward), the
+// objectives already met, ticked; collapsible. The claim's name is no numbered quest: the eight
+// quests count from « Premier coup de pioche ». Also the wording of the completion toast, and
 // the naming modal that opens on an unnamed base once no full screen is up (the main menu
 // first): skipped under automation (`navigator.webdriver`, `?nomenu`), where the base keeps
 // its placeholder name and quest 0 stays open until a script names it.
@@ -13,9 +16,9 @@
 // guide's (guide.ts); this log shows its step's hint and the guide's on/off switch.
 import { BUILDINGS } from '@/content/buildings';
 import { BAL } from '@/content/balance';
-import { COLONY_NAME_MAX, QUEST_IDS, QUEST_TITLES, questDef, type QuestDef, type QuestObjective, type QuestReward } from '@/content/quests';
+import { COLONY_NAME_MAX, QUEST_IDS, QUEST_TITLES, SIDE_GOALS, guideSteps, isGoal, questDef, type QuestDef, type QuestId, type QuestObjective, type QuestReward, type SideGoal } from '@/content/quests';
 import { RECIPES } from '@/content/recipes';
-import { RESEARCH, nodeName } from '@/content/research';
+import { RESEARCH, buildingsUnlockedBy, nodeName } from '@/content/research';
 import { ITEM_IDS, buildingDef, buildingIdx, itemDef, itemIdx } from '@/content/registry';
 import type { BuildingDef, Loc, RecipeDef, ResearchDef } from '@/content/types';
 import { wirePerElectronicsWorkshop } from '@/content/validate';
@@ -26,9 +29,10 @@ import { locale, t } from '@/i18n/i18n';
 import type { Atlas } from '@/render/art/atlas';
 import { EPOCH, TPS } from '@/sim/constants';
 import type { Sim } from '@/sim/state';
-import { currentQuest, questProgress, rewardItems, type ObjectiveProgress } from '@/sim/systems/quests';
-import { buildingIcon } from './build-bar';
-import type { GuideStep } from './guide';
+import { currentQuest, objectiveProgress, questProgress, rewardItems, type ObjectiveProgress } from '@/sim/systems/quests';
+import { buildingIcon, itemIcon } from './build-bar';
+import { glyph, type GlyphId } from './glyphs';
+import type { GuideStep, HintState } from './guide';
 import { itemMention, itemRef, markItems } from './mention';
 import { nameVerdict, refusalText, registerOf } from './screens/intro-name';
 import { oc, secondsTo } from './trade-view';
@@ -39,14 +43,21 @@ export interface QuestLogHost {
   screenOpen(): boolean;
   /** The guide's current step: its hint goes under the objectives. */
   step(): GuideStep | null;
-  /** The guide's on / off switch. */
-  guide: { enabled: boolean };
+  /** The guide: its on / off switch, and a goal's hint (D101). */
+  guide: { enabled: boolean; hintState(): HintState; toggleHint(): void };
+  /** The map view on show (the optional objective « Les vues » records those opened). */
+  view?(): string;
 }
 
 /** How long the finished log stays (ticks: 20 game seconds), its last stamp in view. */
 const DONE_SHOW_TICKS = 200;
 
-const prefs = makeStore<{ version: 1; folded: boolean; doneOpen: boolean }>('filon.quests.v1', 1, () => ({ version: 1, folded: false, doneOpen: false }));
+// `views`: per base (« seed:founding »), the map views opened, for the optional objective (D101).
+type Prefs = { version: 1; folded: boolean; doneOpen: boolean; sideOpen: boolean; views: Record<string, string[]> };
+const prefs = makeStore<Prefs>('filon.quests.v1', 1, () => ({ version: 1, folded: false, doneOpen: false, sideOpen: true, views: {} }));
+/** Bases kept in `views` (the oldest go). */
+const VIEWS_KEEP = 24;
+const baseKey = (sim: Sim): string => `${sim.playerSeed}:${sim.foundingEpoch}`;
 
 /** Name ideas for a new base (place names: the same in both languages). */
 const NAMES = ['Filon-Clair', 'Haute-Braise', 'Val-de-Cuivre', 'Roche-Fière', 'Belle-Coulée', 'Pierre-Haute', 'Sables-d’Or', 'Vent-Clair', 'Mont-Ferré', 'Fonds-de-Verre', 'Trois-Cols', 'Bonne-Mine'];
@@ -64,10 +75,10 @@ const refs = (ids: readonly string[]): string => ids.map((id) => itemRef(id)).jo
 /** Names as one list in the current language (« A et B »). */
 const listOf = (names: readonly string[]): string => new Intl.ListFormat(locale(), { type: 'conjunction' }).format(names);
 
-/** The items a quest names: its objectives' and its steps'. Its labels and hints say them in plain words. */
+/** The items a quest names: its objectives' and its steps' or hints'. Its labels and hints say them in plain words. */
 export function questItems(def: QuestDef): string[] {
   const out = new Set<string>();
-  for (const o of [...def.objectives, ...def.steps.flatMap((st) => (st.done ? [st.done] : []))]) {
+  for (const o of [...def.objectives, ...guideSteps(def).flatMap((st) => (st.done ? [st.done] : []))]) {
     if ('items' in o && Array.isArray(o.items)) for (const i of o.items) out.add(i);
     else if ('item' in o && typeof o.item === 'string') out.add(o.item);
   }
@@ -106,14 +117,49 @@ export function objectiveLabel(o: QuestObjective): string {
     case 'unlocked': return o.label ? o.label[locale()] : t('quest.obj.unlocked', { name: listOf(o.ids.map((id) => nodeName(id)[locale()])) });
     case 'feeds': return t('quest.obj.feeds', { item: itemRef(o.item), name: buildingName(o.to[0]!) });
     case 'vein': return t('quest.obj.vein');
+    case 'night': return t('quest.obj.night');
+    case 'starter': return t('quest.obj.starter');
+    case 'land': return t('quest.obj.land');
+    case 'hearth': return t('quest.obj.hearth', { n: o.level });
     default: { const never: never = o; return never; }
   }
+}
+
+/**
+ * An objective's icon (D101: shown, not told): what it counts — a building, a plan's building, a
+ * glyph. An item's objective has none of its own: its words name the item, with its icon (mention.ts).
+ */
+function objectiveIcon(atlas: Atlas, o: QuestObjective): HTMLElement | HTMLCanvasElement | null {
+  const g = (id: GlyphId): HTMLElement => glyph(id);
+  switch (o.k) {
+    case 'stock': case 'produce': case 'export': case 'import': case 'rate': case 'feeds': case 'order': return null;
+    case 'build': case 'linked': case 'powered': case 'delivers': case 'recipe': return buildingIcon(atlas, o.defs[0]!, 18);
+    case 'post': return buildingIcon(atlas, 'trade_post', 18);
+    case 'unlocked': { const b = o.ids.length === 1 ? buildingsUnlockedBy(o.ids[0]!)[0] : undefined; return b ? buildingIcon(atlas, b, 18) : g('building'); }
+    case 'research': { const b = buildingsUnlockedBy(o.id)[0]; return b ? buildingIcon(atlas, b, 18) : g('building'); }
+    case 'night': return g('power');
+    case 'starter': return g('crier');
+    case 'vein': case 'land': return g('parcel');
+    case 'dig': return g('rock');
+    case 'reach': case 'name': return g('flag');
+    case 'hearth': return buildingIcon(atlas, 'hearth', 18);
+    default: { const never: never = o; return never; }
+  }
+}
+
+/** An optional objective's icon. */
+function sideIcon(atlas: Atlas, gl: SideGoal): HTMLElement | HTMLCanvasElement | null {
+  const ic = gl.icon;
+  if ('glyph' in ic) return glyph(ic.glyph as GlyphId);
+  if ('item' in ic) return itemIcon(atlas, itemIdx(ic.item), 16);
+  return buildingIcon(atlas, ic.building, 16);
 }
 
 /** How far it is, as text: « 12/50 », « 24/30 par min », ✓; a yes-or-no objective not met yet says nothing (its box does). */
 function progressText(o: QuestObjective, p: ObjectiveProgress): string {
   if (p.met && p.need === 1) return '✓';
   if (o.k === 'rate') return p.measuring ? t('quest.measuring') : t('quest.perMin', { have: num(p.have), need: num(p.need) });
+  if (o.k === 'night') return t('quest.pct', { have: num(Math.min(p.have, 100)), need: num(p.need) });
   if (p.need === 1) return '';
   return `${num(Math.min(p.have, p.need))}/${num(p.need)}`;
 }
@@ -125,7 +171,8 @@ export function rewardText(r: QuestReward, title?: string): string {
   else if (r.hearthLevel) parts.push(t('quest.reward.hearth', { n: r.hearthLevel }));
   else for (const { item, mu } of rewardItems(r)) parts.push(`+${num(mu / 1000)} ${itemRef(item)}`);
   if (r.credits) parts.push(`+${oc(r.credits * 100)}`);
-  if (r.title) parts.push(title && QUEST_TITLES[title] ? t('quest.reward.titled', { title: L(QUEST_TITLES[title]!) }) : t('quest.reward.title'));
+  const titled = r.title ? title : r.grant;
+  if (r.title || r.grant) parts.push(titled && QUEST_TITLES[titled] ? t('quest.reward.titled', { title: L(QUEST_TITLES[titled]!) }) : t('quest.reward.title'));
   return parts.join(' · ');
 }
 
@@ -161,7 +208,18 @@ export class QuestLog {
   /** Per objective of the current quest: its row's live parts. */
   private rows: Array<{ node: HTMLElement; val: HTMLElement; bar: HTMLElement }> = [];
   private hintEl: HTMLElement | null = null;
+  /** A goal's « Indice » button (D101), in the current block. */
+  private hintBtn: HTMLButtonElement | null = null;
   private lives: Live[] = [];
+  /** The optional objectives: their fold and list, rebuilt when the set shown or the language changes. */
+  private readonly sideBtn: HTMLButtonElement;
+  private readonly sideList: HTMLElement;
+  private sideSig = '';
+  private sideRows: Array<{ id: string; node: HTMLElement }> = [];
+  private sideOpen: boolean;
+  private readonly views: Prefs['views'];
+  /** « Passer le tutoriel »: its words follow a language switch. */
+  private readonly skipBtn: HTMLButtonElement;
   /** Produced counters sampled once a second (live rates for the info lines). */
   private samples: Array<{ tick: number; produced: Float64Array }> = [];
   // ── the naming modal ──
@@ -176,6 +234,11 @@ export class QuestLog {
     const p = prefs.load();
     this.folded = p.folded;
     this.doneOpen = p.doneOpen;
+    this.sideOpen = p.sideOpen;
+    this.views = p.views;
+    this.sideBtn = el<'button'>('button.ql-sidebtn', { 'data-quest-sidebtn': '', onclick: () => { this.sideOpen = !this.sideOpen; this.sideSig = ''; this.save(); this.refresh(); } });
+    this.sideList = el('ul.ql-sidelist');
+    this.skipBtn = el<'button'>('button.ql-skip', { 'data-quest-skip': '', onclick: () => { if (window.confirm(t('quest.skip.confirm'))) { this.host.sim().skipTutorial(); this.refresh(); } } }, t('quest.skip'));
     this.nameEl = el('button.ql-name.lettering', { 'data-quest-rename': '', onclick: () => this.openNaming() });
     this.subEl = el('div.ql-sub');
     this.titlesEl = el('div.ql-titles');
@@ -190,8 +253,8 @@ export class QuestLog {
         el('div.ql-tools', {}, [this.guideBtn, this.foldBtn]),
         this.subEl,
       ]),
-      el('div.ql-body', {}, [this.cur, el('div.ql-done', {}, [this.doneBtn, this.doneList]),
-        el('button.ql-skip', { 'data-quest-skip': '', onclick: () => { if (window.confirm(t('quest.skip.confirm'))) { this.host.sim().skipTutorial(); this.refresh(); } } }, t('quest.skip'))]),
+      el('div.ql-body', {}, [this.cur, el('div.ql-side', { 'data-quest-side': '' }, [this.sideBtn, this.sideList]), el('div.ql-done', {}, [this.doneBtn, this.doneList]),
+        this.skipBtn]),
     ]);
 
     // The naming modal: CrierBelt's welcome, a name (a suggestion to start from), register or later.
@@ -276,7 +339,7 @@ export class QuestLog {
   }
 
   private save(): void {
-    prefs.save({ version: 1, folded: this.folded, doneOpen: this.doneOpen });
+    prefs.save({ version: 1, folded: this.folded, doneOpen: this.doneOpen, sideOpen: this.sideOpen, views: this.views });
   }
 
   /** 4 Hz. */
@@ -298,21 +361,20 @@ export class QuestLog {
     }
     if (st.named && this.modalOpen && !this.input.matches(':focus')) this.closeNaming();
 
-    // Under the HUD's left column (its research chips wrap): keep clear of it and of the build bar.
-    const hud = document.querySelector('[data-screen="hud"] .hud-left') ?? document.querySelector('[data-screen="hud"]');
-    const top = Math.round(hud ? hud.getBoundingClientRect().bottom + 8 : 104);
-    setStyle(this.root, 'top', `${top}px`);
-    setStyle(this.root, 'max-height', `${Math.max(120, window.innerHeight - top - 150)}px`);
+    // Its place — under the HUD however it wraps or folds, clear of the build bar — is the CSS's
+    // (styles/responsive.css, D96: the layout's `--hud-b` and `--bar-h`, in #ui's zoomed px).
 
     // Header.
     setText(this.nameEl, baseLabel(sim));
     setAttr(this.nameEl, 'title', t('quest.rename'));
     setAttr(this.nameEl, 'data-unnamed', st.named ? null : '');
-    setText(this.subEl, q ? t('quest.count', { n: q.index + 1, total: QUEST_IDS.length }) : t('quest.partner'));
+    // The claim's name is the register's, not a numbered quest (D101): the quests count from 1.
+    setText(this.subEl, !q ? t('quest.partner') : q.index === 0 ? t('quest.register') : t('quest.count', { n: q.index, total: QUEST_IDS.length - 1 }));
     setText(this.titlesEl, st.titles.map((id) => (QUEST_TITLES[id] ? L(QUEST_TITLES[id]!) : id)).join(' · '));
     setAttr(this.guideBtn, 'data-on', this.host.guide.enabled ? '' : null);
     setAttr(this.guideBtn, 'title', this.host.guide.enabled ? t('quest.guide.on') : t('quest.guide.off'));
     setText(this.foldBtn, this.folded ? '▸' : '▾');
+    setText(this.skipBtn, t('quest.skip'));
     setAttr(this.foldBtn, 'title', this.folded ? t('quest.expand') : t('quest.collapse'));
     setAttr(this.root, 'data-folded', this.folded ? '' : null);
 
@@ -340,8 +402,19 @@ export class QuestLog {
       });
       const step = this.host.step();
       if (this.hintEl) setText(this.hintEl, step && step.quest === q.id ? hintText(q.def, step.hint) : '');
+      // A goal's « Indice » (D101): asks the guide for its one marker, or puts it away; greyed once
+      // every hint holds (the quest waits for its numbers).
+      if (this.hintBtn) {
+        const h = this.host.guide.hintState();
+        setText(this.hintBtn, h.shown ? t('quest.hint.hide') : t('quest.hint.ask'));
+        setAttr(this.hintBtn, 'data-on', h.shown ? '' : null);
+        setAttr(this.hintBtn, 'data-auto', h.auto ? '' : null);
+        setAttr(this.hintBtn, 'disabled', h.left || h.shown ? null : '');
+        setAttr(this.hintBtn, 'title', h.left || h.shown ? null : t('quest.hint.none'));
+      }
       for (const lv of this.lives) lv.update(sim);
     }
+    this.refreshSide(sim, q?.index ?? QUEST_IDS.length);
 
     // Objectives already met.
     const doneSig = `${st.done.join(',')}|${locale()}|${this.doneOpen ? 1 : 0}`;
@@ -362,6 +435,7 @@ export class QuestLog {
     this.rows = [];
     this.lives = [];
     this.hintEl = null;
+    this.hintBtn = null;
     if (!q) {
       this.cur.replaceChildren(el('p.ql-all', {}, t('quest.all')));
       setAttr(this.cur, 'data-quest', null);
@@ -373,9 +447,10 @@ export class QuestLog {
     def.objectives.forEach((o, i) => {
       if (i > 0 && def.any) objs.push(el('li.ql-or', {}, t('quest.or')));
       const val = el('span.ql-val'), bar = el('span.ql-fill');
+      const icon = objectiveIcon(this.atlas, o);
       const node = el('li.ql-obj', { 'data-quest-obj': String(i) }, [
         el('span.ql-box'),
-        el('span.ql-label', {}, objectiveLabel(o)),
+        el('span.ql-label', {}, [icon ? el('span.ql-oicon', {}, icon) : null, objectiveLabel(o)]),
         val,
         el('span.ql-track', {}, bar),
       ]);
@@ -383,12 +458,15 @@ export class QuestLog {
       objs.push(node);
     });
     this.hintEl = el('p.ql-hint');
+    // A goal (D101): no step line, but an « Indice » that asks the guide for one marker.
+    if (isGoal(def)) this.hintBtn = el<'button'>('button.ql-hintbtn', { type: 'button', 'data-quest-hint': '', onclick: () => { this.host.guide.toggleHint(); this.refresh(); } });
     const parts: HTMLElement[] = [
-      el('h3.ql-title.lettering', {}, [el('span.ql-num', {}, String(q.index + 1)), L(def.name)]),
+      el('h3.ql-title.lettering', {}, [q.index > 0 ? el('span.ql-num', {}, String(q.index)) : null, L(def.name)]),
       el('blockquote.ql-msg', {}, [el('span.ql-from', {}, t('quest.voice')), L(def.desc)]),
       el('ul.ql-objs', {}, objs),
       ...this.infoLines(sim, def),
       this.rewardRow(def.reward),
+      ...(this.hintBtn ? [this.hintBtn] : []),
       this.hintEl,
     ];
     if (def.objectives.some((o) => o.k === 'name')) parts.push(el('button.btn.primary.ql-namebtn', { 'data-quest-name': '', onclick: () => this.openNaming() }, t('quest.name.button')));
@@ -414,8 +492,48 @@ export class QuestLog {
     for (const [it, n] of r.items ?? []) chips.push(itemChip(itemIdx(it), n * 1000));
     if (r.credits) chips.push(el('span.ql-chip.ql-coin', {}, oc(r.credits * 100)));
     if (r.title) chips.push(el('span.ql-chip.ql-word', {}, t('quest.reward.title')));
+    if (r.grant && QUEST_TITLES[r.grant]) chips.push(el('span.ql-chip.ql-word', {}, t('quest.reward.titled', { title: L(QUEST_TITLES[r.grant]!) })));
     if (!chips.length) chips.push(el('span.ql-chip.ql-word', {}, t('quest.reward.none')));
     return el('div.ql-reward', {}, [el('span.ql-rlabel', {}, t('quest.reward')), ...chips]);
+  }
+
+  /**
+   * The optional objectives (D101: what the player can discover alone — the analytics, the land,
+   * the views): those whose quest has come, each a tick, its icon and its name; « n/m » on the fold.
+   * Read from the sim (from the founding) or, for the views, the record this log keeps.
+   */
+  private refreshSide(sim: Sim, index: number): void {
+    this.noteView(sim);
+    const shown = (Object.entries(SIDE_GOALS) as Array<[string, SideGoal]>).filter(([, g]) => QUEST_IDS.indexOf(g.from as QuestId) <= index);
+    const met = (g: SideGoal): boolean => (g.objective ? objectiveProgress(sim, g.objective).met : (g.views ?? []).every((v) => this.views[baseKey(sim)]?.includes(v)));
+    const sig = `${shown.map(([id]) => id).join(',')}|${locale()}|${this.sideOpen ? 1 : 0}`;
+    if (sig !== this.sideSig) {
+      this.sideSig = sig;
+      this.sideRows = this.sideOpen ? shown.map(([id, g]) => ({ id, node: el('li.ql-sideitem', { 'data-quest-side-goal': id }, [el('span.ql-tick'), el('span.ql-sicon', {}, sideIcon(this.atlas, g)), el('span', {}, L(g.name))]) })) : [];
+      this.sideList.replaceChildren(...this.sideRows.map((r) => r.node));
+    }
+    let n = 0;
+    for (const [id, g] of shown) {
+      const ok = met(g);
+      if (ok) n++;
+      const row = this.sideRows.find((r) => r.id === id);
+      if (row) { setAttr(row.node, 'data-met', ok ? '' : null); setText(row.node.firstChild as HTMLElement, ok ? '✓' : '○'); }
+    }
+    setAttr(this.sideBtn.parentElement!, 'hidden', shown.length ? null : '');
+    setText(this.sideBtn, `${this.sideOpen ? '▾' : '▸'} ${t('quest.side', { n, total: shown.length })}`);
+  }
+
+  /** The map view on show, noted for « Les vues » (per base; the oldest bases go). */
+  private noteView(sim: Sim): void {
+    const v = this.host.view?.();
+    if (!v || v === 'normal') return;
+    const key = baseKey(sim), seen = this.views[key] ?? [];
+    if (seen.includes(v)) return;
+    delete this.views[key];
+    this.views[key] = [...seen, v];
+    const keys = Object.keys(this.views);
+    for (const k of keys.slice(0, Math.max(0, keys.length - VIEWS_KEEP))) delete this.views[k];
+    this.save();
   }
 
   /** Live lines (content `info`): the vein's shortfall, the next delivery, the price. */

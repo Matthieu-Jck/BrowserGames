@@ -16,8 +16,9 @@
 // (refused).
 //
 // The wire geometry is rebuilt only when the wires or the compiled graph change, and redrawn
-// when a grid's powered state flips; each style is one batched stroke. The glints are pooled
-// sprites moved each frame with no allocation.
+// when it differs from what is drawn (D92: a ribbon laid recompiles the graph, but leaves every
+// wire as it was — a redraw re-tessellated thousands of strokes) or a grid's powered state flips;
+// each style is one batched stroke. The glints are pooled sprites moved each frame with no allocation.
 import { CanvasSource, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import type { LinkPreview } from '@/input/link-tool';
 import type { Sim } from '@/sim/state';
@@ -67,6 +68,18 @@ const LINE = {
 } as const;
 /** The Link tool's preview: a little bolder than a wire (it is a pointer), the same shape. */
 const PREVIEW = { iso: 2.4, isoDash: 1.7, plan: 0.075, planDash: 0.055, alpha: 0.85, endIso: 2.6, endPlan: 0.09 } as const;
+
+/** Are two lists of wires drawn alike: the same wires in the same order, on the same grids, the same way, along the same curves? */
+function sameWires(a: readonly Wire[], b: readonly Wire[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const p = a[i]!, q = b[i]!;
+    if (p.a !== q.a || p.b !== q.b || p.net !== q.net || p.way !== q.way || p.ax !== q.ax || p.ay !== q.ay || p.bx !== q.bx || p.by !== q.by) return false;
+    if (p.iso.length !== q.iso.length) return false;
+    for (let k = 0; k < p.iso.length; k++) if (p.iso[k] !== q.iso[k]) return false;
+  }
+  return true;
+}
 
 /** A small four-pointed spark with a soft halo, white (tinted per use), 32 px. */
 function glintTexture(): Texture {
@@ -138,8 +151,7 @@ export class WiresView {
     let restyle = false;
     if (sim.links.version !== this.linksV || g.version !== this.graphV) {
       this.linksV = sim.links.version; this.graphV = g.version;
-      this.rebuild(sim);
-      restyle = true;
+      restyle = this.rebuild(sim);
     }
     const powered = this.readPower(sim);
     if (restyle || !this.styled || powered !== this.poweredKey || byGrid !== this.byGrid) {
@@ -152,7 +164,8 @@ export class WiresView {
 
   // ── geometry ───────────────────────────────────────────────────────────────
 
-  private rebuild(sim: Sim): void {
+  /** The wires from the colony; false when every one is drawn as before (same ends, grid, way and curve). */
+  private rebuild(sim: Sim): boolean {
     const out: Wire[] = [];
     for (const [ia, ib] of sim.links.pairs()) {
       const ea = sim.ents.get(ia), eb = sim.ents.get(ib);
@@ -170,7 +183,9 @@ export class WiresView {
       const e = sim.ents.get(id);
       return !!e && e.builtAt === 0 && !sim.isDormant(e) && SOURCE_KINDS.has(buildingDef(e.def).kind);
     });
+    const same = sameWires(this.wires, out);
     this.wires = out;
+    return !same;
   }
 
   /** Read each wired grid's supply and service; returns a key that changes when any of them flips. */

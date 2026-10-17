@@ -1,0 +1,240 @@
+/* responsive.css — the responsive layer (D96): every rule that changes the interface with the
+   window's size or the pointer, in one place, over the components' own stylesheets (imported last;
+   `#ui` / `#screens` in the selectors so it wins whatever the bundle's order).
+
+   Breakpoints (ui/fit.ts repeats them as numbers; a media query cannot read a variable):
+     wide     ≥ 900 px wide — the desktop layout: side panels on the right, the HUD in two groups.
+                The whole UI zooms out a little below 1280 × 720 (`--ui-zoom`, app/layout.ts).
+     narrow   < 900 px wide — tablets upright, phones: the side panels become bottom sheets
+                (ui/sheet.ts), the HUD's cartouches flow and fold, the build bar scrolls, the
+                screens go full screen in one column.
+     phone    < 560 px wide — a phone upright: the HUD on two short rows.
+     short    < 540 px tall — a phone on its side: the build tray and the sheets lower.
+     touch    (pointer: coarse) — hit targets ≥ 44 px (≥ 40 px after the fit), no key caps or
+                keyboard hints.
+   The HUD and the build bar publish where they end (`--hud-b`, `--hud-rb`, `--bar-h`; the window is
+   `--win-w` × `--win-h`, all in #ui's zoomed px) and the edge
+   offsets include the safe area (`--safe-*`, base.css), so nothing sits under a notch. Inside #ui
+   and #screens size against the window with % (a fixed element's) or those variables, never
+   vw / vh: Chrome scales them by the zoom. */
+
+/* ── every size: the edges, and the panels placed from what the HUD and the bar take ── */
+/* The HUD over the notices and the panels: its folds drop down over them. */
+#ui .hud { top: calc(var(--gap) + var(--safe-t)); left: calc(var(--gap) + var(--safe-l)); right: calc(var(--gap) + var(--safe-r)); z-index: 2; }
+#ui .buildbar { left: calc(var(--gap) + var(--safe-l)); right: calc(var(--gap) + var(--safe-r)); bottom: calc(var(--gap) + var(--safe-b)); }
+#ui .bb-tray { max-width: min(100%, 960px); }
+#ui .toasts { top: calc(var(--hud-b) + 10px); max-width: calc(100% - 2 * var(--gap)); }
+#ui .toast { max-width: 100%; }
+#ui .qlog { top: calc(var(--hud-b) + 10px); left: calc(var(--gap) + var(--safe-l)); max-height: max(120px, calc(100% - var(--hud-b) - var(--bar-h) - 3 * var(--gap) - var(--safe-b))); }
+/* The side panels: under the HUD's right cluster, above the open build bar, sized by clamp(). */
+#ui .inspector, #ui .vpanel, #ui .land {
+  top: calc(var(--hud-rb) + 18px);
+  right: calc(var(--gap) + var(--safe-r));
+  max-height: calc(100% - var(--hud-rb) - 18px - var(--bar-h) - var(--gap) - var(--safe-b) - 6px);
+}
+#ui .inspector, #ui .vpanel { width: clamp(292px, 23%, 330px); }
+#ui .land { width: clamp(286px, 22%, 316px); }
+/* The Stock panel (D96): under the HUD on the left, over the quest log (which steps aside), above the bar. */
+#ui .stockp {
+  top: calc(var(--hud-b) + 10px); left: calc(var(--gap) + var(--safe-l)); width: clamp(300px, 24%, 360px); z-index: 1;
+  max-height: calc(100% - var(--hud-b) - 10px - var(--bar-h) - var(--gap) - var(--safe-b) - 6px);
+}
+#ui:has(> .stockp:not([hidden])) .qlog { display: none; }
+/* The purse's card (D102): under the HUD, its left edge at the purse's (`--purse-left`, set by the HUD), inside the window. */
+#ui .purse {
+  top: calc(var(--hud-b) + 10px); left: min(var(--purse-left, 12px), calc(100% - min(380px, 100% - 2 * var(--gap)) - var(--gap)));
+  width: min(380px, calc(100% - 2 * var(--gap))); z-index: 1;
+  max-height: calc(100% - var(--hud-b) - 10px - var(--bar-h) - var(--gap) - var(--safe-b) - 6px);
+}
+#ui:has(> .purse:not([hidden])) .qlog { display: none; }
+/* The narrow layout's own parts, hidden on a wide window. */
+#ui .hud-fold, #ui .hud-vfold, #ui .sheet-grip, #ui .bb-rotate { display: none; }
+.hud-caret { width: 0; height: 0; border: 5px solid transparent; border-top: 6px solid var(--c-ink); border-bottom: 0; margin-left: 1px; }
+.hud-layers-glyph path { stroke: var(--c-ink); stroke-width: 1.4; stroke-linejoin: round; }
+/* A cartouche that lived on vw (zoomed by Chrome inside #screens). */
+#screens .conflict-box { max-width: min(460px, calc(100% - 32px)); }
+
+/* ── narrow: < 900 px ───────────────────────────────────────────────────────── */
+@media (max-width: 899px) {
+  :root { --gap: 8px; }
+
+  /* The HUD flows: one wrapping row of cartouches (the two groups' boxes dissolve), the right
+     cluster pushed right; each cartouche shrinks to its icon and figure (the rates, the
+     temperature and the power bar wait in the tooltips and the views; the stocks are in the Stock panel). */
+  #ui .hud { flex-wrap: wrap; justify-content: flex-start; align-items: stretch; gap: 6px; }
+  #ui .hud-left, #ui .hud-row, #ui .hud-right { display: contents; }
+  #ui .hud-grp { min-height: 40px; padding: 3px 9px; gap: 6px; }
+  #ui .hud-delta, #ui .hud-temp, #ui .hud-pbar { display: none; }
+  #ui .hud-val { font-size: 17px; }
+  #ui .hud-power { flex-direction: row; align-items: center; padding: 3px 9px; }
+  #ui .hud-stock { order: 10; }
+  #ui [data-hud-eco] { order: 20; }
+  #ui .hud-power { order: 30; }
+  #ui [data-hud-time] { order: 40; }
+  #ui .hud-fold { order: 50; display: inline-flex; }
+  #ui .hud-vfold { order: 60; display: inline-flex; margin-left: auto; }
+  #ui .hud-build { order: 70; padding: 6px 13px; font-size: 17px; }
+  #ui .hud-menu { order: 80; }
+  #ui .hud-build, #ui .hud-menu, #ui .hud-vfold { min-height: 40px; }
+  #ui .hud-vfold { align-items: center; gap: 4px; padding: 4px 9px; }
+  #ui .hud-vfold[data-on] { background: var(--c-turq-l); }
+  #ui .hud-fold { position: relative; align-items: center; gap: 5px; padding: 3px 9px 3px 6px; }
+  #ui .hud-fold .hud-ring { width: 18px; height: 18px; }
+  #ui .hud-fold[data-held] { border-color: var(--c-coral-d); box-shadow: inset 0 0 0 1.5px var(--c-coral-d); }
+  #ui .hud-fold[data-ready] { background: var(--c-peach-l); }
+  #ui .hud[data-fold] .hud-fold[aria-expanded='true'], #ui .hud[data-fold] .hud-vfold[aria-expanded='true'] { background: var(--c-peach); }
+  /* The folds open as dropdowns under the HUD, over the world (they never push the panels). */
+  #ui .hud-research, #ui .hud-views { display: none; }
+  #ui .hud[data-fold='research'] .hud-research {
+    display: flex; flex-direction: column; align-items: stretch; gap: 6px;
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 3; width: max-content; max-width: 100%;
+    max-height: calc(var(--win-h) - var(--hud-b) - 3 * var(--gap)); overflow: auto; padding: 8px;
+    background: var(--c-paper); border: 2px solid var(--c-ink); border-radius: var(--radius-ink); box-shadow: var(--shadow-ink);
+  }
+  #ui .hud[data-fold='views'] .hud-views { display: block; position: absolute; top: calc(100% + 6px); right: 0; z-index: 3; }
+  #ui .hud[data-fold='views'] .hud-views .vbar { flex-direction: column; }
+
+  /* The side panels: bottom sheets, full width (a column of 600 px at most), above the open build
+     bar and never over the HUD; half-way open, folded to their header, or pulled up (ui/sheet.ts). */
+  #ui .inspector, #ui .vpanel, #ui .land, #ui .stockp, #ui .purse {
+    --sheet-peek: 84px;
+    --sheet-max: calc(100% - var(--hud-b) - var(--bar-h) - 2 * var(--gap) - var(--safe-b) - 4px);
+    top: auto; width: auto;
+    left: max(calc(var(--gap) + var(--safe-l)), calc(50% - 300px));
+    right: max(calc(var(--gap) + var(--safe-r)), calc(50% - 300px));
+    bottom: calc(var(--bar-h) + var(--gap) + var(--safe-b));
+    max-height: min(var(--sheet-max), 50%);
+    padding-top: 0;
+    transition: max-height 180ms ease;
+    overscroll-behavior: contain;
+  }
+  #ui :is(.inspector, .vpanel, .land, .stockp, .purse)[data-sheet='full'] { max-height: var(--sheet-max); }
+  #ui :is(.inspector, .vpanel, .land, .stockp, .purse)[data-sheet='peek'] { max-height: min(var(--sheet-peek), var(--sheet-max)); overflow: hidden; }
+  #ui :is(.inspector, .vpanel, .land, .stockp, .purse)[data-dragging] { transition: none; }
+  /* One sheet at a time: the Stock, opened on purpose, over the others (they come back when it closes). */
+  #ui .stockp, #ui .purse { z-index: 2; }
+  #ui:has(> :is(.stockp, .purse):not([hidden])) :is(.inspector, .vpanel, .land) { display: none; }
+  #ui .sheet-grip {
+    display: flex; justify-content: center; align-items: center; position: sticky; top: 0; z-index: 2;
+    width: calc(100% + 24px); height: 24px; margin: 0 -12px 2px; padding: 0; cursor: grab; touch-action: none;
+    border: none; border-radius: 12px 12px 0 0; background: var(--c-paper);
+  }
+  #ui .sheet-grip i { display: block; width: 46px; height: 5px; border-radius: 3px; background: var(--c-ink-soft); opacity: 0.55; }
+  #ui .sheet-grip:active { cursor: grabbing; }
+
+  /* The tutorial's log: at most the window's width, a third of its height; it steps aside while a
+     sheet is up (the player is reading the sheet; the log comes back when it closes). */
+  #ui .qlog { width: min(304px, calc(100% - 2 * var(--gap) - var(--safe-l) - var(--safe-r))); max-height: min(36%, calc(100% - var(--hud-b) - var(--bar-h) - 3 * var(--gap))); }
+  #ui:has(> :is(.inspector, .vpanel, .land, .stockp, .purse):not([hidden])) .qlog { display: none; }
+
+  /* The build bar: the categories in one row that scrolls sideways, the tray one row of slots that scrolls too. */
+  #ui .buildbar { gap: 5px; }
+  #ui .bb-tabs, #ui .bb-tray {
+    flex-wrap: nowrap; justify-content: flex-start; max-width: 100%;
+    overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; scroll-snap-type: x proximity;
+  }
+  #ui .bb-tabs::-webkit-scrollbar, #ui .bb-tray::-webkit-scrollbar { display: none; }
+  #ui .bb-tabs { padding: 2px 5px 5px 2px; }
+  #ui .bb-tab { flex: none; scroll-snap-align: start; }
+  #ui .bb-tray { padding: 6px 8px; gap: 4px; }
+  #ui .bb-slot { flex: none; width: 78px; scroll-snap-align: start; }
+  #ui .bb-slot > canvas { height: 46px; }
+
+  /* The screens: full screen, a narrower margin, ✕ in the corner, tabs that scroll. */
+  #screens .screen {
+    padding: calc(10px + var(--safe-t)) calc(10px + var(--safe-r)) calc(10px + var(--safe-b)) calc(10px + var(--safe-l));
+    gap: 8px;
+  }
+  #screens .screen > .rs-head, #screens .crier > .cr-head { padding-right: 52px; gap: 6px 12px; }
+  #screens .screen .rs-close { position: absolute; top: calc(10px + var(--safe-t)); right: calc(10px + var(--safe-r)); margin: 0; z-index: 2; }
+  #screens .rs-head h1, #screens .cr-head h1 { font-size: 27px; }
+  #screens .st-tabs, #screens .cr-tabs { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; scrollbar-width: none; padding: 2px 5px 5px 2px; }
+  #screens .st-tab, #screens .cr-tab { flex: none; }
+  /* The tech tree: the tree on top, the detail pane under it. */
+  #screens .research .rs-body { flex-direction: column; }
+  #screens .research .rs-detail { width: auto; max-height: 44%; align-self: stretch; flex: none; }
+  #screens .research .tr-view { min-height: 0; }
+  /* The Crier: one column that scrolls — the purse and facts, the tabs, the orbit and the Gazette last. */
+  #screens .crier .cr-body { display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; }
+  #screens .crier .cr-main { order: 1; flex: none; }
+  #screens .crier .cr-side { order: 2; flex: none; }
+  #screens .crier .cr-pane { flex: none; overflow: visible; padding-right: 0; }
+  #screens .crier .cr-orbit { flex: none; height: 300px; }
+  #screens .crier .cr-gazette { max-height: none; overflow: visible; }
+  #screens .crier .cr-facts { max-width: 100%; overflow-x: auto; }
+  /* The statistics: one column (from 1120 px, screens.css), the side cards one under the other. */
+  #screens .stats .st-side { grid-template-columns: minmax(0, 1fr); }
+  #screens .stats .st-body { padding-right: 2px; }
+  /* The absence report and « Avant de partir »: a smaller head; the forecast's two figures one under the other. */
+  #screens .ab-head h2 { font-size: 30px; }
+  #screens .fc-head { grid-template-columns: minmax(0, 1fr); }
+  #screens .fc-for { flex-wrap: wrap; }
+}
+
+/* ── narrow and on its side: the sheet docks right, beside the world ─────────── */
+@media (max-width: 899px) and (orientation: landscape) {
+  #ui .inspector, #ui .vpanel, #ui .land, #ui .stockp, #ui .purse {
+    left: auto; width: min(400px, 56%);
+    max-height: var(--sheet-max);
+  }
+  #ui :is(.inspector, .vpanel, .land, .stockp, .purse)[data-sheet='half'] { max-height: min(var(--sheet-max), 70%); }
+  /* The notices on the world's side, clear of the sheet. */
+  #ui .toasts { left: calc(var(--gap) + var(--safe-l)); transform: none; align-items: flex-start; max-width: 42%; }
+  #ui .toast { font-size: 13px; padding: 4px 11px; }
+}
+
+/* ── phone upright: < 560 px ───────────────────────────────────────────────── */
+@media (max-width: 559px) {
+  /* Two rows: the Stock, the purse, the power, the time; then the research fold, the views,
+     « Construire » and the menu (the HUD's own flow; nothing forced). */
+  #ui .hud-stock { padding: 3px 10px 3px 7px; }
+  #ui .hud-stock-label { font-size: 16px; }
+  #ui .bb-slot { width: 72px; }
+  #ui .bb-tab .bb-label { font-size: 16px; }
+  #screens .research .rs-detail { max-height: 48%; }
+  #screens .crier .cr-orbit { height: 240px; }
+  /* The statistics' ledger: the item, made, used and the net as figures (the bars and the
+     sparkline wait for a wider window). */
+  #screens .stats .st-row { grid-template-columns: minmax(0, 1.5fr) repeat(3, minmax(0, 1fr)); gap: 6px; }
+  #screens .stats .st-row > :nth-child(5) { display: none; }
+  #screens .stats .st-row .insp-bar, #screens .stats .st-row .st-div { display: none; }
+  #screens .stats .st-row .kmeter { justify-content: flex-end; }
+  #screens .stats .st-row .kmeter-v { min-width: 0; text-align: right; }
+  #screens .stats .st-net { display: block; text-align: right; }
+  #screens .stats .st-col { justify-content: flex-end; }
+  #screens .stats .st-headrow > :first-child { justify-content: flex-start; }
+}
+
+/* ── short: < 540 px tall (a phone on its side) ─────────────────────────────── */
+@media (max-height: 539px) {
+  #ui .bb-slot { width: 74px; padding: 4px 3px; }
+  #ui .bb-slot > canvas { height: 36px; }
+  #ui .bb-name { min-height: 0; -webkit-line-clamp: 1; line-clamp: 1; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
+  #ui .bb-tray { padding: 4px 6px; }
+  #ui :is(.inspector, .vpanel, .land, .stockp, .purse) { --sheet-peek: 74px; }
+  #screens .crier .cr-orbit { height: 220px; }
+  #screens .research .rs-detail { max-height: 52%; }
+}
+
+/* ── touch: hit targets, no keyboard hints ─────────────────────────────────── */
+@media (pointer: coarse) {
+  #ui .hud-grp, #ui .hud-rs, #ui .hud-build, #ui .hud-menu, #ui .hud-vfold, #ui .hud-fold { min-height: 46px; }
+  #ui .hud-menu { min-width: 46px; }
+  #ui .hud-credits { align-self: stretch; min-height: 46px; }
+  #ui .bb-tab { min-height: 46px; }
+  #ui .bb-slot { min-height: 46px; }
+  #ui .vbar-btn { min-height: 46px; width: 48px; }
+  #ui .insp-x { min-width: 46px; min-height: 46px; margin-top: -8px; margin-right: -8px; }
+  #ui .dbg-badge-back { min-width: 44px; min-height: 40px; }
+  #ui .dbg-badge { min-height: 46px; }
+  #ui .btn { min-height: 42px; }
+  #screens .rs-close { min-width: 46px; min-height: 46px; }
+  /* No keyboard here: the key caps and the keyboard hints go (the tabs' and slots' order stays). */
+  #ui .bb-key, #ui .vbar-btn .bb-key { display: none; }
+  #ui .bb-hint { display: none; }
+  #ui .bb-tab { padding-left: 12px; }
+  /* R for a finger: « Tourner », while a building or a ribbon is in hand. */
+  #ui .buildbar[data-open] .bb-rotate { display: inline-flex; }
+  #ui .bb-rotate { background: var(--c-peach-l); }
+  #ui .bb-turn { font-size: 20px; line-height: 1; }
+}

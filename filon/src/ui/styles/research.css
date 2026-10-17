@@ -1,7 +1,8 @@
 /* research.css — the research half of the tech tree (D68–D70; ui/screens/research.ts, which
-   imports it): the research lab's gate between the two blocks (D71), the tier columns and their heads, the trunk and the family lanes (their names per
-   tier, the specialities' divider), the research nodes (what they use as they run, their time,
-   the specialisation badge, the queue's tag), the header's research strip (slots, labs, the
+   imports it): the research lab's gate between the two blocks (D71), the tier bands and their heads, the trunk and the family lanes (their names per
+   tier, the specialities' divider), the links (their kinds; a hovered node's chain lit, the rest
+   faded, D107), the research nodes (what they unlock, their time and data, their tokens, the
+   queue's tag), the header's research strip (slots, labs, the
    token bill, the purse-in-the-red warning, the Compute Plan, the queue) and the detail pane's
    research parts. The plans' half and the shared tree rules stay in screens.css. */
 
@@ -52,14 +53,21 @@
 .rs-gpath[data-full] small { color: var(--c-turq-d); font-weight: 700; }
 .rs-gate .rs-qnote { margin-top: 6px; }
 
-/* ── tier columns ── */
-.tr-tiercol { position: absolute; border-left: 1.5px dashed rgba(30, 27, 46, 0.2); border-radius: 0 0 0 10px; }
-.tr-tiercol[data-tier='2'], .tr-tiercol[data-tier='4'] { background: rgba(157, 140, 201, 0.09); }
+/* ── tier bands (D107): each tier a band of its own, a gutter of paper between them, its head on top ── */
+.tr-tiercol {
+  position: absolute; border: 1.5px solid rgba(30, 27, 46, 0.16); border-radius: 14px 14px 10px 10px;
+  background: rgba(255, 252, 246, 0.55);
+}
+.tr-tiercol[data-tier='2'] { background: rgba(157, 140, 201, 0.10); }
+.tr-tiercol[data-tier='3'] { background: rgba(157, 140, 201, 0.16); }
+.tr-tiercol[data-tier='4'] { background: rgba(106, 90, 134, 0.16); }
 .tr-tierhead {
   position: absolute; z-index: 1; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto;
-  column-gap: 12px; align-items: center; padding: 4px 12px 0;
+  column-gap: 14px; align-items: center; padding: 6px 14px 0;
+  border-bottom: 2px solid rgba(30, 27, 46, 0.18); border-radius: 14px 14px 0 0;
+  background: color-mix(in srgb, var(--c-lilac-l) 26%, rgba(255, 252, 246, 0.9));
 }
-.tr-tiername { grid-row: 1 / 3; font-size: 26px; line-height: 1; color: var(--c-ink-soft); }
+.tr-tiername { grid-row: 1 / 3; font-size: 30px; line-height: 1; color: var(--c-ink-soft); }
 .tr-tierhead[data-open] .tr-tiername { color: var(--c-ink); }
 .tr-tierhead[data-on] .tr-tiername { text-decoration: underline 3px var(--c-turq); text-underline-offset: 4px; }
 .tr-opens { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--c-ink-soft); }
@@ -81,7 +89,6 @@
 .tree .tr-lane[data-kind='research'] { gap: 2px; }
 .tree .tr-lane[data-kind='research'] .tr-lanename { font-size: 19px; }
 .tr-lane[data-kind='research'] .tr-paththeme { font-size: 10.5px; }
-.tr-lane[data-kind='research'] .rs-respec { margin-top: 2px; }
 /* A family's name over each tier column (its speciality's from Tier 3), on the band's edge. */
 .tr-ttag {
   position: absolute; z-index: 2; transform: translateY(-50%); pointer-events: none; white-space: nowrap;
@@ -94,9 +101,23 @@
 /* The divider between a family's two specialities. */
 .tr-split { position: absolute; height: 0; border-top: 2px dashed color-mix(in srgb, var(--path) 45%, transparent); }
 
-/* Links: a trunk gate shows only while its node is selected (the tier heads say what opens a tier). */
+/* Links: a trunk gate shows only while its node is hovered or selected (the tier heads say what opens a tier). */
 .tree .tr-link[data-gate] { display: none; }
-.tree .tr-link[data-gate][data-hot] { display: inline; stroke: var(--c-lilac-d); stroke-width: 1.8; opacity: 0.6; stroke-dasharray: 3 6; }
+.tree .tr-link[data-gate][data-hot], .tree .tr-link[data-gate][data-chain] { display: inline; stroke: var(--c-lilac-d); stroke-width: 1.8; opacity: 0.7; stroke-dasharray: 3 6; }
+/* From another lane (the Synthesis's bus, the Compute Plan's Server Room…): the same states, a finer line. */
+.tree .tr-link[data-kind='cross'] { stroke-width: 1.6; }
+
+/* A node's chain (D107): under the mouse (on a touch screen, the selection), what it needs and what
+   needs it stay, the rest fades back; its links thicken. */
+.tr-canvas .tr-node, .tr-canvas .tr-link { transition: opacity 0.15s ease; }
+.tr-canvas[data-chain] .tr-node:not([data-chain]) { opacity: 0.2; }
+.tr-canvas[data-chain] .tr-node[data-chain] { opacity: 1; }
+.tr-canvas[data-chain] .tr-link:not([data-chain]) { opacity: 0.06; }
+.tr-canvas[data-chain] .tr-link[data-chain] { opacity: 1; stroke-width: 3.2; }
+.tr-canvas[data-chain] .tr-link[data-chain][data-state='locked'] { stroke: var(--c-coral-d); stroke-dasharray: 4 5; }
+.tr-canvas[data-chain] .tr-link[data-chain][data-state='open'] { stroke-dasharray: 8 4; }
+.tr-canvas[data-chain] .tr-node[data-chain='self'] { box-shadow: 3px 3px 0 var(--c-ink), 0 0 0 4px color-mix(in srgb, var(--c-turq) 55%, transparent); }
+.tr-canvas[data-chain] .tr-ttag, .tr-canvas[data-chain] .tr-band { opacity: 0.55; }
 
 /* ── research nodes: a lilac pill, its spine in its lane's colour ── */
 .tree .tr-node[data-kind='research'] { background: #f4effb; border-radius: 18px; padding: 3px 9px 3px 13px; gap: 7px; }
@@ -114,20 +135,27 @@
 .tree .tr-node[data-kind='research'] .tr-name { font-size: 14.5px; line-height: 16px; }
 .tree .tr-node[data-kind='research'][data-long] .tr-name { font-size: 13px; }
 /* What it uses as it runs: data files, tokens, their price at CrierBelt. */
-.tr-rcost { display: flex; align-items: center; gap: 5px; min-width: 0; font-size: 11.5px; line-height: 16px; white-space: nowrap; }
-.tr-rcost .tr-chip { gap: 2px; }
-.tr-rcost .tr-chip canvas, .tr-rcost .tr-mark { width: 14px; height: 14px; }
+.tr-rcost { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; font-size: 11.5px; line-height: 16px; white-space: nowrap; }
+.tr-rcost .tr-chip { gap: 1px; }
+.tr-rcost .tr-chip canvas, .tr-rcost .tr-mark { width: 13px; height: 13px; }
 .tr-oc { color: var(--c-ink-soft); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; }
 .tr-oc .coin { width: 1em; height: 1em; }
-/* Its minimum time and its specialisation badge. */
-/* Its tokens, their price at CrierBelt and its minimum time. */
+/* No token billed before the servers' plan (D105): the token chip at 0, faded, « offert » in turquoise. */
+.tr-chip[data-k='tok'][data-free] { opacity: 0.6; }
+.tr-oc[data-free] { color: var(--c-turq-d); font-weight: 700; cursor: help; }
+.rs-rcosts li[data-free] { cursor: help; }
+.rs-free { color: var(--c-turq-d); font-weight: 600; }
+/* Its minimum time and its data on one line (D107: the time first), its tokens and their price on the next. */
+.tr-rline { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 11.5px; line-height: 16px; white-space: nowrap; }
+.tr-rline .tr-time { display: inline-flex; align-items: center; gap: 3px; margin-left: 0; font-weight: 700; color: var(--c-ink); }
+.tr-rline .tr-mark { width: 13px; height: 13px; }
 .tr-rfoot { display: flex; align-items: center; gap: 8px; font-size: 11.5px; line-height: 15px; color: var(--c-ink-soft); white-space: nowrap; }
 .tr-tokbox { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
 .tr-tokbox .tr-chip { color: var(--c-ink); }
 .tr-rfoot .tr-chip .tr-mark { width: 13px; height: 13px; }
 .tr-rfoot .tr-time { display: inline-flex; align-items: center; gap: 3px; margin-left: 0; }
 .tr-rfoot .tr-mark { width: 13px; height: 13px; }
-.tr-node[data-state='done'] .tr-rcost, .tr-node[data-state='done'] .tr-tokbox { opacity: 0.55; }
+.tr-node[data-state='done'] .tr-rline, .tr-node[data-state='done'] .tr-tokbox { opacity: 0.55; }
 /* Queued in a lab (the Research Queue): a tag on its upper left edge, the lab's number. */
 .tr-qtag {
   position: absolute; left: 14px; top: -10px; display: none; align-items: center; gap: 3px; padding: 0 6px 0 4px;
@@ -168,6 +196,20 @@
 }
 .rs-plan canvas { width: 18px; height: 18px; display: block; }
 .rs-plan b { padding: 0 6px; border-radius: 999px; font-size: 11.5px; background: var(--c-paper); border: 1px solid var(--c-ink-soft); }
+/* The Compute Plan's comparison at today's use (D102): an hour without it, an hour with it; the cheaper lit. */
+.rs-plancmp { display: inline-flex; align-items: stretch; gap: 0; border: 1.5px solid var(--c-ink); border-radius: 9px; overflow: hidden; cursor: help; }
+.rs-plancmp[hidden] { display: none; }
+.rs-cmp { display: inline-flex; flex-direction: column; justify-content: center; padding: 1px 8px; font-size: 12px; line-height: 1.1; background: var(--c-paper); }
+.rs-cmp + .rs-cmp { border-left: 1px dashed rgba(30, 27, 46, 0.35); }
+.rs-cmp small { font-size: 10.5px; color: var(--c-ink-soft); }
+.rs-cmp b { font-weight: 700; color: var(--c-coral-d); white-space: nowrap; }
+.rs-cmp[data-best] { background: var(--c-turq-l); }
+/* A running project's tokens now (D102): a minute, their ◉ a minute, the servers' share — icons, the words on hover. */
+.rs-toknow { display: flex; align-items: center; gap: 5px; margin: 6px 0 2px; font-size: 12.5px; cursor: help; }
+.rs-toknow .kmark { width: 1.2em; height: 1.2em; }
+.rs-toknow canvas { display: block; margin-left: 6px; }
+.rs-toknow b { font-weight: 700; }
+.rs-toknow .coin-w { margin-left: 6px; }
 .rs-plan[aria-pressed='true'] { background: color-mix(in srgb, var(--c-turq-l) 60%, var(--c-paper)); }
 .rs-plan[aria-pressed='true'] b { background: var(--c-turq-d); color: var(--c-paper); border-color: var(--c-ink); }
 .rs-qchip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 4px 1px 8px; border-radius: 999px; background: #ebe3f8; border: 1.5px solid var(--c-lilac-d); font-size: 12px; }
@@ -209,14 +251,9 @@
 .rs-qinfo small { color: var(--c-ink-soft); font-size: 11.5px; line-height: 1.3; }
 .rs-qnext { color: var(--c-lilac-d) !important; font-weight: 600; }
 .rs-qput { flex: none; font-size: 13px; padding: 2px 7px; }
-/* The family's reconversion. */
-.rs-famrow { display: flex; align-items: center; gap: 8px; }
-.rs-famname { font-size: 18px; }
-.rs-famrow .tr-pathcount { align-self: center; margin: 0; cursor: help; }
-.rs-famrow .rs-respec { margin-left: auto; }
-.rs-fam .rs-qnote { margin-top: 4px; }
 
 /* Reduced motion: the warnings and highlights hold still. */
 @media (prefers-reduced-motion: reduce) {
   .rs-held, .tr-tierhead[data-opens] .tr-gate { animation: none; }
+  .tr-canvas .tr-node, .tr-canvas .tr-link { transition: none; }
 }

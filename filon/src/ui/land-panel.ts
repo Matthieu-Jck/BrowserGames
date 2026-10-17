@@ -5,8 +5,9 @@
 // shows rather than tells (owner, D53): a little map of the parcel's 16 × 16 tiles, its name on
 // the map (a compass offset from the Heart), who holds it (an owner's flag and the name: the
 // claim, a sister claim, CrierBelt) and how (a tag), what it holds as glyphs and tile counts (each
-// ore's icon, rock, water, salt flats, vents, the dune sea, the fog over what is not explored yet,
-// the buildings on it), then the price
+// ore's icon, rock, water, salt flats, vents, the dune sea, chasms and rivers, the fog over what is
+// not explored yet, the buildings on it), its usable floor as a gauge and a share (D94: where a 2 × 2
+// machine stands; the price follows it), then the price
 // with the ocelle sign and « Acheter », the rent an hour and « Louer » (Land Registry first), or on
 // a leased parcel its hour as a bar and « Rendre le bail »; a bought one, once Parcel Resale
 // (xp_resell) is learnt, « Revendre » and what CrierBelt gives back. A button the colony would
@@ -26,6 +27,7 @@ import { TICK_MS } from '@/sim/constants';
 import { footprint } from '@/sim/entities';
 import type { Sim } from '@/sim/state';
 import { LEASE_TICKS, type LandRefusal } from '@/sim/systems/land';
+import { parcelFloor, parcelOre } from '@/sim/world/floor';
 import { PARCEL, parcelRect } from '@/sim/world/land';
 import { glyph, type GlyphId } from './glyphs';
 import { itemMention } from './mention';
@@ -46,6 +48,7 @@ export interface LandHost {
 /** A terrain tile's colour on the parcel's little map (the ground's palette: art/tokens.ts). */
 const TERRAIN_COL: readonly string[] = [
   C.cirque, C.hardpan, C.rock1, C.rock2, C.rock3, C.rock4, C.shallow, C.deep, C.salt, C.vent, C.duneSea, C.dug, C.filled,
+  C.chasm, C.river,
 ];
 /** The map's size: pixels a tile (CSS px; drawn at twice that for sharp edges), the parcel about 112 px a side whatever its size (D74: 23 tiles). */
 const MAP_PX = Math.max(3, Math.round(112 / PARCEL));
@@ -109,6 +112,8 @@ export class LandPanel {
     return [
       el('div.land-top', {}, [this.map(sim, p), this.holder(sim, p, st)]),
       this.contents(sim, p, c),
+      this.floor(sim, p),
+      this.ore(sim, p),
       ...this.deal(sim, p, st),
     ];
   }
@@ -166,7 +171,7 @@ export class LandPanel {
     const chip = (icon: HTMLElement, n: number, label: string, k: string): HTMLElement =>
       el('span.land-chip', { 'data-k': k, title: `${label} · ${tr('land.tiles', { n })}` }, [icon, el('b', {}, String(n))]);
     const kids: HTMLElement[] = c.ores.map(([i, n]) => chip(itemMention(i, { name: false }), n, itemDef(i).name[locale()], ITEM_IDS[i]!));
-    for (const [k, n] of [['rock', c.rock], ['water', c.water], ['salt', c.salt], ['vent', c.vent], ['dunes', c.dunes], ['floor', c.floor], ['fog', c.hidden]] as const) {
+    for (const [k, n] of [['rock', c.rock], ['water', c.water], ['river', c.river], ['chasm', c.chasm], ['salt', c.salt], ['vent', c.vent], ['dunes', c.dunes], ['floor', c.floor], ['fog', c.hidden]] as const) {
       if (n > 0) kids.push(chip(glyph(k), n, t(`land.c.${k}` as MsgKey), k));
     }
     const built = el('b');
@@ -178,6 +183,45 @@ export class LandPanel {
       setAttr(builtChip, 'title', `${t('land.c.buildings')} · ${n}`);
     });
     return el('div.land-holds', { title: t('land.holds') }, [...kids, builtChip]);
+  }
+
+  /**
+   * Its usable floor (D94, sim/world/floor.ts): a gauge of the share of its tiles where a 2 × 2
+   * machine stands on level ground, and the figure — over the whole parcel, as its price reads it.
+   * Under a third the gauge turns amber: land cut up by cliffs, chasms or rivers.
+   */
+  private floor(sim: Sim, p: number): HTMLElement {
+    const fill = el('span.land-bar-fill');
+    const share = el('b');
+    const row = el('div.land-floor', { title: t('land.floor.tip') }, [glyph('floor'), el('span', {}, t('land.floor')), el('span.land-bar', {}, [fill]), share]);
+    this.live.push(() => {
+      const f = parcelFloor(sim.grid, p);
+      setStyle(fill, 'transform', `scaleX(${(f.permille / 1000).toFixed(3)})`);
+      setText(share, pct(f.permille / 1000));
+      setAttr(row, 'data-low', f.permille < 333 ? '' : null);
+    });
+    return row;
+  }
+
+  /**
+   * Its ore (D94: space or ore): three pips filled up to its tier (`parcelOre`: none, a thin blob, a
+   * field, a rich one) in the colour of the ore it holds most, and its deposit tiles — the land
+   * panel's twin of the Terrain view's pips.
+   */
+  private ore(sim: Sim, p: number): HTMLElement {
+    const pips = [0, 1, 2].map(() => el('i.land-pip'));
+    const tiles = el('b');
+    const row = el('div.land-ore', { title: t('land.ore.tip') }, [glyph('ore'), el('span', {}, t('land.ore')), el('span.land-pips', {}, pips), tiles]);
+    this.live.push(() => {
+      const o = parcelOre(sim.grid, p);
+      const col = o.item >= 0 ? itemDef(o.item).color : '';
+      pips.forEach((n, k) => {
+        setAttr(n, 'data-on', k < o.tier ? '' : null);
+        setStyle(n, '--pip', col.startsWith('#') ? col : col ? ((C as Record<string, string>)[col] ?? C.ink) : '');
+      });
+      setText(tiles, String(o.tiles));
+    });
+    return row;
   }
 
   /**

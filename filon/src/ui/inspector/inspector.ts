@@ -4,9 +4,9 @@
 // · the top block answers three questions at a glance: what it does (the kind's `HERO`: a recipe
 //   as an icon equation, what a drill cuts a minute, the power it makes, the project it runs…),
 //   whether it works (the status line: a mark and one word — at work, a passing stop, stopped, as
-//   the world draws it, `workOf` D83; being built; asleep, D80), and why not (the reason as icons:
-//   the inputs it waits for, its full output, no power, no wire, no recipe; under it, the few words
-//   of what to do);
+//   the world draws it, `workOf` D83; at work but slowed by a weak grid, in amber, D91; being built;
+//   asleep, D80), and why not (the reason as icons: the inputs it waits for, its full output, no
+//   power, the weak grid and its %, no wire, no recipe; under it, the few words of what to do);
 // · the kind's sections (panels.ts: its recipe and buffers, its stores, its filters, its project's
 //   data…), each its own card, then the grid card (power.ts, D25/D76);
 // · the foot: every action of the panels (choose a research, open the Crier, take the Link tool,
@@ -25,12 +25,13 @@ import type { DrillNode, GeneratorNode, MachineNode } from '@/sim/flow/nodes';
 import type { Sim } from '@/sim/state';
 import { St, type Ent } from '@/sim/types';
 import { linkable } from '@/sim/power/links';
-import { LOOKS_AT_WORK, workOf } from '@/sim/systems/work';
+import { LOOKS_AT_WORK, weakGrid, workOf } from '@/sim/systems/work';
 import { buildingIcon } from '../build-bar';
 import { firstSentence } from '../building-facts';
 import { glyph } from '../glyphs';
 import { itemList, itemRef } from '../mention';
-import { itemReason, mark, statusLine, type Facet, type InspectorHost, type PanelCtx, type StateWord } from './kit';
+import { pct } from '@/i18n/format';
+import { itemReason, mark, statusLine, weakReason, type Facet, type InspectorHost, type PanelCtx, type StateWord } from './kit';
 import { HERO, PANELS } from './panels';
 import { gridCard } from './power';
 import { tradeSig } from '../trade-view';
@@ -61,7 +62,9 @@ interface Why { icons: () => Node[]; sig: string; text: string | null }
  * below); a struck bolt, a cut plug, an empty slot, the land or the tree for a sleeper; else a few
  * words of what to do. Nothing when the status says it all.
  */
-function why(node: FNode | undefined, kind: BuildingKind, st: number, unwired: boolean, asleep: 'research' | 'land' | null): Why {
+function why(node: FNode | undefined, kind: BuildingKind, st: number, unwired: boolean, asleep: 'research' | 'land' | null, sat: number): Why {
+  // At work, slowed by a weak grid (D91; `sat` only then): the half-bolt and its %.
+  if (sat > 0) return { icons: () => [weakReason(sat)], sig: `k${pct(sat / 1000)}`, text: t('insp.why.weak', { p: pct(sat / 1000) }) };
   const m = node?.kind === 'machine' ? (node as MachineNode) : null;
   const none: Why = { icons: () => [], sig: '', text: null };
   switch (st) {
@@ -111,7 +114,7 @@ export class Inspector {
 
   /** Everything a rebuild depends on: change it and the panels are built again (a trade post: also its streams and orders; the view's facet). */
   private signature(sim: Sim, e: Ent): string {
-    const base = `${e.id}:${e.cfg}:${e.builtAt !== 0}:${sim.graph?.nodeByEnt.get(e.id) ? 1 : 0}:${locale()}:${(e.portItems ?? []).join('.')}:${sim.hearthLevel}:${sim.fleet.get(e.id) ?? 0}:${sim.done.size}:${this.host.facet?.() ?? ''}`;
+    const base = `${e.id}:${e.cfg}:${e.builtAt !== 0}:${sim.graph?.nodeByEnt.get(e.id) ? 1 : 0}:${locale()}:${(e.portItems ?? []).join('.')}:${sim.hearthLevel}:${sim.fleet.get(e.id) ?? 0}:${sim.done.size}:${this.host.facet?.() ?? ''}:${e.id === sim.hearthId ? sim.expertise.slots.map((x) => (x ? `${x.id}${x.on ? '+' : '-'}${sim.expertise.ranks.get(x.id) ?? 0}` : '')).join('/') : ''}`;
     return BUILDING_KIND[e.def] === 'trade' ? `${base}:${tradeSig(sim, e.id)}` : base;
   }
 
@@ -140,9 +143,12 @@ export class Inspector {
       const st = e.builtAt !== 0 ? St.Building : asleep ? St.Dormant : node ? node.status : St.Ok;
       // Unpowered because no wire reaches it (D25) says so: the fix is a wire, not more power.
       const unwired = st === St.Unpowered && sim.graph?.netOfEnt.get(e.id) === undefined;
-      const word: StateWord = st === St.Building ? 'build' : st === St.Dormant ? 'sleep' : quiet ? WORD[st] ?? 'on' : workOf(sim, e);
-      const label = t(unwired ? 'insp.status.unlinked' : asleep === 'land' ? 'insp.status.dormantLand' : STATUS[st] ?? 'insp.status.ok');
-      const w = why(node, kind, st, unwired, asleep);
+      const work: StateWord = st === St.Building ? 'build' : st === St.Dormant ? 'sleep' : quiet ? WORD[st] ?? 'on' : workOf(sim, e);
+      // At work on a grid under 100 %: it runs, slowed — a warning in amber, not « En marche » (D91).
+      const sat = quiet || work === 'build' || work === 'sleep' ? 0 : weakGrid(sim, e);
+      const word: StateWord = work === 'on' && sat ? 'slow' : work;
+      const label = t(word === 'slow' ? 'insp.status.weak' : unwired ? 'insp.status.unlinked' : asleep === 'land' ? 'insp.status.dormantLand' : STATUS[st] ?? 'insp.status.ok');
+      const w = why(node, kind, st, unwired, asleep, word === 'slow' ? sat : 0);
       status.set(word, w.icons, w.sig, label);
       setAttr(status.root, 'hidden', quiet && word === 'on' ? '' : null);
       // The why line: the status in words, then what to do (or the items, by name).

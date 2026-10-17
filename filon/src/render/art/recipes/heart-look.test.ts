@@ -6,7 +6,9 @@ import { BAL } from '@/content/balance';
 import { BUILDINGS, type BuildingId } from '@/content/buildings';
 import type { BuildingDef } from '@/content/types';
 import { HEART_CORNERS, artLevelOf, artLevels, heartLook, portDrawn } from './buildings';
-import { isoArt, planArt } from './fx';
+import { beaconSpot, isoArt, planArt } from './fx';
+import { isoHead } from './buildings';
+import { tileToIso } from '../../iso';
 
 const HEART = BUILDINGS.hearth as BuildingDef;
 
@@ -48,5 +50,18 @@ describe('the Core’s looks (D86)', () => {
     }
     expect(heartLook(1)).toMatchObject({ beacons: 1, strips: 1, cornice: false, drone: false, floods: false });
     expect(heartLook(4)).toMatchObject({ beacons: 3, strips: 2, cornice: true, pilasters: true, drone: true, skirt: true, floods: true });
+  });
+
+  it('blinks its night beacon on the uplink’s feed horn at every level and turn, not on a link mast that projects higher', () => {
+    const [X, Y] = tileToIso(HEART.w / 2, HEART.h / 2, isoHead('hearth'));
+    for (let lv = 1; lv <= artLevels('hearth'); lv++) {
+      for (const rot of [0, 1, 2, 3] as const) {
+        const art = isoArt('hearth', rot, lv);
+        const [x, y] = beaconSpot(art, HEART.w / 2, HEART.h / 2, isoHead('hearth'));
+        // On a light the art bakes (the feed's LED), within a pixel or two of the feed point (sprite px: 2 × world px).
+        expect(art.emitters.some((em) => em.x === x && em.y === y), `lv ${lv} rot ${rot}`).toBe(true);
+        expect(Math.hypot(x - X * 2, y - Y * 2), `lv ${lv} rot ${rot}`).toBeLessThan(3);
+      }
+    }
   });
 });

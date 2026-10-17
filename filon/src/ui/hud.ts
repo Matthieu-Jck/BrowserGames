@@ -1,6 +1,8 @@
 // hud.ts — the top bar, in separate inked cartouches (D88; owner, 2026-10-15: « Plus clair, plus
-// séparé »): the Heart's stocks (glyph, amount, change per minute — the first few, the rest behind
-// a « +n » chip that opens a drawer under them), the economy (the ocelles with the recurring trade
+// séparé »): the Heart's stock behind a « Stock » button (D96; owner, 2026-10-16: « n'affiche plus
+// cette barre de ressource… il faut que le joueur clique sur un bouton Stock pour le voir »: a crate,
+// the word, a badge when the base lacks an item — ui/stock-facts.ts —, the panel in
+// ui/stock-panel.ts, open or closed as this viewer last left it), the economy (the ocelles with the recurring trade
 // per hour; a click opens the Crier when the shell allows it), the energy (the Heart grid's power
 // and a bar of it; a click opens the Électricité view), the time of day with the cirque's air
 // temperature (the sun's % in its tooltip). On the right, the view selector (ui/views/view-bar.ts,
@@ -8,48 +10,54 @@
 // the view — a coral dot on it when something new may be built — and the main menu.
 // Under them, the tech tree's chip (D33: plans and research, T; a badge counts the plans the
 // Heart can pay for right now), the Statistics chip (G) once the ledger is unlocked, and one chip
-// per research project.
+// per research project — the tree's state and a project's clock as the tree screen derives them
+// (ui/tree-state.ts). Once the Core mounts its Archive (level 3), the Expertise chip (D93, E): the
+// two slots' pictures and a badge of the expertises a free slot could take.
 // What the Analytics path unlocks (D41, ui/analytics.ts) shows here: the stocks' rates with the
-// telemetry, the Statistics chip with the ledger. When an analytics plan is taken, the HUD plays
+// telemetry (in the Stock panel), the Statistics chip with the ledger. When an analytics plan is taken, the HUD plays
 // its reveal (ui/focus.ts): the base dims and the new readout is lifted out with CrierBelt's line,
 // as soon as no screen covers the HUD (`HudHost.covered`).
-// A stock chip's change reads « +12/min »: what the base brought into the Heart over the last
-// minute (`Sim.hearthIn`), so it speaks of the number beside it — never negative, since nothing
-// leaves the Heart by itself (a building's cost is no rate). Its tooltip says it in words (the
-// item, what the Heart holds, what came in over the last minute).
+// An item's rate in the Stock panel reads « +12/min »: what the base brought into the Heart over
+// the last minute (`Sim.hearthIn`, sampled here once a second), so it speaks of the number beside
+// it — never negative, since nothing leaves the Heart by itself (a building's cost is no rate).
+// On a narrow window (D96, styles/responsive.css) the bar wraps and folds: the research row behind one chip (the tree's mark, its
+// badge, the first project's ring) and the view selector behind a layers button, each opening as a
+// dropdown under the HUD (`data-fold` on the root; a tap elsewhere closes it).
 // Refreshed at 4 Hz; the DOM is only written when something changed.
+import { tokenFacts } from './token-facts';
+import { mark } from './inspector/kit';
 import { ITEM_IDS, itemIdx, N_ITEMS } from '@/content/registry';
 import { el, setAttr, setStyle, setText } from '@/core/dom';
 import { locale, t, tr } from '@/i18n/i18n';
 import type { Atlas } from '@/render/art/atlas';
 import type { Sim } from '@/sim/state';
-import { itemIcon } from './build-bar';
-import { nameOf } from './mention';
-import { PLAN_IDS, RESEARCH, nodeName, type ResearchId } from '@/content/research';
+import { RESEARCH, nodeName, type ResearchId } from '@/content/research';
 import type { ResearchDef } from '@/content/types';
-import { projectPermille } from '@/sim/research/runtime';
 import { dayEpoch, sunPermille } from '@/sim/power/network';
 import { EPOCH, DAY_EPOCHS, TPS } from '@/sim/constants';
 import { temperatureAt } from '@/sim/world/climate';
 import { revealed } from '@/sim/systems/quests';
 import { duration } from '@/i18n/format';
 import type { MsgKey } from '@/i18n/i18n';
-import { oc, tradePerHour } from './trade-view';
+import { oc } from './trade-view';
 import { ANALYTICS_REVEALS, UnlockWatch, analyticsOn } from './analytics';
+import { projectTiming, readyPlans } from './tree-state';
 import { Spotlight, type FocusShot } from './focus';
+import { expertiseDef } from '@/content/expertises';
+import { archiveOpen } from '@/sim/systems/expertise';
+import { archiveGlyph, choosable, choosableText, expertiseIcon } from './screens/expertise';
+import { crateGlyph, compact, StockPanel } from './stock-panel';
+import { shortages, type Shortage } from './stock-facts';
+import { PurseCard, perHour as purseHour } from './purse-card';
+import { PurseHistory, purseSummary, type FlowLine, type PurseSummary } from './purse-facts';
+import { makeStore } from '@/core/store';
 
 /** More ticks than this between two one-second samples: a catch-up ran (play runs `TPS` a second). */
 const CATCH_UP_TICKS = 3 * TPS;
 /** Items shown first when held (the early chain), then anything else in stock. */
 const ORDER = ['iron_ore', 'iron_plate', 'sand', 'glass', 'coal', 'copper_ore', 'copper_wire', 'journal_1', 'journal_2', 'gear', 'circuit', 'ceramic', 'stone', 'salt'];
-/** Stocks on the bar itself (the most stocked); the rest wait behind the « +n » chip (D88). */
-const MAIN_STOCKS = 5;
-
-const compact = (n: number): string => {
-  const L = locale();
-  if (Math.abs(n) >= 10000) return `${new Intl.NumberFormat(L, { maximumFractionDigits: 1 }).format(n / 1000)} k`;
-  return new Intl.NumberFormat(L, { maximumFractionDigits: 0 }).format(n);
-};
+/** Whether this viewer left the Stock panel open (D96): a convenience of this browser's, never the colony's. */
+const stockPref = makeStore<{ version: 1; open: boolean }>('filon.stock.v1', 1, () => ({ version: 1, open: false }));
 
 const SVG = 'http://www.w3.org/2000/svg';
 
@@ -65,6 +73,20 @@ function treeGlyph(): SVGSVGElement {
     const c = document.createElementNS(SVG, 'circle');
     c.setAttribute('cx', String(x)); c.setAttribute('cy', String(y)); c.setAttribute('r', '2.3');
     svg.append(c);
+  }
+  return svg;
+}
+
+/** The views' mark (D96: the folded selector's button): three inked layers, stacked. */
+function layersGlyph(): SVGSVGElement {
+  const svg = document.createElementNS(SVG, 'svg');
+  svg.setAttribute('viewBox', '0 0 20 20');
+  svg.setAttribute('class', 'hud-tree-glyph hud-layers-glyph');
+  for (const [y, fill] of [[12.5, 'var(--c-paper-d)'], [9, 'var(--c-peach)'], [5.5, 'var(--c-turq)']] as const) {
+    const p = document.createElementNS(SVG, 'path');
+    p.setAttribute('d', `M10 ${y - 4} L18 ${y} L10 ${y + 4} L2 ${y} Z`);
+    p.setAttribute('style', `fill: ${fill}`);
+    svg.append(p);
   }
   return svg;
 }
@@ -90,8 +112,10 @@ export interface HudHost {
   building(): boolean;
   toggleBuild(): void;
   openResearch(): void;
-  /** Open the Crier (M); when given, the ocelles chip opens it. */
+  /** Open the Crier (M); when given, the purse's card ends with « Ouvrir la Criée » (D102). */
   openCrier?(): void;
+  /** Go where a recurring flow of the purse is managed (D102: the order in the Crier, the tree, the lease's parcel). */
+  purseGo?(f: FlowLine): void;
   /** Open the main menu; when given, a menu button sits right of « Construire ». */
   openMenu?(): void;
   /** The absolute world tick the clock shows (default: the sim's; the shell adds FL.dayPhase's offset). */
@@ -100,29 +124,47 @@ export interface HudHost {
   openStats?(): void;
   /** Is something over the HUD (a full screen, the menu, a modal)? A reveal waits until it is gone. */
   covered?(): boolean;
-  /** The energy chip's click: the Électricité view (D88), and whether it is on. */
+  /** The energy chip's click: the Électricité view (D88), whether the tutorial offers it yet (D32), and whether it is on. */
   openPower?(): void;
+  powerShown?(): boolean;
   powerOn?(): boolean;
   /** Is something newly unlocked waiting in the build bar's trays (a dot on « Construire »)? */
   buildNew?(): boolean;
+  /** Open the Expertise window (D93); when given, its chip shows once the Core mounts the Archive. */
+  openExpertise?(): void;
 }
 
 export class Hud {
   readonly root: HTMLElement;
-  private readonly stocks: HTMLElement;
-  private readonly chips = new Map<number, { node: HTMLElement; val: HTMLElement; delta: HTMLElement }>();
+  /** « Stock » (D96): the crate, the word, the badge of what the base lacks; it opens `stock`. */
+  private readonly stockBtn: HTMLButtonElement;
+  private readonly stockLabel: HTMLElement;
+  private readonly stockBadge: HTMLElement;
+  /** The Heart's stock panel; the shell puts its root in #ui. */
+  readonly stock: StockPanel;
+  /** What the base lacks, worked out once a second (ui/stock-facts.ts). */
+  private lacks = new Map<number, Shortage>();
   private readonly credits: HTMLElement;
   private readonly creditsChip: HTMLElement;
-  /** The bar's cartouches (D88): stocks, economy, energy, time. */
-  private readonly stocksGrp: HTMLElement;
+  /** What the purse's ◉/h is made of (D102): opened by a click on the purse, or a rest of a mouse on it. */
+  readonly purse: PurseCard;
+  /** Opened by a click (it stays until closed), not by a passing pointer. */
+  private pursePinned = false;
+  /** The purse's journal sampled once a game minute (D102), and the summary of its last hour. */
+  private readonly purseHist = new PurseHistory();
+  private purseSum: PurseSummary | null = null;
+  private purseKey = '';
+  private purseTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The bar's cartouches (D88): economy, energy, time (and « Stock »). */
   private readonly ecoGrp: HTMLElement;
   private readonly timeGrp: HTMLElement;
-  /** « +n »: the stocks not on the bar, in a drawer under it. */
-  private readonly moreBtn: HTMLButtonElement;
-  private readonly drawer: HTMLElement;
-  private drawerOpen = false;
   /** Where the shell puts the view selector (ui/views/view-bar.ts), left of « Construire ». */
   readonly views: HTMLElement;
+  /** Narrow windows (D96): the research row's fold (the tree's mark, its badge, the first project's ring) and the views' (layers). */
+  private readonly fold: HTMLButtonElement;
+  private readonly foldBadge: HTMLElement;
+  private readonly foldRing: HTMLElement;
+  private readonly vfold: HTMLButtonElement;
   /** The colony's recurring trade, ◉ per hour (streams and orders). */
   private readonly creditsRate: HTMLElement;
   private readonly power: HTMLElement;
@@ -139,6 +181,12 @@ export class Hud {
   /** The Statistics chip (G), right of the tree's, once the ledger (analytics) is unlocked. */
   private readonly stats: HTMLElement;
   private readonly statsName: HTMLElement;
+  /** The Expertise chip (D93, E): the Archive's mark, the two slots' pictures, a badge of those to choose. */
+  private readonly exp: HTMLElement;
+  private readonly expName: HTMLElement;
+  private readonly expSlots: HTMLElement;
+  private readonly expBadge: HTMLElement;
+  private expSig = '';
   /** The spotlight the analytics reveals play in (D41); FL.focusReveal drives it too. */
   readonly spotlight = new Spotlight({ auto: !(typeof navigator !== 'undefined' && navigator.webdriver) });
   /** Which analytics plans were just taken: each plays its reveal once. */
@@ -159,11 +207,20 @@ export class Hud {
   private knownSim: unknown = null;
 
   constructor(private readonly atlas: Atlas, private readonly host: HudHost) {
-    this.stocks = el('div.hud-stocks', { 'data-hud-stocks': '' });
+    this.stockLabel = el('span.hud-stock-label.lettering');
+    this.stockBadge = el('span.hud-stock-badge');
+    this.stockBtn = el<'button'>('button.hud-grp.hud-stock.cartouche', { type: 'button', 'data-hud-stock': '', 'aria-expanded': 'false', onclick: () => this.setStock(!this.stock.open) },
+      [crateGlyph(), this.stockLabel, this.stockBadge]);
+    this.stock = new StockPanel(atlas, () => this.setStock(false));
     this.credits = el('span.hud-val');
     this.creditsRate = el('span.hud-delta');
-    const open = host.openCrier ? (): void => host.openCrier?.() : null;
-    this.creditsChip = el('div.hud-chip.hud-credits', { 'data-hud-crier': open ? '' : null, onclick: open }, [el('span.hud-coin', {}, '◉'), this.credits, this.creditsRate]);
+    this.creditsChip = el('div.hud-chip.hud-credits', { 'data-hud-purse': '', role: 'button', tabindex: '0', 'aria-expanded': 'false',
+      onclick: () => this.setPurse(!(this.purse.open && this.pursePinned), true),
+      onkeydown: (e: KeyboardEvent) => { if (e.key === 'Enter') this.setPurse(!this.purse.open, true); } }, [el('span.hud-coin', {}, '◉'), this.credits, this.creditsRate]);
+    this.purse = new PurseCard(atlas, {
+      sim: () => host.sim(), summary: () => this.purseNow(), go: (f) => { this.setPurse(false); host.purseGo?.(f); }, close: () => this.setPurse(false),
+      openCrier: host.openCrier ? () => { this.setPurse(false); host.openCrier?.(); } : undefined,
+    });
     this.powerVal = el('span.hud-val');
     this.powerFill = el('span.hud-pbar-fill');
     const openPower = host.openPower ? (): void => host.openPower?.() : null;
@@ -185,44 +242,115 @@ export class Hud {
       type: 'button', 'data-hud-stats': '', hidden: true,
       onclick: (e: Event) => { e.stopPropagation(); host.openStats?.(); },
     }, [statsGlyph(), this.statsName]);
+    this.expName = el('span.hud-rs-name.lettering');
+    this.expSlots = el('span.hud-exp-slots');
+    this.expBadge = el('span.hud-tree-badge');
+    this.exp = el('button.hud-rs.hud-tree.hud-exp.cartouche', {
+      type: 'button', 'data-hud-expertise': '', hidden: true,
+      onclick: (e: Event) => { e.stopPropagation(); host.openExpertise?.(); },
+    }, [archiveGlyph(), this.expName, this.expSlots, this.expBadge]);
     this.clockTime = el('span.hud-time');
     this.clockTemp = el('span.hud-temp');
     this.clock = el('div.hud-chip.hud-clock', {}, [this.clockTime, this.clockTemp]);
-    this.moreBtn = el<'button'>('button.hud-more', { type: 'button', 'data-hud-more': '', onclick: () => { this.drawerOpen = !this.drawerOpen; this.refreshDrawer(); } });
-    this.drawer = el('div.hud-drawer.cartouche', { 'data-hud-drawer': '', hidden: true });
-    this.stocksGrp = el('div.hud-grp.hud-stocks-grp.cartouche', {}, [this.stocks, this.moreBtn]);
     this.ecoGrp = el('div.hud-grp.cartouche', { 'data-hud-eco': '' }, [this.creditsChip]);
     this.timeGrp = el('div.hud-grp.cartouche', { 'data-hud-time': '' }, [this.clock]);
     this.views = el('div.hud-views');
+    this.foldBadge = el('span.hud-tree-badge');
+    this.foldRing = el('span.hud-ring');
+    this.fold = el<'button'>('button.hud-rs.hud-tree.hud-fold.cartouche', { type: 'button', 'data-hud-fold': 'research', 'aria-expanded': 'false', onclick: () => this.toggleFold('research') },
+      [treeGlyph(), this.foldRing, this.foldBadge, el('span.hud-caret')]);
+    this.vfold = el<'button'>('button.btn.hud-vfold', { type: 'button', 'data-hud-fold': 'views', 'aria-expanded': 'false', onclick: () => this.toggleFold('views') },
+      [layersGlyph(), el('span.hud-caret')]);
     this.root = el('header.hud', { 'data-screen': 'hud' }, [
       el('div.hud-left', {}, [
-        el('div.hud-row', {}, [this.stocksGrp, this.ecoGrp, this.power, this.timeGrp]),
-        this.drawer,
+        el('div.hud-row', {}, [this.stockBtn, this.ecoGrp, this.power, this.timeGrp, this.fold]),
         this.research,
       ]),
-      el('div.hud-right', {}, [this.views, this.buildBtn, this.menuBtn]),
+      el('div.hud-right', {}, [this.vfold, this.views, this.buildBtn, this.menuBtn]),
     ]);
+    // A fold open: a tap anywhere else closes it; a choice inside it closes it too (after it acts).
+    document.addEventListener('pointerdown', (e) => {
+      const at = e.target as Node | null;
+      const f = this.root.getAttribute('data-fold');
+      if (!f || !at) return;
+      const keep = f === 'research' ? [this.fold, this.research] : [this.vfold, this.views];
+      if (!keep.some((n) => n.contains(at))) this.setFold(null);
+    }, true);
+    this.research.addEventListener('click', () => this.setFold(null));
+    // The Stock panel: a click anywhere but on it or its button closes it (the world, the HUD, a panel).
+    document.addEventListener('pointerdown', (e) => {
+      const at = e.target as Node | null;
+      if (this.stock.open && at && !this.stock.root.contains(at) && !this.stockBtn.contains(at)) this.setStock(false);
+    }, true);
+    if (stockPref.load().open) this.setStock(true, false);
+    // The purse's card: a click elsewhere closes it; a mouse resting on the purse opens it, leaving it (and the card) closes it unless clicked open.
+    document.addEventListener('pointerdown', (e) => {
+      const at = e.target as Node | null;
+      if (this.purse.open && at && !this.purse.root.contains(at) && !this.ecoGrp.contains(at)) this.setPurse(false);
+    }, true);
+    const hover = typeof matchMedia === 'function' ? matchMedia('(hover: hover) and (pointer: fine)') : null;
+    const later = (fn: () => void, ms: number): void => { if (this.purseTimer) clearTimeout(this.purseTimer); this.purseTimer = setTimeout(fn, ms); };
+    const enter = (): void => { if (hover?.matches && !this.purse.open) later(() => this.setPurse(true, false), 280); else if (this.purseTimer) clearTimeout(this.purseTimer); };
+    const leave = (): void => { if (hover?.matches && !this.pursePinned) later(() => { if (!this.pursePinned) this.setPurse(false); }, 240); else if (this.purseTimer && !this.purse.open) clearTimeout(this.purseTimer); };
+    this.ecoGrp.addEventListener('pointerenter', enter);
+    this.ecoGrp.addEventListener('pointerleave', leave);
+    this.purse.root.addEventListener('pointerenter', () => { if (this.purseTimer) clearTimeout(this.purseTimer); });
+    this.purse.root.addEventListener('pointerleave', leave);
+    this.views.addEventListener('click', () => setTimeout(() => this.setFold(null), 0));
   }
 
-  /** The drawer of the stocks not on the bar: shown while open and there are some. */
-  private refreshDrawer(): void {
-    const extra = this.extra.length;
-    if (!extra) this.drawerOpen = false;
-    setAttr(this.drawer, 'hidden', this.drawerOpen && extra ? null : '');
-    setAttr(this.moreBtn, 'data-on', this.drawerOpen ? '' : null);
-    setAttr(this.moreBtn, 'aria-expanded', this.drawerOpen ? 'true' : 'false');
+  /** The fold open on a narrow window (D96): the research row or the views, as a dropdown. */
+  private setFold(f: 'research' | 'views' | null): void {
+    setAttr(this.root, 'data-fold', f);
+    setAttr(this.fold, 'aria-expanded', f === 'research' ? 'true' : 'false');
+    setAttr(this.vfold, 'aria-expanded', f === 'views' ? 'true' : 'false');
   }
 
-  private chip(item: number): { node: HTMLElement; val: HTMLElement; delta: HTMLElement } {
-    let c = this.chips.get(item);
-    if (!c) {
-      const val = el('span.hud-val'), delta = el('span.hud-delta');
-      const node = el('div.hud-chip', { 'data-item': ITEM_IDS[item] }, [itemIcon(this.atlas, item, 22), val, delta]);
-      c = { node, val, delta };
-      this.chips.set(item, c);
-    }
-    return c;
+  private toggleFold(f: 'research' | 'views'): void {
+    this.setFold(this.root.getAttribute('data-fold') === f ? null : f);
   }
+
+  /** Open or close the purse's card (D102); `pinned`: by a click (it stays until closed), else by a mouse resting on the purse. */
+  setPurse(on: boolean, pinned = false): void {
+    if (this.purseTimer) { clearTimeout(this.purseTimer); this.purseTimer = null; }
+    if (on && this.stock.open) this.setStock(false);
+    this.pursePinned = on && (pinned || this.pursePinned);
+    this.purse.show(on);
+    setAttr(this.creditsChip, 'aria-expanded', on ? 'true' : 'false');
+    setAttr(this.ecoGrp, 'data-on', on ? '' : null);
+    if (on) { this.placePurse(); this.purse.refresh(); }
+  }
+
+  /** The last hour of the purse (D102): worked out again once a new game minute is sampled. */
+  private purseNow(): PurseSummary {
+    const sim = this.host.sim();
+    this.purseHist.sample(sim);
+    const s = this.purseHist.samples, key = `${s.length}:${s[s.length - 1]?.epoch ?? ''}:${locale()}`;
+    if (!this.purseSum || key !== this.purseKey) { this.purseKey = key; this.purseSum = purseSummary(sim, this.purseHist); }
+    return this.purseSum;
+  }
+
+  /** Is the purse's card open (Esc closes it first)? */
+  get purseOpen(): boolean { return this.purse.open; }
+
+  /** The card stands under the HUD, its left edge at the purse's (in #ui's zoomed px; a narrow window's sheet ignores it). */
+  private placePurse(): void {
+    const zoom = Number.parseFloat(document.documentElement.style.getPropertyValue('--ui-zoom')) || 1;
+    this.purse.root.style.setProperty('--purse-left', `${Math.round(this.ecoGrp.getBoundingClientRect().left / zoom)}px`);
+  }
+
+  /** Open or close the Stock panel (D96); the viewer's choice is remembered (`remember`: a click, Esc — not the start). */
+  setStock(on: boolean, remember = true): void {
+    if (on && this.purse?.open) this.setPurse(false);
+    this.stock.show(on);
+    setAttr(this.stockBtn, 'aria-expanded', on ? 'true' : 'false');
+    setAttr(this.stockBtn, 'data-on', on ? '' : null);
+    if (remember) stockPref.save({ version: 1, open: on });
+    if (on) this.refreshStock(this.host.sim());
+  }
+
+  /** Is the Stock panel open (Esc closes it first)? */
+  get stockOpen(): boolean { return this.stock.open; }
 
   /** Keep a chip of the shell's at the end of the research row (it flows with the row, never over the world). */
   pin(node: HTMLElement): void {
@@ -240,51 +368,119 @@ export class Hud {
         const name = p.id.startsWith('respec:')
           ? t('research.respecName', { branch: t(`research.branch.${p.id.slice(7)}` as MsgKey) })
           : (RESEARCH[p.id as ResearchId] as ResearchDef).name[L];
-        return el('button.hud-rs.cartouche', { 'data-id': p.id }, [el('span.hud-ring'), el('span.hud-rs-name.lettering', {}, name), el('span.hud-rs-eta')]);
+        return el('button.hud-rs.cartouche', { 'data-id': p.id }, [el('span.hud-ring'), el('span.hud-rs-name.lettering', {}, name), el('span.hud-rs-eta'), el('span.hud-rs-tok', {}, [mark('token'), el('b')])]);
       });
       setText(this.treeName, t('tree.hud'));
-      this.research.replaceChildren(this.tree, this.stats, ...chips, ...this.pinned);
+      this.research.replaceChildren(this.tree, this.stats, this.exp, ...chips, ...this.pinned);
     }
     // The Statistics chip: the ledger's way in (G), shown once it is unlocked (D41).
     setAttr(this.stats, 'hidden', analyticsOn(sim, 'ledger') ? null : '');
     setText(this.statsName, t('hud.stats'));
     setAttr(this.stats, 'title', t('hud.stats.tip'));
-    // The plans the Heart can pay for right now (prerequisites met): an invitation to open the tree.
-    const ready = PLAN_IDS.filter((id) => sim.planBlock(id) === null).length;
+    this.refreshExpertise(sim);
+    // The plans the Heart can pay for right now (prerequisites met): an invitation to open the tree
+    // (tree-state.ts: the tree's own derivation, the same « ready » its cards show).
+    const ready = readyPlans(sim).length;
     setText(this.treeBadge, ready ? String(ready) : '');
     setAttr(this.tree, 'data-ready', ready ? '' : null);
     setAttr(this.tree, 'title', ready ? `${t('tree.hud.tip')} · ${tr('tree.hud.ready', { n: ready })}` : t('tree.hud.tip'));
     // A purse in the red holds every project (its tokens cannot be paid): each chip turns coral
     // and says so, the purse in its tip — beside the toast, the lab's inspector and the tree.
     const heldTip = sim.researchHeld ? t('tree.rs.held.tip', { v: oc(sim.credits) }) : null;
+    const tokens = tokenFacts(sim);
+    // The fold (narrow windows, D96) says the row in brief: the ready plans' badge, the first project's ring, coral while held.
+    setText(this.foldBadge, ready ? String(ready) : '');
+    setAttr(this.fold, 'data-ready', ready ? '' : null);
+    setAttr(this.fold, 'title', t('hud.fold.research'));
+    setAttr(this.fold, 'aria-label', t('hud.fold.research'));
+    const first = sim.projects[0];
+    const ft = first ? projectTiming(sim, first) : null;
+    setAttr(this.foldRing, 'hidden', ft ? null : '');
+    if (ft) this.foldRing.style.setProperty('--p', `${ft.permille / 10}%`);
+    setAttr(this.fold, 'data-held', ft?.held ? '' : null);
     for (const p of sim.projects) {
       const chip = this.research.querySelector(`[data-id="${p.id}"]`) as HTMLElement | null;
       if (!chip) continue;
-      const pm = projectPermille(p);
-      (chip.querySelector('.hud-ring') as HTMLElement).style.setProperty('--p', `${pm / 10}%`);
-      const net = p.lab ? sim.graph?.nodeByEnt.get(p.lab)?.net ?? -1 : -1;
-      const sat = p.lab ? (net >= 0 ? sim.netPower[net]?.sat ?? 0 : 0) : 1000;
-      const left = sat > 0 ? Math.max(0, p.dur * 1000 - p.el) / sat / 10 : Infinity;
-      const short = p.el >= p.dur * 1000 && pm < 1000;
-      const stop = sim.researchHeld && p.lab !== 0; // as `projectSat`: a reconversion (no lab) runs on
-      setAttr(chip, 'data-held', stop ? '' : null);
-      setAttr(chip, 'title', stop ? heldTip : null);
-      setText(chip.querySelector('.hud-rs-eta')!, stop ? t('hud.rs.held') : short ? t('research.waiting') : Number.isFinite(left) ? duration(left) : '—');
+      // Its clock as the tree says it (tree-state.ts): held (a reconversion, with no lab, runs on), its time left, its data owed.
+      const tm = projectTiming(sim, p);
+      (chip.querySelector('.hud-ring') as HTMLElement).style.setProperty('--p', `${tm.permille / 10}%`);
+      setAttr(chip, 'data-held', tm.held ? '' : null);
+      // Its tokens now (D102): a minute on the chip; their ◉ a minute and the servers' share in its tooltip.
+      const tk = tokens.projects.get(p.id);
+      const tok = chip.querySelector('.hud-rs-tok') as HTMLElement;
+      setAttr(tok, 'hidden', tk && tk.perMin > 0 ? null : '');
+      if (tk) setText(tok.querySelector('b')!, t('hud.perMin', { v: compact(Math.round(tk.perMin)) }));
+      const tokTip = tk && tk.perMin > 0 ? t('hud.rs.tok.tip', { n: compact(Math.round(tk.perMin)), c: oc(Math.round(tk.centsPerMin), false, 2), p: Math.round(tokens.servers / 10) }) : null;
+      setAttr(chip, 'title', [tm.held ? heldTip : null, tokTip].filter(Boolean).join('\n') || null);
+      setText(chip.querySelector('.hud-rs-eta')!, tm.held ? t('hud.rs.held') : tm.short ? t('research.waiting') : Number.isFinite(tm.left) ? duration(tm.left) : '—');
     }
   }
 
-  /** The stock chips on show (refresh picks them; `counts` keeps their numbers live): on the bar, in the drawer. */
-  private shown: number[] = [];
-  private extra: number[] = [];
+  /**
+   * The Expertise chip (D93): shown once the Core mounts the Archive; the two slots' pictures (dashed
+   * while empty, amber while a réorientation's 24 h run), and a badge counting the earned expertises
+   * a free slot could take — an invitation, like the tree's.
+   */
+  private refreshExpertise(sim: Sim): void {
+    const on = !!this.host.openExpertise && archiveOpen(sim);
+    setAttr(this.exp, 'hidden', on ? null : '');
+    if (!on) return;
+    setText(this.expName, t('hud.expertise'));
+    const sig = sim.expertise.slots.map((s) => (s ? `${s.id}:${s.on}` : '-')).join(',');
+    if (sig !== this.expSig) {
+      this.expSig = sig;
+      this.expSlots.replaceChildren(...sim.expertise.slots.map((s) => {
+        const d = s ? expertiseDef(s.id) : undefined;
+        return el('span.hud-exp-slot', { 'data-on': s?.on ? '' : null, 'data-coming': s && !s.on ? '' : null }, d ? [expertiseIcon(this.atlas, d.icon, 16)] : []);
+      }));
+    }
+    const n = choosable(sim);
+    setText(this.expBadge, n ? String(n) : '');
+    setAttr(this.exp, 'data-ready', n ? '' : null);
+    setAttr(this.exp, 'title', n ? `${t('hud.expertise.tip')} · ${choosableText(n)}` : t('hud.expertise.tip'));
+  }
 
   /**
-   * Every frame, the stock counts alone (change-only writes): an item lands in the Heart whole,
-   * on the tick it reaches it, and its +1 shows with it — not up to a quarter second later.
+   * Every frame, the Stock panel's amounts alone while it is open (change-only writes): an item
+   * lands in the Heart whole, on the tick it reaches it, and its +1 shows with it.
    */
   counts(): void {
-    const sim = this.host.sim();
-    for (const i of this.shown) setText(this.chip(i).val, compact(Math.floor(sim.stock[i]! / 1000)));
-    if (this.drawerOpen) for (const i of this.extra) setText(this.chip(i).val, compact(Math.floor(sim.stock[i]! / 1000)));
+    this.stock.counts(this.host.sim());
+  }
+
+  /**
+   * The items the Stock panel lists: those the Heart holds (the early chain first, then any other)
+   * and those the base lacks — during the tutorial only what it has introduced or the base has
+   * made (nothing on screen before it means something to the player).
+   */
+  private stockItems(sim: Sim): number[] {
+    const rv = revealed(sim);
+    const shows = (i: number): boolean => !rv || rv.has(`stock:${ITEM_IDS[i]}`) || sim.produced[i]! > 0;
+    const held = ORDER.map((id) => itemIdx(id)).filter((i) => sim.stock[i]! >= 1000);
+    for (let i = 0; i < N_ITEMS; i++) if (!held.includes(i) && sim.stock[i]! >= 1000) held.push(i);
+    const items = held.filter(shows);
+    for (const i of this.lacks.keys()) if (!items.includes(i) && shows(i)) items.push(i);
+    return items;
+  }
+
+  /** What came into the Heart over the last minute, a minute (null without the telemetry, D41). */
+  private rate(sim: Sim, item: number): number | null {
+    if (!analyticsOn(sim, 'rates')) return null;
+    const old = this.samples[0], last = this.samples[this.samples.length - 1];
+    const span = Math.max(1, this.samples.length - 1);
+    return old && last ? ((last[item]! - old[item]!) / 1000) * (60 / span) : 0;
+  }
+
+  /** The button (shown once there is something to list; its badge) and, while open, the panel. */
+  private refreshStock(sim: Sim): void {
+    const items = this.stockItems(sim);
+    const lacking = [...this.lacks.values()].filter((s) => items.includes(s.item));
+    setAttr(this.stockBtn, 'hidden', items.length ? null : '');
+    setText(this.stockLabel, t('hud.stock'));
+    setText(this.stockBadge, lacking.length ? String(lacking.length) : '');
+    setAttr(this.stockBadge, 'data-tone', lacking.length ? (lacking.some((s) => s.out) ? 'out' : 'short') : null);
+    setAttr(this.stockBtn, 'title', lacking.length ? `${t('hud.stock.btnTip')} · ${tr('hud.stock.lack', { n: lacking.length })}` : t('hud.stock.btnTip'));
+    if (this.stock.open) this.stock.refresh(sim, items, (i) => this.rate(sim, i), this.lacks);
   }
 
   refresh(nowMs: number): void {
@@ -305,59 +501,42 @@ export class Hud {
       // ribbon, made read −5/min beside a Heart stock that never moved.
       this.samples.push(sim.hearthIn.slice());
       if (this.samples.length > 61) this.samples.shift();
+      // What the base lacks (D96, the Stock's badge): once a second is enough, it walks the plans.
+      this.lacks = new Map(shortages(sim).map((s) => [s.item, s]));
     }
-    const old = this.samples[0];
-    const span = Math.max(1, this.samples.length - 1);
-    const held = ORDER.map((id) => itemIdx(id)).filter((i) => sim.stock[i]! >= 1000);
-    for (let i = 0; i < N_ITEMS; i++) if (!held.includes(i) && sim.stock[i]! >= 1000) held.push(i);
-    // During the tutorial, a stock shows once the tutorial has introduced it, or once the base
-    // has made some itself: nothing on screen before it means something to the player.
-    const rv = revealed(sim);
-    const tele = analyticsOn(sim, 'rates');
-    const all = held.filter((i) => !rv || rv.has(`stock:${ITEM_IDS[i]}`) || sim.produced[i]! > 0);
-    // On the bar: the most stocked (a stock of one is no headline), kept in the chain's order so the chips never shuffle.
-    const top = new Set([...all].sort((a, b) => sim.stock[b]! - sim.stock[a]! || a - b).slice(0, MAIN_STOCKS));
-    const want = all.filter((i) => top.has(i));
+    this.refreshStock(sim);
     // The groups (D88): each cartouche shows once the tutorial has introduced what it holds.
-    setAttr(this.stocksGrp, 'hidden', want.length ? null : '');
+    const rv = revealed(sim);
     setAttr(this.ecoGrp, 'hidden', rv && !rv.has('credits') ? '' : null);
     setAttr(this.power, 'hidden', rv && !rv.has('power') ? '' : null);
     setAttr(this.timeGrp, 'hidden', rv && !rv.has('clock') ? '' : null);
     setAttr(this.research, 'hidden', rv && !rv.has('research') ? '' : null);
+    setAttr(this.fold, 'hidden', rv && !rv.has('research') ? '' : null);
+    // The views' fold (narrow windows, D96): there while the selector is, lit while a view other than Normal is on.
+    const vbar = this.views.querySelector('.vbar');
+    const lit = this.views.querySelector('[data-on][data-view]')?.getAttribute('data-view') ?? 'normal';
+    setAttr(this.vfold, 'hidden', vbar && !vbar.hasAttribute('hidden') ? null : '');
+    setAttr(this.vfold, 'data-on', lit !== 'normal' ? '' : null);
+    setAttr(this.vfold, 'title', t('hud.fold.views'));
+    setAttr(this.vfold, 'aria-label', t('hud.fold.views'));
     // No Build button with nothing to build; a coral dot on it when a tray holds something new.
     setAttr(this.buildBtn, 'hidden', !rv || rv.has('build') ? null : '');
     setAttr(this.buildBtn, 'data-new', !this.host.building() && this.host.buildNew?.() ? '' : null);
     setAttr(this.buildBtn, 'title', !this.host.building() && this.host.buildNew?.() ? t('build.newHud') : null);
-    this.shown = want;
-    this.extra = all.filter((i) => !top.has(i));
-    const nodes = want.map((i) => this.chip(i).node);
-    if (nodes.length !== this.stocks.children.length || nodes.some((n, k) => this.stocks.children[k] !== n)) this.stocks.replaceChildren(...nodes);
-    // The rest behind « +n »: a drawer under the bar, built from the same chips.
-    setText(this.moreBtn, this.extra.length ? t('hud.more', { n: this.extra.length }) : '');
-    setAttr(this.moreBtn, 'hidden', this.extra.length ? null : '');
-    setAttr(this.moreBtn, 'title', t('hud.more.tip'));
-    const more = this.extra.map((i) => this.chip(i).node);
-    if (more.length !== this.drawer.children.length || more.some((n, k) => this.drawer.children[k] !== n)) this.drawer.replaceChildren(...more);
-    this.refreshDrawer();
-    for (const i of all) {
-      const c = this.chip(i);
-      setText(c.val, compact(Math.floor(sim.stock[i]! / 1000)));
-      // Rates are an unlock: the telemetry, the Analytics path's first plan (D41).
-      const last = this.samples[this.samples.length - 1];
-      const d = tele && old && last ? ((last[i]! - old[i]!) / 1000) * (60 / span) : 0;
-      const dv = Math.abs(d) >= 0.5 ? `${d > 0 ? '+' : '−'}${compact(Math.abs(d))}` : '';
-      setText(c.delta, dv ? t('hud.perMin', { v: dv }) : '');
-      setAttr(c.delta, 'data-sign', d > 0 ? '+' : d < 0 ? '-' : null);
-      // What the chip says, in words: the item, what the Heart holds, and (with the telemetry) what came in.
-      const n = compact(Math.floor(sim.stock[i]! / 1000));
-      setAttr(c.node, 'title', tele ? t('hud.stock.tipRate', { item: nameOf(i), n, rate: t('hud.perMin', { v: dv || '0' }) }) : t('hud.stock.tip', { item: nameOf(i), n }));
-    }
     setText(this.credits, compact(sim.credits / 100));
-    const perHour = tradePerHour(sim) / 100;
-    setText(this.creditsRate, Math.abs(perHour) >= 0.5 ? t('hud.perHour', { v: `${perHour > 0 ? '+' : '−'}${compact(Math.abs(perHour))}` }) : '');
+    // The purse's real recurring change an hour (D102: the engine's journal over the last hour —
+    // sales, standing orders, tokens, the Compute Plan, rental, rent; one-offs apart), the same sum
+    // the card breaks down. Nothing until a game minute has been seen.
+    const ps = this.purseNow();
+    const perHour = ps.total / 100;
+    setText(this.creditsRate, ps.minutes && Math.abs(perHour) >= 0.5 ? t('hud.perHour', { v: `${perHour > 0 ? '+' : '−'}${compact(Math.abs(perHour))}` }) : '');
     setAttr(this.creditsRate, 'data-sign', perHour >= 0.5 ? '+' : perHour <= -0.5 ? '-' : null);
-    setAttr(this.creditsChip, 'title', this.host.openCrier ? `${t('hud.credits')} · ${t('crier.hud.tip')}` : t('hud.credits'));
-    // Power of the Hearth's grid.
+    setAttr(this.creditsChip, 'title', `${t('hud.credits')} · ${purseHour(perHour * 100)} · ${t('purse.hud.tip')}`);
+    if (this.purse.open) { this.placePurse(); this.purse.refresh(); }
+    // Power of the Hearth's grid; a click opens Électricité once the tutorial offers it (D32).
+    const opens = !!this.host.openPower && (this.host.powerShown?.() ?? true);
+    const openTip = opens ? ` · ${t('hud.power.open')}` : '';
+    setAttr(this.power, 'aria-disabled', this.host.openPower && !opens ? 'true' : null);
     const net = sim.graph?.netOfEnt.get(sim.hearthId);
     const np = net !== undefined ? sim.netPower[net] : undefined;
     if (np) {
@@ -366,14 +545,14 @@ export class Hud {
       setAttr(this.power, 'data-low', pct < 100 ? '' : null);
       setAttr(this.power, 'data-out', pct <= 0 ? '' : null);
       setStyle(this.powerFill, 'transform', `scaleX(${(pct / 100).toFixed(3)})`);
-      setAttr(this.power, 'title', `${t('hud.powerTip', { d: Math.round(np.demand), s: Math.round(np.renew + np.fuel) })}${this.host.openPower ? ` · ${t('hud.power.open')}` : ''}`);
+      setAttr(this.power, 'title', `${t('hud.powerTip', { d: Math.round(np.demand), s: Math.round(np.renew + np.fuel) })}${openTip}`);
     }
     setAttr(this.power, 'data-on', this.host.powerOn?.() ? '' : null);
     // Accumulators on the Hearth's grid.
     if (np && net !== undefined) {
       let E = 0, cap = 0;
       for (const a of sim.graph.nets[net]?.accs ?? []) { E += sim.accEnergy.get(a.ent) ?? 0; cap += a.cap; }
-      if (cap > 0) setAttr(this.power, 'title', `${t('hud.powerTip', { d: Math.round(np.demand), s: Math.round(np.renew + np.fuel) })} · ${t('hud.gourds', { v: Math.round((E * 100) / cap) })}${this.host.openPower ? ` · ${t('hud.power.open')}` : ''}`);
+      if (cap > 0) setAttr(this.power, 'title', `${t('hud.powerTip', { d: Math.round(np.demand), s: Math.round(np.renew + np.fuel) })} · ${t('hud.gourds', { v: Math.round((E * 100) / cap) })}${openTip}`);
     }
     // Time of day: a 36-minute day on a 24-hour clock (midnight mid-night), from the world clock
     // (the shell may shift it for FL.dayPhase); the air temperature of the cirque; the sun in the tooltip.

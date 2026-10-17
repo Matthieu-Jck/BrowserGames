@@ -1,7 +1,10 @@
 // input.ts — raw input → camera moves and high-level callbacks for the tool layer. Pan with
 // ZQSD/WASD/arrows, middle-drag, Space+drag or left-drag on empty ground; wheel zooms to the
-// cursor. Hotkeys are ignored while a text field has focus.
+// cursor. Hotkeys are ignored while a text field has focus. Fingers (D96) go through the touch
+// gestures (touch.ts): one-finger pan and tap, a tool's drag, long press for the right button,
+// pinch zoom; they reach the app as the same pointer calls the mouse makes.
 import { actionOf, HELD, resolveKey, type Action } from './bindings';
+import { TouchGestures, type TouchEffect, type TouchTool } from './touch';
 
 const ZOOM_CODES = new Set(['Equal', 'Minus', 'NumpadAdd', 'NumpadSubtract']);
 import type { Camera } from '@/render/camera';
@@ -24,6 +27,10 @@ export interface InputHooks {
   onPointerDown(p: PointerInfo): void;
   onPointerMove(p: PointerInfo): void;
   onPointerUp(p: PointerInfo): void;
+  /** What one finger does with the tool in hand (D96): pan and click, tap to place, or the tool's drag. Default: a drag while a tool is active. */
+  touchTool?(): TouchTool;
+  /** A drag or a right box under way is dropped, not laid (a second finger came down: a pinch). */
+  onPointerCancel?(): void;
 }
 
 const PAN_SPEED = 900; // screen px / s
@@ -32,6 +39,9 @@ export class Input {
   private held = new Set<string>();
   private drag: { id: number; x: number; y: number; moved: number; click: boolean } | null = null;
   private space = false;
+  /** Fingers on the canvas (D96) and the long-press timer. */
+  private readonly touch = new TouchGestures();
+  private longTimer: ReturnType<typeof setTimeout> | null = null;
   /** Last pointer position (screen CSS px). */
   sx = -1;
   sy = -1;
@@ -48,6 +58,7 @@ export class Input {
     canvas.addEventListener('pointerdown', (e) => this.down(e));
     window.addEventListener('pointermove', (e) => this.move(e));
     window.addEventListener('pointerup', (e) => this.up(e));
+    window.addEventListener('pointercancel', (e) => { if (e.pointerType === 'touch') this.touchUp(e, true); });
     window.addEventListener('keydown', (e) => this.keydown(e));
     window.addEventListener('keyup', (e) => this.keyup(e));
     window.addEventListener('blur', () => { this.held.clear(); this.space = false; });
@@ -77,6 +88,7 @@ export class Input {
   }
 
   private down(e: PointerEvent): void {
+    if (e.pointerType === 'touch') { this.touchDown(e); return; }
     this.canvas.focus();
     this.sx = e.clientX; this.sy = e.clientY;
     // Left press with no tool pans on drag but still selects on a plain click (on release).
@@ -90,6 +102,7 @@ export class Input {
   }
 
   private move(e: PointerEvent): void {
+    if (e.pointerType === 'touch') { this.touchMove(e); return; }
     this.sx = e.clientX; this.sy = e.clientY;
     if (this.drag && e.pointerId === this.drag.id) {
       const dx = e.clientX - this.drag.x, dy = e.clientY - this.drag.y;
@@ -102,6 +115,7 @@ export class Input {
   }
 
   private up(e: PointerEvent): void {
+    if (e.pointerType === 'touch') { this.touchUp(e, false); return; }
     if (this.drag && e.pointerId === this.drag.id) {
       const wasClick = this.drag.click && this.drag.moved < 5;
       this.drag = null;
@@ -109,6 +123,58 @@ export class Input {
       return;
     }
     this.hooks.onPointerUp(this.info(e));
+  }
+
+  // ── fingers (D96) ──────────────────────────────────────────────────────────
+
+  private touchTool(): TouchTool {
+    return this.hooks.touchTool?.() ?? (this.hooks.toolActive() ? 'drag' : 'none');
+  }
+
+  private touchDown(e: PointerEvent): void {
+    this.canvas.focus();
+    this.canvas.setPointerCapture(e.pointerId);
+    this.applyTouch(this.touch.down(e.pointerId, e.clientX, e.clientY, performance.now()));
+    this.armLong();
+  }
+
+  /** Only the fingers that came down on the canvas: a touch on a panel is the panel's. */
+  private touchMove(e: PointerEvent): void {
+    this.applyTouch(this.touch.move(e.pointerId, e.clientX, e.clientY, this.touchTool()));
+    this.armLong();
+  }
+
+  private touchUp(e: PointerEvent, cancelled: boolean): void {
+    this.applyTouch(this.touch.up(e.pointerId, e.clientX, e.clientY, this.touchTool(), cancelled));
+    this.armLong();
+  }
+
+  /** The long-press timer runs while one finger is still and pending. */
+  private armLong(): void {
+    const at = this.touch.longAt();
+    if (this.longTimer !== null) { clearTimeout(this.longTimer); this.longTimer = null; }
+    if (at === null) return;
+    this.longTimer = setTimeout(() => {
+      this.longTimer = null;
+      this.applyTouch(this.touch.timer(performance.now()));
+    }, Math.max(0, at - performance.now()));
+  }
+
+  private applyTouch(fx: TouchEffect[]): void {
+    const { w, h } = this.view();
+    const at = (x: number, y: number, button: number): PointerInfo => ({ sx: x, sy: y, button, shift: false, ctrl: false, overCanvas: true });
+    for (const f of fx) {
+      switch (f.k) {
+        case 'hover': this.sx = f.x; this.sy = f.y; this.hooks.onPointerMove(at(f.x, f.y, 0)); break;
+        case 'down': this.hooks.onPointerDown(at(f.x, f.y, f.button)); break;
+        case 'move': this.sx = f.x; this.sy = f.y; this.hooks.onPointerMove(at(f.x, f.y, 0)); break;
+        case 'up': this.hooks.onPointerUp(at(f.x, f.y, f.button)); break;
+        case 'cancel': this.hooks.onPointerCancel?.(); break;
+        case 'pan': this.camera.panScreen(f.dx, f.dy); break;
+        case 'zoom': this.camera.zoomBy(f.f, f.x, f.y, w, h); break;
+        case 'long': navigator.vibrate?.(12); break; // a tick under the finger where the device has one
+      }
+    }
   }
 
   /** True when the last left press turned into a camera drag. */

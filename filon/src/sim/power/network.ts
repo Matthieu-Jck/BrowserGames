@@ -7,36 +7,29 @@
 //
 // Generator output lives in small named functions (`solarKw`, `windKw`, `producerKw`) over a
 // `Weather` value so that a new weather input (temperature, for the climate follow-up) is
-// added in one place: `weatherAt`, `weatherKey` and the functions that read it.
+// added in one place: `weatherAt`, `weatherKey` and the functions that read it. The wind (D95) is
+// world/wind.ts: the weather's wind at a time × a turbine's exposure where it stands, through the
+// turbine's curve.
 import { BAL } from '@/content/balance';
-import { CIRQUE } from '@/content/world';
-import type { BuildingDef } from '@/content/types';
-import { hash32 } from '@/core/hash';
+import type { BuildingDef, WindCurve } from '@/content/types';
 import { mulDiv } from '@/core/fixed';
-import { CENTER, DAY_EPOCHS, GUST_EPOCHS, GUST_LEVELS, SOLAR } from '../constants';
+import { DAY_EPOCHS, SOLAR } from '../constants';
 import { footprint } from '../entities';
 import type { Mods } from '../research/modifiers';
-import { T, type Ent } from '../types';
+import type { Ent } from '../types';
 import type { Grid } from '../world/grid';
+import { curveShare, gustPermille, localWind, turbineSite, veerOf, windAt } from '../world/wind';
 
-/** Why a turbine gets the wind it gets: its height on the land, or the ground it stands on. */
-export type WindSite = { readonly k: 'height'; readonly level: number } | { readonly k: 'cirque' } | { readonly k: 'plain' } | { readonly k: 'mesa' };
+export { gustPermille } from '../world/wind';
 
 /**
- * A turbine's local wind ‰ and why (D44): up on the land, the higher the windier (`windHeight` by
- * level: owner, 2026-10-14, "les éoliennes en fonction de leur hauteur"); down inside the Crown the
- * cirque's floor is sheltered; outside it, mesas (hardpan) are windy and the rest is plain. The
- * graph compiler builds each turbine with it; the inspector shows it.
+ * A turbine's exposure ‰ where it stands, for each of the day's three bearings (D95, world/wind.ts):
+ * the mean over its footprint, its foot at the land's level now. The graph compiler builds each
+ * turbine with it; the inspector and the views read the same.
  */
-export function windSite(grid: Grid, e: Pick<Ent, 'def' | 'x' | 'y' | 'rot'>): { permille: number; site: WindSite } {
-  const level = grid.level(e.x, e.y);
-  if (level > 0) return { permille: BAL.windHeight[Math.min(level, BAL.windHeight.length) - 1]!, site: { k: 'height', level } };
+export function windSite(grid: Grid, worldSeed: number, e: Pick<Ent, 'def' | 'x' | 'y' | 'rot'>): [number, number, number] {
   const [w, h] = footprint(e.def, e.rot);
-  const dx = e.x + w / 2 - CENTER, dy = e.y + h / 2 - CENTER;
-  // Sheltered inside the Crown: its foot on this land's map (D63: map 1 keeps its own, 34).
-  const outer = grid.source.crownOuter ?? CIRQUE.crownOuter;
-  if (dx * dx + dy * dy < outer * outer) return { permille: BAL.windCirque, site: { k: 'cirque' } };
-  return grid.terrain(e.x, e.y) === T.Hardpan ? { permille: BAL.windMesa[0]!, site: { k: 'mesa' } } : { permille: BAL.windPlain, site: { k: 'plain' } };
+  return turbineSite(grid.source, worldSeed, e.x, e.y, w, h, (x, y) => grid.level(x, y));
 }
 
 export interface Producer {
@@ -45,8 +38,10 @@ export interface Producer {
   kind: 'wind' | 'solar' | 'geo' | 'hearth';
   /** Base output (kW) before weather. */
   kw: number;
-  /** Local wind factor ‰ (wind only). */
-  local: number;
+  /** Exposure ‰ where it stands for each of the day's three bearings (wind only; else [1000, 1000, 1000]). */
+  local: readonly [number, number, number];
+  /** Its curve (wind only). */
+  curve?: WindCurve;
   /** Steady output on top of the weather-bound part (kW): the Hearth's isotope core. */
   base?: number;
 }
@@ -56,15 +51,23 @@ export interface Producer {
  * the inspector's grid module read the same numbers. The Hearth's built-in solar panel follows a
  * solar panel's rules (solar research, the all-generator bonus) and carries its isotope core.
  */
-export function producerOf(e: Ent, b: Pick<BuildingDef, 'kind' | 'gen'>, grid: Grid, mods: Pick<Mods, 'windOut' | 'solarOut' | 'geoOut' | 'genOut'>): Producer | null {
+export function producerOf(e: Ent, b: Pick<BuildingDef, 'kind' | 'gen'>, grid: Grid, mods: Pick<Mods, 'windOut' | 'solarOut' | 'geoOut' | 'genOut'>, worldSeed: number, hearthLevel = 1): Producer | null {
   switch (b.kind) {
-    case 'hearth': return { ent: e.id, kind: 'hearth', kw: Math.floor((BAL.hearthSolarKw * mods.solarOut * mods.genOut) / 1e6), local: 1000, base: Math.floor((BAL.hearthCoreKw * mods.genOut) / 1000) };
-    case 'wind': return { ent: e.id, kind: 'wind', kw: Math.floor((b.gen!.kw * mods.windOut * mods.genOut) / 1e6), local: windSite(grid, e).permille };
-    case 'solar': return { ent: e.id, kind: 'solar', kw: Math.floor((b.gen!.kw * mods.solarOut * mods.genOut) / 1e6), local: 1000 };
-    case 'geothermal': return { ent: e.id, kind: 'geo', kw: Math.floor((b.gen!.kw * mods.geoOut * mods.genOut) / 1e6), local: 1000 };
+    case 'hearth': {
+      // Its core steady, its panel with the sun; both grow with its level (D101).
+      const lv = Math.max(1, Math.min(BAL.hearthCoreKw.length, hearthLevel)) - 1;
+      return { ent: e.id, kind: 'hearth', kw: Math.floor((BAL.hearthSolarKw[lv]! * mods.solarOut * mods.genOut) / 1e6), local: FLAT, base: Math.floor((BAL.hearthCoreKw[lv]! * mods.genOut) / 1000) };
+    }
+    case 'wind': return { ent: e.id, kind: 'wind', kw: Math.floor((b.gen!.kw * mods.windOut * mods.genOut) / 1e6), local: windSite(grid, worldSeed, e), curve: b.gen!.wind ?? DEFAULT_CURVE };
+    case 'solar': return { ent: e.id, kind: 'solar', kw: Math.floor((b.gen!.kw * mods.solarOut * mods.genOut) / 1e6), local: FLAT };
+    case 'geothermal': return { ent: e.id, kind: 'geo', kw: Math.floor((b.gen!.kw * mods.geoOut * mods.genOut) / 1e6), local: FLAT };
     default: return null;
   }
 }
+
+const FLAT = [1000, 1000, 1000] as const;
+/** A wind building without its own curve (none in content: validate.ts asks every turbine for one). */
+const DEFAULT_CURVE: WindCurve = { cutIn: 400, rated: 1600 };
 
 export interface Acc {
   ent: number;
@@ -142,34 +145,39 @@ export function sunPermille(absEpoch: number): number {
 /** Day phase in [0, 36) epochs — exposed to the renderer. */
 export const dayEpoch = (absEpoch: number): number => ((absEpoch % DAY_EPOCHS) + DAY_EPOCHS) % DAY_EPOCHS;
 
-/** Gust level ‰ for the 10-epoch window containing absEpoch (variance ‰ scales the swing). */
-export function gustPermille(absEpoch: number, worldSeed: number, variance = 1000): number {
-  const w = Math.floor(absEpoch / GUST_EPOCHS);
-  const lvl = GUST_LEVELS[hash32(worldSeed, w, 0x6a5) % GUST_LEVELS.length]!;
-  return 1000 + mulDiv(lvl - 1000, variance, 1000);
-}
-
 /** The weather as the generators see it during one epoch (‰). New inputs (temperature) join here. */
 export interface Weather {
   /** Sun ‰ (the SOLAR table). */
   sun: number;
-  /** Gust ‰ of the 10-epoch window (with the gust variance research). */
+  /** Gust ‰ of the 10-epoch window (with the gust variance research): the look and the sound. */
   gust: number;
+  /** The wind over open flat ground ‰ (D95: the day's curve × its mood × the gust, rounded). */
+  wind: number;
+  /** Today's bearing: 0, 1 (the prevailing one) or 2 — which of a turbine's three exposures applies. */
+  veer: number;
 }
 
 /** A colony's weather at an absolute world epoch. */
 export function weatherAt(absEpoch: number, worldSeed: number, mods: Pick<Mods, 'gustVariance'>): Weather {
-  return { sun: sunPermille(absEpoch), gust: gustPermille(absEpoch, worldSeed, mods.gustVariance) };
+  return {
+    sun: sunPermille(absEpoch),
+    gust: gustPermille(absEpoch, worldSeed, mods.gustVariance),
+    wind: windAt(absEpoch, worldSeed, mods.gustVariance),
+    veer: veerOf(Math.floor(absEpoch / DAY_EPOCHS), worldSeed),
+  };
 }
 
 /** Changes exactly when the generators' output may change (the catch-up re-solves its grids then). */
-export const weatherKey = (w: Weather): string => `${w.sun}:${w.gust}`;
+export const weatherKey = (w: Weather): string => `${w.sun}:${w.wind}:${w.veer}`;
 
 /** A solar panel of `peak` kW under this sun (solar panels, the Hearth's own panel). */
 export const solarKw = (peak: number, w: Weather): number => mulDiv(peak, w.sun, 1000);
 
-/** A wind turbine: base kW × local wind ‰ × gust ‰. */
-export const windKw = (base: number, local: number, w: Weather): number => mulDiv(mulDiv(base, local, 1000), w.gust, 1000);
+/** The local wind ‰ a turbine with these exposures catches in this weather. */
+export const turbineWind = (local: readonly [number, number, number], w: Weather): number => localWind(w.wind, local[w.veer]!);
+
+/** A wind turbine of rating `kw` and curve `c`, with these exposures, in this weather (kW). */
+export const windKw = (kw: number, c: WindCurve, local: readonly [number, number, number], w: Weather): number => mulDiv(kw, curveShare(c, turbineWind(local, w)), 1000);
 
 /** Renewable output of one producer (kW) under this weather. */
 export function producerKw(p: Producer, w: Weather): number {
@@ -181,7 +189,7 @@ export function producerKw(p: Producer, w: Weather): number {
     case 'solar':
       return solarKw(p.kw, w);
     case 'wind':
-      return windKw(p.kw, p.local, w);
+      return windKw(p.kw, p.curve ?? DEFAULT_CURVE, p.local, w);
   }
 }
 

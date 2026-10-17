@@ -8,11 +8,14 @@
 //   the buildings;
 // · « Énergie » (with the Power Log): what the grids ask and what they have now, as two figures in
 //   the colours of their lines, the history over the window, the load in the header.
+// · « Pris par les Glaneurs » (D103): what the Gleaners took off the ribbons by night since the
+//   founding, each item by its icon and a count — shown once they have taken anything.
 // The ledger takes the left; the machines and the power stand beside it and stay in view while it
 // scrolls (one column on a narrow window). Each part shows only once its plan is unlocked
 // (`analyticsOn`). The explanations moved to the headers' tooltips (`tip`); every item shows its
 // icon (mention.ts), and an empty table says why and what to do. Labels are written on each
 // refresh, so a language switch shows at once. Read-only; refreshed at 4 Hz while open.
+import { viewIconCanvas } from '@/render/art/view-icons';
 import { N_ITEMS, buildingDef } from '@/content/registry';
 import { el, setAttr, setText } from '@/core/dom';
 import { locale, t, type MsgKey } from '@/i18n/i18n';
@@ -35,7 +38,7 @@ export interface StatsHost {
 /** A machine state's label (the inspector's status line, shorter for a missing wire) and tone. */
 const STATE_LABEL: Record<MachineState, MsgKey> = {
   unlinked: 'stats.state.unlinked', unpowered: 'insp.status.unpowered', nofuel: 'insp.status.nofuel',
-  starved: 'insp.status.starved', blocked: 'insp.status.blocked', nojob: 'insp.status.nojob', lowpower: 'insp.status.lowpower',
+  starved: 'insp.status.starved', blocked: 'insp.status.blocked', nojob: 'insp.status.nojob', lowpower: 'insp.status.weak',
   ok: 'insp.status.ok', idle: 'insp.status.idle', building: 'insp.status.building', dormant: 'insp.status.dormant',
 };
 const STATE_TONE: Record<MachineState, 'good' | 'warn' | 'bad' | 'idle'> = {
@@ -45,7 +48,7 @@ const STATE_TONE: Record<MachineState, 'good' | 'warn' | 'bad' | 'idle'> = {
 /** A state's mark, as the inspector's status line draws its reason (a cut plug, a struck bolt, a full box, an empty slot…). */
 const STATE_ICON: Record<MachineState, () => HTMLElement> = {
   unlinked: () => glyph('unwired'), unpowered: () => glyph('noPower'), nofuel: () => mark('off'),
-  starved: () => mark('pause'), blocked: () => mark('full'), nojob: () => glyph('empty'), lowpower: () => glyph('power'),
+  starved: () => mark('pause'), blocked: () => mark('full'), nojob: () => glyph('empty'), lowpower: () => mark('slow'), // at work on a weak grid (D91)
   ok: () => mark('on'), idle: () => mark('pause'), building: () => mark('build'), dormant: () => mark('sleep'),
 };
 
@@ -75,6 +78,10 @@ export class StatsScreen {
   private readonly ledger: Part;
   private readonly machinesPart: Part;
   private readonly powerPart: Part;
+  /** The Gleaners' takings (D103). */
+  private readonly gleanPart: Part;
+  private readonly gleanList = el('div.st-gleaned');
+  private gleanSig = '';
   private readonly side: HTMLElement;
   private readonly body: HTMLElement;
   /** The machines: one bar cut by state, then a chip per state. */
@@ -131,8 +138,11 @@ export class StatsScreen {
       figures, this.power, el('div.st-axis', {}, [this.axisFrom, this.axisNow]),
     ]);
 
-    for (const p of [this.machinesPart, this.powerPart]) setAttr(p.root, 'hidden', '');
-    this.side = el('div.st-side', {}, [this.machinesPart.root, this.powerPart.root]);
+    // ── the Gleaners' takings (D103) ──
+    this.gleanPart = this.part('gleaned', viewIconCanvas('moon', 16, false), 'stats.gleaned', [this.gleanList]);
+
+    for (const p of [this.machinesPart, this.powerPart, this.gleanPart]) setAttr(p.root, 'hidden', '');
+    this.side = el('div.st-side', {}, [this.machinesPart.root, this.powerPart.root, this.gleanPart.root]);
     this.body = el('div.st-body', {}, [this.ledger.root, this.side]);
     const close = el('button.btn.rs-close', { type: 'button', onclick: () => host.close() }, '✕');
     this.root = el('section.screen.stats', { 'data-screen': 'stats' }, [
@@ -144,13 +154,12 @@ export class StatsScreen {
   }
 
   /** A kit section tagged `data-st-part` (the smoke test's and the docs' hook). */
-  private part(id: 'machines' | 'ledger' | 'power', icon: HTMLElement, title: MsgKey, body: HTMLElement[]): Part {
+  private part(id: 'machines' | 'ledger' | 'power' | 'gleaned', icon: HTMLElement, title: MsgKey, body: HTMLElement[]): Part {
     const aside = el('span.st-aside');
-    const root = section({ sec: `st-${id}`, title: t(title), icon, aside }, body);
+    const root = section({ sec: `st-${id}`, title: () => t(title), icon, aside }, body); // its title follows the language (the kit's `lang`)
     root.setAttribute('data-st-part', id);
     const head = root.querySelector<HTMLElement>('.ksec-head')!;
     const titleEl = root.querySelector<HTMLElement>('.ksec-title')!;
-    this.labels.push([titleEl, () => t(title)]);
     return { root, head, title: titleEl, aside };
   }
 
@@ -227,8 +236,19 @@ export class StatsScreen {
       setAttr(this.machinesPart.head, 'title', t('stats.machines.note'));
       this.refreshMachines(sim);
     }
+    // What the Gleaners took (D103): every item, the most first.
+    const taken: Array<[number, number]> = [];
+    if (sim) for (let i = 0; i < N_ITEMS; i++) if (sim.gleaned[i]! >= 1000) taken.push([i, Math.floor(sim.gleaned[i]! / 1000)]);
+    taken.sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+    const gSig = `${locale()}:${taken.map(([i, n]) => `${i}x${n}`).join(',')}`;
+    if (gSig !== this.gleanSig) {
+      this.gleanSig = gSig;
+      this.gleanList.replaceChildren(...taken.map(([i, n]) => el('span.st-gleaned-chip', { 'data-item': String(i) }, [itemMention(i), el('b', {}, num(n))])));
+    }
+    setAttr(this.gleanPart.root, 'hidden', taken.length ? null : '');
+    setAttr(this.gleanPart.head, 'title', t('stats.gleaned.tip'));
     // The ledger alone takes the whole width.
-    setAttr(this.body, 'data-solo', powerOn || machinesOn ? null : '');
+    setAttr(this.body, 'data-solo', powerOn || machinesOn || taken.length ? null : '');
   }
 
   /** The Diagnostics: the bar cut by state and a chip per state (worst first) with its count; the tooltips name the buildings. */

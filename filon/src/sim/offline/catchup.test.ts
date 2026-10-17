@@ -3,6 +3,7 @@ import { N_ITEMS, itemIdx } from '@/content/registry';
 import { testSim, drillToHearth, line, steadyPower, stockedSilo, wire, IRON, COAL } from '../testkit';
 import { catchUp } from './catchup';
 import { makeRng } from '@/core/rng';
+import { timed } from '@/core/cpu-time';
 import type { Sim } from '../state';
 
 /**
@@ -87,11 +88,10 @@ describe('offline catch-up', () => {
   it('a week-long absence of a small base computes quickly (ore runs dry, coal fills up)', () => {
     let silos = { ore: 0, coal: 0 };
     const [, off] = twin((s) => { silos = kilnLine(s, 1000, 1000); peatDrill(s); });
-    const t0 = performance.now();
-    const rep = catchUp(off, 7 * 24 * 36000, { noDirect: true });
-    const ms = performance.now() - t0;
-    expect(ms).toBeLessThan(4000);
-    console.log(`week catch-up: ${ms.toFixed(0)} ms, ${rep.warmups} warm-ups, mode ${rep.mode}`);
+    // CPU time (core/cpu-time.ts): the suites running beside it in the parallel phase do not count.
+    const { value: rep, ms, wall } = timed(() => catchUp(off, 7 * 24 * 36000, { noDirect: true }));
+    expect(ms, `${ms.toFixed(0)} ms of CPU (${wall.toFixed(0)} ms on the wall)`).toBeLessThan(4000);
+    console.log(`week catch-up: ${ms.toFixed(0)} ms of CPU (${wall.toFixed(0)} on the wall), ${rep.warmups} warm-ups, mode ${rep.mode}`);
     expect(off.tick).toBe(7 * 24 * 36000);
     expect(held(off, silos.ore, IRON())).toBeLessThan(25);
     // Coal: 12/min into the Hearth, which gives nothing → it fills up and stops taking it.

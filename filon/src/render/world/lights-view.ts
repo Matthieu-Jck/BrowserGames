@@ -8,9 +8,10 @@
 //   rotation, whatever the art becomes. Amber only on machines that run hot (kilns, coal generators);
 //   elsewhere amber LEDs glow work-lamp white, cyan stays cyan, red and green stay. Each
 //   building adds its night rig from its kind and footprint: a pool of work-lamp light on the
-//   ground, and on the Heart a pulsing uplink beacon. A building standing on the mountains (D44)
+//   ground, and on the Heart a pulsing uplink beacon, on its dish's feed horn (fx `beaconSpot`). A building standing on the mountains (D44)
 //   has its lights lifted with it, onto the rock top (world/stand.ts). One iso container (under
-//   M, faded with the volumes) and one plan container (under P, fainter). Built on structural changes only,
+//   M, faded with the volumes) and one plan container (under P, fainter). Laid on structural changes only,
+//   building by building (D92: a building keeps its lights until what they were laid from changes),
 //   from pooled sprites; per frame only the layer's alpha (the night factor: one render-group
 //   uniform), the beacon's pulse, the incinerators' fire (a glow over each pit and up its flame,
 //   bright as an item burns: world/pits.ts) and, during a morph, two transforms. A production
@@ -38,7 +39,7 @@ import type { Pt } from '../art/ink';
 import { C, num } from '../art/tokens';
 import { artLevelOf, isoHead } from '../art/recipes/buildings';
 import {
-  drawBulbIso, drawBulbPlan, drawCloud, drawGlow, drawPvState, drawSoft, HOT, isoArt, isoFrameOf, nightRig, planArt, planFrameOf,
+  beaconSpot, drawBulbIso, drawBulbPlan, drawCloud, drawGlow, drawPvState, drawSoft, HOT, isoArt, isoFrameOf, nightRig, planArt, planFrameOf,
   SOLAR_STAGES, type Emitter, type GlowClass, type SolarStage,
 } from '../art/recipes/fx';
 import type { Grade } from '../daynight';
@@ -225,20 +226,56 @@ function rotLocal(w: number, h: number, rot: Rot, x: number, y: number): [number
 /** A state overlay: its building, its sprite, its frame by stage (null: nothing to show), its anchor point and scale. */
 interface Overlay { ent: number; s: Sprite; keys: ReadonlyArray<string | null>; x: number; y: number; k: number }
 
+/**
+ * One building's lights (D92), kept until what they were laid from (`sig`) changes: its glows in
+ * each view (pooled sprites), its beacon's sprites, its pit's glows, its solar overlays, and — for a
+ * building whose look says whether it works (D83) — whether its glows show.
+ */
+interface LightRec {
+  sig: string;
+  ent: number;
+  iso: Sprite[];
+  plan: Sprite[];
+  overlays: Overlay[];
+  beacons: Array<{ s: Sprite; a: number }>;
+  pit: { ent: number; glows: Array<{ s: Sprite; a: number }> } | null;
+  /** Watched (D83): its glows shown as last applied. */
+  watched: boolean;
+  on: boolean;
+  seen: number;
+}
+
+/**
+ * The solar overlays sort just over their building's key (+ 0.25 in iso, the plan's 0), after every
+ * sprite at that very key, among themselves in entity order — the order a rebuild from scratch laid
+ * them in (D92; the buildings view sorts its own sprites a hair under their keys).
+ */
+const TIE = 2 ** -36;
+
 export class LightsView {
   /** Iso glows (iso world px, under M) and plan glows (tile units, under P). */
   private readonly iso = new Container({ label: 'lights:iso' });
   private readonly plan = new Container({ label: 'lights:plan' });
   private readonly sheet: FxSheet;
-  private isoPool: Sprite[] = [];
-  private planPool: Sprite[] = [];
+  /**
+   * Glow sprites free for reuse (hidden), per view; how many are in use. The containers are sorted by
+   * rank (the building's id, then the order its glows are laid): added light rounds a little
+   * differently in another order where many glows stack, so they keep the order a rebuild from
+   * scratch lays them in.
+   */
+  private readonly freeIso: Sprite[] = [];
+  private readonly freePlan: Sprite[] = [];
   private nIso = 0;
   private nPlan = 0;
-  private overlays: Overlay[] = [];
-  /** Beacons (pulsing): their sprites and base strength. */
-  private beacons: Array<{ s: Sprite; a: number }> = [];
-  /** The incinerators' fire: each pit's glows and their full strength (× the fire's heat); the colony they burn in. */
-  private pits: Array<{ ent: number; glows: Array<{ s: Sprite; a: number }> }> = [];
+  /** Each building's lights, by entity; the record being laid; the rebuild's pass. */
+  private readonly recs = new Map<number, LightRec>();
+  /** Gathered from the records for the per-frame work: the watched ones (D83), the beacons, the pits, the overlays. */
+  private readonly watched = new Set<LightRec>();
+  private readonly beacons = new Set<{ s: Sprite; a: number }>();
+  private readonly pits = new Set<{ ent: number; glows: Array<{ s: Sprite; a: number }> }>();
+  private readonly overlays = new Set<Overlay>();
+  private cur: LightRec | null = null;
+  private pass = 0;
   private sim: Sim | null = null;
   private te = -1;
   private stage = -1;
@@ -246,9 +283,10 @@ export class LightsView {
   readonly hidden = new Set<number>();
   /** Which production buildings work (the buildings view's): a switched-off one shows no light (D83). */
   work: WorkLook | null = null;
-  /** Each watched building's glows (its run of each pool) and whether they show; the look version applied. */
-  private groups: Array<{ ent: number; i0: number; i1: number; p0: number; p1: number; on: boolean }> = [];
+  /** The look version applied. */
   private workVer = -1;
+  /** Building records laid and dropped by the last rebuild (perf, tests). */
+  lastUpdate = { laid: 0, dropped: 0 };
 
   constructor(
     private readonly layer: Container,
@@ -257,6 +295,8 @@ export class LightsView {
     private readonly atlas: Atlas,
   ) {
     layer.blendMode = 'add';
+    this.iso.sortableChildren = true;
+    this.plan.sortableChildren = true;
     layer.addChild(this.iso, this.plan);
     layer.visible = false;
     this.sheet = bakeSheet(atlas);
@@ -271,42 +311,90 @@ export class LightsView {
   }
 
   /**
-   * Rebuild every light and overlay from the colony (on structural changes), after the buildings
-   * view: a building's stand (how high it stands, how it sorts) is the one that view worked out.
+   * After a structural change, after the buildings view (a building's stand — how high it stands,
+   * how it sorts — is the one that view worked out): the lights of the buildings whose lights
+   * changed (`sigOf`) laid again, those of the buildings gone dropped, the rest kept (D92: on a base
+   * of 25 000 entities every light laid again took 20–26 ms). Another colony starts from nothing.
    */
   rebuild(sim: Sim): void {
-    this.nIso = 0;
-    this.nPlan = 0;
-    this.beacons = [];
-    this.pits = [];
-    this.groups = [];
-    this.workVer = -1; // applied below, then on every flip
-    this.sim = sim;
-    for (const o of this.overlays) o.s.destroy();
-    this.overlays = [];
+    if (sim !== this.sim) { this.clear(); this.sim = sim; }
+    const pass = ++this.pass;
+    const gone: LightRec[] = [];
+    const todo: Array<{ e: Ent; sig: string }> = [];
     for (const e of sim.ents.sorted()) {
       const kind = BUILDING_KIND[e.def]!;
-      if (kind === 'belt' || kind === 'conduit' || e.builtAt !== 0 || sim.isDormant(e) || this.hidden.has(e.id)) continue;
-      const i0 = this.nIso, p0 = this.nPlan;
-      this.addBuilding(e);
-      if (looksAtWork(e.def) && (this.nIso > i0 || this.nPlan > p0)) this.groups.push({ ent: e.id, i0, i1: this.nIso, p0, p1: this.nPlan, on: true });
+      if (kind === 'belt' || kind === 'conduit') continue;
+      const sig = this.sigOf(sim, e);
+      const r = this.recs.get(e.id);
+      if (r && r.sig === sig) { r.seen = pass; continue; }
+      if (r) { gone.push(r); this.recs.delete(e.id); }
+      todo.push({ e, sig });
     }
-    for (let i = this.nIso; i < this.isoPool.length; i++) this.isoPool[i]!.visible = false;
-    for (let i = this.nPlan; i < this.planPool.length; i++) this.planPool[i]!.visible = false;
+    for (const [id, r] of this.recs) if (r.seen !== pass) { gone.push(r); this.recs.delete(id); }
+    for (const r of gone) this.drop(r);
+    for (const { e, sig } of todo) {
+      const r: LightRec = { sig, ent: e.id, iso: [], plan: [], overlays: [], beacons: [], pit: null, watched: false, on: true, seen: pass };
+      this.cur = r;
+      // Dark while being built, dormant or hidden (the intro's Heart): a record with nothing in it.
+      if (e.builtAt === 0 && !sim.isDormant(e) && !this.hidden.has(e.id)) this.addBuilding(e);
+      r.watched = looksAtWork(e.def) && (r.iso.length > 0 || r.plan.length > 0);
+      this.recs.set(e.id, r);
+      if (r.watched) this.watched.add(r);
+      for (const b of r.beacons) this.beacons.add(b);
+      if (r.pit) this.pits.add(r.pit);
+      for (const o of r.overlays) this.overlays.add(o);
+    }
+    this.cur = null;
+    if (todo.length || gone.length) {
+      this.workVer = -1; // the new ones' looks applied at the next update, then on every flip
+      this.stage = -1; // the new overlays' solar stage, likewise
+    }
     this.sheet.flush();
-    this.stage = -1;
+    this.lastUpdate = { laid: todo.length, dropped: gone.length };
+  }
+
+  /** Every light laid again from scratch (what `rebuild` must match: the shots' check). */
+  rebuildAll(sim: Sim): void {
+    this.clear();
+    this.rebuild(sim);
+  }
+
+  /** What a building's lights are laid from: its kind, place, turn, built, dormant or hidden, its stand, the look it wears (the Heart's level: its lamps and beacon, D86). */
+  private sigOf(sim: Sim, e: Ent): string {
+    const st = standOf(e);
+    const id = BUILDING_IDS[e.def]! as BuildingId;
+    return `${e.def},${e.x},${e.y},${e.rot},${+(e.builtAt !== 0)}${+sim.isDormant(e)}${+this.hidden.has(e.id)},${st ? `${st.level},${st.z}` : ''},${artLevelOf(id, sim.hearthLevel)}`;
+  }
+
+  /** A record's lights gone: its glows back to the free pools (hidden), its overlays destroyed. */
+  private drop(r: LightRec): void {
+    for (const s of r.iso) { s.visible = false; this.freeIso.push(s); }
+    for (const s of r.plan) { s.visible = false; this.freePlan.push(s); }
+    this.nIso -= r.iso.length;
+    this.nPlan -= r.plan.length;
+    for (const o of r.overlays) { o.s.destroy(); this.overlays.delete(o); }
+    this.watched.delete(r);
+    for (const b of r.beacons) this.beacons.delete(b);
+    if (r.pit) this.pits.delete(r.pit);
+  }
+
+  /** Every record dropped (another colony). */
+  private clear(): void {
+    for (const r of this.recs.values()) this.drop(r);
+    this.recs.clear();
   }
 
   private sprite(view: 'i' | 'p', key: 'glow' | 'soft'): Sprite {
-    const pool = view === 'i' ? this.isoPool : this.planPool;
-    const n = view === 'i' ? this.nIso++ : this.nPlan++;
-    let s = pool[n];
+    const free = view === 'i' ? this.freeIso : this.freePlan;
+    let s = free.pop();
     if (!s) {
       s = new Sprite();
       s.anchor.set(0.5);
       (view === 'i' ? this.iso : this.plan).addChild(s);
-      pool.push(s);
     }
+    const r = this.cur!;
+    s.zIndex = r.ent * 256 + r.iso.length + r.plan.length; // its rank (`freeIso` above)
+    if (view === 'i') { this.nIso++; r.iso.push(s); } else { this.nPlan++; r.plan.push(s); }
     s.texture = this.sheet.get(key)!.tex;
     s.visible = true;
     return s;
@@ -336,6 +424,7 @@ export class LightsView {
   }
 
   private addBuilding(e: Ent): void {
+    const r = this.cur!;
     const id = BUILDING_IDS[e.def]! as BuildingId;
     const def = buildingDef(e.def);
     const rotI = this.atlas.frames.has(bKey(id, e.rot)) ? e.rot : 0;
@@ -361,24 +450,21 @@ export class LightsView {
     const [w, h] = footprint(e.def, e.rot);
     if (rig.pool) {
       const [X, Y] = tileToIso(e.x + w / 2, e.y + h / 2, lv);
-      const r = rig.pool.r, color = rig.pool.warm ? POOL_WARM : POOL_COLD;
+      const rr = rig.pool.r, color = rig.pool.warm ? POOL_WARM : POOL_COLD;
       // A ground circle of radius r tiles is an ellipse r·√2·32 by r·√2·16 world px in iso.
-      this.glow('i', 'soft', X, Y, r * Math.SQRT2 * 64, r * Math.SQRT2 * 32, color, rig.pool.alpha);
-      this.glow('p', 'soft', e.x + w / 2, e.y + h / 2, r * 2, r * 2, color, rig.pool.alpha * 0.8);
+      this.glow('i', 'soft', X, Y, rr * Math.SQRT2 * 64, rr * Math.SQRT2 * 32, color, rig.pool.alpha);
+      this.glow('p', 'soft', e.x + w / 2, e.y + h / 2, rr * 2, rr * 2, color, rig.pool.alpha * 0.8);
     }
     if (rig.beacon) {
-      // On the art's highest light (the uplink mast's tip), else at the top of the head room.
-      let top: Emitter | null = null;
-      for (const em of isoA.emitters) if (!top || em.y < top.y) top = em;
-      let X: number, Y: number;
-      if (top) { X = ax + top.x * 0.5; Y = ay + top.y * 0.5; } else {
-        const [cx, cy] = rotLocal(def.w, def.h, rotI, def.w / 2, def.h / 2);
-        [X, Y] = tileToIso(e.x + cx, e.y + cy, lv + isoHead(id) * rig.beacon.at);
-      }
+      // Over the footprint's centre at its share of the head room — the Heart's uplink feed horn —
+      // on the light baked there (fx `beaconSpot`; not the highest light: a link mast's is higher).
+      const [cx, cy] = rotLocal(def.w, def.h, rotI, def.w / 2, def.h / 2);
+      const [bx, by] = beaconSpot(isoA, cx, cy, isoHead(id) * rig.beacon.at);
+      const X = ax + bx * 0.5, Y = ay + by * 0.5;
       const d = rig.beacon.d * Math.SQRT2 * 32;
       const core = this.glow('i', 'glow', X, Y, d * 0.35, d * 0.35, BEACON, 1);
       const halo = this.glow('i', 'soft', X, Y, d, d, BEACON, rig.beacon.alpha * 0.6);
-      this.beacons.push({ s: core, a: 1 }, { s: halo, a: rig.beacon.alpha * 0.6 });
+      r.beacons.push({ s: core, a: 1 }, { s: halo, a: rig.beacon.alpha * 0.6 });
       this.glow('p', 'glow', e.x + w / 2, e.y + h / 2, rig.beacon.d * 0.5, rig.beacon.d * 0.5, BEACON, 0.8);
     }
     // An incinerator's fire: a warm glow on its throat and up its flame, as strong as the fire (`update`).
@@ -391,7 +477,7 @@ export class LightsView {
         { s: this.glow('i', 'glow', X, Y - 4, 30, 18, AMBER, 0), a: 1 },
         { s: this.glow('p', 'soft', e.x + 0.5, e.y + 0.5, 1.8, 1.8, POOL_WARM, 0), a: 0.7 },
       ];
-      this.pits.push({ ent: e.id, glows });
+      r.pit = { ent: e.id, glows };
     }
     // Solar states over the sprites: the bulb's petals, any cells drawn in PV.
     const z = (st ? st.z : buildingZ(e.x, e.y, w, h)) + 0.25;
@@ -409,31 +495,33 @@ export class LightsView {
     }
   }
 
-  /** An overlay sprite above a building (iso: in `objects` at zIndex z; plan: on `plan`). */
+  /** An overlay sprite above a building (iso: in `objects` at depth key z; plan: on `plan`), ranked after the very key by entity (`TIE`). */
   private overlay(ent: number, view: 'i' | 'p', keys: ReadonlyArray<string | null>, x: number, y: number, k: number, z: number): void {
     if (!keys.some((key) => key !== null && !!this.sheet.get(key))) return;
+    const r = this.cur!;
     const s = new Sprite();
     s.scale.set(k);
     s.visible = false;
-    if (view === 'i') { s.zIndex = z; this.objectLayer.addChild(s); } else this.planLayer.addChild(s);
-    this.overlays.push({ ent, s, keys, x, y, k });
+    s.zIndex = z + TIE * (ent * 4 + r.overlays.length);
+    if (view === 'i') this.objectLayer.addChild(s); else this.planLayer.addChild(s);
+    r.overlays.push({ ent, s, keys, x, y, k });
   }
 
   /**
    * The switched-off buildings' glows hidden, the working ones' shown (D83), when a look has
-   * flipped since the last call: one pass over the watched buildings' groups, writing only those
-   * that changed.
+   * flipped since the last call: one pass over the watched buildings, writing only those that
+   * changed; their solar overlays greyed with them.
    */
   private lookAtWork(): void {
     const w = this.work;
     if (!w || w.version === this.workVer) return;
     this.workVer = w.version;
-    for (const g of this.groups) {
-      const on = w.isLit(g.ent);
-      if (on === g.on) continue;
-      g.on = on;
-      for (let i = g.i0; i < g.i1; i++) this.isoPool[i]!.visible = on;
-      for (let i = g.p0; i < g.p1; i++) this.planPool[i]!.visible = on;
+    for (const r of this.watched) {
+      const on = w.isLit(r.ent);
+      if (on === r.on) continue;
+      r.on = on;
+      for (const s of r.iso) s.visible = on;
+      for (const s of r.plan) s.visible = on;
     }
     // A panel's petals and cells over its sprite: greyed with it (a few dozen at most).
     for (const o of this.overlays) {
@@ -449,16 +537,16 @@ export class LightsView {
     const a = g.night;
     this.layer.visible = a > 0.004 && this.count > 0;
     this.layer.alpha = a;
-    if (this.layer.visible && this.beacons.length) {
+    if (this.layer.visible && this.beacons.size) {
       const pulse = 1 - PULSE + PULSE * (0.5 + 0.5 * Math.sin((seconds * 2 * Math.PI) / PULSE_S));
       for (const b of this.beacons) b.s.alpha = b.a * pulse;
     }
-    if (this.layer.visible && this.pits.length && this.sim) {
+    if (this.layer.visible && this.pits.size && this.sim) {
       // The fire as the buildings view last stepped it (the frame before): a smoulder, then the flare.
       const fire = pitFire(this.sim);
       for (const p of this.pits) {
         const k = 0.12 + 0.88 * fire.heat(p.ent);
-        for (const g of p.glows) g.s.alpha = g.a * k;
+        for (const gl of p.glows) gl.s.alpha = gl.a * k;
       }
     }
     if (te !== this.te) {
@@ -490,6 +578,8 @@ export class LightsView {
 
   destroy(): void {
     for (const o of this.overlays) o.s.destroy();
+    this.overlays.clear();
+    this.recs.clear();
     this.layer.removeChildren();
     this.iso.destroy({ children: true });
     this.plan.destroy({ children: true });
@@ -522,6 +612,14 @@ export class CloudShadows {
   private readonly plane = new Container({ label: 'clouds' });
   private readonly sprites: Sprite[] = [];
   private te = -1;
+  /** Their drift (tiles a second): downwind of the world's prevailing wind once the shell sets it (D95). */
+  private drift: readonly [number, number] = [WIND_X, WIND_Y];
+
+  /** The way the clouds drift: the prevailing wind's (a unit vector, tile space; D95). */
+  setDrift(ux: number, uy: number): void {
+    const v = Math.hypot(WIND_X, WIND_Y);
+    this.drift = [ux * v, uy * v];
+  }
 
   constructor(layer: Container, textures: readonly Texture[]) {
     this.plane.blendMode = 'multiply';
@@ -553,7 +651,7 @@ export class CloudShadows {
       this.plane.setFromMatrix(new Matrix(P.a, P.b, P.c, P.d, 0, 0));
     }
     const ox = tx - SKY / 2, oy = ty - SKY / 2;
-    const dx = WIND_X * seconds, dy = WIND_Y * seconds;
+    const dx = this.drift[0] * seconds, dy = this.drift[1] * seconds;
     for (let i = 0; i < SKY_CLOUDS.length; i++) {
       const c = SKY_CLOUDS[i]!;
       const x = ((((c.x + dx - ox) % SKY) + SKY) % SKY) + ox;

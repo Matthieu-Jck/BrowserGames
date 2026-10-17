@@ -14,20 +14,25 @@
 //
 // The levels (SCENARIO_IDS, by advancement):
 //   claim     the claim named, at the very start of the tutorial (quest 1 current), nothing built
-//   smelter   quests 0–2: two iron drills into the Heart, wired, telemetry → at « La fonderie »
-//   survey    quests 0–5: + the smelter (a router splits the second iron line), the coal, two
-//             wind turbines, the glass smelter (two sand collectors; a router shares the coal)
-//             → at « La Criée appelle »
-//   tutorial  all twelve quests: + every plan, the collector's Survey Data into the research lab (the Face Cutter learnt), the
-//             trade post (glass led into its entrance for its quest, then the iron ore line
-//             joining it — the post sells whatever comes in, D64 — and its exit laid into the
-//             Heart, fed by a small import order of plates: what the base builds with), the copper line, a beacon past the
-//             Crown, more wind and a coal generator, the quartz vein's parcel and two face cutters at
-//             its wall, their quartz over the Crown into the Heart, and the quartz workshop the quest
-//             pays for, its oscillators into the Heart (scenario-quartz.ts, D87) — the whole tutorial
-//             factory running
-//   grown     later on: every plan of the tree, Mechanics and a few research nodes learnt for
-//             real, a gear press, a silo; then the cirque's deposits covered by drills and two more
+//   smelter   « Premier coup de pioche »: an iron drill into the Heart, wired → at « La fonderie »
+//   survey    + the smelter fed by its own drill pair (a second iron drill and the coal, D97, D101),
+//             two wind turbines on the floor and two on the Crown's windiest spot (« Tenir la nuit »),
+//             the glass smelter (two sand collectors; a router shares the coal) → at « La Criée »
+//   tutorial  the tutorial up to its last quest (D101): + the trade post (glass led into its entrance,
+//             then the iron ore line joining it — the post sells whatever comes in, D64), the copper
+//             line and its wire mill, CrierBelt's starter contract led from the post's exit into the
+//             mill (taken up once delivered, the fulfilled contract stopped: the exit then goes into the
+//             Heart, fed by a small import order of plates, what the base builds with), the Core raised
+//             to level 2 (« Le Cœur grandit »), every plan (the Face Cutter's among them), the Core's
+//             own Survey Data into the research lab, Mechanics started, a beacon past the Crown, a coal
+//             generator, the quartz vein's parcel and two face cutters at its wall, their
+//             quartz over the Crown into the Heart, and the quartz workshop the quest pays for, its
+//             oscillators into the Heart (scenario-quartz.ts, D87) — the whole tutorial factory
+//             running; « Les pièces de la Synthèse » current (D90), Mechanics learnt and the lab's next
+//             node under way (D107: Tier 1 takes minutes): a base to play the last quest from (the
+//             grown level completes it by force)
+//   grown     later on: every plan of the tree, Mechanics, Data Processing (its data collector on
+//             the lab's line) and a few research nodes learnt for real, a gear press, a silo; then the cirque's deposits covered by drills and two more
 //             smelters on their lines (scenario-cirque.ts `mineCirque`, D82)
 //   late      the grown base with most of the tree granted outside the commands (so its log does
 //             not replay to it: `report.granted`), the Heart at level 4, an excavator on marked
@@ -40,7 +45,8 @@
 //             tower workshop, Mechanics Data researched for real, thermal cores, round a second trade
 //             post), the potteries on the tarn's peak, the Ember Fields mine, coal and copper flown
 //             home, drifters between them, a geothermal plant where there is a vent, pylon lines;
-//             last, a sand field of arc furnaces on the cirque's free floor (`fillCirque`, D82)
+//             last, a sand field of arc furnaces on the cirque's free floor (`fillCirque`, D82); and
+//             two expertises chosen at the Core's Archive among those its feats earned (D93)
 //
 // Each level is founded at sunrise (`scenarioEpoch`) so its build runs in full sun: the early
 // base's power is the Heart's panel. From the tutorial level on, a level ends with its power
@@ -55,21 +61,24 @@ import { QUEST_IDS, type QuestId } from '@/content/quests';
 import { PLAN_IDS, planDef, researchNode, treePrereq } from '@/content/research';
 import { CIRQUE, COS64, SIN64, WORLD_SEED } from '@/content/world';
 import { CENTER, DAY_EPOCHS, EPOCH, PERMILLE, SOLAR } from './constants';
-import { besideRoutingBlock, branch, join, keepOff, lay, layFrom, learnPlans, placeFed, placeFeeding, powerLine, routeOver, sideGoals, spotsNear, type BeltTiles, type Feed } from './dev';
+import { besideRoutingBlock, branch, checkpoint, join, keepOff, lay, layFrom, learnPlans, placeFed, placeFeeding, powerLine, rollback, routeOver, sideGoals, spotsNear, type BeltTiles, type Feed } from './dev';
 import { footprint, worldPorts, type WorldPort } from './entities';
+import { isFaceOre } from './face';
 import { Sim } from './state';
 import { Chain } from './flow/chain';
 import type { FNode } from './flow/node';
 import { inReach } from './systems/landscape';
-import { DX, DY, isFloor, isRock, opposite, T, type Rot } from './types';
+import { DX, DY, isFloor, isRock, opposite, T, type Ent, type Rot } from './types';
 import { inWorld, tileIndex } from './world/grid';
 import { parcelAt } from './world/land';
 import { MapGen } from './world/mapgen';
-import { windSite } from './power/network';
+import { producerKw, weatherAt, windKw, windSite } from './power/network';
+import { windiest } from './readouts/wind';
 import { coalPit, copperHome, emberMine, geothermal, emberSite, fabrique, flyRoute, potteries, toward, waitKites } from './scenario-late';
 import { fillCirque, mineCirque, reattach } from './scenario-cirque';
 import { quartzWorks, wallQuartz } from './scenario-quartz';
 import { workOf, looksAtWork, type Work } from './systems/work';
+import { flows } from './systems/quests';
 
 /** The longest the build waits for the Fabrique's first purchases (their quarter hour and the post's lift). */
 const FABRIQUE_WARM_MAX = 26 * EPOCH;
@@ -100,6 +109,8 @@ export interface ScenarioOptions {
   near: number;
   /** The claim's name (the shell's words: the engine writes no text). */
   name: string;
+  /** The map version (content `MAPS`, D63); default today's (`MAP_VERSION`). */
+  mapV?: number;
 }
 
 /** Full sun's first minute of the day (the first `SOLAR` step at 1000 ‰). */
@@ -112,7 +123,7 @@ export function scenarioEpoch(near: number): number {
 
 /** A new base on the player's land, built to level `id`. */
 export function foundScenario(id: ScenarioId, o: ScenarioOptions): { sim: Sim; report: ScenarioReport } {
-  const sim = new Sim({ worldSeed: WORLD_SEED, playerSeed: o.playerSeed, source: new MapGen(WORLD_SEED, o.playerSeed), foundingEpoch: scenarioEpoch(o.near) });
+  const sim = new Sim({ worldSeed: WORLD_SEED, playerSeed: o.playerSeed, source: new MapGen(WORLD_SEED, o.playerSeed, o.mapV), foundingEpoch: scenarioEpoch(o.near) });
   return { sim, report: buildScenario(sim, id, o.name) };
 }
 
@@ -122,14 +133,18 @@ export function buildScenario(sim: Sim, id: ScenarioId, name: string): ScenarioR
   const upTo = SCENARIO_IDS.indexOf(id);
   if (!sim.nameColony(name)) b.until('claim'); // an unusable name: quest 0 is forced
   if (upTo >= 3) tradeSpot(b); // the trade post's place by the Heart, taken before the lines ring it
-  if (upTo >= 1) { firstStrike(b); ribbonLines(b); }
+  if (upTo >= 1) firstStrike(b);
   if (upTo >= 2) { bloomKiln(b); firstWind(b); glassworks(b); }
-  if (upTo >= 3) { crierCalls(b); tiredVein(b); firstPurchase(b); beyondCrown(b); fieldJournal(b); morePower(b); wallQuartz(b, () => powerUp(b, 12, 1000, 'veinPower')); postLine(b); tradeLine(b); quartzWorks(b); }
+  if (upTo >= 3) { crierTrade(b); coreUpgrade(b); beyondCrown(b); fieldJournal(b); morePower(b); wallQuartz(b, () => powerUp(b, 12, 1000, 'veinPower')); postLine(b); tradeLine(b); ironSurplus(b); quartzWorks(b); }
   if (upTo >= 4) grown(b);
   if (upTo >= 5) late(b);
   // The rest of the cirque's floor (D82), last: the late base's works take their places first.
   if (upTo >= 4) fillCirque(b);
   if (upTo >= 2) powerUp(b, id === 'late' ? LATE_TURBINES : undefined, id === 'late' ? LATE_POWER_MARGIN : undefined);
+  // The tutorial level opens with research under way (D107: its Mechanics took a minute): the lab's
+  // next node, the Core's data the Heart held meanwhile flowing in (its outlet hands out 2 a second:
+  // ten seconds, short of the node's minute).
+  if (id === 'tutorial') { labNext(b); b.run(100); }
   // The base run a few minutes, what stood backed up all along taken up (D85).
   if (upTo >= 4) settle(b);
   sim.ensureCompiled();
@@ -137,7 +152,7 @@ export function buildScenario(sim: Sim, id: ScenarioId, name: string): ScenarioR
 }
 
 /** The tutorial's sources the levels keep whatever they do (the scenario test looks for them). */
-const KEEP_SOURCES: ReadonlySet<string> = new Set(['iron1', 'iron2', 'coal', 'copper', 'collector', 'cutter1', 'cutter2']);
+const KEEP_SOURCES: ReadonlySet<string> = new Set(['iron1', 'iron2', 'coal', 'copper', 'collector', 'cutter1', 'cutter2', 'data2']);
 
 /**
  * As a player would after building (D85): the base run a few minutes, and the sources — drills,
@@ -175,16 +190,28 @@ const SETTLE_MIN = 6, SETTLE_RUN = 2;
  * fois fini de faire tourner le jeu simulé pendant quelques minutes et voir si une machine reste
  * éteinte plusieurs minutes d'affilée »). Off is D83's look (`workOf`): not 'on'. A fuel generator
  * on standby (the wind covers the grid: 'pause') is the grid's reserve, not a fault, and is left out.
+ * So is research waiting on the player's next choice, not on a line (D101, D107: Tier 1's nodes take
+ * a minute or three, so a grown base's lab is soon done): a lab with no project, and a data maker
+ * whose every lab has none.
  * It runs the base: call it on a copy, or as the last thing done to one.
  */
 export function idleAfter(sim: Sim, minutes = 6, limit = 3): Array<{ id: number; def: string; x: number; y: number; work: Work }> {
   const STEP = 50, watch = sim.ents.sorted().filter((e) => looksAtWork(e.def));
   const run = new Map<number, number>(), worst = new Map<number, number>();
+  const labs = watch.filter((e) => BUILDING_KIND[e.def] === 'lab');
+  const free = (lab: number): boolean => !sim.projects.some((p) => p.lab === lab);
+  const resting = (e: Ent): boolean => {
+    if (BUILDING_KIND[e.def] === 'lab') return free(e.id);
+    if (buildingDef(e.def).drill?.anywhere !== 'journal_1') return false;
+    const fed = labs.filter((l) => flows(sim, e.id, l.id));
+    return fed.length > 0 && fed.every((l) => free(l.id));
+  };
   for (let t = 0; t < minutes * 600; t += STEP) {
     sim.run(STEP);
     for (const e of watch) {
       const w = workOf(sim, e);
-      const standby = w === 'pause' && BUILDING_KIND[e.def] === 'generator';
+      const rest = w !== 'on' && resting(e);
+      const standby = rest || (w === 'pause' && BUILDING_KIND[e.def] === 'generator');
       const r = w === 'on' || standby ? 0 : (run.get(e.id) ?? 0) + STEP;
       run.set(e.id, r);
       if (r > (worst.get(e.id) ?? 0)) worst.set(e.id, r);
@@ -207,6 +234,9 @@ export class Builder {
   /** The laid lines, by role (branches split them). */
   readonly lines: Record<string, BeltTiles> = {};
   readonly heart: [number, number] = [CENTER, CENTER];
+  /** The windiest spot of the Crown (`windAnchor`, D95), and the windy spots no wire reached. */
+  private anchor: [number, number] | null = null;
+  private readonly unreachable = new Set<number>();
 
   constructor(readonly sim: Sim, id: ScenarioId) {
     this.report = { id, ticks: 0, forced: [], skipped: [], granted: [], ids: {} };
@@ -299,6 +329,51 @@ export class Builder {
     }
     this.skip(role);
     return 0;
+  }
+
+  /**
+   * A turbine at the windiest free spot within `r` of `near` (D95: by its exposure over the days),
+   * none under `min` ‰; its id, or 0 (not skipped: the caller decides).
+   */
+  windy(role: string, def: string, near: readonly [number, number], r: number, min = 0, not: ReadonlySet<number> = new Set()): number {
+    this.affordDef(def);
+    for (const [x, y, e] of windiest(this.sim, def, near[0], near[1], r, 4 + not.size)) {
+      if (e < min) break;
+      if (not.has(tileIndex(x, y))) continue;
+      const p = this.sim.place(def, x, y, 0);
+      if (p.ok) return (this.ids[role] = p.id!);
+    }
+    return 0;
+  }
+
+  /**
+   * A turbine at the windiest spot within `r` of `near` that a wire reaches (D95), wired: a spot
+   * no line reaches (a plateau behind a cliff, map 4) is taken down again (refunded) and the next
+   * one tried, at most six. Its id, or 0 (not skipped).
+   */
+  windyWired(role: string, def: string, near: readonly [number, number], r: number, min = 0): number {
+    for (let tries = 0; tries < 6; tries++) {
+      const id = this.windy(role, def, near, r, min, this.unreachable);
+      if (!id) return 0;
+      this.wire(role);
+      if (this.sim.linksOf(id).length) return id;
+      this.unskip(`wire:${role}`);
+      const e = this.sim.ents.get(id)!;
+      this.unreachable.add(tileIndex(e.x, e.y));
+      this.sim.remove(e.x, e.y);
+      delete this.ids[role];
+    }
+    return 0;
+  }
+
+  /** The windiest spot of the Crown a turbine may take (D95), found once: where the base's wind goes. */
+  windAnchor(def = 'wind_flower'): [number, number] {
+    if (!this.anchor) {
+      const R = (this.sim.grid.source.crownOuter ?? CIRQUE.crownOuter) + 1;
+      const best = windiest(this.sim, def, CENTER, CENTER, R, 1)[0];
+      this.anchor = best ? [best[0], best[1]] : this.crown();
+    }
+    return this.anchor;
   }
 
   /** A drill on `item`: the spot nearest `near` (default the Heart) on whole-deposit tiles, its output facing the Heart. */
@@ -418,6 +493,12 @@ export class Builder {
     return [(a[0] + c[0]) >> 1, (a[1] + c[1]) >> 1];
   }
 
+  /** `d` tiles past a building's centre on the side away from the Heart (each axis: the Heart's own row or column stays). */
+  away(role: string, d: number): [number, number] {
+    const c = this.centre(role), h = this.heart;
+    return [c[0] + Math.sign(c[0] - h[0]) * d, c[1] + Math.sign(c[1] - h[1]) * d];
+  }
+
   /** The middle tile of a laid line (the Heart's centre when there is none). */
   middle(role: string): [number, number] {
     const l = this.lines[role];
@@ -527,26 +608,28 @@ function firstStrike(b: Builder): void {
   b.until('first_strike');
 }
 
-/** 2 · telemetry, a second iron drill and its line. */
-function ribbonLines(b: Builder): void {
-  b.plan('telemetry');
-  b.source('iron2', 'drill', b.heart, b.H, { item: 'iron_ore', r: 30 });
-  b.wire('iron2');
-  b.until('ribbon_lines');
-}
-
-/** 3 · the smelter toward the coal: its iron from a router on an iron line, its plates into the Heart; a coal drill's line into it. */
+/**
+ * 2 · the smelter toward the coal, fed by its own drill pair (D97: one iron drill and one coal drill
+ * a smelter; D101: no router yet), its plates into the Heart.
+ */
 function bloomKiln(b: Builder): void {
-  b.plan('kiln', 'router');
-  const iron = b.laid('iron2', 'iron1');
-  b.fed('kiln1', 'kiln', b.mid(b.deposit('coal')), [iron.length ? { lines: iron } : 0], b.H, 'plates');
-  if (b.ids.kiln1) b.source('coal', 'drill', b.centre('kiln1'), b.ids.kiln1, { item: 'coal', r: 30 });
+  b.plan('kiln');
+  b.fed('kiln1', 'kiln', b.mid(b.deposit('coal')), [], b.H, 'plates');
+  if (b.ids.kiln1) {
+    b.source('coal', 'drill', b.centre('kiln1'), b.ids.kiln1, { item: 'coal', r: 30 });
+    // On the north deposit, beside the first drill: its line takes the way the old router branch did
+    // (the north-west deposit's ran down the cirque's west side, where the glass and the post go next).
+    b.source('iron2', 'drill', b.deposit('iron_ore'), b.ids.kiln1, { item: 'iron_ore', r: 30 });
+  }
   b.recipe('kiln1', 'iron_plate');
-  b.wire('coal');
+  b.wire('coal', 'iron2');
   b.until('bloom_kiln');
 }
 
-/** 4 · two wind turbines on the quiet side, wired. */
+/**
+ * 3 · « Tenir la nuit » (D101): two wind turbines on the quiet side, wired, then two on the Crown's
+ * windiest spot (`crownWind`: the floor's give little, D44) — the night holds.
+ */
 function firstWind(b: Builder): void {
   b.plan('wind_flower');
   // Where the levels have always planted them, on the floor: they give little now (D44), but moving
@@ -556,61 +639,126 @@ function firstWind(b: Builder): void {
   b.put('wind1', 'wind_flower', spot, { r: 8 });
   b.put('wind2', 'wind_flower', spot, { r: 8 });
   b.wire('wind1', 'wind2');
+  crownWind(b);
   b.until('first_wind');
 }
 
-/** 5 · glass: a second smelter fed coal by a router on the coal line, sand by two collectors (their lines joined); its glass into the Heart. */
+/**
+ * 5 · glass: a second smelter fed coal by a router on the coal line, sand by two collectors (their
+ * lines joined); its glass into the Heart. The smelter and its first collector go down together: a
+ * spot whose free inlet the coal line and the router's branch box in takes no sand (D104: the coal's
+ * irregular patch can run its line along the smelter's inlet row), so the smelter goes back up and
+ * tries farther along the coal line, as a player moves it.
+ */
 function glassworks(b: Builder): void {
-  b.plan('sand_collector');
-  const coal = b.laid('coal');
-  b.fed('kiln2', 'kiln', b.middle('coal'), [coal.length ? { lines: coal } : 0], b.H, 'glass');
-  b.recipe('kiln2', 'glass');
-  if (b.ids.kiln2) b.source('sand1', 'sand_collector', b.centre('kiln2'), b.ids.kiln2);
+  b.plan('sand_collector', 'router');
+  const coal = b.laid('coal'), tiles = b.lines.coal ?? [];
+  const along = (f: number): [number, number] => { const t = tiles[Math.min(tiles.length - 1, Math.floor(tiles.length * f))]; return t ? [t[0], t[1]] : b.middle('coal'); };
+  const tries = tiles.length ? [0.5, 0.25, 0.75, 0.1, 0.9].map(along) : [b.middle('coal')];
+  for (const [k, near] of tries.entries()) {
+    const cp = checkpoint(b.sim), skips = b.report.skipped.length;
+    b.fed('kiln2', 'kiln', near, [coal.length ? { lines: coal } : 0], b.H, 'glass', k === 0);
+    b.recipe('kiln2', 'glass');
+    // Its sand from the far side, away from the Heart: the post's glass and ore lines come in on the near side.
+    if (b.ids.kiln2) b.source('sand1', 'sand_collector', b.away('kiln2', 3), b.ids.kiln2);
+    if ((b.ids.kiln2 && b.ids.sand1) || k === tries.length - 1) break; // the last try stands as it is, its skips reported
+    if (b.ids.kiln2) rollback(b.sim, cp);
+    b.report.skipped.length = skips;
+    for (const r of ['kiln2', 'sand1']) delete b.ids[r];
+    for (const l of ['glass', 'kiln2.in0', 'sand1']) delete b.lines[l];
+  }
   if (b.ids.sand1) b.source('sand2', 'sand_collector', b.centre('sand1'), 'sand1');
   b.wire('sand1', 'sand2');
   b.until('glassworks');
 }
 
 /**
- * 10 · Survey Data: every plan left, then the research lab's (the gate, D71); a data collector by
- * the plate line (power alone: it stands anywhere; its wire shares a pole), the lab by it, fed by
- * a ribbon from it; the Face Cutter's research starts (its tokens paid by the minute, D68; D87: Mechanics comes after it).
+ * 6 · « Le Cœur grandit » (D101): the Core to level 2 by the player's own command (`hearthUp`), its
+ * plates, glass and copper wire from the Heart (logged grants where short): it mounts the data
+ * outlet the lab runs on, and grows the Core's power.
+ */
+function coreUpgrade(b: Builder): void {
+  const sim = b.sim, up = BAL.hearthUpgrades[sim.hearthLevel - 1];
+  if (sim.hearthLevel < 2 && up) {
+    b.afford(up.cost);
+    if (!sim.upgradeHearth().ok) b.skip('hearth:2');
+  }
+  b.until('core_upgrade', 1);
+}
+
+/**
+ * 7 · Survey Data: every plan left (the Face Cutter's among them, D101), then the research lab's
+ * (the gate, D71); the lab by the Core's data outlet, fed by a ribbon from it — no data collector:
+ * it comes with « Traitement des données » (the grown level) —; Mechanics starts (no tokens before
+ * the servers, D105).
  */
 function fieldJournal(b: Builder): void {
   b.plan(...PLAN_IDS.filter((id) => planDef(id)!.lane !== 'gate'), 'observatory');
-  b.put('collector', 'data_collector', b.middle('plates'), { r: 10 });
-  b.wireByPole('collector');
   if (!dataLine(b) && !(b.junctions() && dataLine(b))) b.skip('observatory');
   b.wireByPole('observatory');
-  if (b.ids.observatory && !b.sim.startResearch('ex_quartz').ok) b.skip('research:ex_quartz');
+  if (b.ids.observatory && !b.sim.startResearch('tr1').ok) b.skip('research:tr1');
   b.until('field_journal');
 }
 
-/** The data line: the lab placed near the collector, a ribbon from the collector's outlet into it. */
+/**
+ * The tutorial lab's next project once Mechanics is learnt (D107: a minute's research), as a player
+ * goes on: the level opens with research under way, on the Core's data.
+ */
+function labNext(b: Builder): void {
+  const sim = b.sim, lab = b.ids.observatory;
+  if (!lab || sim.projects.some((p) => p.lab === lab)) return;
+  if (!TUTORIAL_NEXT.some((id) => sim.researchBlock(id) === null && sim.startResearch(id, lab).ok)) b.skip('research:next');
+}
+/** What the tutorial lab starts next, the first that can (first-depth Tier 1 nodes). */
+const TUTORIAL_NEXT = ['en_pitch', 'an_data', 'xp_swift', 'dn3', 'ex_fastdrill', 'cm_post2'];
+
+/**
+ * The data line: the lab east of the Heart, a ribbon from the Core's data outlet (its south-east
+ * corner, D86) into it — east rather than south, where the wire mill's line comes in and the quartz
+ * workshop branches off it later (`quartzWorks`).
+ */
 function dataLine(b: Builder): boolean {
-  const sim = b.sim, col = b.ids.collector;
-  if (!col) return false;
+  const sim = b.sim, h = sim.ents.get(sim.hearthId);
+  if (!h) return false;
+  const [w] = footprint(h.def, h.rot);
   b.affordAll(['observatory', 1], b.spare);
-  const o = placeFed(sim, 'observatory', b.centre('collector'), [col], null, { r: 10 });
+  const o = placeFed(sim, 'observatory', [h.x + w + 4, h.y + 2], [sim.hearthId], null, { r: 10 });
   if (!o) return false;
   b.ids.observatory = o.id;
   if (o.lines[0]) b.lines['data.lab'] = o.lines[0];
   return true;
 }
 
-/** Where a ribbon led into the post goes: onto the tail of the stub laid into its entrance (`postAtHeart`), as `branch` wants its goals. */
+/**
+ * Where a ribbon led into the post goes: onto the tail of the stub laid into its entrance
+ * (`postAtHeart`), or into its outer tile from either side (D104: on a crowded west side the tail
+ * alone can stand boxed in), as `branch` wants its goals.
+ */
 function stubGoal(b: Builder): Map<number, Rot> | undefined {
   const stub = b.lines['post.stub'];
-  return stub ? new Map([[tileIndex(stub[0]![0] - DX[stub[0]![2]]!, stub[0]![1] - DY[stub[0]![2]]!), stub[0]![2]]]) : undefined;
+  if (!stub) return undefined;
+  const goals = new Map([[tileIndex(stub[0]![0] - DX[stub[0]![2]]!, stub[0]![1] - DY[stub[0]![2]]!), stub[0]![2]]]);
+  for (const [t, d] of sideGoals(b.sim, stub)) if (!goals.has(t)) goals.set(t, d);
+  return goals;
 }
 
 /**
- * 7 · the trade post against the Heart (placed at the start), wired, and glass led into its
- * entrance by a router on the glass line (it sells whatever comes in, D64): the router shares the
- * glass between the Heart and the post, and the post's sales keep the base in ocelles (glass sells
- * well; the iron ore line joins it later, `postLine`).
+ * 5 · « La Criée » (D101): the Crier both ways. Glass sold — the trade post against the Heart (placed
+ * at the start), wired, glass led into its entrance by a router on the glass line (it sells whatever
+ * comes in, D64; the iron ore line joins it later, `postLine`) — and copper bought and used: the
+ * wire mill toward the tired vein, its own copper drill, and CrierBelt's starter contract, its ore led
+ * from the post's exit into the side of the drill's line into the mill (`starterLine`).
  */
-function crierCalls(b: Builder): void {
+function crierTrade(b: Builder): void {
+  postGlass(b);
+  tiredVein(b);
+  starterLine(b);
+  b.until('crier_trade', 10); // the router shares the glass three ways and the post may stand far off: a slow first lift
+  starterDone(b);
+}
+
+/** The trade post wired, and glass led into its entrance by a router on the glass line. */
+function postGlass(b: Builder): void {
   b.plan('trade_post');
   if (!b.ids.post) postAtHeart(b);
   b.wire('post');
@@ -619,32 +767,62 @@ function crierCalls(b: Builder): void {
   let r = post && glass.length ? branch(b.sim, glass, post, -1, stubGoal(b)) : null;
   if (!r && post && glass.length && b.junctions()) { b.affordAll(['router', 1], b.spare); r = branch(b.sim, glass, post, -1, stubGoal(b)); }
   if (r) b.lines['post.glass'] = [...r.path, ...(b.lines['post.stub'] ?? [])]; else b.skip('line:post.glass');
-  b.until('crier_calls', 10); // the router shares the glass three ways and the post may stand far off: a slow first lift
 }
 
-/** 8 · the tired copper vein: a wire mill toward it, its wire into the Heart; a copper drill's line into it. */
+/** The tired copper vein: a wire mill toward it, its wire into the Heart; a copper drill's line into it. */
 function tiredVein(b: Builder): void {
   b.plan('wire_mill');
   b.fed('mill', 'wire_mill', b.mid(b.deposit('copper_ore')), [], b.H, 'wire');
   if (b.ids.mill) b.source('copper', 'drill', b.centre('mill'), b.ids.mill, { item: 'copper_ore', r: 30 });
   b.recipe('mill', 'copper_wire');
   b.wire('copper', 'mill');
-  b.until('tired_vein');
 }
 
-/** 9 · a standing import order of copper ore (up to twice this minute's ask). */
-function firstPurchase(b: Builder): void {
-  const post = b.ids.post;
-  const ask = b.sim.prices.ask[itemIdx('copper_ore')]!;
-  const order = post ? b.sim.addImport(post, 'copper_ore', 10, 2 * ask) : null;
-  if (typeof order !== 'number') b.skip('import:copper_ore');
-  b.until('first_purchase');
-  // The quest wants a first purchase, not a standing drain: the copper drill feeds the wire mill,
-  // and imported ore would only pile up in the Heart while the order eats the money.
-  if (typeof order === 'number') b.sim.cancelImport(order);
+/**
+ * The starter contract signed (D101: `BAL.starter`, fixed price, off the market) and its ore led
+ * from the post's one exit into the side of the copper drill's line, so the wire mill uses what the
+ * base bought (owner, 2026-10-16: « Je n'avais même pas relié mon tradepost »).
+ */
+function starterLine(b: Builder): void {
+  const post = b.ids.post, copper = b.lines.copper;
+  if (!post || !copper) { b.skip('starter'); return; }
+  if (typeof b.sim.takeStarter(post) !== 'number') { b.skip('starter'); return; }
+  b.crossings();
+  let path = join(b.sim, post, copper);
+  if (!path && b.junctions()) { b.crossings(); path = join(b.sim, post, copper); }
+  if (path) b.lines['post.starter'] = path; else b.skip('line:post.starter');
 }
 
-/** 10 · a survey beacon past the Crown (the quest's own reach), on the nearest free tile out there. */
+/**
+ * Once the contract is delivered whole and its last ore has left the container: the fulfilled order
+ * stopped, its ribbon taken up, so the post's exit is free for what the base buys later (`tradeLine`). A post's one exit hands
+ * out all its cargo in turn (D62): plates led into the mill's line would jam it.
+ */
+function starterDone(b: Builder): void {
+  const sim = b.sim, post = b.ids.post, line = b.lines['post.starter'];
+  if (!post || !line) return;
+  const ore = itemIdx(BAL.starter.item);
+  const pending = (): boolean => sim.trade.orders.some((o) => (o.starter ?? 0) > 0)
+    || sim.trade.inflight.some((s) => s.post === post && s.item === ore) || (sim.stores.get(post)?.[ore] ?? 0) >= 1000;
+  for (let t = 0; t < 12 * EPOCH && pending(); t += 60) b.run(60);
+  // Fulfilled, the contract stands stopped and asks (D101): « Arrêter », the notice's default.
+  const done = sim.trade.orders.find((o) => o.starter !== undefined);
+  if (done) sim.cancelImport(done.id);
+  // Its ribbons go; a junction where it crossed another line goes back to that line's ribbon.
+  const ribbon = buildingIdx('ribbon'), crossing = buildingIdx('crossing');
+  for (const [x, y] of line) {
+    const e = sim.entityAt(x, y);
+    if (!e || (e.def !== ribbon && e.def !== crossing)) continue;
+    const other = e.def === crossing ? Object.entries(b.lines).find(([r, l]) => r !== 'post.starter' && l.some(([lx, ly]) => lx === x && ly === y)) : undefined;
+    const rot = other?.[1].find(([lx, ly]) => lx === x && ly === y)?.[2];
+    sim.remove(x, y);
+    if (rot !== undefined) sim.placeBelts('ribbon', [[x, y, rot]]);
+  }
+  delete b.lines['post.starter'];
+  b.run(EPOCH); // the cargo leaves the post at the next boundary: its entrance takes the ore again
+}
+
+/** A survey beacon past the Crown (the old « Au-delà de la Couronne »: the land beyond seen), on the nearest free tile out there. */
 function beyondCrown(b: Builder): void {
   b.plan('beacon');
   b.affordDef('beacon');
@@ -661,18 +839,23 @@ function beyondCrown(b: Builder): void {
   const id = at ? sim.place('beacon', at[0], at[1], 0).id : undefined;
   if (id) b.ids.beacon = id;
   else b.skip('beacon');
-  b.until('beyond_crown');
 }
 
-/** After the tutorial: two more wind turbines and the coal generator (quest 4's kit), fed by its own coal drill. */
-function morePower(b: Builder): void {
-  b.plan('brazier');
-  const crown = b.crown();
-  b.put('wind3', 'wind_flower', crown, { r: 9, onRock: true });
-  b.put('wind4', 'wind_flower', crown, { r: 9, onRock: true });
-  b.wire('wind3', 'wind4');
+/**
+ * Two wind turbines on the Crown's windiest spot and next to it (D95: the Sough is read off the land,
+ * not guessed): « Tenir la nuit »'s answer (D101), planted there since; `morePower` once did it.
+ */
+function crownWind(b: Builder): void {
+  const crown = b.windAnchor();
+  if (!b.windyWired('wind3', 'wind_flower', crown, 6)) { b.put('wind3', 'wind_flower', b.crown(), { r: 9, onRock: true }); b.wire('wind3'); }
+  if (!b.windyWired('wind4', 'wind_flower', crown, 8)) { b.put('wind4', 'wind_flower', b.crown(), { r: 9, onRock: true }); b.wire('wind4'); }
   // A turbine whose line found no way up from the grid of the time: again, now the other's poles stand on the Crown.
   if (b.ids.wind3 && !b.sim.linksOf(b.ids.wind3).length) { b.unskip('wire:wind3'); b.wire('wind3'); }
+}
+
+/** After the tutorial: the coal generator (« Tenir la nuit »'s kit), fed by its own coal drill. */
+function morePower(b: Builder): void {
+  b.plan('brazier');
   // The generator only with a coal drill of its own (the deposit is small: sharing the smelters' coal would starve them).
   b.optional(() => {
     if (!b.fed('generator', 'brazier', b.mid(b.deposit('coal')), [], null)) return;
@@ -689,10 +872,11 @@ function morePower(b: Builder): void {
 /** Research nodes the grown base learns for real, in order, after Mechanics. */
 const GROWN_RESEARCH = ['en_pitch', 'xp_swift'];
 /**
- * What its lab runs next when it opens, the first that can start: a Tier 1 node two deep (60 Survey
- * Data over 15 minutes), which two data collectors (2 a minute each) keep running without a wait.
+ * What its lab runs next when it opens, the first that can start: a Tier 1 node two deep (20 Survey
+ * Data over 3 minutes since D107), which the Core (3 a minute with Data Processing) and its data
+ * collector (2) keep running without a wait; then a first-depth one.
  */
-const GROWN_NEXT = ['en2', 'xp_bigsilo', 'ex_sifter', 'dn3', 'an_data', 'cm2'];
+const GROWN_NEXT = ['en2', 'xp_bigsilo', 'cm_floor', 'dn_esmelt', 'an_relay', 'ex_fastdrill', 'cm_post2', 'dn3'];
 /** Game minutes each may take before it is granted instead. */
 const RESEARCH_WAIT_MIN = 40;
 
@@ -750,6 +934,23 @@ function postLine(b: Builder): void {
   if (r) b.lines['post.in'] = [...r.path, ...(glass ?? stub ?? [])]; else b.skip('line:post');
 }
 
+/**
+ * The smelter's own iron drill (D101: a drill pair a smelter) cuts more than the smelter takes (11–18
+ * ore a minute against 10, D97): an overflow gate on its line sends the rest into the Heart, as a
+ * player does once the line backs up — else the drill stands still for minutes on end (D85).
+ */
+function ironSurplus(b: Builder): void {
+  const line = b.lines.iron2;
+  if (!line) return;
+  b.affordAll(['router', 1], b.spare);
+  let r = branch(b.sim, [line], b.H, -1);
+  if (!r && b.junctions()) { b.affordAll(['router', 1], b.spare); r = branch(b.sim, [line], b.H, -1); }
+  if (!r) { b.skip('line:iron2.heart'); return; }
+  b.lines['iron2.heart'] = r.path;
+  // The smelter first, the Heart only what it leaves: an overflow gate where the router went down.
+  serveFirst(b, 'iron2.heart', 'overflow_gate');
+}
+
 /** Does the ribbon on tile (x, y) run, ribbon after ribbon, into building `to`? */
 function leadsTo(sim: Sim, x: number, y: number, to: number): boolean {
   sim.ensureCompiled();
@@ -769,11 +970,13 @@ function leadsTo(sim: Sim, x: number, y: number, to: number): boolean {
 const PLATES_PER_MIN = 1;
 
 /**
- * Wind turbines on the Crown (D44) until the night is covered — the turbines at their mean wind,
- * fuel generators at what they gave, the Heart's steady core (its sun is a day's bonus) — against
- * the grid's draw: what the base drew over a minute, or most of what its
- * buildings are rated for (a starved machine draws little and would hide the need). A base
- * left short runs every machine slow and starves its lines. At most `cap` turbines.
+ * Wind turbines on the Crown's windiest spots (D95) until the grid holds through the next two
+ * days — the weather is the world clock's, so the turbines' and the sun's output are known epoch by
+ * epoch; fuel generators at what they gave, the Heart's steady core — against the grid's draw: what
+ * the base drew over a minute, or most of what its buildings are rated for (a starved machine draws
+ * little and would hide the need). A base left short runs every machine slow and starves its lines.
+ * At most `cap` turbines; each next to the last one placed while that stays windy, else at the
+ * Crown's windiest spot left.
  */
 function powerUp(b: Builder, cap = 12, margin = 1000, prefix = 'power'): void {
   const sim = b.sim;
@@ -788,42 +991,61 @@ function powerUp(b: Builder, cap = 12, margin = 1000, prefix = 'power'): void {
   for (const e of sim.ents.map.values()) if (sim.graph.netOfEnt.get(e.id) === grid()) rated += buildingDef(e.def).kw ?? 0;
   const need = Math.floor((Math.max(drew, Math.floor((rated * 85) / 100)) * margin) / 1000);
   sim.ensureCompiled();
-  let night = fuel;
-  for (const p of sim.graph.nets[grid()]?.producers ?? []) {
-    if (p.kind === 'hearth') night += p.base ?? 0;
-    else if (p.kind === 'wind') night += Math.floor((p.kw * p.local) / PERMILLE);
-    else if (p.kind === 'geo') night += p.kw;
-  }
+  // The next two days' weather, and what the grid's producers give in each epoch of it.
+  const ws = Array.from({ length: 2 * DAY_EPOCHS }, (_, k) => weatherAt(sim.absEpoch() + k, sim.worldSeed, sim.mods));
+  const supply = ws.map(() => fuel);
+  for (const p of sim.graph.nets[grid()]?.producers ?? []) ws.forEach((w, k) => { supply[k] = supply[k]! + producerKw(p, w); });
+  const low = (): number => Math.min(...supply);
   // The best turbine the claim can build (the Pitch-Control Turbine once researched, D70). A turbine
   // out of the zone comes by kite: count what it will give from where it stands.
   const turbine = sim.unlocked(buildingDef(buildingIdx('pitch_turbine')).unlock) ? 'pitch_turbine' : 'wind_flower';
-  const kw = Math.floor((buildingDef(buildingIdx(turbine)).gen!.kw * sim.mods.windOut * sim.mods.genOut) / 1e6);
-  for (let k = 0; k < cap && night < need; k++) {
+  const g = buildingDef(buildingIdx(turbine)).gen!;
+  const kw = Math.floor((g.kw * sim.mods.windOut * sim.mods.genOut) / 1e6);
+  let near = b.windAnchor(turbine);
+  const R = (sim.grid.source.crownOuter ?? CIRQUE.crownOuter) + 1;
+  for (let k = 0; k < cap && low() < need; k++) {
     const role = `${prefix}${k + 1}`;
-    // The quiet side's slopes first (as the earlier levels always had them), then round the ridge.
-    const id = k < 12 ? b.put(role, turbine, b.crown(k >> 2), { r: 9, onRock: true }) : b.optional(() => b.put(role, turbine, b.ridge(k - 12), { r: 4, onRock: true }));
-    if (!id) { if (k < 12) return; continue; }
-    b.wire(role);
-    night += Math.floor((kw * windSite(sim.grid, sim.ents.get(id)!).permille) / PERMILLE);
+    const id = b.windyWired(role, turbine, near, 6, WINDY) || b.windyWired(role, turbine, b.windAnchor(turbine), R, WINDY);
+    if (!id) break; // the Crown's windy spots all taken: what stands must do
+    const e = sim.ents.get(id)!, local = windSite(sim.grid, sim.worldSeed, e);
+    near = [e.x, e.y];
+    ws.forEach((w, j) => { supply[j] = supply[j]! + windKw(kw, g.wind!, local, w); });
   }
   // The kites land (turbines off the claim's land come by kite; the late base's all stand on it).
   if (cap <= 12 || [...sim.ents.map.values()].some((e) => e.builtAt > sim.tick)) b.run(EPOCH);
 }
 
-/** Every plan; a second coal drill on the coal line; Mechanics and a few nodes learnt for real (data from the collector, tokens by the minute); a gear press and a silo off the plate and glass lines. */
+/** A debug base's turbines stand where the exposure is at least this (‰, D95): never in a lee. */
+const WINDY = 1200;
+
+/** Every plan; a second coal drill on the coal line; Mechanics, Data Processing and a few nodes learnt for real (data from the Core, then its collector too); a gear press and a silo off the plate and glass lines. */
 function grown(b: Builder): void {
   const sim = b.sim;
+  // « Les pièces de la Synthèse » (D90), the quest the tutorial level leaves current: completed by force —
+  // its circuit workshop and press take lines off the tutorial level's crowded core, which not every
+  // land leaves room to lay by script (quests.test.ts plays it with real commands).
+  b.until('synth_parts', 0);
   learnPlans(sim);
   // More coal for both smelters, where the deposit has room: a drill joining the coal line.
   b.optional(() => { if (b.source('coal2', 'drill', b.centre('coal'), 'coal', { item: 'coal', r: 30 })) b.wire('coal2'); });
   // Research, one node after another in the observatory, for real: time runs until the node is
   // learnt; past the wait it is granted (reported).
   const learn = (id: string): void => {
-    if (!sim.done.has(id) && !sim.projects.some((p) => p.id === id) && !sim.startResearch(id).ok) { b.grantNode(id); return; }
+    const begun = (): boolean => sim.done.has(id) || sim.projects.some((p) => p.id === id) || sim.startResearch(id).ok;
+    // One lab, one project: what it runs already (the tutorial level's next node) finishes first.
+    for (let t = 0; t < RESEARCH_WAIT_MIN * EPOCH && sim.projects.length && !begun(); t += EPOCH) b.run(EPOCH);
+    if (!begun()) { b.grantNode(id); return; }
     for (let t = 0; t < RESEARCH_WAIT_MIN * EPOCH && !sim.done.has(id); t += EPOCH) b.run(EPOCH);
     if (!sim.done.has(id)) b.grantNode(id);
   };
   learn('tr1');
+  // « Traitement des données » (D101: the data collector comes with it, no longer with the lab): its
+  // collector into one of the lab's free inputs, else joining the Core's data line, and the lab
+  // never waits on data (D85).
+  learn('an_data');
+  const lab0 = b.ids.observatory;
+  if (lab0 && (b.optional(() => b.source('collector', 'data_collector', b.centre('observatory'), lab0, { r: 10 }))
+    || (b.lines['data.lab'] && b.optional(() => b.source('collector', 'data_collector', b.centre('observatory'), 'data.lab', { r: 10 }))))) b.wireByPole('collector');
   for (const id of GROWN_RESEARCH) learn(id);
   // Gears (Mechanics' recipe, the press) off a plate line, into the Heart; a silo off a glass line (a store to draw from: unloaders, D34).
   const plates = b.laid('plates'), glass = b.laid('glass');
@@ -837,8 +1059,7 @@ function grown(b: Builder): void {
   b.optional(() => retireGenerator(b));
   // Every cirque deposit covered as far as its lines carry (D82, D85).
   mineCirque(b);
-  // A second data collector on the lab's line, and the lab on its next node: a grown base's lab never stands idle (D85).
-  if (b.lines['data.lab'] && b.optional(() => b.source('collector2', 'data_collector', b.centre('collector'), 'data.lab'))) b.wireByPole('collector2');
+  // The lab on its next node: a grown base's lab never stands idle (D85).
   const lab = b.ids.observatory;
   if (lab && !sim.projects.some((p) => p.lab === lab) && !GROWN_NEXT.some((id) => sim.researchBlock(id) === null && sim.startResearch(id, lab).ok)) b.skip('research:next');
   b.run(2 * EPOCH);
@@ -851,11 +1072,13 @@ function grown(b: Builder): void {
  * Lore); Extraction through Excavation to Deep Fill, and the Deep Bore (Drilling) its far mines need; Machines through both specialities (the etcher
  * makes its servomotors, the assembly tower stands ready); Energy through Power Plants to the
  * Sunheart; Expansion through Claims to the Far Claim (its works stand on parcels far from the
- * claim's land); Commerce to the second wharf; Analytics to the servers (D68–D70). 44 of the tree's
- * 77 nodes, two more under way on the labs' own data files.
+ * claim's land); Commerce to the Standing Orders (D107: its second post with « Second comptoir »); Analytics to the servers (D68–D70). 44 of the tree's
+ * 77 nodes, one more under way on the first lab's data files (D107: the Commerce path reaches the
+ * Wider Wharf, the Fabrique's post level 2, through the Compute Plan, so the Fabrique's lab — every
+ * node it could run on its data learnt — waits for the player's choice).
  */
 const LATE_RESEARCH = ['tr2', 'tr5', 'tr7', 'tr8', 'ex5', 'ex8', 'xp_far', 'dn_etcher', 'dn8', 'enK', 'cm3', 'an_servers'];
-/** What its first lab researches for real, on the tutorial's collector's data (a depth-4 node). */
+/** What its first lab researches for real, on the Core's and its collector's data (a depth-4 node). */
 const SURVEY_PROJECT = 'an_queue';
 /** What the Fabrique's lab researches for real, on its own collector's data: a depth-4 node. */
 const ADVANCED_PROJECT = 'cm_plan';
@@ -910,6 +1133,25 @@ function late(b: Builder): void {
   if (far) { b.landAround(far.at, 10); b.optional(() => overCrown(b, far)); }
   b.optional(() => swiftPlates(b));
   advanced(b);
+  expertises(b);
+}
+
+/**
+ * The expertises the late base holds (D93), in this order of preference among those its feats have
+ * earned: Estate (its parcels: land cheaper), Methods (its machines: Machines research faster), then
+ * research ones — none changes what its lines carry, so D85's checks hold as before.
+ */
+const LATE_EXPERTISES = ['estate', 'methods', 'power_eng', 'haulage', 'trading'];
+
+/** Choose two earned expertises at the Archive (commands); a level short of two is reported. */
+function expertises(b: Builder): void {
+  const sim = b.sim;
+  // The ranks as the last minute's boundary read them: no time run for this (the build's CPU budget).
+  const earned = LATE_EXPERTISES.filter((id) => (sim.expertise.ranks.get(id) ?? 0) > 0);
+  for (let slot = 0; slot < sim.expertise.slots.length; slot++) {
+    const id = earned[slot];
+    if (!id || sim.chooseExpertise(slot, id)) b.skip(`expertise:${slot}`);
+  }
 }
 
 /**
@@ -929,12 +1171,13 @@ function advanced(b: Builder): void {
   b.optional(() => coalBore(b));
   // Servers: the research's tokens out of the base's own power (D68).
   b.optional(() => { for (let k = 1; k <= LATE_SERVERS; k++) { b.affordDef('server'); b.put(`server${k}`, 'server', b.quietSide(8), { r: 14 }); b.wire(`server${k}`); } });
-  // The first lab's next project, on its collector's data files.
+  // The first lab's next project, on the Core's and its collector's data files.
   if (b.ids.observatory && !sim.startResearch(SURVEY_PROJECT, b.ids.observatory).ok) b.skip(`research:${SURVEY_PROJECT}`);
   // The cirque's plates are short (its ore shared with the Heart and the post): the plate smelter
   // served first off the ore lines. The coal is shared evenly by the two smelters (the router
   // stays): on a land with one coal drill, the glass smelter served last stood cold.
-  serveFirst(b, 'kiln1.in0');
+  // (Since D101 the plate smelter has its own drill, served first by its overflow gate: `ironSurplus`.)
+  if (b.lines['kiln1.in0']) serveFirst(b, 'kiln1.in0');
   b.optional(() => farCopper(b));
   // The cirque short of coal (one drill left on its deposit): coal flown home from a pit past the Crown.
   coalPit(b, sim.grid.source.crownOuter ?? CIRQUE.crownOuter);
@@ -942,17 +1185,39 @@ function advanced(b: Builder): void {
   if (b.ids.dockW) {
     if (pots) { flyRoute(b, 'dockT', 'dockW', 'ceramic', 1); b.optional(() => copperHome(b)); }
     if (b.ids.dockE) flyRoute(b, 'dockE', 'dockW', 'embersalt', 1);
-    if (b.ids.observatory2 && !sim.startResearch(ADVANCED_PROJECT, b.ids.observatory2).ok) b.skip(`research:${ADVANCED_PROJECT}`);
+    // The Fabrique's lab on its own node where one is left on its data (none since D107: Tier 3 wants atlases).
+    if (b.ids.observatory2 && !sim.done.has(ADVANCED_PROJECT) && !sim.startResearch(ADVANCED_PROJECT, b.ids.observatory2).ok) b.skip(`research:${ADVANCED_PROJECT}`);
   }
   // A geothermal plant where the land has a vent: power day and night for the far works.
   b.optional(() => geothermal(b));
   // The longest plain line left, upgraded to express ribbons.
   b.optional(() => expressLine(b));
+  // Its lines out in the open desert under glass (D103), before the kites are waited for.
+  b.optional(() => glaze(b));
   // The land bought for the other works paid, the purse topped up again.
   if (sim.credits < LATE_PURSE) sim.grantCredits(LATE_PURSE - sim.credits);
   waitKites(b);
   // The base opens: the potteries dig.
   for (const f of b.later.splice(0)) f();
+}
+
+/**
+ * The late base's lines out in the open desert under glass (D103): every plain ribbon tile the
+ * Gleaners reach becomes a glazed ribbon (as fast; its glass granted where short — off the claim's
+ * land a ribbon costs thrice, and a kite brings it). Its swift and traction pieces out there stay as
+ * they are: a few things still go by night, and the morning report has something to say.
+ */
+function glaze(b: Builder): void {
+  const sim = b.sim;
+  sim.ensureCompiled();
+  const plain = buildingIdx('ribbon');
+  const tiles = [...sim.graph.glean.exposed].filter((t) => sim.ents.get(sim.grid.occ[t]!)?.def === plain);
+  for (const t of tiles) {
+    const e = sim.ents.get(sim.grid.occ[t]!)!;
+    const chk = sim.canPlace('glazed_ribbon', e.x, e.y, e.rot);
+    b.afford(chk.cost.map((c) => [ITEM_IDS[c.item]!, Math.ceil(c.mu / 1000)] as const));
+    if (!sim.place('glazed_ribbon', e.x, e.y, e.rot).ok) b.skip(`glaze:${e.x},${e.y}`);
+  }
 }
 
 /**
@@ -973,11 +1238,13 @@ function farCopper(b: Builder): boolean {
   b.affordAll(['router', 1], b.spare);
   const r = branch(sim, [climb], mill);
   if (!r) {
-    // Put the thin drill and its line back as they were.
+    // Put the thin drill and its line back as they were, under its role and on the grid again
+    // (D104's layout made this path run on land 2: it stood unwired, idle).
     b.affordAll(['drill', 1]);
     b.afford([['iron_plate', thin.length]]);
-    sim.place('drill', cx, cy, cr);
+    const back = sim.place('drill', cx, cy, cr);
     sim.placeBelts('ribbon', thin);
+    if (back.ok) { b.ids.copper = back.id!; b.wire('copper'); } else delete b.ids.copper;
     b.skip('farCopper');
     return false;
   }
@@ -1197,25 +1464,36 @@ function excavate(b: Builder): void {
   // Heart — or, the Heart's sides all taken by the cirque's lines, joining a line that takes
   // anything: the trade post's entrance line (stone sells), the glass line (the Heart, the silo).
   const intos: Array<number | string> = [b.H, ...['post.in', 'glass'].filter((r) => b.lines[r])];
+  // The rock within its reach it may dig (as the jobs measure it: from its footprint's edge, D54;
+  // free rock — a turbine or a pole may stand on some — and no vein face, D87).
+  const reachable = (id: number): number[] => {
+    const e = sim.ents.get(id)!;
+    const [w, h] = footprint(e.def, e.rot);
+    const reach = BAL.digReach, tiles: number[] = [];
+    for (let y = e.y - reach; y < e.y + h + reach; y++) {
+      for (let x = e.x - reach; x < e.x + w + reach; x++) {
+        if (isRock(sim.grid.terrain(x, y)) && inReach(e, x, y) && sim.grid.occ[tileIndex(x, y)] === 0 && !isFaceOre(sim.grid.ore(x, y))) tiles.push(tileIndex(x, y));
+      }
+    }
+    return tiles;
+  };
   let placed = false;
   for (const [rx, ry] of rocks) {
     if (tried.length >= 8) break;
     if (tried.some(([tx, ty]) => (tx - rx) * (tx - rx) + (ty - ry) * (ty - ry) < 36)) continue;
     tried.push([rx, ry]);
     const near = toward([rx, ry], b.heart, 3);
-    if (intos.some((into) => b.optional(() => b.source('excavator', 'excavator', near, into, { r: 4 })))) { placed = true; break; }
+    const cp = checkpoint(sim);
+    if (!intos.some((into) => b.optional(() => b.source('excavator', 'excavator', near, into, { r: 4 })))) continue;
+    if (reachable(b.ids.excavator!).length) { placed = true; break; }
+    // The spot found leaves no free rock in its reach (D104's obstacles, turbines on the rock):
+    // taken back up with its line, and the next rock tried.
+    rollback(sim, cp);
+    delete b.ids.excavator;
+    delete b.lines.excavator;
   }
   if (!placed) { b.skip('excavator'); return; }
   b.wire('excavator');
-  // The rock within its reach marked (as the jobs measure it: from its footprint's edge, D54).
-  const e = sim.ents.get(b.ids.excavator!)!;
-  const [w, h] = footprint(e.def, e.rot);
-  const reach = BAL.digReach;
-  const tiles: number[] = [];
-  for (let y = e.y - reach; y < e.y + h + reach; y++) {
-    for (let x = e.x - reach; x < e.x + w + reach; x++) {
-      if (isRock(sim.grid.terrain(x, y)) && inReach(e, x, y)) tiles.push(tileIndex(x, y));
-    }
-  }
-  if (!sim.designate(tiles, true)) b.skip('designate');
+  // The rock within its reach marked.
+  if (!sim.designate(reachable(b.ids.excavator!), true)) b.skip('designate');
 }

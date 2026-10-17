@@ -28,6 +28,20 @@
   --f-body: 'Atkinson Hyperlegible Next Variable', ui-sans-serif, system-ui, sans-serif;
 
   --ui-scale: 1;
+  /* The responsive layout (D96): the zoom of #ui and #screens (the UI scale × the window's fit) and
+     where the HUD and the build bar end, set by app/layout.ts in #ui's own px; the edge gap; the
+     safe area (a notch, a home bar) in the same zoomed px. Breakpoints: responsive.css. */
+  --ui-zoom: 1;
+  --hud-b: 104px;
+  --hud-rb: 58px;
+  --bar-h: 0px;
+  --win-w: 100vw;
+  --win-h: 100vh;
+  --gap: 12px;
+  --safe-t: calc(env(safe-area-inset-top, 0px) / var(--ui-zoom));
+  --safe-r: calc(env(safe-area-inset-right, 0px) / var(--ui-zoom));
+  --safe-b: calc(env(safe-area-inset-bottom, 0px) / var(--ui-zoom));
+  --safe-l: calc(env(safe-area-inset-left, 0px) / var(--ui-zoom));
   --radius-ink: 14px 9px 16px 10px / 10px 15px 9px 14px;
   --shadow-ink: 3px 4px 0 var(--c-ink);
 }
@@ -45,9 +59,14 @@ body {
 }
 
 #stage, #stage canvas { position: fixed; inset: 0; display: block; }
-#stage canvas { width: 100vw; height: 100vh; touch-action: none; outline: none; }
+#stage canvas { width: 100%; height: 100%; touch-action: none; outline: none; }
 #ui { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
 #ui > * { pointer-events: auto; }
+/* Touch (D96): a pinch or a double tap on the interface never zooms the page (the canvas has its own pinch). */
+/* Touch (D96): a pinch or a double tap on the interface never zooms the page (the canvas has its
+   own pinch); scrolling a panel still works. Zero specificity: a part with its own gestures (the
+   tech tree's view, the orbit) keeps its `touch-action: none`. */
+:where(#ui, #screens), :where(#ui, #screens) :where(*) { touch-action: pan-x pan-y; -webkit-tap-highlight-color: transparent; }
 #screens { position: fixed; inset: 0; pointer-events: none; z-index: 20; }
 #screens > [data-open] { pointer-events: auto; }
 #tooltip { position: fixed; z-index: 40; pointer-events: none; }

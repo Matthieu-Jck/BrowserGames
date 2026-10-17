@@ -8,13 +8,14 @@ export const BAL = {
 
   // ── hearth & storage ─────────────────────────────────────────────────────
   hearthCap: [5000, 10000, 20000, 40000], // per item, by Hearth level 1..4
-  // The Hearth's built-in solar panel at full sun (× SOLAR‰ and the solar research, like a sun
-  // bulb; D25): two drills and a wire mill by day — wind, coal generators and accumulators earn their place
-  // from the first evening.
-  hearthSolarKw: 240,
-  // …and its isotope core (× genOut): a steady trickle day and night, enough for one drill.
-  // The world clock is shared, so a base may be founded at night: it must never start dead.
-  hearthCoreKw: 90,
+  // The Hearth's power, by level 1..4 (D101; owner, 2026-10-16: « the solar panels from the core
+  // should do a less important part of its electricity production »): its isotope core gives the
+  // most, day and night (× genOut) — about 70 % of what it gives at noon —, its built-in solar panel
+  // the rest at full sun (× SOLAR‰ and the solar research, like a sun bulb; D25). Level 1: 210 + 90 kW,
+  // two drills at night, three by day: the first night asks for a turbine (« Tenir la nuit »), it
+  // never cuts the base dead. The world clock is shared, so a base may be founded at night.
+  hearthSolarKw: [90, 130, 180, 240],
+  hearthCoreKw: [210, 300, 420, 560],
   hearthPortPerMin: 120, // each unloader port
   reservoirMargin: 20, // items: within this of a bound, offline treats the reservoir as at the bound
 
@@ -36,10 +37,42 @@ export const BAL = {
   runSpanTicks: 20, // parcels of the same item merge over at most 2 s
 
   // ── power ────────────────────────────────────────────────────────────────
-  windCirque: 250, // ‰ local wind on the cirque's floor: sheltered, a poor spot for a turbine (owner, 2026-10-13)
-  windHeight: [1400, 1600, 1800, 2000], // ‰ up on the land by its height: level 1, 2, 3, 4 and above (D44; by height, not hardness, since 2026-10-14)
-  windPlain: 1000,
-  windMesa: [1600, 2000],
+  // The wind (D95, sim/world/wind.ts): the weather's wind over open flat ground at a time (‰ of
+  // the reference wind) × a tile's exposure (‰), from the land as the world made it. A turbine's
+  // curve (content/buildings.ts `gen.wind`) turns that local wind into its share of its rating.
+  wind: {
+    // ── the time: a day's curve × the day's mood × the gust window ──
+    // ‰ at the start of each day epoch (epoch 0 = 20:00, 6 = midnight, 24 = noon): the Sough rises
+    // at dusk and blows through the night over the tops, lulls in the late morning, picks up with
+    // the afternoon's heat. It complements the sun (owner's night is dark for the panels).
+    curve: [
+      1060, 1120, 1170, 1210, 1240, 1260, 1270, 1270, 1260, 1240, 1210, 1170,
+      1120, 1060, 990, 920, 860, 810, 780, 760, 760, 770, 790, 820,
+      850, 880, 910, 940, 960, 980, 990, 1000, 1010, 1020, 1030, 1040,
+    ] as readonly number[],
+    moodLow: 650, // ‰: a world day runs from this calm…
+    moodHigh: 1350, // …to this breezy (hash of WORLD_SEED and the day, blended from one day start to the next)
+    step: 50, // ‰: the time's wind is rounded to this (few distinct weathers: the catch-up keeps one solve per weather)
+    veer: 4, // bearing steps (of 64): a day's wind comes from the prevailing bearing, or this much either side of it
+    veerSide: 200, // ‰ of the days on each side (the rest: the prevailing bearing)
+    // ── the place: a tile's exposure ‰ (the land as generated: a dig does not move the wind) ──
+    base: 820, // flat ground, an average fetch
+    levelGain: 40, // per level above the floor: the air runs faster higher up
+    relRadius: 6, // tiles: the box (2r+1)² whose mean level a tile stands above or below…
+    relGain: 340, // …per level above it: tops, ridges, the Crown's crest windy…
+    relGainLow: 120, // …and per level below it: a gully a little calmer (the lee and the bowl do the rest)
+    fetch: 32, // tiles looked upwind (and round, for the basin)
+    side: 6, // bearing steps: the two side rays of the upwind fan (≈ 34°)
+    openGain: 380, // the share of the upwind fan clear of higher ground, full fetch: wide open ground
+    shelterGain: 1800, // ‰ of shelter per level-per-tile of the steepest higher ground upwind (the lee)…
+    shelterMax: 850, // …at most
+    basinGain: 480, // ‰ off in a bowl: the share of eight bearings that meet higher ground within the fetch
+    funnelReach: 8, // tiles: higher ground on both flanks this close…
+    funnelClear: 16, // …and the way upwind clear this far: a pass, the wind funnelled through it…
+    funnel: 300, // …‰ more
+    min: 60,
+    max: 2600,
+  },
 
   // ── climate: the cirque desert's air (sim/world/climate.ts) ──────────────
   climate: {
@@ -73,10 +106,19 @@ export const BAL = {
     parcel: 23,
     startRings: 1,
     base: 20_000, // centi-ocelles: every parcel, before what it holds
-    /** Centi-ocelles per tile, by ground: what it gives to build on (rock to dig, water to pump or fill, a vent to tap). */
-    tile: { floor: 60, rock: 25, water: 90, salt: 70, vent: 3_000, dunes: 15 } as Record<string, number>,
+    /**
+     * Centi-ocelles per tile, by ground: what it gives to build on (rock to dig, water to pump or fill,
+     * a vent to tap). Floor pays in full only where it is usable (D94, world/floor.ts: a 2 × 2 machine
+     * fits on it at one level); a sliver of it pays as rock. A river gives water to pump from its bank
+     * and nothing to stand on; a chasm nothing at all.
+     */
+    tile: { floor: 60, sliver: 25, rock: 25, water: 90, river: 20, chasm: 0, salt: 70, vent: 3_000, dunes: 15 } as Record<string, number>,
     /** Centi-ocelles per deposit tile, per point of the ore's value (items.ts), at a richness of 500 (5/min): scaled by the tile's own. */
-    depositPerValue: 400,
+    // 250 since D94 (was 400): on map 4 the ore lies in broken ground, and a parcel rich in it and
+    // short of room costs a little more than an open one (≈ 540–620 ◉ against ≈ 515), not half again.
+    depositPerValue: 250,
+    /** A parcel's ore at a glance (D94: the Terrain view's and the land panel's pips): deposit tiles for one, two, three. */
+    oreTiers: [1, 13, 40] as readonly number[],
     growth: 1100, // ‰ on the price per parcel already bought (Land Charter lowers it)
     rentPermille: 30, // of the price, an hour
     sisterShare: 125, // ‰ of the parcels beyond the starting ring that a sister claim owns
@@ -87,8 +129,6 @@ export const BAL = {
   // ── research (D69) ───────────────────────────────────────────────────────
   // A node costs its table's price whatever else the claim owns: the spread penalty and the
   // lineage discount were removed (owner, 2026-10-15, D72).
-  respecRefund: 500, // ‰ of the data (250 for a keystone)
-  respecCooldownDays: 14,
   // ── AI tokens (D68): never owned, paid the minute they are used ───────────
   // Research uses tokens as it runs; each minute the claim's servers cover what they can (what
   // they make and nobody uses is lost), CrierBelt's servers the rest, at this price.
@@ -106,6 +146,14 @@ export const BAL = {
   liftDelayMin: [10, 6, 3], // minutes from a purchase to the lift-off, by trade-post level
   tradeOrders: 2,           // standing import orders (Standing Orders: +4)
   importHysteresis: 30,     // ‰: an order paused above its max resumes once the ask is 3 % below it
+  // The starter contract (D101): CrierBelt's one-time offer for a new base's first purchase, off
+  // the market (prices never see it). `cents`: the fixed price per item in centi-ocelles — 2 ◉,
+  // no fee, half the ore's market value; `n` items in all, `perMin` a minute; each purchase lands
+  // in the post's container `delayMin` game minutes later, and leaves only by its exit.
+  // Fulfilled, it stops (D101: the owner's base bought on for hours, unseen): continued, it is an
+  // ordinary order, capped at the ask × continueOver ‰. Its lots land a minute after each purchase:
+  // the tutorial waits on no slow delivery.
+  starter: { item: 'copper_ore', n: 40, perMin: 10, cents: 200, delayMin: 1, continueOver: 1100 },
   /**
    * The Crier Ring's NPC market (src/market, design §6). It computes in floats, being
    * authoritative where it runs; only its outputs reach the sim, as integers. Times are minutes
@@ -183,8 +231,11 @@ export const BAL = {
   backfillerCap: 200,
   /** Hearth upgrades (level 2, 3, 4): research gate and materials. */
   hearthUpgrades: [
-    { unlock: 'tr1', cost: [['iron_plate', 200], ['gear', 50]] },
-    { unlock: 'tr4', cost: [['gear', 300], ['ceramic', 100], ['circuit', 50]] },
+    // Level 2 is the player's to raise (D101: a tutorial quest, « Le Cœur grandit »), paid in what the
+    // base makes by « La Criée »: it mounts the data outlet, whose Survey Data feeds the first lab.
+    { unlock: 'start', cost: [['iron_plate', 120], ['glass', 40], ['copper_wire', 40]] },
+    // Level 3 closes Tier 1 (D93): the Synthesis, paid in Tier 1's own parts; it mounts the Archive of the expertises.
+    { unlock: 'tr_synth', cost: [['gear', 150], ['circuit', 60], ['oscillator', 30]] },
     { unlock: 'tr6', cost: [['circuit', 200], ['thermal_core', 20]] },
   ] as ReadonlyArray<{ unlock: string; cost: ReadonlyArray<readonly [string, number]> }>,
   /**
@@ -192,6 +243,42 @@ export const BAL = {
    * outlet hands out nothing and the Heart makes no Survey Data, whatever Analytics researched.
    */
   hearthDataLevel: 2,
+  /**
+   * The Survey Data the Heart makes a minute from that level on (mu), research or not (D101: the
+   * first lab runs on it; « Traitement des données » adds to it and brings the data collector).
+   */
+  hearthDataBase: 2000,
+
+  // ── expertises (D93, content/expertises.ts) ──────────────────────────────
+  expertise: {
+    /** The Heart level that mounts the Archive (its south-west corner, D86): the window opens there. */
+    level: 3,
+    /** How many the claim holds at a time; that many chosen open Tier 2. */
+    slots: 2,
+    /** A réorientation's price (centi-◉): the first, then × `reorientGrowth` ‰ for each one before it. */
+    reorientCents: 150_000,
+    reorientGrowth: 2000,
+    /** Minutes a réorientation leaves the slot without its expertise: the new one holds 24 h later. */
+    gapMinutes: 1440,
+    /** The share of its demand the Core's grid must serve at a minute's end for the minute to count (‰, the `grid` feat). */
+    gridPermille: 950,
+  },
+
+  // ── the Gleaners (D103, content/gleaners.ts: what they take) ──────────────
+  // A small people of the open desert: at night they take a few shiny things off the ribbons they
+  // reach (sim/world/reach.ts, sim/flow/chain.ts). A ribbon chain's tiles beside open desert floor
+  // are its exposed cells; on a share of its steps (`perTile` ‰ a cell, at most `maxPermille`) they
+  // look at one of them and take what it carries, by their taste.
+  gleaners: {
+    /** ‰ of a chain's steps they try, per exposed tile: a short dash across a corner loses little. */
+    perTile: 2,
+    /** At most, on a chain: ‰ of its steps (5 % of what passes on a long exposed line, by night). */
+    maxPermille: 50,
+    /** A pocket of desert floor this small (tiles), closed by rock, water, buildings or fences, is out of their reach. */
+    pocket: 1500,
+    /** The sun (‰, `SOLAR`) at or under which they are out: the dark hours. */
+    darkSun: 0,
+  },
 
   // ── drifters ─────────────────────────────────────────────────────────────
   dockShips: 4,

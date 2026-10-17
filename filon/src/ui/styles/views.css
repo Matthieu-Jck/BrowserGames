@@ -52,6 +52,15 @@
 button.vp-flag { cursor: pointer; }
 button.vp-flag:hover { background: var(--c-peach-l); }
 .vp-flag b { font-variant-numeric: tabular-nums; }
+/* The base by what each building is to power (D95's note on D88): a chip per group in the world's wash, its count. */
+.vp-groups { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 4px 0 4px; }
+.vp-group { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px 2px 4px; border: 1.2px solid var(--c-ink); border-radius: 999px; background: var(--c-paper); font: inherit; font-size: 12px; color: inherit; }
+.vp-group[hidden] { display: none; }
+button.vp-group { cursor: pointer; }
+button.vp-group:hover { background: var(--c-peach-l); }
+.vp-group b { font-variant-numeric: tabular-nums; }
+.vp-group[data-tone='bad'] { border-color: var(--c-coral-d); color: var(--c-coral-d); }
+.vp-group[data-group='none'] { opacity: 0.75; }
 
 /* ── Électricité: a card per grid ──────────────────────────────────────────── */
 .vp-grid {
@@ -94,6 +103,20 @@ button.vp-flag:hover { background: var(--c-peach-l); }
 .vp-row-bar { height: 7px; border: 1.2px solid var(--c-ink); border-radius: 4px; background: var(--c-paper-d); overflow: hidden; }
 .vp-row-fill { display: block; height: 100%; transform-origin: left center; transform: scaleX(0); background: var(--c-warn); }
 .vp-row-kw { font-variant-numeric: tabular-nums; color: var(--c-ink-soft); white-space: nowrap; }
+
+/* The Vent view (D95): the compass and the wind of the moment, the turbines' rows (the day's mean, now ticked). */
+.vp-wind-head { display: flex; align-items: center; gap: 10px; margin: 4px 0 2px; }
+.vp-rose { flex: none; display: block; }
+.vp-wind-now { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.vp-wind-from { font-size: 15px; }
+.vp-wind-usual { color: var(--c-ink-soft); font-size: 11.5px; }
+.vp-wind-now .vp-acc { margin-top: 3px; }
+.vp-wind-fill { background: var(--c-turq); }
+.vp-wind-f { font-variant-numeric: tabular-nums; }
+.vp-wind-row .vp-row-bar { position: relative; overflow: visible; }
+.vp-wind-row .vp-row-fill { border-radius: 3px; }
+.vp-row-now { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--c-ink); border-radius: 1px; }
+.vp-arrow { flex: none; width: 16px; font-style: normal; font-weight: 700; text-align: center; }
 
 /* ── Logistique ────────────────────────────────────────────────────────────── */
 .vp-hist { display: flex; align-items: flex-end; gap: 3px; height: 44px; padding: 0 2px; border-bottom: 1.5px solid var(--c-ink); }

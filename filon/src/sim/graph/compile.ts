@@ -9,6 +9,7 @@
 // ribbon contents survive a recompile (contents are redistributed by position; anything
 // orphaned is refunded). The graph also tells the views what feeds each ribbon tile.
 import { BAL } from '@/content/balance';
+import { WORLD_SEED } from '@/content/world';
 import {
   BUILDING_KIND, CRECIPES, N_ITEMS, buildingDef, buildingIdx, itemIdx,
 } from '@/content/registry';
@@ -16,7 +17,7 @@ import { filterOf, recipeOf } from '../cfg';
 import { MU, WORLD } from '../constants';
 import { footprint, worldPorts, forTiles, type Entities, type WorldPort } from '../entities';
 import { faceRate, isFaceOre } from '../face';
-import { DX, DY, T, opposite, type Ent, type Rot } from '../types';
+import { DX, DY, T, isWater, opposite, type Ent, type Rot } from '../types';
 import type { RouterLogic } from '@/content/types';
 import type { Grid } from '../world/grid';
 import { tileIndex } from '../world/grid';
@@ -26,6 +27,8 @@ import { DrillNode, ForkNode, GeneratorNode, MachineNode, ReservoirNode, SinkNod
 import type { Mods } from '../research/modifiers';
 import { buildGrids, producerOf, type Acc, type Net, type Producer, type WireSource } from '../power/network';
 import { isLinkPoint, linkable } from '../power/links';
+import { gleanLand, type GleanLand } from '../world/reach';
+import { hash32 } from '@/core/hash';
 
 export interface Graph {
   version: number;
@@ -58,6 +61,8 @@ export interface Graph {
    * full ribbon's head is known to be taken before it says its first tile is free.
    */
   accOrder: FNode[];
+  /** The Gleaners' reach (D103): the ribbon tiles they reach at night, and those guarded from them (sim/world/reach.ts). */
+  glean: GleanLand;
 }
 
 export interface CompileInput {
@@ -65,10 +70,14 @@ export interface CompileInput {
   grid: Grid;
   mods: Mods;
   now: number;
+  /** The world seed: the wind's bearings (D95; default WORLD_SEED). */
+  worldSeed?: number;
   hearthStock: Float64Array;
   hearthCap: number;
   /** The Survey Data the Heart makes a minute (mu, `Sim.heartDataRate`): 0 until its level mounts the data outlet (D86), which then hands it out. */
   heartData: number;
+  /** The Heart's level (its power grows with it, D101; default 1). */
+  hearthLevel?: number;
   /** Per-entity stocks of silos, docks and trade posts (persisted by the state). */
   stores: Map<number, Float64Array>;
   old: Graph | null;
@@ -542,6 +551,29 @@ export function compileGraph(inp: CompileInput): Graph {
     chains.push(c);
     for (const t of list) chainByTile.set(t, c);
   }
+  // The Gleaners (D103): the ribbon tiles beside open desert floor, on lands that have them (a Crown
+  // and a desert past it: `crownOuter`; a test world has none). Each item ribbon's exposed cells, the
+  // share of its steps they try (`BAL.gleaners`: per exposed tile, capped: a short dash across a corner
+  // loses little) and its own draw, from its head tile.
+  const items = [...beltAt.keys()].filter((t) => !chainByTile.get(t)?.fluid).sort((a, b) => a - b);
+  const fences: number[] = [];
+  for (const e of sorted) if (BUILDING_KIND[e.def] === 'fence' && e.builtAt === 0) fences.push(tileIndex(e.x, e.y));
+  fences.sort((a, b) => a - b);
+  const glean = gleanLand(grid, items, (t) => !!buildingDef(beltAt.get(t)!.def).glazed, grid.source.crownOuter, BAL.gleaners.pocket, fences);
+  if (glean.exposed.length) {
+    const exposed = new Set(glean.exposed);
+    const seed = inp.worldSeed ?? WORLD_SEED;
+    for (const c of chains) {
+      if (c.fluid) continue;
+      const cells: number[] = [];
+      for (let i = 0; i < c.tiles.length; i++) if (exposed.has(c.tiles[i]!)) cells.push(i);
+      if (!cells.length) continue;
+      c.gleanCells = Int32Array.from(cells);
+      c.gleanRate = Math.min(BAL.gleaners.maxPermille, cells.length * BAL.gleaners.perTile);
+      c.gleanSeed = hash32(seed, c.tiles[c.tiles.length - 1]!, 0x9a1e);
+    }
+  }
+
   // Items on removed ribbons go back to the Hearth (and a conduit's parcels on what is now a ribbon, a ribbon's on a conduit).
   for (const [t, ps] of oldParcels) {
     if (usedTiles.has(t) && chainByTile.get(t)?.fluid) continue;
@@ -650,7 +682,7 @@ export function compileGraph(inp: CompileInput): Graph {
     const b = buildingDef(e.def);
     const net = nets[g]!;
     // A producer (the Hearth's own panel and core, a turbine, a panel, a geothermal well): `producerOf`.
-    const prod = producerOf(e, b, grid, mods);
+    const prod = producerOf(e, b, grid, mods, inp.worldSeed ?? WORLD_SEED, inp.hearthLevel ?? 1);
     if (prod) net.producers.push(prod);
     if (b.kind === 'accumulator') {
       const a = b.accumulator!;
@@ -670,19 +702,19 @@ export function compileGraph(inp: CompileInput): Graph {
     version: (inp.old?.version ?? 0) + 1,
     nodes, chains, nE,
     eSrc: Int32Array.from(src), eDst: Int32Array.from(dst), eSrcPort: Int32Array.from(sp), eDstPort: Int32Array.from(dp),
-    nodeByEnt, chainByTile, nets, netOfEnt, reservoirs, hearth, servers, feedDirs, jumps, accOrder,
+    nodeByEnt, chainByTile, nets, netOfEnt, reservoirs, hearth, servers, feedDirs, jumps, accOrder, glean,
   };
 }
 
 /** Milli-items per tick for a per-minute rate (60/min → 100). */
 export const mpt = (perMin: number): number => Math.round((perMin * 1000) / 600);
 
-/** Does a pump stand by water (on or next to a water tile) on its own level (a tarn up on the Crown, D63, is not the floor's)? */
+/** Does a pump stand by water (on or next to a water tile, a river's too: D94) on its own level (a tarn up on the Crown, D63, is not the floor's)? */
 function touchesWater(grid: Grid, e: Ent): boolean {
   const lv = grid.level(e.x, e.y);
   for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
     const t = grid.terrain(e.x + dx, e.y + dy);
-    if ((t === T.Shallow || t === T.Deep) && grid.level(e.x + dx, e.y + dy) === lv) return true;
+    if (isWater(t) && grid.level(e.x + dx, e.y + dy) === lv) return true;
   }
   return false;
 }
@@ -696,12 +728,16 @@ function onDugFloor(grid: Grid, e: Ent): boolean {
 /** Majority ore under a drill and its rate cap (mu per epoch); a face cutter's, the face behind it (D87). */
 export function drillRate(grid: Grid, e: Ent, mods: Mods): { item: number; rateEp: number } {
   const b = buildingDef(e.def);
+  // Ore Cutting (an expertise, D93): every extractor's rate and its deposit's cap × `drillRate`;
+  // Archiving's: a data collector's × `dataRate`.
+  const by = (r: { item: number; rateEp: number }, permille: number): { item: number; rateEp: number } =>
+    (permille === 1000 ? r : { item: r.item, rateEp: Math.floor((r.rateEp * permille) / 1000) });
   // A face cutter (D87): the face ore of the wall its back is against, not what lies under it.
-  if (b.drill?.face) return faceRate(grid, e.def, e.x, e.y, e.rot);
+  if (b.drill?.face) return by(faceRate(grid, e.def, e.x, e.y, e.rot), mods.drillRate);
   // A ground collector: a steady rate off the bare ground (its placement checked the sand).
-  if (b.drill?.ground) return { item: itemIdx(b.drill.ground), rateEp: b.drill.perMin * 1000 };
+  if (b.drill?.ground) return by({ item: itemIdx(b.drill.ground), rateEp: b.drill.perMin * 1000 }, mods.drillRate);
   // A data collector (D68): its item out of power alone, anywhere.
-  if (b.drill?.anywhere) return { item: itemIdx(b.drill.anywhere), rateEp: b.drill.perMin * 1000 };
+  if (b.drill?.anywhere) return by({ item: itemIdx(b.drill.anywhere), rateEp: b.drill.perMin * 1000 }, mods.dataRate);
   const counts = new Map<number, number>();
   const caps = new Map<number, number>();
   forTiles(e, (x, y) => {
@@ -718,7 +754,7 @@ export function drillRate(grid: Grid, e: Ent, mods: Mods): { item: number; rateE
   const cx = e.x + w / 2 - 512, cy = e.y + h / 2 - 512;
   const ring3 = cx * cx + cy * cy > 320 * 320 ? mods.ring3Caps : 1000;
   const cap = Math.floor((Math.floor((caps.get(item)! * capMult) / 1000) * ring3) / 1000);
-  return { item, rateEp: Math.min(b.drill!.perMin * 1000, cap) };
+  return by({ item, rateEp: Math.min(b.drill!.perMin * 1000, cap) }, mods.drillRate);
 }
 
 /** May a routing block take items in from / hand them out towards outward side d? */

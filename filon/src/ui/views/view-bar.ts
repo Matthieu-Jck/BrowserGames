@@ -1,9 +1,12 @@
 // view-bar.ts — the view selector (D88), top right in the HUD before « Construire »: one inked
 // cartouche of icon buttons, each with its key cap — Normal (an eye, Esc), Électricité (the bolt,
-// P), Logistique (a ribbon running, F), Production (a gear, O), Terrain (a parcel, I: the land
+// P), Logistique (a ribbon running, F), Production (a gear, O), Vent (the wind, V: with the
+// Anémométrie plan, D95), Terrain (a parcel, I: the land
 // mode, D60, which keeps its `[data-hud-land]` hook). Shown rather than told: the name and what the
 // view shows sit in the tooltip; the button of the view on show is lit. A view the tutorial has not
-// reached yet is left out (the shell says which: `ViewBarHost.shows`). Hooks: `[data-view=…]`.
+// reached yet is left out (the shell says which: `ViewBarHost.shows`, from the quests' `view:*`
+// reveals, D32), and with Normal alone to choose there is no selector: none before quest 3.
+// Hooks: `[data-view=…]`; the Vent button's `[data-hud-wind]` (the Anémométrie plan's spotlight, D95).
 import { el, setAttr } from '@/core/dom';
 import type { MapView } from '@/core/kinds';
 import { t, type MsgKey } from '@/i18n/i18n';
@@ -24,6 +27,7 @@ const BUTTONS: ReadonlyArray<{ v: MapView; icon: ViewIcon | 'parcel'; key: strin
   { v: 'power', icon: 'bolt', key: 'P', tip: 'mapview.power.tip' },
   { v: 'logistics', icon: 'flow', key: 'F', tip: 'mapview.logistics.tip' },
   { v: 'production', icon: 'gear', key: 'O', tip: 'mapview.production.tip' },
+  { v: 'wind', icon: 'wind', key: 'V', tip: 'mapview.wind.tip' },
   { v: 'land', icon: 'parcel', key: 'I', tip: 'land.tool.tip' },
 ];
 
@@ -36,7 +40,7 @@ export class ViewBar {
     for (const b of BUTTONS) {
       const mark = b.icon === 'parcel' ? glyph('parcel') : viewIconCanvas(b.icon, 22, false);
       const node = el<'button'>('button.vbar-btn', {
-        type: 'button', 'data-view': b.v, 'data-hud-land': b.v === 'land' ? '' : null,
+        type: 'button', 'data-view': b.v, 'data-hud-land': b.v === 'land' ? '' : null, 'data-hud-wind': b.v === 'wind' ? '' : null,
         onclick: () => host.pick(b.v),
       }, [mark, el('span.bb-key', {}, b.key)]);
       this.buttons.push({ v: b.v, node, tip: b.tip });

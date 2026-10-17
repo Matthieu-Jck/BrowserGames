@@ -13,7 +13,12 @@ export interface Stage {
   resize(): void;
 }
 
-export async function createStage(host: HTMLElement, opts: { perf?: boolean } = {}): Promise<Stage> {
+/**
+ * `perf`: lighter rendering (1× resolution, no antialiasing). `lowPower` (« Basse consommation »,
+ * D100): ask for the economical GPU — on a computer with two, the integrated one, which leaves the
+ * discrete one (and its fans) asleep.
+ */
+export async function createStage(host: HTMLElement, opts: { perf?: boolean; lowPower?: boolean } = {}): Promise<Stage> {
   const resolution = opts.perf ? 1 : Math.min(2, window.devicePixelRatio || 1);
   const renderer = await autoDetectRenderer({
     preference: 'webgl',
@@ -23,7 +28,7 @@ export async function createStage(host: HTMLElement, opts: { perf?: boolean } = 
     autoDensity: true,
     antialias: !opts.perf,
     backgroundColor: 0xeed7b8,
-    powerPreference: 'high-performance',
+    powerPreference: opts.lowPower ? 'low-power' : 'high-performance',
     textureGCActive: false,
   });
   host.appendChild(renderer.canvas);

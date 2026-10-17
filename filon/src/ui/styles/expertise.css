@@ -1,0 +1,162 @@
+/* expertise.css — the Expertise window (D93; ui/screens/expertise.ts) and the Archive's mark the HUD
+   chip and the Core's inspector share: the two slots as big cards (an empty one dashed, one coming
+   into place amber with its 24 h bar), the twelve expertises by family in the families' colours
+   (the tech tree's, research.css), each card's state on its rim — earned turquoise, in place
+   violet like the Archive's bands, not yet earned faded. The kit's sections, meters and marks
+   (kit.css) do the rest. */
+
+/* ── the Archive's mark ─────────────────────────────────────────────────── */
+.xa-glyph { display: inline-block; width: 1.3em; height: 1.3em; vertical-align: -0.3em; flex: none; }
+.xa-glyph svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.xa-glyph .xa-body { fill: #f7f3fb; stroke: var(--c-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.xa-glyph .xa-band { fill: var(--c-lilac); stroke: var(--c-ink); stroke-width: 1.1; }
+.xa-glyph .xa-plate { fill: none; stroke: #d6a53a; stroke-width: 1.1; stroke-linecap: round; }
+.xa-glyph .xa-top { fill: var(--c-lilac-l); stroke: var(--c-ink); stroke-width: 1.2; }
+.xa-glyph .xa-line { fill: none; stroke: var(--c-ink); stroke-width: 1.3; stroke-linecap: round; }
+.xa-glyph .xa-lamp { fill: var(--c-glow-turq); stroke: var(--c-ink); stroke-width: 0.9; }
+
+/* ── the window ─────────────────────────────────────────────────────────── */
+.expertise .rs-head { align-items: center; }
+.ex-headglyph .xa-glyph { width: 40px; height: 40px; }
+.ex-tier {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 6px; font-size: 14px; font-weight: 600;
+  border: 1.5px dashed var(--c-ink-soft); border-radius: 12px 9px 13px 10px / 10px 13px 9px 12px; color: var(--c-ink-soft);
+}
+.ex-tier[data-open] { border-style: solid; border-color: var(--c-turq-d); color: var(--c-turq-d); background: color-mix(in srgb, var(--c-turq) 12%, var(--c-paper)); }
+.ex-cancel[hidden] { display: none; }
+.ex-body { flex: 1; min-height: 0; overflow: auto; overflow-x: hidden; padding: 0 4px 24px; display: flex; flex-direction: column; gap: 4px; }
+.ex-body .ksec { background: color-mix(in srgb, var(--c-paper-d) 30%, var(--c-paper)); }
+
+/* Before the Archive: a banner with the Core at level 3, the cards faded a little. */
+.ex-banner { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; font-size: 14px; font-weight: 600; color: var(--c-lilac-d); }
+.ex-banner[hidden] { display: none; }
+.ex-bannerpic { display: inline-flex; }
+.expertise[data-locked] .ex-slotrow { opacity: 0.55; }
+
+/* ── the slots ──────────────────────────────────────────────────────────── */
+.ex-slotrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 12px; }
+.ex-slot {
+  position: relative; display: flex; align-items: center; gap: 12px; min-height: 92px; padding: 10px 14px 10px 30px;
+  border: 2px solid var(--c-ink); border-radius: var(--radius-ink); box-shadow: var(--shadow-ink);
+  background: color-mix(in srgb, var(--c-lilac) 16%, var(--c-paper));
+}
+.ex-slot[data-state='empty'] { border-style: dashed; box-shadow: none; background: transparent; color: var(--c-ink-soft); }
+.ex-slot[data-state='coming'] { background: color-mix(in srgb, var(--c-warn) 14%, var(--c-paper)); }
+.ex-slotnum { position: absolute; left: 8px; top: 6px; font-size: 20px; color: var(--c-lilac-d); }
+.ex-sloticon { display: inline-flex; flex: none; width: 56px; justify-content: center; }
+.ex-plus { font-family: var(--f-title); font-size: 42px; line-height: 1; color: color-mix(in srgb, var(--c-ink) 35%, transparent); }
+.ex-slotmain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.ex-slottop { display: flex; align-items: center; gap: 10px; }
+.ex-slotname { font-size: 20px; line-height: 1.05; font-weight: 400; }
+.ex-slotfoot { display: flex; align-items: center; gap: 8px; min-height: 18px; font-size: 13px; font-weight: 600; }
+.ex-slot[data-state='on'] .ex-slotstate { color: var(--c-turq-d); }
+.ex-slot[data-state='coming'] .ex-slotstate { color: color-mix(in srgb, var(--c-warn) 55%, var(--c-ink)); white-space: nowrap; }
+.ex-slotfoot .kmeter { max-width: 180px; }
+.ex-replace { flex: none; align-self: center; }
+.ex-replace[hidden] { display: none; }
+.expertise[data-arming] .ex-slot:not([data-state='empty']) { outline: 3px dashed var(--c-warn); outline-offset: 3px; }
+
+/* ── a rank as pips ─────────────────────────────────────────────────────── */
+.ex-pips { display: inline-flex; align-items: center; gap: 3px; margin-left: auto; }
+.ex-pips[hidden] { display: none; }
+.ex-pip { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--c-ink); background: var(--c-paper); display: inline-block; }
+.ex-pip[data-on] { background: var(--c-lilac); }
+.ex-rank { min-width: 1.6em; margin-left: 3px; font-size: 15px; color: var(--c-lilac-d); }
+
+/* ── an effect: its figure, what it improves ────────────────────────────── */
+.ex-fx { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--c-ink-soft); }
+.ex-fig { font-family: var(--f-title); font-size: 21px; line-height: 1; color: var(--c-ink); font-weight: 400; font-variant-numeric: tabular-nums; }
+.ex-fxicon { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+.ex-fxicon .kmark, .ex-fxicon .glyph { width: 1.25em; height: 1.25em; }
+.ex-fxlabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* An icon of any kind, at a size. */
+.ex-icon { display: inline-flex; align-items: center; justify-content: center; width: var(--s); height: var(--s); flex: none; font-size: calc(var(--s) * 0.8); }
+.ex-icon > canvas { width: var(--s); height: var(--s); }
+.ex-icon > .glyph, .ex-icon > .kmark { width: 1em; height: 1em; vertical-align: 0; }
+.ex-coin { font-size: 0.8em; line-height: 1; }
+
+/* ── the expertises, by family ──────────────────────────────────────────── */
+.ex-fam[data-fam='en'] { --fam: #d9a21c; }
+.ex-fam[data-fam='ex'] { --fam: #a8604a; }
+.ex-fam[data-fam='dn'] { --fam: var(--c-lilac-d); }
+.ex-fam[data-fam='cm'] { --fam: #d8584a; }
+.ex-fam[data-fam='an'] { --fam: #23908f; }
+.ex-fam[data-fam='xp'] { --fam: #3d72b8; }
+.ex-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(470px, 100%), 1fr)); gap: 10px 14px; }
+.ex-fam {
+  min-width: 0; padding: 4px 8px 8px; border-left: 4px solid var(--fam);
+  border-radius: 4px 12px 14px 4px / 4px 14px 12px 4px; background: color-mix(in srgb, var(--fam) 8%, transparent);
+}
+.ex-famhead { margin: 0 0 4px; }
+.ex-famname { font-size: 17px; color: color-mix(in srgb, var(--fam) 70%, var(--c-ink)); }
+.ex-fampair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+.ex-card {
+  display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 8px 10px;
+  border: 1.5px solid var(--c-ink); border-radius: 10px 8px 11px 9px / 9px 11px 8px 10px; background: var(--c-paper);
+}
+.ex-card[data-state='locked'] { border-style: dashed; border-color: var(--c-ink-soft); background: color-mix(in srgb, var(--c-paper) 60%, transparent); }
+.ex-card[data-state='locked'] .ex-cardtop .ex-icon, .ex-card[data-state='locked'] .ex-fx { opacity: 0.55; }
+.ex-card[data-state='earned'] { box-shadow: inset 0 0 0 1.5px var(--c-turq); }
+.ex-card[data-state='held'] { border-width: 2.5px; border-color: var(--c-lilac-d); background: color-mix(in srgb, var(--c-lilac) 14%, var(--c-paper)); }
+.ex-card[data-state='coming'] { border-width: 2.5px; border-color: var(--c-warn); }
+.ex-card[data-armed] { outline: 3px dashed var(--c-warn); outline-offset: 2px; }
+.ex-cardtop { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ex-name { font-size: 16px; line-height: 1.05; font-weight: 400; min-width: 0; }
+.ex-feat { display: flex; flex-direction: column; gap: 2px; }
+.ex-featrow { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; font-size: 11px; color: var(--c-ink-soft); }
+.ex-featname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ex-featval { flex: none; font-size: 12px; font-weight: 600; color: var(--c-ink); font-variant-numeric: tabular-nums; }
+.ex-feat .kmeter-v { display: none; }
+.ex-feat .insp-bar { height: 7px; }
+.ex-next { font-size: 11px; color: var(--c-ink-soft); }
+.ex-foot { display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-height: 30px; }
+.ex-badge { display: inline-flex; align-items: center; gap: 4px; margin-right: auto; font-size: 13px; font-weight: 700; color: var(--c-lilac-d); }
+.ex-card[data-state='coming'] .ex-badge { color: color-mix(in srgb, var(--c-warn) 55%, var(--c-ink)); }
+.ex-badge[hidden], .ex-act[hidden] { display: none; }
+.ex-act { padding: 4px 10px; font-size: 13px; }
+.ex-act[data-kind='choose']:not([disabled]) { background: var(--c-turq); color: var(--c-paper); }
+.ex-act[data-on] { background: var(--c-warn); }
+.ex-act[disabled] { opacity: 0.55; cursor: not-allowed; }
+
+/* ── narrow, phone, touch (D96's breakpoints, ui/styles/responsive.css): the screen goes full
+   screen there; one column of slots and of families below 900 px, a family's two cards stacked
+   below 560 px, hit targets of 44 px for a finger. No vw/vh: the UI's zoom scales them. ──────── */
+@media (max-width: 899px) {
+  .ex-slotrow, .ex-grid { grid-template-columns: 1fr; }
+  .ex-headglyph .xa-glyph { width: 30px; height: 30px; }
+  .ex-tier { font-size: 13px; }
+  .ex-slot { min-height: 0; }
+}
+@media (max-width: 559px) {
+  .ex-fampair { grid-template-columns: 1fr; }
+  .ex-slot { flex-wrap: wrap; gap: 8px; padding: 8px 10px 10px 26px; }
+  .ex-sloticon { width: 44px; }
+  .ex-slotname { font-size: 18px; }
+  .ex-replace { flex: 1 1 100%; }
+  .ex-banner { font-size: 13px; }
+}
+@media (pointer: coarse) {
+  .ex-act, .ex-replace, .ex-cancel { min-height: 44px; }
+  .ex-act { padding: 6px 12px; }
+}
+
+/* ── the HUD's chip ─────────────────────────────────────────────────────── */
+.hud-exp .xa-glyph { width: 20px; height: 20px; }
+.hud-exp-slots { display: inline-flex; gap: 2px; }
+.hud-exp-slot { display: inline-flex; width: 20px; height: 20px; align-items: center; justify-content: center; border-radius: 6px; border: 1.2px dashed var(--c-ink-soft); }
+.hud-exp-slot[data-on] { border: 1.2px solid var(--c-lilac-d); background: color-mix(in srgb, var(--c-lilac) 18%, transparent); }
+.hud-exp-slot[data-coming] { border: 1.2px solid var(--c-warn); }
+.hud-exp-slot .ex-icon { --s: 16px; }
+
+/* ── the Core's inspector ───────────────────────────────────────────────── */
+.insp-exp-slots { display: flex; flex-direction: column; gap: 4px; }
+.insp-exp-slot { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.insp-exp-slot b { font-weight: 600; }
+.insp-exp-slot .ex-fig { font-size: 16px; margin-left: auto; }
+.insp-exp-slot[data-empty] { color: var(--c-ink-soft); font-style: italic; }
+
+/* ── the tech tree's Tier 2 head: « and two expertises » (D93) ──────────── */
+.tr-gate-exp { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; color: var(--c-lilac-d); font-weight: 600; }
+.tr-gate-exp .xa-glyph { width: 15px; height: 15px; }

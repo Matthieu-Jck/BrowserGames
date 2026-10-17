@@ -7,7 +7,7 @@
    and the build tip (40). It zooms itself with the UI scale, as #ui does. */
 .bcard {
   position: fixed; left: 0; top: 0; z-index: 32; width: 318px; padding: 10px 13px 9px;
-  zoom: var(--ui-scale); font-size: 13px; line-height: 1.35;
+  zoom: var(--ui-zoom); font-size: 13px; line-height: 1.35;
   pointer-events: none;
 }
 .bcard[hidden] { display: none; }

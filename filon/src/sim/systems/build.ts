@@ -1,5 +1,5 @@
 // build.ts — placing and removing structures. The placement rules, in order: unlock, world
-// edge, fog, occupancy, terrain, deposit / water / vent needs, the claim's land (docs/land.md:
+// edge, fog, occupancy, terrain (a chasm or a river refused by name, D94), deposit / water / vent needs, the claim's land (docs/land.md:
 // production on its parcels, nothing on a sister claim's), the step a line piece faces (D77: only
 // a traction ribbon changes level, one terrace at a time), cost. An occupied tile is no refusal
 // when what stands there may be replaced (Mindustry-style): same replace group, wholly inside the
@@ -11,14 +11,14 @@
 import { BAL } from '@/content/balance';
 import { BUILDING_KIND, CRECIPES, N_ITEMS, buildingDef, buildingIdx, costOf, itemIdx, recipesFor } from '@/content/registry';
 import { filterOf, recipeOf, withFilter } from '../cfg';
-import { footprint, forTiles } from '../entities';
+import { footprint, forTiles, worldPorts } from '../entities';
 import { faceRot, faceTiles, isFaceOre } from '../face';
 import { refundNode } from '../graph/compile';
 import { inWorld, tileIndex } from '../world/grid';
 import { parcelAt } from '../world/land';
 import { CENTER } from '../constants';
 import { maxPosts } from '../trade';
-import { DX, DY, isFloor, isRock, isWater, T, type Ent, type Rot } from '../types';
+import { DX, DY, isFloor, isRock, isWater, opposite, T, type Ent, type Rot } from '../types';
 import type { Sim } from '../state';
 
 export type PlaceReason =
@@ -35,7 +35,9 @@ export type PlaceReason =
   /** A junction next to another junction: a ribbon must run on each side of one (D73). */
   | 'junction_chain'
   /** A face cutter whose back meets no face ore: it stands at the foot of a quartz wall, its back to the rock (D87). */
-  | 'needs_face';
+  | 'needs_face'
+  /** A chasm or a river under the footprint (D94): nothing stands there nor fills it; a skybridge pair leaps it (a ribbon drag plans one). */
+  | 'chasm' | 'river';
 
 export type Cost = Array<{ item: number; mu: number }>;
 
@@ -144,7 +146,7 @@ export function canPlace(sim: Sim, defId: string, x: number, y: number, rot: Rot
       if (b.onRock && isRock(t)) rock++; // on the mountains (D44)
       else if (!isFloor(t)) {
         if (b.kind === 'pump' && t === T.Shallow) water = true;
-        else return fail('terrain');
+        else return fail(t === T.Chasm ? 'chasm' : t === T.River ? 'river' : 'terrain');
       }
       if (t !== T.Vent) vent = false;
       const ore = sim.grid.ore(tx, ty);
@@ -330,28 +332,84 @@ export function loneRecipe(sim: Sim, def: number): number {
 
 /**
  * The rotation a placement really takes: a one-tile directional routing block (router, sorters,
- * gates) dropped onto a ribbon follows it — its back takes in what the ribbon brings (owner,
- * 2026-10-12); a face cutter turns its back to the quartz wall it is dropped against (D87,
- * `faceRot`). Anything else keeps the rotation asked for. The ghost shows the same.
+ * gates) dropped onto a ribbon takes the way the items *enter* that tile (`entryRot`, D98): its
+ * back to what feeds it, its front and sides then covering the ribbon's way out — straight on a
+ * straight run, sideways on a curve (owner, 2026-10-16: on a curve the ribbon's own way, the way
+ * out, turned the block's back away from its feed). `turned`: the player turned the block in hand
+ * (R), and their rotation wins over the ribbon's (D98). A face cutter turns its back to the quartz
+ * wall it is dropped against (D87, `faceRot`). Anything else keeps the rotation asked for. The
+ * ghost shows the same.
  */
-export function placementRot(sim: Sim, defId: string, x: number, y: number, rot: Rot): Rot {
+export function placementRot(sim: Sim, defId: string, x: number, y: number, rot: Rot, turned = false): Rot {
   const def = buildingIdx(defId), b = buildingDef(def);
   if (b.drill?.face) return inWorld(x, y) ? faceRot(sim.grid, def, x, y, rot) : rot;
-  if (b.kind !== 'fork' || b.w !== 1 || b.h !== 1) return rot;
+  if (turned || b.kind !== 'fork' || b.w !== 1 || b.h !== 1) return rot;
   const logic = b.logic ?? 'router';
   if (logic === 'distributor' || logic === 'unloader') return rot;
   const e = sim.entityAt(x, y);
-  return e && BUILDING_KIND[e.def] === 'belt' ? e.rot : rot;
+  return e && BUILDING_KIND[e.def] === 'belt' ? entryRot(sim, e) : rot;
+}
+
+/**
+ * The way items travel as they enter ribbon `rb`'s tile, read as the flow compiler links it
+ * (`compileGraph`, `routingPorts`): from the neighbour that feeds it — a ribbon pointing into the
+ * tile (seen past junctions; a traction ribbon may climb in from one level off; a bridge that leaps
+ * over the tile feeds nothing), a building's outlet facing it, or a routing block that may hand on
+ * that way. Fed straight from behind, the ribbon's own way; else from a side (the first clockwise
+ * from the back when both sides feed it: a block takes in at its back only, so one of two side
+ * feeds must stay out); fed by nothing (a line's first tile), the ribbon's own way too. Planned
+ * pieces (a kite still flying them out) count: it is the layout the player drew.
+ */
+export function entryRot(sim: Sim, rb: Ent): Rot {
+  const d = rb.rot;
+  for (const r of [d, (d + 1) & 3, (d + 3) & 3] as Rot[]) if (feedsFrom(sim, rb.x, rb.y, r)) return r;
+  return d;
+}
+
+/** Does something on the side of (x, y) behind travel direction `r` hand items into it, moving `r`? */
+function feedsFrom(sim: Sim, x: number, y: number, r: Rot): boolean {
+  const s = opposite(r);
+  let nx = x + DX[s]!, ny = y + DY[s]!;
+  // A junction passes items straight across: what feeds through it stands past it.
+  while (inWorld(nx, ny) && BUILDING_KIND[sim.entityAt(nx, ny)?.def ?? -1] === 'crossing') { nx += DX[s]!; ny += DY[s]!; }
+  const o = inWorld(nx, ny) ? sim.entityAt(nx, ny) : undefined;
+  if (!o) return false;
+  const k = BUILDING_KIND[o.def], dl = Math.abs(sim.grid.level(nx, ny) - sim.grid.level(x, y));
+  if (k === 'belt' || k === 'bridge') {
+    if (o.rot !== r || dl > (buildingDef(o.def).lift ? 1 : 0)) return false;
+    return k !== 'bridge' || !leapsFrom(sim, o, nx, ny);
+  }
+  if (dl !== 0) return false;
+  if (k === 'fork') {
+    const logic = buildingDef(o.def).logic ?? 'router';
+    return logic === 'distributor' || logic === 'unloader' || r !== opposite(o.rot);
+  }
+  return worldPorts(o).some((p) => p.io === 'out' && p.dir === r && p.x === nx && p.y === ny);
+}
+
+/** A bridge at (x, y) that leaps to a bridge ahead within its span (`compileGraph`'s rule) hands nothing to the tile in front of it. */
+function leapsFrom(sim: Sim, o: Ent, x: number, y: number): boolean {
+  const span = 4 + sim.mods.bridgeSpan, lv = sim.grid.level(x, y);
+  for (let k = 1; k <= span; k++) {
+    const bx = x + DX[o.rot]! * k, by = y + DY[o.rot]! * k;
+    if (!inWorld(bx, by)) return false;
+    const b = sim.entityAt(bx, by);
+    if (b && BUILDING_KIND[b.def] === 'bridge' && b.rot === o.rot && sim.grid.level(bx, by) === lv) return true;
+  }
+  return false;
 }
 
 /**
  * Place a building, replacing what `canPlace` says it replaces. `cfg0`: its settings; when
  * omitted, a building re-placed over the same building (a sorter turned) keeps that one's
  * settings (D24), and a new machine starts on its lone recipe (`loneRecipe`, D83). The settings
- * actually kept are logged, so a replay needs no such inference.
+ * actually kept are logged, so a replay needs no such inference. `turned`: the player turned it in
+ * hand (R), so a routing block keeps their rotation over a ribbon (D98); logged where it changed
+ * the rotation, so a replay keeps it too.
  */
-export function place(sim: Sim, defId: string, x: number, y: number, rot0: Rot, cfg0?: number): PlaceCheck & { id?: number } {
-  const rot = placementRot(sim, defId, x, y, rot0);
+export function place(sim: Sim, defId: string, x: number, y: number, rot0: Rot, cfg0?: number, turned = false): PlaceCheck & { id?: number } {
+  const auto = placementRot(sim, defId, x, y, rot0);
+  const rot = turned ? placementRot(sim, defId, x, y, rot0, true) : auto;
   const chk = canPlace(sim, defId, x, y, rot);
   if (!chk.ok) return chk;
   const def = buildingIdx(defId);
@@ -368,7 +426,9 @@ export function place(sim: Sim, defId: string, x: number, y: number, rot0: Rot, 
   occupy(sim, e);
   reveal(sim, e);
   if (b.kind === 'excavator' || b.kind === 'backfiller') sim.jobsDirty = true;
-  sim.log.push({ tick: sim.tick, cmd: { k: 'place', def: defId, x, y, rot, cfg } });
+  // The player's turn is logged only where it overrode the ribbon's way: elsewhere the logged
+  // rotation alone places it the same again.
+  sim.log.push({ tick: sim.tick, cmd: rot !== auto ? { k: 'place', def: defId, x, y, rot, cfg, turned: true } : { k: 'place', def: defId, x, y, rot, cfg } });
   sim.dirty = true;
   sim.events.push({ k: 'structure' });
   return { ...chk, id: e.id };

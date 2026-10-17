@@ -6,7 +6,10 @@
 // invalidation (a structure change rebuilds the building and item views; dug or filled tiles
 // repaint their terrain chunks and relief). Land (docs/land.md): a parcel bought, leased or given
 // up gets a short notice; a lease that lapsed (the purse could not pay its hour) a warning, since
-// what stood on it is dormant now; the hourly rent is silent (the HUD's ocelles show it).
+// what stood on it is dormant now; the hourly rent is silent (the HUD's ocelles show it). An
+// expertise's rank earned, or one in place after its réorientation, gets a notice (D93). The
+// Gleaners (D103): their first night on a base and each morning's report go to their card
+// (ui/gleaners-card.ts); without one (a test), the morning report is a toast.
 import { RESEARCH, buildingsUnlockedBy, nodeName, type ResearchId } from '@/content/research';
 import type { ResearchDef } from '@/content/types';
 import { bus } from '@/core/bus';
@@ -18,6 +21,8 @@ import { parcelLabel } from '@/ui/land-facts';
 import { oc } from '@/ui/trade-view';
 import { itemRef } from '@/ui/mention';
 import { questToast } from '@/ui/quest-log';
+import { expertiseDef } from '@/content/expertises';
+import { romanRank } from '@/ui/screens/expertise';
 import type { Toasts } from '@/ui/toasts';
 
 export interface EventSink {
@@ -31,6 +36,8 @@ export interface EventSink {
   lift(ev: Extract<SimEvent, { k: 'trade' }>): void;
   /** Purchases landed in a post's container (the shell brings the drone down with them, D43). */
   land?(ev: Extract<SimEvent, { k: 'delivered' }>): void;
+  /** The Gleaners struck for the first time this night, or a morning's report (D103): their card. */
+  gleaners?(ev: Extract<SimEvent, { k: 'gleaners' }>): void;
 }
 
 type Handlers = { [K in SimEvent['k']]: (ev: Extract<SimEvent, { k: K }>, sink: EventSink) => void };
@@ -86,6 +93,19 @@ const HANDLERS: Handlers = {
   },
   researchQueued: (ev, sink) => {
     sink.toasts.show('info', t('toast.research.queued', { name: (RESEARCH[ev.id as ResearchId] as ResearchDef).name[locale()] }), 5000);
+  },
+  // The expertises (D93): a rank earned (once the Core mounts the Archive), or one in place at the end of its réorientation's 24 h.
+  expertise: (ev, sink) => {
+    const name = expertiseDef(ev.id)?.name[locale()] ?? ev.id;
+    if (ev.what === 'earned') sink.toasts.show('good', t('toast.expertise.earned', { name, rank: romanRank(ev.rank) }), 7000);
+    else sink.toasts.show('good', t('toast.expertise.ready', { name }), 6000);
+    bus.emit('sfx', { cue: 'research' });
+  },
+  // The Gleaners (D103): what they took off the ribbons by night, shown on their card.
+  gleaners: (ev, sink) => {
+    if (sink.gleaners) sink.gleaners(ev);
+    else if (ev.what === 'dawn') sink.toasts.show('warn', t('glean.dawn.text', { list: ev.taken.map(([i, mu]) => t('glean.item', { n: Math.round(mu / 1000), item: itemRef(i) })).join(', ') }), 9000);
+    if (ev.what === 'dawn') bus.emit('sfx', { cue: 'notice' }); // the morning report; their first take of a night is silent
   },
 };
 

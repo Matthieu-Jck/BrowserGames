@@ -3,12 +3,17 @@
 // the heat's key (empty pale turquoise to full coral; a ribbon carries 60 a minute, a swift one 120)
 // over a histogram of the lines by how loaded they are, each bar in its heat, and the skydocks'
 // drifter routes. Read from `Readouts.ribbons` (sim/readouts/ribbons.ts); refreshed at 4 Hz with
-// change-only writes.
+// change-only writes. Then the night (D103): how many ribbon tiles the Gleaners reach (the crescent,
+// as the map marks them) and how many are kept from them (the glass hood), and what they took last
+// night, each item by its icon — the block gone where no ribbon runs by the open desert.
 import { el, setAttr, setStyle, setText } from '@/core/dom';
 import { t, tr, type MsgKey } from '@/i18n/i18n';
 import { HEAT, heatColor, viewIconCanvas } from '@/render/art/view-icons';
 import type { RibbonLook, RibbonSummary } from '@/sim/readouts/ribbons';
 import type { Sim } from '@/sim/state';
+import { locale } from '@/i18n/i18n';
+import { num } from '@/i18n/format';
+import { itemRef } from '../mention';
 
 /** The histogram's buckets (tenths of what a line carries). */
 const BUCKETS = 10;
@@ -24,6 +29,11 @@ export class LogisticsPanel {
   private readonly bars: HTMLElement[] = [];
   private readonly routes = el('b');
   private readonly routesRow: HTMLElement;
+  /** The night (D103): exposed and guarded tiles, last night's takings. */
+  private readonly night: HTMLElement;
+  private readonly exposed = el('b');
+  private readonly guarded = el('b');
+  private readonly taken = el('p.vp-glean-taken');
   private readonly cursor = new Map<string, number>();
   private looks: readonly RibbonLook[] = [];
 
@@ -45,6 +55,13 @@ export class LogisticsPanel {
     const grad = `linear-gradient(90deg, ${HEAT.map(([u, c]) => `${c} ${u / 10}%`).join(', ')})`;
     for (let i = 0; i < BUCKETS; i++) this.bars.push(el('i.vp-hist-bar', { style: `background:${heatColor((i + 0.5) * (1000 / BUCKETS))}` }));
     this.routesRow = el('div.vp-routes', {}, [viewIconCanvas('dock', 20), el('span', { 'data-label': 'mapview.routes' }), this.routes]);
+    this.night = el('div.vp-glean', { 'data-glean': '' }, [
+      el('div.vp-flags', {}, [
+        el('span.vp-flag', { 'data-k': 'exposed' }, [viewIconCanvas('moon', 20), this.exposed]),
+        el('span.vp-flag', { 'data-k': 'guarded' }, [viewIconCanvas('guard', 20), this.guarded]),
+      ]),
+      this.taken,
+    ]);
     this.root = el('div.vp-logistics', {}, [
       row,
       el('h4.vp-h', { 'data-label': 'mapview.heat' }),
@@ -52,6 +69,7 @@ export class LogisticsPanel {
       el('div.vp-heat', { style: `background:${grad}` }),
       el('div.vp-heat-ends', {}, [el('small', { 'data-label': 'mapview.heat.empty' }), el('small', { 'data-label': 'mapview.heat.full' })]),
       this.routesRow,
+      this.night,
     ]);
   }
 
@@ -89,5 +107,18 @@ export class LogisticsPanel {
     });
     setText(this.routes, String(sim.routes.length));
     setAttr(this.routesRow, 'hidden', sim.routes.length ? null : '');
+    // The night (D103).
+    const g = sim.graph?.glean;
+    const ne = g?.exposed.length ?? 0, ng = g?.guarded.length ?? 0;
+    const took = sim.gleanedTonight().sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+    setAttr(this.night, 'hidden', ne || ng || took.length ? null : '');
+    setText(this.exposed, String(ne));
+    setText(this.guarded, String(ng));
+    setAttr(this.exposed.parentElement!, 'title', tr('mapview.glean.exposed', { n: ne }));
+    setAttr(this.guarded.parentElement!, 'title', tr('mapview.glean.guarded', { n: ng }));
+    setAttr(this.exposed.parentElement!, 'hidden', ne ? null : '');
+    setAttr(this.guarded.parentElement!, 'hidden', ng ? null : '');
+    const list = took.slice(0, 6).map(([i, mu]) => t('glean.item', { n: num(Math.round(mu / 1000)), item: itemRef(i) }));
+    setText(this.taken, took.length ? `${t(sim.gleanNight() ? 'mapview.glean.tonight' : 'mapview.glean.taken')} ${new Intl.ListFormat(locale(), { type: 'conjunction' }).format(list)}` : t('mapview.glean.none'));
   }
 }

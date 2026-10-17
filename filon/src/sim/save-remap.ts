@@ -55,13 +55,15 @@ export const FIELDS: { readonly [K in keyof Required<SaveData>]: Kind } = {
   done: 'plain', terrainDiff: 'plain', levelDiff: 'plain', oreDiff: 'index', land: 'plain', explored: 'plain',
   nodes: 'index', chains: 'index', produced: 'index', consumed: 'index', projects: 'index', tokens: 'plain', dataAcc: 'refs', labQueue: 'refs',
   notes: 'plain', respecs: 'plain', lastRespec: 'plain', designated: 'plain', jobs: 'refs', fleet: 'refs',
-  routes: 'index', nextRouteId: 'plain', market: 'plain', trade: 'index', quests: 'plain', value: 'plain',
+  routes: 'index', nextRouteId: 'plain', market: 'plain', trade: 'index', quests: 'plain', value: 'plain', expertise: 'plain',
+  gleaners: 'index',
 };
 
 /** The same for the trade section. */
 export const TRADE_FIELDS: { readonly [K in keyof Required<NonNullable<SaveData['trade']>>]: Kind } = {
   cargo: 'index', orders: 'index', nextOrderId: 'plain', inflight: 'index', sold: 'index', bought: 'index',
   ledger: 'index', activity: 'refs', earned: 'plain', spent: 'plain', soldTotal: 'index', boughtTotal: 'index', floors: 'index',
+  starterTaken: 'plain',
 };
 
 const sigOf = (r: CRecipe): string =>
@@ -297,6 +299,8 @@ export function remapSave(d: SaveData, to: ContentTable = contentTable(), retire
     fleet: (d.fleet ?? []).filter(([id]) => alive(id)),
     routes: (d.routes ?? []).filter((r) => alive(r.from) && alive(r.to) && item(r.item) >= 0).map((r) => ({ ...r, item: item(r.item) })),
     ...(trade ? { trade } : {}),
+    // The Gleaners' counts (D103): per item, re-pointed like the statistics.
+    ...(d.gleaners ? { gleaners: { ...d.gleaners, gleaned: dense(d.gleaners.gleaned, false), ...(d.gleaners.dusk ? { dusk: dense(d.gleaners.dusk, false) } : {}), ...(d.gleaners.dawn ? { dawn: dense(d.gleaners.dawn, false) } : {}) } } : {}),
   };
   const note: RemapNote = {
     removed: [...removed].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([id, r]) => ({ id, ...r })),

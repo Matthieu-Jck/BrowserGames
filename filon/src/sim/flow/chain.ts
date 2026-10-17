@@ -20,9 +20,19 @@
 //
 // Conduits (fluids) still flow continuously: a FIFO of parcels ("runs": an item, a quantity and
 // the window of ticks in which it reaches the head), only the head run leaving, up to `thrMu` a tick.
+//
+// The Gleaners (D103): at night (`ctx.glean`) a ribbon's exposed cells (`gleanCells`: its tiles
+// beside open desert floor, sim/world/reach.ts) lose a little. On `gleanRate` ‰ of its steps —
+// spread evenly over a window of `GLEAN_WINDOW` ticks on the world's clock (`gleanStep`) — they look
+// at one exposed cell, picked by a hash of the chain and the step, and take what it carries by their
+// taste (content/gleaners.ts). So they take a fraction of what passes (an empty cell gives nothing),
+// the same on every machine, and the pattern repeats with the window: the catch-up folds the window
+// into a night group's period (graph/groups.ts `rotNight`) and the warm-ups count what is taken
+// (`ctx.gleaned`), exactly as online. Whole items, counted: nothing vanishes unseen.
 import { BAL } from '@/content/balance';
-import { itemDef } from '@/content/registry';
-import type { StateHasher } from '@/core/hash';
+import { GLEANER_TASTE } from '@/content/gleaners';
+import { N_ITEMS, itemDef, itemIdx } from '@/content/registry';
+import { hash32, type StateHasher } from '@/core/hash';
 import { ceilDiv } from '@/core/fixed';
 import { MU } from '../constants';
 import { FNode, type TickCtx } from './node';
@@ -38,6 +48,48 @@ export const isFluidItem = (item: number): boolean => {
 
 /** Engine ticks per minute (10 a second). */
 const TPM = 600;
+
+/**
+ * The Gleaners' pattern repeats every GLEAN_WINDOW ticks (D103): two minutes, the recipes' common
+ * cycle (`CYCLE_LCM`), so a night group keeps a short exact period offline.
+ */
+export const GLEAN_WINDOW = 1200;
+
+/** The index (0…) of the step a ribbon of `perMin` takes at tick `t` of the Gleaners' window (only meaningful on a step tick). */
+export const windowStep = (t: number, perMin: number): number => Math.floor(((t + 1) * perMin) / TPM) - 1;
+/** The tick of the window on which step `s` falls (the inverse of `windowStep`, `stepAt`'s beat). */
+export const windowStepTick = (s: number, perMin: number): number => Math.ceil(((s + 1) * TPM) / perMin) - 1;
+/** Do the Gleaners try on step `s` of the window, at `rate` ‰ of the steps from the chain's phase (an error-diffusion line)? */
+export const gleanTriesAt = (s: number, rate: number, phase: number): boolean =>
+  Math.floor(((s + 1) * rate + phase) / 1000) !== Math.floor((s * rate + phase) / 1000);
+/** Which of its exposed cells they look at on step `s` (index into `gleanCells`). */
+export const gleanPick = (seed: number, s: number, n: number): number => hash32(seed, s) % n;
+
+/**
+ * Every try of an exposed chain in one window (D103), in order: its tick in the window and the
+ * chain cell they look at. The very rule `gleanStep` runs, laid out ahead of time: the views send a
+ * Gleaner to each one before it happens, and the sim's log says whether it took something.
+ */
+export function gleanSchedule(c: Pick<Chain, 'perMin' | 'gleanRate' | 'gleanSeed' | 'gleanCells'>): Array<{ t: number; cell: number }> {
+  const out: Array<{ t: number; cell: number }> = [];
+  const n = c.gleanCells.length;
+  if (!n || c.gleanRate <= 0) return out;
+  const steps = (GLEAN_WINDOW * c.perMin) / TPM, phase = c.gleanSeed % 1000;
+  for (let s = 0; s < steps; s++) {
+    if (gleanTriesAt(s, c.gleanRate, phase)) out.push({ t: windowStepTick(s, c.perMin), cell: c.gleanCells[gleanPick(c.gleanSeed, s, n)]! });
+  }
+  return out;
+}
+
+let TASTE: Int16Array | null = null;
+/** How likely the Gleaners take an item of this kind when they look at it (‰; 0: they leave it). */
+export function gleanTaste(item: number): number {
+  if (!TASTE) {
+    TASTE = new Int16Array(N_ITEMS);
+    for (const [id, p] of Object.entries(GLEANER_TASTE)) TASTE[itemIdx(id)] = p;
+  }
+  return TASTE[item] ?? 0;
+}
 
 /** Does a ribbon of `perMin` items a minute step at tick `now`? Every TPM/perMin ticks on average, on the world's clock. */
 export function stepAt(perMin: number, now: number): boolean {
@@ -71,6 +123,8 @@ export function packRuns(runs: readonly number[], len: number, rest: (item: numb
 /** How cells say where their item came from (`via`): a tile behind on this chain, or nothing known (a restored state). */
 export const VIA_BEHIND = -2, VIA_NONE = -1;
 
+const NO_CELLS = new Int32Array(0);
+
 export class Chain extends FNode {
   readonly kind = 'chain' as const;
   /** Milli-items on it (whole items in cells, the stage, and a conduit's runs). */
@@ -96,6 +150,14 @@ export class Chain extends FNode {
   private inboxVia = VIA_NONE;
   /** Per tick: the step's verdict, the first empty cell (worked out once, in `accept`). */
   private stepNow = -1;
+
+  // ── the Gleaners (D103): set at compile from the land, never saved ────────
+  /** Its cells the Gleaners reach at night (indices, ascending); empty: none. */
+  gleanCells: Int32Array = NO_CELLS;
+  /** ‰ of its steps they try at night (`BAL.gleaners`: per exposed tile, capped). */
+  gleanRate = 0;
+  /** Its own draw: which steps they try, which cell they look at. */
+  gleanSeed = 0;
 
   // ── fluids ───────────────────────────────────────────────────────────────
   runs: Run[] = [];
@@ -132,8 +194,13 @@ export class Chain extends FNode {
   get stepTicks(): number { return TPM / this.perMin; }
   get period(): number { return stepPeriod(this.perMin); }
 
-  /** Does it step at tick `now`? */
-  steps(now: number): boolean { return stepAt(this.perMin, now); }
+  /** Does it step at tick `now`? Asked three times a tick (offer, accept, update): the verdict is kept for the tick (D92: a warm-up asks it hundreds of millions of times). */
+  steps(now: number): boolean {
+    if (now !== this.stepsAt) { this.stepsAt = now; this.stepsIs = stepAt(this.perMin, now); }
+    return this.stepsIs;
+  }
+  private stepsAt = NaN;
+  private stepsIs = false;
 
   /** Every item on it, head first: its item and milli-items (a cell's whole item, the stage's part, a conduit's runs). */
   contents(): Array<{ item: number; mu: number }> {
@@ -270,6 +337,30 @@ export class Chain extends FNode {
       this.stageMu -= MU;
       if (this.stageMu <= 0) { this.stageMu = 0; this.stageItem = -1; }
     }
+    if (ctx.glean && this.gleanRate > 0 && this.steps(now)) this.gleanStep(ctx);
+  }
+
+  /**
+   * A step at night on an exposed chain (D103). The step's index in the window `s` (0…): they try
+   * on `gleanRate` ‰ of the steps, spread evenly (an error-diffusion line from the chain's own phase:
+   * the same count every window, never bunched), look at one exposed cell (a hash of the chain and
+   * `s`) and take what it carries if it is to their taste (a second hash against the taste ‰). The
+   * whole item leaves the line, counted in `ctx.gleaned` (and logged online for the views).
+   */
+  private gleanStep(ctx: TickCtx): void {
+    const now = ctx.now;
+    const t = ((now % GLEAN_WINDOW) + GLEAN_WINDOW) % GLEAN_WINDOW;
+    const s = windowStep(t, this.perMin);
+    if (!gleanTriesAt(s, this.gleanRate, this.gleanSeed % 1000)) return;
+    const i = this.gleanCells[gleanPick(this.gleanSeed, s, this.gleanCells.length)]!;
+    const v = this.cells[i]!;
+    if (!v) return;
+    const item = v - 1;
+    if (hash32(this.gleanSeed, s, 1) % 1000 >= gleanTaste(item)) return;
+    this.cells[i] = 0;
+    this.content -= MU;
+    ctx.gleaned[item] = ctx.gleaned[item]! + MU;
+    ctx.gleanLog?.push(this.tiles[i]!, item, now);
   }
 
   // ── fluids: a FIFO of runs ───────────────────────────────────────────────

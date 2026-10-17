@@ -9,7 +9,11 @@
 //   which its one exit hands out, each item in turn (D43, D62). An order buys only while the exit
 //   leads somewhere, and nothing while the container is full (a container's load: the post's
 //   throughput). The post's **cargo** is what it bought and holds or awaits;
-// · spot trades: a stock sold or bought at once along the market's depth (slippage).
+// · spot trades: a stock sold or bought at once along the market's depth (slippage);
+// · the starter contract (D101): once per base, CrierBelt sells copper ore at a fixed price, off
+//   the market — a standing order that buys `BAL.starter.n` in all, then stops (fulfilled) until
+//   the player continues it at the market's price or stops it; it lands `BAL.starter.delayMin`
+//   minutes after each purchase and, like every purchase, leaves only by the exit.
 // Everything here is integer: milli-items, centi-ocelles, ticks.
 import { BAL } from '@/content/balance';
 import { EPOCH } from './constants';
@@ -30,6 +34,13 @@ export interface ImportOrder {
   active: boolean;
   /** Express Freight (cm_express): half the delay, a quarter dearer. */
   express?: boolean;
+  /**
+   * The starter contract (D101; present only on that order): the mu still to buy at CrierBelt's
+   * fixed price, off the market. Always active (no hysteresis); at 0 it stands stopped (`orderHold`
+   * 'fulfilled') until continued at the market's price (`continueStarter`, which drops the field)
+   * or cancelled.
+   */
+  starter?: number;
 }
 
 export interface Shipment {
@@ -38,7 +49,7 @@ export interface Shipment {
   mu: number;
   /** Tick of arrival (always an epoch boundary). */
   arrive: number;
-  /** Supplying colony (index in the market's colonies), for the views. */
+  /** Supplying colony (index in the market's colonies), for the views; −1: CrierBelt itself (the starter contract, D101). */
   colony: number;
   /** What it cost, CrierBelt's cut included (centi-◉; for the views: the post's panel). Absent in saves before D64. */
   cents?: number;
@@ -62,16 +73,22 @@ export interface PostActivity { epoch: number; soldMu: number; boughtMu: number;
 /** Why a trade command was refused (null = accepted). */
 export type TradeRefusal = 'no_express' | 'no_post' | 'not_tradable' | 'slots' | 'unaffordable' | 'stock' | 'bad_amount' | 'reserve'
   /** A purchase no outlet of any post takes out; more than one container's load; a full container (D43). */
-  | 'no_outlet' | 'container' | 'full';
+  | 'no_outlet' | 'container' | 'full'
+  /** The starter contract was already signed on this base (D101: once, even if cancelled since). */
+  | 'taken';
 
-/** The trade post level from research: 1, 2 (Second Wharf), 3 (Grand Post). */
+/** The trade post level from research: 1, 2 (Wider Wharf), 3 (Grand Post). */
 export const tradeLevel = (mods: Mods): number => (mods.flags.has('tradeL3') ? 3 : mods.flags.has('tradeL2') ? 2 : 1);
 
 /** Standing import orders in all (Standing Orders: 6). */
 export const orderSlots = (mods: Mods): number => BAL.tradeOrders + mods.orders;
 
-/** Trade posts the colony may build (Second Wharf allows a second one). */
-export const maxPosts = (mods: Mods): number => (mods.flags.has('post3') ? 3 : mods.flags.has('tradeL2') ? 2 : 1);
+/**
+ * Trade posts the colony may build: a second with « Second comptoir » (`post2`, Commerce's Tier 1
+ * since D107), a third with the Crier House. Before D107 the second came with the post's level 2
+ * (`tradeL2`): a claim holding that keeps its second post.
+ */
+export const maxPosts = (mods: Mods): number => (mods.flags.has('post3') ? 3 : mods.flags.has('post2') || mods.flags.has('tradeL2') ? 2 : 1);
 
 /** What one post lifts per epoch, imports and exports together (mu). */
 export const throughputMu = (level: number): number => BAL.tradeThroughput[Math.min(3, level) - 1]! * 1000;
@@ -121,6 +138,8 @@ export interface TradeState {
   spent: number;
   soldTotal: Float64Array;
   boughtTotal: Float64Array;
+  /** The starter contract (D101) was signed on this base: CrierBelt offers it once, ever. */
+  starterTaken: boolean;
 }
 
 export function newTradeState(nItems: number): TradeState {
@@ -129,5 +148,6 @@ export function newTradeState(nItems: number): TradeState {
     sold: new Float64Array(nItems), bought: new Float64Array(nItems),
     ledger: [], activity: new Map(), floors: new Map(), earned: 0, spent: 0,
     soldTotal: new Float64Array(nItems), boughtTotal: new Float64Array(nItems),
+    starterTaken: false,
   };
 }

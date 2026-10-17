@@ -13,7 +13,7 @@ import { buildDemo, hearthNetwork, powerLine } from '../dev';
 import { catchUp } from '../offline/catchup';
 import { serialize, deserialize } from '../serialize';
 import { Sim } from '../state';
-import { testSim, wire, drillToHearth, line, stockedSilo, IRON, SAND } from '../testkit';
+import { learnPlans, testSim, testSource, wire, drillToHearth, line, stockedSilo, IRON, SAND } from '../testkit';
 import { St, T, type Ent, type Rot } from '../types';
 import { MapGen } from '../world/mapgen';
 import { FlatSource } from '../world/grid';
@@ -223,16 +223,22 @@ describe('power wires in a colony', () => {
     expect(b.hash()).toBe(sim.hash());
   });
 
-  it('the Hearth’s own solar panel follows the sun (240 kW at noon, a ramp at dawn, nothing at night) on top of its 90 kW isotope core', () => {
+  it('the Hearth’s own solar panel follows the sun (a share at noon, a ramp at dawn, nothing at night) on top of its isotope core, the most of it (D101); both grow with its level', () => {
     const sim = testSim(); // founded at noon of a world day
     sim.run(1);
     const g = gridOf(sim, sim.hearthId)!;
-    const core = BAL.hearthCoreKw;
-    expect(sim.netPower[g]!.renew).toBe(240 + core);
+    const core = BAL.hearthCoreKw[0]!, sun = BAL.hearthSolarKw[0]!;
+    expect(core * 100).toBeGreaterThanOrEqual(65 * (core + sun)); // about 70 % steady at noon
+    expect(sim.netPower[g]!.renew).toBe(sun + core);
     sim.run(12 * 600); // epoch 36: the night — the core alone
     expect(sim.netPower[g]!.renew).toBe(core);
     sim.run(12 * 600); // epoch 48 = day epoch 12: first light, 150 ‰
-    expect(sim.netPower[g]!.renew).toBe(36 + core);
+    expect(sim.netPower[g]!.renew).toBe(Math.floor((sun * 150) / 1000) + core);
+    // Level 2: the next row of both, once the graph is compiled again.
+    sim.hearthLevel = 2;
+    sim.dirty = true;
+    sim.run(1);
+    expect(sim.netPower[gridOf(sim, sim.hearthId)!]!.renew).toBe(Math.floor((BAL.hearthSolarKw[1]! * 150) / 1000) + BAL.hearthCoreKw[1]!);
     // A Solar Farm (en_solarfarm, D70): 600 kW in full sun, nothing at night (no panel keeps a night floor).
     const farm = testSim();
     farm.done.add('en_solarfarm');
@@ -242,7 +248,7 @@ describe('power wires in a colony', () => {
     expect(f.ok, f.reason).toBe(true);
     expect(farm.link(farm.hearthId, f.id!).ok).toBe(true);
     farm.run(1);
-    expect(farm.netPower[gridOf(farm, farm.hearthId)!]!.renew).toBe(240 + 600 + core);
+    expect(farm.netPower[gridOf(farm, farm.hearthId)!]!.renew).toBe(sun + 600 + core);
     farm.run(12 * 600);
     expect(farm.netPower[gridOf(farm, farm.hearthId)!]!.renew).toBe(core);
   });
@@ -264,7 +270,11 @@ describe('power wires in a colony', () => {
   });
 
   it('online ≈ offline on a wired grid over a whole day (sun, wind, a coal generator at night)', () => {
-    const base = testSim();
+    // The turbine stands in the lee of a low rock (D95: the wind from the north-west to the north
+    // in this world), so on most nights the wind cannot carry the drills and the coal burns.
+    const src = testSource();
+    const base = new Sim({ worldSeed: 7, playerSeed: 11, foundingEpoch: WORLD_EPOCH0 + 24, source: new FlatSource(src.deposits, [...src.rocks, { x: 515, y: 513, w: 5, h: 2, t: T.Rock1, level: 1 }]) });
+    learnPlans(base);
     for (const [it, n] of [['iron_plate', 200], ['glass', 40], ['copper_wire', 40]] as const) base.grant(it, n);
     drillToHearth(base);
     const m = base.place('mast', 520, 512, 0);
@@ -275,12 +285,17 @@ describe('power wires in a colony', () => {
     wire(base, [sand.id!, wind.id!], m.id!);
     wire(base, brazier.id!);
     base.placeBelts('ribbon', line(521, 511, 3, 7));
-    // A second iron drill (facing east, side-loading the first one's line): with it the night's
-    // demand (2 × 90 + 30 kW) outruns the Heart's core and the wind, so the coal generator burns.
+    // A second iron drill (facing east, side-loading the first one's line) and a third (into its
+    // tail): with them the night's demand (3 × 90 + 30 kW) outruns the Heart's core (210 kW since
+    // D101) and the wind, so the coal generator burns.
     const d2 = base.place('drill', 508, 500, 1);
     expect(d2.ok, d2.reason).toBe(true);
     wire(base, d2.id!);
     expect(base.placeBelts('ribbon', [...line(510, 500, 2, 5), [510, 505, 1]])).toBe(6);
+    const d3 = base.place('drill', 513, 502, 2); // its output faces (514, 504)
+    expect(d3.ok, d3.reason).toBe(true);
+    wire(base, d3.id!);
+    expect(base.placeBelts('ribbon', [[514, 504, 3], [513, 504, 3]])).toBe(2);
     // Coal from a silo under the coal generator: out (507,520) → one ribbon square up into its inlet.
     stockedSilo(base, 507, 520, 0, 'coal', 400);
     expect(base.placeBelts('ribbon', [[507, 519, 0]])).toBe(1);

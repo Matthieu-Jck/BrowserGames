@@ -1,0 +1,30 @@
+/* deposit-card.css — the deposit card (D99, ui/deposit-card.ts): a small cartouche beside the
+   pointer resting on a known deposit — the ore, what a tile gives (the kit's meter), the machines
+   that work it (dim with a lock while still to unlock), the parcel. Over the world and the panels,
+   under the build tip (40); it catches no pointer. It zooms with the UI scale, as #ui does. */
+.dcard {
+  position: fixed; left: 0; top: 0; z-index: 36; pointer-events: none;
+  zoom: var(--ui-zoom); min-width: 170px; max-width: 240px; padding: 7px 10px 8px;
+  font-size: 13px; line-height: 1.3; box-shadow: 2px 3px 0 var(--c-ink);
+}
+.dcard[hidden] { display: none; }
+.dcard-head { display: flex; align-items: center; gap: 7px; }
+.dcard-head canvas { display: block; width: 28px; height: 28px; flex: none; }
+.dcard-name { font-size: 15px; line-height: 1.1; }
+.dcard-rich { margin-top: 6px; }
+.dcard-rich .kmeter { gap: 6px; }
+.dcard-size { display: flex; align-items: center; gap: 4px; margin-top: 2px; font-size: 11px; color: var(--c-ink-soft); font-variant-numeric: tabular-nums; }
+.dcard-size .glyph { width: 1.25em; height: 1.25em; }
+.dcard-mach { display: grid; gap: 2px; margin-top: 6px; padding-top: 5px; border-top: 1px dashed var(--c-ink-soft); }
+.dcard-m { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+.dcard-m canvas { display: block; width: 22px; height: 22px; flex: none; }
+.dcard-m[data-locked] { color: var(--c-ink-soft); font-weight: 400; }
+.dcard-m[data-locked] canvas { opacity: 0.45; filter: grayscale(1); }
+.dcard-lock { width: 12px; height: 12px; margin-left: auto; flex: none; }
+.dcard-lock .dl-shackle { fill: none; stroke: var(--c-ink-soft); stroke-width: 1.6; }
+.dcard-lock .dl-body { fill: var(--c-paper-d); stroke: var(--c-ink-soft); stroke-width: 1.2; }
+.dcard-lock .dl-hole { stroke: var(--c-ink-soft); stroke-width: 1.4; stroke-linecap: round; }
+.dcard-then { padding-left: 6px; font-size: 13px; line-height: 1; color: var(--c-ink-soft); }
+.dcard-land { display: flex; align-items: center; gap: 5px; margin-top: 6px; padding-top: 5px; border-top: 1px dashed var(--c-ink-soft); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.dcard-land .glyph { width: 1.3em; height: 1.3em; }
+.dcard-land[data-poor] { color: var(--c-coral-d); }

@@ -17,12 +17,16 @@ import { buildDemo, connect, powerLine, learnPlans } from '@/sim/dev';
 import { BUILDING_IDS, ITEM_IDS } from '@/content/registry';
 import { QUEST_IDS } from '@/content/quests';
 import { isResearch } from '@/content/research';
+import { EXPERTISES, EXPERTISE_IDS, isExpertise } from '@/content/expertises';
+import { archiveOpen, tierTwoOpen } from '@/sim/systems/expertise';
 import { questProgress } from '@/sim/systems/quests';
 import { isScenario } from '@/sim/scenarios';
 import { buildArtboard } from '@/ui/screens/artboard';
 import { eventLine } from '@/ui/gazette';
 import type { Rot } from '@/sim/types';
-import { CENTER } from '@/sim/constants';
+import { CENTER, EPOCH } from '@/sim/constants';
+import { catchUp } from '@/sim/offline/catchup';
+import { GLEAN_WINDOW, gleanSchedule } from '@/sim/flow/chain';
 import { veinSpots } from '@/sim/scenario-quartz';
 import { PARCEL, parcelAt, parcelCentre, ringOf } from '@/sim/world/land';
 
@@ -39,7 +43,7 @@ export interface FilonDebug {
   /** Open a construction category (null closes building and returns to iso). */
   category(cat?: string | null): string | null;
   /**
-   * The specialised view on show (D88: normal, power, logistics, production, land); with an
+   * The specialised view on show (D88: normal, power, logistics, production, wind (D95), land); with an
    * argument, shows it first (its readings at once). `marks`: the badges up; `panel`: the side card shown.
    */
   mapView(v?: MapView): { view: MapView; marks: number; panel: boolean; version: number };
@@ -117,6 +121,8 @@ export interface FilonDebug {
   parcelAt(x: number, y: number): number;
   /** The land's quartz vein (D87: map 3): its face tiles, the way they look, the floor spots of its face cutters (top-left, rot); null on maps 1–2. */
   vein(): { x: number; y: number; dx: number; dy: number; n: number; look: number; parcel: number; spots: Array<[number, number, number]> } | null;
+  /** The sea's coast straight out from the cirque (map 4, D94); with a zoom, the camera jumps there (the fog lifted round it: a review rig). Null where there is no sea. */
+  sea(zoom?: number): [number, number] | null;
   /** This epoch's bid / ask of an item (◉). */
   price(item: string): { bid: number; ask: number };
   /** The first built trade post (0 = none). */
@@ -131,6 +137,16 @@ export interface FilonDebug {
    * outright (sandbox, outside commands). Returns the ids unlocked.
    */
   unlock(id?: string): string[];
+  /**
+   * The expertises (D93): ranks, slots, each feat's value, the next réorientation's price (◉),
+   * whether Tier 2 is open. `earnExpertise` sets a rank outright (sandbox, outside commands, as if
+   * its feat had reached it); `chooseExpertise` / `reorientExpertise` are the commands (null: done,
+   * else why not).
+   */
+  expertise(): { ranks: Record<string, number>; slots: Array<{ id: string; on: boolean; at: number } | null>; feats: Record<string, number>; reorientCost: number; tierTwo: boolean; archive: boolean };
+  earnExpertise(id: string, rank?: number): boolean;
+  chooseExpertise(slot: number, id: string): string | null;
+  reorientExpertise(slot: number, id: string): string | null;
   archetype(): string;
   /**
    * Day / night: with an hour of the 24-hour clock (5 dawn, 12 noon, 19 dusk, 0 midnight) or a
@@ -156,6 +172,23 @@ export interface FilonDebug {
   nameColony(name: string): boolean;
   /** The naming modal: is it open? With true / false, opens / closes it first. */
   nameModal(open?: boolean): boolean;
+  /** The night notice (D101): `true` shows it now, whatever the hour; whether it is on show. */
+  nightNotice(show?: boolean): boolean;
+  /**
+   * The Gleaners (D103): whether they are out, the ribbon tiles they reach and those kept from them
+   * (and the first few exposed tiles, to aim a camera), what they took (lifetime and the night so
+   * far / the last one, by item id), the figures on screen, the card on show. `toNight: m` runs the
+   * base on to `m` minutes into the next night — a catch-up, sandbox; `card` shows a card now with
+   * what they took (null closes it).
+   */
+  gleaners(o?: { toNight?: number; card?: 'night' | 'dawn' | null }): {
+    night: boolean; exposed: number; guarded: number; exposedTiles: Array<[number, number]>; guardedTiles: Array<[number, number]>;
+    gleaned: Record<string, number>; tonight: Record<string, number>; figures: number; carrying: number; tapping: number; prowling: number; card: 'night' | 'dawn' | null; tick: number;
+    /** The next tries on the exposed lines from now on (tile, tick), soonest first: where to look for one. */
+    next: Array<{ x: number; y: number; tick: number }>;
+  };
+  /** A goal quest's hint (D101): `true` asks for it, `false` puts it away; the guide's hint state. */
+  questHint(show?: boolean): { goal: boolean; shown: boolean; left: boolean; auto: boolean };
   /**
    * The intro (D31; skipped by itself under automation): its state — open, the beat on screen
    * ('city', 'investor', 'crierbelt', 'name', 'landing'), the landing running and its time (s),
@@ -367,6 +400,14 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
       const V = app.sim.grid.source.quartzVein;
       return V ? { x: V.x, y: V.y, dx: V.dx, dy: V.dy, n: V.n, look: V.look, parcel: parcelAt(V.x, V.y), spots: veinSpots(app.sim) } : null;
     },
+    sea: (zoom) => {
+      const p = app.sim.grid.source.seaPoint?.() ?? null;
+      if (p && zoom !== undefined) {
+        app.sim.explored.push([p[0], p[1], 60]);
+        app.camera.centerOnTile(p[0], p[1], zoom);
+      }
+      return p;
+    },
     price: (item) => {
       const i = ITEM_IDS.indexOf(item as never);
       return { bid: (app.sim.prices.bid[i] ?? 0) / 100, ask: (app.sim.prices.ask[i] ?? 0) / 100 };
@@ -386,6 +427,22 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
       }
       return learnPlans(sim, id ? [id] : undefined);
     },
+    expertise: () => {
+      const sim = app.sim;
+      return {
+        ranks: Object.fromEntries(sim.expertise.ranks), slots: sim.expertise.slots.map((x) => (x ? { ...x } : null)),
+        feats: Object.fromEntries(EXPERTISE_IDS.map((id) => [id, sim.featValue(EXPERTISES[id].feat)])),
+        reorientCost: sim.reorientCost() / 100, tierTwo: tierTwoOpen(sim), archive: archiveOpen(sim),
+      };
+    },
+    earnExpertise: (id, rank = 1) => {
+      if (!isExpertise(id)) return false;
+      app.sim.expertise.ranks.set(id, Math.max(1, Math.min(3, rank)));
+      app.sim.rebuildDerived();
+      return true;
+    },
+    chooseExpertise: (slot, id) => app.sim.chooseExpertise(slot, id),
+    reorientExpertise: (slot, id) => app.sim.reorient(slot, id),
     research: (id) => {
       if (id) { const r = app.sim.startResearch(id); if (!r.ok) return { ok: false, reason: r.reason }; }
       return { ok: true, reason: null, projects: app.sim.projects.map((p) => ({ id: p.id, permille: Math.min(1000, Math.floor(p.el / Math.max(1, p.dur))) })), done: [...app.sim.done] };
@@ -428,6 +485,45 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
       const ok = app.sim.nameColony(name);
       app.quests.refresh();
       return ok;
+    },
+    nightNotice: (show) => {
+      if (show === true) app.night.show();
+      return app.night.shown;
+    },
+    gleaners: (o = {}) => {
+      const sim = app.sim;
+      if (o.toNight !== undefined) {
+        // On to the next nightfall (a night already begun counts from its start), then m minutes in.
+        let e = sim.absEpoch();
+        if (sim.gleanNight()) while (sim.gleanNight((e - 1 - sim.foundingEpoch) * EPOCH)) e--;
+        else while (!sim.gleanNight((e - sim.foundingEpoch) * EPOCH)) e++;
+        const to = (e - sim.foundingEpoch) * EPOCH + Math.round(o.toNight * EPOCH);
+        if (to > sim.tick) catchUp(sim, to - sim.tick);
+        app.gleaners.rebuild(sim);
+      }
+      if (o.card === null) app.gleanCard.hide();
+      if (o.card) app.gleanCard.show(o.card, sim.gleanedTonight());
+      sim.ensureCompiled();
+      const byId = (pairs: ReadonlyArray<readonly [number, number]>): Record<string, number> => Object.fromEntries(pairs.map(([i, mu]) => [ITEM_IDS[i]!, mu / 1000]));
+      const g = sim.graph.glean;
+      return {
+        night: sim.gleanNight(), exposed: g.exposed.length, guarded: g.guarded.length,
+        exposedTiles: [...g.exposed].slice(0, 24).map((t) => [t & 1023, t >> 10] as [number, number]),
+        guardedTiles: [...g.guarded].slice(0, 24).map((t) => [t & 1023, t >> 10] as [number, number]),
+        gleaned: byId([...sim.gleaned].map((mu, i) => [i, mu] as const).filter(([, mu]) => mu > 0)),
+        tonight: byId(sim.gleanedTonight()), figures: app.gleaners.shown, carrying: app.gleaners.carrying, tapping: app.gleaners.tapping, prowling: app.gleaners.prowling, card: app.gleanCard.shown, tick: sim.tick,
+        next: sim.graph.chains.filter((c) => c.gleanRate > 0).flatMap((c) => gleanSchedule(c).map((s) => {
+          const t = sim.tick - (sim.tick % GLEAN_WINDOW) + s.t;
+          const tile = c.tiles[s.cell]!;
+          return { x: tile & 1023, y: tile >> 10, tick: t > sim.tick ? t : t + GLEAN_WINDOW };
+        })).sort((a, b) => a.tick - b.tick).slice(0, 24),
+      };
+    },
+    questHint: (show) => {
+      const h = app.guide.hintState();
+      if (show !== undefined && show !== h.shown) app.guide.toggleHint();
+      app.quests.refresh();
+      return app.guide.hintState();
     },
     nameModal: (open) => {
       if (open === true) app.quests.openNaming();

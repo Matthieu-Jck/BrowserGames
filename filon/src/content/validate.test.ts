@@ -6,6 +6,8 @@ import { BAL } from './balance';
 import { BUILDINGS } from './buildings';
 import { ANALYTICS, PLAN_IDS, PLAN_PATHS, PLANS, RESEARCH, pathEntries, pathPlans, pathProblems, planDef, treePrereq } from './research';
 import { BOOTSTRAP, ESSENTIAL, RESERVED, reserveNeed, reserveProblems, stagePlans } from './reserve';
+import { FEATURE_NEEDS, buyable, knownAt, mapSpecific, nodeUnusable, usabilityProblems, usableWith } from './usable';
+import { DEPTH_COST, FAMILIES, TIER1_WHOLE, tierOfDepth } from './research';
 import type { BuildingDef, PlanDef, RecipeDef } from './types';
 
 describe('content invariants', () => {
@@ -68,11 +70,11 @@ describe('content invariants', () => {
     }
   });
 
-  it('the analytics path (D41): telemetry first (saves and quest 2 know its id), then the ledger, the power log, the diagnostics — each turning on its own flag, and only that', () => {
-    expect(pathPlans('analytics')).toEqual(['telemetry', 'statistics', 'power_log', 'diagnostics']);
+  it('the analytics path (D41): telemetry first (saves and quest 2 know its id), then the ledger, the power log, the diagnostics and the wind survey (D95) — each turning on its own flag, and only that', () => {
+    expect(pathPlans('analytics')).toEqual(['telemetry', 'statistics', 'power_log', 'diagnostics', 'anemometry']);
     expect(pathEntries('analytics')).toEqual(['telemetry']);
     expect(PLANS.telemetry.prereq).toEqual([]); // a root plan: the tutorial's first plan never waits
-    expect(ANALYTICS).toEqual({ rates: 'telemetry', ledger: 'statistics', power: 'power_log', machines: 'diagnostics' });
+    expect(ANALYTICS).toEqual({ rates: 'telemetry', ledger: 'statistics', power: 'power_log', machines: 'diagnostics', wind: 'anemometry' });
     for (const id of pathPlans('analytics')) {
       const p = PLANS[id] as PlanDef;
       expect(p.effects, id).toEqual([{ k: 'flag', flag: id }]);
@@ -107,5 +109,64 @@ describe('content invariants', () => {
     const left = new Map(Object.entries(BAL.startStock));
     for (const id of rootPlans()) for (const [it, n] of (PLANS as Record<string, PlanDef>)[id]!.cost) left.set(it, left.get(it)! - n);
     for (const [it, n] of reserveNeed((p) => rootPlans().includes(p))) expect(left.get(it)!, it).toBeGreaterThanOrEqual(n);
+  });
+});
+
+describe('nothing unusable (D107)', () => {
+  it('every node of the tree unlocks only what the base can use by then: buildings paid and run, recipes fed, features with what they act on', () => {
+    expect(usabilityProblems()).toEqual([]);
+  });
+
+  it('usable means extracted, made or bought: a cliff face’s quartz only through a trade post, water never bought, the uniques only bought', () => {
+    expect(mapSpecific('quartz')).toBe(true);
+    expect(mapSpecific('sporeglass')).toBe(true);
+    expect(mapSpecific('iron_ore')).toBe(false);
+    expect(buyable('quartz')).toBe(true);
+    expect(buyable('water')).toBe(false);
+    expect(usableWith(new Set(['beacon', 'ex_quartz'])).items.has('quartz')).toBe(false);
+    expect(usableWith(new Set(['beacon', 'telemetry', 'trade_post', 'ex_quartz'])).items.has('quartz')).toBe(true);
+    // Before the sand collector and the wire mill, a kiln makes plates but no glass, and no wire is drawn.
+    const kiln = usableWith(knownAt('kiln')).items;
+    expect(kiln.has('iron_plate')).toBe(true);
+    expect(kiln.has('glass') || kiln.has('copper_wire')).toBe(false);
+    // A research node knows every plan (the lab's gate needs them all, D71).
+    expect(knownAt('tr1').has('trade_post')).toBe(true);
+  });
+
+  it('the rule catches what the tree used to unlock too early (the violations D107 fixed)', () => {
+    // Each fix is pinned: the prerequisite that makes it usable.
+    expect(PLANS.workshop.prereq).toEqual(expect.arrayContaining(['sand_collector', 'wire_mill']));
+    expect(PLANS.ex_quartz.prereq).toContain('trade_post');
+    expect(RESEARCH.ex_sifter.prereq).toContain('tr2'); // Basalt Bits after it: the excavator's bits
+    expect(RESEARCH.dn_compact.prereq).toContain('tr3'); // the assembly recipes are Ceramics'
+    expect(RESEARCH.cm_plan.prereq).toContain('an_servers'); // no token billed before the servers (D105)
+    expect(RESEARCH.xp4.prereq).toContain('tr4'); // the pylons are Land Registry's
+    // Every feature the tree uses says what it acts on.
+    for (const id of [...PLAN_IDS, ...Object.keys(RESEARCH)]) expect(nodeUnusable(id), id).toEqual([]);
+    expect(FEATURE_NEEDS.tokenPlan).toContain('server');
+  });
+
+  it('the tree’s shape (D107): Logistics, Commerce’s beginner Tier 1, the Fast Drill at Tier 1, Finance at Tier 2', () => {
+    expect(FAMILIES.xp.name).toEqual({ fr: 'Logistique', en: 'Logistics' });
+    expect(RESEARCH.cm_post2.tier).toBe(1);
+    expect(RESEARCH.cm2.tier).toBe(2);
+    expect(RESEARCH.ex_fastdrill.tier).toBe(1);
+    expect(RESEARCH.ex_sifter.tier).toBe(2);
+    expect(RESEARCH[TIER1_WHOLE].prereq).toEqual(expect.arrayContaining(['cm_post2', 'ex_fastdrill']));
+    expect(RESEARCH[TIER1_WHOLE].prereq).not.toContain('cm2');
+  });
+
+  it('research is short early and long late (D107): minutes by tier', () => {
+    const band: Record<number, [number, number]> = { 1: [1, 3], 2: [8, 30], 3: [60, 360], 4: [480, 1440] };
+    for (const [d, c] of Object.entries(DEPTH_COST)) {
+      const [lo, hi] = band[tierOfDepth(Number(d))]!;
+      expect(c.minutes, `depth ${d}`).toBeGreaterThanOrEqual(lo);
+      expect(c.minutes, `depth ${d}`).toBeLessThanOrEqual(hi);
+    }
+    for (const [id, r] of Object.entries(RESEARCH)) {
+      const [lo, hi] = band[r.tier]!;
+      expect(r.minutes, id).toBeGreaterThanOrEqual(lo);
+      expect(r.minutes, id).toBeLessThanOrEqual(hi);
+    }
   });
 });

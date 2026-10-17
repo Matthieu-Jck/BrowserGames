@@ -8,26 +8,32 @@
 // (world/stand.ts), so the rock it stands on never covers it. Water up on the rock (the Crown's
 // tarn, D63) is a column like the rock round it, topped by its pool (terrain.ts `columnLook`).
 // Rock holding a face ore (D87: quartz in the cliff) wears its vein — a crystal seam on its walls,
-// points on its lip — keyed apart (`:q`) and baked with a little headroom for the points.
+// points on its lip — keyed apart (`:q`) and baked with a little headroom for the points. A stream
+// up on a massif (D94) is a column too, its fall down its wall. A column whose lower step shows in
+// front of the one above (a diagonal front's ledge, relief.ts `ledges`) is cut in parts, each tinted
+// by the shade at its own height; each step wears the rock of its height where it shows (`:l`); the
+// talus at the foot of a higher neighbour's wall is a decal of its own (`t:`), a few dozen looks
+// for the whole land.
 //
 // The sun's shadows on the rock (owner, 2026-10-13: "high ground needs to be doing way bigger
 // shadows… proportionate to the place of the sun"): the floor's are painted (terrain-chunks.ts,
 // 's'); a column whose top lies in the shadow of higher rock is tinted towards ink (`setSun`):
 // from nine points on its top, a walk back towards the sun — a level up for every level's step of
 // the light along the ground — finds the rock that stands in the way. Re-tinted when the sun moves
-// a step, and as blocks stream in.
+// a step, and as blocks stream in. The walk reads the rock as drawn (`heightAt`: chamfers), and the
+// shade is smoothed over the tops and ledges round it at its height.
 import { Container, Sprite } from 'pixi.js';
+import { hash32 } from '@/core/hash';
 import { CHUNK, CHUNKS } from '@/sim/constants';
 import type { Grid } from '@/sim/world/grid';
-import { hash32 } from '@/core/hash';
-import { buildWindow, BORDER, columnLook, tileMasks, WIN, windowLevels } from '../art/terrain';
-import { drawColumn, topKey, type TopLook } from '../art/rock';
+import { buildWindow, BORDER, columnLook, footOf, tileMasks, WIN, windowLayers, windowLevels } from '../art/terrain';
+import { columnSeed, columnVariant, drawColumn, drawFoot, footKey, topKey, type Foot, type TopLook } from '../art/rock';
 import { DynAtlas } from '../art/dyn-atlas';
 import { IS, IH, ILH } from '../art/iso-shapes';
 import { screenToWorld, type CamState } from '../camera-math';
-import { tileToIso } from '../iso';
+import { LH, tileToIso } from '../iso';
 import { reliefHead, tileBoxBounds, type Lin } from '../projection';
-import { MAX_LEVEL, MAX_TERRACE, tileTop } from '../relief';
+import { ledges, MAX_LEVEL, MAX_TERRACE, slabOutline, STEP_LEVELS, tileTop, type OutlinePt } from '../relief';
 import { rockZ } from './stand';
 import { C, mix, num } from '../art/tokens';
 
@@ -38,23 +44,42 @@ const BUDGET_MS = 8;
 const M = 5; // sprite margin (atlas px)
 /** Where a column's top is tested for shade (tile-local), and the shade's ink (the cast shadows' cool ink). */
 const SAMPLES: ReadonlyArray<readonly [number, number]> = [0.17, 0.5, 0.83].flatMap((u) => [0.17, 0.5, 0.83].map((v) => [u, v] as const));
+/** A ledge's samples: a finer grid, of which only the points on the ledge are kept. */
+const LEDGE_SAMPLES: ReadonlyArray<readonly [number, number]> = [0.1, 0.3, 0.5, 0.7, 0.9].flatMap((u) => [0.1, 0.3, 0.5, 0.7, 0.9].map((v) => [u, v] as const));
+/** Is (u, v) inside a convex outline (clockwise, y down)? */
+const inside = (p: readonly OutlinePt[], u: number, v: number): boolean => {
+  for (let i = 0; i < p.length; i++) {
+    const a = p[i]!, b = p[(i + 1) % p.length]!;
+    if ((b.u - a.u) * (v - a.v) - (b.v - a.v) * (u - a.u) < -1e-9) return false;
+  }
+  return true;
+};
 const SHADE = mix(C.ink, C.lilacD, 0.3);
 /** Headroom (levels) over a vein's column for the crystal points on its lip (rock.ts `veinLip`: up to half a level). */
 const VEIN_HEAD = 0.6;
+/** The least ledge (tiles² of a lower step's top left open by the step above) a column is cut at: a diagonal front's half tile, not a corner's chamfer. */
+const LEDGE_MIN = 0.2;
+/** Headroom (atlas px) over a talus decal for its stones. */
+const FOOT_HEAD = 8;
 /** Sorting key shared with the buildings (world/stand.ts holds them all): 4 × (2 × depth) + kind. */
 export { rockZ };
 
-/** A chunk's columns: relief level, per-step masks, rock class, the top of a column that is not rock (null: rock), its face-ore vein (D87). */
-interface ChunkRelief { lv: Uint8Array; masks: Uint8Array[]; cls: Uint8Array; top: Array<TopLook | null>; vein: Uint8Array }
+/** A chunk's columns: relief level, per-step masks, rock class, the top of a column that is not rock (null: rock), its face-ore vein (D87), where higher neighbours' walls rise from its top (rock.ts `Foot`: talus there). */
+interface ChunkRelief { lv: Uint8Array; masks: Uint8Array[]; cls: Uint8Array; top: Array<TopLook | null>; vein: Uint8Array; foot: Array<Foot | null>; layers: Array<number[] | null> }
 
 export class ReliefView {
   readonly atlas = new DynAtlas();
   private readonly chunks = new Map<number, ChunkRelief>();
-  private readonly blocks = new Map<number, Array<{ s: Sprite; x: number; y: number }>>();
+  /** Each block's sprites: a column's parts, each with the height its tint is worked out at (and, for a ledge, its column's masks). */
+  private readonly blocks = new Map<number, Array<{ s: Sprite; x: number; y: number; lv: number; ms: number[] | null }>>();
   /** The sun (ground step per relief level, tiles; quantised), its shadows' strength, and the key they were tinted for. */
   private sun: [number, number] = [0.42, 0];
   private sunAlpha = 0;
   private tinted = '';
+  /** Each tile's shade under the sun of the moment, worked out once: the smoothing reads it for every tile round. */
+  private readonly shades = new Map<number, number>();
+  private readonly outlines = new Map<string, OutlinePt[][]>();
+  private readonly ledgeCache = new Map<string, number[]>();
   private on = true;
   /** Columns waiting for their sprite bake (they show painted meanwhile). */
   pending = 0;
@@ -70,6 +95,7 @@ export class ReliefView {
         if (nx < 0 || ny < 0 || nx >= CHUNKS || ny >= CHUNKS) continue;
         const k = ny * CHUNKS + nx;
         this.chunks.delete(k);
+        this.shades.clear();
         for (let by = 0; by < CHUNK / BLOCK; by++) {
           for (let bx = 0; bx < CHUNK / BLOCK; bx++) this.dropBlock((ny * CHUNK) / BLOCK + by, (nx * CHUNK) / BLOCK + bx);
         }
@@ -94,12 +120,26 @@ export class ReliefView {
       c = {
         lv: new Uint8Array(CHUNK * CHUNK), masks: Array.from({ length: MAX_TERRACE }, () => new Uint8Array(CHUNK * CHUNK)),
         cls: new Uint8Array(CHUNK * CHUNK), top: new Array<TopLook | null>(CHUNK * CHUNK).fill(null), vein: new Uint8Array(CHUNK * CHUNK),
+        foot: new Array<Foot | null>(CHUNK * CHUNK).fill(null), layers: new Array<number[] | null>(CHUNK * CHUNK).fill(null),
       };
       for (let j = 0; j < CHUNK; j++) {
         for (let i = 0; i < CHUNK; i++) {
           const o = (j + BORDER) * WIN + i + BORDER, k = j * CHUNK + i;
           c.lv[k] = lv[o]!;
-          if (lv[o]) { const look = columnLook(d, lv, o); c.cls[k] = look.cls; c.top[k] = look.top; c.vein[k] = look.vein ? 1 : 0; }
+          if (lv[o]) {
+            const look = columnLook(d, lv, o);
+            c.cls[k] = look.cls; c.top[k] = look.top; c.vein[k] = look.vein ? 1 : 0;
+            c.foot[k] = look.top ? null : footOf(lv, masks, o);
+            // The rock of each step, when it is not the column's own all the way down (terrain.ts
+            // `layersOf`) — only where it shows: a step with no wall and no top in sight (no drop, no
+            // ledge) keeps the column's own, so looks that draw the same share one sprite.
+            let layers = look.top ? null : windowLayers(d, lv, o, look.cls, lv[o]! / STEP_LEVELS);
+            if (layers) {
+              const ms = tileMasks(lv, masks, o), shows = ledges(ms);
+              layers = layers.map((l, t) => (ms[t] || shows.includes(t) ? l : look.cls));
+            }
+            c.layers[k] = layers && layers.some((l) => l !== look.cls) ? layers : null;
+          }
           for (let t = 0; t < MAX_TERRACE; t++) c.masks[t]![k] = masks[t]![o]!;
         }
       }
@@ -108,18 +148,41 @@ export class ReliefView {
     return c;
   }
 
-  /** The baked frame for a column look, or undefined when over this frame's budget. */
-  private frame(cls: number, L: number, masks: readonly number[], variant: number, top: TopLook | null, vein: boolean): ReturnType<DynAtlas['get']> {
-    const key = `${cls}:${masks.join('.')}:${variant}:${topKey(top)}${vein ? ':q' : ''}`;
+  /**
+   * The baked frame for a column look's part (its slabs t0 … t1: the whole column unless a ledge
+   * cuts it, `ledges`), or undefined when over this frame's budget. A part's frame spans its own
+   * heights only.
+   */
+  private frame(cls: number, masks: readonly number[], variant: number, top: TopLook | null, vein: boolean, layers: readonly number[] | null, t0: number, t1: number): ReturnType<DynAtlas['get']> {
+    const whole = t0 === 0 && t1 === masks.length - 1;
+    const key = `${cls}:${masks.join('.')}:${variant}:${topKey(top)}${vein ? ':q' : ''}${layers ? `:l${layers.join('')}` : ''}${whole ? '' : `:p${t0}-${t1}`}`;
     const f = this.atlas.get(key);
     if (f || this.atlas.spent > BUDGET_MS) return f;
     // A vein's points poke up over the top's back lip: room for them above.
-    const head = vein ? Math.ceil(VEIN_HEAD * ILH) : 0;
-    const w = 2 * IS + 2 * M, h = 2 * IH + L * ILH + 2 * M + head;
-    const ox = M + IS, oy = M + L * ILH + head;
-    const seed = hash32(cls, L, masks[masks.length - 1]!, variant + 0x51);
+    const last = t1 === masks.length - 1;
+    const head = vein && last ? Math.ceil(VEIN_HEAD * ILH) : 0;
+    const zb = t0 * STEP_LEVELS, zt = (t1 + 1) * STEP_LEVELS;
+    const w = 2 * IS + 2 * M, h = 2 * IH + (zt - zb) * ILH + 2 * M + head;
+    const ox = M + IS, oy = M + zt * ILH + head;
+    const seed = columnSeed(cls, masks, variant);
     return this.atlas.add(key, w, h, ox, oy, (ctx) => {
-      drawColumn(ctx, (u, v, z) => [ox + (u - v) * IS, oy + (u + v) * IH - z * ILH], cls, masks, { detail: 2, seed, k: 1, top, vein });
+      drawColumn(ctx, (u, v, z) => [ox + (u - v) * IS, oy + (u + v) * IH - z * ILH], cls, masks, { detail: 2, seed, k: 1, top, vein: vein && last, layers, slabs: [t0, t1] });
+    });
+  }
+
+  /**
+   * The baked talus decal at the foot of higher neighbours' walls on a top (rock.ts `drawFoot`),
+   * drawn at height 0 and lifted onto the top by its sprite: a few dozen looks (hardness × where
+   * the walls stand × two variants) serve every foot of the land.
+   */
+  private footFrame(cls: number, foot: Foot, variant: number): ReturnType<DynAtlas['get']> {
+    const key = `t:${cls}:${footKey(foot)}:${variant}`;
+    const f = this.atlas.get(key);
+    if (f || this.atlas.spent > BUDGET_MS) return f;
+    const w = 2 * IS + 2 * M, h = 2 * IH + 2 * M + FOOT_HEAD;
+    const ox = M + IS, oy = M + FOOT_HEAD;
+    return this.atlas.add(key, w, h, ox, oy, (ctx) => {
+      drawFoot(ctx, (u, v, z) => [ox + (u - v) * IS, oy + (u + v) * IH - z * ILH], 0, cls, foot, 0x7a1 + variant * 977 + cls, 1);
     });
   }
 
@@ -157,25 +220,53 @@ export class ReliefView {
     this.atlas.flush();
   }
 
+  /**
+   * A block's sprites. A column is cut at its ledges (relief.ts `ledges`: a lower step's top showing
+   * in front of a chamfered upper step, the diagonal fronts' staircases) into parts, bottom first
+   * at the same depth key (equal keys keep their order), each tinted by the shade at its own top: a
+   * ledge is part of the terrace in front, and shaded with it, not lit with the high top behind it
+   * (owner, 2026-10-16: the terraces under a cliff were a checkerboard of diamonds).
+   */
   private build(key: number, cx: number, cy: number, tx: number, ty: number): void {
     const c = this.chunk(cx, cy);
-    const out: Array<{ s: Sprite; x: number; y: number }> = [];
+    const out: Array<{ s: Sprite; x: number; y: number; lv: number; ms: number[] | null }> = [];
     let complete = true;
     for (let y = ty; y < ty + BLOCK; y++) {
       for (let x = tx; x < tx + BLOCK; x++) {
         const k = (y - cy * CHUNK) * CHUNK + (x - cx * CHUNK);
-        const L = c.lv[k]!;
-        if (!L) continue;
-        const f = this.frame(c.cls[k]!, L, tileMasks(c.lv, c.masks, k), hash32(x, y, 0x77) & 1, c.top[k]!, c.vein[k] === 1);
-        if (!f) { complete = false; this.pending++; continue; }
-        const s = new Sprite(f.tex);
-        s.scale.set(0.5);
-        const [wx, wy] = tileToIso(x, y);
-        s.position.set(wx - f.ox * 0.5, wy - f.oy * 0.5);
-        s.zIndex = rockZ(x, y);
-        s.tint = this.tintAt(x, y);
-        this.layer.addChild(s);
-        out.push({ s, x, y });
+        if (!c.lv[k]) continue;
+        const ms = tileMasks(c.lv, c.masks, k), variant = columnVariant(x, y);
+        let t0 = 0;
+        for (const t1 of this.ledgesOf(ms)) {
+          const f = this.frame(c.cls[k]!, ms, variant, c.top[k]!, c.vein[k] === 1, c.layers[k]!, t0, t1);
+          const lv = (t1 + 1) * STEP_LEVELS;
+          t0 = t1 + 1;
+          if (!f) { complete = false; this.pending++; continue; }
+          const s = new Sprite(f.tex);
+          s.scale.set(0.5);
+          const [wx, wy] = tileToIso(x, y);
+          s.position.set(wx - f.ox * 0.5, wy - f.oy * 0.5);
+          s.zIndex = rockZ(x, y);
+          const ledge = t1 < ms.length - 1 ? ms : null;
+          s.tint = this.tintAt(x, y, lv, ledge);
+          this.layer.addChild(s);
+          out.push({ s, x, y, lv, ms: ledge });
+        }
+        // The talus at the foot of the higher walls behind it, a decal lifted onto its top.
+        const foot = c.foot[k];
+        if (foot) {
+          const f = this.footFrame(c.cls[k]!, foot, hash32(x, y, 0x7b) & 1);
+          if (!f) { complete = false; this.pending++; continue; }
+          const L = c.lv[k]!;
+          const s = new Sprite(f.tex);
+          s.scale.set(0.5);
+          const [wx, wy] = tileToIso(x, y);
+          s.position.set(wx - f.ox * 0.5, wy - f.oy * 0.5 - L * LH);
+          s.zIndex = rockZ(x, y) + 0.01;
+          s.tint = this.tintAt(x, y, L, null);
+          this.layer.addChild(s);
+          out.push({ s, x, y, lv: L, ms: null });
+        }
       }
     }
     if (!complete) {
@@ -201,42 +292,112 @@ export class ReliefView {
     const key = `${this.sun[0]},${this.sun[1]},${this.sunAlpha}`;
     if (key === this.tinted) return;
     this.tinted = key;
-    for (const b of this.blocks.values()) for (const c of b) c.s.tint = this.tintAt(c.x, c.y);
+    this.shades.clear();
+    for (const b of this.blocks.values()) for (const c of b) c.s.tint = this.tintAt(c.x, c.y, c.lv, c.ms);
   }
 
-  /** How much of a column's top (0–1) lies in the shadow of higher rock, the sun being where `sun` says. */
-  shadeAt(x: number, y: number): number {
-    const t = tileTop(this.grid, x, y);
-    const [dx, dy] = this.sun;
-    if (!t || (!dx && !dy)) return 0;
-    let n = 0;
-    for (const [u, v] of SAMPLES) {
-      for (let k = 0.5; k <= MAX_LEVEL - t; k += 0.5) {
-        if (tileTop(this.grid, Math.floor(x + u - dx * k), Math.floor(y + v - dy * k)) > t + k) { n++; break; }
-      }
-    }
-    return n / SAMPLES.length;
+  /** A tile's per-step masks (null off the world). */
+  private masksOf(x: number, y: number): number[] | null {
+    if (x < 0 || y < 0 || x >= CHUNKS * CHUNK || y >= CHUNKS * CHUNK) return null;
+    const c = this.chunk(Math.floor(x / CHUNK), Math.floor(y / CHUNK));
+    return tileMasks(c.lv, c.masks, (y % CHUNK) * CHUNK + (x % CHUNK));
+  }
+
+  /** A column look's ledges (relief.ts `ledges`), worked out once per look. */
+  private ledgesOf(ms: readonly number[]): number[] {
+    const key = ms.join('.');
+    let l = this.ledgeCache.get(key);
+    if (!l) { l = ledges(ms, LEDGE_MIN); this.ledgeCache.set(key, l); }
+    return l;
+  }
+
+  /** A column look's slab outlines (relief.ts `slabOutline`), worked out once per look. */
+  private outlinesOf(ms: readonly number[]): OutlinePt[][] {
+    const key = ms.join('.');
+    let o = this.outlines.get(key);
+    if (!o) { o = ms.map((_, s) => slabOutline(ms, s)); this.outlines.set(key, o); }
+    return o;
   }
 
   /**
-   * The shade, smoothed over the column's neighbours at its height: the land steps tile by tile,
-   * but the art draws a diagonal front as one straight wall (relief.ts `cutsOf`), so the shade along
-   * it is spread evenly instead of every other tile.
+   * The height of the rock drawn at a ground point (px, py) (tiles): the highest step of its tile
+   * whose outline holds it — a chamfered column stands where the art draws it (a diagonal front is
+   * one straight wall), not over its whole tile; a plain tile is its top.
    */
-  private smoothShade(x: number, y: number): number {
-    const t = tileTop(this.grid, x, y);
-    let sum = 2 * this.shadeAt(x, y), w = 2;
-    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
-      if ((!i && !j) || tileTop(this.grid, x + i, y + j) !== t) continue;
-      sum += this.shadeAt(x + i, y + j);
-      w++;
+  private heightAt(px: number, py: number): number {
+    const tx = Math.floor(px), ty = Math.floor(py);
+    const top = tileTop(this.grid, tx, ty);
+    if (!top) return top;
+    const ms = this.masksOf(tx, ty);
+    if (!ms || ms.every((m) => !m)) return top;
+    const outs = this.outlinesOf(ms);
+    let h = 0;
+    for (let s = 0; s < outs.length; s++) if (inside(outs[s]!, px - tx, py - ty)) h = (s + 1) * STEP_LEVELS;
+    return h;
+  }
+
+  /**
+   * How much of a column's top (0–1) lies in the shadow of higher rock, the sun being where `sun`
+   * says; or of its ledge at height `t` (`ms`, the column's masks: the ledge is the part of the
+   * step's outline the step above leaves open). The rock in the way is the rock as drawn
+   * (`heightAt`), so the tops along one straight wall take the same shade.
+   */
+  shadeAt(x: number, y: number, t = tileTop(this.grid, x, y), ms: readonly number[] | null = null): number {
+    const [dx, dy] = this.sun;
+    if (!t || (!dx && !dy)) return 0;
+    const step = t / STEP_LEVELS;
+    const outs = ms ? this.outlinesOf(ms) : null;
+    const pts = outs ? LEDGE_SAMPLES.filter(([u, v]) => inside(outs[step - 1]!, u, v) && !inside(outs[step]!, u, v)) : SAMPLES;
+    if (!pts.length) return 0;
+    let n = 0;
+    for (const [u, v] of pts) {
+      for (let k = 0.5; k <= MAX_LEVEL - t; k += 0.5) {
+        const px = x + u - dx * k, py = y + v - dy * k;
+        // The cheap test first: only a tile standing higher than the ray can hold rock in the way.
+        if (tileTop(this.grid, Math.floor(px), Math.floor(py)) > t + k && this.heightAt(px, py) > t + k) { n++; break; }
+      }
+    }
+    return n / pts.length;
+  }
+
+  /** `shadeAt` at height t, worked out once per tile and height for the sun of the moment. */
+  private shadeCached(x: number, y: number, t: number, ms: readonly number[] | null = null): number {
+    const key = (y * CHUNKS * CHUNK + x) * (MAX_LEVEL + 1) + t;
+    let s = this.shades.get(key);
+    if (s === undefined) { s = this.shadeAt(x, y, t, ms); this.shades.set(key, s); }
+    return s;
+  }
+
+  /**
+   * The shade, smoothed over the columns round it at its height (5 × 5, nearer ones weighing more):
+   * the land steps tile by tile, but the art draws a diagonal front as one straight wall (relief.ts
+   * `cutsOf`), and each sprite takes one tint, so an unsmoothed shade fell every other tile — a
+   * checkerboard of diamonds on the terraces under a cliff (owner, 2026-10-16). Smoothed, it fades
+   * across a terrace in small steps.
+   */
+  private smoothShade(x: number, y: number, t: number, ms: readonly number[] | null): number {
+    let sum = 2 * this.shadeCached(x, y, t, ms), w = 2;
+    for (let j = -2; j <= 2; j++) for (let i = -2; i <= 2; i++) {
+      if (!i && !j) continue;
+      const top = tileTop(this.grid, x + i, y + j);
+      if (top < t) continue;
+      // A neighbour's top at this height, or its ledge there (part of the same terrace).
+      let nms: number[] | null = null;
+      if (top > t) {
+        nms = this.masksOf(x + i, y + j);
+        if (!nms || !this.ledgesOf(nms).includes(t / STEP_LEVELS - 1)) continue;
+      }
+      const wt = 1 / (1 + i * i + j * j);
+      sum += wt * this.shadeCached(x + i, y + j, t, nms);
+      w += wt;
     }
     return sum / w;
   }
 
-  private tintAt(x: number, y: number): number {
-    const f = this.sunAlpha > 0 ? this.smoothShade(x, y) : 0;
-    return f ? num(mix('#ffffff', SHADE, Math.min(0.6, f * this.sunAlpha * 1.5))) : 0xffffff;
+  /** A part's tint: the shade at its top (`lv`; `ms`, its column's masks, for a ledge), smoothed with the tops round it at that height. */
+  private tintAt(x: number, y: number, lv: number, ms: readonly number[] | null): number {
+    const f = this.sunAlpha > 0 ? this.smoothShade(x, y, lv, ms) : 0;
+    return f ? num(mix('#ffffff', SHADE, Math.min(0.5, f * this.sunAlpha * 1.2))) : 0xffffff;
   }
 
   stats(): { blocks: number; sprites: number; baked: number } {

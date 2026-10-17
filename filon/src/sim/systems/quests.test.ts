@@ -4,8 +4,8 @@ import { ITEM_IDS, itemIdx, recipeIdx } from '@/content/registry';
 import { PLAN_IDS, PLANS } from '@/content/research';
 import { recipeOf } from '../cfg';
 import { replay, type Command } from '../commands';
-import { CENTER, EPOCH } from '../constants';
-import { powerLine } from '../dev';
+import { EPOCH } from '../constants';
+import { connect, join, placeFed, powerLine, type Feed } from '../dev';
 import { catchUp } from '../offline/catchup';
 import { deserialize, serialize } from '../serialize';
 import { heldIn, Sim } from '../state';
@@ -14,7 +14,8 @@ import { COAL, drillToHearth, learnPlans, line, steadyPower, testSim, testSource
 import { FlatSource, type VeinSite } from '../world/grid';
 import { parcelAt } from '../world/land';
 import { WORLD_EPOCH0 } from '../constants';
-import { cleanName, currentQuest, objectiveProgress, questProgress, rewardItems, stepApplies } from './quests';
+import { cleanName, currentQuest, loadQuests, objectiveProgress, planOffered, questProgress, rewardItems, stepApplies } from './quests';
+import { nightCover } from '../readouts/night';
 
 const idx = (id: QuestId): number => QUEST_IDS.indexOf(id);
 
@@ -59,16 +60,18 @@ function until(sim: Sim, id: QuestId, max: number): void {
 }
 
 /**
- * The guide's step of the current quest, as `ui/guide.ts` picks it: the first whose `done` does
- * not hold (counters from the founding). Read on a compiled graph, as the guide's 4 Hz refresh
- * does — so a step is never shown once the base already does what it asks.
+ * A guided quest's step, as `ui/guide.ts` picks it: the first whose `done` does not hold (counters
+ * from the founding), else its closing line. Read on a compiled graph, as the guide's 4 Hz refresh
+ * does — so a step is never shown once the base already does what it asks. (The guide also never
+ * shows again a step done once, D101: its memory is the UI's, not read here.)
  */
 function stepNow(sim: Sim): [string | null, number] {
   sim.ensureCompiled();
   const q = currentQuest(sim);
   if (!q) return [null, -1];
-  const i = q.def.steps.findIndex((s) => stepApplies(sim, s) && !(s.done && objectiveProgress(sim, s.done).met));
-  return [q.id, i < 0 ? q.def.steps.length - 1 : i];
+  const steps = q.def.steps ?? [];
+  const i = steps.findIndex((s) => stepApplies(sim, s) && !(s.done && objectiveProgress(sim, s.done).met));
+  return [q.id, i < 0 ? steps.length - 1 : i];
 }
 
 /**
@@ -91,18 +94,31 @@ function replayBase(): Sim {
 }
 
 /**
+ * A goal's hint as the guide shows it on request (ui/guide.ts `hintIndex`, D101): the first that
+ * applies on this land and is not done (its `unless` not holding); −1 when every one holds.
+ */
+function hintNow(sim: Sim): [string | null, number] {
+  sim.ensureCompiled();
+  const q = currentQuest(sim);
+  if (!q) return [null, -1];
+  return [q.id, (q.def.hints ?? []).findIndex((s) => stepApplies(sim, s) && !(s.done && objectiveProgress(sim, s.done).met))];
+}
+
+/**
  * The tutorial played with real commands on the test colony, quest by quest, up to (and
  * including) quest `last` — every plan unlocked in the tree before what it unlocks is used, every
- * machine fed by its own lines (the Hearth only takes in). At each action the guide's step must
- * move on exactly when the base does what it asks. Returns the ids of what it built.
+ * machine fed by its own lines (the Hearth only takes in). In a guided quest the guide's step must
+ * move on exactly when the base does what it asks; in a goal (D101) its hint on request does.
+ * Returns the ids of what it built.
  *
- * The factory (east of the Hearth, 510..514 × 510..514): two iron drills north into its north
- * inputs; a router on the second iron line feeds the plate smelter; a coal drill on the extra
- * deposit feeds it too, and a router on the coal line feeds the glass smelter, beside the sand;
- * the smelters' lines run into the Hearth's east inputs; copper comes from the south; at the end,
- * every plan taken, a data collector's Survey Data rides one ribbon into the research lab.
+ * The factory (east of the Hearth, 510..514 × 510..514): an iron drill north into its north input;
+ * a second iron drill and a coal drill on the extra deposit feed the plate smelter (a drill pair,
+ * D97); a router on the coal line feeds the glass smelter, beside the sand; the smelters' lines run
+ * into the Hearth's east inputs; the trade post sells glass, and its exit leads the starter
+ * contract's copper ore into the wire mill's line (D101); the Core raised to level 2 (D101), every
+ * plan taken, the Core's own Survey Data rides one ribbon from its outlet into the research lab.
  */
-function play(sim: Sim, last: QuestId = 'wall_quartz'): Record<string, number> {
+function play(sim: Sim, last: QuestId = 'synth_parts'): Record<string, number> {
   const ids: Record<string, number> = {};
   const stop = (id: QuestId): boolean => idx(id) >= idx(last);
   const place = (name: string, def: string, x: number, y: number, rot: Rot = 0): number => {
@@ -113,203 +129,188 @@ function play(sim: Sim, last: QuestId = 'wall_quartz'): Record<string, number> {
   const lay = (path: Array<[number, number, Rot]>): void => { expect(sim.placeBelts('ribbon', path)).toBe(path.length); };
   const unlock = (...plans: string[]): void => { for (const p of plans) expect(sim.unlockPlan(p), p).toEqual({ ok: true, reason: null }); };
   const at = (quest: QuestId, step: number): void => { expect(stepNow(sim)).toEqual([quest, step]); };
+  const hint = (quest: QuestId, i: number): void => { expect(hintNow(sim)).toEqual([quest, i]); };
 
   // 0 — a name.
   expect(sim.nameColony('  Bonne-Veine  ')).toBe(true);
   expect(sim.colonyName).toBe('Bonne-Veine');
   if (stop('claim')) return ids;
 
-  // 1 — the starting kit: a drill on iron, wired, a ribbon into the Hearth's north input: 10 ore in.
+  // 1 — guided: the starting kit, a drill on iron, wired, a ribbon into the Hearth's north input: 10 ore in.
   at('first_strike', 0);
   ids.drill1 = drillToHearth(sim);
-  at('first_strike', 2);
+  at('first_strike', 3); // every step done: the closing line while the ore comes, never the ribbon again (D98)
   until(sim, 'first_strike', 8 * EPOCH);
   if (stop('first_strike')) return ids;
 
-  // 2 — the tree's first plan (telemetry: the rates appear), then a second drill and its line.
-  at('ribbon_lines', 0);
-  expect(sim.mods.flags.has('telemetry')).toBe(false);
-  unlock('telemetry');
-  expect(sim.mods.flags.has('telemetry')).toBe(true);
-  at('ribbon_lines', 1);
-  place('drill2', 'drill', 513, 502, 2);
-  at('ribbon_lines', 2);
-  wire(sim, ids.drill2!);
-  at('ribbon_lines', 3);
-  lay([[514, 504, 3], ...line(513, 504, 2, 6)]);
-  at('ribbon_lines', 4);
-  until(sim, 'ribbon_lines', 4 * EPOCH);
-  if (stop('ribbon_lines')) return ids;
-
-  // 3 — the smelter and the router: the second iron line split between the Hearth and the
-  // smelter, the coal straight from its drill, the plates into the Hearth's east input.
+  // 2 — guided: the smelter's plan, the smelter, its recipe, its drill pair (coal on the extra
+  // deposit, a second iron drill: no router, D101), their wires, the plates into the Hearth.
   at('bloom_kiln', 0);
   expect(sim.place('kiln', 516, 505, 2).reason).toBe('locked'); // not before its plan
   unlock('kiln');
-  at('bloom_kiln', 0); // the router is still locked
-  unlock('router');
   at('bloom_kiln', 1);
+  place('kiln1', 'kiln', 516, 505, 2); // inputs north at (516|517, 504), output south at (517, 507)
+  at('bloom_kiln', 2);
+  expect(sim.setRecipe(ids.kiln1!, 'iron_plate')).toBe(true);
+  at('bloom_kiln', 3);
   place('coal', 'drill', 520, 498, 2); // on the extra deposit; its output faces (521, 500)
-  at('bloom_kiln', 2); // the coal is beyond the Hearth's reach: a pole first
+  at('bloom_kiln', 4);
+  lay([[521, 500, 2], [521, 501, 2], [521, 502, 3], [520, 502, 3], [519, 502, 3], [518, 502, 3], [517, 502, 2], [517, 503, 2], [517, 504, 2]]);
+  at('bloom_kiln', 5);
+  place('drill2', 'drill', 513, 502, 2); // its output faces (514, 504)
+  at('bloom_kiln', 6);
+  lay([[514, 504, 1], [515, 504, 1], [516, 504, 2]]);
+  at('bloom_kiln', 7); // both lines laid: the coal drill's wire (beyond the Hearth's reach: a pole)
   place('mastC', 'mast', 516, 503); // it wires itself to the Hearth
   expect(sim.links.has(sim.hearthId, ids.mastC!)).toBe(true);
-  at('bloom_kiln', 3);
-  wire(sim, ids.coal!, ids.mastC);
-  at('bloom_kiln', 4);
-  place('kiln1', 'kiln', 516, 505, 2); // inputs north at (516|517, 504), output south at (517, 507)
-  at('bloom_kiln', 5);
-  expect(sim.setRecipe(ids.kiln1!, 'iron_plate')).toBe(true);
-  at('bloom_kiln', 6);
-  place('routerIron', 'router', 513, 505); // over the second iron line: it replaces the ribbon (D24)
-  expect(sim.entityAt(513, 505)?.id).toBe(ids.routerIron);
-  at('bloom_kiln', 6); // a router alone feeds nothing yet
-  lay([[514, 505, 1], [515, 505, 0], [515, 504, 1], [516, 504, 2]]);
   at('bloom_kiln', 7);
-  lay([[521, 500, 2], [521, 501, 2], [521, 502, 3], [520, 502, 3], [519, 502, 3], [518, 502, 3], [517, 502, 2], [517, 503, 2], [517, 504, 2]]);
+  wire(sim, ids.coal!, ids.mastC);
   at('bloom_kiln', 8);
-  lay([[517, 507, 2], [517, 508, 2], [517, 509, 2], [517, 510, 2], [517, 511, 3], [516, 511, 3], [515, 511, 3]]);
+  wire(sim, ids.drill2!);
   at('bloom_kiln', 9);
+  const plateLine: Array<[number, number, Rot]> = [[517, 507, 2], [517, 508, 2], [517, 509, 2], [517, 510, 2], [517, 511, 3], [516, 511, 3], [515, 511, 3]];
+  lay(plateLine);
+  at('bloom_kiln', 10); // the closing line
   until(sim, 'bloom_kiln', 6 * EPOCH);
-  if (stop('bloom_kiln')) return ids;
-
-  // 4 — wind turbines on a pole west of the Hearth (poles came with the coal, quest 3: this
-  // quest no longer asks for one).
-  at('first_wind', 0);
-  unlock('wind_flower');
-  at('first_wind', 1);
-  place('wind1', 'wind_flower', 501, 503);
-  place('wind2', 'wind_flower', 504, 500);
-  at('first_wind', 2);
-  place('mastW', 'mast', 507, 505);
-  expect(sim.links.has(sim.hearthId, ids.mastW!)).toBe(true);
-  wire(sim, [ids.wind1!, ids.wind2!], ids.mastW);
-  until(sim, 'first_wind', EPOCH);
+  // 3 — the night (D101): the test colony's geothermal tap gives day and night alike, so the
+  // Hearth's grid already holds without the sun — the goal is met as soon as it is current.
+  expect(objectiveProgress(sim, { k: 'night', pct: 80 }).met).toBe(true);
+  until(sim, 'first_wind', QUEST_CHECK_TICKS);
   if (stop('first_wind')) return ids;
 
-  // 5 — glass: a second smelter beside the first; sand off the bare ground beside it (two sand
-  // collectors: no deposit, the floor is sand), their lines joining into its other input; its coal
-  // off the coal line through a router; its glass into the Hearth's other east input.
-  at('glassworks', 0);
+  // 4 — goal: glass. A second smelter beside the first; sand off the bare ground beside it (two
+  // sand collectors), their lines joining into its other input; its coal off the coal line
+  // through a router; its glass into the Hearth's other east input. Its hint follows.
+  hint('glassworks', 0);
   expect(sim.place('sand_collector', 522, 506, 0).reason).toBe('locked'); // not before its plan
   unlock('sand_collector');
-  at('glassworks', 1);
+  hint('glassworks', 1);
   place('kiln2', 'kiln', 520, 505, 2); // inputs north at (520|521, 504), output south at (521, 507)
-  at('glassworks', 2);
+  hint('glassworks', 2);
   expect(sim.setRecipe(ids.kiln2!, 'glass')).toBe(true);
-  at('glassworks', 3);
+  hint('glassworks', 3);
   expect(sim.place('sand_collector', 518, 498, 0).reason).toBe('needs_sand'); // on the coal deposit
   place('sand', 'sand_collector', 522, 506); // its output faces (522, 505)
-  at('glassworks', 3); // one of the two
   place('sandB', 'sand_collector', 523, 502, 2); // facing south: its output faces (524, 504)
-  at('glassworks', 4);
+  hint('glassworks', 4);
   wire(sim, [ids.sand!, ids.sandB!], ids.mastC);
-  at('glassworks', 5);
-  place('routerCoal', 'router', 519, 502);
-  lay([[519, 503, 2], [519, 504, 1], [520, 504, 2]]);
-  at('glassworks', 6);
+  hint('glassworks', 5);
   lay([[522, 505, 0], [522, 504, 3], [521, 504, 2]]);
   lay([[524, 504, 3], [523, 504, 3]]); // the second collector's line runs into the first's
-  at('glassworks', 7);
-  lay([...line(521, 507, 2, 6), ...line(521, 513, 3, 7)]);
-  at('glassworks', 7);
+  hint('glassworks', 6); // the coal: the router's plan (another coal drill would pass this hint by)
+  unlock('router');
+  hint('glassworks', 7);
+  place('routerCoal', 'router', 519, 502);
+  lay([[519, 503, 2], [519, 504, 1], [520, 504, 2]]);
+  hint('glassworks', 8);
+  const glassLine = [...line(521, 507, 2, 6), ...line(521, 513, 3, 7)];
+  lay(glassLine);
+  hint('glassworks', -1); // every hint holds: the glass is on its way
   until(sim, 'glassworks', 6 * EPOCH);
   if (stop('glassworks')) return ids;
 
-  // 6 — the trade post (its 5×5 pad and apron, D62) east of the glass line, glass led into its
-  // entrance by a router (it sells whatever comes in, D64).
-  at('crier_calls', 0);
-  unlock('trade_post');
-  at('crier_calls', 1);
-  place('post', 'trade_post', 524, 509); // its entrance at (526, 513), fed from (526, 514)
-  at('crier_calls', 2);
+  // 5 — goal: the Crier both ways. The trade post (its 5×5 pad and apron, D62) east of the glass
+  // line, glass led into its entrance by a router (it sells whatever comes in, D64); the wire mill
+  // on the tired vein; CrierBelt's starter contract, its ore led from the post's exit into the side
+  // of the copper drill's line (D101: bought goods used).
+  hint('crier_trade', 0);
+  unlock('telemetry', 'trade_post');
+  hint('crier_trade', 1);
+  place('post', 'trade_post', 524, 509); // its entrance at (526, 513), fed from (526, 514); its exit at (526, 509), out to (526, 508)
   sim.grant('iron_plate', 2);
   place('routerSale', 'router', 521, 512); // over the glass line going south: its east side out
   lay([[522, 512, 1], [523, 512, 2], [523, 513, 2], [523, 514, 1], [524, 514, 1], [525, 514, 1], [526, 514, 0]]);
-  at('crier_calls', 2);
-  until(sim, 'crier_calls', 6 * EPOCH);
-  if (stop('crier_calls')) return ids;
-
-  // 7 — the copper vein: a drill, a wire mill fed by it through one ribbon, the wire to the
-  // Hearth's south input.
-  at('tired_vein', 0);
   unlock('wire_mill');
-  at('tired_vein', 1);
-  place('copper', 'drill', 516, 522); // its output faces (516, 521)
-  at('tired_vein', 2);
+  place('copper', 'drill', 516, 523); // its output faces (516, 522)
   place('mill', 'wire_mill', 516, 519); // its input faces (516, 521), its output (516, 518)
   expect(recipeOf(sim.ents.get(ids.mill!)!.cfg)).toBe(recipeIdx('copper_wire') + 1); // its lone recipe, set at once (D83)
-  at('tired_vein', 3);
   powerLine(sim, ids.copper!);
-  at('tired_vein', 3); // the drill and the mill wired: one step
   powerLine(sim, ids.mill!);
-  at('tired_vein', 4);
-  lay([[516, 521, 0]]);
-  at('tired_vein', 5);
-  lay([...line(516, 518, 3, 3), ...line(513, 518, 0, 4)]);
-  at('tired_vein', 5);
-  until(sim, 'tired_vein', 4 * EPOCH);
-  if (stop('tired_vein')) return ids;
+  const copperLine: Array<[number, number, Rot]> = [[516, 522, 0], [516, 521, 0]];
+  lay(copperLine);
+  const wireLine = [...line(516, 518, 3, 3), ...line(513, 518, 0, 4)];
+  lay(wireLine);
+  // The contract (D101): bought at a fixed price, it buys nothing while the post's exit leads nowhere.
+  expect(typeof sim.takeStarter(ids.post!)).toBe('number');
+  expect(objectiveProgress(sim, { k: 'starter' }).met).toBe(true);
+  sim.run(2 * EPOCH);
+  expect(sim.trade.boughtTotal[itemIdx('copper_ore')]).toBe(0);
+  const exitLine = join(sim, ids.post!, copperLine);
+  expect(exitLine, 'a ribbon from the post\'s exit into the copper line').toBeTruthy();
+  sim.ensureCompiled();
+  expect(objectiveProgress(sim, { k: 'feeds', item: 'copper_ore', to: ['wire_mill'], from: ['trade_post'], n: 1 }).met).toBe(true);
+  until(sim, 'crier_trade', 8 * EPOCH);
+  if (stop('crier_trade')) return ids;
 
-  // 8 — a standing import order of copper ore (its goods would leave by the post's exit).
-  at('first_purchase', 0);
-  const ask = sim.prices.ask[itemIdx('copper_ore')]!;
-  expect(typeof sim.addImport(ids.post!, 'copper_ore', 10, 2 * ask)).toBe('number');
-  until(sim, 'first_purchase', QUEST_CHECK_TICKS);
-  if (stop('first_purchase')) return ids;
+  // 6 — goal: the Core's level 2 (D101), the player's own click, paid from the Hearth's stock: plates,
+  // glass and copper wire are there (the colony's spare materials, « La Criée »'s wire).
+  hint('core_upgrade', 3);
+  expect(sim.upgradeHearth().ok).toBe(true);
+  expect(sim.hearthLevel).toBe(2);
+  hint('core_upgrade', -1);
+  until(sim, 'core_upgrade', QUEST_CHECK_TICKS);
+  if (stop('core_upgrade')) return ids;
 
-  // 9 — the survey beacon's plan, then a beacon through the Crown (the flat test world has no rock to dig).
-  at('beyond_crown', 0);
-  unlock('beacon');
-  at('beyond_crown', 1);
-  place('beacon', 'beacon', CENTER + 34, CENTER); // past the Crown's edge (r 32), inside the land revealed at founding (r 44)
-  until(sim, 'beyond_crown', 2 * EPOCH);
-  if (stop('beyond_crown')) return ids;
-
-  // 10 — Survey Data (D71): every plan left, each as soon as the Hearth can pay for it, then the
-  // research lab's (the gate) and the data collector it brings; the lab north of the iron drills,
-  // the collector west of them, both wired; one ribbon carries the data into the lab; the Face Cutter
-  // starts (D87: Mechanics comes after it), its tokens paid by the minute.
-  at('field_journal', 0);
+  // 7 — goal: Survey Data (D71, D101). Every plan left, each as soon as the Hearth can pay for it,
+  // then the research lab's (the gate); the lab south-east of the Hearth, wired, one ribbon from the
+  // Core's data outlet into it (no data collector: it comes later, with « Traitement des données »);
+  // Mechanics starts (no tokens before the servers, D105).
+  hint('field_journal', 0);
   const take = (p: string): void => {
     for (let t = 0; t < 30 * EPOCH && !sim.done.has(p) && !sim.unlockPlan(p).ok; t += EPOCH) sim.run(EPOCH);
     expect(sim.done.has(p), p).toBe(true);
   };
   for (const p of PLAN_IDS) if (PLANS[p].lane !== 'gate') take(p);
-  at('field_journal', 1);
+  hint('field_journal', 1);
   take('observatory');
-  at('field_journal', 2);
-  place('observatory', 'observatory', 512, 498); // 3×3 (D84), north of the iron drills: inputs south at (512..514, 501)
-  at('field_journal', 3);
-  place('collector', 'data_collector', 509, 502); // its output north at (509, 501)
-  at('field_journal', 4);
-  wire(sim, ids.observatory!, ids.mastC);
-  at('field_journal', 5);
-  wire(sim, ids.collector!, ids.mastC);
-  at('field_journal', 6);
-  lay([[509, 501, 1], [510, 501, 1], [511, 501, 1], [512, 501, 0]]); // east from the collector's output, then up into the lab
-  at('field_journal', 7);
-  expect(sim.startResearch('ex_quartz').ok).toBe(true);
-  at('field_journal', 8);
+  expect(sim.done.has('ex_quartz')).toBe(true); // the Face Cutter: a plan among the others (D101)
+  hint('field_journal', 2);
+  place('observatory', 'observatory', 518, 516); // 3×3 (D84), south-east of the Hearth: inputs south at (518..520, 518)
+  hint('field_journal', 3);
+  powerLine(sim, ids.observatory!);
+  hint('field_journal', 4);
+  expect(connect(sim, sim.hearthId, ids.observatory!), 'a ribbon from the Core\'s data outlet into the lab').toBeGreaterThan(0);
+  hint('field_journal', 5);
+  expect(sim.startResearch('tr1').ok).toBe(true);
+  hint('field_journal', -1);
   until(sim, 'field_journal', 8 * EPOCH);
   if (stop('field_journal')) return ids;
 
-  // 11 — quartz in the wall (D87): the vein's parcel bought, the Face Cutter learnt, a cutter at the
-  // wall's foot (dropped facing away, it turns its back to the rock), wired pole by pole, its quartz
-  // along one ribbon into the Hearth's west input.
-  at('wall_quartz', 0);
+  // 8 — goal: quartz in the wall (D87), past the Crown. The vein's parcel bought, a cutter at the
+  // wall's foot (no research wait, D101: its plan was taken with the others; dropped facing away, it
+  // turns its back to the rock), wired pole by pole, its quartz along one ribbon into the Hearth's
+  // west input.
+  hint('wall_quartz', 0);
   expect(sim.buyLand(parcelAt(468, 511))).toBeNull();
-  at('wall_quartz', 1);
-  for (let t = 0; t < 20 * EPOCH && !sim.done.has('ex_quartz'); t += EPOCH) sim.run(EPOCH);
-  expect(sim.done.has('ex_quartz')).toBe(true);
-  at('wall_quartz', 2);
+  hint('wall_quartz', 1);
   place('cutter', 'face_cutter', 468, 510, 3); // its back to the wall (x 467, y 510–511): turned to rot 1
   expect(sim.ents.get(ids.cutter!)!.rot).toBe(1);
-  at('wall_quartz', 3);
+  hint('wall_quartz', 2);
   powerLine(sim, ids.cutter!);
-  at('wall_quartz', 4);
-  lay([[470, 510, 2], ...line(470, 511, 1, 40)]); // from its output (front, east) down a tile, then east into (510, 511)
-  at('wall_quartz', 6); // step 5 is the land without a vein's (an import order): passed by here
+  hint('wall_quartz', 3);
+  const quartzLine: Array<[number, number, Rot]> = [[470, 510, 2], ...line(470, 511, 1, 40)];
+  lay(quartzLine); // from its output (front, east) down a tile, then east into (510, 511)
+  hint('wall_quartz', -1); // the land without a vein's hint (an import order) is passed by here
   until(sim, 'wall_quartz', 6 * EPOCH);
+  if (stop('wall_quartz')) return ids;
+
+  // 9 — goal: Parts for the Synthesis (D90, after D93): the two workshops (the quartz workshop off the
+  // quartz and wire lines, the electronics workshop off the wire and glass lines, each a router on
+  // the line), their oscillators and circuits into the Hearth; no press (D101: its gears wait for
+  // Mechanics, started in « Données d'arpentage »). The long lines are found by the layout kit.
+  hint('synth_parts', 0);
+  const fed = (name: string, def: string, near: [number, number], feeds: Feed[], to: number | null): number => {
+    const r = placeFed(sim, def, near, feeds, to, { r: 16, tries: 120 });
+    if (!r) throw new Error(`${name} (${def} near ${near}): no spot with its lines`);
+    return (ids[name] = r.id);
+  };
+  fed('quartzW', 'quartz_workshop', [490, 516], [{ lines: [quartzLine] }, { lines: [wireLine] }], sim.hearthId);
+  fed('circuits', 'workshop', [500, 522], [{ lines: [wireLine] }, { lines: [glassLine] }], sim.hearthId);
+  hint('synth_parts', 2); // both fed, neither wired yet
+  powerLine(sim, ids.quartzW!);
+  powerLine(sim, ids.circuits!);
+  hint('synth_parts', -1); // their lines were laid with them: the parts on their way
+  until(sim, 'synth_parts', 10 * EPOCH);
   return ids;
 }
 
@@ -319,11 +320,12 @@ const logged = (sim: Sim, k: Command['k']): Command[] => sim.log.filter((l) => l
 describe('quests', () => {
   it('the quest table holds together (the tutorial unlocks before it uses), and checks fall on every epoch boundary', () => {
     expect(questProblems()).toEqual([]);
-    expect(QUEST_IDS.length).toBe(12);
+    expect(QUEST_IDS.length).toBe(10); // the claim's name, then nine quests (D101: « Le Cœur grandit » the ninth)
+    expect(QUEST_IDS.filter((id) => (QUESTS[id] as QuestDef).steps).slice(1)).toEqual(['first_strike', 'bloom_kiln']); // guided: the first basics only
     expect(EPOCH % QUEST_CHECK_TICKS).toBe(0);
   });
 
-  it('a scripted colony completes quests 0–11 in order, each once, each paid once', () => {
+  it('a scripted colony completes quests 0–9 in order, each once, each paid once', () => {
     const sim = colony();
     const credits0 = sim.credits;
     play(sim);
@@ -334,15 +336,18 @@ describe('quests', () => {
     // One logged completion per quest, in order, none forced; one quest event each.
     expect(logged(sim, 'quest')).toEqual(QUEST_IDS.map((id) => ({ k: 'quest', id })));
     // The tree: every plan the tutorial asked for, unlocked through the logged command.
+    const first = ['kiln', 'sand_collector', 'router', 'telemetry', 'trade_post', 'wire_mill'];
     expect(logged(sim, 'unlockPlan').map((c) => (c as { id: string }).id)).toEqual([
-      'telemetry', 'kiln', 'router', 'wind_flower', 'sand_collector', 'trade_post', 'wire_mill', 'beacon',
-      ...PLAN_IDS.filter((p) => !['telemetry', 'kiln', 'router', 'wind_flower', 'sand_collector', 'trade_post', 'wire_mill', 'beacon', 'observatory'].includes(p)),
-      'observatory',
+      ...first, ...PLAN_IDS.filter((p) => ![...first, 'observatory'].includes(p)), 'observatory',
     ]);
-    // Ocelles: quests 6 and 10 pay 150 + 300 ◉ (on top of the trade, less the research's tokens, D68, and the vein's parcel, D87).
+    // Ocelles: quests 5, 6, 7 and 9 pay 150 + 100 + 600 + 300 ◉ (on top of the trade — the starter
+    // contract among the purchases, D101 —, less the research's tokens if any, D68/D105, and the
+    // vein's parcel, D87).
     const t = sim.trade;
-    expect(sim.credits - credits0 - (t.earned - t.spent) + sim.tokenStats.totalCents + sim.land.paid.get(parcelAt(468, 511))!).toBe((300 + 150) * 100);
-    // The title of the path taken (a beacon: the passes).
+    expect(sim.credits - credits0 - (t.earned - t.spent) + sim.tokenStats.totalCents + sim.land.paid.get(parcelAt(468, 511))!).toBe((150 + 100 + 600 + 300) * 100);
+    // The Core raised by the player's own command, once (D101: no quest grants a level).
+    expect(logged(sim, 'hearthUp')).toHaveLength(1);
+    // The register's title for the way past the Crown (D101: « Le quartz de la paroi » grants it).
     expect(sim.quests.titles).toEqual(['arpentage']);
     // Nothing is left to complete, and nothing more is paid.
     const before = sim.hash();
@@ -351,19 +356,191 @@ describe('quests', () => {
     expect(sim.hash()).toBe(before);
   }, 60_000);
 
-  it('on a land without a quartz vein (maps 1–2, D87) the quartz quest asks for an import instead of the vein\'s steps', () => {
+  it('on a land without a quartz vein (maps 1–2, D87) the quartz quest hints at an import instead of the vein\'s steps', () => {
     const sim = testSim(EXTRA, { plans: false }); // the flat test world: no vein
     for (const id of QUEST_IDS.slice(0, idx('wall_quartz'))) expect(sim.completeQuest(id, true), id).toBe(true);
     expect(objectiveProgress(sim, { k: 'vein' }).met).toBe(true); // nothing to buy
-    sim.done.add('ex_quartz');
-    sim.rebuildDerived();
-    expect(stepNow(sim)).toEqual(['wall_quartz', 5]); // the import order (the vein's steps passed by)
+    expect(hintNow(sim)).toEqual(['wall_quartz', 4]); // the import order (the vein's hints passed by)
     // On the vein's land the same quest starts at the parcel.
     const v = veinSim();
     for (const id of QUEST_IDS.slice(0, idx('wall_quartz'))) expect(v.completeQuest(id, true), id).toBe(true);
     expect(objectiveProgress(v, { k: 'vein' }).met).toBe(false);
-    expect(stepNow(v)).toEqual(['wall_quartz', 0]);
+    expect(hintNow(v)).toEqual(['wall_quartz', 0]);
   });
+
+  it('« La Criée »: the starter contract buys nothing until the post\'s exit leads somewhere, and the quest wants its ore in a wire mill (D101)', () => {
+    const sim = colony();
+    play(sim, 'glassworks');
+    expect(currentQuest(sim)?.id).toBe('crier_trade');
+    learnPlans(sim);
+    // The post sells glass, the mill stands fed by its own drill: two of three objectives (the glass sold, ever).
+    const post = sim.place('trade_post', 524, 509, 0).id!;
+    sim.grant('iron_plate', 2);
+    expect(sim.place('router', 521, 512, 0).ok).toBe(true);
+    expect(sim.placeBelts('ribbon', [[522, 512, 1], [523, 512, 2], [523, 513, 2], [523, 514, 1], [524, 514, 1], [525, 514, 1], [526, 514, 0]])).toBe(7);
+    const copper = sim.place('drill', 516, 523, 0).id!, mill = sim.place('wire_mill', 516, 519, 0).id!;
+    powerLine(sim, copper); powerLine(sim, mill);
+    const copperLine: Array<[number, number, Rot]> = [[516, 522, 0], [516, 521, 0]];
+    expect(sim.placeBelts('ribbon', copperLine)).toBe(2);
+    expect(sim.placeBelts('ribbon', [...line(516, 518, 3, 3), ...line(513, 518, 0, 4)])).toBe(7);
+    expect(hintNow(sim)).toEqual(['crier_trade', 2]); // the post's wire (its power is not an objective)
+    // Signed, its exit leading nowhere: nothing bought, nothing paid (the order's 'outlet' hold).
+    expect(typeof sim.takeStarter(post)).toBe('number');
+    expect(sim.takeStarter(post)).toBe('taken'); // once a base
+    sim.run(3 * EPOCH);
+    expect(sim.trade.boughtTotal[itemIdx('copper_ore')]).toBe(0);
+    expect(sim.quests.done).not.toContain('crier_trade');
+    // The exit led into the side of the copper line: the ore comes and goes into the mill.
+    expect(join(sim, post, copperLine)).toBeTruthy();
+    until(sim, 'crier_trade', 8 * EPOCH);
+    expect(sim.trade.boughtTotal[itemIdx('copper_ore')]).toBeGreaterThanOrEqual(10_000);
+  }, 60_000);
+
+  it('« Le Cœur grandit »: the player raises the Core with plates, glass and wire, no research; its outlet then feeds the lab (D101)', () => {
+    const sim = testSim(undefined, { plans: false });
+    for (const id of QUEST_IDS.slice(0, idx('core_upgrade'))) expect(sim.completeQuest(id, true), id).toBe(true);
+    expect(currentQuest(sim)?.id).toBe('core_upgrade');
+    expect(sim.hearthLevel).toBe(1);
+    learnPlans(sim);
+    // A lab and a ribbon from the Core's data outlet, before the level: the outlet hands nothing out.
+    const lab = sim.place('observatory', 518, 516, 0).id!;
+    expect(connect(sim, sim.hearthId, lab)).toBeGreaterThan(0);
+    const fromCore = { k: 'feeds', item: 'journal_1', to: ['observatory'], from: ['hearth'], n: 1 } as const;
+    sim.ensureCompiled();
+    expect(objectiveProgress(sim, fromCore).met).toBe(false);
+    // What is short, one hint at a time, the copper wire first; the Core's card is the target.
+    const set = (it: string, n: number): void => { sim.stock[itemIdx(it)] = n * 1000; }; // outside commands
+    set('copper_wire', 10); set('glass', 10); set('iron_plate', 10);
+    expect(hintNow(sim)).toEqual(['core_upgrade', 0]);
+    expect((QUESTS.core_upgrade as QuestDef).hints!.every((h) => h.target.k === 'hearth')).toBe(true);
+    expect(sim.upgradeHearth()).toEqual({ ok: false, reason: 'unaffordable' });
+    set('copper_wire', 40);
+    expect(hintNow(sim)).toEqual(['core_upgrade', 1]);
+    set('glass', 40);
+    expect(hintNow(sim)).toEqual(['core_upgrade', 2]);
+    set('iron_plate', 300); set('glass', 100); set('copper_wire', 100);
+    expect(hintNow(sim)).toEqual(['core_upgrade', 3]); // the click itself
+    // No research asked (Mechanics no longer gives it): one logged command.
+    expect(sim.done.has('tr1')).toBe(false);
+    expect(sim.upgradeHearth().ok).toBe(true);
+    expect(sim.log.at(-1)!.cmd).toEqual({ k: 'hearthUp' });
+    expect(hintNow(sim)).toEqual(['core_upgrade', -1]);
+    sim.run(QUEST_CHECK_TICKS);
+    expect(sim.quests.done).toContain('core_upgrade');
+    // Level 2: the Core makes Survey Data (2 a minute) and its outlet hands it to the lab, which
+    // runs Mechanics on it (« Données d'arpentage »).
+    sim.ensureCompiled();
+    expect(objectiveProgress(sim, fromCore).met).toBe(true);
+    powerLine(sim, lab);
+    expect(sim.startResearch('tr1').ok).toBe(true);
+    const J = itemIdx('journal_1'), made0 = sim.produced[J]!;
+    sim.run(3 * EPOCH);
+    expect(sim.produced[J]! - made0).toBe(3 * 2000);
+    expect(sim.stock[J]!).toBeLessThan(sim.produced[J]!); // handed out, into the lab
+  });
+
+  it('« Tenir la nuit » reads the Core\'s grid without the sun, at any hour (D101)', () => {
+    const sim = testSim(undefined, { plans: false });
+    const night = { k: 'night', pct: 80 } as const;
+    // Three drills by day (270 kW): the Core's panel tops them up; its core alone (210 kW at level 1,
+    // day and night: D101) would not carry them through the night.
+    drillToHearth(sim);
+    wire(sim, sim.place('drill', 513, 502, 2).id!);
+    wire(sim, sim.place('drill', 515, 502, 2).id!);
+    sim.run(20);
+    const c = nightCover(sim)!;
+    expect(c.solar).toBeGreaterThan(0); // founded at noon: the sun gives
+    expect(c.pct).toBeLessThan(80);
+    expect(objectiveProgress(sim, night)).toEqual({ have: c.pct, need: 80, met: false });
+    // A geothermal tap holds day and night alike: the goal is met by day already.
+    steadyPower(sim);
+    sim.run(20);
+    expect(nightCover(sim)!.pct).toBe(100);
+    expect(objectiveProgress(sim, night).met).toBe(true);
+  });
+
+  it('a goal\'s hint for one way passes by once another way did it (D101: a second coal drill, no router)', () => {
+    const sim = colony();
+    play(sim, 'first_wind');
+    expect(currentQuest(sim)?.id).toBe('glassworks');
+    const routerHint = (QUESTS.glassworks as QuestDef).hints![6]!;
+    expect(routerHint.target).toEqual({ k: 'unlock', ids: ['router'] });
+    expect(stepApplies(sim, routerHint)).toBe(true);
+    // The glass smelter north of the extra coal, fed by a coal drill of its own: no router needed.
+    expect(sim.unlockPlan('sand_collector').ok).toBe(true);
+    const kiln2 = sim.place('kiln', 522, 492, 0).id!; // inputs south at (522|523, 493), fed from (522|523, 494)
+    expect(sim.setRecipe(kiln2, 'glass')).toBe(true);
+    const d = sim.place('drill', 522, 496, 0).id!; // its output faces (522, 495)
+    powerLine(sim, d);
+    expect(sim.placeBelts('ribbon', [[522, 495, 0], [522, 494, 0]])).toBe(2);
+    sim.ensureCompiled();
+    expect(objectiveProgress(sim, { k: 'feeds', item: 'coal', to: ['kiln', 'kiln_compact'], n: 2 }).met).toBe(true);
+    expect(stepApplies(sim, routerHint)).toBe(false); // the router's plan is no longer hinted at
+    expect(sim.done.has('router')).toBe(false);
+  }, 60_000);
+
+  it('the tree offers each quest\'s few plans, then every plan (D101), and everything once the tutorial is over or skipped', () => {
+    const sim = testSim(undefined, { plans: false });
+    expect(planOffered(sim, 'kiln')).toBe(false); // the claim's name: no tree yet
+    sim.quests.cur = idx('bloom_kiln');
+    expect(['kiln', 'router', 'telemetry'].map((p) => planOffered(sim, p))).toEqual([true, false, false]);
+    sim.quests.cur = idx('crier_trade');
+    expect(['kiln', 'router', 'telemetry', 'trade_post', 'beacon'].map((p) => planOffered(sim, p))).toEqual([true, true, true, true, false]);
+    sim.quests.cur = idx('field_journal');
+    expect(PLAN_IDS.every((p) => planOffered(sim, p))).toBe(true);
+    // A plan taken early (the engine takes any plan: the pacing is the tree's) always shows.
+    sim.quests.cur = idx('bloom_kiln');
+    expect(sim.unlockPlan('beacon').ok).toBe(true);
+    expect(planOffered(sim, 'beacon')).toBe(true);
+    sim.quests.skipped = true;
+    expect(planOffered(sim, 'silo')).toBe(true);
+  });
+
+  it('a save from the first tutorial loads into today\'s quests: each old quest maps to the one that holds it (D101)', () => {
+    const OLD = ['claim', 'first_strike', 'ribbon_lines', 'bloom_kiln', 'first_wind', 'glassworks', 'crier_calls', 'tired_vein', 'first_purchase', 'beyond_crown', 'field_journal', 'wall_quartz', 'synth_parts'];
+    const NOW: Record<string, string | null> = {
+      claim: 'claim', first_strike: 'first_strike', ribbon_lines: 'bloom_kiln', bloom_kiln: 'bloom_kiln', first_wind: 'first_wind', glassworks: 'glassworks',
+      // « Le Cœur grandit » (table 3) comes first for a player at « La Criée »'s end; passed by once a later quest was done.
+      crier_calls: 'crier_trade', tired_vein: 'crier_trade', first_purchase: 'crier_trade', beyond_crown: 'core_upgrade', field_journal: 'core_upgrade',
+      wall_quartz: 'wall_quartz', synth_parts: 'synth_parts', '': null,
+    };
+    for (const cur of [...OLD, '']) {
+      const done = cur ? OLD.slice(0, OLD.indexOf(cur)) : OLD;
+      const sim = testSim();
+      // An old save's quest state: no table, the old ids, baselines for the old current quest.
+      loadQuests(sim, { done, doneAt: done.map((_, i) => 100 * i), cur: cur || null, base: [7], win: [-1, 0, -1, 0], named: true, titles: [] });
+      expect(QUEST_IDS[sim.quests.cur] ?? null, `old ${cur || 'all done'}`).toBe(NOW[cur]);
+      expect(sim.quests.done.every((id) => (QUEST_IDS as string[]).includes(id))).toBe(true);
+      expect([...sim.quests.doneAt].sort((a, b) => a - b)).toEqual(sim.quests.doneAt);
+      // « La Criée » is done once all three quests it holds were, at the last one's tick.
+      if (!cur || OLD.indexOf(cur) > OLD.indexOf('first_purchase')) expect(sim.quests.doneAt[sim.quests.done.indexOf('crier_trade')]).toBe(100 * OLD.indexOf('first_purchase'));
+      // The current quest's baselines are taken afresh (the old ones belonged to the old table).
+      const objs = currentQuest(sim)?.def.objectives ?? [];
+      expect(sim.quests.base.length).toBe(objs.length);
+    }
+    // A save from the D101 table before « Le Cœur grandit » (table 2): the same rule.
+    const T2 = ['claim', 'first_strike', 'bloom_kiln', 'first_wind', 'glassworks', 'crier_trade', 'field_journal', 'wall_quartz', 'synth_parts'];
+    for (const [cur, now] of [['field_journal', 'core_upgrade'], ['wall_quartz', 'wall_quartz'], ['synth_parts', 'synth_parts']] as const) {
+      const done = T2.slice(0, T2.indexOf(cur));
+      const sim = testSim();
+      loadQuests(sim, { done, doneAt: done.map((_, i) => 100 * i), cur, base: [0, 0], win: [-1, 0, -1, 0, -1, 0, -1, 0], named: true, titles: [], table: 2 });
+      expect(QUEST_IDS[sim.quests.cur], `table 2 at ${cur}`).toBe(now);
+      expect(sim.quests.done.includes('core_upgrade')).toBe(now !== 'core_upgrade');
+      expect([...sim.quests.doneAt].sort((a, b) => a - b)).toEqual(sim.quests.doneAt);
+    }
+    // Today's table: a quest not done stays to do, whatever came after it.
+    const t3 = testSim();
+    loadQuests(t3, { done: ['claim', 'field_journal'], doneAt: [0, 5], cur: null, base: [], win: [], named: true, titles: [], table: 3 });
+    expect(QUEST_IDS[t3.quests.cur]).toBe('first_strike');
+    expect(t3.quests.done).not.toContain('core_upgrade');
+    // Today's save keeps its own baselines (the same hash after a round trip).
+    const a = colony();
+    play(a, 'first_strike');
+    a.run(77);
+    const b = deserialize(JSON.parse(JSON.stringify(serialize(a))), veinSource());
+    expect(b.quests).toEqual(a.quests);
+    expect(b.hash()).toBe(a.hash());
+  }, 60_000);
 
   it('each reward lands in the Hearth exactly once (forced completions, item by item)', () => {
     const sim = testSim();
@@ -379,11 +556,12 @@ describe('quests', () => {
       expect(sim.completeQuest(id, true)).toBe(false);
     }
     expect(sim.quests.done).toEqual(QUEST_IDS);
-    // The kits are the buildings' own costs; the first purchase's prize is the Hearth's level-2 materials.
+    // The kits are the buildings' own costs; « La Criée » pays copper wire, no Core level (D101: the player raises it).
     expect(rewardItems(QUESTS.first_wind.reward).map((c) => [ITEM_IDS[c.item], c.mu / 1000])).toEqual([['iron_plate', 20], ['copper_wire', 4]]);
-    expect(rewardItems(QUESTS.first_purchase.reward).map((c) => [ITEM_IDS[c.item], c.mu / 1000])).toEqual([['iron_plate', 200], ['gear', 50]]);
-    // A forced `any` quest takes its first objective's title.
-    expect(sim.quests.titles).toEqual(['taille']);
+    expect(rewardItems(QUESTS.crier_trade.reward).map((c) => [ITEM_IDS[c.item], c.mu / 1000])).toEqual([['copper_wire', 40]]);
+    expect(sim.hearthLevel).toBe(1); // forced through, not one level granted
+    // The register's title « Le quartz de la paroi » grants, whatever completed it.
+    expect(sim.quests.titles).toEqual(['arpentage']);
   });
 
   it('naming the claim completes quest 0 at once; names are trimmed and bounded', () => {
@@ -404,23 +582,32 @@ describe('quests', () => {
     expect(sim.completeQuest('first_strike')).toBe(false);
   });
 
-  it('quest 2 asks for the telemetry plan, a second wired drill and 20 more ore: about a minute of play', () => {
+  it('« La fonderie » takes a smelter fed by its own drill pair, and plates made before it count (D101: `ever`)', () => {
     const sim = colony();
     sim.nameColony('R');
+    // The smelter built first, before the first drill: its plates are made during « Premier coup de pioche ».
+    expect(sim.unlockPlan('kiln').ok).toBe(true);
+    const kiln = sim.place('kiln', 516, 505, 2).id!;
+    expect(sim.setRecipe(kiln, 'iron_plate')).toBe(true);
+    const coal = sim.place('drill', 520, 498, 2).id!;
+    sim.placeBelts('ribbon', [[521, 500, 2], [521, 501, 2], [521, 502, 3], [520, 502, 3], [519, 502, 3], [518, 502, 3], [517, 502, 2], [517, 503, 2], [517, 504, 2]]);
+    const d2 = sim.place('drill', 513, 502, 2).id!;
+    sim.placeBelts('ribbon', [[514, 504, 1], [515, 504, 1], [516, 504, 2]]);
+    const mast = sim.place('mast', 516, 503, 0).id!;
+    wire(sim, coal, mast);
+    wire(sim, d2);
+    sim.placeBelts('ribbon', [[517, 507, 2], [517, 508, 2], [517, 509, 2], [517, 510, 2], [517, 511, 3], [516, 511, 3], [515, 511, 3]]);
+    sim.run(3 * EPOCH);
+    expect(sim.produced[itemIdx('iron_plate')]).toBeGreaterThan(10_000);
+    expect(sim.quests.cur).toBe(idx('first_strike')); // no drill into the Core yet
     drillToHearth(sim);
     until(sim, 'first_strike', 8 * EPOCH);
-    expect(sim.quests.cur).toBe(idx('ribbon_lines'));
-    wire(sim, sim.place('drill', 513, 502, 2).id!);
-    sim.placeBelts('ribbon', [[514, 504, 3], ...line(513, 504, 2, 6)]);
-    sim.run(2 * EPOCH);
-    expect(sim.quests.done).not.toContain('ribbon_lines'); // the plan is still to unlock
-    expect(sim.unlockPlan('telemetry').ok).toBe(true);
-    until(sim, 'ribbon_lines', QUEST_CHECK_TICKS);
-  });
+    until(sim, 'bloom_kiln', QUEST_CHECK_TICKS); // met already: done the next second
+  }, 60_000);
 
   it('replaying the log reproduces the quests, their rewards and the state hash', () => {
     const a = colony();
-    play(a, 'tired_vein');
+    play(a, 'crier_trade');
     a.run(321);
     const b = replayBase();
     replay(b, a.log, a.tick);
@@ -446,35 +633,43 @@ describe('quests', () => {
   it('save → load keeps the quests and the tree (same hash), and goes on alike', () => {
     const a = colony();
     play(a, 'first_strike');
-    expect(a.unlockPlan('telemetry').ok).toBe(true);
-    wire(a, a.place('drill', 513, 502, 2).id!);
-    a.placeBelts('ribbon', [[514, 504, 3], ...line(513, 504, 2, 6)]);
+    expect(a.unlockPlan('kiln').ok).toBe(true);
+    const kiln = a.place('kiln', 516, 505, 2).id!;
+    a.setRecipe(kiln, 'iron_plate');
     a.run(77);
     const b = deserialize(JSON.parse(JSON.stringify(serialize(a))), veinSource());
     expect(b.quests).toEqual(a.quests);
-    expect(b.done.has('telemetry')).toBe(true);
-    expect(b.mods.flags.has('telemetry')).toBe(true);
+    expect(b.done.has('kiln')).toBe(true);
     expect(b.colonyName).toBe(a.colonyName);
     expect(b.hash()).toBe(a.hash());
-    a.run(3 * EPOCH);
-    b.run(3 * EPOCH);
-    expect(a.quests.done).toContain('ribbon_lines');
+    for (const s of [a, b]) {
+      const coal = s.place('drill', 520, 498, 2).id!;
+      s.placeBelts('ribbon', [[521, 500, 2], [521, 501, 2], [521, 502, 3], [520, 502, 3], [519, 502, 3], [518, 502, 3], [517, 502, 2], [517, 503, 2], [517, 504, 2]]);
+      const d2 = s.place('drill', 513, 502, 2).id!;
+      s.placeBelts('ribbon', [[514, 504, 1], [515, 504, 1], [516, 504, 2]]);
+      wire(s, coal, s.place('mast', 516, 503, 0).id!);
+      wire(s, d2);
+      s.placeBelts('ribbon', [[517, 507, 2], [517, 508, 2], [517, 509, 2], [517, 510, 2], [517, 511, 3], [516, 511, 3], [515, 511, 3]]);
+      s.run(4 * EPOCH);
+    }
+    expect(a.quests.done).toContain('bloom_kiln');
     expect(b.quests).toEqual(a.quests);
     expect(b.hash()).toBe(a.hash());
   }, 60_000);
 
   it('a quest met during an absence completes right after the catch-up (and at the next check)', () => {
     const a = colony();
-    play(a, 'ribbon_lines');
-    // Quest 3's smelter line, built just before leaving: its 10 plates are made while away.
-    expect(a.unlockPlan('kiln').ok && a.unlockPlan('router').ok).toBe(true);
+    play(a, 'first_strike');
+    // « La fonderie »'s smelter and drill pair, built just before leaving: its 10 plates are made while away.
+    expect(a.unlockPlan('kiln').ok).toBe(true);
     const coal = a.place('drill', 520, 498, 2).id!;
     const mast = a.place('mast', 516, 503, 0).id!;
     wire(a, coal, mast);
     const kiln = a.place('kiln', 516, 505, 2).id!;
     a.setRecipe(kiln, 'iron_plate');
-    expect(a.place('router', 513, 505, 0).ok).toBe(true);
-    a.placeBelts('ribbon', [[514, 505, 1], [515, 505, 0], [515, 504, 1], [516, 504, 2]]);
+    const d2 = a.place('drill', 513, 502, 2).id!;
+    wire(a, d2);
+    a.placeBelts('ribbon', [[514, 504, 1], [515, 504, 1], [516, 504, 2]]);
     a.placeBelts('ribbon', [[521, 500, 2], [521, 501, 2], [521, 502, 3], [520, 502, 3], [519, 502, 3], [518, 502, 3], [517, 502, 2], [517, 503, 2], [517, 504, 2]]);
     a.placeBelts('ribbon', [[517, 507, 2], [517, 508, 2], [517, 509, 2], [517, 510, 2], [517, 511, 3], [516, 511, 3], [515, 511, 3]]);
     a.run(5);
@@ -484,7 +679,7 @@ describe('quests', () => {
     const away = 12 * EPOCH;
     catchUp(b, away, { noDirect: true });
     expect(b.quests.done).not.toContain('bloom_kiln'); // the catch-up runs no quest check itself
-    expect(b.checkQuests()).toEqual(['bloom_kiln']);
+    expect(b.checkQuests()).toContain('bloom_kiln');
     expect(b.stock[itemIdx('iron_plate')]! - c.stock[itemIdx('iron_plate')]!).toBeGreaterThan(0); // its reward (30 plates) is in
     // Without the explicit check, the first online check (within a second) finds it.
     catchUp(c, away, { noDirect: true });
@@ -495,16 +690,14 @@ describe('quests', () => {
     expect(a.quests.done).toContain('bloom_kiln');
   }, 60_000);
 
-  it('ore mined during an absence counts: quest 2 completes right after the catch-up', () => {
+  it('ore mined during an absence counts: quest 1 completes right after the catch-up', () => {
     const a = colony();
-    play(a, 'first_strike');
-    expect(a.unlockPlan('telemetry').ok).toBe(true);
-    wire(a, a.place('drill', 513, 502, 2).id!);
-    a.placeBelts('ribbon', [[514, 504, 3], ...line(513, 504, 2, 6)]);
+    a.nameColony('Absente');
+    drillToHearth(a);
     a.run(7);
     catchUp(a, 30 * EPOCH, { noDirect: true });
-    expect(a.checkQuests()).toContain('ribbon_lines');
-    expect(a.quests.done).toContain('ribbon_lines');
+    expect(a.checkQuests()).toContain('first_strike');
+    expect(a.quests.done).toContain('first_strike');
   }, 60_000);
 
   it('a drill “delivers” only once its output reaches the Heart through ribbons (the guide stops pointing then)', () => {
@@ -568,5 +761,86 @@ describe('quests', () => {
     const paid = sim.quoteSpot(plate, 'sell', 50).cents;
     for (const id of QUEST_IDS) sim.completeQuest(id, true);
     expect(sim.quoteSpot(plate, 'sell', 50).cents).toBe(paid);
+  });
+});
+
+describe('the guide never asks again for what is done (D98)', () => {
+  /** The quest colony with every plan, steady power and spare materials, named: quest 1 current. */
+  const planned = (): Sim => {
+    const sim = veinSim(true);
+    steadyPower(sim);
+    for (const [it, n] of [['iron_plate', 500], ['glass', 200], ['copper_wire', 100], ['gear', 50], ['coal', 100]] as const) sim.grant(it, n);
+    expect(sim.nameColony('Ordre')).toBe(true);
+    return sim;
+  };
+  const closing = (id: QuestId): number => (QUESTS[id] as QuestDef).steps!.length - 1;
+
+  it('every guided quest ends on a closing line: every step done, the quest waiting for its numbers, nothing done is asked again', () => {
+    for (const id of QUEST_IDS) {
+      const steps = (QUESTS[id] as QuestDef).steps;
+      if (steps) expect(steps[steps.length - 1]!.done, id).toBeUndefined();
+    }
+    // Quest 1: drill, wire, ribbon done; 10 ore still to come. The guide no longer says « Trace un ruban ».
+    const sim = colony();
+    expect(sim.nameColony('Ruban')).toBe(true);
+    drillToHearth(sim);
+    expect(stepNow(sim)).toEqual(['first_strike', closing('first_strike')]);
+    expect((QUESTS.first_strike as QuestDef).steps![closing('first_strike')]!.target.k).toBe('stock');
+    expect(sim.quests.done).not.toContain('first_strike');
+  });
+
+  it('steps done out of order are passed by: the ribbon laid before the drill, the drill before its wire', () => {
+    const sim = colony();
+    expect(sim.nameColony('Ordre')).toBe(true);
+    expect(stepNow(sim)).toEqual(['first_strike', 0]);
+    expect(sim.placeBelts('ribbon', [[512, 504, 3], ...line(511, 504, 2, 6)])).toBe(7); // the line first
+    expect(stepNow(sim)).toEqual(['first_strike', 0]); // a drill: nothing at its start yet
+    const d = sim.place('drill', 511, 502, 2).id!;
+    expect(stepNow(sim)).toEqual(['first_strike', 1]); // its wire; the ribbon is there already
+    wire(sim, d);
+    expect(stepNow(sim)).toEqual(['first_strike', closing('first_strike')]);
+    until(sim, 'first_strike', 8 * EPOCH);
+  });
+
+  it('the smelter built backwards: its lines before it, the drills before their wires — only what is missing is asked for', () => {
+    const sim = planned();
+    drillToHearth(sim);
+    sim.completeQuest('first_strike', true);
+    expect(stepNow(sim)).toEqual(['bloom_kiln', 1]); // every plan is known: the smelter
+    // The plates' line, the coal's line and the iron's, before the smelter they lead to and from.
+    expect(sim.placeBelts('ribbon', [[517, 507, 2], [517, 508, 2], [517, 509, 2], [517, 510, 2], [517, 511, 3], [516, 511, 3], [515, 511, 3]])).toBe(7);
+    expect(sim.placeBelts('ribbon', [[521, 500, 2], [521, 501, 2], [521, 502, 3], [520, 502, 3], [519, 502, 3], [518, 502, 3], [517, 502, 2], [517, 503, 2], [517, 504, 2]])).toBe(9);
+    expect(sim.placeBelts('ribbon', [[514, 504, 1], [515, 504, 1], [516, 504, 2]])).toBe(3);
+    expect(stepNow(sim)).toEqual(['bloom_kiln', 1]); // still the smelter: the rest waits on it
+    const kiln = sim.place('kiln', 516, 505, 2).id!;
+    expect(stepNow(sim)).toEqual(['bloom_kiln', 2]); // its recipe
+    expect(sim.setRecipe(kiln, 'iron_plate')).toBe(true);
+    expect(stepNow(sim)).toEqual(['bloom_kiln', 3]); // the coal drill; its ribbon is there already
+    const coal = sim.place('drill', 520, 498, 2).id!;
+    expect(stepNow(sim)).toEqual(['bloom_kiln', 5]); // the iron drill
+    const d2 = sim.place('drill', 513, 502, 2).id!;
+    expect(stepNow(sim)).toEqual(['bloom_kiln', 7]); // the wires
+    wire(sim, coal, sim.place('mast', 516, 503, 0).id!);
+    wire(sim, d2);
+    expect(stepNow(sim)).toEqual(['bloom_kiln', closing('bloom_kiln')]); // never « un ruban… » again
+    until(sim, 'bloom_kiln', 6 * EPOCH);
+  });
+
+  it('a line counts whatever it is made of: a swift stretch, a router on its curve, a bridge pair over a crossing line', () => {
+    const sim = planned();
+    sim.done.add('xp_swift'); // an expertise's ribbon, granted outside commands (this colony is not replayed)
+    sim.rebuildDerived();
+    const d = sim.place('drill', 511, 502, 2).id!;
+    wire(sim, d);
+    expect(sim.placeBelts('swift_ribbon', [[512, 504, 3], [511, 504, 2]])).toBe(2); // west, then south: a curve
+    expect(sim.place('router', 511, 504, 0).ok).toBe(true); // on the curve it takes the way the ore enters (D98)
+    expect(sim.entityAt(511, 504)!.rot).toBe(3);
+    expect(sim.place('skybridge', 511, 505, 2).ok).toBe(true);
+    expect(sim.placeBelts('ribbon', line(507, 506, 1, 9))).toBe(9); // a line across, under the leap
+    expect(sim.place('skybridge', 511, 507, 2).ok).toBe(true);
+    expect(sim.placeBelts('ribbon', line(511, 508, 2, 2))).toBe(2); // into the Heart's north input
+    expect(stepNow(sim)).toEqual(['first_strike', closing('first_strike')]);
+    expect(objectiveProgress(sim, { k: 'delivers', defs: ['drill'], n: 1 }).met).toBe(true);
+    until(sim, 'first_strike', 8 * EPOCH); // and the ore really arrives
   });
 });

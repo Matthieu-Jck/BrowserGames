@@ -241,7 +241,7 @@ describe('space', () => {
 
   it('a dig that research unlocks during an absence starts offline as online', () => {
     const make = (): Sim => {
-      const sim = spaceSim(['tr1', 'tr2', 'tr3', 'ex_sifter', 'ex3']);
+      const sim = spaceSim(['tr1', 'tr_synth', 'tr2', 'tr3', 'ex_sifter', 'ex3']); // Tier 2 hangs from the Synthesis (D93)
       sim.grantCredits(10_000_000); // the research's tokens, bought by the minute (D68)
       const lab = sim.place('observatory', 503, 512, 0);
       expect(lab.ok, lab.reason).toBe(true);

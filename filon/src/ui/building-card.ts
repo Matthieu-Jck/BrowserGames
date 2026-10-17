@@ -153,7 +153,7 @@ export class BuildingCard {
   /**
    * Above the tray, centred on the slot, kept inside the window, its tail pointing at the slot.
    * Rects are in screen pixels, but the card's own left/top are in its zoomed pixels (it zooms
-   * with `--ui-scale`, like #ui): divide by the zoom, read off the card itself (screen ÷ layout width).
+   * with `--ui-zoom`, like #ui): divide by the zoom, read off the card itself (screen ÷ layout width).
    */
   private place(slot: HTMLElement): void {
     const r = slot.getBoundingClientRect();

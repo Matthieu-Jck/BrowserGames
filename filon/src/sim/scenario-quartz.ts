@@ -1,6 +1,6 @@
 // scenario-quartz.ts — the quartz vein in the debug bases (D87; scenarios.ts). The tutorial level
-// plays « Le quartz de la paroi » as a player does: the vein's parcel bought, the Face Cutter's
-// research (started at the Survey Data quest) waited for, two face cutters at the wall's foot, their
+// plays « Le quartz de la paroi » as a player does: the vein's parcel bought (the Face Cutter's plan
+// taken with every plan at the Survey Data quest, D101: no research wait), two face cutters at the wall's foot, their
 // poles over the Crown, one line home — up and down the Crown on traction ribbons (`routeOver`),
 // into the Heart, the second cutter joining it from the side. Two, because a traction ribbon carries
 // 30 a minute: what two cutters cut (15 each), so neither stands backed up (D85). Then, once the
@@ -11,7 +11,6 @@
 // the furnaces' search out (seconds of build). What the land does not allow is skipped and
 // reported, never thrown; a land without a vein (none of today's) skips it all.
 import { buildingIdx } from '@/content/registry';
-import { EPOCH } from './constants';
 import { join, placeFed, routeOver, sideGoalsOver, type BeltTiles } from './dev';
 import { footprint, worldPorts } from './entities';
 import { faceTiles } from './face';
@@ -22,8 +21,6 @@ import { inWorld, tileIndex } from './world/grid';
 
 /** Face cutters the levels set along the vein: what one traction line carries home (30 a minute). */
 const VEIN_CUTTERS = 2;
-/** Game minutes the build gives the Face Cutter's research (15 Survey Data at 2 a minute: about 8). */
-const RESEARCH_WAIT_MIN = 20;
 
 /**
  * Where face cutters stand along the land's vein: on the floor at its foot, each with its back on two
@@ -71,9 +68,9 @@ function layRuns(b: Builder, path: ReadonlyArray<readonly [number, number, Rot, 
 }
 
 /**
- * « Le quartz de la paroi » (quest 11): the vein's parcel bought, the Face Cutter learnt for real
- * (its research runs from the Survey Data quest; `power` tops the grid up for the night it runs
- * into), two cutters at the wall's foot, wired, their quartz over the Crown into the Heart.
+ * « Le quartz de la paroi » (D87, D101): the vein's parcel bought (`power` tops the grid up for the
+ * cutters and the night), the Face Cutter's plan in hand (taken at the Survey Data quest), two
+ * cutters at the wall's foot, wired, their quartz over the Crown into the Heart.
  */
 export function wallQuartz(b: Builder, power: () => void): void {
   const sim = b.sim;
@@ -88,10 +85,11 @@ export function wallQuartz(b: Builder, power: () => void): void {
     for (const t of faceTiles(sim.grid, def, x, y, rot)) tiles.push(t);
   }
   if (!b.landFor(tiles)) return;
-  // The base's power topped up first: the research waits on the collector's data, and the evening comes on (`powerUp`).
+  // The base's power topped up first: the cutters draw, and the evening comes on (`powerUp`).
   power();
-  for (let t = 0; t < RESEARCH_WAIT_MIN * EPOCH && !sim.done.has('ex_quartz'); t += EPOCH) b.run(EPOCH);
-  if (!sim.done.has('ex_quartz')) { b.skip('research:ex_quartz'); return; }
+  // The Face Cutter's plan (D101: taken with every plan at the Survey Data quest; here if not).
+  b.plan('ex_quartz');
+  if (!sim.unlocked('ex_quartz')) return;
   b.affordAll(['face_cutter', spots.length]);
   spots.forEach(([x, y, rot], k) => {
     const r = sim.place('face_cutter', x, y, rot);
@@ -101,8 +99,6 @@ export function wallQuartz(b: Builder, power: () => void): void {
   b.wire(...spots.map((_, k) => `cutter${k + 1}`));
   veinLine(b);
   b.until('wall_quartz');
-  // The lab on to Mechanics, as a player goes on (D87: it hangs from the Face Cutter).
-  if (b.ids.observatory && !sim.projects.some((p) => p.lab === b.ids.observatory) && !sim.startResearch('tr1', b.ids.observatory).ok) b.skip('research:tr1');
 }
 
 /**

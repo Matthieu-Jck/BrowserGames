@@ -9,7 +9,7 @@ export const BUILDINGS = {
   // ── colony ────────────────────────────────────────────────────────────────
   hearth: {
     name: { fr: 'Cœur', en: 'Core' },
-    desc: { fr: 'Le cœur de ta base : il reçoit sans jamais rendre son stock, qui paie tes constructions. Son noyau isotopique donne 90 kW jour et nuit, son panneau solaire jusqu’à 240 kW de plus en plein soleil, il tend 6 fils jusqu’à 8 tuiles et, dès son niveau 2, sa sortie de données donne les données d’arpentage que la recherche Analytique lui fait produire.', en: 'The heart of your base: it takes and never gives back its stock, which pays for your construction. Its isotope reactor gives 90 kW day and night, its solar panel up to 240 kW more in full sun, it holds 6 wires up to 8 tiles long and, from its level 2, its data outlet hands out the Survey Data the Analytics research has it make.' },
+    desc: { fr: 'Le cœur de ta base : il reçoit sans jamais rendre son stock, qui paie tes constructions. Son noyau isotopique donne l’essentiel de son électricité, jour et nuit, son panneau solaire un peu plus en plein soleil, et les deux grandissent à chaque niveau ; il tend 6 fils jusqu’à 8 tuiles et, dès son niveau 2, sa sortie de données donne des données d’arpentage pour la recherche.', en: 'The heart of your base: it takes and never gives back its stock, which pays for your construction. Its isotope reactor gives most of its power, day and night, its solar panel a little more in full sun, and both grow with each level; it holds 6 wires up to 8 tiles long and, from its level 2, its data outlet hands out Survey Data for research.' },
     kind: 'hearth', category: 'colony', w: 5, h: 5, needsZone: false, cost: [], unlock: 'never',
     ports: [
       // Inputs only: the Heart takes, it never gives (owner, 2026-10-12) — machines are fed by
@@ -18,12 +18,12 @@ export const BUILDINGS = {
       P(1, 4, 'S', 'in'), P(2, 4, 'S', 'in'), P(3, 4, 'S', 'in'),
       P(4, 1, 'E', 'in'), P(4, 2, 'E', 'in'), P(4, 3, 'E', 'in'),
       P(0, 1, 'W', 'in'), P(0, 2, 'W', 'in'), P(0, 3, 'W', 'in'), // three a side, all round (owner, 2026-10-12)
-      // Its one outlet (D68): the Survey Data it makes once the Analytics research has it process
-      // the base's activity (mods.heartData) — never its stock, which it still never gives. Level 2
-      // mounts it on this corner (D86): the port stands before, handing out nothing.
+      // Its one outlet (D68): the Survey Data it makes from its level 2 (D101: `BAL.hearthDataBase`,
+      // plus what the Analytics research has it process, mods.heartData) — never its stock, which it
+      // still never gives. Level 2 mounts it on this corner (D86): the port stands before, handing out nothing.
       P(4, 4, 'S', 'out'),
     ],
-    // gen.kw: the built-in solar panel's peak (BAL.hearthSolarKw wins; D25). A link point of 6 wires.
+    // gen.kw: the built-in solar panel's peak (BAL.hearthSolarKw and hearthCoreKw win, by level: D25, D101). A link point of 6 wires.
     gen: { kw: 240 }, pole: { range: 8, slots: 6, climb: 1 }, storageCap: 5000,
   },
   beacon: {
@@ -180,6 +180,16 @@ export const BUILDINGS = {
     kind: 'machine', category: 'production', w: 1, h: 2, needsZone: true, unlock: 'dn3', crafts: true,
     cost: [['iron_plate', 15], ['gear', 2]], ports: [P(0, 1, 'S', 'in'), P(0, 1, 'E', 'in'), P(0, 0, 'N', 'out')],
   },
+  // The smelter's work on power instead of coal (D106; owner, 2026-10-17: « un electric smelter, qui
+  // consomme beaucoup mais qui permet de faire ce que fait le smelter sans charbon »): the smelter's
+  // pace, a heavy draw — coal stays the cheap way early, power the clean one — and the arc furnace's
+  // two recipes (plates or glass: it waits for the player's choice, D83). Built of Tier 1 materials.
+  electric_smelter: {
+    name: { fr: 'Fonderie électrique', en: 'Electric Smelter' },
+    desc: { fr: 'Fond le minerai de fer en plaques et le sable en verre à l’électricité, sans charbon, au rythme de la fonderie. Elle tire beaucoup sur le réseau : prévois l’énergie avant de l’allumer.', en: 'Smelts iron ore into plates and sand into glass with power, no coal, at the smelter’s pace. It draws heavily on the grid: plan the power before you switch it on.' },
+    kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'dn_esmelt', crafts: true, kw: 300, idleKw: 15,
+    cost: [['iron_plate', 25], ['copper_wire', 10], ['glass', 4]], ports: [P(0, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
+  },
   wire_mill: {
     name: { fr: 'Tréfileuse', en: 'Wire Mill' },
     desc: { fr: 'Tire deux fils de cuivre de chaque minerai de cuivre. Le cuivre du cirque est maigre : prévois d’en acheter.', en: 'Draws two copper wires from each copper ore. Copper is scarce in the cirque: plan to buy some.' },
@@ -250,9 +260,9 @@ export const BUILDINGS = {
   },
   wind_flower: {
     name: { fr: 'Éolienne', en: 'Wind Turbine' },
-    desc: { fr: 'De l’électricité gratuite : 120 kW × le vent local, qui varie avec les rafales. Au fond du cirque, abrité, elle ne donne presque rien (×0,25) ; sur la Couronne, le Souffle porte (×1,4 à ×2, plus la roche est haute).', en: 'Free power: 120 kW × the local wind, which varies with the gusts. Down in the sheltered cirque it gives next to nothing (×0.25); on the Crown the Sough blows (×1.4 to ×2, the higher the rock the more).' },
+    desc: { fr: 'De l’électricité au gré du vent : jusqu’à 360 kW. Le vent change d’un lieu à l’autre — fort sur les crêtes et les grands espaces dégagés, faible au creux du cirque et à l’abri des reliefs — et d’une heure à l’autre ; par grande tempête, elle s’arrête.', en: 'Power as the wind blows: up to 360 kW. The wind changes from place to place — strong on the ridges and wide open ground, weak down in the cirque and in the lee of the relief — and from hour to hour; in a great storm it stops.' },
     kind: 'wind', replaceGroup: 'wind', category: 'energy', w: 2, h: 2, needsZone: true, onRock: true, unlock: 'wind_flower',
-    cost: [['iron_plate', 10], ['glass', 4], ['copper_wire', 6]], ports: [], gen: { kw: 120 },
+    cost: [['iron_plate', 10], ['glass', 4], ['copper_wire', 6]], ports: [], gen: { kw: 360, wind: { cutIn: 400, rated: 1400, cutOut: 3600 } }, // D95: its rating, reached at 1.4× the reference wind
   },
   sun_bulb: {
     name: { fr: 'Panneau solaire', en: 'Solar Panel' },
@@ -322,7 +332,7 @@ export const BUILDINGS = {
   data_collector: {
     name: { fr: 'Collecteur de données', en: 'Data Collector' },
     desc: { fr: 'Capte et compile des données sur la planète : 2 données d’arpentage par minute, n’importe où, de l’électricité seule. Elles sortent à l’avant, pour les laboratoires.', en: 'Picks up and compiles data about the planet: 2 Survey Data a minute, anywhere, from power alone. They leave at the front, for the labs.' },
-    kind: 'drill', category: 'research', w: 2, h: 2, needsZone: true, unlock: 'observatory', kw: 120, idleKw: 12,
+    kind: 'drill', category: 'research', w: 2, h: 2, needsZone: true, unlock: 'an_data', kw: 120, idleKw: 12, // D101: after the lab, from « Traitement des données »
     cost: [['iron_plate', 10], ['glass', 4], ['copper_wire', 6]], ports: [P(0, 0, 'N', 'out')], drill: { perMin: 2, anywhere: 'journal_1' },
   },
   server: {
@@ -361,9 +371,9 @@ export const BUILDINGS = {
   },
   pitch_turbine: {
     name: { fr: 'Éolienne à pas variable', en: 'Pitch-Control Turbine' },
-    desc: { fr: 'Ses pales s’orientent au vent : 200 kW × le vent local. Posée sur une éolienne, elle la remplace.', en: 'Its blades turn to the wind: 200 kW × the local wind. Placed over a wind turbine, it replaces it.' },
+    desc: { fr: 'Ses pales s’orientent au vent : jusqu’à 480 kW, dès le moindre souffle et jusque dans la tempête. Posée sur une éolienne, elle la remplace.', en: 'Its blades turn to the wind: up to 480 kW, from the lightest breeze and on through a storm. Placed over a wind turbine, it replaces it.' },
     kind: 'wind', replaceGroup: 'wind', category: 'energy', w: 2, h: 2, needsZone: true, onRock: true, unlock: 'en_pitch',
-    cost: [['iron_plate', 15], ['glass', 6], ['copper_wire', 8], ['gear', 4]], ports: [], gen: { kw: 200 },
+    cost: [['iron_plate', 15], ['glass', 6], ['copper_wire', 8], ['gear', 4]], ports: [], gen: { kw: 480, wind: { cutIn: 300, rated: 1250 } }, // D95: feathered blades, no storm stop
   },
   heavy_accumulator: {
     name: { fr: 'Accumulateur lourd', en: 'Heavy Accumulator' },
@@ -379,9 +389,9 @@ export const BUILDINGS = {
   },
   big_turbine: {
     name: { fr: 'Grande éolienne', en: 'Great Turbine' },
-    desc: { fr: 'Une éolienne de 3×3 : 500 kW × le vent local. Sur la Couronne, elle donne le plus.', en: 'A 3×3 wind turbine: 500 kW × the local wind. It gives most on the Crown.' },
+    desc: { fr: 'Une éolienne de 3×3 : jusqu’à 1 200 kW. Plus haute, elle prend le vent plus tôt ; sur une crête dégagée, elle donne le plus.', en: 'A 3×3 wind turbine: up to 1,200 kW. Taller, it catches the wind sooner; on an open ridge it gives most.' },
     kind: 'wind', replaceGroup: 'wind', category: 'energy', w: 3, h: 3, needsZone: true, onRock: true, unlock: 'en_bigwind',
-    cost: [['iron_plate', 40], ['gear', 12], ['copper_wire', 20], ['ceramic', 10]], ports: [], gen: { kw: 500 },
+    cost: [['iron_plate', 40], ['gear', 12], ['copper_wire', 20], ['ceramic', 10]], ports: [], gen: { kw: 1200, wind: { cutIn: 350, rated: 1300, cutOut: 4200 } }, // D95
   },
   cell_generator: {
     name: { fr: 'Générateur à batteries', en: 'Battery Generator' },
@@ -509,6 +519,23 @@ export const BUILDINGS = {
     desc: { fr: 'Taille le quartz en lames et les monte sur deux fils de cuivre : des oscillateurs à quartz, pour les données mécaniques et les serveurs. Deux entrées à l’arrière.', en: 'Cuts quartz into blades and mounts each on two copper wires: quartz oscillators, for Mechanics Data and the servers. Two inputs at the back.' },
     kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'ex_quartz', crafts: true, kw: 60, idleKw: 6,
     cost: [['iron_plate', 15], ['glass', 4], ['copper_wire', 4]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
+  },
+  // ── appended (D103): what keeps the Gleaners off the ribbons ─────────────
+  // The Gleaners walk the open desert floor at night and take shiny things off the ribbons they
+  // reach (sim/world/reach.ts). A fence stands in their way (a pocket of floor fenced in is out of
+  // their reach); a glazed ribbon is a ribbon under glass, as fast as the plain one. The fence sits in
+  // the Base tray (the base's perimeter, beside the survey beacon), the glazed ribbon with the ribbons.
+  fence: {
+    name: { fr: 'Grille', en: 'Fence' },
+    desc: { fr: 'Une grille basse que les Glaneurs ne franchissent pas\u00a0: clos un avant-poste du désert, et ses rubans sont hors de leur portée la nuit. Se trace en glissant.', en: 'A low fence the Gleaners do not cross: close in a desert outpost and its ribbons are out of their reach at night. Lay it by dragging.' },
+    kind: 'fence', category: 'colony', w: 1, h: 1, needsZone: false, unlock: 'xp_guard',
+    cost: [['iron_plate', 1]], ports: [],
+  },
+  glazed_ribbon: {
+    name: { fr: 'Ruban vitré', en: 'Glazed Ribbon' },
+    desc: { fr: 'Un ruban sous verre, aussi rapide que le ruban (60/min)\u00a0: les Glaneurs ne prennent rien de ce qu’il porte. Trace-le par-dessus un ruban pour le couvrir.', en: 'A ribbon under glass, as fast as the ribbon (60/min): the Gleaners take nothing it carries. Drag it over a ribbon to cover it.' },
+    kind: 'belt', glazed: true, replaceGroup: 'transport', category: 'logistics', w: 1, h: 1, needsZone: false, onRock: true, unlock: 'xp_guard',
+    cost: [['glass', 1]], ports: [], belt: { ticksPerTile: 6, perMin: 60 },
   },
 } as const satisfies Record<string, BuildingDef>;
 

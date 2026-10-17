@@ -6,7 +6,9 @@
 // than tell (D53, owner 2026-10-13): « Contenu : [items] », « Sortie 1 : [item] », an empty slot
 // for nothing, the explanations on hover. Each part is a section of the kit (D89) tagged with the
 // logistics facet (D88: the Logistique view lifts it); a silo's one item and its gauge sit at the
-// top (`storeHero`), what it does.
+// top (`storeHero`), what it does. A ribbon the Gleaners reach at night (D103) says so under what it
+// carries — « Exposé la nuit », the crescent — or that it is safe (under glass, behind a fence), and
+// what they took on its line since the last nightfall.
 import { BAL } from '@/content/balance';
 import { BUILDING_KIND, ITEM_IDS, buildingDef } from '@/content/registry';
 import type { BuildingDef } from '@/content/types';
@@ -19,6 +21,8 @@ import type { ReservoirNode } from '@/sim/flow/nodes';
 import { dockShips } from '@/sim/space';
 import type { Rot } from '@/sim/types';
 import { glyph } from '../glyphs';
+import { viewIconCanvas } from '@/render/art/view-icons';
+import { tileIndex } from '@/sim/world/grid';
 import { itemPicker } from '../item-picker';
 import { itemMention, itemRef } from '../mention';
 import { CARGO, costChips, fmt, heldList, itemSelect, mark, meter, note, row, section, seenBy, type Panel, type PanelCtx } from './kit';
@@ -30,8 +34,39 @@ export const ribbonPanel: Panel = ({ sim, e, live }) => {
     for (const r of c?.contents() ?? []) sums.set(r.item, (sums.get(r.item) ?? 0) + r.mu);
     return [...sums].map(([i, mu]) => [i, mu / 1000] as const);
   }, glyph('empty', t('insp.ribbon.empty')), { named: true });
-  return [section({ sec: 'ribbon', title: t('insp.onRibbon'), icon: mark('cargo'), group: 'logistics' }, [list])];
+  return [section({ sec: 'ribbon', title: t('insp.onRibbon'), icon: mark('cargo'), group: 'logistics' }, [list]), nightSection(sim, e, live)];
 };
+
+/** Is tile t in a sorted list of tiles? */
+const listed = (arr: Int32Array, t: number): boolean => {
+  let lo = 0, hi = arr.length - 1;
+  while (lo <= hi) { const m = (lo + hi) >> 1, v = arr[m]!; if (v === t) return true; if (v < t) lo = m + 1; else hi = m - 1; }
+  return false;
+};
+
+/**
+ * The Gleaners at night (D103): whether they reach this ribbon from the desert (sim/world/reach.ts),
+ * or it is kept from them — under glass, behind a fence — and what they took on its line since the
+ * last nightfall (the line's marks). Nothing for a ribbon nowhere near the open desert.
+ */
+function nightSection(sim: PanelCtx['sim'], e: PanelCtx['e'], live: PanelCtx['live']): HTMLElement | null {
+  sim.ensureCompiled();
+  const tile = tileIndex(e.x, e.y), g = sim.graph.glean;
+  const exposed = listed(g.exposed, tile);
+  if (!exposed && !listed(g.guarded, tile)) return null;
+  const say = exposed ? t('insp.glean.exposed') : buildingDef(e.def).glazed ? t('insp.glean.glass') : t('insp.glean.fence');
+  const state = el('div.insp-row.insp-glean', { 'data-glean': exposed ? 'exposed' : 'guarded' }, [viewIconCanvas(exposed ? 'moon' : 'guard', 18), el('span.insp-label', {}, say)]);
+  const taken = el('b');
+  const takenRow = row(t('insp.glean.taken'), taken);
+  live(() => {
+    const c: Chain | undefined = sim.chainAt(e.x, e.y);
+    let mu = 0;
+    for (const v of c?.tiles ?? []) mu += sim.gleaners.marks.get(v) ?? 0;
+    setText(taken, String(Math.round(mu / 1000)));
+    setAttr(takenRow, 'hidden', mu > 0 ? null : '');
+  });
+  return section({ sec: 'night', title: t('insp.glean.title'), icon: viewIconCanvas('moon', 16, false), group: 'logistics' }, [state, exposed ? note(t('insp.glean.exposed.tip')) : null, takenRow]);
+}
 
 /** A side of a block: where it is from the block's front (ahead, left, right, behind) with the compass beside, and that as one name. */
 function sideLabel(d: number, front: number | null): { node: HTMLElement; name: string } {

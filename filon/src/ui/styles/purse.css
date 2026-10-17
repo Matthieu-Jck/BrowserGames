@@ -1,0 +1,68 @@
+/* purse.css — the purse's card (D102): what the HUD's ◉/h is made of. The purse's real change an
+   hour as a big number (turquoise up, coral down) beside a sparkline of the purse, the window it
+   reads, the biggest drain; then the kit's sections — a trade post each (its items sold, its
+   standing orders), « Recherche » (the tokens, the plan, the rental), « Terres » (the rent) — a line
+   per flow: its icon, its name over its detail, a bar on one scale for all, « +1 450 ◉/h »; the
+   same minutes' one-offs apart, muted; « Ouvrir la Criée » at the foot. Imported by
+   ui/purse-card.ts itself. Where it stands (under the purse; a bottom sheet on a narrow window) is
+   responsive.css's. */
+
+.purse { position: fixed; overflow: auto; padding: 10px 12px 12px; font-size: 13px; line-height: 1.35; }
+.purse[hidden] { display: none; }
+.purse-head h3 { margin: 0; font-size: 22px; line-height: 1.05; }
+.purse-head small { color: var(--c-ink-soft); font-size: 11.5px; }
+.purse-coin { flex: none; display: grid; place-items: center; width: 40px; height: 40px; font-size: 30px; line-height: 1; }
+.purse-coin .coin { width: 36px; height: 36px; vertical-align: 0; }
+.purse-top { display: grid; gap: 4px; margin: 8px 0 6px; padding: 7px 10px 8px; border-radius: 9px 7px 10px 8px / 8px 10px 7px 9px;
+  background: color-mix(in srgb, var(--c-peach-l) 55%, var(--c-paper)); border: 1.5px dashed color-mix(in srgb, var(--c-ink) 25%, transparent); }
+.purse-top .kstat-body > b { font-size: 26px; }
+.purse-top .kstat-body > b[data-sign='+'] { color: var(--c-turq-d); }
+.purse-top .kstat-body > b[data-sign='-'] { color: var(--c-coral-d); }
+.purse-headline { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.purse-window { font-size: 11.5px; color: var(--c-ink-soft); }
+.purse-spark { display: block; flex: none; width: 120px; height: 30px; }
+.purse-spark svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.purse-spark polyline { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.purse-spark svg[data-sign='+'] polyline { stroke: var(--c-turq-d); }
+.purse-spark svg[data-sign='-'] polyline { stroke: var(--c-coral-d); }
+.purse-drain { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--c-coral-d); }
+.purse-drain[hidden], .purse-empty[hidden] { display: none; }
+.purse-net { font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+.purse-net[data-sign='+'] { color: var(--c-turq-d); }
+.purse-net[data-sign='-'] { color: var(--c-coral-d); }
+.purse-explain { margin: 0 0 4px; }
+.purse-body { display: grid; gap: 8px; }
+.purse-body .ksec { margin: 0; }
+.purse-arrow { font-size: 13px; line-height: 1; }
+.purse-arrow[data-sign='+'] { color: var(--c-turq-d); }
+.purse-arrow[data-sign='-'] { color: var(--c-coral-d); }
+/* A line: a button (it goes where the flow is managed). */
+.purse-line {
+  display: grid; grid-template-columns: 24px minmax(0, 1fr) 46px auto; align-items: center; gap: 8px;
+  width: 100%; padding: 4px 4px; text-align: left; cursor: pointer; font: inherit; color: inherit;
+  border: none; border-bottom: 1px dashed rgba(30, 27, 46, 0.12); border-radius: 5px; background: transparent;
+}
+.purse-line:last-child { border-bottom: none; }
+.purse-line:hover, .purse-line:focus-visible { background: var(--c-peach-l); outline: none; }
+.purse-icon { display: grid; place-items: center; }
+.purse-icon canvas { display: block; }
+.purse-icon .kmark, .purse-icon .glyph { width: 1.35em; height: 1.35em; }
+/* The name over its detail (a rate a minute, today's cost, the servers' share). */
+.purse-label { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.purse-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.2; }
+.purse-sub { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.purse-detail { font-size: 11px; color: var(--c-ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.purse-chip { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px 0 3px; border: 1.2px solid var(--c-ink); border-radius: 999px; background: var(--c-lilac-l); font-size: 11px; }
+.purse-chip canvas { display: block; }
+.purse-bar { display: block; height: 8px; border: 1.2px solid var(--c-ink); border-radius: 4px; background: var(--c-paper-d); overflow: hidden; }
+.purse-fill { display: block; height: 100%; transform-origin: left center; transform: scaleX(0); }
+.purse-line[data-sign='+'] .purse-fill { background: var(--c-turq); }
+.purse-line[data-sign='-'] .purse-fill { background: var(--c-coral); }
+.purse-v { white-space: nowrap; font-variant-numeric: tabular-nums; text-align: right; }
+.purse-line[data-sign='+'] .purse-v { color: var(--c-turq-d); }
+.purse-line[data-sign='-'] .purse-v { color: var(--c-coral-d); }
+/* The same minutes' one-offs: apart, muted (never in the headline). */
+.purse-once { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 8px; font-size: 11.5px; color: var(--c-ink-soft); }
+.purse-once:empty { display: none; }
+.purse-once-chip { padding: 0 7px; border: 1px dashed rgba(30, 27, 46, 0.4); border-radius: 999px; white-space: nowrap; }
+.purse-foot { margin-top: 10px; }

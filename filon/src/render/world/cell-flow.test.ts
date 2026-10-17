@@ -1,12 +1,16 @@
 // cell-flow.test.ts — items drawn from the engine's cells (D57), driven by the real engine at 60
 // frames a second as the app does: an item never jumps, never pops up but out of a source, never
-// vanishes but into a building, and rides a junction's hump on the north–south line.
+// vanishes but into a building, and rides a junction's hump on the north–south line. Only the lines
+// near the view are read (D92): on the late debug base, every window draws what the whole base
+// draws within it.
 import { describe, it, expect } from 'vitest';
 import { itemIdx } from '@/content/registry';
 import { line, stockedSilo, testSim } from '@/sim/testkit';
 import { opposite, type Ent, type Rot } from '@/sim/types';
 import { tileIndex } from '@/sim/world/grid';
 import type { Sim } from '@/sim/state';
+import { WORLD_EPOCH0 } from '@/sim/constants';
+import { foundScenario } from '@/sim/scenarios';
 import { CellFlow, type FlowItem } from './cell-flow';
 import { HUMP_Z, buildPieces } from './item-flow';
 
@@ -114,5 +118,32 @@ describe('items drawn from the cells (D57)', () => {
     expect(a).toHaveLength(8);
     expect(b).toEqual(a);
     for (const p of a) expect(Number(p.split(',')[0])).toBeCloseTo(500.5, 6); // tile centres
+  });
+
+  it('only the lines near the view are read, and every window draws what the whole base draws in it (D92)', () => {
+    const { sim } = foundScenario('late', { playerSeed: 1, near: WORLD_EPOCH0 + 1000, name: 'Banc' });
+    sim.run(300);
+    const flow = new CellFlow();
+    flow.setPieces(buildPieces(sim, beltPiece, 20));
+    const draw = (t: number, v: readonly [number, number, number, number]): string[] => {
+      const o: string[] = [];
+      flow.each(sim, t, v, (it) => o.push(`${it.item}:${it.x.toFixed(4)},${it.y.toFixed(4)},${it.z.toFixed(3)},${it.o},${it.d.toFixed(3)}`));
+      return o.sort();
+    };
+    let compared = 0;
+    for (let k = 0; k < 6; k++) {
+      sim.run(7);
+      const t = sim.tick + k / 6;
+      const all = draw(t, [0, 0, 1024, 1024]);
+      expect(all.length).toBeGreaterThan(100); // the base's lines are busy
+      // Windows of 24 tiles across the base, as the screen's at near zoom: what they draw is the whole's, within them.
+      for (let y = 440; y < 600; y += 17) for (let x = 440; x < 600; x += 19) {
+        const v = [x, y, x + 24, y + 24] as const;
+        const inV = all.filter((s) => { const [px, py] = s.split(':')[1]!.split(',').map(Number) as [number, number]; return px >= v[0] - 2 && px <= v[2] + 2 && py >= v[1] - 2 && py <= v[3] + 2; });
+        expect(draw(t, v)).toEqual(inV);
+        compared += inV.length;
+      }
+    }
+    expect(compared).toBeGreaterThan(500);
   });
 });

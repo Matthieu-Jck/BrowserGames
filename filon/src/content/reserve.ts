@@ -167,6 +167,6 @@ export function reserveProblems(): string[] {
     if (left < n) out.push(`the first ring of plans leaves ${left} ${it}, the reserve ${n}`);
   }
   // Power: drills and the wire mill run on the Heart's steady core, even through the night.
-  if (!(BAL.hearthCoreKw > 0)) out.push('the Heart needs a steady core (BAL.hearthCoreKw > 0): a bootstrap built at night must run');
+  if (!BAL.hearthCoreKw.every((kw) => kw > 0)) out.push('the Heart needs a steady core at every level (BAL.hearthCoreKw > 0): a bootstrap built at night must run');
   return out;
 }

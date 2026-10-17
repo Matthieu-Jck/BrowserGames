@@ -153,7 +153,7 @@ describe('flow engine', () => {
       b.powerTick();
       runPhases(b.graph, [...b.graph.nodes].reverse(), b.ctx);
       b.tick++;
-      if (b.tick % 600 === 0) b.tradeEpoch(); // the epoch boundary of Sim.step
+      if (b.tick % 600 === 0) { b.tradeEpoch(); b.expertiseEpoch((n) => b.ctx.sat[n] ?? 0); } // the epoch boundary of Sim.step (D93: the expertises' minute)
     }
     expect(b.hash()).toBe(a.hash());
   });

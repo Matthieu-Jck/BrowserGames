@@ -4,7 +4,7 @@ import type { ItemDef } from './types';
 
 export const ITEMS = {
   // ── raw (tier 1): ordinary materials — the exotic ones come with the later tiers ──
-  iron_ore: { name: { fr: 'Minerai de fer', en: 'Iron Ore' }, tier: 1, kind: 'ore', value: 1.0, depth: 800, glyph: 'pebble', color: '#9b5a3c' },
+  iron_ore: { name: { fr: 'Minerai de fer', en: 'Iron Ore' }, tier: 1, kind: 'ore', value: 1.0, depth: 800, glyph: 'pebble', color: '#8f4632' },
   sand: { name: { fr: 'Sable', en: 'Sand' }, tier: 1, kind: 'ore', value: 1.0, depth: 400, glyph: 'grain', color: '#eadcc4' },
   coal: { name: { fr: 'Charbon', en: 'Coal' }, tier: 1, kind: 'fuel', value: 1.2, depth: 300, glyph: 'coal', color: '#34303f' },
   copper_ore: { name: { fr: 'Minerai de cuivre', en: 'Copper Ore' }, tier: 1, kind: 'ore', value: 4.0, depth: 150, glyph: 'copper', color: '#c8743a' },

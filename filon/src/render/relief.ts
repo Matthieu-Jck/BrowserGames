@@ -4,10 +4,12 @@
 // `grid.level`), the very one placement, ribbons and wires obey — so what is drawn is what the
 // rules read (owner, 2026-10-13: buildings on the mountains did not sit on their rock: the relief
 // was drawn from a smoothed height of its own that only roughly agreed with the levels). Only
-// the +x and +y walls ever face the camera. Water up on the rock (the Crown's tarn, D63) and the
-// ground reclaimed from it stand as columns too, at their level: their walls are the rock round
-// them, their top the water's (art/rock.ts `drawColumn`'s `top`), never a hole down to the floor.
-// Pure maths: no DOM, no Pixi.
+// the +x and +y walls ever face the camera. Water up on the rock (the Crown's tarn, D63), a
+// stream up on a massif (map 4's drainage, D94) and the ground reclaimed from them stand as
+// columns too, at their level: their walls are the rock round them, their top the water's
+// (art/rock.ts `drawColumn`'s `top`; a stream's fall down its wall), never a hole down to the floor.
+// The steps of a column whose lower top shows in front of the one above (`ledges`) are where the
+// relief sprites cut it in parts. Pure maths: no DOM, no Pixi.
 import { T } from '@/sim/types';
 import { LH, TH } from './iso';
 
@@ -25,13 +27,16 @@ export const SMOOTH = 2;
 
 export const isRockT = (t: number): boolean => t >= T.Rock1 && t <= T.Rock4;
 export const isWaterT = (t: number): boolean => t === T.Shallow || t === T.Deep;
-/** Does a tile of this class stand at its level when it lies above the floor (water up on the rock, ground reclaimed from it)? */
-const liftsT = (t: number): boolean => isWaterT(t) || t === T.Filled;
+/** A river's tile (D94): running water, on the floor or, a stream, up on a massif. */
+export const isRiverT = (t: number): boolean => t === T.River;
+/** Does a tile of this class stand at its level when it lies above the floor (water up on the rock, a stream up on a massif, ground reclaimed from it)? */
+const liftsT = (t: number): boolean => isWaterT(t) || t === T.River || t === T.Filled;
 
 /**
  * Relief level of a tile (0 = the floor's level; rock: one terrace — `STEP_LEVELS` levels — per
  * level of the land, at least one; water and reclaimed ground up on the rock, the Crown's tarn
- * (D63): one terrace per level too): from its terrain class and the land's level there.
+ * (D63), and a stream up on a massif (D94): one terrace per level too): from its terrain class and
+ * the land's level there.
  */
 export function levelOf(terrain: number, level: number): number {
   if (isRockT(terrain)) return (level < 1 ? 1 : level > MAX_TERRACE ? MAX_TERRACE : level) * STEP_LEVELS;
@@ -172,6 +177,34 @@ export function slabOutline(masks: readonly number[], t: number): OutlinePt[] {
     const sil = mv < 1e-6 ? N : mu > 1 - 1e-6 ? E : mv > 1 - 1e-6 ? S : mu < 1e-6 ? W : true;
     return { u: p.u, v: p.v, sil };
   });
+}
+
+/**
+ * The steps of a column whose top shows in front of the step above it (a chamfer sets the upper
+ * step back: a ledge, of at least `min` tiles² of top since the last one), and its last step: where a column is cut into parts, each shaded by the sun
+ * at its own height (world/relief-view.ts) — the ledge belongs to the terrace in front, not to the
+ * high top behind.
+ */
+export function ledges(masks: readonly number[], min = 1e-6): number[] {
+  const out: number[] = [];
+  let prev = area(slabOutline(masks, 0));
+  for (let t = 0; t + 1 < masks.length; t++) {
+    const next = area(slabOutline(masks, t + 1));
+    // `min`: the least area of top (tiles²) left open that counts.
+    if (next < prev - min) { out.push(t); prev = next; }
+  }
+  out.push(masks.length - 1);
+  return out;
+}
+
+/** The area of an outline (tiles²). */
+function area(p: readonly OutlinePt[]): number {
+  let a = 0;
+  for (let i = 0; i < p.length; i++) {
+    const q = p[i]!, r = p[(i + 1) % p.length]!;
+    a += q.u * r.v - r.u * q.v;
+  }
+  return Math.abs(a) / 2;
 }
 
 /** The outline of a single-step column. */

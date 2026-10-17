@@ -69,7 +69,7 @@ export const onArm = (cx: number, cy: number, k: number, j = 0): [number, number
 export const TERMINALS: Readonly<Partial<Record<BuildingId, readonly Terminal[]>>> = {
   hearth: HEART_MASTS.at.map(([x, y]) => ({ x, y, z: HEART_MASTS.top })),
   drill: [roof(1.7, 0.36, 1.0)],
-  deep_bore: [roof(0.5, 2.62, 1.15)],
+  deep_bore: [roof(1.05, 2.62, 1.15)], // on its power house, off the derrick's diagonals (the part draws over them)
   excavator: [roof(1.0, 2.2, 1.62)],
   pump: [roof(0.77, 0.74, 0.62, 0.72)],
   backfiller: [roof(1.6, 0.3, 2.15, 0.22)],
@@ -108,6 +108,7 @@ export const TERMINALS: Readonly<Partial<Record<BuildingId, readonly Terminal[]>
   scriptorium: [roof(2.7, 0.5, 1.0)],
   sifter: [roof(1.34, 1.07, 1.52, 0.2)],
   arc_furnace: [roof(1.76, 0.26, 1.15, 0.22)],
+  electric_smelter: [roof(1.74, 0.3, 1.42, 0.22)], // on its inverter cabinet (D106), its heavy cable down into the gland beside it
   wire_mill_double: [roof(1.0, 1.72, 0.95, 0.25)],
   forge_press: [roof(2.74, 2.3, 1.05)],
   etcher: [roof(2.67, 1.2, 1.15)],

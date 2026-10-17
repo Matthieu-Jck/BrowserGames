@@ -407,7 +407,7 @@ await step('power: P shows the Électricité view (D88), P again the Normal one'
   assert((await FL(() => window.FL.mapView().view)) === 'normal', 'P did not go back to Normal');
 });
 
-await step('inspect: the grid module (D76) — a wind flower shows rated × factor = now, its factor unfolds why; a workshop shows what it draws, in the same card', async () => {
+await step('inspect: the grid module (D76) — a wind flower shows rated × factor = now, its factor unfolds why (its wind once the Anémométrie plan is learnt, D95); a workshop shows what it draws, in the same card', async () => {
   const ids = await FL(() => {
     const sim = window.FL.app.sim;
     const of = (def) => sim.ents.sorted().find((e) => window.FL.entityAt(e.x, e.y)?.def === def && e.builtAt === 0)?.id ?? 0;
@@ -419,10 +419,17 @@ await step('inspect: the grid module (D76) — a wind flower shows rated × fact
   assert((await page.$$('[data-power-card]')).length === 1, 'one grid card');
   assert(await page.$('.pw-why[hidden]'), 'the reasons start folded');
   await page.click('.pw-coef');
-  await page.waitForSelector('.pw-why:not([hidden]) [data-pw-viz="wind"] .pw-step[data-on]', { timeout: 3000 });
+  // D95: with the Anémométrie plan, the wind's reasons and the turbine's next 24 hours (now inked).
+  const planned = await FL(() => window.FL.app.sim.done.has('anemometry'));
+  if (planned) await page.waitForSelector('.pw-why:not([hidden]) [data-pw-viz="wind"] .pw-sun-bars i[data-on]', { timeout: 3000 });
+  else await page.waitForSelector('.pw-why:not([hidden]) .pw-why-lines div', { timeout: 3000 });
   const f = await page.evaluate(() => [...document.querySelectorAll('[data-pw="formula"] .pw-kw, [data-pw="formula"] .pw-coef-n')].map((n) => n.textContent));
   assert(f.length === 3 && /kW/.test(f[0]) && /^×/.test(f[1]) && /kW/.test(f[2]), `formula: ${f.join(' | ')}`);
   await page.locator('.inspector').screenshot({ path: shot('smoke-grid-card.png') });
+  // Before the plan (taken back in the sandbox): what its blades give, no picture of the wind.
+  await FL(() => { const sim = window.FL.app.sim; sim.done.delete('anemometry'); sim.rebuildDerived(); });
+  await page.waitForFunction(() => !document.querySelector('.pw-why [data-pw-viz="wind"]') && document.querySelectorAll('.pw-why-lines div').length === 2, undefined, { timeout: 3000 });
+  if (planned) await FL(() => { const sim = window.FL.app.sim; sim.done.add('anemometry'); sim.rebuildDerived(); });
   await FL((id) => window.FL.selected(id), ids.shop);
   await page.waitForSelector('[data-power-card] [data-pw="draw"]', { timeout: 5000 });
   assert(!(await page.$('[data-pw="formula"]')), 'a consumer has no formula');
@@ -443,28 +450,28 @@ await step('sound: the first click unlocked it; the score follows the clock; cue
   await FL(() => window.FL.menu(false));
 });
 
-await step('research: start the Face Cutter from the screen (D87: Mechanics hangs from it), the HUD counts down, a notice lands', async () => {
+await step('research: start Mechanics from the screen (D101: right after the lab\'s plan; the Face Cutter is a plan), the HUD counts down, a notice lands', async () => {
   await FL(() => window.FL.lookAt(512, 512, 1));
   assert(await FL(() => window.FL.feedLab('journal_1', 40)), 'no research lab to feed');
   await page.keyboard.press('t');
   await page.waitForSelector('[data-screen="research"][data-open]', { timeout: 2000 });
-  await page.click('.rs-card[data-id="ex_quartz"]');
+  await page.click('.rs-card[data-id="tr1"]');
   await page.click('.rs-detail .btn.primary');
   const r = await FL(() => window.FL.research());
-  assert(r.projects?.some((p) => p.id === 'ex_quartz'), `ex_quartz not running: ${JSON.stringify(r)}`);
+  assert(r.projects?.some((p) => p.id === 'tr1'), `tr1 not running: ${JSON.stringify(r)}`);
   await page.keyboard.press('Escape');
-  await page.waitForSelector('.hud-rs[data-id="ex_quartz"]', { timeout: 2000 });
-  const eta = await page.textContent('.hud-rs[data-id="ex_quartz"] .hud-rs-eta');
+  await page.waitForSelector('.hud-rs[data-id="tr1"]', { timeout: 2000 });
+  const eta = await page.textContent('.hud-rs[data-id="tr1"] .hud-rs-eta');
   assert(/min|m|s/.test(eta ?? ''), `no countdown in the HUD: ${eta}`);
-  // 1 800 ticks at full power; the weather follows the real clock, so a calm hour browns
+  // Its minimum time at full power; the weather follows the real clock, so a calm hour browns
   // the demo grid out: tick on until it is learnt (bounded).
   for (let i = 0; i < 12; i++) {
     await FL(() => window.FL.tick(600));
-    if ((await FL(() => window.FL.research())).done?.includes('ex_quartz')) break;
+    if ((await FL(() => window.FL.research())).done?.includes('tr1')) break;
   }
-  await page.waitForFunction(() => [...document.querySelectorAll('.toast')].some((n) => /Haveuse|Face Cutter/.test(n.textContent ?? '')), undefined, { timeout: 3000 });
+  await page.waitForFunction(() => [...document.querySelectorAll('.toast')].some((n) => /Mécanique|Mechanics/.test(n.textContent ?? '')), undefined, { timeout: 3000 });
   const after = await FL(() => window.FL.research());
-  assert(after.done?.includes('ex_quartz'), 'ex_quartz not learnt');
+  assert(after.done?.includes('tr1'), 'tr1 not learnt');
   await page.screenshot({ path: shot('smoke-m4.png') });
 });
 
@@ -658,13 +665,22 @@ await step('land (D60): I opens the land mode over the plan view; a click picks 
   await FL(() => { window.FL.tool(null); window.FL.category(null); window.FL.close(); window.FL.selected(0); });
   await settleView('iso');
   // A parcel for sale just past the starting square (ring 2: 3 × 3 parcels of 23 tiles round the
-  // Heart's, D74), its middle explored; the ocelles granted if short (a rig: the purse of the demo base).
+  // Heart's, D74), clicked on its explored tile nearest its middle: a ring-2 middle lies 46 tiles
+  // out and more, past the founding's reveal (`startReveal` 44), so whether one was explored
+  // depended on the run; its inner edge (35 out) always is. The ocelles granted if short (a rig:
+  // the purse of the demo base).
   const pick = await FL(() => {
     const sim = window.FL.app.sim;
     for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
       if (Math.max(Math.abs(dx), Math.abs(dy)) !== 2) continue;
-      const { p, at } = window.FL.parcel(dx, dy);
-      if (sim.land.holds(p) || sim.land.sister(p) >= 0 || !sim.revealed(at[0], at[1])) continue;
+      const { p, at: mid } = window.FL.parcel(dx, dy);
+      if (sim.land.holds(p) || sim.land.sister(p) >= 0) continue;
+      let at = null, best = Infinity;
+      for (let y = mid[1] - 11; y <= mid[1] + 11; y++) for (let x = mid[0] - 11; x <= mid[0] + 11; x++) {
+        const d = (x - mid[0]) ** 2 + (y - mid[1]) ** 2;
+        if (d < best && sim.revealed(x, y) && window.FL.parcelAt(x, y) === p) { best = d; at = [x, y]; }
+      }
+      if (!at) continue;
       const cents = sim.landPrice(p);
       if (sim.credits < cents + 100) sim.grantCredits(cents + 100 - sim.credits);
       return { p, at, bought: sim.land.bought.size };
@@ -705,9 +721,21 @@ await step('perf: 10 000 items riding ribbons stay above 30 fps', async () => {
   // the sister parcels under the field first (the ocelles granted, and Far Claim, since they do not
   // touch its land: a rig).
   await FL(() => window.FL.unlock('xp_far'));
-  const sisters = await FL(() => {
+  // The field's place: of a few blocks east of the cirque, the one with the least land a ribbon cannot
+  // take (map 4, D94: rivers, crevasses, water and rock cross the plains), the first on a tie.
+  const [fx, fy] = await FL(() => {
+    const g = window.FL.app.sim.grid;
+    let best = [600, 450], bad = Infinity;
+    for (const [x0, y0] of [[600, 450], [600, 400], [600, 500], [640, 430], [560, 560], [560, 340], [380, 450], [420, 560]]) {
+      let n = 0;
+      for (let y = y0; y < y0 + 100; y += 2) for (let x = x0; x < x0 + 105; x += 2) { const t = g.terrain(x, y); if (t > 1 && t !== 8) n++; }
+      if (n < bad) { bad = n; best = [x0, y0]; }
+    }
+    return best;
+  });
+  const sisters = await FL(([fx, fy]) => {
     const sim = window.FL.app.sim, ps = new Set();
-    for (let y = 450; y < 550; y++) for (let x = 600; x < 705; x++) ps.add(window.FL.parcelAt(x, y));
+    for (let y = fy; y < fy + 102; y++) for (let x = fx; x < fx + 105; x++) ps.add(window.FL.parcelAt(x, y));
     let n = 0;
     for (const p of [...ps].sort((a, b) => a - b)) {
       if (sim.land.sister(p) < 0) continue;
@@ -716,11 +744,13 @@ await step('perf: 10 000 items riding ribbons stay above 30 fps', async () => {
       if (sim.buyLand(p) === null) n++;
     }
     return n;
-  });
-  console.log(`    ${sisters} sister parcels bought under the field`);
-  const laid = await FL(() => window.FL.ribbonField(600, 450, 100, 105)); // one item per square: 10 500 squares
+  }, [fx, fy]);
+  console.log(`    ${sisters} sister parcels bought under the field at ${fx},${fy}`);
+  // One item per square: 10 710 squares, of which map 4's obstacles take a few hundred — the field alone
+  // carries 10 000 (at 100 rows it laid 9 920 and leaned on the base's other lines, fewer under load).
+  const laid = await FL(([fx, fy]) => window.FL.ribbonField(fx, fy, 102, 105), [fx, fy]);
   const filled = await FL(() => window.FL.fillRibbons('iron_ore'));
-  await FL(() => window.FL.lookAt(652, 500, 0.5));
+  await FL(([fx, fy]) => window.FL.lookAt(fx + 52, fy + 50, 0.5), [fx, fy]);
   await page.waitForTimeout(2500);
   const p = await FL(() => window.FL.perf());
   console.log(`    ribbons=${laid} items=${filled} drawn=${p.items} fps=${p.fps} frameMs=${p.frameMs.toFixed(2)}`);
@@ -729,6 +759,60 @@ await step('perf: 10 000 items riding ribbons stay above 30 fps', async () => {
   assert(p.fps > 30 || p.frameMs < 8, `too slow: ${p.fps} fps, ${p.frameMs.toFixed(2)} ms a frame`);
   await page.screenshot({ path: shot('smoke-items.png') });
 });
+
+await step('render (D92): a change re-draws only what it touched (buildings and lights), as a full rebuild draws it; off-screen buildings are culled', async () => {
+  // Near the Heart's demo line, the ribbon field off screen.
+  await FL(() => window.FL.pause());
+  try { await renderChecks(); } finally { await FL(() => window.FL.resume()); }
+});
+async function renderChecks() {
+  await FL(() => window.FL.lookAt(512, 518, 1.2));
+  await page.waitForTimeout(400);
+  // Every sprite of the layers the buildings share, in draw order: what each one shows and where
+  // (a hidden one, or one in a hidden container, only its texture and key: by night a shadow keeps the day's stretch until dawn).
+  const snap = () => FL(async () => {
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const app = window.FL.app, L = (n) => app.layers.get(n);
+    const of = (c) => c.children.map((s) => (s.visible && c.visible
+      ? [s.texture?.uid ?? -1, s.x, s.y, s.scale.x, s.scale.y, s.skew.x, s.skew.y, s.rotation, s.zIndex, s.culled, s.alpha, s.tint]
+      : [s.texture?.uid ?? -1, s.zIndex, 'hidden', s.culled]).join('|'));
+    return [...of(L('objects')), '/', ...of(L('plan')), '/', ...of(L('belts').children[0]), '/', ...L('shadows').children.flatMap(of), '/',
+      // The night glows: those shown, at night (the hidden ones wait in the lights view's pools for reuse, in
+      // any order; by day the whole layer is hidden and a beacon keeps the last night frame's pulse).
+      ...(L('lights').visible ? L('lights').children.flatMap(of).filter((x) => !x.includes('hidden')) : ['lights: day'])];
+  });
+  const changed = await FL(async () => {
+    const frames = (k) => new Promise((r) => { let n = 0; const f = () => (++n >= k ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); });
+    const app = window.FL.app, out = [];
+    for (const def of ['ribbon', 'silo']) {
+      const at = window.FL.freeSpot(def, 512, 518, 20);
+      if (!at || !window.FL.place(def, at[0], at[1], 0).ok) continue;
+      await frames(2);
+      out.push(app.buildings.lastUpdate.laid);
+      app.sim.remove(at[0], at[1]);
+      await frames(2);
+    }
+    return { laid: out, drawn: app.buildings.cullStats().entities };
+  });
+  // By day (the shadows) and by night (the lights), whatever the world clock says.
+  const both = async () => {
+    await FL(() => window.FL.dayPhase('noon'));
+    const day = await snap();
+    await FL(() => window.FL.dayPhase('night'));
+    const night = await snap();
+    await FL(() => window.FL.dayPhase(null));
+    return [...day, '//', ...night];
+  };
+  const a = await both();
+  await FL(() => { const app = window.FL.app; app.buildings.rebuildAll(app.sim); app.items.rebuild(app.sim); app.lights.rebuildAll(app.sim); });
+  const b = await both();
+  const culledNear = await FL(() => window.FL.app.buildings.cullStats().culled);
+  console.log(`    sprites laid per change ${changed.laid.join(', ')} (of ${changed.drawn} entities), ${a.length} sprites compared, ${culledNear} entities culled near`);
+  assert(changed.laid.length === 2 && changed.laid.every((n) => n > 0 && n < 60), `a change re-drew too much: ${JSON.stringify(changed)}`);
+  const diff = a.findIndex((s, i) => s !== b[i]);
+  assert(a.length === b.length && diff < 0, `updated ≠ rebuilt: ${a.length} vs ${b.length} sprites, first difference at ${diff}: ${a[diff]} vs ${b[diff]}`);
+  assert(culledNear > 0, 'nothing culled at near zoom');
+}
 
 await step('menu: out of the way under automation; over the running base; Esc steps back; Jouer closes', async () => {
   await FL(() => { window.FL.tool(null); window.FL.category(null); window.FL.close(); });
@@ -773,13 +857,13 @@ await step('debug bases: the menu page plays a ready-made base; the player’s b
   await page.click('[data-debug-load="survey"]');
   await page.waitForSelector('[data-debug-badge]:not([hidden])', { timeout: 10000 });
   const s = await FL(() => ({ menu: window.FL.menu(), cur: window.FL.debugSaves().current, q: window.FL.quests().current }));
-  assert(!s.menu && s.cur === 'survey' && s.q === 'crier_calls', `after load: ${JSON.stringify(s)}`);
+  assert(!s.menu && s.cur === 'survey' && s.q === 'crier_trade', `after load: ${JSON.stringify(s)}`);
   await FL(() => window.FL.resume());
   await page.waitForTimeout(1500);
   assert((await FL(() => window.FL.debugSaves().realHash)) === own, 'the player’s base moved while aside');
   const r = await FL(() => window.FL.debugSave('tutorial'));
   console.log(`    tutorial built in ${r.ms} ms, forced ${r.forced.length}, skipped ${r.skipped.length}`);
-  assert(r.ok && r.quest === null && r.forced.length === 0, `tutorial: ${JSON.stringify(r)}`);
+  assert(r.ok && r.quest === 'synth_parts' && r.forced.length === 0, `tutorial: ${JSON.stringify(r)}`); // the last quest left to play (D90)
   // D83: a production building that does not work looks switched off — a drill whose wires are cut goes dark.
   const cut = await FL(() => {
     const app = window.FL.app;
@@ -802,7 +886,7 @@ await step('debug bases: the menu page plays a ready-made base; the player’s b
   await FL(() => window.FL.resume());
 });
 
-await step('views (D88): P, F, O and I show one system each over the base veiled, with their panel; a click opens the inspector on that view; Esc goes back to Normal', async () => {
+await step('views (D88, D95): P, F, O, V and I show one system each over the base veiled, with their panel; a click opens the inspector on that view; Esc goes back to Normal', async () => {
   const saves = await FL(() => window.FL.debugSaves());
   if (!saves) { console.log('    (no debug page on this build)'); return; }
   await FL(() => window.FL.pause());
@@ -844,6 +928,20 @@ await step('views (D88): P, F, O and I show one system each over the base veiled
   await page.waitForFunction(() => window.FL.mapView().view === 'production' && (window.FL.app.views.data.production?.length ?? 0) > 0 && window.FL.mapView().panel, undefined, { timeout: 3000 });
   await page.waitForTimeout(300);
   await page.screenshot({ path: shot('smoke-views-production.png') });
+  // Vent (V, D95: the late base has the Anémométrie plan): the turbines' badges, the card's compass, the 24 h chart, the turbines' rows.
+  await page.keyboard.press('v');
+  await page.waitForFunction(() => { const v = window.FL.mapView(); return v.view === 'wind' && v.marks > 0 && v.panel && (window.FL.app.views.data.wind?.turbines.length ?? 0) > 0; }, undefined, { timeout: 3000 });
+  const wv = await FL(() => ({
+    rose: !!document.querySelector('[data-screen="view"] canvas.vp-rose'),
+    chart: !!document.querySelector('[data-screen="view"] .vp-wind canvas.vp-chart'),
+    rows: document.querySelectorAll('[data-screen="view"] .vp-wind-row').length,
+    lit: document.querySelector('[data-view="wind"]')?.hasAttribute('data-on'),
+  }));
+  assert(wv.rose && wv.chart && wv.rows > 0 && wv.lit, `Vent: ${JSON.stringify(wv)}`);
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: shot('smoke-views-wind.png') });
+  await page.keyboard.press('v');
+  assert((await FL(() => window.FL.mapView().view)) === 'normal', 'V did not go back to Normal');
   // Terrain (I) is the land mode; another view ends it.
   await page.keyboard.press('i');
   await page.waitForFunction(() => window.FL.mapView().view === 'land' && window.FL.app.landTool.active, undefined, { timeout: 2000 });
@@ -854,6 +952,219 @@ await step('views (D88): P, F, O and I show one system each over the base veiled
   // Views read the base and never change it: no command logged.
   assert((await FL(() => window.FL.app.sim.log.length)) === log0, 'a view logged a command');
   await FL(() => window.FL.pause());
+  await FL(() => window.FL.debugSave(null));
+  assert((await FL(() => window.FL.hash())) === own, 'the player’s base did not come back as it was');
+  await FL(() => window.FL.resume());
+});
+
+await step('expertise (D93): the late base holds two expertises and Tier 2 is open; E opens the window; a réorientation, armed on a card and made on a slot, leaves 24 h before it is in place; a click on the Core\'s Archive opens it too', async () => {
+  const saves = await FL(() => window.FL.debugSaves());
+  if (!saves) { console.log('    (no debug page on this build)'); return; }
+  await FL(() => window.FL.pause());
+  const own = await FL(() => window.FL.hash());
+  const r = await FL(() => window.FL.debugSave('late'));
+  assert(r.ok, `late base: ${JSON.stringify(r)}`);
+  await FL(() => { window.FL.menu(false); window.FL.close(); window.FL.view('iso'); window.FL.lookAt(512, 511, 2.4); window.FL.resume(); });
+  const x = await FL(() => window.FL.expertise());
+  assert(x.archive && x.tierTwo && x.slots.every((s) => s && s.on), `expertises: ${JSON.stringify(x.slots)}`);
+  // The chip shows at the HUD's next refresh (4 Hz).
+  const chip = await page.waitForFunction(() => document.querySelector('[data-hud-expertise]')?.hidden === false, undefined, { timeout: 2000 }).then(() => true, () => false);
+  assert(chip, 'no Expertise chip in the HUD');
+  await page.keyboard.press('e');
+  await page.waitForFunction(() => window.FL.screen() === 'expertise', undefined, { timeout: 2000 });
+  const id = await FL(() => [...document.querySelectorAll('.ex-act[data-kind="reorient"]')].find((n) => !n.disabled && !n.hidden)?.getAttribute('data-ex-act') ?? null);
+  assert(id, 'no expertise to reorient to');
+  await page.click(`[data-ex-act="${id}"]`);
+  await page.click('[data-ex-replace="0"]');
+  const y = await FL(() => window.FL.expertise());
+  assert(y.slots[0]?.id === id && !y.slots[0].on && y.reorientCost > x.reorientCost, `after the réorientation: ${JSON.stringify(y.slots[0])}`);
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: shot('smoke-expertise.png') });
+  await page.keyboard.press('Escape');
+  assert((await FL(() => window.FL.screen())) === null, 'Esc did not close the window');
+  // The Archive: its drum on the Core's south-west corner, a level up.
+  const at = await FL(() => {
+    const sim = window.FL.app.sim, e = sim.ents.get(sim.hearthId), [sx, sy] = window.FL.tileToScreen(e.x + 0.06, e.y + 3.94);
+    return [sx, sy - 16 * window.FL.app.camera.state.zoom];
+  });
+  await page.waitForTimeout(400);
+  await page.mouse.click(at[0], at[1]);
+  await page.waitForFunction(() => window.FL.screen() === 'expertise', undefined, { timeout: 2000 });
+  await FL(() => { window.FL.close(); window.FL.pause(); });
+  await FL(() => window.FL.debugSave(null));
+  assert((await FL(() => window.FL.hash())) === own, 'the player’s base did not come back as it was');
+  await FL(() => window.FL.resume());
+});
+
+await step('responsive (D96): on a phone-sized window the HUD folds its rows, the inspector is a bottom sheet under the HUD, the build bar scrolls; nothing leaves the window; the canvas follows the resize', async () => {
+  const saves = await FL(() => window.FL.debugSaves());
+  if (!saves) { console.log('    (no debug page on this build)'); return; }
+  await FL(() => window.FL.pause());
+  const own = await FL(() => window.FL.hash());
+  const r = await FL(() => window.FL.debugSave('late'));
+  assert(r.ok, `late base: ${JSON.stringify(r)}`);
+  await FL(() => { window.FL.menu(false); window.FL.resume(); });
+  const cam0 = await FL(() => window.FL.camera());
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(700);
+  // Everything the HUD shows inside the window; the research row behind its fold; no sideways scroll.
+  const hud = await FL(() => {
+    const W = innerWidth, H = innerHeight, out = [];
+    for (const n of document.querySelectorAll('.hud .hud-grp, .hud .hud-fold, .hud .hud-build, .hud .hud-menu, .hud .hud-vfold')) {
+      if (n.closest('[hidden]') || getComputedStyle(n).display === 'none') continue;
+      const b = n.getBoundingClientRect();
+      if (b.left < -1 || b.right > W + 1 || b.top < -1 || b.bottom > H + 1) out.push(n.className);
+    }
+    const canvas = document.querySelector('#stage canvas').getBoundingClientRect();
+    return { out, fold: !!document.querySelector('[data-hud-fold="research"]')?.getBoundingClientRect().width, row: getComputedStyle(document.querySelector('.hud-research')).display,
+      scroll: document.documentElement.scrollWidth - W, canvas: [Math.round(canvas.width), Math.round(canvas.height)], zoom: document.documentElement.style.getPropertyValue('--ui-zoom') };
+  });
+  assert(!hud.out.length && hud.fold && hud.row === 'none' && hud.scroll <= 0, `HUD at 390 × 844: ${JSON.stringify(hud)}`);
+  assert(hud.canvas[0] === 390 && hud.canvas[1] === 844, `the canvas did not follow the window: ${hud.canvas}`);
+  const cam1 = await FL(() => window.FL.camera());
+  assert(Math.abs(cam1.tx - cam0.tx) < 0.01 && Math.abs(cam1.ty - cam0.ty) < 0.01, `the camera lost its centre: ${JSON.stringify([cam0, cam1])}`);
+  // The inspector: a bottom sheet with its grip, under the HUD, inside the window.
+  const kiln = await FL(() => window.FL.app.sim.ents.sorted().find((e) => window.FL.entityAt(e.x, e.y)?.def === 'kiln' && e.builtAt === 0)?.id ?? 0);
+  await FL((id) => window.FL.selected(id), kiln);
+  await page.waitForTimeout(400);
+  const sheet = await FL(() => {
+    const i = document.querySelector('[data-screen="inspector"]').getBoundingClientRect(), h = document.querySelector('.hud').getBoundingClientRect();
+    return { top: i.top, bottom: i.bottom, left: i.left, right: i.right, hud: h.bottom, H: innerHeight, W: innerWidth, grip: !!document.querySelector('[data-screen="inspector"] .sheet-grip')?.getBoundingClientRect().width };
+  });
+  assert(sheet.grip && sheet.top >= sheet.hud && sheet.bottom <= sheet.H && sheet.left >= 0 && sheet.right <= sheet.W && sheet.bottom > sheet.H - 40, `the sheet: ${JSON.stringify(sheet)}`);
+  await page.screenshot({ path: shot('smoke-responsive-phone.png') });
+  // The build bar: its tabs and tray inside the window, scrolling sideways.
+  await FL(() => { window.FL.selected(0); window.FL.category('production'); });
+  await page.waitForTimeout(500);
+  const bar = await FL(() => {
+    const t = document.querySelector('.bb-tabs'), y = document.querySelector('.bb-tray');
+    const a = t.getBoundingClientRect(), b = y.getBoundingClientRect();
+    return { inside: a.left >= 0 && a.right <= innerWidth && b.left >= 0 && b.right <= innerWidth && b.bottom <= innerHeight, scrolls: y.scrollWidth > y.clientWidth && getComputedStyle(y).overflowX === 'auto' };
+  });
+  assert(bar.inside && bar.scrolls, `the build bar at 390 px: ${JSON.stringify(bar)}`);
+  await FL(() => window.FL.category(null));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.waitForTimeout(600);
+  assert((await FL(() => document.documentElement.style.getPropertyValue('--ui-zoom'))) === '1', 'the zoom did not come back to 1 at 1440 × 900');
+  await FL(() => window.FL.pause());
+  await FL(() => window.FL.debugSave(null));
+  assert((await FL(() => window.FL.hash())) === own, 'the player’s base did not come back as it was');
+  await FL(() => window.FL.resume());
+});
+
+await step('stock (D96): no stock bar on the HUD; « Stock » opens the Heart\'s stock by kind with each item\'s amount and rate; Esc, a click on the world and the button close it; the choice is remembered', async () => {
+  const saves = await FL(() => window.FL.debugSaves());
+  if (!saves) { console.log('    (no debug page on this build)'); return; }
+  await FL(() => window.FL.pause());
+  const own = await FL(() => window.FL.hash());
+  const r = await FL(() => window.FL.debugSave('late'));
+  assert(r.ok, `late base: ${JSON.stringify(r)}`);
+  await FL(() => { window.FL.menu(false); window.FL.close(); window.FL.resume(); });
+  await page.waitForFunction(() => !document.querySelector('[data-hud-stock]')?.hidden, undefined, { timeout: 2000 });
+  // The bar is gone: no item chips on the HUD; the panel closed.
+  const hud = await FL(() => ({ chips: document.querySelectorAll('.hud [data-item]').length, closed: document.querySelector('[data-screen="stock"]').hasAttribute('hidden'), label: document.querySelector('[data-hud-stock]').textContent }));
+  assert(hud.chips === 0 && hud.closed && /Stock/.test(hud.label), `HUD: ${JSON.stringify(hud)}`);
+  // Open: sections by kind, a row per item with its amount; with the telemetry, some rates (the late base has it).
+  await page.click('[data-hud-stock]');
+  await page.waitForTimeout(1300); // a refresh, and a second of the rates' samples
+  const p = await FL(() => {
+    const root = document.querySelector('[data-screen="stock"]');
+    const rows = [...root.querySelectorAll('.stk-row[data-item]')];
+    return { open: !root.hasAttribute('hidden'), secs: root.querySelectorAll('.ksec[data-sec^="stock-"]').length, rows: rows.length,
+      vals: rows.filter((n) => n.querySelector('.stk-val')?.textContent).length, tele: root.hasAttribute('data-tele'),
+      expanded: document.querySelector('[data-hud-stock]').getAttribute('aria-expanded'), kept: localStorage.getItem('filon.stock.v1') };
+  });
+  assert(p.open && p.secs >= 2 && p.rows >= 5 && p.vals === p.rows && p.tele && p.expanded === 'true' && /"open":true/.test(p.kept ?? ''), `the panel: ${JSON.stringify(p)}`);
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-screen="stock"] .stk-rate')].some((n) => /\/min/.test(n.textContent ?? '')), undefined, { timeout: 4000 });
+  await page.screenshot({ path: shot('smoke-stock.png') });
+  // Esc closes it (first, before any tool or selection); the button opens it again; a click on the world closes it.
+  await page.keyboard.press('Escape');
+  assert(await FL(() => document.querySelector('[data-screen="stock"]').hasAttribute('hidden')), 'Esc did not close the Stock');
+  await page.click('[data-hud-stock]');
+  assert(!(await FL(() => document.querySelector('[data-screen="stock"]').hasAttribute('hidden'))), 'the button did not open it again');
+  await page.mouse.click(720, 600);
+  assert(await FL(() => document.querySelector('[data-screen="stock"]').hasAttribute('hidden')), 'a click on the world did not close it');
+  assert(/"open":false/.test(await FL(() => localStorage.getItem('filon.stock.v1') ?? '')), 'the closed choice was not kept');
+  await FL(() => { window.FL.selected(0); window.FL.pause(); });
+  await FL(() => window.FL.debugSave(null));
+  assert((await FL(() => window.FL.hash())) === own, 'the player’s base did not come back as it was');
+  await FL(() => window.FL.resume());
+});
+
+await step('purse (D102): the HUD\'s ◉/h is the purse\'s real recurring change; a click on the purse breaks it down — each item sold, each standing order, the tokens, the rent — the biggest drain named; a line goes where it is managed; Esc closes the card', async () => {
+  const saves = await FL(() => window.FL.debugSaves());
+  if (!saves) { console.log('    (no debug page on this build)'); return; }
+  await FL(() => window.FL.pause());
+  const own = await FL(() => window.FL.hash());
+  const r = await FL(() => window.FL.debugSave('late'));
+  assert(r.ok, `late base: ${JSON.stringify(r)}`);
+  await FL(() => { window.FL.menu(false); window.FL.close(); window.FL.resume(); });
+  // Ten game minutes one at a time: the HUD samples the purse's journal once a minute.
+  for (let m = 0; m < 10; m++) { await FL(() => window.FL.tick(600)); await page.waitForTimeout(100); }
+  await page.click('[data-hud-purse]');
+  await page.waitForSelector('[data-screen="purse"]:not([hidden]) .purse-line', { timeout: 3000 });
+  const c = await FL(() => {
+    const root = document.querySelector('[data-screen="purse"]');
+    const lines = [...root.querySelectorAll('.purse-line')];
+    return { kinds: lines.map((n) => n.getAttribute('data-flow')), values: lines.map((n) => n.querySelector('.purse-v')?.textContent ?? ''),
+      total: root.querySelector('.purse-top b')?.textContent ?? '', hud: document.querySelector('[data-hud-purse] .hud-delta')?.textContent ?? '',
+      drain: root.querySelector('.purse-drain')?.textContent ?? '', crier: !!root.querySelector('[data-hud-crier]') };
+  });
+  console.log(`    flows: ${c.kinds.join(', ')} · total ${c.total} · HUD ${c.hud}`);
+  assert(c.kinds.includes('sale') && c.values.every((v) => /◉\/h/.test(v)) && c.crier, `the card: ${JSON.stringify(c)}`);
+  assert(!/^\s*$/.test(c.total) && (c.drain === '' || /Commande|Baux|Tokens|Forfait|Autres/.test(c.drain)), `total / drain: ${JSON.stringify(c)}`);
+  await page.screenshot({ path: shot('smoke-purse.png') });
+  // An item sold: the Crier on its Trade tab, its post's card flashed.
+  await page.click('[data-screen="purse"] .purse-line[data-flow="sale"]');
+  await page.waitForFunction(() => window.FL.screen() === 'market' && !!document.querySelector('.crier [data-post][data-flash], .crier [data-order][data-flash]'), undefined, { timeout: 3000 });
+  assert(await FL(() => document.querySelector('[data-screen="purse"]').hasAttribute('hidden')), 'the card stayed open over the Crier');
+  await FL(() => window.FL.close());
+  // Esc closes the card.
+  await page.click('[data-hud-purse]');
+  await page.keyboard.press('Escape');
+  assert(await FL(() => document.querySelector('[data-screen="purse"]').hasAttribute('hidden')), 'Esc did not close the card');
+  await FL(() => window.FL.pause());
+  await FL(() => window.FL.debugSave(null));
+  assert((await FL(() => window.FL.hash())) === own, 'the player’s base did not come back as it was');
+  await FL(() => window.FL.resume());
+});
+
+await step('weak grid (D91): the tutorial base by night, its turbines and accumulators cut off, serves under 100 %: a drill at work reads « Au ralenti » in amber with the half-bolt and its %; the Production view counts it among the waiting', async () => {
+  const saves = await FL(() => window.FL.debugSaves());
+  if (!saves) { console.log('    (no debug page on this build)'); return; }
+  await FL(() => window.FL.pause());
+  const own = await FL(() => window.FL.hash());
+  const r = await FL(() => window.FL.debugSave('tutorial'));
+  assert(r.ok, `tutorial base: ${JSON.stringify(r)}`);
+  // Night, its panels asleep; the wind follows the real clock, so its turbines' and accumulators'
+  // wires are cut (a rig): the Core's isotope core and the brazier serve part of the demand.
+  await FL(() => {
+    window.FL.menu(false);
+    window.FL.dayPhase('night');
+    const sim = window.FL.app.sim, off = new Set(['wind_flower', 'pitch_turbine', 'big_turbine', 'accumulator', 'heavy_accumulator']);
+    for (const e of sim.ents.sorted()) if (off.has(window.FL.entityAt(e.x, e.y)?.def)) for (const o of window.FL.links(e.id)) window.FL.unlink(e.id, o);
+    window.FL.tick(20);
+  });
+  const slow = await FL(() => {
+    const sim = window.FL.app.sim;
+    const low = (x) => { const n = sim.graph.nodeByEnt.get(x.id); return n && n.status === 6 ? n : null; }; // St.LowPower: it ran, slowed
+    const e = sim.ents.sorted().find((x) => low(x)?.kind === 'drill') ?? sim.ents.sorted().find((x) => low(x));
+    return e ? { id: e.id, x: e.x, y: e.y, sat: sim.ctx.sat[low(e).net] } : null;
+  });
+  assert(slow, 'nothing slowed by a weak grid on the tutorial base at night');
+  console.log(`    ${await FL((id) => window.FL.entityAt(window.FL.app.sim.ents.get(id).x, window.FL.app.sim.ents.get(id).y)?.def, slow.id)} on a grid at ${slow.sat / 10} %`);
+  await FL((s) => { window.FL.lookAt(s.x + 1, s.y + 1, 1.3); window.FL.selected(s.id); window.FL.resume(); }, slow);
+  await page.waitForSelector('[data-screen="inspector"] .kstatus[data-state="slow"] .kreason[data-k="weak"]', { timeout: 4000 });
+  const line = await page.evaluate(() => document.querySelector('[data-screen="inspector"] .kstatus')?.innerText ?? '');
+  assert(/Au ralenti|Slowed/.test(line) && /%/.test(line), `status line: ${line}`);
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: shot('smoke-weak-inspect.png') });
+  await FL(() => window.FL.selected(0));
+  await page.keyboard.press('o');
+  await page.waitForSelector('[data-screen="view"] .vp-why[data-why="weak"][data-work="pause"]', { timeout: 4000 });
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: shot('smoke-weak-production.png') });
+  await FL(() => { window.FL.mapView('normal'); window.FL.pause(); window.FL.dayPhase(null); });
   await FL(() => window.FL.debugSave(null));
   assert((await FL(() => window.FL.hash())) === own, 'the player’s base did not come back as it was');
   await FL(() => window.FL.resume());
@@ -897,13 +1208,50 @@ await step('card: a pointer resting on a tray slot shows the building (recipes, 
   await FL(() => { window.FL.tool(null); window.FL.category(null); });
 });
 
+await step('deposit (D99): nothing in hand, a pointer resting on a known deposit shows its card — the ore, the drills that work it; a tool in hand hides it', async () => {
+  await FL(() => { window.FL.tool(null); window.FL.category(null); window.FL.view('plan'); });
+  await settleView('plan');
+  // A known iron tile on open ground, nothing standing on it, nearest the Core.
+  const spot = await FL(() => {
+    const sim = window.FL.app.sim, g = sim.grid, it = window.FL.itemIndex('iron_ore');
+    for (let r = 0; r < 40; r++) for (let y = 512 - r; y <= 512 + r; y++) for (let x = 512 - r; x <= 512 + r; x++) {
+      if (Math.max(Math.abs(x - 512), Math.abs(y - 512)) !== r) continue;
+      if (g.ore(x, y) === it && (g.terrain(x, y) < 2 || g.terrain(x, y) > 5) && sim.revealed(x, y) && !sim.entityAt(x, y)) return [x, y];
+    }
+    return null;
+  });
+  assert(spot, 'no known iron tile');
+  await FL(([x, y]) => window.FL.lookAt(x + 0.5, y + 0.5, 1.2), spot);
+  await page.waitForTimeout(300);
+  const [sx, sy] = await tileXY(spot[0], spot[1]);
+  await page.mouse.move(sx + 25, sy + 25);
+  await page.mouse.move(sx, sy, { steps: 3 });
+  await page.waitForTimeout(700);
+  const card = await FL(() => {
+    const n = document.querySelector('[data-deposit-card]');
+    return n && !n.hidden ? { ore: n.dataset.ore, defs: [...n.querySelectorAll('.dcard-m')].map((m) => m.dataset.def), meter: !!n.querySelector('.kmeter'), land: !!n.querySelector('.dcard-land') } : null;
+  });
+  assert(card && card.ore === 'iron_ore', `no card on the iron: ${JSON.stringify(card)}`);
+  assert(card.defs.includes('drill') && card.defs.includes('deep_bore') && !card.defs.includes('face_cutter'), `the wrong machines: ${card.defs}`);
+  assert(card.meter && card.land, 'no yield or no parcel on the card');
+  await page.screenshot({ path: shot('smoke-deposit.png') });
+  // Placing (D53): the tip's job, not the card's.
+  await FL(() => window.FL.tool('drill'));
+  await page.mouse.move(sx + 2, sy + 1);
+  await page.waitForTimeout(400);
+  assert(await FL(() => document.querySelector('[data-deposit-card]')?.hidden !== false), 'the card stayed while placing');
+  await FL(() => { window.FL.tool(null); window.FL.category(null); });
+});
+
 await step('quests: CrierBelt has the claim named; the log moves on; rewards pay once', async () => {
   // The demo base starts with the tutorial skipped: the tutorial needs a fresh base. The base
   // persists (M7): a reload would open it again, so start over (a new base, the page reloads).
   await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle' }), FL(() => window.FL.wipe()).catch(() => null)]);
   await page.waitForFunction(() => !!window.FL && window.FL.ready(), undefined, { timeout: 30000 });
   await FL(() => { if (window.FL.app.guide) window.FL.app.guide.enabled = false; });
-  assert((await FL(() => document.querySelectorAll('.bb-tab[data-cat]:not([hidden])').length)) === 0, 'build tabs shown before the tutorial introduces them');
+  // The bar builds its tabs shown and hides them at its first refresh (4 Hz), which can land just after `ready`.
+  const tabsHidden = await page.waitForFunction(() => document.querySelectorAll('.bb-tab[data-cat]:not([hidden])').length === 0, undefined, { timeout: 2000 }).then(() => true, () => false);
+  assert(tabsHidden, 'build tabs shown before the tutorial introduces them');
   let q = await FL(() => window.FL.quests());
   assert(q.current === 'claim' && q.named === false, `start: ${q.current} named=${q.named}`);
   assert(await page.isVisible('[data-screen="quests"]'), 'no quest log');
@@ -920,13 +1268,31 @@ await step('quests: CrierBelt has the claim named; the log moves on; rewards pay
   const seen = await page.waitForFunction(() => window.FL.toasts().some((t) => /CrierBelt/.test(t)), undefined, { timeout: 3000 }).then(() => true, () => false);
   assert(seen, `no CrierBelt notice: ${JSON.stringify(await FL(() => window.FL.toasts()))}`);
   await page.screenshot({ path: shot('smoke-quests.png') });
+  // D101: a goal shows no arrow until its « Indice » is asked for — then one marker, gone on a second click.
+  await FL(() => { window.FL.app.guide.enabled = true; window.FL.completeQuest('first_wind'); });
+  await page.waitForSelector('[data-quest-hint]:not([disabled])', { timeout: 2000 });
+  await page.waitForTimeout(400);
+  let g = await FL(() => window.FL.quests().guide);
+  assert(g.quest === null && g.at === 'hidden' && !g.hint, `a goal unasked shows nothing: ${JSON.stringify(g)}`);
+  await page.click('[data-quest-hint]');
+  const shownHint = await page.waitForFunction(() => { const d = window.FL.quests().guide; return d.hint && d.at !== 'hidden'; }, undefined, { timeout: 2000 }).then(() => true, () => false);
+  assert(shownHint, `the hint shows one marker: ${JSON.stringify(await FL(() => window.FL.quests().guide))}`);
+  await page.click('[data-quest-hint]');
+  const goneHint = await page.waitForFunction(() => window.FL.quests().guide.at === 'hidden', undefined, { timeout: 2000 }).then(() => true, () => false);
+  assert(goneHint, 'the hint put away');
+  // The night notice (D101): on show, its « Compris » puts it away for good.
+  assert(await FL(() => window.FL.nightNotice(true)), 'the night notice did not show');
+  assert(await page.isVisible('[data-screen="night"]'), 'the night notice is not visible');
+  await page.click('[data-night-ok]');
+  assert(!(await FL(() => window.FL.nightNotice())), 'the night notice stayed');
+  await FL(() => { window.FL.app.guide.enabled = false; });
   const c0 = await FL(() => window.FL.credits());
-  assert((await FL(() => window.FL.completeQuest('wall_quartz'))) === null, 'completeQuest refused'); // the last quest (D87)
+  assert((await FL(() => window.FL.completeQuest('synth_parts'))) === null, 'completeQuest refused'); // the last quest (D90)
   q = await FL(() => window.FL.quests());
-  assert(q.done.length === 12, `done: ${q.done.length}`); // the tutorial's twelve quests (the quartz in the wall last, D87)
+  assert(q.done.length === 10, `done: ${q.done.length}`); // the claim's name and the tutorial's nine quests (D101: « Le Cœur grandit » added; the Synthesis's parts last, D90)
   const c1 = await FL(() => window.FL.credits());
-  assert(Math.abs(c1 - c0 - 450) < 0.01, `credits ${c0} → ${c1}`); // 150 (the Crier) + 300 (Survey Data)
-  await FL(() => window.FL.completeQuest('wall_quartz'));
+  assert(Math.abs(c1 - c0 - 1150) < 0.01, `credits ${c0} → ${c1}`); // 150 (« La Criée ») + 100 (« Le Cœur grandit ») + 600 (Survey Data) + 300 (the Synthesis's parts), D90, D101
+  await FL(() => window.FL.completeQuest('synth_parts'));
   assert(Math.abs((await FL(() => window.FL.credits())) - c1) < 0.01, 'paid twice');
 });
 
@@ -955,6 +1321,81 @@ await step('quartz (D87): today\'s land has its vein a parcel away; a face cutte
   await settleView('iso');
   await page.waitForFunction(() => window.FL.perf().chunksMissing === 0, undefined, { timeout: 8000 }).catch(() => {});
   await page.screenshot({ path: shot('smoke-vein.png') });
+});
+
+await step('the Gleaners (D103): a ribbon out past the Crown is exposed at night, none in the cirque; under glass it is safe; the Logistique card counts them; the morning report shows and goes', async () => {
+  const v = await FL(() => window.FL.vein());
+  const [x, y, rot] = v.spots[0];
+  const r = await FL(([x, y, rot]) => {
+    const sim = window.FL.app.sim;
+    const dx = [0, 1, 0, -1][rot], dy = [-1, 0, 1, 0][rot], sx = [0, 1, 0, -1][(rot + 1) & 3], sy = [-1, 0, 1, 0][(rot + 1) & 3];
+    // Five tiles across the floor before the cutter, four out from it.
+    const path = [0, 1, 2, 3, 4].map((k) => [x + dx * 4 + sx * k, y + dy * 4 + sy * k, (rot + 1) & 3]);
+    const laid = sim.placeBelts('ribbon', path);
+    sim.ensureCompiled();
+    const ex = new Set(sim.graph.glean.exposed), tiles = path.map(([a, b]) => b * 1024 + a);
+    const crown = sim.grid.source.crownOuter ?? 29;
+    const inCirque = [...ex].filter((t) => ((t & 1023) - 512) ** 2 + ((t >> 10) - 512) ** 2 < crown * crown).length;
+    const exposed = tiles.filter((t) => ex.has(t)).length;
+    window.FL.unlock('xp_guard');
+    sim.grant('glass', 20);
+    const glazed = sim.placeBelts('glazed_ribbon', path);
+    sim.ensureCompiled();
+    const g = new Set(sim.graph.glean.guarded), ex2 = new Set(sim.graph.glean.exposed);
+    return { laid, exposed, inCirque, glazed, guarded: tiles.filter((t) => g.has(t)).length, still: tiles.filter((t) => ex2.has(t)).length };
+  }, [x, y, rot]);
+  assert(r.laid >= 3 && r.exposed === r.laid, `a desert ribbon is exposed: ${JSON.stringify(r)}`);
+  assert(r.inCirque === 0, `nothing exposed in the cirque: ${JSON.stringify(r)}`);
+  assert(r.glazed === r.laid && r.still === 0 && r.guarded === r.laid, `under glass it is safe: ${JSON.stringify(r)}`);
+  // The Logistique card's night block, and the morning report.
+  await FL(() => window.FL.mapView('logistics'));
+  await page.waitForTimeout(400);
+  assert(await page.isVisible('.vp-glean'), 'the Logistique card shows the night');
+  await FL(() => window.FL.mapView('normal'));
+  const card = await FL(() => { window.FL.selected(0); return window.FL.gleaners({ card: 'dawn' }).card; });
+  assert(card === 'dawn', `the morning report: ${card}`);
+  assert(await page.isVisible('[data-screen="gleaners"]'), 'the morning report is not visible');
+  await page.click('[data-gleaners-ok]');
+  assert((await FL(() => window.FL.gleaners().card)) === null, 'the morning report stayed');
+});
+
+await step('gaps (D94): today\'s land (map 4) has chasms and rivers past the Crown; nothing stands in them, a ribbon drag leaps one with a skybridge pair; the land panel shows a parcel\'s usable floor', async () => {
+  const r = await FL(() => {
+    const sim = window.FL.app.sim, g = sim.grid, C = 512;
+    if (g.source.mapV !== 4) return { ok: false, why: `map ${g.source.mapV}` };
+    // The nearest straight crossing of a chasm, east–west: two floor tiles, 2–3 chasm tiles, two floor tiles, level 0.
+    const floor = (x, y) => [0, 1].includes(g.terrain(x, y)) && g.level(x, y) === 0;
+    let at = null, best = Infinity, rivers = 0;
+    for (let y = C - 120; y <= C + 120; y++) for (let x = C - 120; x <= C + 120; x++) {
+      if (g.terrain(x, y) === 14) rivers++;
+      const d = (x - C) ** 2 + (y - C) ** 2;
+      if (d >= best || g.terrain(x + 2, y) !== 13 || !floor(x, y) || !floor(x + 1, y)) continue;
+      let n = 0;
+      while (g.terrain(x + 2 + n, y) === 13 && n < 4) n++;
+      if (n >= 2 && n <= 3 && floor(x + 2 + n, y) && floor(x + 3 + n, y)) { at = [x, y, n]; best = d; }
+    }
+    if (!at) return { ok: false, why: 'no chasm crossing within 120 tiles' };
+    const [x, y, n] = at;
+    sim.explored.push([x + 3, y, 12]); // a rig: the fog lifted over the crossing (land too far to buy is crossed by kite)
+    const refused = sim.canPlace('mast', x + 2, y, 0).reason;
+    for (const tx of [x, x + 3 + n]) { const p = window.FL.parcelAt(tx, y); if (!sim.land.holds(p)) { if (sim.credits < sim.landPrice(p) + 100) sim.grantCredits(sim.landPrice(p) + 100 - sim.credits); sim.buyLand(p); } }
+    window.FL.unlock('bridge');
+    sim.grant('iron_plate', 40);
+    const path = Array.from({ length: n + 4 }, (_, k) => [x + k, y, 1]);
+    const plan = sim.planBelts('ribbon', path).map((s) => (s.leapt ? 'leapt' : s.ok ? s.def : s.reason));
+    const laid = sim.placeBelts('ribbon', path);
+    return { ok: true, at, rivers, refused, plan, laid, p: window.FL.parcelAt(x, y) };
+  });
+  assert(r.ok, `gaps: ${JSON.stringify(r)}`);
+  assert(r.rivers > 20, `rivers round the cirque: ${r.rivers}`);
+  assert(r.refused === 'chasm', `a mast in a chasm: ${r.refused}`);
+  assert(r.plan.filter((s) => s === 'skybridge').length === 2 && r.plan.filter((s) => s === 'leapt').length === r.at[2], `the drag's plan: ${r.plan.join(' ')}`);
+  // The land mode: the picked parcel's usable floor in the panel.
+  await FL((p) => { window.FL.mapView('land'); window.FL.app.landTool.click(p); }, r.p);
+  await page.waitForSelector('.land-floor b', { timeout: 3000 });
+  const share = await page.$eval('.land-floor b', (n) => n.textContent ?? '');
+  assert(/\d+\s?%/.test(share), `usable floor: « ${share} »`);
+  await FL(() => window.FL.mapView('normal'));
 });
 
 await step('intro (D31): not by itself under automation; FL.intro plays it; the register refuses a sister claim; the landing names the claim and gives it the emblem designed on the form', async () => {
@@ -1003,17 +1444,35 @@ await step('intro (D31): not by itself under automation; FL.intro plays it; the 
   assert(!st.heartHidden && !(await FL(() => document.body.hasAttribute('data-intro'))), 'Heart or HUD not back');
 });
 
-await step('tree (D33): the HUD chip opens the tech tree; one click on a plan unlocks it, paid by the Heart', async () => {
-  // This base's quests were forced, which unlocks no plan: Telemetry is still to buy.
+await step('tree (D33): the HUD chip opens the tech tree; one click on a plan unlocks it, paid by the Heart; a hovered card lights its chain (D107)', async () => {
+  // This base's quests were forced, which unlocks no plan; the quartz step took the Face Cutter's
+  // with its prerequisites (D107: the trade post first, so the telemetry too). The first plan still
+  // to take, its prerequisites met (the Statistics' stays for the next step), is bought here.
   await FL(() => { window.FL.close(); window.FL.pause(); });
-  const before = await FL(() => ({ plates: window.FL.stocks().iron_plate ?? 0, on: window.FL.app.sim.unlocked('telemetry') }));
-  assert(!before.on, 'Telemetry already unlocked');
+  const id = await FL(() => ['telemetry', 'incinerator', 'traction', 'silo', 'sorter', 'junction', 'brazier', 'wire_mill', 'sand_collector']
+    .find((p) => !window.FL.app.sim.unlocked(p) && window.FL.app.sim.planBlock(p) === null) ?? null);
+  assert(id, 'no plan left to take');
+  const before = await FL((p) => ({ plates: window.FL.stocks().iron_plate ?? 0, on: window.FL.app.sim.unlocked(p) }), id);
   await page.click('[data-hud-tree]');
   await page.waitForSelector('[data-screen="research"][data-open]', { timeout: 3000 });
-  await page.click('[data-unlock="telemetry"]');
-  await page.waitForSelector('.tr-node[data-id="telemetry"][data-state="done"]', { timeout: 2000 });
-  const after = await FL(() => ({ plates: window.FL.stocks().iron_plate ?? 0, on: window.FL.app.sim.unlocked('telemetry') }));
-  assert(after.on && Math.abs(before.plates - after.plates - 8) < 0.01, `Telemetry ${after.on}, plates ${before.plates} → ${after.plates}`);
+  const cost = Number(await page.textContent(`.tr-node[data-id="${id}"] .tr-chip`));
+  await page.click(`[data-unlock="${id}"]`);
+  await page.waitForSelector(`.tr-node[data-id="${id}"][data-state="done"]`, { timeout: 2000 });
+  const after = await FL((p) => ({ plates: window.FL.stocks().iron_plate ?? 0, on: window.FL.app.sim.unlocked(p) }), id);
+  assert(!before.on && after.on && Math.abs(before.plates - after.plates - cost) < 0.01, `${id} ${after.on}, plates ${before.plates} → ${after.plates} (cost ${cost})`);
+  // A research card under the mouse lights its chain (D107): the Compute Plan, its Server Room
+  // across the lanes; the rest fades; off the cards, all comes back.
+  await page.hover('.tr-node[data-id="cm_plan"]');
+  const chain = await page.evaluate(() => ({
+    on: document.querySelector('.tr-canvas')?.hasAttribute('data-chain'),
+    self: document.querySelector('.tr-node[data-id="cm_plan"]')?.getAttribute('data-chain'),
+    servers: document.querySelector('.tr-node[data-id="an_servers"]')?.getAttribute('data-chain'),
+    far: document.querySelector('.tr-node[data-id="en_tower"]')?.hasAttribute('data-chain'),
+    link: !!document.querySelector('.tr-link[data-chain][data-kind="cross"]'),
+  }));
+  assert(chain.on && chain.self === 'self' && chain.servers === '' && !chain.far && chain.link, `chain: ${JSON.stringify(chain)}`);
+  await page.mouse.move(2, 2);
+  await page.waitForFunction(() => !document.querySelector('.tr-canvas')?.hasAttribute('data-chain'), undefined, { timeout: 2000 });
   await page.screenshot({ path: shot('smoke-tree.png') });
   await page.click('.rs-close');
   await FL(() => window.FL.resume());
@@ -1060,7 +1519,7 @@ await step('i18n: no missing key (⟦…⟧) on any screen, in French and in Eng
   for (const loc of ['en', 'fr']) {
     await FL((l) => window.FL.setLocale(l), loc);
     await FL(() => { window.FL.close(); window.FL.selected(window.FL.entityAt(512, 512)?.id ?? 0); });
-    for (const scr of [null, 'research', 'stats', 'market', 'menu', 'menu:settings', 'menu:about']) {
+    for (const scr of [null, 'research', 'stats', 'market', 'expertise', 'menu', 'menu:settings', 'menu:about']) {
       if (scr?.startsWith('menu')) await FL((p) => window.FL.menu(true, p || undefined), scr.split(':')[1] ?? '');
       else if (scr) await FL((s) => window.FL.open(s), scr);
       await page.waitForTimeout(350);
@@ -1083,7 +1542,8 @@ await step('i18n: no missing key (⟦…⟧) on any screen, in French and in Eng
 
 // ── M7: the base is kept (sandbox database under automation), caught up, exported, one tab at a time ──
 /** The page opened paused (?paused): a hash read after the boot is the base as it was loaded. */
-const PAUSED = `${URL.replace(/\/?$/, '/')}?paused`;
+// Built with the URL API: a URL that already has a query (?debug, to get the debug bases on a production build) keeps it.
+const PAUSED = (() => { const u = new globalThis.URL(URL); u.searchParams.set('paused', ''); return u.href; })();
 const ready = async (pg = page) => {
   await pg.waitForFunction(() => !!window.FL && window.FL.ready() && document.body.hasAttribute('data-ready'), undefined, { timeout: 30000 });
   await pg.waitForFunction(() => !document.querySelector('[data-screen="boot"]'), undefined, { timeout: 10000 });

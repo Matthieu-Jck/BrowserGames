@@ -5,9 +5,12 @@
 // so they read as one family (styles: styles/kit.css):
 // · `section`: a card with a header (an icon and a title, a figure on the right) and its body, one
 //   per thing a building has (its recipe, its stores, its grid…), tagged with the facet it belongs
-//   to so a specialised view (D88) can lift it;
-// · `statusLine`: a mark, one word coloured by the state (`Work`: on, pause, off; building; asleep)
-//   and the reason as icons (the inputs missing, the output full, no power, no wire, no recipe…);
+//   to so a specialised view (D88) can lift it; a title or tip given as a function follows the
+//   language by itself (`lang`: the kit's one listener says it again at each switch, for every
+//   panel and screen built from the kit);
+// · `statusLine`: a mark, one word coloured by the state (`Work`: on, pause, off; slowed by a weak
+//   grid, D91; building; asleep) and the reason as icons (the inputs missing, the output full, no
+//   power, a weak grid and its %, no wire, no recipe…);
 // · `equation`: what a building does as icons — « [ore] 15 + [coal] 15 → [plate] 15 /min »;
 // · `meter`: a gauge for a buffer or a rate, its value beside it; `progressBar` for a task;
 // · `stat`: a big figure and its caption; numbers through `fmt` / `kw` / `perMin` (format.ts), the
@@ -16,9 +19,10 @@
 import { ITEM_IDS, itemDef } from '@/content/registry';
 import type { BuildingKind } from '@/content/types';
 import { el, setAttr, setText } from '@/core/dom';
-import { num, rate } from '@/i18n/format';
-import { locale, t, type MsgKey } from '@/i18n/i18n';
+import { num, pct, rate } from '@/i18n/format';
+import { locale, onLocale, t, type MsgKey } from '@/i18n/i18n';
 import type { Atlas } from '@/render/art/atlas';
+import { viewIconCanvas } from '@/render/art/view-icons';
 import type { FNode } from '@/sim/flow/node';
 import type { Sim } from '@/sim/state';
 import { St, type Ent } from '@/sim/types';
@@ -42,6 +46,8 @@ export interface InspectorHost {
   openResearch(): void;
   /** Open the Crier screen (on its Trade tab). */
   openCrier?(tab?: 'trade'): void;
+  /** Open the Expertise window (D93: the Core's Archive). */
+  openExpertise?(): void;
   notify(kind: 'good' | 'bad' | 'info' | 'warn', text: string): void;
   /** Take the Link tool from this pillar or the Heart (power wires, D25). */
   link?(id: number): void;
@@ -102,12 +108,14 @@ export const seenBy = (sim: Sim) => (i: number): boolean => sim.produced[i]! > 0
 
 const NS = 'http://www.w3.org/2000/svg';
 
-export type MarkId = 'on' | 'pause' | 'off' | 'build' | 'sleep' | 'tree' | 'full' | 'recipe' | 'store' | 'data' | 'level' | 'route' | 'cargo' | 'flight' | 'order' | 'gate' | 'filter' | 'job' | 'token';
+export type MarkId = 'on' | 'slow' | 'pause' | 'off' | 'build' | 'sleep' | 'tree' | 'full' | 'recipe' | 'store' | 'data' | 'level' | 'route' | 'cargo' | 'flight' | 'order' | 'gate' | 'filter' | 'job' | 'token';
 
 /** Each mark on a 16 × 16 board: [tag, attributes]. Classes `k-*` take the palette (kit.css). */
 const MARKS: Readonly<Record<MarkId, ReadonlyArray<readonly [string, Record<string, string>]>>> = {
   // At work: a disc with a tick.
   on: [['circle', { class: 'k-disc k-on', cx: '8', cy: '8', r: '6.4' }], ['path', { class: 'k-stroke k-light', d: 'M5 8.3l2.1 2.1L11 6.2' }]],
+  // At work, slowed (a weak grid, D91): the tick on amber.
+  slow: [['circle', { class: 'k-disc k-pause', cx: '8', cy: '8', r: '6.4' }], ['path', { class: 'k-stroke', d: 'M5 8.3l2.1 2.1L11 6.2' }]],
   // A passing stop: two bars.
   pause: [['circle', { class: 'k-disc k-pause', cx: '8', cy: '8', r: '6.4' }], ['path', { class: 'k-stroke', d: 'M6.4 5.4v5.2M9.6 5.4v5.2' }]],
   // Stopped: a square.
@@ -164,38 +172,77 @@ export function mark(id: MarkId, title?: string): HTMLElement {
   return span;
 }
 
+// ── words that follow the language ────────────────────────────────────────────
+
+/** Words on a panel: a string, shown as given, or a function that says them in the language of the moment. */
+export type Label = string | (() => string);
+
+/** What each node built with a live label says, and where (its text, or an attribute). */
+const spoken = new WeakMap<Element, Array<readonly [attr: string | null, say: () => string]>>();
+let listening = false;
+
+const write = (node: Element, attr: string | null, s: string): void => {
+  if (attr) setAttr(node, attr, s);
+  else setText(node, s);
+};
+
+/** Say every live label of the document again: the language changed. */
+function relabel(): void {
+  if (typeof document === 'undefined') return;
+  for (const node of document.querySelectorAll('[data-lang]')) for (const [attr, say] of spoken.get(node) ?? []) write(node, attr, say());
+}
+
+/**
+ * Put `label` in `node` — its text, or the attribute `attr` (a tooltip) — and, when it is a
+ * function, say it again at each language switch: one listener for every panel, card and screen
+ * built from the kit, so none re-sets its titles on refresh. A node out of the document is skipped
+ * (it is said afresh when built again). Returns the node.
+ */
+export function lang<E extends Element>(node: E, label: Label | null | undefined, attr: string | null = null): E {
+  if (label == null) return node;
+  write(node, attr, typeof label === 'string' ? label : label());
+  if (typeof label === 'function') {
+    let said = spoken.get(node);
+    if (!said) { spoken.set(node, (said = [])); node.setAttribute('data-lang', ''); }
+    said.push([attr, label]);
+    if (!listening) { listening = true; onLocale(relabel); }
+  }
+  return node;
+}
+
 // ── sections ──────────────────────────────────────────────────────────────────
 
 export interface SectionOpts {
   /** Its hook: `[data-sec="…"]`. */
   sec: string;
-  title: string;
+  /** Its title: a function (« () => t('…') ») follows the language by itself (`lang`). */
+  title: Label;
   /** A mark, a glyph or an item's icon before the title. */
   icon?: Node | null;
   /** A figure on the right of its header (a total, a count). */
   aside?: Node | string | null;
   /** The facet it belongs to (a specialised view lifts it, D88). */
   group?: Facet | null;
-  /** What the section is, in words, on hover of its header (D53). */
-  tip?: string | null;
+  /** What the section is, in words, on hover of its header (D53); a function follows the language. */
+  tip?: Label | null;
 }
 
 /** A section card: its header (icon, title, a figure on the right), then its body. */
 export function section(o: SectionOpts, body: Array<Node | null | undefined>): HTMLElement {
   return el('section.ksec', { 'data-sec': o.sec, 'data-group': o.group ?? null }, [
-    el('header.ksec-head', { title: o.tip ?? null }, [
+    lang(el('header.ksec-head', {}, [
       o.icon ? el('span.ksec-icon', {}, o.icon) : null,
-      el('h4.ksec-title.lettering', {}, o.title),
+      lang(el('h4.ksec-title.lettering'), o.title),
       o.aside != null ? el('span.ksec-aside', {}, o.aside) : null,
-    ]),
+    ]), o.tip, 'title'),
     ...body.filter((n): n is Node => !!n),
   ]);
 }
 
 // ── the status line ───────────────────────────────────────────────────────────
 
-/** A building's state as the status line says it: at work, a passing stop, stopped; being built; asleep (D80). */
-export type StateWord = 'on' | 'pause' | 'off' | 'build' | 'sleep';
+/** A building's state as the status line says it: at work, at work slowed by a weak grid (D91), a passing stop, stopped; being built; asleep (D80). */
+export type StateWord = 'on' | 'slow' | 'pause' | 'off' | 'build' | 'sleep';
 
 /**
  * The status line: a mark and one word coloured by the state, then the reason as icons (the
@@ -215,6 +262,15 @@ export function statusLine(): { root: HTMLElement; set(state: StateWord, reasons
       setAttr(root, 'title', tip || null);
     },
   };
+}
+
+/**
+ * The weak grid as a reason (D91): the Électricité view's half-bolt (art/view-icons.ts `low`, the
+ * same mark the map draws) and the share of its demand the grid serves, « 62 % ».
+ */
+export function weakReason(sat: number): HTMLElement {
+  const p = pct(sat / 1000);
+  return el('span.kreason', { 'data-k': 'weak', title: t('insp.status.weak.tip', { p }) }, [viewIconCanvas('low', 20), el('b.kreason-n', {}, p)]);
 }
 
 /** A reason that is an item: its icon, dashed when it is missing, ringed coral when it is full. */

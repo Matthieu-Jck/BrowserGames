@@ -3,7 +3,8 @@
 // or emptying, a construction or a research completing). Research labs are reservoirs whose
 // research draw is a known outflow (its allowance rate); the Heart's and the autonomous labs'
 // data files a known inflow; servers' tokens and research's are counted per segment and billed
-// at each boundary by the online call (`tokenEpoch`, D68). Within a segment every group follows a regime —
+// at each boundary by the online call (`tokenEpoch`, D68); the expertises' feats and slots are read
+// there too (`expertiseEpoch`, D93). Within a segment every group follows a regime —
 // warmed up once from its true state, then extrapolated exactly (transient + whole periods
 // + prefix). Groups only interact through reservoirs (state flags and throttle rates) and
 // power grids (fixed satisfaction / dispatch per segment). Every per-segment pass is indexed
@@ -23,7 +24,8 @@ import { dataMakers, dataTick, serverTick } from '../systems/research';
 import { jobDone, jobRate, type Job } from '../space';
 import { renewableKw, weatherAt, weatherKey } from '../power/network';
 import { modsKey } from '../research/modifiers';
-import { condKey, flowAt, materialize, restoreGroup, scanGroup, Scratch, statAt, warmUp, type Cond, type Regime } from './steady';
+import { condKey, flowAt, gleanAt, materialize, restoreGroup, rotOf, scanGroup, Scratch, statAt, warmUp, type Cond, type Regime } from './steady';
+import { gleanNight, markTaken } from '../systems/gleaners';
 import { newReport, type AwayReport } from './report';
 
 /** Below this, simply tick the engine (exact, and cheap for short gaps). */
@@ -82,7 +84,7 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
   if (ticks <= 0) return rep;
   sim.ensureCompiled();
   const hearthBefore = sim.stock.slice();
-  const prod0 = sim.produced.slice(), cons0 = sim.consumed.slice();
+  const prod0 = sim.produced.slice(), cons0 = sim.consumed.slice(), glean0 = sim.gleaned.slice();
   const credits0 = sim.credits, earned0 = sim.trade.earned, spent0 = sim.trade.spent;
   const sold0 = sim.trade.soldTotal.slice(), bought0 = sim.trade.boughtTotal.slice();
   const finish = (): AwayReport => {
@@ -103,6 +105,7 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     for (let i = 0; i < N_ITEMS; i++) {
       rep.produced[i] = sim.produced[i]! - prod0[i]!;
       rep.consumed[i] = sim.consumed[i]! - cons0[i]!;
+      rep.gleaned[i] = sim.gleaned[i]! - glean0[i]!;
     }
     return finish();
   }
@@ -251,7 +254,8 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     }
     const sat = new Map<number, number>(), disp = new Map<number, number>();
     for (const n of grp.nets) { sat.set(n, netModes[n]!.sat); disp.set(n, netModes[n]!.disp); }
-    return { res, sat, disp };
+    // The Gleaners (D103): out in the dark hours, a world-clock input of the segment's minute.
+    return { res, sat, disp, night: grp.glean && gleanNight(sim.absEpoch(now)) };
   }
 
   const netDirty = new Set<number>();
@@ -282,7 +286,7 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     let lag = 0;
     if (cached && run.warmCount >= CACHE_AFTER) {
       // A known regime: no warm-up, the group jumps into its cycle (an approximation: `approx`).
-      const L = run.grp.rotL;
+      const L = rotOf(run.grp, c);
       const jump: Regime = { ...cached, t1: 0, prefT: cached.keys.map(() => Float64Array.of(0)), s0: cached.s1 };
       if (!cached.exact) {
         // An averaged regime (no exact period: an approximation already) jumps to where it ended.
@@ -588,6 +592,14 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
         if (pr) { rep.produced[i] = rep.produced[i]! + pr; sim.produced[i] = sim.produced[i]! + pr; }
         if (co) { rep.consumed[i] = rep.consumed[i]! + co; sim.consumed[i] = sim.consumed[i]! + co; }
       }
+      // What the Gleaners took off its ribbons (D103), exactly as the regime ran it.
+      for (let j = 0; j < reg.gleanItems.length; j++) {
+        const d = gleanAt(reg, j, eb) - gleanAt(reg, j, ea);
+        if (!d) continue;
+        const i = reg.gleanItems[j]!;
+        rep.gleaned[i] = rep.gleaned[i]! + d;
+        markTaken(sim, run.grp.gleanTile, i, d);
+      }
     }
     if (sim.jobs.length) {
       const sats = new Map(sim.jobs.map((j) => [j, jobSatOff(j)] as const));
@@ -767,6 +779,14 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
       sim.tokenEpoch();
       if (sim.researchHeld !== heldBefore) rep.incidents.push({ tick: now, kind: sim.researchHeld ? 'researchHeld' : 'researchResumed' });
       dropTradeEvents(sim);
+      // The expertises' minute (D93), as online, last: the Core's grid as the segment just ended
+      // served it, the feats' ranks, a réorientation's 24 h ending. An expertise in place whose
+      // rank rose, or one coming into place, changes the Mods: a new graph.
+      if (sim.expertiseEpoch((n) => netModes[n]?.sat ?? 0)) materializeOnce();
+      // The Gleaners' nightfall and dawn (D103), as online: the night's tally, the morning report.
+      // When they come out or go home, their groups take another regime (the night is in its key).
+      sim.gleanEpoch();
+      if (gleanNight(sim.absEpoch(now)) !== gleanNight(sim.absEpoch(now) - 1)) for (const run of runs) if (run.grp.glean) markDirty(run);
     }
     // Constructions finishing change the graph.
     if (pendingBuilds.length && pendingBuilds[0]! <= now) {

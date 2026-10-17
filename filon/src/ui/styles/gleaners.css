@@ -1,0 +1,22 @@
+/* ── the Gleaners' cards (D103): their first night, and each morning's report ──
+   They take the night notice's place and look (.nnotice, quests.css): top right, under the HUD. */
+.gnotice .gn-art { flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 64px; }
+.gnotice .gn-art canvas { display: block; }
+.gnotice .gn-guards { display: flex; gap: 2px; align-items: center; }
+.gnotice[data-what="dawn"] .gn-guards { display: none; }
+.gn-chips { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 0 0 8px; }
+.gn-chips[hidden] { display: none; }
+.gn-chip { display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px 1px 3px; border-radius: 999px; background: var(--c-lilac-l, #ddd3ec); font-size: 13px; }
+.gn-chip canvas { display: block; width: 22px; height: 22px; }
+.gn-chip b { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* The Logistique card's night (D103, ui/views/logistics-panel.ts). */
+.vp-glean { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--c-ink-soft); }
+.vp-glean[hidden] { display: none; }
+.vp-glean .vp-flag[hidden] { display: none; }
+.vp-glean-taken { margin: 6px 0 0; font-size: 12.5px; line-height: 1.45; }
+
+/* The statistics' « Pris par les Glaneurs » (D103, ui/screens/stats.ts). */
+.st-gleaned { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.st-gleaned-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.st-gleaned-chip b { font-weight: 600; font-variant-numeric: tabular-nums; }

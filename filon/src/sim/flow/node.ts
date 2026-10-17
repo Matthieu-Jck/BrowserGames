@@ -23,6 +23,15 @@ export interface TickCtx {
   consumed: Float64Array;
   /** What the Hearth took in through its ports (milli-items): the HUD's rates (`Sim.hearthIn`). */
   hearthIn: Float64Array;
+  /**
+   * The Gleaners (D103): 1 while they are out (the dark hours: online from the world clock, in a
+   * warm-up from its conditions), 0 by day. A ribbon's exposed cells lose a little to them then.
+   */
+  glean: number;
+  /** What they took off the ribbons (milli-items, cumulative: `Sim.gleaned` online, a warm-up's own). */
+  gleaned: Float64Array;
+  /** Online only: each theft as it happens (tile, item, tick), for the views' figures and the lines' marks. */
+  gleanLog?: number[];
   /** The edge being transferred (phase B, for `give`: a ribbon notes where an item came from). */
   edge?: number;
 }

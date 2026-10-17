@@ -66,7 +66,8 @@ describe('land in parcels', () => {
     const ore = new Sim({ worldSeed: 7, playerSeed: 11, foundingEpoch: sim.foundingEpoch, source: testSource([{ x: CENTER + 40, y: CENTER - 4, w: 8, h: 8, item: itemIdx('copper_ore'), rich: 500 }]) });
     const bare = sim.landPrice(EAST), rich = ore.landPrice(EAST);
     expect(bare).toBe(BAL.land.base + PARCEL * PARCEL * BAL.land.tile.floor!);
-    expect(rich).toBeGreaterThan(bare + 64 * 1000);
+    // 64 copper tiles (value 4 ◉) at a richness of 500: `depositPerValue` × the value each.
+    expect(rich).toBe(bare + 64 * Math.floor((BAL.land.depositPerValue * 400 * 500) / (100 * 500)));
     // Each parcel bought makes the next dearer.
     expect(sim.buyLand(EAST)).toBe(null);
     expect(sim.landPrice(WEST)).toBe(Math.floor((bare * BAL.land.growth) / 1000));

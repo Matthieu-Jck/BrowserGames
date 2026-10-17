@@ -10,7 +10,7 @@ import { CENTER, WORLD } from '@/sim/constants';
 import { packRuns } from '@/sim/flow/chain';
 import { MapGen } from '@/sim/world/mapgen';
 import { SAVE_VERSION, type SaveData } from '@/sim/serialize';
-import { RESEARCH_RENAMED } from '@/content/retired';
+import { RESEARCH_RENAMED, TIER2_UP_V10 } from '@/content/retired';
 
 /** A step from version v to v + 1 (input: a parsed save of version v). */
 export type Migration = (d: Record<string, unknown>) => Record<string, unknown>;
@@ -268,7 +268,97 @@ export function labsToThree(d: Record<string, unknown>): Record<string, unknown>
   return { ...d, content: { ...content, buildings: content.buildings.map((id) => (id === 'observatory' ? 'observatory_2x2' : id)) } };
 }
 
-export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsToTowers, 6: researchToTokens, 7: researchAtBase, 8: parcelsResized, 9: labsToThree };
+/**
+ * 10 → 11, the tree's arc (D93): the Synthesis (`tr_synth`) closes Tier 1 — it needs every other
+ * Tier 1 node and gives the Core's level 3 — and opens Tier 2 with two expertises chosen. A claim
+ * that already holds a node of Tier 2 or beyond (learnt, or under way) holds the Synthesis too: its
+ * Tier 2 stays open (`tierTwoOpen` also counts such a node), and the nodes it hangs from stay met.
+ * The expertises themselves start empty: a field with its default (nothing earned; the feats read
+ * the counters the save already holds at the first minute's boundary).
+ */
+export function expertiseArc(d: Record<string, unknown>): Record<string, unknown> {
+  const done = (d.done as string[] | undefined) ?? [];
+  const running = ((d.projects as Array<{ id: string }> | undefined) ?? []).map((p) => p.id);
+  if (done.includes('tr_synth') || ![...done, ...running].some((id) => TIER2_UP_V10.has(id))) return d;
+  return { ...d, done: [...done, 'tr_synth'].sort() };
+}
+
+/**
+ * 11 → 12, the Electric Smelting (D106): a Tier 1 node of Machines, `dn_esmelt`, between the
+ * Compact Machines and the Twin Wire Mill, and the arc furnace's recipes now unlock with it (the
+ * electric smelter runs them too). A claim that holds a node hanging from it — the twin wire mill
+ * or the Synthesis (which every Tier 2 claim holds since 10 → 11), learnt or under way — holds it
+ * too: the nodes it already has stay met, and its arc furnaces keep their recipes.
+ */
+export function electricSmelting(d: Record<string, unknown>): Record<string, unknown> {
+  const done = (d.done as string[] | undefined) ?? [];
+  const running = ((d.projects as Array<{ id: string }> | undefined) ?? []).map((p) => p.id);
+  if (done.includes('dn_esmelt') || ![...done, ...running].some((id) => id === 'dn_wiremill' || id === 'tr_synth')) return d;
+  return { ...d, done: [...done, 'dn_esmelt'].sort() };
+}
+
+/**
+ * 12 → 13, the tutorial's first lab on the Core's own data (D101): the data collector now comes with
+ * « Traitement des données » (`an_data`), no longer with the lab's plan, and the Face Cutter
+ * (`ex_quartz`) is a plan, no longer a research. A claim holding the lab's plan holds `an_data` too,
+ * so the collectors it has stand and it may still build them; a Face Cutter under way or queued is
+ * its plan taken. A project of either goes (`an_data` learnt, `ex_quartz` no longer researched), the
+ * data it had paid back to the Heart — nothing vanishes. Ids frozen here: the tree may change.
+ */
+export function coreData(d: Record<string, unknown>): Record<string, unknown> {
+  const done = (d.done as string[] | undefined) ?? [];
+  const projects = (d.projects as Array<{ id: string; cost?: number[]; paid?: number[] }> | undefined) ?? [];
+  const queue = (d.labQueue as Array<[number, string]> | undefined) ?? [];
+  const grant = new Set<string>();
+  if (done.includes('observatory') && !done.includes('an_data')) grant.add('an_data');
+  if (!done.includes('ex_quartz') && (projects.some((p) => p.id === 'ex_quartz') || queue.some(([, id]) => id === 'ex_quartz'))) grant.add('ex_quartz');
+  // A project of a node granted, or of the Face Cutter (no longer a research), whatever its state.
+  const goes = (id: string): boolean => grant.has(id) || id === 'ex_quartz';
+  if (!grant.size && !projects.some((p) => goes(p.id)) && !queue.some(([, id]) => goes(id))) return d;
+  const stock = [...((d.stock as number[] | undefined) ?? [])];
+  for (const p of projects) {
+    if (!goes(p.id)) continue;
+    (p.paid ?? []).forEach((mu, i) => { const it = p.cost?.[2 * i]; if (it !== undefined && mu > 0) stock[it] = (stock[it] ?? 0) + mu; });
+  }
+  return {
+    ...d,
+    done: [...new Set([...done, ...grant])].sort(),
+    stock,
+    ...(d.projects ? { projects: projects.filter((p) => !goes(p.id)) } : {}),
+    ...(d.labQueue ? { labQueue: queue.filter(([, id]) => !goes(id)) } : {}),
+  };
+}
+
+/**
+ * 13 → 14, a sensible tree (D107): the Fast Drill (`ex_fastdrill`, a Tier 2 node before) and the
+ * second trade post (`cm_post2`, new) are of Tier 1, which the Synthesis closes whole (D93). A claim
+ * that holds the Synthesis (learnt or under way) holds them too, so its Tier 1 stays whole and the
+ * Synthesis's prerequisites met. Nothing else moves: a node moved to another tier keeps its id, a
+ * project keeps the cost it started at. Ids frozen here: the tree may change, this step may not.
+ */
+export function tierOneWhole(d: Record<string, unknown>): Record<string, unknown> {
+  const done = (d.done as string[] | undefined) ?? [];
+  const running = ((d.projects as Array<{ id: string }> | undefined) ?? []).map((p) => p.id);
+  if (!done.includes('tr_synth') && !running.includes('tr_synth')) return d;
+  const grant = ['ex_fastdrill', 'cm_post2'].filter((id) => !done.includes(id));
+  if (!grant.length) return d;
+  // A project of a node granted goes, the data it had paid back to the Heart (nothing vanishes).
+  const projects = (d.projects as Array<{ id: string; cost?: number[]; paid?: number[] }> | undefined) ?? [];
+  const queue = (d.labQueue as Array<[number, string]> | undefined) ?? [];
+  const stock = [...((d.stock as number[] | undefined) ?? [])];
+  for (const p of projects) {
+    if (!grant.includes(p.id)) continue;
+    (p.paid ?? []).forEach((mu, i) => { const it = p.cost?.[2 * i]; if (it !== undefined && mu > 0) stock[it] = (stock[it] ?? 0) + mu; });
+  }
+  return {
+    ...d,
+    done: [...done, ...grant].sort(),
+    ...(projects.some((p) => grant.includes(p.id)) ? { stock, projects: projects.filter((p) => !grant.includes(p.id)) } : {}),
+    ...(queue.some(([, id]) => grant.includes(id)) ? { labQueue: queue.filter(([, id]) => !grant.includes(id)) } : {}),
+  };
+}
+
+export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsToTowers, 6: researchToTokens, 7: researchAtBase, 8: parcelsResized, 9: labsToThree, 10: expertiseArc, 11: electricSmelting, 12: coreData, 13: tierOneWhole };
 
 export class SaveTooNew extends Error {
   constructor(readonly version: number) { super(`save version ${version} is newer than this build (${SAVE_VERSION})`); }

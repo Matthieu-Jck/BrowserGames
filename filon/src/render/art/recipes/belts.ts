@@ -5,6 +5,9 @@
 // skybridge deck; other orientations are rotations / mirrors at render time. Shadows are
 // symmetric soft halos, so a piece looks the same whichever way it is turned.
 //
+// The glazed ribbon (D103) is a ribbon whose rails are glass-edged, pale ice with a bright edge;
+// its hood is laid over its items by the views (recipes/gleaners.ts `drawGlassCover`).
+//
 // The traction ribbon is a track, not a belt (owner, 2026-10-13: "the traction ribbon needs to
 // look like a traction thing"): brass grouser plates on a dark rubber band, between heavy rails
 // with sprocket wheels. Where it changes level, its lift up the terrace's wall is drawn apart
@@ -19,11 +22,12 @@ const BAND = 0.6;  // belt width in tiles
 const RAIL = 6;    // rail width in px
 
 export const BELT_TIERS = {
-  ribbon: { fill: C.tealL, slat: C.teal, chevron: C.ice },
-  swift_ribbon: { fill: C.violetL, slat: C.violet, chevron: C.ice },
-  express_ribbon: { fill: C.coral, slat: C.coralD, chevron: C.peachL },
-  traction_ribbon: { fill: mix(C.steelDD, C.inkSoft, 0.45), slat: C.brass, chevron: C.brassL }, // a track: grouser plates (`treadPlates`)
-  conduit: { fill: C.steelL, slat: C.steel, chevron: C.shallow },
+  ribbon: { fill: C.tealL, slat: C.teal, chevron: C.ice, rail: C.steel },
+  swift_ribbon: { fill: C.violetL, slat: C.violet, chevron: C.ice, rail: C.steel },
+  express_ribbon: { fill: C.coral, slat: C.coralD, chevron: C.peachL, rail: C.steel },
+  traction_ribbon: { fill: mix(C.steelDD, C.inkSoft, 0.45), slat: C.brass, chevron: C.brassL, rail: C.steelD }, // a track: grouser plates (`treadPlates`)
+  conduit: { fill: C.steelL, slat: C.steel, chevron: C.shallow, rail: C.steel },
+  glazed_ribbon: { fill: C.tealL, slat: C.teal, chevron: C.ice, rail: mix(C.ice, C.steelL, 0.35) }, // under glass (D103): its hood is laid over the items
 } as const;
 export type BeltTier = keyof typeof BELT_TIERS;
 
@@ -50,12 +54,12 @@ export function drawStraight(ctx: Ctx, tier: BeltTier, seed: number): void {
   if (tier === 'traction_ribbon') { treadRails(ctx, x0, x1, seed); return; }
   // Steel rails, inked, running past the tile so neighbours join seamlessly.
   for (const [xa, xb] of [[x0 - RAIL, x0], [x1, x1 + RAIL]] as const) {
-    flat(ctx, [[xa, -1], [xb, -1], [xb, S + 1], [xa, S + 1]], C.steel);
-    ink(ctx, [[xa + 1.5, -2], [xa + 1.5, S + 2]], { w: 1.4, color: C.steelL, shade: false, taper: 0, jitter: 0, seed: seed + 3 });
+    flat(ctx, [[xa, -1], [xb, -1], [xb, S + 1], [xa, S + 1]], t.rail);
+    ink(ctx, [[xa + 1.5, -2], [xa + 1.5, S + 2]], { w: 1.4, color: tier === 'glazed_ribbon' ? '#ffffff' : C.steelL, shade: false, taper: 0, jitter: 0, seed: seed + 3 });
     ink(ctx, [[xa, -2], [xa, S + 2]], { w: 1.8, taper: 0, jitter: 0.2, seed: seed + 1 });
     ink(ctx, [[xb, -2], [xb, S + 2]], { w: 1.8, taper: 0, jitter: 0.2, seed: seed + 2 });
     rivet(ctx, (xa + xb) / 2, S * 0.25, 1.5, C.steelL);
-    light(ctx, (xa + xb) / 2, S * 0.75, 1.6, tier === 'express_ribbon' ? C.ledWarm : C.led);
+    light(ctx, (xa + xb) / 2, S * 0.75, 1.6, tier === 'express_ribbon' ? C.ledWarm : tier === 'glazed_ribbon' ? C.glowCyan : C.led);
   }
 }
 
@@ -136,7 +140,7 @@ export function drawCorner(ctx: Ctx, tier: BeltTier, seed: number): void {
   }
   const rail = tier === 'traction_ribbon' ? RAIL + 2 : RAIL;
   for (const [ra, rb] of [[rIn - rail, rIn], [rOut, rOut + rail]] as const) {
-    flat(ctx, band(ra, rb), tier === 'traction_ribbon' ? C.steelD : C.steel);
+    flat(ctx, band(ra, rb), t.rail);
     ink(ctx, arc(ra), { w: 1.8, taper: 0, jitter: 0.2, seed: seed + 1 });
     ink(ctx, arc(rb), { w: 1.8, taper: 0, jitter: 0.2, seed: seed + 2 });
   }
@@ -162,7 +166,7 @@ export function drawInlet(ctx: Ctx, tier: BeltTier, seed: number): void {
     ctx.restore();
   }
   for (const [ya, yb] of [[x0 - RAIL, x0], [x1, x1 + RAIL]] as const) {
-    flat(ctx, [[-1, ya], [x0, ya], [x0, yb], [-1, yb]], C.steel);
+    flat(ctx, [[-1, ya], [x0, ya], [x0, yb], [-1, yb]], t.rail);
     ink(ctx, [[-2, ya], [x0, ya]], { w: 1.8, taper: 0, jitter: 0.2, seed: seed + 1 });
     ink(ctx, [[-2, yb], [x0, yb]], { w: 1.8, taper: 0, jitter: 0.2, seed: seed + 2 });
   }

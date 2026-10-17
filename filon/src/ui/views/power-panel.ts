@@ -1,5 +1,8 @@
-// power-panel.ts — the Électricité view's side panel (D88), shown rather than told: the buildings
-// in trouble as chips (no wire, asleep, no power, being built — a click goes to the next one), then
+// power-panel.ts — the Électricité view's side panel (D88), shown rather than told: the base by what
+// each building is to power (owner, 2026-10-16), a chip per group in the world's wash with its count
+// — what makes power, what draws it, the accumulators, what needs it and reaches no grid, what needs
+// none (a click goes to the next of a group; the last only counts) —; the buildings in trouble as
+// chips (no power, being built — a click goes to the next one), then
 // one card per grid in its colour (sim/readouts/power.ts `gridReports`):
 // - its head: the swatch, its name and size, how well it is served;
 // - what it makes now against what it asks: one bar stacked by source (the Core, the ground's
@@ -20,16 +23,18 @@ import { num } from '@/i18n/format';
 import { locale, t, tr, type MsgKey } from '@/i18n/i18n';
 import type { Atlas } from '@/render/art/atlas';
 import { C } from '@/render/art/tokens';
-import { GRID_COLORS, SOURCE_COLOR, SOURCE_ICON, viewIconCanvas, type ViewIcon } from '@/render/art/view-icons';
+import { GRID_COLORS, POWER_GROUP_COLOR, SOURCE_COLOR, SOURCE_ICON, viewIconCanvas, type ViewIcon } from '@/render/art/view-icons';
 import { DAY_EPOCHS } from '@/sim/constants';
 import { dayEpoch, sunPermille } from '@/sim/power/network';
-import { SOURCES, type GridReport, type PowerFlag, type PowerMark, type Source } from '@/sim/readouts/power';
+import { POWER_GROUPS, SOURCES, type GridReport, type PowerFlag, type PowerGroup, type PowerMark, type Source } from '@/sim/readouts/power';
 import type { Sim } from '@/sim/state';
 import { buildingIcon } from '../build-bar';
 import { BUILDING_IDS } from '@/content/registry';
 
-/** The flags a chip counts, in order (short of power is the grid's, its card says it). */
-const FLAGS: ReadonlyArray<Exclude<PowerFlag, 'low' | null>> = ['unwired', 'dark', 'asleep', 'site'];
+/** The flags a chip counts, in order (short of power is the grid's, its card says it; no wire and asleep are the « not linked » group's). */
+const FLAGS: ReadonlyArray<Exclude<PowerFlag, 'low' | null>> = ['dark', 'site'];
+/** The groups' chips, in the legend's order; then what needs no power. */
+const GROUP_ORDER: readonly PowerGroup[] = ['producer', 'consumer', 'storage', 'unlinked'];
 /** Consumers listed per grid. */
 const TOP = 4;
 /** The chart's size (CSS px). */
@@ -63,6 +68,8 @@ interface Card {
 
 export class PowerPanel {
   readonly root: HTMLElement;
+  private readonly groups = el('div.vp-groups');
+  private readonly groupChips = new Map<PowerGroup | 'none', { node: HTMLElement; n: HTMLElement }>();
   private readonly flags = el('div.vp-flags');
   private readonly flagChips = new Map<string, { node: HTMLElement; n: HTMLElement }>();
   private readonly cardsEl = el('div.vp-cards');
@@ -76,13 +83,30 @@ export class PowerPanel {
   private marks: readonly PowerMark[] = [];
 
   constructor(private readonly atlas: Atlas, private readonly host: PowerPanelHost) {
+    for (const g of [...GROUP_ORDER, 'none'] as const) {
+      const n = el('b');
+      const node = el(g === 'none' ? 'span.vp-group' : 'button.vp-group', { type: g === 'none' ? null : 'button', 'data-group': g, onclick: g === 'none' ? null : () => this.nextOf(g) }, [
+        el('i.vp-swatch', { style: `background:${POWER_GROUP_COLOR[g][0]};border-color:${POWER_GROUP_COLOR[g][1]}` }), n,
+      ]);
+      this.groupChips.set(g, { node, n });
+      this.groups.append(node);
+    }
     for (const f of FLAGS) {
       const n = el('b');
       const node = el('button.vp-flag', { type: 'button', 'data-flag': f, onclick: () => this.next(f) }, [viewIconCanvas(f as ViewIcon, 20), n]);
       this.flagChips.set(f, { node, n });
       this.flags.append(node);
     }
-    this.root = el('div.vp-power', {}, [this.flags, this.cardsEl, this.none]);
+    this.root = el('div.vp-power', {}, [this.groups, this.flags, this.cardsEl, this.none]);
+  }
+
+  /** Go to the next building of a group (round the list). */
+  private nextOf(g: PowerGroup): void {
+    const ids = this.marks.filter((m) => m.group === g).map((m) => m.ent);
+    if (!ids.length) return;
+    const i = (this.cursor.get(`g:${g}`) ?? 0) % ids.length;
+    this.cursor.set(`g:${g}`, i + 1);
+    this.host.focus(ids[i]!);
   }
 
   /** Go to the next building carrying a flag (round the list). */
@@ -94,8 +118,19 @@ export class PowerPanel {
     this.host.focus(ids[i]!);
   }
 
-  refresh(sim: Sim, grids: readonly GridReport[], marks: readonly PowerMark[]): void {
+  refresh(sim: Sim, grids: readonly GridReport[], marks: readonly PowerMark[], idle: number): void {
     this.marks = marks;
+    // The groups: a chip each in the world's wash with its count (the not linked hidden at zero); a click goes to the next.
+    for (const g of [...POWER_GROUPS, 'none'] as const) {
+      const c = this.groupChips.get(g);
+      if (!c) continue;
+      const n = g === 'none' ? idle : marks.reduce((k, m) => k + (m.group === g ? 1 : 0), 0);
+      setText(c.n, String(n));
+      setAttr(c.node, 'hidden', g === 'unlinked' && !n ? '' : null);
+      setAttr(c.node, 'data-tone', g === 'unlinked' && n ? 'bad' : null);
+      const label = t(`mapview.group.${g}` as MsgKey);
+      setAttr(c.node, 'title', g === 'none' ? label : t('mapview.next', { label }));
+    }
     // The flags: a chip per kind with its count, hidden at zero.
     for (const f of FLAGS) {
       const c = this.flagChips.get(f)!;

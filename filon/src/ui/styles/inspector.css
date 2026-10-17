@@ -3,8 +3,10 @@
    grid card, the foot. Imported by inspector.ts itself, so it comes after hud.css in the bundle.
    The land panel (land-panel.ts) borrows `.insp-head`, `.insp-x` and `.insp-note`. */
 
+/* Its place and size — under the HUD's right cluster and above the build bar on a wide window, a
+   bottom sheet on a narrow one — are responsive.css's (D96). */
 .inspector {
-  position: fixed; right: 12px; top: 76px; width: 318px; max-height: calc(100vh - 220px);
+  position: fixed; right: 12px; top: 76px; width: 318px;
   overflow: auto; padding: 10px 12px 12px; font-size: 13px; line-height: 1.35;
 }
 .inspector[hidden] { display: none; }
@@ -26,6 +28,7 @@
   border-left: 3px solid var(--c-warn); border-radius: 0 7px 7px 0; background: var(--c-peach-l);
 }
 .insp-why[hidden] { display: none; }
+.insp-why[data-state='slow'] { border-left-color: color-mix(in srgb, var(--c-warn) 70%, var(--c-ink)); }
 .insp-why[data-state='off'] { border-left-color: var(--c-coral-d); background: color-mix(in srgb, var(--c-coral) 16%, var(--c-paper)); }
 .insp-why[data-state='build'], .insp-why[data-state='sleep'] { border-left-color: var(--c-lilac-d); background: color-mix(in srgb, var(--c-lilac-l) 40%, var(--c-paper)); }
 /* What it does: the hero, on a warm wash so it reads first. */
@@ -154,18 +157,14 @@
 .pw-why[hidden] { display: none; }
 .pw-why-viz:empty { display: none; }
 .pw-why-viz { margin-top: 5px; }
-/* The wind's ladder: a bar per place by its factor, the turbine's own inked. */
-.pw-ladder { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; height: 66px; }
-.pw-step { display: grid; grid-template-rows: auto 1fr auto; justify-items: center; min-width: 0; }
-.pw-step-f, .pw-step-l { font-size: 9.5px; line-height: 1.2; white-space: nowrap; overflow: hidden; max-width: 100%; color: var(--c-ink-soft); font-variant-numeric: tabular-nums; }
-.pw-step-bar { align-self: end; width: 70%; border: 1px solid var(--c-ink-soft); border-bottom: none; border-radius: 3px 3px 0 0; background: var(--c-paper-d); }
-.pw-step[data-on] .pw-step-bar { background: var(--c-turq); border-color: var(--c-ink); }
-.pw-step[data-on] .pw-step-f, .pw-step[data-on] .pw-step-l { color: var(--c-ink); font-weight: 700; }
 /* The sun's curve over a day, midnight to midnight; now inked. */
 .pw-sun-bars { display: flex; align-items: flex-end; gap: 1px; height: 26px; border-bottom: 1px solid var(--c-ink-soft); }
 .pw-sun-bars i { flex: 1; background: var(--c-peach); border-radius: 1px 1px 0 0; }
 .pw-sun-bars i[data-on] { min-height: 3px; background: var(--c-coral-d); box-shadow: 0 0 0 1px var(--c-ink); } /* at night, a stub on the line */
 .pw-sun-axis { display: flex; justify-content: space-between; font-size: 9.5px; color: var(--c-ink-soft); }
+/* A turbine's next 24 hours (D95): its share of its rating an epoch a bar, now inked. */
+.pw-wind .pw-sun-bars i { background: var(--c-turq-l); }
+.pw-wind .pw-sun-bars i[data-on] { background: var(--c-turq-d); }
 
 /* ── the facet of a specialised view (D88): its part first; the root says which ── */
 .inspector[data-facet] .ksec:not([data-dim]) { box-shadow: 2px 2px 0 var(--c-ink); }

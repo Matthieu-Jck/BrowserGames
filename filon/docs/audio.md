@@ -32,7 +32,7 @@ main.ts loop: app.frame(dt) → sound.frame(dt)               (app/sound.ts)
                       scheduled at exact audio times; the ambience glides (≤ 15 writes / s)
 ```
 
-The world snapshot (`SoundWorld`) is plain numbers the shell reads each frame: the hour and night factor of the day/night look (`app.dayNight.grade`, so `FL.dayPhase` moves the music too), the weather's gust level (`gustPermille`, the same ‰ the wind turbines see), the camera zoom, the items drawn on ribbons in view, whether a full screen or the menu covers the base, and — four times a second, from a scan of the flow graph — the machines running in the whole base (`activity`) and those in view (weighted towards the centre, with a stereo pan).
+The world snapshot (`SoundWorld`) is plain numbers the shell reads each frame: the hour and night factor of the day/night look (`app.dayNight.grade`, so `FL.dayPhase` moves the music too), the weather's gust level (`gustPermille`, the gust part of the wind the turbines see, D95), the camera zoom, the items drawn on ribbons in view, whether a full screen or the menu covers the base, and — four times a second, from a scan of the flow graph — the machines running in the whole base (`activity`) and those in view (weighted towards the centre, with a stereo pan).
 
 ### The mixer
 

@@ -474,6 +474,18 @@ export function copperHome(b: Builder): boolean {
   b.lines['copperHome'] = path;
   b.wire('boreCu2');
   flyRoute(b, 'dockW', 'dockT', 'copper_ore', 1);
+  // The cirque's copper drills upstream of the join — the tired vein's and those the cirque's mining
+  // joined to its line (`copper.*`, D82) — stand backed up once the mill's 20 a minute come home
+  // (D85; D104's layout showed it on land 3): taken up, the joiners' own short lines with them; the
+  // vein's line stays, carrying the flown copper.
+  const belts = new Set([buildingIdx('ribbon'), buildingIdx('swift_ribbon')]);
+  for (const role of Object.keys(b.ids).filter((r) => r === 'copper' || r.startsWith('copper.')).sort()) {
+    const e = sim.ents.get(b.ids[role]!);
+    if (role !== 'copper') for (const [x, y, r] of b.lines[role] ?? []) { const o = sim.entityAt(x, y); if (o && belts.has(o.def) && o.rot === r) sim.remove(x, y); }
+    if (e) sim.remove(e.x, e.y);
+    delete b.ids[role];
+    if (role !== 'copper') delete b.lines[role];
+  }
   return true;
 }
 

@@ -17,6 +17,11 @@
 // incinerator over its pit's lip: the item rides on at the line's pace up the chute and falls in
 // (pits.ts `pitPath`: `d`, how far it has fallen, so the items view draws it sinking behind the
 // near rim). Conduits carry water inside their pipes: nothing is drawn.
+//
+// Only the ribbons near the view are read (D92): each line's box (its tiles and its paths' ends,
+// worked out with the graph) is tested against the view first, with room for every point a line
+// draws or decides — an item gliding in from the tile before, one taken through a routing block
+// by the next line — so a base of thousands of lines walks the few on screen.
 import { MU, WORLD } from '@/sim/constants';
 import { VIA_BEHIND, type Chain } from '@/sim/flow/chain';
 import { ForkNode } from '@/sim/flow/nodes';
@@ -33,6 +38,14 @@ export interface FlowItem { item: number; x: number; y: number; z: number; o: nu
 const centreOf = (p: Piece): number => (p.bend ? 0.5 : 0.5 / Math.max(1, lengthOf(p)));
 const len = (p: Piece): number => Math.max(1e-6, lengthOf(p));
 
+/**
+ * How far (tiles) past its box a line may draw or decide what another draws: an item comes from at
+ * most the tile before (a feeding line's last tile, a block's centre, a port's edge: 1.5 tiles), and
+ * the line out of a routing block draws what the line into it took through it (the block between:
+ * 3 tiles); the view's own margin (2) on top. Lines whose box is farther from the view are skipped.
+ */
+const BOX_MARGIN = 8;
+
 const PT: Pt = { x: 0, y: 0, z: 0, o: 0 };
 const OUT: FlowItem = { item: 0, x: 0, y: 0, z: 0, o: 0, d: 0 };
 const FALL = { z: 0, d: 0 };
@@ -42,6 +55,8 @@ export class CellFlow {
   /** Routing blocks' centres, and the ribbons feeding each, by node index (rebuilt with the pieces). */
   private centres = new Map<number, [number, number]>();
   private feeders = new Map<number, Chain[]>();
+  /** Each line's box (tiles: x0, y0, x1, y1), by its index in the graph's chains (rebuilt with the graph). */
+  private boxes: Float64Array = new Float64Array(0);
   private graphVer = -1;
 
   /** New ribbon paths (after structural changes). */
@@ -57,6 +72,9 @@ export class CellFlow {
     if (g.version !== this.graphVer) this.relink(sim);
     const [vx0, vy0, vx1, vy1] = view;
     const inView = (x: number, y: number): boolean => x >= vx0 - 2 && x <= vx1 + 2 && y >= vy0 - 2 && y <= vy1 + 2;
+    // The lines near the view: their box within BOX_MARGIN of it (D92).
+    const B = this.boxes, M = BOX_MARGIN;
+    const near = (ci: number): boolean => !(B[ci * 4 + 2]! < vx0 - M || B[ci * 4]! > vx1 + M || B[ci * 4 + 3]! < vy0 - M || B[ci * 4 + 1]! > vy1 + M);
     const out = (item: number, p: Pt, d = 0): void => {
       if (!inView(p.x, p.y)) return;
       OUT.item = item; OUT.x = p.x; OUT.y = p.y; OUT.z = p.z; OUT.o = p.o; OUT.d = d;
@@ -66,8 +84,9 @@ export class CellFlow {
     // the arrivals already handed on (drawn on their way through instead), by feeding chain.
     const arriving = new Map<number, number>();
     const through = new Set<Chain>();
-    for (const c of g.chains) {
-      if (c.fluid) continue;
+    for (let ci = 0; ci < g.chains.length; ci++) {
+      const c = g.chains[ci]!;
+      if (c.fluid || !near(ci)) continue;
       const L = c.length;
       for (let i = 0; i < L; i++) {
         const v = c.cells[i]!;
@@ -110,9 +129,10 @@ export class CellFlow {
         out(v - 1, PT);
       }
     }
-    for (const c of g.chains) {
+    for (let ci = 0; ci < g.chains.length; ci++) {
+      const c = g.chains[ci]!;
       // Its last item out, into something that is not a ribbon: to the building's edge, or a block's centre.
-      if (c.fluid || through.has(c)) continue;
+      if (c.fluid || through.has(c) || !near(ci)) continue;
       const lo = c.lastOut, S = c.stepTicks;
       if (lo.item < 0 || lo.edge < 0) continue;
       const f = (t - (lo.tick + 1)) / S;
@@ -240,12 +260,26 @@ export class CellFlow {
     return null;
   }
 
-  /** Routing blocks' centres, by node index. */
+  /** Routing blocks' centres, by node index; each line's box. */
   private relink(sim: Sim): void {
     const g = sim.graph;
     this.graphVer = g.version;
     this.centres.clear();
     this.feeders.clear();
+    const B = (this.boxes = new Float64Array(g.chains.length * 4));
+    for (let ci = 0; ci < g.chains.length; ci++) {
+      const c = g.chains[ci]!;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      const add = (x: number, y: number): void => { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; };
+      for (let i = 0; i < c.length; i++) {
+        const t = c.tiles[i]!, x = t % WORLD, y = (t - x) / WORLD;
+        add(x, y);
+        add(x + 1, y + 1);
+        const p = this.pieces.get(t);
+        if (p) { add(p.ax, p.ay); add(p.bx, p.by); } // a leap's far end
+      }
+      B[ci * 4] = x0; B[ci * 4 + 1] = y0; B[ci * 4 + 2] = x1; B[ci * 4 + 3] = y1;
+    }
     for (const c of g.chains) {
       const e = c.outE[0];
       const d = e === undefined ? undefined : g.nodes[g.eDst[e]!];

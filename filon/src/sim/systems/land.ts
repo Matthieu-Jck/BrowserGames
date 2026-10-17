@@ -4,6 +4,7 @@
 // it") — buying it, leasing it by the hour, and the hour's rent taken at the minute boundary it falls
 // on (`landEpoch`: online and in the catch-up, the same call). A lease the purse cannot pay lapses:
 // the parcel goes back to its owner and what stands on it goes dormant (`isDormant`), nothing lost.
+import { book } from '../purse';
 import { BAL } from '@/content/balance';
 import { ITEMS } from '@/content/items';
 import { ITEM_IDS } from '@/content/registry';
@@ -11,6 +12,7 @@ import { CENTER, EPOCH } from '../constants';
 import { isFaceOre } from '../face';
 import type { Sim } from '../state';
 import { T } from '../types';
+import { parcelFloor } from '../world/floor';
 import { PARCEL_COLS, parcelCentre, parcelRect } from '../world/land';
 
 /** A lease's hour, in ticks. */
@@ -33,10 +35,12 @@ const valid = (p: number): boolean => Number.isInteger(p) && p >= 0 && p < PARCE
 /**
  * What a parcel holds, priced (centi-ocelles): its ground tile by tile and its deposits by ore and
  * richness. A face ore (D87: the quartz in a wall) is priced as the rock it is set in: no drill
- * takes it, and the vein's parcel is the tutorial's first purchase, within its purse.
+ * takes it, and the vein's parcel is the tutorial's first purchase, within its purse. Floor pays in
+ * full only where it is usable (D94, world/floor.ts), so land cut up by cliffs, chasms and rivers
+ * costs less: its price follows the room it gives.
  */
 export function landContent(sim: Sim, p: number): number {
-  const L = BAL.land, { x0, y0, x1, y1 } = parcelRect(p);
+  const L = BAL.land, { x0, y0, x1, y1 } = parcelRect(p), usable = parcelFloor(sim.grid, p).mask, w = x1 - x0;
   let cents = L.base;
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
@@ -46,7 +50,9 @@ export function landContent(sim: Sim, p: number): number {
           : t === T.Salt ? L.tile.salt!
             : t === T.Vent ? L.tile.vent!
               : t === T.DuneSea ? L.tile.dunes!
-                : L.tile.floor!;
+                : t === T.River ? L.tile.river!
+                  : t === T.Chasm ? L.tile.chasm!
+                    : usable[(y - y0) * w + x - x0] ? L.tile.floor! : L.tile.sliver!;
       const ore = sim.grid.ore(x, y);
       if (ore >= 0 && !isFaceOre(ore)) cents += Math.floor((L.depositPerValue * VALUE[ore]! * (sim.grid.capMuPerEpoch(x, y) / 10)) / (100 * 500));
     }
@@ -108,6 +114,7 @@ export function buyLand(sim: Sim, p: number): LandRefusal | null {
   if (r) return r;
   const cents = landPrice(sim, p);
   sim.credits -= cents;
+  book(sim, 'land', -cents);
   sim.land.leases.delete(p);
   sim.land.bought.add(p);
   sim.land.paid.set(p, cents);
@@ -123,6 +130,7 @@ export function rentLand(sim: Sim, p: number): LandRefusal | null {
   if (r) return r;
   const cents = landRent(sim, p);
   sim.credits -= cents;
+  book(sim, 'rent', -cents); // the first hour's rent
   sim.land.leases.set(p, { next: sim.tick + LEASE_TICKS, cents });
   held(sim, p);
   sim.log.push({ tick: sim.tick, cmd: { k: 'rentLand', p } });
@@ -151,6 +159,7 @@ export function sellLand(sim: Sim, p: number): LandRefusal | null {
   sim.land.bought.delete(p);
   sim.land.paid.delete(p);
   sim.credits += cents;
+  book(sim, 'land', cents);
   sim.dirty = true;
   sim.log.push({ tick: sim.tick, cmd: { k: 'sellLand', p } });
   sim.events.push({ k: 'land', p, what: 'sold', cents });
@@ -193,6 +202,7 @@ export function landEpoch(sim: Sim): boolean {
     if (l.next > sim.tick) continue;
     if (sim.credits >= l.cents) {
       sim.credits -= l.cents;
+      book(sim, 'rent', -l.cents);
       l.next += LEASE_TICKS;
       sim.events.push({ k: 'land', p, what: 'rent', cents: l.cents });
     } else {

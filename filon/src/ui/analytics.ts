@@ -3,7 +3,8 @@
 //   · `analyticsOn(sim, feature)`: is a readout unlocked? Each analytics plan turns on its own
 //     flag (`ANALYTICS` in content/research.ts): the HUD's rates (telemetry), the Statistics
 //     screen and its HUD chip (statistics), the power history in it (power_log), the machines'
-//     states in it (diagnostics). Nothing else reads those flags.
+//     states in it (diagnostics), the Vent view and the wind's readings (anemometry, D95). Nothing
+//     else reads those flags.
 //   · `ANALYTICS_REVEALS`: what the spotlight (focus.ts) lifts out when an analytics plan is
 //     unlocked — a `[data-…]` hook of the HUD — and CrierBelt's line for it.
 //   · `UnlockWatch`: which plans are newly done since the last look; the first look at a colony
@@ -23,12 +24,13 @@ export const analyticsOn = (sim: Pick<Sim, 'mods'>, f: AnalyticsFeature): boolea
 /** A reveal: the element lifted out of the dimmed base (a selector, resolved when it plays) and CrierBelt's line. */
 export interface AnalyticsReveal { readonly target: string; readonly caption: MsgKey }
 
-/** One per analytics plan (checked by analytics.test.ts): the rates on the stocks, the rest on the Statistics chip. */
+/** One per analytics plan (checked by analytics.test.ts): the rates on the Stock button, the rest on the Statistics chip. */
 export const ANALYTICS_REVEALS: Readonly<Record<string, AnalyticsReveal>> = {
-  telemetry: { target: '[data-hud-stocks]', caption: 'focus.telemetry' },
+  telemetry: { target: '[data-hud-stock]', caption: 'focus.telemetry' }, // the Stock button: the rates live in its panel (D96)
   statistics: { target: '[data-hud-stats]', caption: 'focus.statistics' },
   power_log: { target: '[data-hud-stats]', caption: 'focus.power_log' },
   diagnostics: { target: '[data-hud-stats]', caption: 'focus.diagnostics' },
+  anemometry: { target: '[data-hud-wind]', caption: 'focus.anemometry' }, // the Vent view's button (D95)
 };
 
 /** Which of `ids` became done since the last look. The first look at a colony (or a new one) only takes the baseline. */

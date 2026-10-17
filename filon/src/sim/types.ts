@@ -13,10 +13,20 @@ export const sideIndex = { N: 0, E: 1, S: 2, W: 3 } as const;
 export const T = {
   Sand: 0, Hardpan: 1, Rock1: 2, Rock2: 3, Rock3: 4, Rock4: 5,
   Shallow: 6, Deep: 7, Salt: 8, Vent: 9, DuneSea: 10, Dug: 11, Filled: 12,
+  /**
+   * Map 4's obstacles (D94), at level 0: a chasm (« précipice », a ravine nothing stands in nor
+   * fills) and a river (flowing water: nothing stands in it nor fills it, a pump beside it draws
+   * from it). A skybridge pair leaps both; a wire passes over both (the land's level is the floor's).
+   */
+  Chasm: 13, River: 14,
 } as const;
 
 export const isRock = (t: number): boolean => t >= T.Rock1 && t <= T.Rock4;
-export const isWater = (t: number): boolean => t === T.Shallow || t === T.Deep;
+/** Water a pump draws: still (lakes, the tarn) or flowing (a river, D94). Only still water is filled (`isStillWater`). */
+export const isWater = (t: number): boolean => t === T.Shallow || t === T.Deep || t === T.River;
+export const isStillWater = (t: number): boolean => t === T.Shallow || t === T.Deep;
+/** The land's gaps (D94): a chasm or a river — nothing builds there, nothing fills them, a skybridge pair leaps them. */
+export const isGap = (t: number): boolean => t === T.Chasm || t === T.River;
 /** Ground a regular building can stand on. */
 export const isFloor = (t: number): boolean =>
   t === T.Sand || t === T.Hardpan || t === T.Dug || t === T.Filled || t === T.Salt || t === T.Vent;

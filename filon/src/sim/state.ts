@@ -1,6 +1,6 @@
 // state.ts — the colony: its whole state, its public API, and the online tick. The Sim is a
 // facade: the state lives here, the rules live in the systems (src/sim/systems/*: build,
-// configure, research, landscape, land, freight, power, trade, quests), each a set of functions over the Sim.
+// configure, research, landscape, land, freight, power, trade, quests, expertise), each a set of functions over the Sim.
 // Command methods validate, apply and log themselves (commands.ts); the shell drains `events`.
 // What the base may build is the unlock tree's (D33): `done` holds the plans unlocked and the
 // research learnt, and `unlocked(id)` answers for both.
@@ -10,16 +10,20 @@
 //   1. remote constructions whose kite arrived become buildings
 //   2. recompile the flow graph if anything structural changed (`dirty`)
 //   3. power: per grid, demands vs weather → satisfaction ‰, dispatch, accumulators
-//   4. flow phases A (offers/accepts) → B (transfers) → C (machines, drills, internal updates)
+//   4. flow phases A (offers/accepts) → B (transfers) → C (machines, drills, internal updates);
+//      at night the Gleaners take from the exposed ribbons (systems/gleaners.ts, D103)
 //   5. research projects pay their data and advance; servers make tokens; the Heart and the
 //      autonomous labs make data files (systems/research.ts)
 //   6. landscape: dig / fill jobs advance and finish
 //   7. freight: drifter routes move goods between skydocks
 //   8. tick++; at every epoch boundary (each game minute) the trade posts trade and the Crier
 //      settles (systems/trade.ts), the leases due take their hour's rent or lapse
-//      (systems/land.ts), then research's tokens are billed (systems/research.ts `tokenEpoch`) —
-//      the catch-up calls the same functions — then an 'epoch' event
+//      (systems/land.ts), then research's tokens are billed (systems/research.ts `tokenEpoch`),
+//      then the expertises' feats and slots (systems/expertise.ts `expertiseEpoch`, D93), then the
+//      Gleaners' nightfall and dawn (systems/gleaners.ts `gleanEpoch`, D103) — the catch-up calls
+//      the same functions — then an 'epoch' event
 //   9. quests: rate windows at epoch boundaries, a completion check every second (systems/quests.ts)
+import { book, newPurseLog, type PurseLog } from './purse';
 import { isEmblem, type Emblem } from '@/content/emblem';
 import { BAL } from '@/content/balance';
 import { LocalMarketService } from '@/market/service';
@@ -36,7 +40,7 @@ import type { MachineNode, ReservoirNode } from './flow/nodes';
 import { makeCtx, runPhases } from './flow/step';
 import { compileGraph, type Graph } from './graph/compile';
 import { computeMods, type Mods } from './research/modifiers';
-import type { BranchId, Project, StartBlock } from './research/runtime';
+import type { Project, StartBlock } from './research/runtime';
 import type { Job, JobKind, Route } from './space';
 import * as build from './systems/build';
 import * as beltPlan from './systems/belt-plan';
@@ -49,6 +53,8 @@ import * as reserve from './systems/reserve';
 import * as trade from './systems/trade';
 import * as quests from './systems/quests';
 import * as value from './systems/value';
+import * as expertise from './systems/expertise';
+import * as gleaners from './systems/gleaners';
 import { newTradeState, type SpotSide, type TradeRefusal, type TradeState } from './trade';
 import type { Ent, Rot } from './types';
 import { Grid, inWorld, tileIndex, type TerrainSource } from './world/grid';
@@ -60,7 +66,7 @@ import { hash32 } from '@/core/hash';
 export type { Command, SimEvent } from './commands';
 export type { Cost, PlaceCheck, PlaceReason } from './systems/build';
 export type { BeltPath, BeltStep } from './systems/belt-plan';
-export type { PlanBlock, RespecBlock } from './systems/research';
+export type { PlanBlock } from './systems/research';
 export type { LinkCheck } from './systems/power';
 export type { LinkReason } from './power/links';
 export { recipeOf } from './cfg';
@@ -167,6 +173,15 @@ export class Sim {
   quests: quests.QuestState = quests.newQuestState();
   /** The claim's value over time (systems/value.ts, D50). */
   value: value.ValueState = value.newValueState();
+  /** The expertises (D93): ranks earned, the slots, réorientations, the Core's grid held. Saved, hashed. */
+  expertise: expertise.ExpertiseState = expertise.newExpertiseState();
+  /**
+   * The Gleaners (D103, systems/gleaners.ts): what they took off the ribbons, per item (milli-items,
+   * cumulative: statistics, saved, not hashed — what they take is the flow's, which is hashed), and
+   * their nights' tally and marks.
+   */
+  readonly gleaned = new Float64Array(N_ITEMS);
+  gleaners: gleaners.GleanState = gleaners.newGleanState();
 
   // ── the compiled flow graph (derived, rebuilt when `dirty`) ──────────────
   graph!: Graph;
@@ -198,6 +213,12 @@ export class Sim {
    * minute afresh after a catch-up).
    */
   readonly hearthIn = new Float64Array(N_ITEMS);
+  /**
+   * The purse's journal (D102, sim/purse.ts): every change of `credits` since this colony was
+   * opened, summed by what made it (sales, orders, tokens, rent… and the one-offs). Neither saved
+   * nor hashed, like `hearthIn`: the HUD's real ◉/h is read from it.
+   */
+  readonly purseLog: PurseLog = newPurseLog();
 
   constructor(opts: SimOptions, fresh = true) {
     this.worldSeed = opts.worldSeed;
@@ -225,18 +246,22 @@ export class Sim {
     return BAL.hearthCap[Math.min(BAL.hearthCap.length, this.hearthLevel) - 1]! * 1000;
   }
 
-  /** The Survey Data the Heart makes a minute (mu): the Analytics research's, once its level has mounted the data outlet (D86), else none. */
+  /**
+   * The Survey Data the Heart makes a minute (mu), once its level has mounted the data outlet (D86),
+   * else none: its own (`BAL.hearthDataBase`, D101: the first lab runs on it) and the Analytics
+   * research's (and Archiving's share, D93).
+   */
   heartDataRate(): number {
-    return this.hearthLevel >= BAL.hearthDataLevel ? this.mods.heartData : 0;
+    return this.hearthLevel >= BAL.hearthDataLevel ? Math.floor(((BAL.hearthDataBase + this.mods.heartData) * this.mods.dataRate) / 1000) : 0;
   }
 
   absEpoch(tick = this.tick): number {
     return this.foundingEpoch + Math.floor(tick / EPOCH);
   }
 
-  /** After research changes: modifiers and a recompile. */
+  /** After research or the expertises in place change: modifiers and a recompile. */
   rebuildDerived(): void {
-    this.mods = computeMods(this.done);
+    this.mods = computeMods(this.done, expertise.heldExpertises(this));
     this.dirty = true;
   }
 
@@ -248,8 +273,8 @@ export class Sim {
     this.links.prune((id) => this.ents.map.has(id));
     const old = this.graph ?? null;
     this.graph = compileGraph({
-      ents: this.ents, grid: this.grid, mods: this.mods, now: this.tick,
-      hearthStock: this.stock, hearthCap: this.hearthCap(), heartData: this.heartDataRate(), stores: this.stores, old,
+      ents: this.ents, grid: this.grid, mods: this.mods, now: this.tick, worldSeed: this.worldSeed,
+      hearthStock: this.stock, hearthCap: this.hearthCap(), heartData: this.heartDataRate(), hearthLevel: this.hearthLevel, stores: this.stores, old,
       refund: (item, mu) => this.refund(item, mu),
       labAccepts: research.labAccepts(this),
       tradeAccepts: trade.exportAccepts(this),
@@ -260,8 +285,9 @@ export class Sim {
       links: this.links,
     });
     const ctx = makeCtx(this.graph, this.graph.nets.length, N_ITEMS);
-    if (this.ctx) { ctx.produced = this.ctx.produced; ctx.consumed = this.ctx.consumed; ctx.hearthIn = this.ctx.hearthIn; }
+    if (this.ctx) { ctx.produced = this.ctx.produced; ctx.consumed = this.ctx.consumed; ctx.hearthIn = this.ctx.hearthIn; ctx.gleanLog = this.ctx.gleanLog; }
     else { ctx.produced = this.produced; ctx.consumed = this.consumed; ctx.hearthIn = this.hearthIn; }
+    ctx.gleaned = this.gleaned;
     this.ctx = ctx;
     this.nodesByNet = this.graph.nets.map(() => []);
     for (const n of this.graph.nodes) if (n.net >= 0) this.nodesByNet[n.net]!.push(n);
@@ -318,11 +344,11 @@ export class Sim {
   // ── commands: structures (systems/build.ts) ──────────────────────────────
   /** Would it fit here, at what cost, after what delay, replacing what (`replaces`)? */
   canPlace(defId: string, x: number, y: number, rot: Rot): build.PlaceCheck { return build.canPlace(this, defId, x, y, rot); }
-  /** The rotation `place` would really use (a routing block dropped on a ribbon follows it). */
-  placementRot(defId: string, x: number, y: number, rot: Rot): Rot { return build.placementRot(this, defId, x, y, rot); }
-  /** Place a building over free tiles or over what it may replace (`cfg` omitted: a re-placed building keeps its settings). */
-  place(defId: string, x: number, y: number, rot: Rot, cfg?: number): build.PlaceCheck & { id?: number } {
-    const r = build.place(this, defId, x, y, rot, cfg);
+  /** The rotation `place` would really use (a routing block dropped on a ribbon takes the way its items enter, unless `turned` by the player: D98). */
+  placementRot(defId: string, x: number, y: number, rot: Rot, turned = false): Rot { return build.placementRot(this, defId, x, y, rot, turned); }
+  /** Place a building over free tiles or over what it may replace (`cfg` omitted: a re-placed building keeps its settings; `turned`: the player's R wins over a ribbon's way, D98). */
+  place(defId: string, x: number, y: number, rot: Rot, cfg?: number, turned = false): build.PlaceCheck & { id?: number } {
+    const r = build.place(this, defId, x, y, rot, cfg, turned);
     // Wires: carried over from what it replaced; a new pillar wires itself to the nearest one (D25).
     if (r.ok && r.id) power.placed(this, r.id, r.replaces);
     return r;
@@ -365,6 +391,7 @@ export class Sim {
   /** Sandbox / rewards: ocelles (centi-◉, logged). */
   grantCredits(cents: number): void {
     this.credits += cents;
+    book(this, 'grant', cents);
     this.log.push({ tick: this.tick, cmd: { k: 'credits', cents } });
   }
 
@@ -421,8 +448,6 @@ export class Sim {
   tokenPriceK(): number { return research.tokenPriceK(this); }
   /** The minute boundary's token bill (online: from step; offline: the catch-up). Whether research's hold changed. */
   tokenEpoch(): boolean { return research.tokenEpoch(this); }
-  respecBlock(branch: BranchId): research.RespecBlock | null { return research.respecBlock(this, branch); }
-  respec(branch: BranchId): boolean { return research.respec(this, branch); }
   projectStock(p: Project): Float64Array | null { return research.projectStock(this, p); }
   projectSat(p: Project, satOf: (net: number) => number): number { return research.projectSat(this, p, satOf); }
   finishProjects(): string[] { return research.finishProjects(this); }
@@ -459,6 +484,10 @@ export class Sim {
   /** Floor Prices: the bid (centi-◉ an item) under which the posts hold an item back (null: none). */
   setFloorPrice(item: string, cents: number | null): boolean { return trade.setFloorPrice(this, item, cents); }
   cancelImport(id: number): boolean { return trade.cancelImport(this, id); }
+  /** The starter contract (D101): CrierBelt's one-time copper ore at a fixed price, off the market, on `post`. The order's id or a refusal (`no_post`, `taken`, `slots`). */
+  takeStarter(post: number): number | TradeRefusal { return trade.takeStarter(this, post); }
+  /** The fulfilled starter contract continued at the market's price (D101): an ordinary order now. */
+  continueStarter(id: number): boolean { return trade.continueStarter(this, id); }
   spotTrade(item: string, side: SpotSide, n: number): { cents: number } | { refused: TradeRefusal } { return trade.spotTrade(this, item, side, n); }
   quoteSpot(item: number, side: SpotSide, n: number): ReturnType<typeof trade.quoteSpot> { return trade.quoteSpot(this, item, side, n); }
   tradePosts(): Ent[] { return trade.tradePosts(this); }
@@ -475,6 +504,30 @@ export class Sim {
   }
   /** The claim's value now, in centi-ocelles (systems/value.ts). */
   claimValue(): ReturnType<typeof value.claimValue> { return value.claimValue(this); }
+
+  // ── commands: the expertises (systems/expertise.ts, D93) ──────────────────
+  /** Why choosing `id` into the empty `slot` would be refused (null: it would go through). */
+  chooseBlock(slot: number, id: string): expertise.ExpertiseBlock | null { return expertise.chooseBlock(this, slot, id); }
+  /** Choose an earned expertise into an empty slot: in place at once. null when done, else why not. */
+  chooseExpertise(slot: number, id: string): expertise.ExpertiseBlock | null { return expertise.choose(this, slot, id); }
+  /** Why reorienting `slot` to `id` would be refused (null: it would go through). */
+  reorientBlock(slot: number, id: string): expertise.ExpertiseBlock | null { return expertise.reorientBlock(this, slot, id); }
+  /** A réorientation: paid, the slot's expertise gone at once, `id` in place 24 h later. null when done, else why not. */
+  reorient(slot: number, id: string): expertise.ExpertiseBlock | null { return expertise.reorient(this, slot, id); }
+  /** The next réorientation's price (centi-◉). */
+  reorientCost(): number { return expertise.reorientCost(this); }
+  /** A feat's value now (content/expertises.ts `FeatKind`). */
+  featValue(kind: Parameters<typeof expertise.featValue>[1]): number { return expertise.featValue(this, kind); }
+  /** The minute boundary's feats, ranks and slots (online: from step; offline: the catch-up, with its grids' modes). Whether the Mods changed. */
+  expertiseEpoch(satOf: (net: number) => number): boolean { return expertise.expertiseEpoch(this, satOf); }
+
+  // ── the Gleaners (systems/gleaners.ts, D103): statistics and the nights' reports ──
+  /** Are the Gleaners out now (the dark hours)? */
+  gleanNight(tick = this.tick): boolean { return gleaners.gleanNight(this.absEpoch(tick)); }
+  /** The minute boundary's nightfall and dawn (online: from step; offline: the catch-up). */
+  gleanEpoch(): void { gleaners.gleanEpoch(this); }
+  /** What they took in the night (item, milli-items): the night so far, or by day the last one. */
+  gleanedTonight(): Array<[number, number]> { return gleaners.takenSince(this); }
 
   // ── commands: quests (systems/quests.ts) ─────────────────────────────────
   /** Name (or rename) the claim: quest 0. */
@@ -499,7 +552,9 @@ export class Sim {
     this.ensureCompiled();
     this.ctx.now = this.tick;
     power.powerTick(this);
+    gleaners.gleanBefore(this);
     runPhases(this.graph, this.graph.nodes, this.ctx, this.graph.accOrder);
+    gleaners.gleanAfter(this);
     research.researchTick(this);
     landscape.landscapeTick(this);
     freight.freightTick(this);
@@ -508,6 +563,8 @@ export class Sim {
       this.tradeEpoch();
       this.landEpoch();
       this.tokenEpoch();
+      this.expertiseEpoch((n) => this.ctx.sat[n] ?? 0);
+      this.gleanEpoch();
       this.events.push({ k: 'epoch', epoch: this.absEpoch() });
     }
     quests.questStep(this);
@@ -581,11 +638,12 @@ export class Sim {
     // Trade: cargo, orders, goods in flight, the ocelles' history, and the market's own state.
     const t = this.trade;
     for (const [post, items] of [...t.cargo].sort((a, b) => a[0] - b[0])) h.int(post).ints(items);
-    for (const o of t.orders) h.int(o.id).int(o.post).int(o.item).int(o.perMin).int(o.maxCents).int(o.active ? 1 : 0);
+    for (const o of t.orders) h.int(o.id).int(o.post).int(o.item).int(o.perMin).int(o.maxCents).int(o.active ? 1 : 0).int(o.starter ?? -1);
     for (const sh of t.inflight) h.int(sh.post).int(sh.item).int(sh.mu).int(sh.arrive);
-    h.int(t.nextOrderId).int(t.earned).int(t.spent).ints(t.sold).ints(t.bought);
+    h.int(t.nextOrderId).int(t.earned).int(t.spent).ints(t.sold).ints(t.bought).int(t.starterTaken ? 1 : 0);
     h.str(JSON.stringify(this.market.save()));
     quests.hashQuests(this.quests, h);
+    expertise.hashExpertise(this.expertise, h);
     for (const n of this.graph.nodes) { h.int(n.ent); n.hash(h, this.tick); }
     return h.digest();
   }

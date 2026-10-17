@@ -14,7 +14,8 @@ import type { BuildCategory, BuildingDef } from '@/content/types';
 import { BUILDING_IDS, buildingDef, buildingIdx, costOf, isBeltDef } from '@/content/registry';
 import { el, setAttr, setText } from '@/core/dom';
 import type { NotifyKind } from '@/core/kinds';
-import { locale, t, type MsgKey } from '@/i18n/i18n';
+import { locale, t, tr, type MsgKey } from '@/i18n/i18n';
+import { pipetteCap } from './keycap';
 import { beltKey, btKey, frameCanvas, iKey, type Atlas } from '@/render/art/atlas';
 import { BELT_TIERS } from '@/render/art/recipes/belts';
 import { TOP_MARGIN, TOP_PX } from '@/render/art/recipes/buildings-top';
@@ -75,6 +76,8 @@ export interface BuildBarHost {
   /** The Link tool (power wires, D25): take / put away, and whether it is in hand (the Énergie tray's « Relier »). */
   link?(): void;
   linking?(): boolean;
+  /** Turn the building in hand (R; D96: the « Tourner » button, shown on touch screens, where there is no R). */
+  rotate?(): void;
 }
 
 /** The Link tool's icon: two pillar heads and the wire sagging between them, inked. */
@@ -150,6 +153,8 @@ export class BuildBar {
   private traySig = '';
   private readonly demolishBtn: HTMLButtonElement;
   private readonly markBtn: HTMLButtonElement;
+  /** « Tourner » (D96): R for a finger, while a building or a ribbon is in hand (responsive.css shows it on touch screens only). */
+  private readonly rotateBtn: HTMLButtonElement;
   private readonly backBtn: HTMLButtonElement;
   /** The Énergie tray's « Relier » tool slot (null while another tray is open). */
   private linkBtn: HTMLButtonElement | null = null;
@@ -183,7 +188,8 @@ export class BuildBar {
     this.demolishBtn = el<'button'>('button.bb-tab.bb-demolish', { onclick: () => host.demolish() }, [el('span.bb-key', {}, 'X'), this.label(el('span.bb-label.lettering'), 'build.demolish')]);
     this.markBtn = el<'button'>('button.bb-tab.bb-demolish.bb-mark', { onclick: () => host.mark() }, [el('span.bb-key', {}, 'C'), this.label(el('span.bb-label.lettering'), 'build.mark')]);
     this.backBtn = el<'button'>('button.bb-tab.bb-back', { onclick: () => host.openCategory(null) }, [el('span.bb-key', {}, 'B'), this.label(el('span.bb-label.lettering'), 'view.toIso')]);
-    tabRow.append(this.markBtn, this.demolishBtn, this.backBtn);
+    this.rotateBtn = el<'button'>('button.bb-tab.bb-rotate', { type: 'button', hidden: true, onclick: () => host.rotate?.() }, [el('span.bb-key', {}, 'R'), el('span.bb-turn', { 'aria-hidden': 'true' }, '⟳'), this.label(el('span.bb-label.lettering'), 'build.rotate')]);
+    tabRow.append(this.rotateBtn, this.markBtn, this.demolishBtn, this.backBtn);
     this.tray = el('div.bb-tray');
     this.hintEl = el('div.bb-hint');
     this.root = el('section.buildbar', { 'data-screen': 'buildbar' }, [this.tray, tabRow, this.hintEl]);
@@ -284,6 +290,7 @@ export class BuildBar {
     }
     setAttr(this.demolishBtn, 'data-on', this.host.demolishing() ? '' : null);
     setAttr(this.markBtn, 'data-on', this.host.marking() ? '' : null);
+    setAttr(this.rotateBtn, 'hidden', this.host.rotate && this.host.current() ? null : '');
     const rv = revealed(sim);
     setAttr(this.markBtn, 'hidden', rv && !rv.has('brush') ? '' : null);
     if (this.linkBtn) setAttr(this.linkBtn, 'data-on', this.host.linking?.() ? '' : null);
@@ -295,7 +302,8 @@ export class BuildBar {
       setAttr(s.node, 'data-new', this.fresh.has(s.def) ? '' : null);
       for (const c of s.chips) setAttr(c.node, 'data-poor', sim.stock[c.item]! < c.mu ? '' : null);
     }
-    setText(this.hintEl, cat ? t(this.host.hint()) : '');
+    // The pipette's key as this keyboard prints it (keycap.ts), not as the language guesses.
+    setText(this.hintEl, cat ? tr(this.host.hint(), { pip: pipetteCap() }) : '');
   }
 
   /** Does any tray hold a building unlocked but not seen yet (a dot on « Construire » while building is closed, D88)? */

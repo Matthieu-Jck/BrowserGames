@@ -15,7 +15,7 @@
 import { BUILDING_IDS, BUILDING_KIND, buildingDef } from '@/content/registry';
 import { bKey, type Atlas } from '@/render/art/atlas';
 import type { BuildingId } from '@/content/buildings';
-import { isoHead } from '@/render/art/recipes/buildings';
+import { HEART_CORNERS, heartCornerAt, isoHead, type HeartPiece } from '@/render/art/recipes/buildings';
 import type { Camera } from '@/render/camera';
 import { screenToWorld } from '@/render/camera-math';
 import { LH, tileToIso } from '@/render/iso';
@@ -79,6 +79,16 @@ export class Picker {
     return [Math.floor(x), Math.floor(y)];
   }
 
+  /**
+   * The tile under a screen point as the eye sees it (the deposit card, D99): in plan the ground's;
+   * in iso the one its ray meets first — a rock top or a cliff face (`surfaceTile`), else the ground.
+   */
+  seenTileAt(sx: number, sy: number): [number, number] {
+    const { w, h } = this.d.size();
+    const [x, y] = screenTile(this.d.view.P, this.d.camera.state, w, h, sx, sy);
+    return this.d.view.building ? [Math.floor(x), Math.floor(y)] : surfaceTile(this.d.sim().grid, x, y);
+  }
+
   /** Screen px (CSS) of a tile's centre. */
   tileToScreen(tx: number, ty: number): [number, number] {
     const { w, h } = this.d.size();
@@ -123,7 +133,37 @@ export class Picker {
     const [tx, ty] = surfaceTile(sim.grid, px, py);
     return sim.entityAt(tx, ty)?.id ?? 0;
   }
+
+  /**
+   * The Core's corner piece under a screen point (D86: the data outlet, the Archive, the grid
+   * station; null: none, or not mounted at its level): in plan its corner tile, in iso its volume —
+   * a box round the piece's centre up to its height. The Archive opens the Expertise window (D93).
+   */
+  heartPieceAt(sx: number, sy: number): HeartPiece | null {
+    const sim = this.d.sim();
+    const e = sim.ents.get(sim.hearthId);
+    if (!e) return null;
+    const pieces = HEART_CORNERS.filter((c) => c.piece && c.lv <= sim.hearthLevel);
+    if (this.d.view.building) {
+      const [x, y] = this.tileAt(sx, sy);
+      return pieces.find((c) => e.x + c.tx === x && e.y + c.ty === y)?.piece ?? null;
+    }
+    const { w: W, h: H } = this.d.size();
+    const [X, Y] = screenToWorld(this.d.camera.state, W, H, sx, sy);
+    const foot = drawnLevel(sim.grid, e) * LH, top = foot + PIECE_H * LH;
+    const P = (u: number, v: number, z: number): [number, number] => { const [a, b] = apply(ISO_LIN, u, v); return [a, b - z]; };
+    for (const c of pieces) {
+      const [lx, ly] = heartCornerAt(c.tx, c.ty);
+      const x0 = e.x + lx - PIECE_R, y0 = e.y + ly - PIECE_R, x1 = e.x + lx + PIECE_R, y1 = e.y + ly + PIECE_R;
+      const hull: Array<[number, number]> = [P(x0, y0, top), P(x1, y0, top), P(x1, y0, foot), P(x1, y1, foot), P(x0, y1, foot), P(x0, y1, top)];
+      if (inConvex(hull, X, Y)) return c.piece;
+    }
+    return null;
+  }
 }
+
+/** How far a corner piece reaches round its centre (tiles), and how tall it stands (levels): the Archive's drum and antenna (D86). */
+const PIECE_R = 0.42, PIECE_H = 2.1;
 
 /** Is (x, y) inside a convex polygon given in either winding? */
 export function inConvex(poly: ReadonlyArray<readonly [number, number]>, x: number, y: number): boolean {

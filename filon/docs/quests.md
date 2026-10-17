@@ -1,88 +1,233 @@
 # Quests: the tutorial
 
-Twelve objectives, 0–11, played in order, one at a time (design plan §8 « Prise en main », decisions D28, D33 and D34 in [decisions.md](decisions.md)). CrierBelt, the player's partner (see [lore.md](lore.md)), sets each objective in a short message and pays a reward when it is met; a guide points at what to use next. The player sees them numbered 1–12; code and content use indices 0–11.
+The claim's name, then nine quests, played in order, one at a time (design plan §8 « Prise en main »; decisions D28, D33, D34 and, for today's shape, **D101** in [decisions.md](decisions.md)). CrierBelt, the player's partner (see [lore.md](lore.md)), sets each quest in a short message and pays a reward when it is met. The player sees the quests numbered 1–9; the claim's name is the register's entry, not a numbered quest. Code and content use indices 0–9.
+
+Two kinds of quest (D101; owner, 2026-10-16: « le début va trop vite et le tutoriel est trop long. Le joueur débloque plein de trucs, mais comme le tutoriel lui dit toujours sur quoi cliquer partout, le joueur ne va pas lire et perdre de l'intérêt. Parfois, on peut mettre une quête sans exiger du joueur qu'il clique à un endroit en particulier, le laisser expérimenter »):
+
+- **Guided** (`steps`): the first basics only — a drill and its ribbon into the Core, a smelter fed by a drill pair, a wire. The guide's arrow walks the steps, one action each; steps that share a sentence share its hint, so the player reads a few larger steps while the arrow stays precise.
+- **Goals** (`hints`): a short brief in CrierBelt's voice, one to three measurable objectives, a reward. No arrow and no step list. The quest log's « Indice » asks for help: one marker on the first hint still to do, gone once that hint holds. After `QUEST_HINT_AFTER` (5 game minutes) with none of the quest's objectives moving, that marker comes once by itself. Never a stream.
+
+Objectives judge outcomes — the compiled graph, rates, stocks, totals — never particular clicks or tiles, so any way the player finds counts. A counter with `ever` counts from the founding, so what was done before its quest counts too (the plates made while the smelter's quest was not yet current, the glass already sold).
 
 Three parts, one per layer:
 
 | Part | File | Does |
 |---|---|---|
-| Content | [content/quests.ts](../src/content/quests.ts) | `QUESTS` (in run order): name and CrierBelt's message (`{ fr, en }`), objectives, `any`, reward, guide steps, live `info`; `QUEST_TITLES`; `QUEST_CHECK_TICKS`, `COLONY_NAME_MAX`; `questProblems()` (run by `validateContent`) |
-| Engine | [sim/systems/quests.ts](../src/sim/systems/quests.ts) | `QuestState` (on `sim.quests`), objective progress, completion, rewards, the `name` and `quest` commands, rate windows, save and hash |
-| UI | [ui/quest-log.ts](../src/ui/quest-log.ts), [ui/guide.ts](../src/ui/guide.ts), [ui/styles/quests.css](../src/ui/styles/quests.css) | The quest log (left, under the HUD), the completion toast's text, the naming modal, the guide's arrow, ring and hint bubble |
+| Content | [content/quests.ts](../src/content/quests.ts) | `QUESTS` (in run order): name and CrierBelt's message (`{ fr, en }`), `reveals`, objectives, `any`, reward, `steps` (guided) or `hints` (goal), live `info`; `QUEST_TITLES`; `QUEST_FOLDS` (the first tutorial's ids, for saves); `QUEST_ADDED` (quests a later table added, for saves); `SIDE_GOALS` (the optional objectives); `QUEST_CHECK_TICKS`, `QUEST_HINT_AFTER`, `QUEST_TABLE`, `COLONY_NAME_MAX`; `isGoal`, `guideSteps`; `questProblems()` (run by `validateContent`) |
+| Engine | [sim/systems/quests.ts](../src/sim/systems/quests.ts), [sim/readouts/night.ts](../src/sim/readouts/night.ts) | `QuestState` (on `sim.quests`), objective progress, completion, rewards, the `name` and `quest` commands, rate windows, `revealed` and `planOffered`, save (with the folds), hash; `nightCover`, the Core's grid without the sun |
+| UI | [ui/quest-log.ts](../src/ui/quest-log.ts), [ui/guide.ts](../src/ui/guide.ts), [ui/night-notice.ts](../src/ui/night-notice.ts), [ui/styles/quests.css](../src/ui/styles/quests.css) | The quest log (left, under the HUD), the completion toast's text, the naming modal; the guide's arrow, ring and bubble; the night notice |
 
-Tests: [sim/systems/quests.test.ts](../src/sim/systems/quests.test.ts). The French halves of `QUESTS` and `QUEST_TITLES` are in the i18n typography test.
+Tests: [sim/systems/quests.test.ts](../src/sim/systems/quests.test.ts). The French halves of `QUESTS`, `QUEST_TITLES` and `SIDE_GOALS` are in the i18n typography test.
 
 ## The quests as built
 
-Two rules shape it (owner, 2026-10-12): **the Heart only takes in** (D34) — every machine is fed by its own production lines, so the tutorial builds lines (a router splits the iron line between the Heart and the smelter, another shares the coal with the glass smelter, and at the end a ribbon takes the data collector's Survey Data to the research lab); and **everything beyond the starting kit is unlocked in the tech tree** (D33) — a quest opens the tree (T, the HUD's tree chip) and unlocks what it needs before using it, starting with telemetry, then the smelter and the router.
+Two rules still shape it (owner, 2026-10-12): **the Heart only takes in** (D34) — every machine is fed by its own production lines —; and **everything beyond the starting kit is unlocked in the tech tree** (D33) — a quest's plans come from the tree. **The tree offers only what the tutorial has reached** (D101): each quest `reveals` the few plans it is about (`plan:<id>`); the others are drawn faint, « Plus tard », with no cost and no button, and the HUD's badge does not count them. « Données d'arpentage » reveals every plan (`plans`): the rest of the kit is a goal the player works through at their own pace before the lab (D71). The engine takes any plan (debug bases, `FL.unlock`); the pacing is the tree's (`planOffered`).
 
-| # | id | Unlocks in the tree | Objectives (all, unless *any*) | Reward |
-|---|---|---|---|---|
-| 0 | `claim` · Ta concession | — | the claim is named (`name` command) | — (its entry in the register) |
-| 1 | `first_strike` · Premier coup de pioche | — (the starting kit: drill, ribbon, pole, Link) | a drill built; 10 ore in the Heart | 20 iron plates |
-| 2 | `ribbon_lines` · Le Ruban | Télémétrie (the rates show at once) | telemetry unlocked; two drills wired; 20 more ore mined | 10 glass |
-| 3 | `bloom_kiln` · La fonderie | Fonderie, Routeur | a router built; iron ore and coal reach the smelter by lines (`feeds`); 10 plates made | 30 iron plates |
-| 4 | `first_wind` · Le Souffle | Éolienne | 2 wind turbines wired into a grid — the hints send them up onto the Crown, where the wind blows (D44), wired pole by pole | a coal generator kit (its cost) |
-| 5 | `glassworks` · La verrerie | Collecteur de sable (sand is the ground: two collectors by the glass smelter, D38) | sand reaches a smelter; coal reaches both smelters (a router on the coal line); 10 glass made | 20 plates, 20 glass |
-| 6 | `crier_calls` · La Criée appelle | Comptoir | a trade post; 3 glass sold — glass led into its entrance by a router on the glass line (a post sells whatever its entrance brings, D64) | 150 ◉ |
-| 7 | `tired_vein` · Le filon fatigué | Tréfileuse | a wire mill (it starts on Copper Wire, its only recipe: no recipe step, D83); 10 copper wire made (the drill and the mill wired in one step) | 10 circuits |
-| 8 | `first_purchase` · Premier achat | — | a standing import order for copper ore (no wait for the delivery) | the Heart's level-2 materials |
-| 9 | `beyond_crown` · Au-delà de la Couronne | Balise d’arpentage | *any*: 2 tiles dug (title « Perce-Couronne »), or a building past the Crown (« Passe-Crête »): on the floor past its foot (`CIRQUE.crownOuter`, 29 on map 2), on rock past its farthest terrace (`crownReach`: its peaks reach further, D63): the cirque is closed (D45), so the beacon goes over the Crown — the text points at the traction ribbons and terraced poles that cross it | a title in the register |
-| 10 | `field_journal` · Données d’arpentage | every plan left, then Laboratoire de recherche (the gate, D71: it brings the data collector) | every plan unlocked; 3 Survey Data made; a research lab; the Face Cutter (`ex_quartz`) started (its tokens billed by the minute, D70; D87: Mechanics hangs from it now) — the hints: the plans one after the other, the lab by the Core, the collector beside it, both wired, a ribbon from the collector into the lab | 300 ◉ (100 before D87: the next quest buys a parcel) |
-| 11 | `wall_quartz` · Le quartz de la paroi (D87) | — (its research runs from quest 10) | the Face Cutter learnt; 10 quartz in the Core — the hints, on a land with the vein (map 3): the land mode, the vein's parcel (west or north, just beyond the Crown) and « Acheter » (`vein` objective), the research's card while it runs, a face cutter at the wall's foot (the arrow on the vein: `{ vein: true }`; it turns its back to the rock by itself), wired over the Crown, a ribbon home that turns into traction ribbon on the Crown; on a land without one (maps 1–2, founded before it): an import order of quartz instead (`land: 'novein'`) | a quartz workshop kit (its cost) |
+| # | id | Kind | Reveals | Objectives (all, unless *any*) | Reward |
+|---|---|---|---|---|---|
+| — | `claim` · Ta concession | guided | — | the claim is named (`name` command) | — (its entry in the register) |
+| 1 | `first_strike` · Premier coup de pioche | guided: 4 steps | the construction bar, power, the first stocks | a drill built; 10 ore in the Core | 20 iron plates |
+| 2 | `bloom_kiln` · La fonderie | guided: 11 steps, 7 sentences to read | the tree (its chip, T), the clock, the Production and Électricité views; plan Fonderie | iron ore and coal reach a smelter by lines (`feeds`); 10 plates made (`ever`) | 30 iron plates |
+| 3 | `first_wind` · Tenir la nuit | goal | plans Éolienne, Générateur à charbon | the Core's grid would hold 80 % of its demand without the sun (`night`) | a coal generator kit (its cost) |
+| 4 | `glassworks` · La verrerie | goal | the Logistique view; plans Collecteur de sable, Routeur, Jonction | 10 glass made (`ever`); glass reaches the Core | 20 plates, 20 glass |
+| 5 | `crier_trade` · La Criée | goal | ocelles, the Crier; plans Télémétrie, Comptoir, Tréfileuse | 5 glass sold (`ever`); 10 copper ore bought and delivered (`import`, `ever`); the bought ore reaches a wire mill (`feeds` `from` the trade post) | 150 ◉, 40 copper wire |
+| 6 | `core_upgrade` · Le Cœur grandit | goal | — | the Core at level 2 (`hearth`): the player's own `hearthUp`, paid in 120 plates, 40 glass and 40 copper wire | 100 ◉ |
+| 7 | `field_journal` · Données d’arpentage | goal | every plan; the brush | every plan unlocked (a calm count, « Plans pris 9/25 »; the Face Cutter's among them); the Core's Survey Data reaches the lab (`feeds` `from` the Core); Mechanics (`tr1`) started | 600 ◉ |
+| 8 | `wall_quartz` · Le quartz de la paroi | goal | the Terrain view | the vein's parcel held (`vein`); 10 quartz in the Core | a quartz workshop kit; the title « Passe-Crête » (`grant`) |
+| 9 | `synth_parts` · Les pièces de la Synthèse | goal | — | oscillators and circuits each led into the Core | 300 ◉ |
 
-Targets are small on purpose (owner, 2026-10-12: "the tutorial is too long"): every objective is a minute or two of play, never a wait (owner, 2026-10-14: "the tutorial can be slightly shorter": the board quest went with the export streams, two wiring steps became one, two wait-only notes went; 61 steps → 56; since D83 a machine with one recipe unlocked starts on it, so the wire mill's recipe step went too: 51 now) — the scripted run (`quests.test.ts`, every line laid by hand) finishes the first eleven in under seven game minutes, the longest waits about two minutes for plates, glass and data to flow; the twelfth (D87) waits on its research's data (15 Survey Data at 2 a minute) and ends near the fifteenth minute. No tutorial quest waits on an import delivery (≈ 25 min: the lift plus the voyage) or on a rate window (`rate` stays in the engine but the tutorial no longer uses it). The steps are many but each is one action, and each one's `done` reads the base (a step is never shown once the base already does what it asks): unlock a plan, place, wire, set a recipe (only where there is a choice: the smelters' plates or glass), lay one line. Output ribbons point at a free input of the Heart (`{ intake: true }`), nearest the newest producer (all its nozzles are inputs now).
+The first tutorial (D28–D98) had twelve quests after the name and 81 steps; today's has two guided quests of 4 and 11 steps after the name (one step), and 54 hints on request. D101 kept its arc — the cirque's basics → glass and power → copper and the Crier → past the Crown → the lab and Tier 1 → quartz — and merged or cut the rest:
 
-Adapted from the plan: ordinary early materials replace the exotic ones (« bulbes » → glass, « tourbe » → coal, « carillonite » → copper ore), power is wired by hand from quest 1 on (D25: the Heart's few wires, poles, the Link tool), and the import target is a standing order rather than a delivery (a delivery takes about 25 minutes). The circuits quest of the first version became the glassworks: circuits need a wire line and a glass line into a workshop, which the tutorial leaves to the player.
+- « Le Ruban » (a second drill, the telemetry) is gone: the second drill is the smelter's, and the telemetry is an optional objective.
+- « La fonderie » has no router any more: one drill of each feeds one smelter (D97: 10 ore and 10 coal a minute). The router comes with the glass, where the coal is shared — or a second coal drill does it, and that hint passes by (`unless`).
+- « Le Souffle » became « Tenir la nuit », whose measure is the grid without the sun.
+- « La Criée appelle », « Le filon fatigué » and « Premier achat » are one quest, « La Criée ». Its purchase is the starter contract, and the quest is met when the bought ore reaches a wire mill (owner, 2026-10-16: « on dit au joueur de placer une commande de cuivre sur le marché, mais jamais de s'en servir. Je n'avais même pas relié mon tradepost »).
+- « Au-delà de la Couronne » folded into « Le quartz de la paroi », the tutorial's way past the Crown; its title « Passe-Crête » with it.
+
+The second pass (D101, owner's notes of the same night) took out every wait that is not building time:
+
+- **No research wait** (owner: « le face cutter devrait être beaucoup plus rapide à obtenir, ce tutoriel est chiant »). The Face Cutter (`ex_quartz`) is a plan of the Survey path, taken with every plan in « Données d'arpentage »; « Le quartz de la paroi » no longer waits on it. « Données d'arpentage » only *starts* Mechanics (`tr1`, whose prerequisite is now the lab's plan alone), and « Les pièces de la Synthèse » asks for the two parts it can build at once: the gears wait for Mechanics' press, learnt in its own time.
+- **The Core grows by the player's hand** (owner: « there should be a quest in the tutorial where you upgrade it »). « Le Cœur grandit » is the Core's level 2 (`BAL.hearthUpgrades[0]`, unlock `start`): one click on the Core's card once its plates, glass and copper wire are in the Core. No quest grants a level any more (« La Criée » used to pay level 2's materials, and Mechanics gated it).
+- **The first lab runs on the Core's own data** (owner: « The quest where you start researching could use the core's data production rather than a data collector, which could be unlocked later »). From level 2 the Core makes 2 Survey Data a minute at its data outlet (`BAL.hearthDataBase`, research or not); a ribbon from the outlet feeds the lab. The data collector comes with « Traitement des données » (`an_data`, Tier 1, +1 a minute at the Core).
+- **No tokens to talk about**: research costs no tokens before the servers (D105), so no quest text mentions them.
+
+**The starter contract** (`BAL.starter`, [engine.md](engine.md#trade)): CrierBelt's one-time offer, « Contrat de départ · prix fixe », signed on a post's card in the Crier. It brings 40 copper ore at a fixed 2 ◉, 10 a minute, each lot landing a game minute later, off the market. It buys nothing while the post's exit leads nowhere, so the player meets the exit's rule at once. « La Criée »'s hints show the post's exit (« sa rampe corail ») and the ribbon into the mill.
+
+- **At its cap it stops** (owner, 2026-10-16: on their base the tutorial's copper order bought on for hours, about −2 200 ◉/h, unseen). The order stands paused (`orderHold` 'fulfilled'), and a notice ([ui/contract-notice.ts](../src/ui/contract-notice.ts), `[data-screen="contract"]`) says « Contrat de départ rempli » with the ore's icon, today's market price and what that costs a minute. It asks one question: « Continuer au prix du marché » (`[data-contract-go]`: the logged `starterGo` command, an ordinary order from then on, capped 10 % over the ask: `BAL.starter.continueOver`) or « Arrêter » (`[data-contract-stop]`, the default: the order cancelled). The same two buttons stand on its row in the Crier.
+- **Every standing order shows its live cost**, « −37 ◉/min » in coral (`orderCentsPerMin`), or « — » and why it holds. The contract's row shows its fixed price and what is left of its allowance as a bar.
+
+
+**The night** (owner, 2026-10-16: « something should tell the user that the core has solar panels that will stop producing electricity at night »):
+
+- The objective `night` reads `nightCover` ([sim/readouts/night.ts](../src/sim/readouts/night.ts)). That is the Core's grid's producers in this epoch's weather with the sun at nothing, its fuelled generators, and what its accumulators hold spread over a night, against what the grid asks for now. It reads the same at any hour, so the player prepares by day, and the log shows « 54 % / 80 % ». Its hints are the turbines, at the Crown's windiest spots (D95), two and then two more while the night does not hold (`unless`).
+- The night notice ([ui/night-notice.ts](../src/ui/night-notice.ts)) comes once per base, about one game hour (1.5 game minutes) before a sunset, if two things hold: the sun gives at least 15 % of the Core's grid, and `nightCover` is under 80 %.
+  - It shows the sun going down behind the Crown, a turbine and a coal generator.
+  - It shows two figures, « Le soleil : 30 % de ton énergie » and « La nuit : 77 % de ta demande ».
+  - Its one sentence: « Le panneau du Cœur s’éteint au soir ; son noyau donne jour et nuit, mais tes machines demandent déjà plus. Ajoute des éoliennes ou un générateur à charbon avant le soir. »
+  - Its buttons: « Vue Électricité (P) » (shown once the view is offered) and « Compris ».
+  - It goes by itself at nightfall. The brief's « accumulateurs » became « un générateur à charbon »: accumulators are a research of Tier 2 (tr3), so they are not to hand yet.
+- The Core gives most of its power day and night (D101; owner: « the solar panels from the core should do a less important part of its electricity production »): its isotope core, `BAL.hearthCoreKw` (210 kW at level 1, then 300, 420, 560), about 70 % of what it gives at noon; its panel the rest in full sun (`BAL.hearthSolarKw`: 90, 130, 180, 240). So « Tenir la nuit » is about the player's own machines: two drills hold the night on the core alone, and the three drills of « La fonderie » (270 kW) outgrow it. That is why the clock and the Électricité view come with that quest.
+
+**Optional objectives** (`SIDE_GOALS`): what the player can discover alone. Each is a tick in the log's « Objectifs libres » list, with no reward and no arrow, shown from its quest on:
+
+- the views (Production, Électricité, Logistique opened once; the log's own record, per base);
+- the telemetry;
+- one more parcel;
+- the production ledger (G);
+- the wind survey (V).
+
+**Saves** (`QUEST_TABLE` 3, `QUEST_FOLDS`, `QUEST_ADDED`): a save from an older table loads into today's quests (`loadQuests` → `foldDone`). Kept ids stay done. « La Criée » is done once « La Criée appelle », « Le filon fatigué » and « Premier achat » all were, at the last one's tick. « Le Ruban » and « Au-delà de la Couronne » are dropped. « Le Cœur grandit » (added with table 3) counts as done when a quest after it was. The current quest is the first not done in today's order, its baselines taken afresh: the old ones belonged to the old table.
+
+So a base saved at…
+
+- « Le Ruban » goes on at « La fonderie »;
+- « Le filon fatigué » or « Premier achat » goes on at « La Criée »;
+- « Au-delà de la Couronne », or « Données d'arpentage » not done, goes on at « Le Cœur grandit » (met at once by a Core already at level 2);
+- « Le quartz de la paroi » or later goes on where it was.
+
+The save's research moved with it (save 13, [persistence.md](persistence.md)): a claim with the lab's plan holds « Traitement des données », so its data collectors stand; a Face Cutter under way is its plan taken.
+
+A goal met already completes at the next check. The scripted test loads a save at each old quest.
+
+Pacing: the scripted run (`quests.test.ts`, every line laid by hand, `QUEST_REPORT=1` prints the minutes) finishes the guided quests in two game minutes. « La Criée » waits on the contract's first lots (a minute after each purchase), and nothing after it waits on research: the run ends in the ninth game minute. The debug levels play every quest on their own ([scenarios.ts](../src/sim/scenarios.ts)); the headless play-through's times per quest are in D101.
 
 ## How the engine runs them
 
-- **State** (`sim.quests`, saved, hashed): the ids done and the tick each was, the current index, the current quest's *baselines* (one counter value per objective, captured when it became current), its *rate windows*, `named`, `titles`.
-- **Objectives** read the colony as it stands (`build`, `stock`, `linked`, `powered`, `research`, `unlocked`, `post`, `order`, `dig`, `reach`, `recipe`, `delivers`, `feeds`, `name`, `vein`: the land's quartz vein on the claim's land, met at once on a land without one, D87) or a counter *since the quest began* (`produce` from `sim.produced`, `export` from `trade.soldTotal`, `import` = bought minus in flight). `linked` / `powered` read what the inspector's grid module reads (`graph.netOfEnt`, `sim.netPower`): an outcome, whatever the wiring tool looks like (`linked` may name the deposit a drill mines: `item`). `unlocked` counts tree nodes done (`sim.unlocked`: plans and research alike, D33). The line objectives walk the compiled graph through ribbons and routing blocks only (`flows`): `delivers` — a building's output reaches the Heart; `feeds` — a building (on a recipe, if given) receives an item from one of its producers (`producersOf`: drills on its deposit, machines whose recipe makes it), which is how every machine is fed now that the Heart gives nothing (D34). `rate` compares the counter's rise over its window: `(v1 − v0)·EPOCH ≥ perMin·1000·(t1 − t0)`, integers only.
+- **State** (`sim.quests`, saved, hashed): the ids done and the tick each was, the current index, the current quest's *baselines* (one counter value per objective, captured when it became current), its *rate windows*, `named`, `titles`, `skipped`.
+- **Objectives** read the colony as it stands (`build`, `stock`, `linked`, `powered`, `research`, `unlocked`, `post`, `order`, `dig`, `reach`, `recipe`, `delivers`, `feeds`, `name`, `vein`, `night`, `starter`: the contract signed, `land`: parcels held beyond the starting square, `hearth`: the Core's level) or a counter *since* the quest began, or from the founding with `ever` (`produce` from `sim.produced`, `export` from `trade.soldTotal`, `import` = bought minus in flight).
+  - `linked` / `powered` read what the inspector's grid module reads (`graph.netOfEnt`, `sim.netPower`): an outcome, whatever the wiring tool looks like.
+  - `unlocked` counts tree nodes done (plans and research alike, D33).
+  - The line objectives walk the compiled graph through ribbons and routing blocks only (`flows`): any ribbon tier, bridges and junctions on the way. `delivers`: a building's output reaches the Heart. `feeds`: a building (on a recipe, if given) receives an item from one of its producers (`producersOf`: drills on its deposit, machines whose recipe makes it, trade posts holding it in their cargo, the Core its Survey Data once its level mounts the outlet). Its `from` keeps only the producers among some buildings: the trade post, for goods bought and used; the Core, for the lab's data.
+  - `night` is `nightCover`'s percentage; `rate` compares the counter's rise over its window: `(v1 − v0)·EPOCH ≥ perMin·1000·(t1 − t0)`, integers only.
 - **When completion is checked**, at fixed points so a replay meets the same ones:
   1. every `QUEST_CHECK_TICKS` (10) ticks, at the end of `Sim.step` (`questStep`);
   2. inside the `name` command (quest 0 completes at once);
-  3. `sim.checkQuests()`, which the shell calls right after an offline catch-up (the catch-up does not run `step`). Without it the next online check, within a second, finds the same thing: an absence cannot skip a quest. Only the current quest can complete during an absence; the next one starts afterwards.
-- **Rate windows**: a window opens when the quest becomes current and closes at the first epoch boundary at least a whole minute later; then one per minute. After a catch-up the open window spans the absence, so its average rate counts.
-- **Completion** (`finish`): logs `{ k: 'quest', id }`, pays the reward into the Heart (items past its cap if need be — nothing vanishes; ◉; the title of the objective that completed an `any` quest), records it, makes the next quest current (`activate`: baselines, windows) and pushes the `quest` SimEvent. Then any next quests that already hold complete too.
+  3. `sim.checkQuests()`, which the shell calls right after an offline catch-up (the catch-up does not run `step`). Without it the next online check, within a second, finds the same thing: an absence cannot skip a quest. Only the current quest can complete during an absence; the next one starts afterwards. Every objective is a state read or a counter the catch-up keeps exact (the contract's purchases run in the same `tradeEpoch` offline), so online and offline agree.
+- **Rate windows**: a window opens when the quest becomes current and closes at the first epoch boundary at least a whole minute later; then one per minute. After a catch-up the open window spans the absence, so its average rate counts. (No quest uses `rate` today.)
+- **Completion** (`finish`): logs `{ k: 'quest', id }`, pays the reward into the Heart (items past its cap if need be — nothing vanishes; ◉; the title of the objective that completed an `any` quest, or `grant`'s), records it, makes the next quest current (`activate`: baselines, windows) and pushes the `quest` SimEvent. Then any next quests that already hold complete too.
 - **Replay**: a replay re-runs the same ticks, so automatic completions happen again at the same tick and log themselves; their logged entries are then refused by `exec` (the quest is no longer current) and log nothing. Logs and hashes match; nothing is paid twice. A forced entry (`force: true`, debug) is re-forced.
 - **No fee waiver**: CrierBelt's fifth is never waived (D64); an old save's `feeFreeUntil` is read by nothing.
-- **Save**: `SaveData.quests` (optional, ids rather than indices); a save without it starts at quest 0; if the quest table changed, the current quest takes fresh baselines.
+- **Save**: `SaveData.quests` (optional, ids rather than indices, `table`); a save without it starts at quest 0; a save from an older table is folded (above); if the quest table changed, the current quest takes fresh baselines.
 
 ## The UI
 
-- **Quest log** (`QuestLog`, `[data-screen="quests"]`): the claim's name on a coral ribbon (click: rename), « Partenariat CrierBelt · objectif n sur 12 », the guide switch (☞) and fold (▾). The current objective: number, name, CrierBelt's message (« vous »), objectives with inked boxes and progress, live `info` lines, reward chips, the guide step's hint (« tu », like the rest of the UI); then the objectives met, ticked. Placed under the HUD's left column (it measures it) and kept clear of the build bar. A completion stamps a ✓ on it. Once the tutorial is over the log leaves the screen: 20 s (`DONE_SHOW_TICKS`) after the last objective is met, at once when it was skipped (owner, 2026-10-13).
-- **Toast**: `questToast(id, title?)` — « CrierBelt : objectif atteint — La fonderie · +20 Charbon » (handler in [app/sim-events.ts](../src/app/sim-events.ts)).
+- **Quest log** (`QuestLog`, `[data-screen="quests"]`):
+  - The header: the claim's name on a coral ribbon (click: rename), « Partenariat CrierBelt · objectif n sur 9 » (« · inscription au registre » for the name), the guide switch (☞) and fold (▾).
+  - The current quest: its number, name, CrierBelt's message (« vous »), its objectives each with its icon (the item, the building or its plan's building, a glyph for the night, the contract, the land), its inked box, progress and bar (the D89 kit's), live `info` lines, reward chips.
+  - Then, for a guided quest, the guide step's hint (« tu », like the rest of the UI); for a goal, the « Indice » button (`[data-quest-hint]`: « Indice » / « Masquer l'indice »; greyed with « Tout est en place : il ne reste qu'à attendre. » once every hint holds; it nudges when the soft hint came by itself) and, while asked for, its hint.
+  - Then the optional objectives (« Objectifs libres · n/m », `[data-quest-side]`, foldable, `[data-quest-side-goal="<id>"][data-met]`), then the objectives met, ticked.
+  - It is placed under the HUD's left column, clear of the build bar. A completion stamps a ✓ on it. Once the tutorial is over the log leaves the screen: 20 s (`DONE_SHOW_TICKS`) after the last objective is met, at once when it was skipped.
+- **Toast**: `questToast(id, title?)` — « CrierBelt : objectif atteint — La fonderie · +30 Plaque de fer » (handler in [app/sim-events.ts](../src/app/sim-events.ts)).
 - **Naming modal** (`[data-screen="name"]`): CrierBelt's welcome, a name to start from (↻ for another), « Inscrire la concession » / « Plus tard ». It opens by itself once on an unnamed claim when no full screen is up (the main menu shows first at boot); never under `navigator.webdriver` or `?nomenu`, where the claim stays « Concession sans nom » and quest 0 open until a script names it. Enter registers, Esc defers; the quest log's « Nommer la concession… » reopens it.
-- **Guide** (`Guide`, `[data-screen="guide"]`): the current step is the first whose `done` objective does not hold (counters from the founding) and that was not `seen`. Its target follows the UI: `build` → the tab, the slot, then (in hand) a spot in the world only for the very first drill — after that the hint alone says where (owner, 2026-10-12: a spot worked out from content may already be taken); `unlock` → the HUD's tree chip (`[data-hud-tree]`), then in the tree the first of its nodes still locked, scrolled into view: a plan's « Débloquer » (`[data-unlock="<id>"]`), a research's card and « Lancer »; `branch` → a line to split into a building: while no routing block stands on the line of that item, the router (its tab, its slot, then the line's ribbon tile nearest the building still to feed — it replaces the ribbon, D24), then a ribbon on to that building; `recipe` → the machine still to set (one with no recipe first: a working line is never turned over), then its recipe button once it is the one inspected (« D’abord, pose : … » if none is built); `link` → the Énergie tab, the Link tool (`[data-tool="link"]`), then, no source picked yet, where the wire starts — the Heart, or the nearest pole of its grid that reaches the building (`linkFrom`; playtest 2026-10-15: pointing at the drill first made the click a refusal), or, none reaching it, the pole's slot (the hint's « pose un poteau entre les deux ») — and then the building still unwired (a drill on the step's deposit); `research` → the HUD chip, the card, « Lancer »; `crier` → the HUD ◉, the tab, the export slot / order form / best line; `land` (D87) → the HUD's land button (`[data-hud-land]`) while the land mode is off, the parcel holding the step's spot in the world, then once it is picked its « Acheter » (`[data-land-act="buy"]`); `brush`; `name`. A build target's spot is shown in the world for the very first drill and for the quartz vein's foot (`{ vein: true }`, the floor in front of the vein's middle), never elsewhere. A step with `land: 'vein'` applies only on a land with a quartz vein, one with `land: 'novein'` only on one without (`stepApplies` in [sim/systems/quests.ts](../src/sim/systems/quests.ts)): the guide passes the others by. When a full screen covers a target out in the world, the arrow points at the screen's ✕ (`.rs-close`) with the step's hint — after an unlock, the tree's ✕. It hides while the modal is up, or when switched off (remembered in localStorage). A world target's bubble glides the camera there on click.
+- **Guide** (`Guide`, `[data-screen="guide"]`):
+  - **Which step.**
+    - A guided quest's step is the first whose `done` objective does not hold (counters from the founding, read on the compiled graph, so steps done out of order are passed by) and that never held before on this base: the guide remembers the steps done (`passed`, per base and quest, in localStorage), so a step completed, even out of order, never comes back.
+    - A guided quest ends on a closing line, a step with no `done` (D98; `questProblems` checks it). Once every other step holds, that line is the step, so the guide never asks again for the last thing the player did (owner, 2026-10-16: « it keeps telling me what to do (put a ribbon) even though it's done already »); a step whose `done` holds is never pointed at.
+    - A goal shows nothing until its hint is asked for (`toggleHint`) or comes after a long stall (`nudge`). Then it shows `hintIndex`'s hint — the first that applies on this land, whose `unless` does not hold, and not done — until that hint's `done` holds or the player puts it away; the next one waits to be asked for.
+  - **Its target follows the UI.**
+    - `build`: the tab, then the slot (with what the Core lacks to pay for it, if anything: « Il manque au Cœur : 2 Plaque de fer, 2 Verre »), then (in hand) a spot in the world. The spot is shown only for the very first drill, for the quartz vein's foot (`{ vein: true }`) and for a turbine (`{ windy: true }`, D95: the Crown's windiest free spot); elsewhere the hint alone says where.
+    - `unlock`: the HUD's tree chip (`[data-hud-tree]`), then in the tree the first of its nodes the Core can take now, else the first still locked (`unlockNode`: « all plans » points at one ready plan, never down the list), scrolled into view, then its « Débloquer » (`[data-unlock="<id>"]`) or, for a research, its card and « Lancer ». A plan the Heart cannot pay for yet: the bubble says what it lacks.
+    - `branch`: while no routing block stands on the line of that item (or none on it has a side free for one more branch), the router (its tab, its slot); then a ribbon on to the building still to feed.
+    - `recipe`: the machine still to set (one with no recipe first), then its recipe button once it is the one inspected. The building still in hand: « Range d’abord l’outil… ».
+    - `link`: the Énergie tab and the Link tool, then where the wire starts — the Heart, or the nearest pole of its grid that reaches the building (`linkFrom`). None reaching it: the pole's slot and, the pole in hand, the tile where it goes (`poleSpot`). Then the building still unwired.
+    - `research`: the HUD chip, the card, « Lancer ».
+    - `crier`: the HUD's purse, then its card's « Ouvrir la Criée » (D102: a click on the purse opens the card first), the tab, then the order form (its item picker, its rate field when the step gives one, then « Ajouter ») or the starter contract's « Signer » (`[data-starter-take]`, D101; no post yet, the bubble says so).
+    - `land`: the HUD's land button while the land mode is off, the parcel holding the step's spot, its « Acheter ».
+    - `stock`: the HUD's « Stock » button until its panel is open.
+    - `hearth`: the Core in the world, then its card's « Passer au niveau 2 » (`[data-insp-act="hearth-up"]`) once it is the one inspected.
+    - A `build` spot `{ outlet: true }` is the tile just outside the Core's data outlet, where the lab's ribbon starts.
+    - `brush`, `name`.
+  - **Narrow windows.** An `unlock` or `research` target's tree chip may be folded: the arrow points at the research fold (`[data-hud-fold="research"]`).
+  - **A screen in the way.** When a full screen covers a target out in the world, the arrow points at the screen's ✕ (`.rs-close`).
+  - **Every step done, the quest still short.** The first production building standing unwired or without a recipe gets the arrow, « Foreuse à l’arrêt : Sans câble » (`stalled:<def>:<why>`, D88's `stopWhy`).
+  - **The bubble's manners** (D101; owner, the same day: « here the tutorial blocks me from seeing what I'm supposed to do »).
+    - It never covers what it points at, nor the controls the step needs: the card or panel round the target, such as a post's card and its order form, a tree node and the tree's detail panel, or the inspector.
+    - It keeps off the quest log and the side panels.
+    - It tries above what sits low, below what sits high, beside, round the target's corners and beside the log, and keeps the first spot clear, else the one that covers least.
+    - It is worked out every frame, so it follows resizes and scrolls.
+    - Its « – » (`[data-guide-tuck]`) tucks it into a ☞ chip by the ring with no arrow; a click on the chip brings it back (remembered).
+    - A world target's bubble glides the camera there on click.
+  - **When it hides.** While the modal is up, or when switched off (remembered in localStorage).
+- **Night notice** (`NightNotice`, `[data-screen="night"]`, `[data-night-view]`, `[data-night-ok]`) and **contract notice** (`ContractNotice`, `[data-screen="contract"]`): above. They stack top right (`.notices`) and wait under a full screen or a side panel.
+- **The tree's pacing** ([screens/research.ts](../src/ui/screens/research.ts) `stateOf`): a plan not offered yet is in the state `later` (faint, dotted, no cost line, its button off, « Plus tard : le partenariat y viendra »); [tree-state.ts](../src/ui/tree-state.ts) `readyPlans` leaves it out of the HUD's count.
 
 ## Add a quest
 
-1. **Content**: add an entry to `QUESTS` where it should run (order is the run order; ids are saved, so they must stay stable). Give it `name` and `desc` (CrierBelt's message, « vous », short — see [lore.md](lore.md)), `objectives`, `reward`, and `steps` (a hint in « tu » each, a target, and a `done` objective when one says the step is over). French typography: U+00A0 before `:`, U+202F before `; ! ? %` (escapes ` ` / ` ` are fine).
-2. **A new objective kind**: add it to `QuestObjective` (content), read it in `objectiveProgress` and give it a log label in `objectiveLabel` (the `never` checks fail to compile until both exist), add an `quest.obj.<kind>` key to `fr.ts` and `en.ts`. A counter that counts *since* the quest began goes in `counter` and `SINCE`. Keep it integer and offline-maintained: state the catch-up keeps exact (stocks, entities, research, trade totals) or `sim.produced`.
+1. **Content**: add an entry to `QUESTS` where it should run (order is the run order; ids are saved, so they must stay stable — a quest renamed or merged needs a line in `QUEST_FOLDS`, and a new table shape a `QUEST_TABLE` bump). Give it:
+   - `name` and `desc` (CrierBelt's message, « vous », short — see [lore.md](lore.md));
+   - `objectives` (one to three; outcomes, never clicks) and `reward`;
+   - `reveals` (the plans it is about, `plan:<id>`);
+   - either `steps` (guided: only for a basic the player has never seen; the last one a closing line with no `done`, usually `target: { k: 'none' }`, saying what the base is doing while the quest waits) or `hints` (a goal: each with a `done`; `unless` for a way another way makes pointless).
+
+   French typography: U+00A0 before `:`, U+202F before `; ! ? %` (escapes ` ` / ` ` are fine).
+2. **A new objective kind**: add it to `QuestObjective` (content), read it in `objectiveProgress`, give it a log label in `objectiveLabel` and an icon in `objectiveIcon` (the `never` checks fail to compile until all exist), add a `quest.obj.<kind>` key to `fr.ts` and `en.ts`. A counter that counts *since* the quest began goes in `counter` and `SINCE` (`ever` makes it count from the founding). Keep it integer and offline-exact: state the catch-up keeps (stocks, entities, research, trade totals) or `sim.produced`.
 3. **A new guide target**: add it to `GuideTarget` and resolve it in `Guide.target`, preferring stable `data-*` hooks (add one to the component, a tiny edit).
-4. **Unlock before use** (D33): a step that builds something outside the starting kit, sets a recipe or branches a line with a router must come after an `unlock` step (or an `unlocked` objective) for it, in this quest or an earlier one — `questProblems` checks it, so the tutorial never points at a slot the bar does not show.
+4. **Unlock before use** (D33): a step or hint that builds something outside the starting kit, sets a recipe or branches a line with a router must come after an `unlock` step (or an `unlocked` objective) for it, in this quest or an earlier one; a plan it names must be revealed by then (D101). `questProblems` checks both.
 5. **A new reward kind**: `QuestReward`, `rewardItems` / `payReward` (engine), `rewardRow` / `rewardText` (UI).
-6. **Check**: `npx vitest run src/sim/systems/quests.test.ts src/content src/i18n`; extend the scripted run in `quests.test.ts` so it completes the new quest with real commands — it starts from a new player's base (`testSim(…, { plans: false })`), unlocks each plan with `unlockPlan`, and asserts the guide's step after each action (`stepNow`); look at it with `FL.completeQuest('<previous id>')` and `FL.unlock(id)`.
+6. **An optional objective**: an entry in `SIDE_GOALS` (an objective read from the founding, or views; its icon; the quest it shows from).
+7. **Check**: `npx vitest run src/sim/systems/quests.test.ts src/content src/i18n src/sim/scenarios.test.ts`.
+   - Extend the scripted run in `quests.test.ts` so it completes the new quest with real commands. It starts from a new player's base (`veinSim()`), unlocks each plan with `unlockPlan`, and asserts the guide's step after each action in a guided quest (`stepNow`) and the hint on request in a goal (`hintNow`).
+   - Give the tutorial debug level its move (`scenarios.ts`), the quest met on its own.
+   - Look at it with `FL.completeQuest('<previous id>')`, `FL.questHint(true)` and `FL.unlock(id)`.
 
 ## Debug and smoke hooks
 
-`FL.vein()` (the land's quartz vein: its face tiles, the side it looks to, its parcel, the face cutters' four spots; null on maps 1–2), `FL.quests()` (current id, index, named, name, done, titles, progress, where the guide points — e.g. `hud:tree`, `tree:unlock:kiln`, `line:iron_ore`, `screen:close`), `FL.completeQuest(id)` (forces every quest up to `id`, logged, rewards paid; it unlocks no plan), `FL.unlock(id?)` (a plan and its missing prerequisites through commands, their costs granted first; no id: every plan), `FL.nameColony(name)`, `FL.nameModal(open?)`. Selectors: `[data-hud-tree]`, `.tr-node[data-id="<id>"]`, `[data-unlock="<id>"]`, `[data-screen="quests"]`, `[data-quest="<id>"]`, `[data-quest-obj="<i>"][data-met]`, `[data-quest-name]`, `[data-quest-rename]`, `[data-quest-fold]`, `[data-quest-guide]`, `[data-quest-donebtn]`, `[data-quest-done="<id>"]`, `[data-screen="name"]`, `[data-quest-name-input]`, `[data-quest-name-ok]`, `[data-quest-name-later]`, `[data-screen="guide"]`.
+The tutorial debug levels ([sim/scenarios.ts](../src/sim/scenarios.ts)) play the tutorial on their own, every quest met, nothing forced or skipped (`scenarios.test.ts`):
+
+- `claim` stands at quest 1;
+- `smelter` at « La fonderie »;
+- `survey` at « La Criée »;
+- `tutorial` at « Les pièces de la Synthèse », Mechanics learnt and the lab's next node under way (D107: Tier 1 takes minutes; `labNext`). It is a base to play the last quest from; the bot and the smoke start there.
+
+Its « Tenir la nuit » plants two turbines on the Crown's windiest spot (`crownWind`) beside the two on the floor. Its glass smelter goes down with its first sand collector, on the collector's far side from the Heart; a spot that leaves no way in for the sand is taken back up and the next point of the coal line tried (D104: the coal's irregular patch can box the smelter's inlet in). Its « La Criée » signs the starter contract and leads the post's exit into the side of the copper drill's line. Once the contract is delivered it stops the fulfilled order (« Arrêter ») and takes that ribbon up, so the exit can feed the Heart later (`tradeLine`); a junction it crossed goes back to the crossed line's ribbon. « Le Cœur grandit » raises the Core with the logged command; « Données d'arpentage » sets the lab east of the Core, a ribbon from its data outlet, and starts Mechanics. The `grown` level learns « Traitement des données » and sets its data collector by the lab. D85's idle check (`idleAfter`) leaves out a lab with no project and the data maker behind it: research waiting on the player's choice is not a broken line. The smelter's own iron drill gets an overflow gate into the Heart (`ironSurplus`): it cuts more than one smelter takes. The `grown` level completes the last quest by force: its circuit workshop's and press's lines take room the crowded core does not always leave. The scripted run in `quests.test.ts` plays it with real commands.
+
+`FL.vein()` gives the land's quartz vein: its face tiles, the side it looks to, its parcel, the face cutters' four spots; null on maps 1–2.
+
+`FL.quests()` gives the current id, index, named, name, done, titles, progress, and where the guide points: `{ quest, step, at, hint, tucked }`, e.g. `hud:tree`, `tree:unlock:kiln`, `line:iron_ore`, `crier:starter`, `screen:close`, `hidden`.
+
+Other hooks:
+
+- `FL.completeQuest(id)` forces every quest up to `id`, logged, rewards paid; it unlocks no plan.
+- `FL.questHint(show?)` asks for a goal's hint or puts it away, and returns `{ goal, shown, left, auto }`.
+- `FL.nightNotice(show?)` shows the night notice now, whatever the hour, and returns whether it is on show.
+- `FL.unlock(id?)` unlocks a plan and its missing prerequisites through commands, their costs granted first; with no id, every plan.
+- `FL.nameColony(name)`, `FL.nameModal(open?)`.
+
+Selectors: `[data-contract-go]`, `[data-contract-stop]`, `[data-starter-go]`, `[data-starter-stop]`, `[data-order-cost]`, `[data-insp-act="hearth-up"]`, `[data-hud-tree]`, `.tr-node[data-id="<id>"][data-state]`, `[data-unlock="<id>"]`, `[data-screen="quests"]`, `[data-quest="<id>"]`, `[data-quest-obj="<i>"][data-met]`, `[data-quest-hint]`, `[data-quest-side]`, `[data-quest-side-goal="<id>"]`, `[data-quest-name]`, `[data-quest-rename]`, `[data-quest-fold]`, `[data-quest-guide]`, `[data-quest-donebtn]`, `[data-quest-done="<id>"]`, `[data-screen="name"]`, `[data-quest-name-input]`, `[data-quest-name-ok]`, `[data-quest-name-later]`, `[data-screen="guide"]`, `[data-guide-tuck]`, `[data-screen="night"]`, `[data-night-ok]`, `[data-night-view]`, `[data-starter-take]`.
 
 ## Known gaps
 
 - The catch-up checks quests only at its end (through the shell): two quests in a row cannot both complete during one absence.
-- The guide's hints name keys (T, M, L, C, R) by the default bindings.
-- CrierBelt's restart reserve (D36) can hold back a plan a quest asks for. This only happens when the player has first spent the margin above the reserve on other plans: about 80 plates before the first smelter, for example the energy, analytics and survey paths before quest 3's router. The tree says why, and the guide keeps pointing at the plan. Quest rewards and the first plates a smelter makes lift the hold. The smelter's own plan is never held: its whole cost is part of the reserve. The base is never stuck, but that player must feed a smelter without the router to make plates first.
+- The guide's hints name keys (T, M, L, C, R, I, P) by the default bindings.
+- `night` reads the wind as it blows now: a calm hour can read under the wind's average, and a gusty one above it. The quest asks for what holds at some moment, not through a whole night.
+- The guide's memory of steps done is per browser (localStorage), not in the save: another browser shows a guided step again if the base no longer does what it asks.
+- « Les vues » (an optional objective) is the log's own record, per browser too.
+- A full screen (the tree, the Crier) covers the quest log and its « Indice »: the player closes it first.
+- CrierBelt's restart reserve (D36) can hold back a plan a quest asks for. This only happens when the player has first spent the margin above the reserve on other plans. The tree says why, and the hint keeps pointing at the plan. Quest rewards and the first plates a smelter makes lift the hold.
 
 ## What the tutorial reveals (D32)
 
-The interface grows with the tutorial (owner, 2026-10-12: nothing on screen before the tutorial uses it). Each quest lists `reveals` — HUD readouts (`credits`, `power`, `clock`, `research`: the tech tree's chip and T), the construction bar as a whole (`build`: its tabs, the Build button, the Link hotkey), screens and tools (`crier`, `stats`, `brush`) and item stocks (`stock:<item>`) — and they appear when that quest becomes current, cumulatively. `revealed(sim)` (in [sim/systems/quests.ts](../src/sim/systems/quests.ts)) returns the set, or `null` for everything once the tutorial is done or **skipped** (« Passer le tutoriel » in the log: the `skipQuests` command; the demo base starts skipped). An item's stock also shows once the base has made some itself. The bar's **tabs** are no tutorial reveal any more: once `build` is revealed, a tab shows as soon as one of its buildings is unlocked (D27, D33) — at the start Extraction, Logistique and Énergie (drill, ribbon, pole), then Distribution with the router, Production with the smelter, Commerce with the trade post, Colonie with the beacon. Skipping the tutorial shows the whole interface, not what is still locked in the tree. The HUD's rates (what comes into the Heart each minute, D79) are not a tutorial reveal but a plan: **Télémétrie** (the `telemetry` flag), the first step of the tree's Analytics path (D41), which quest 2 has the player unlock — its reveal plays when the player closes the tree (the base dims around the stocks, CrierBelt says what the rates are). The Statistics screen (G and its HUD chip) is the path's next step, `statistics`, which no quest asks for. The HUD, the build bar (the brush, the Build button) and the hotkeys (T, G, M, C, L) all read what is revealed and unlocked.
+The interface grows with the tutorial (owner, 2026-10-12: nothing on screen before the tutorial uses it). Each quest lists `reveals`, and they appear when that quest becomes current, cumulatively:
+
+- HUD readouts: `credits`, `power`, `clock`, `research` (the tech tree's chip and T);
+- the construction bar as a whole (`build`: its tabs, the Build button, the Link hotkey);
+- screens and tools: `crier`, `stats`, `brush`;
+- the specialised views (D88), one by one with the quest whose trouble they show: Production and Électricité with the smelter (why a machine waits; the night its three drills will see), Logistique with the glass's shared coal, Terrain with the quartz parcel. The land key I works from `build` on, as an off-land refusal says. No selector before the smelter;
+- the tree's plans (`plan:<id>`, `plans`, D101);
+- item stocks (`stock:<item>`). An item's stock also shows once the base has made some itself.
+
+`revealed(sim)` (in [sim/systems/quests.ts](../src/sim/systems/quests.ts)) returns the set, or `null` for everything once the tutorial is done or **skipped** (« Passer le tutoriel » in the log: the `skipQuests` command; the demo base starts skipped). Skipping the tutorial shows the whole interface, not what is still locked in the tree.
+
+The bar's **tabs** are no tutorial reveal: once `build` is revealed, a tab shows as soon as one of its buildings is unlocked (D27, D33). At the start that is Extraction, Logistique and Énergie (drill, ribbon, pole); then Production with the smelter, Distribution with the router, Commerce with the trade post, Colonie with the beacon.
+
+The HUD's rates (what comes into the Heart each minute, D79) are no tutorial reveal but a plan: **Télémétrie** (the `telemetry` flag), the first step of the tree's Analytics path (D41), offered with « La Criée » (the trade post needs it) and an optional objective. The HUD, the build bar (the brush, the Build button) and the hotkeys (T, G, M, C, L) all read what is revealed and unlocked.
 
 | Quest | Reveals |
 |---|---|
 | 1 first_strike | the construction bar; power; plates, glass, copper wire, iron ore |
-| 2 ribbon_lines | the tech tree (its HUD chip, T) |
-| 4 first_wind | the clock (day / night, temperature) |
-| 7 crier_calls | ocelles; the Crier |
-| 11 beyond_crown | the landscaping brush |
+| 2 bloom_kiln | the tech tree (its HUD chip, T); the clock (day / night, temperature); the Production and Électricité views; plan Fonderie |
+| 3 first_wind | plans Éolienne, Générateur à charbon |
+| 4 glassworks | the Logistique view; plans Collecteur de sable, Routeur, Jonction |
+| 5 crier_trade | ocelles; the Crier; copper ore; plans Télémétrie, Comptoir, Tréfileuse |
+| 7 field_journal | every plan; the landscaping brush |
+| 8 wall_quartz | the Terrain view |

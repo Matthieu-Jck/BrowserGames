@@ -6,8 +6,8 @@ export type Action =
   | 'panUp' | 'panDown' | 'panLeft' | 'panRight' | 'fast'
   | 'rotate' | 'pipette' | 'deconstruct' | 'cancel' | 'undo'
   | 'zoomIn' | 'zoomOut'
-  | 'viewPower' | 'viewLogistics' | 'viewProduction'
-  | 'scrResearch' | 'scrMarket' | 'scrStats' | 'home' | 'perf' | 'build' | 'mark'
+  | 'viewPower' | 'viewLogistics' | 'viewProduction' | 'viewWind'
+  | 'scrResearch' | 'scrMarket' | 'scrStats' | 'scrExpertise' | 'home' | 'perf' | 'build' | 'mark'
   | 'link' | 'land' | 'hideUi';
 
 interface Binding { codes?: readonly string[]; keys?: readonly string[] }
@@ -33,9 +33,11 @@ export const BINDINGS: Record<Action, Binding> = {
   viewPower: { keys: ['p'] },
   viewLogistics: { keys: ['f'] },
   viewProduction: { keys: ['o'] },
+  viewWind: { keys: ['v'] }, // Vent (D95), once the Anémométrie plan is learnt; KeyV on both layouts
   scrResearch: { keys: ['t'] },
   scrMarket: { keys: ['m'] },
   scrStats: { keys: ['g'] },
+  scrExpertise: { keys: ['e'] }, // the Expertise window (D93), once the Core mounts its Archive; KeyE on both layouts
   home: { keys: ['h'] },
   perf: { codes: ['Backquote', 'IntlBackslash'] },
   build: { keys: ['b'] },

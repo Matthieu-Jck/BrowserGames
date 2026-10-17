@@ -10,7 +10,10 @@
 // sorted among the volumes (world/items-view.ts). The buildings' cast shadows lie on the ground
 // under the volumes, above the ribbons and their items (iso px under M, with the volumes' fade).
 // Churny layers get their own render groups: the volumes too, since items moving among them
-// re-sort them most frames, and a render group re-batches only itself.
+// re-sort them most frames, and a render group re-batches only itself. The glazed ribbons' glass hoods
+// (D103, world/gleaners-view.ts) lie on their own plane over the items, under the volumes. So do the big ones that
+// rarely change (D92): the plan sprites, and inside the buildings view the floor ribbons and the
+// shadows — the terrain's chunks streaming in as the camera pans re-batch the graded world, not them.
 // The specialised views (D88: Électricité, Logistique, Production) dim the base under a paper
 // `veil` (inside the graded world, over the buildings and items, under the wires so the
 // Électricité view's bold wires stay on top), then draw their own system untinted: flat marks in
@@ -43,7 +46,9 @@ export type LayerName =
   | 'land'
   // The specialised views (D88, world/views-view.ts): the paper veil over the base, the view's
   // flat marks (tile units, untinted), its badges (view world px, untinted).
-  | 'veil' | 'viewFlat' | 'viewMarks';
+  | 'veil' | 'viewFlat' | 'viewMarks'
+  // The glass hoods over the glazed ribbons (D103): tile units under P, over the items riding them.
+  | 'glass';
 
 export class Layers {
   readonly world = new Container({ isRenderGroup: true, label: 'world' });
@@ -57,6 +62,7 @@ export class Layers {
   private readonly wiresIso = new Container({ label: 'wiresIso' });
   private readonly wiresPlanPlane = new Container({ label: 'wiresPlanPlane' });
   private readonly veilPlane = new Container({ label: 'veilPlane' });
+  private readonly glassPlane = new Container({ label: 'glassPlane' });
   private readonly top = new Container({ label: 'top' });
   private readonly map = new Map<LayerName, Container>();
 
@@ -68,12 +74,14 @@ export class Layers {
     this.add(this.plane, 'decals');
     this.add(this.plane, 'belts');
     this.add(this.lit, 'items', true);
+    this.lit.addChild(this.glassPlane);
+    this.add(this.glassPlane, 'glass', true);
     this.lit.addChild(this.shadowsIso);
     this.add(this.shadowsIso, 'shadows');
     this.lit.addChild(this.reliefPlane);
     this.add(this.reliefPlane, 'relief');
     this.lit.addChild(this.planPlane);
-    this.add(this.planPlane, 'plan');
+    this.add(this.planPlane, 'plan', true); // a big base's plan sprites re-batch apart from the terrain streaming in (D92)
     this.lit.addChild(this.volumes);
     this.add(this.volumes, 'objects');
     this.add(this.lit, 'itemsOver', true);
@@ -115,7 +123,7 @@ export class Layers {
    */
   setView(P: Lin, t: number): void {
     const m = new Matrix(P.a, P.b, P.c, P.d, 0, 0);
-    for (const c of [this.plane, this.reliefPlane, this.planPlane, this.top, this.wiresPlanPlane, this.veilPlane]) c.setFromMatrix(m);
+    for (const c of [this.plane, this.glassPlane, this.reliefPlane, this.planPlane, this.top, this.wiresPlanPlane, this.veilPlane]) c.setFromMatrix(m);
     const V = isoToView(P);
     const mv = new Matrix(V.a, V.b, V.c, V.d, 0, 0);
     this.volumes.setFromMatrix(mv);

@@ -23,9 +23,13 @@ export const C = {
   // terrain
   cirque: '#f0d5b4',
   hardpan: '#dfb994',
-  rock1: '#e3a07a', rock2: '#b69ac0', rock3: '#9a80c0', rock4: '#6e57a0',
+  // rock by hardness H1–H4 (2026-10-16): one warm desert family from ochre to plum heartrock, as
+  // the relief draws it (rock.ts `ROCK`; the lilac rock is gone: violet only in the shade)
+  rock1: '#e6aa80', rock2: '#d58f6c', rock3: '#bd7866', rock4: '#8c5e6c',
   shallow: '#8dd8ce', deep: '#3fb2a8', deepD: '#26857e',
   vent: '#6e4f6c', dug: '#d9b896', filled: '#e3c6a4', duneSea: '#e5c09d',
+  // map 4's gaps (D94): a river's running water (bluer than the still lakes), a chasm's dark and its lit far wall
+  river: '#5ab7cf', riverD: '#2f8fb0', chasm: '#2a2236', chasmWall: '#6a5677',
   fog: '#f5e9d6',
 } as const;
 

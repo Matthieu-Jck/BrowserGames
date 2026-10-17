@@ -258,7 +258,7 @@ class ListPop {
   private place(): void {
     const o = this.owner;
     if (!o) return;
-    const zoom = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')) || 1;
+    const zoom = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-zoom')) || 1;
     const r = o.root.getBoundingClientRect();
     const below = window.innerHeight - r.bottom - 10, above = r.top - 10;
     const down = below >= Math.min(220 * zoom, above) || below >= above;

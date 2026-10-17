@@ -9,12 +9,14 @@
 //      not fit waits in the air, and so do the post's next ones (D43);
 //   2. each post buys its orders — only while its exit leads somewhere, and not while its
 //      container is full: nothing is spent on goods that could not come out — then sells what
-//      its entrance brought, within its throughput;
+//      its entrance brought, within its throughput. The starter contract (D101, `takeStarter`)
+//      buys under the same holds at its fixed price, off the market, and is gone once bought in full;
 //   3. the cargo no order wants, none on its way and none left in its container leaves it (the
 //      graph is then recompiled: the entrance takes the item again);
 //   4. the market settles that epoch with the mu sold / bought → the next epoch's prices;
 //   5. the Gazette's news and each post's activity go out as events.
 // Spot trades are booked on the market at once (`book`).
+import { book } from '../purse';
 import { BAL } from '@/content/balance';
 import { BUILDING_KIND, ITEM_IDS, N_ITEMS, itemDef } from '@/content/registry';
 import { afterFee, valueCents } from '@/market/pricing';
@@ -114,8 +116,10 @@ export function containerFull(sim: Sim, post: Ent): boolean {
 }
 
 /** Why an order buys nothing at the next lift (null: it buys, if the ocelles allow): its price, no outlet for it, a full container. */
-export type OrderHold = 'price' | 'outlet' | 'full';
+export type OrderHold = 'price' | 'outlet' | 'full' | 'fulfilled';
 export function orderHold(sim: Sim, o: ImportOrder): OrderHold | null {
+  // The starter contract bought in full stops (D101): it never buys on at the market's price unasked.
+  if (o.starter !== undefined && o.starter <= 0) return 'fulfilled';
   if (!o.active) return 'price';
   const p = sim.ents.get(o.post);
   if (!p) return null;
@@ -147,6 +151,8 @@ export function importItems(sim: Sim): Map<number, readonly number[]> {
 /** The fee (‰) on every trade: CrierBelt's cut (D64: a monopoly's, and nothing lowers it). */
 const fee = (sim: Sim): number => sim.mods.tradeFee;
 const line = (sim: Sim, l: Omit<TradeLine, 'epoch'>): void => {
+  // Every line is a change of the purse by its cents (D102: the purse's journal, sim/purse.ts).
+  book(sim, l.kind === 'export' ? 'sales' : l.kind === 'import' ? 'orders' : l.kind, l.cents);
   sim.trade.ledger.push({ epoch: sim.absEpoch(), ...l });
   if (sim.trade.ledger.length > LEDGER_MAX) sim.trade.ledger.splice(0, sim.trade.ledger.length - LEDGER_MAX);
 };
@@ -167,6 +173,28 @@ export function addImport(sim: Sim, post: number, item: string, perMin: number, 
   // Its cargo now: the exit hands it out, the entrance no longer takes it (what it brought of it,
   // still in the container, leaves by the exit too: nothing is sold or lost).
   addCargo(sim, post, it);
+  sim.dirty = true;
+  return o.id;
+}
+
+/**
+ * Sign the starter contract (D101): CrierBelt's one-time offer, opened as a standing order on
+ * `post` that buys `BAL.starter.n` items of `BAL.starter.item` at its fixed price, off the market
+ * (see `tradeEpoch`). Once per base: refused `taken` once signed, even after a cancel. Returns the
+ * order's id or a refusal.
+ */
+export function takeStarter(sim: Sim, post: number): number | TradeRefusal {
+  if (!isPost(sim, post)) return 'no_post';
+  if (sim.trade.starterTaken) return 'taken';
+  if (sim.trade.orders.length >= orderSlots(sim.mods)) return 'slots';
+  const it = ITEM_IDS.indexOf(BAL.starter.item as never);
+  if (!tradable(it)) return 'not_tradable'; // content guard: the contract's item must go through a post
+  const S = BAL.starter;
+  const o: ImportOrder = { id: sim.trade.nextOrderId++, post, item: it, perMin: S.perMin, maxCents: S.cents, active: true, starter: S.n * 1000 };
+  sim.trade.orders.push(o);
+  sim.trade.starterTaken = true;
+  sim.log.push({ tick: sim.tick, cmd: { k: 'starter', post } });
+  addCargo(sim, post, it); // as addImport: its exit hands the ore out, its entrance no longer takes it
   sim.dirty = true;
   return o.id;
 }
@@ -196,6 +224,46 @@ export function setFloorPrice(sim: Sim, item: string, cents: number | null): boo
   return true;
 }
 
+/** What one item costs a standing order at the next lift now (centi-◉): the ask, CrierBelt's fee, express freight's share. */
+export function orderUnitCents(sim: Sim, o: ImportOrder): number {
+  if (o.starter !== undefined) return BAL.starter.cents;
+  const c = afterFee(valueCents(1000, sim.prices.ask[o.item] ?? 0, 'buy'), 'buy', fee(sim));
+  return o.express ? Math.ceil((c * BAL.express.price) / 1000) : c;
+}
+
+/**
+ * What a standing order costs a minute as things stand (centi-◉, D101: « −37 ◉/min » on every
+ * order): its rate at the next lift's price — the starter contract's fixed price, as many as it has
+ * left —, or nothing while it holds (its price above its cap, no outlet, a full container, the
+ * contract fulfilled). The Crier's rows and the purse's breakdown (D102) read the same number.
+ */
+export function orderCentsPerMin(sim: Sim, o: ImportOrder): number {
+  if (orderHold(sim, o)) return 0;
+  const n = o.starter !== undefined ? Math.min(o.perMin, Math.ceil(o.starter / 1000)) : o.perMin;
+  if (n <= 0) return 0;
+  if (o.starter !== undefined) return n * BAL.starter.cents;
+  const c = afterFee(valueCents(n * 1000, sim.prices.ask[o.item] ?? 0, 'buy'), 'buy', fee(sim));
+  return o.express ? Math.ceil((c * BAL.express.price) / 1000) : c;
+}
+
+/**
+ * The fulfilled starter contract continued at the market's price (D101: a logged click on its
+ * notice, « Continuer au prix du marché »): an ordinary standing order now, its cap the ask and a
+ * margin (`BAL.starter.continueOver`). False unless it is a fulfilled contract.
+ */
+export function continueStarter(sim: Sim, id: number): boolean {
+  const o = sim.trade.orders.find((x) => x.id === id);
+  if (!o || o.starter === undefined || o.starter > 0) return false;
+  const ask = sim.prices.ask[o.item] ?? 0;
+  delete o.starter;
+  o.maxCents = Math.max(1, Math.ceil((ask * BAL.starter.continueOver) / 1000));
+  o.active = (ask > 0) && ask <= o.maxCents;
+  sim.log.push({ tick: sim.tick, cmd: { k: 'starterGo', id } });
+  sim.dirty = true;
+  return true;
+}
+
+/** Cancel a standing order (the starter contract too: what it had left is forfeit, and it is never offered again). */
 export function cancelImport(sim: Sim, id: number): boolean {
   const i = sim.trade.orders.findIndex((o) => o.id === id);
   if (i < 0) return false;
@@ -267,6 +335,31 @@ function storeOf(sim: Sim, e: Ent): Float64Array {
   return st;
 }
 
+/**
+ * The starter contract's lift at a boundary (D101), within the post's `budget` (mu): whole items
+ * at the fixed price, as many as the contract has left, its rate, the throughput and the purse
+ * allow — only while its exit leads somewhere and its container has room (`orderHold`, as any
+ * order). No fee, no express; booked in the spending, the lifetime totals and the ledger, never
+ * in `t.bought`: the market does not see it and its prices do not move. It lands
+ * `BAL.starter.delayMin` minutes later (on a boundary), from CrierBelt itself (`colony` −1).
+ * Returns the items bought.
+ */
+function starterBuys(sim: Sim, o: ImportOrder, budget: number): number {
+  const t = sim.trade, S = BAL.starter;
+  o.active = true; // no hysteresis: the price is fixed
+  if (budget < 1000 || (o.starter ?? 0) <= 0 || orderHold(sim, o)) return 0;
+  const n = Math.min(o.perMin, Math.ceil(o.starter! / 1000), Math.floor(budget / 1000), Math.floor(Math.max(0, sim.credits) / S.cents));
+  if (n <= 0) return 0;
+  const mu = n * 1000, cost = n * S.cents;
+  sim.credits -= cost;
+  t.spent += cost;
+  t.boughtTotal[o.item] = t.boughtTotal[o.item]! + mu;
+  o.starter = Math.max(0, o.starter! - mu);
+  t.inflight.push({ post: o.post, item: o.item, mu, arrive: sim.tick + S.delayMin * EPOCH, colony: -1, cents: cost });
+  line(sim, { post: o.post, item: o.item, kind: 'import', mu, cents: -cost });
+  return n;
+}
+
 /** The epoch boundary's trade (see the header). Whether the cargo changed (then the graph must be recompiled, offline too). */
 export function tradeEpoch(sim: Sim): boolean {
   const t = sim.trade;
@@ -308,6 +401,12 @@ export function tradeEpoch(sim: Sim): boolean {
     const from: number[] = [];
     for (const o of t.orders) {
       if (o.post !== p.id) continue;
+      if (o.starter !== undefined) {
+        const n = starterBuys(sim, o, budget);
+        budget -= n * 1000; boughtMu += n * 1000; net -= n * BAL.starter.cents;
+        if (n > 0 && !from.includes(-1)) from.push(-1);
+        continue;
+      }
       o.active = orderTrades(o, ask[o.item] ?? 0);
       if (budget < 1000 || orderHold(sim, o)) continue;
       const src = sim.market.sources(o.item)[0];
@@ -358,6 +457,8 @@ export function tradeEpoch(sim: Sim): boolean {
       sim.events.push({ k: 'trade', post: p.id, soldMu, boughtMu, cents: net, from });
     }
   }
+  // The starter contract bought in full stays, stopped (D101, `orderHold` 'fulfilled'): the player
+  // continues it at the market's price (`continueStarter`) or stops it (`cancelImport`).
 
   // 3. The cargo handed out in full leaves it.
   const changed = pruneCargo(sim);

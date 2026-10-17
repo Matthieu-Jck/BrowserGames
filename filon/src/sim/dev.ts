@@ -12,6 +12,7 @@ import { PLAN_IDS, planDef } from '@/content/research';
 import { CIRQUE } from '@/content/world';
 import { CENTER } from './constants';
 import { footprint, forTiles, worldPorts, type WorldPort } from './entities';
+import { blockDrill, onBlockGrid, oreBlockOf } from './ore-blocks';
 import { gap2, isLinkPoint, linkable, linkPoint, wireObstacle, wireSteep } from './power/links';
 import { landOf } from './systems/power';
 import { DX, DY, opposite, isFloor, isRock, type Ent, type Rot } from './types';
@@ -549,6 +550,8 @@ function touches(a: Pick<Ent, 'def' | 'x' | 'y' | 'rot'>, b: Pick<Ent, 'def' | '
 
 /** What an ore tile under a non-drill's footprint adds to its distance (doubled tiles, squared: 1024 is about 16 tiles off). */
 const ORE_SPOT = 1024;
+/** What a drill off the deposits' block grid adds (D104): behind every spot on it within any search's reach (r 30). */
+const OFF_GRID = 1 << 16;
 
 /**
  * Where `def` can stand around tile `near` (within `r` tiles), nearest first — by its centre,
@@ -561,7 +564,7 @@ const ORE_SPOT = 1024;
  * deposits where it can (`ORE_SPOT`); sharing an edge with entity `touch` if given (whose tiles its ports may face).
  */
 export function spotsNear(sim: Sim, def: string, near: readonly [number, number], opts: { item?: string; orePart?: number; r?: number; toward?: readonly [number, number]; touch?: number; inputsFree?: boolean; onRock?: boolean } = {}): Array<[number, number, Rot]> {
-  const di = buildingIdx(def), it = opts.item ? itemIdx(opts.item) : -1, r = opts.r ?? 12;
+  const di = buildingIdx(def), it = opts.item ? itemIdx(opts.item) : -1, r = opts.r ?? 12, B = oreBlockOf(sim.grid);
   const fronts = portFronts(sim), outs = outFronts(sim), inputsFree = opts.inputsFree ?? true;
   const toucher = opts.touch ? sim.ents.get(opts.touch) : undefined;
   if (opts.touch && !toucher) return [];
@@ -598,12 +601,14 @@ export function spotsNear(sim: Sim, def: string, near: readonly [number, number]
         if (!ports.every(opens)) continue;
         if (!freeSpot(sim, def, x, y, rot)) continue;
         const p0 = ports.find((p) => p.io === 'out') ?? ports[0];
-        const ddx = 2 * x + w - 2 * near[0] - 1, ddy = 2 * y + h - 2 * near[1] - 1;
+        // A drill on a deposit of whole blocks (D104) takes the blocks' grid first: off it, it
+        // would leave half a block on either side that no drill can then cover whole.
+        const ddx = 2 * x + w - 2 * near[0] - 1, ddy = 2 * y + h - 2 * near[1] - 1, off = it >= 0 && blockDrill(di, rot, B) && !onBlockGrid(x, y, B) ? OFF_GRID : 0;
         // Anything but a drill keeps off the deposits where it can (D82): each ore tile it would
         // cover counts as standing some tiles farther off.
         let ore = 0;
         if (it < 0) for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) if (sim.grid.ore(x + i, y + j) >= 0) ore++;
-        out.push([x, y, rot, ddx * ddx + ddy * ddy + ORE_SPOT * ore, p0 ? (p0.fx - tx) * (p0.fx - tx) + (p0.fy - ty) * (p0.fy - ty) : 0]);
+        out.push([x, y, rot, ddx * ddx + ddy * ddy + ORE_SPOT * ore + off, p0 ? (p0.fx - tx) * (p0.fx - tx) + (p0.fy - ty) * (p0.fy - ty) : 0]);
       }
     }
   }

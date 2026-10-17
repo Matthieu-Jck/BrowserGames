@@ -7,12 +7,12 @@
 // mutates a colony outside these commands (sandbox helpers of window.FL) breaks replay.
 import type { Emblem } from '@/content/emblem';
 import type { MarketEvent } from '@/market/types';
-import type { BranchId } from './research/runtime';
 import type { Sim } from './state';
 import type { Rot } from './types';
 
 export type Command =
-  | { k: 'place'; def: string; x: number; y: number; rot: Rot; cfg?: number }
+  /** `turned`: the player turned it in hand (R): a routing block keeps that rotation over a ribbon (D98). */
+  | { k: 'place'; def: string; x: number; y: number; rot: Rot; cfg?: number; turned?: boolean }
   | { k: 'remove'; x: number; y: number }
   | { k: 'recipe'; id: number; recipe: string | null }
   | { k: 'portItem'; id: number; port: number; item: string | null }
@@ -23,6 +23,7 @@ export type Command =
   /** Unlock a plan of the tree (D33): paid from the Heart, at once. */
   | { k: 'unlockPlan'; id: string }
   | { k: 'cancelResearch'; id: string }
+  /** A family's reconversion: retired with its button (D107); kept so older logs still read, it does nothing. */
   | { k: 'respec'; branch: string }
   | { k: 'designate'; tiles: number[]; on: boolean }
   | { k: 'hearthUp' }
@@ -32,6 +33,10 @@ export type Command =
   /** `express` (Express Freight, cm_express): half the delay, a quarter dearer. */
   | { k: 'importOrder'; post: number; item: string; perMin: number; maxCents: number; express?: boolean }
   | { k: 'cancelOrder'; id: number }
+  /** The starter contract (D101): CrierBelt's one-time offer, signed on a trade post. */
+  | { k: 'starter'; post: number }
+  /** The fulfilled starter contract continued at the market's price (D101). */
+  | { k: 'starterGo'; id: number }
   | { k: 'spot'; item: string; side: 'sell' | 'buy'; n: number }
   /** Power wires (D25): `a` is the end the player started from (a pillar or the Hearth, usually). */
   | { k: 'link'; a: number; b: number }
@@ -55,7 +60,11 @@ export type Command =
   /** The Compute Plan (cm_plan): CrierBelt's tokens at a share of the price, for a fee an hour. */
   | { k: 'tokenPlan'; on: boolean }
   /** Floor Prices (cm_floor): the trade posts hold back an item whose bid is under this (centi-◉; null: none). */
-  | { k: 'floorPrice'; item: string; cents: number | null };
+  | { k: 'floorPrice'; item: string; cents: number | null }
+  /** The expertises (D93): an earned one chosen into an empty slot, in place at once. */
+  | { k: 'expertise'; slot: number; id: string }
+  /** A réorientation: the slot's expertise replaced by `id` — paid, in place 24 h later. */
+  | { k: 'reorient'; slot: number; id: string };
 
 export type CommandKind = Command['k'];
 
@@ -72,7 +81,7 @@ export type SimEvent =
   | { k: 'dug'; tile: number; ore: Array<{ item: number; mu: number }> }
   /** A water / salt tile was filled. */
   | { k: 'filled'; tile: number }
-  /** A trade post lifted cargo at an epoch boundary (mu sold / bought, net centi-◉; `from`: the colonies its imports come from). */
+  /** A trade post lifted cargo at an epoch boundary (mu sold / bought, net centi-◉; `from`: the colonies its imports come from, −1 for CrierBelt itself: the starter contract). */
   | { k: 'trade'; post: number; soldMu: number; boughtMu: number; cents: number; from: number[] }
   /** Imported goods arrived at a post (or in the Hearth next to it). */
   | { k: 'delivered'; post: number; item: number; mu: number }
@@ -85,12 +94,19 @@ export type SimEvent =
   /** The purse went into the red (research holds: its tokens cannot be paid) or back out of it (D68). */
   | { k: 'researchHeld'; held: boolean }
   /** A lab started the node queued for it (the Research Queue). */
-  | { k: 'researchQueued'; id: string };
+  | { k: 'researchQueued'; id: string }
+  /** An expertise's rank earned (announced once the Core mounts the Archive), or one in place at the end of its réorientation's 24 h (D93). */
+  | { k: 'expertise'; id: string; rank: number; what: 'earned' | 'ready' }
+  /**
+   * The Gleaners (D103): their first take of a night (`night`: the notice that introduces them), and
+   * at dawn what they took in the night just ended (`dawn`: item and milli-items, by item; the morning report).
+   */
+  | { k: 'gleaners'; what: 'night' | 'dawn'; taken: Array<[number, number]> };
 
 /** Apply one command (as logged). Returns whether the colony accepted it. */
 export function exec(sim: Sim, cmd: Command): boolean {
   switch (cmd.k) {
-    case 'place': return sim.place(cmd.def, cmd.x, cmd.y, cmd.rot, cmd.cfg ?? 0).ok;
+    case 'place': return sim.place(cmd.def, cmd.x, cmd.y, cmd.rot, cmd.cfg ?? 0, cmd.turned ?? false).ok;
     case 'remove': return sim.remove(cmd.x, cmd.y);
     case 'recipe': return sim.setRecipe(cmd.id, cmd.recipe);
     case 'portItem': return sim.setPortItem(cmd.id, cmd.port, cmd.item);
@@ -100,7 +116,7 @@ export function exec(sim: Sim, cmd: Command): boolean {
     case 'research': return sim.startResearch(cmd.id, cmd.lab).ok;
     case 'unlockPlan': return sim.unlockPlan(cmd.id).ok;
     case 'cancelResearch': return sim.cancelResearch(cmd.id);
-    case 'respec': return sim.respec(cmd.branch as BranchId);
+    case 'respec': return false; // retired (D107): no reconversion starts
     case 'designate': return sim.designate(cmd.tiles, cmd.on) > 0;
     case 'hearthUp': return sim.upgradeHearth().ok;
     case 'drifter': return sim.buyDrifter(cmd.dock);
@@ -108,6 +124,8 @@ export function exec(sim: Sim, cmd: Command): boolean {
     case 'unroute': return sim.removeRoute(cmd.id);
     case 'importOrder': return typeof sim.addImport(cmd.post, cmd.item, cmd.perMin, cmd.maxCents, cmd.express ?? false) === 'number';
     case 'cancelOrder': return sim.cancelImport(cmd.id);
+    case 'starter': return typeof sim.takeStarter(cmd.post) === 'number';
+    case 'starterGo': return sim.continueStarter(cmd.id);
     case 'spot': return 'cents' in sim.spotTrade(cmd.item, cmd.side, cmd.n);
     case 'link': return sim.link(cmd.a, cmd.b).ok;
     case 'unlink': return sim.unlink(cmd.a, cmd.b);
@@ -122,6 +140,8 @@ export function exec(sim: Sim, cmd: Command): boolean {
     case 'queueResearch': return sim.queueResearch(cmd.lab, cmd.id);
     case 'tokenPlan': return sim.setTokenPlan(cmd.on);
     case 'floorPrice': return sim.setFloorPrice(cmd.item, cmd.cents);
+    case 'expertise': return sim.chooseExpertise(cmd.slot, cmd.id) === null;
+    case 'reorient': return sim.reorient(cmd.slot, cmd.id) === null;
     default: { const never: never = cmd; return never; } // a new Command kind must be handled here
   }
 }

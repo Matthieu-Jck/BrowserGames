@@ -5,7 +5,7 @@ import { testSim, stockedSilo, steadyPower, wire } from '../testkit';
 import { effectiveCost } from './runtime';
 import { serialize, deserialize } from '../serialize';
 import { catchUp } from '../offline/catchup';
-import { replay } from '../commands';
+import { exec, replay } from '../commands';
 import type { Sim } from '../state';
 
 const DF = (): number => itemIdx('journal_1');
@@ -13,7 +13,7 @@ const DF = (): number => itemIdx('journal_1');
 /** A research lab beside the Heart (on the claim's land, wired to it), its store pre-filled with data files. */
 function labSim(files: number): { sim: Sim; lab: number } {
   const sim = testSim();
-  // Mechanics hangs from the Face Cutter (D87): learnt outside commands, as `learn` does.
+  // The Face Cutter's plan (D101: a plan now; Mechanics no longer hangs from it), taken outside commands.
   sim.done.add('ex_quartz');
   sim.rebuildDerived();
   const r = sim.place('observatory', 503, 512, 0);
@@ -30,6 +30,18 @@ function learn(sim: Sim, ...ids: string[]): void {
   sim.rebuildDerived();
 }
 
+/** Tokens billed (D105: from the Server Room on), so a project's tokens are counted and paid for. */
+const billed = (sim: Sim): void => learn(sim, 'an_servers');
+
+/**
+ * Tier 2 open (D93): Tier 1 whole — the Synthesis and every node it needs — and two expertises
+ * chosen. Its first trunk node, Earthworks (`tr2`), runs 8 minutes on 15 000 tokens: 1 875 a minute.
+ */
+function tierTwo(sim: Sim): void {
+  learn(sim, ...treePrereq('tr_synth'), 'tr_synth');
+  sim.expertise.slots = [{ id: 'estate', at: 0, on: false }, { id: 'haulage', at: 0, on: false }];
+}
+
 describe('research (D68, D69): data files, AI tokens, tiers', () => {
   it('a node costs its table\'s price, whatever else the claim owns (D72: no spread penalty, no lineage discount)', () => {
     // A Tier 3 node uses three kinds of data (D71): Survey Data, a third as much Mechanics Data, a
@@ -42,6 +54,7 @@ describe('research (D68, D69): data files, AI tokens, tiers', () => {
     expect(DEPTH_COST[9]!.tokens).toBe(6_000_000);
     // A Tier 2 node started by a claim that owns Tier 1–2 research in every other family: its table's price.
     const { sim } = labSim(0);
+    billed(sim);
     const closure = (id: string): string[] => [id, ...treePrereq(id).flatMap(closure)];
     learn(sim, ...closure('en_heavyacc').slice(1), ...['ex3', 'dn_wiremill', 'cm_floor', 'an_relay', 'xp_bigsilo'].flatMap(closure));
     expect(sim.startResearch('en_heavyacc')).toEqual({ ok: true, reason: null });
@@ -53,26 +66,28 @@ describe('research (D68, D69): data files, AI tokens, tiers', () => {
 
   it('cannot finish before its minimum duration; it uses its data files and, by the minute, its tokens', () => {
     const { sim, lab } = labSim(100);
+    billed(sim);
     const credits = sim.credits;
     expect(sim.startResearch('tr1').ok).toBe(true);
     const dur = sim.projects[0]!.dur;
-    expect(dur).toBe(3000);
+    expect(dur).toBe(effectiveCost('tr1').ticks);
+    expect(dur).toBe(600); // a minute: Tier 1 is short (D107)
     sim.run(dur - 1);
     expect(sim.done.has('tr1')).toBe(false);
     sim.run(1);
     expect(sim.done.has('tr1')).toBe(true);
-    expect(sim.stores.get(lab)![DF()]).toBe(80_000);
+    expect(sim.stores.get(lab)![DF()]).toBe(94_000); // its 6 Survey Data
     // 8 000 tokens at CrierBelt's 10 ◉ the thousand, billed minute by minute: 80 ◉.
     expect(sim.tokenStats.totalBought).toBe(8000);
     expect(credits - sim.credits).toBe(8000);
   });
 
   it('takes longer when data runs short, and resumes as it arrives', () => {
-    const { sim, lab } = labSim(10);
+    const { sim, lab } = labSim(3);
     sim.startResearch('tr1');
-    sim.run(3500);
+    sim.run(sim.projects[0]!.dur + 500);
     expect(sim.done.has('tr1')).toBe(false);
-    expect(sim.projects[0]!.paid[0]).toBe(10_000);
+    expect(sim.projects[0]!.paid[0]).toBe(3_000);
     sim.stores.get(lab)![DF()] = 20_000;
     sim.run(1);
     expect(sim.done.has('tr1')).toBe(true);
@@ -84,6 +99,10 @@ describe('research (D68, D69): data files, AI tokens, tiers', () => {
     expect(sim.startResearch('tr1').ok).toBe(true);
     expect(sim.researchBlock('tr1')).toBe('active');
     learn(sim, 'tr1');
+    expect(sim.researchBlock('tr2')).toBe('prereq'); // the Synthesis closes Tier 1 first (D93)
+    learn(sim, 'tr_synth');
+    expect(sim.researchBlock('tr2')).toBe('expertise'); // and two expertises chosen open Tier 2
+    sim.expertise.slots = [{ id: 'estate', at: 0, on: false }, { id: 'haulage', at: 0, on: false }];
     expect(sim.researchBlock('tr2')).toBe('slots');
     learn(sim, 'tr3', 'tr4', 'tr5');
     expect(sim.mods.slots).toBe(2);
@@ -98,9 +117,10 @@ describe('research (D68, D69): data files, AI tokens, tiers', () => {
 
   it('cancelling leaves the data already paid in the lab; the tokens used are spent', () => {
     const { sim, lab } = labSim(100);
+    billed(sim);
     sim.startResearch('tr1');
-    sim.run(1500);
-    expect(sim.projects[0]!.paid[0]).toBe(10_000);
+    sim.run(300); // half its minute: half its 6 Survey Data, half its 8 000 tokens
+    expect(sim.projects[0]!.paid[0]).toBe(3_000);
     expect(sim.cancelResearch('tr1')).toBe(true);
     expect(sim.stores.get(lab)![DF()]).toBe(100_000);
     sim.run(600);
@@ -109,8 +129,10 @@ describe('research (D68, D69): data files, AI tokens, tiers', () => {
 
   it('a purse in the red holds research until it is back above zero', () => {
     const { sim } = labSim(100);
-    sim.credits = 500; // 5 ◉: less than a minute of Mechanics' tokens (1 600 a minute)
-    sim.startResearch('tr1');
+    billed(sim);
+    tierTwo(sim);
+    sim.credits = 500; // 5 ◉: less than a minute of Earthworks' tokens (1 875 a minute)
+    expect(sim.startResearch('tr2').ok).toBe(true);
     sim.run(600 - (sim.tick % 600)); // to the boundary
     sim.run(600);
     expect(sim.credits).toBeLessThan(0);
@@ -139,16 +161,17 @@ describe('research (D68, D69): data files, AI tokens, tiers', () => {
     expect(sim.tokenStats.supply).toBe(2000);
     expect(sim.tokenStats.used).toBe(0);
     const credits = sim.credits;
-    sim.startResearch('tr1'); // 1 600 tokens a minute: the server covers them
+    tierTwo(sim);
+    expect(sim.startResearch('tr2').ok).toBe(true); // 1 875 tokens a minute: the server covers them
     sim.run(600 - (sim.tick % 600));
     sim.run(600);
-    expect(sim.tokenStats.used).toBe(1600);
-    expect(sim.tokenStats.fromServers).toBe(1600);
+    expect(sim.tokenStats.used).toBe(1875);
+    expect(sim.tokenStats.fromServers).toBe(1875);
     expect(sim.tokenStats.bought).toBe(0);
     expect(sim.credits).toBe(credits);
   });
 
-  it('the Heart makes data files with Data Processing from its level 2, and hands them out of its one outlet (D86)', () => {
+  it('the Heart makes Survey Data from its level 2, research or not (D101: 2 a minute, Data Processing 1 more), out of its one outlet (D86)', () => {
     const sim = testSim();
     learn(sim, 'an_data');
     const d0 = sim.stock[DF()]!;
@@ -163,20 +186,25 @@ describe('research (D68, D69): data files, AI tokens, tiers', () => {
     const back = deserialize(serialize(sim), sim.grid.source);
     back.run(600);
     expect(back.produced[DF()]).toBe(0);
-    // Level 2 (Mechanics and its materials): a file a minute, no power needed, out by the ribbon.
-    learn(back, 'tr1');
-    back.grant('iron_plate', 200); back.grant('gear', 50);
+    // Level 2 (D101: the player's own upgrade, in plates, glass and copper wire): 2 a minute and Data
+    // Processing's 1, no power needed, out by the ribbon.
+    back.grant('iron_plate', 300); back.grant('glass', 100); back.grant('copper_wire', 100);
     expect(back.upgradeHearth().ok).toBe(true);
+    expect(back.heartDataRate()).toBe(3000);
     back.run(600);
-    expect(back.produced[DF()]).toBe(1000);
+    expect(back.produced[DF()]).toBe(3000);
     back.run(1800);
-    expect(back.produced[DF()]).toBe(4000);
-    expect(back.stock[DF()]! - d0).toBeLessThan(3000); // the files leave by the ribbon
+    expect(back.produced[DF()]).toBe(12_000);
+    expect(back.stock[DF()]! - d0).toBeLessThan(12_000); // some left by the ribbon (a dead end: it fills up)
+    // Without Data Processing (D101: the first lab runs on the Core's own data): 2 a minute.
+    const plain = testSim();
+    plain.hearthLevel = 2; // outside commands, like `learn`
+    expect(plain.heartDataRate()).toBe(2000);
   });
 
   it('the Research Queue: a lab moves on to the node queued for it', () => {
     const { sim, lab } = labSim(200);
-    learn(sim, 'an_queue');
+    learn(sim, 'an_queue', 'tr_synth'); // a Tier 2 node learnt: Tier 2 is open (D93)
     expect(sim.queueResearch(lab, 'nope')).toBe(false); // a known node, not learnt yet
     sim.startResearch('tr1');
     expect(sim.queueResearch(lab, 'tr2')).toBe(true);
@@ -189,7 +217,7 @@ describe('research (D68, D69): data files, AI tokens, tiers', () => {
   it('online ≈ offline: data by ribbon, the Heart’s files, servers, the minute’s bill', () => {
     const sim = testSim();
     steadyPower(sim);
-    learn(sim, 'an_servers', 'an_data', 'ex_quartz'); // Mechanics hangs from the Face Cutter (D87)
+    learn(sim, 'an_servers', 'an_data', 'ex_quartz'); // the Face Cutter's plan too (D101)
     sim.hearthLevel = 2; // its data outlet mounted (D86), outside commands like `learn`
     // A lab (3×3, D84) over a silo of data files, one ribbon square between (the silo hands out north).
     const lab = sim.place('observatory', 512, 516, 0);
@@ -216,27 +244,34 @@ describe('research (D68, D69): data files, AI tokens, tiers', () => {
     expect(b.stock[DF()]).toBe(a.stock[DF()]);
   });
 
-  it('reconversion: the family goes, its buildings stand dormant, notes come back after the wait', () => {
+  it('reconversion is retired (D107): its command does nothing; a save’s reconversion under way runs out, pays its notes, and they pre-pay research', () => {
     const sim = testSim();
     learn(sim, 'tr1', 'en_pitch', 'en2', 'xp_swift');
     sim.grant('iron_plate', 50); sim.grant('glass', 50); sim.grant('copper_wire', 50);
     const sb = sim.place('sun_bulb', 516, 504, 0);
     expect(sb.ok).toBe(true);
-    expect(sim.respec('en')).toBe(true);
-    expect(sim.done.has('en_pitch') || sim.done.has('en2')).toBe(false);
-    expect(sim.isDormant(sim.ents.get(sb.id!)!)).toBe(true);
-    expect(sim.projects[0]!.id).toBe('respec:en');
-    expect(sim.researchBlock('xp_bigsilo')).toBe('slots');
-    expect(sim.respecBlock('xp')).toBe('cooldown');
-    sim.run(sim.projects[0]!.dur);
+    // The command a log may still hold: nothing goes, nothing starts, nothing is logged.
+    const log = sim.log.length;
+    expect(exec(sim, { k: 'respec', branch: 'en' })).toBe(false);
+    expect(sim.done.has('en_pitch') && sim.done.has('en2')).toBe(true);
     expect(sim.projects.length).toBe(0);
-    expect(sim.notes).toBeGreaterThan(0);
+    expect(sim.log.length).toBe(log);
+    // A save from before, its Energy reconverted and the wait under way: the family gone, its
+    // panel dormant, the project holding a slot, no lab.
+    sim.done.delete('en_pitch'); sim.done.delete('en2');
+    sim.projects.push({ id: 'respec:en', lab: 0, cost: [], paid: [], dur: 600, el: 0, notes: 5000 });
+    sim.rebuildDerived();
+    const back = deserialize(serialize(sim), sim.grid.source);
+    expect(back.isDormant(back.ents.get(sb.id!)!)).toBe(true);
+    expect(back.projects[0]!.id).toBe('respec:en');
+    back.run(600);
+    expect(back.projects.length).toBe(0);
+    expect(back.notes).toBe(5000);
     // Notes pre-pay the next research's data files.
-    expect(sim.place('observatory', 503, 512, 0).ok).toBe(true);
-    const notes = sim.notes;
-    sim.startResearch('en_pitch');
-    expect(sim.notes).toBeLessThan(notes);
-    expect(sim.projects[0]!.paid[0]).toBeGreaterThan(0);
+    expect(back.place('observatory', 503, 512, 0).ok).toBe(true);
+    back.startResearch('en_pitch');
+    expect(back.notes).toBeLessThan(5000);
+    expect(back.projects[0]!.paid[0]).toBeGreaterThan(0);
   });
 });
 
@@ -291,8 +326,7 @@ describe('plans (D33): the tree’s instant unlocks, paid from the Heart', () =>
     for (const id of PLAN_IDS) if (PLANS[id].lane !== 'gate') { for (const [it, n] of PLANS[id].cost) sim.grant(it, n); expect(sim.unlockPlan(id).ok, id).toBe(true); }
     expect(sim.researchBlock('tr1')).toBe('prereq');
     expect(sim.unlockPlan('observatory').ok).toBe(true);
-    expect(sim.researchBlock('ex_quartz')).toBe('no_lab'); // now only a lab is missing
-    expect(sim.researchBlock('tr1')).toBe('prereq'); // Mechanics after the Face Cutter (D87)
+    expect(sim.researchBlock('tr1')).toBe('no_lab'); // now only a lab is missing (D101: Mechanics straight after the lab's plan)
   });
 
   it('unlocks replay to the same state hash, and survive save → load', () => {

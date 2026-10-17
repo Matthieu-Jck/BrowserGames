@@ -13,6 +13,7 @@
 import { ITEMS, type ItemId } from '@/content/items';
 import type { Glyph, ItemDef } from '@/content/types';
 import { C, mix } from '../tokens';
+import { ORE_LOOK } from '../ore';
 import type { Ctx } from '../ink';
 
 export const GLYPH = 32;
@@ -283,15 +284,16 @@ function quartzPoint(ctx: Ctx, x: number, base: number, h: number, w: number, le
 
 const GLYPHS: Record<Glyph, G> = {
   pebble: (ctx, col) => {
-    // Iron ore: a chunky faceted rock, rust brown, its lit top and shaded flank cut as facets,
-    // grey metal flecks catching the light.
+    // Iron ore: a chunky faceted rock, rust-red, its lit top cut as a facet and its far flank
+    // grey-black magnetite — the nodules on the ground (art/ore.ts `ORE_LOOK`, D99) — grey metal
+    // flecks catching the light.
     const nw: P = [6.5, 11.5], n: P = [12, 6.5], ne: P = [21, 5.5], e: P = [27, 10.5];
     const se: P = [28.5, 19], s: P = [23, 26], sw: P = [10.5, 27], w: P = [4, 20.5];
     const k1: P = [11, 13.5], k2: P = [20, 13], k3: P = [19.5, 21]; // where the facets meet
     const rock = poly([nw, n, ne, e, se, s, sw, w]);
     fill(ctx, rock, col);
-    fill(ctx, poly([nw, n, ne, e, k2, k1]), hi(col, 0.3));
-    fill(ctx, poly([e, se, s, k3, k2]), lo(col, 0.32));
+    fill(ctx, poly([nw, n, ne, e, k2, k1]), ORE_LOOK.iron_ore.lit);
+    fill(ctx, poly([e, se, s, k3, k2]), ORE_LOOK.iron_ore.accent);
     line(ctx, [k1, k2, e], 0.8, lo(col, 0.55));
     line(ctx, [k2, k3, s], 0.8, lo(col, 0.55));
     for (const [x, y, k] of [[10.5, 18.5, 1], [15, 23, 0.8], [24, 17.5, 0.85], [15.5, 9.5, 0.75]] as const) {
@@ -368,7 +370,8 @@ const GLYPHS: Record<Glyph, G> = {
   },
   copper: (ctx, col) => {
     // Copper ore: a broken chunk of copper-orange rock (a peaked silhouette where iron ore is a
-    // squat boulder), faceted the same way, crusted with teal patina.
+    // squat boulder), faceted the same way, crusted with malachite green — the crusts on the
+    // ground (art/ore.ts `ORE_LOOK`, D99).
     const w: P = [3.5, 18.5], nw: P = [8, 9], n: P = [15.5, 5.5], ne: P = [25.5, 4.5];
     const e: P = [29, 13], se: P = [27, 24.5], s: P = [18.5, 28.5], sw: P = [7, 26.5];
     const k1: P = [11.5, 14], k2: P = [21, 13.5], k3: P = [21, 22]; // where the facets meet
@@ -376,9 +379,10 @@ const GLYPHS: Record<Glyph, G> = {
     fill(ctx, rock, col);
     fill(ctx, poly([nw, n, ne, e, k2, k1]), hi(col, 0.3));
     fill(ctx, poly([e, se, s, k3, k2]), lo(col, 0.3));
-    fill(ctx, poly([[5.5, 21], [9.5, 18], [14, 19.5], [12.5, 24.5], [7.5, 25]]), C.turq);
-    fill(ctx, poly([[16.5, 8.5], [21.5, 7], [22.5, 10.5], [18, 11.5]]), mix(C.turq, WHITE, 0.25));
-    fill(ctx, poly([[22.5, 18.5], [26.5, 16.5], [26, 21.5], [22.5, 23]]), C.turqD);
+    const green = ORE_LOOK.copper_ore.accent;
+    fill(ctx, poly([[5.5, 21], [9.5, 18], [14, 19.5], [12.5, 24.5], [7.5, 25]]), green);
+    fill(ctx, poly([[16.5, 8.5], [21.5, 7], [22.5, 10.5], [18, 11.5]]), mix(green, WHITE, 0.3));
+    fill(ctx, poly([[22.5, 18.5], [26.5, 16.5], [26, 21.5], [22.5, 23]]), mix(green, C.ink, 0.3));
     line(ctx, [nw, k1, k2, e], 0.8, lo(col, 0.55));
     line(ctx, [k2, k3, s], 0.8, lo(col, 0.55));
     stroke(ctx, rock);

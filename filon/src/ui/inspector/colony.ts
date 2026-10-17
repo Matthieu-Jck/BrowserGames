@@ -1,6 +1,7 @@
 // colony.ts — inspector panels of the base itself, laid out by the kit (D89): the Heart (at the top
 // its level as steps and its data outlet; then its stock as icons and amounts, and the next level:
-// what it mounts on a corner, D86, and what it costs — the upgrade itself is the foot's action) and
+// what it mounts on a corner, D86, and what it costs — the upgrade itself is the foot's action; from
+// level 3 its Archive: the two expertises in place, D93, and « Ouvrir l'Archive » in the foot) and
 // the landscapers (an excavator's / backfiller's job and its time left, or the marks in reach; the
 // stone it holds).
 import { BAL } from '@/content/balance';
@@ -11,6 +12,9 @@ import { duration } from '@/i18n/format';
 import { locale, t, tr } from '@/i18n/i18n';
 import { footprint } from '@/sim/entities';
 import { itemMention } from '../mention';
+import { expertiseDef } from '@/content/expertises';
+import { archiveOpen, rankOf } from '@/sim/systems/expertise';
+import { archiveGlyph, effectFigure, effectLabel, expertiseIcon, romanRank } from '../screens/expertise';
 import { costChips, equation, fmt, heldList, itemRow, itemTerm, mark, progressBar, section, type Panel, type PanelCtx } from './kit';
 
 /** The Heart's level as steps (one inked per level reached), and its data outlet once mounted (D68, D86). */
@@ -18,19 +22,16 @@ export const hearthHero = ({ sim }: PanelCtx): HTMLElement => {
   const lv = sim.hearthLevel, max = BAL.hearthUpgrades.length + 1;
   const steps = el('span.insp-steps', { title: t('insp.hearth.levelOf', { n: lv, max }) }, Array.from({ length: max }, (_, i) => el('i', { 'data-on': i < lv ? '' : null })));
   const parts: HTMLElement[] = [el('div.insp-hero-line', {}, [mark('level'), el('b.insp-hero-name.lettering', {}, t('insp.hearth.level', { n: lv })), steps])];
-  // Its data outlet (D68): the files a minute it makes and hands out, once Analytics has it make
-  // some — from the level that mounts the outlet (D86); before, which level.
-  if (sim.mods.heartData > 0) {
-    const file = itemIdx('journal_1');
-    parts.push(lv >= BAL.hearthDataLevel
-      ? equation([], [itemTerm(file, fmt(sim.mods.heartData / 1000, 0))], t('insp.unit.perMin'))
-      : el('p.insp-note', {}, [itemMention(file, { name: false }), ' ', t('insp.hearth.adds', { n: BAL.hearthDataLevel })]));
-  }
+  // Its data outlet (D68): the Survey Data a minute it makes and hands out, from the level that
+  // mounts the outlet (D86; D101: research or not, the first lab runs on it). Before, the next
+  // level's section says which level mounts it.
+  const rate = sim.heartDataRate();
+  if (rate > 0) parts.push(equation([], [itemTerm(itemIdx('journal_1'), fmt(rate / 1000, 0))], t('insp.unit.perMin')));
   return el('div.insp-hero', { 'data-hero': 'hearth' }, parts);
 };
 
 /** The Heart: the top of its stock; the next level, what it mounts and costs (the upgrade in the foot). */
-export const hearthPanel: Panel = ({ sim, host, live, action }) => {
+export const hearthPanel: Panel = ({ sim, host, live, action, atlas }) => {
   const list = heldList(live, () => [...sim.stock.keys()]
     .filter((i) => sim.stock[i]! >= 1000)
     .sort((a, b) => sim.stock[b]! - sim.stock[a]! || a - b)
@@ -39,12 +40,28 @@ export const hearthPanel: Panel = ({ sim, host, live, action }) => {
   const lv = sim.hearthLevel;
   const up = BAL.hearthUpgrades[lv - 1];
   const out: Array<HTMLElement | null> = [section({ sec: 'stock', title: t('insp.stock'), icon: mark('store') }, [list])];
+  // The Archive (D93): the expertises in place, their rank and effect; the window in the foot.
+  if (archiveOpen(sim)) {
+    const rows = sim.expertise.slots.map((s, i) => {
+      const d = s ? expertiseDef(s.id) : undefined;
+      if (!s || !d) return el('div.insp-exp-slot', { 'data-empty': '' }, [el('span.ex-slotnum.lettering', {}, String(i + 1)), t('exp.slot.empty')]);
+      const rank = rankOf(sim, s.id);
+      return el('div.insp-exp-slot', { title: effectLabel(d) }, [
+        expertiseIcon(atlas, d.icon, 22), el('b', {}, `${d.name[locale()]} ${romanRank(rank)}`),
+        s.on ? mark('on') : mark('order', t('exp.coming')), el('b.ex-fig', {}, effectFigure(d, rank)),
+      ]);
+    });
+    out.push(section({ sec: 'archive', title: t('insp.hearth.archive'), icon: archiveGlyph(), tip: t('exp.tip') }, [el('div.insp-exp-slots', {}, rows)]));
+    if (host.openExpertise) action(el('button.btn.insp-recipe', { 'data-insp-act': 'expertise', onclick: () => host.openExpertise?.() }, t('insp.hearth.archive.open')));
+  }
   if (!up) return out; // the top block's steps say it is the last level (its tooltip in words)
   const ok = sim.unlocked(up.unlock);
   const locked = t('insp.hearth.locked', { res: nodeName(up.unlock)[locale()] });
   out.push(section({ sec: 'level', title: t('insp.hearth.nextLevel', { n: lv + 1 }), icon: mark('level') }, [
     // What the next level mounts on its corner (D86): the data outlet, shown by the file it hands out.
     lv + 1 === BAL.hearthDataLevel ? el('p.insp-note', {}, [itemMention(itemIdx('journal_1'), { name: false }), ' ', t('insp.hearth.adds', { n: lv + 1 })]) : null,
+    // …the Archive of the expertises (D93), shown by its mark.
+    lv + 1 === BAL.expertise.level ? el('p.insp-note', {}, [archiveGlyph(), ' ', t('insp.hearth.archiveAt', { n: lv + 1 })]) : null,
     costChips(sim, up.cost),
     ok ? null : el('p.insp-note', { 'data-tone': 'bad' }, [mark('tree'), ' ', locked]),
   ]));

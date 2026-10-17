@@ -19,6 +19,10 @@ export interface TerrainSource {
   readonly tarn?: { readonly x: number; readonly y: number; readonly level: number } | null;
   /** The land's quartz vein, where there is one (map 3, D87): its face tiles and the way they look. */
   readonly quartzVein?: VeinSite | null;
+  /** A point on the sea's coast straight out from the cirque (map 4, D94: the shared world's sea); null where there is none. */
+  seaPoint?(): [number, number] | null;
+  /** The land's deposits come in whole blocks this wide on the world's grid (map 4, D104: a drill's footprint); absent or 1: tile by tile. */
+  readonly oreBlock?: number;
 }
 
 /**

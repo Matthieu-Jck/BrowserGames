@@ -1,16 +1,19 @@
 import { describe, it, expect } from 'vitest';
+import { BAL } from '@/content/balance';
 import { RESEARCH_IDS, buildingIdx, itemIdx } from '@/content/registry';
 import { researchNode } from '@/content/research';
 import { WORLD_SEED } from '@/content/world';
 import { afterFee, valueCents } from '@/market/pricing';
 import { testSim, line, steadyPower, wire, IRON } from './testkit';
 import { WORLD_EPOCH0 } from './constants';
+import { replay } from './commands';
 import { buildDemo, connect } from './dev';
 import { worldPorts } from './entities';
 import { catchUp } from './offline/catchup';
-import { serialize, deserialize } from './serialize';
+import { serialize, deserialize, type SaveData } from './serialize';
+import { contentTable, remapSave, type ContentTable } from './save-remap';
 import { deliveryTicks, orderTrades, throughputMu, type ImportOrder } from './trade';
-import { containerFull, containerMu, handsOut, waitingMu } from './systems/trade';
+import { containerFull, containerMu, handsOut, orderCentsPerMin, orderHold, waitingMu } from './systems/trade';
 import { computeMods } from './research/modifiers';
 import { Sim } from './state';
 import { MapGen } from './world/mapgen';
@@ -318,5 +321,272 @@ describe('trade posts', () => {
       expect(Math.abs(b.stock[it]! - a.stock[it]!)).toBeLessThanOrEqual(2_000);
     }
     expect(b.credits).toBe(a.credits);
+  });
+});
+
+describe('the starter contract (D101)', () => {
+  const S = BAL.starter;
+  const EP = 600;
+  const starterOf = (sim: Sim): ImportOrder | undefined => sim.trade.orders.find((o) => o.starter !== undefined);
+
+  it('is CrierBelt’s copper ore at 2 ◉, 40 in all, 10 a minute, landing a minute after each purchase; continued, capped a tenth over the ask', () => {
+    // The API the tutorial is written against: these numbers are the contract.
+    expect(S).toEqual({ item: 'copper_ore', n: 40, perMin: 10, cents: 200, delayMin: 1, continueOver: 1100 });
+  });
+
+  it('signed, it is an always-active order that buys at its fixed price — only once the post’s exit leads somewhere', () => {
+    const { sim, post } = postSim();
+    expect(sim.trade.starterTaken).toBe(false);
+    const id = sim.takeStarter(post);
+    expect(typeof id).toBe('number');
+    expect(sim.trade.starterTaken).toBe(true);
+    const o = starterOf(sim)!;
+    expect(o).toMatchObject({ id, post, item: COPPER(), perMin: 10, maxCents: 200, active: true, starter: 40_000 });
+    expect(sim.cargoOf(post)).toEqual([COPPER()]); // its exit hands it out, as an order's goods
+    expect(sim.log.at(-1)!.cmd).toEqual({ k: 'starter', post });
+    sim.ensureCompiled();
+    expect(orderHold(sim, o)).toBe('outlet');
+    // The exit leads nowhere: nothing bought, nothing paid.
+    const c0 = sim.credits;
+    sim.run(3 * EP);
+    expect(sim.credits).toBe(c0);
+    expect(sim.trade.inflight).toHaveLength(0);
+    expect(o.starter).toBe(40_000);
+    // Laid into the Hearth: 10 at the next lift, at 2 ◉ each, no fee — from CrierBelt itself.
+    exitToHearth(sim);
+    sim.run(EP);
+    expect(c0 - sim.credits).toBe(10 * 200);
+    expect(sim.trade.spent).toBe(2000);
+    expect(sim.trade.inflight).toEqual([{ post, item: COPPER(), mu: 10_000, arrive: sim.tick + S.delayMin * EP, colony: -1, cents: 2000 }]);
+    expect(sim.trade.ledger.at(-1)).toMatchObject({ post, item: COPPER(), kind: 'import', mu: 10_000, cents: -2000 });
+    expect(o.starter).toBe(30_000);
+    expect(o.active).toBe(true);
+  });
+
+  it('buys 10 a minute, 40 in all, then stops (fulfilled): nothing more is bought nor paid unasked; each lot lands a minute later and leaves by the exit', () => {
+    const { sim, post } = postSim();
+    exitToHearth(sim);
+    expect(typeof sim.takeStarter(post)).toBe('number');
+    const c0 = sim.credits, cu0 = sim.stock[COPPER()]!;
+    sim.ensureCompiled(); // its exit linked: it buys
+    expect(orderCentsPerMin(sim, starterOf(sim)!)).toBe(10 * 200); // « −20 ◉/min » on its row
+    sim.run(EP); // tick 600: the first lot bought
+    expect(starterOf(sim)!.starter).toBe(30_000);
+    const first = sim.trade.inflight[0]!;
+    expect(first.arrive).toBe(EP + S.delayMin * EP);
+    expect(first.arrive % EP).toBe(0);
+    sim.run(first.arrive - sim.tick - 1);
+    expect(sim.stores.get(post)![COPPER()]).toBe(0); // not yet
+    sim.run(1);
+    expect(sim.stores.get(post)![COPPER()]).toBeGreaterThan(0); // in its container
+    expect(sim.events.some((e) => e.k === 'delivered' && e.item === COPPER() && e.mu === 10_000)).toBe(true);
+    sim.run(4 * EP - sim.tick); // tick 2400: the fourth and last lot
+    const o = starterOf(sim)!;
+    expect(o.starter).toBe(0);
+    expect(orderHold(sim, o)).toBe('fulfilled');
+    expect(orderCentsPerMin(sim, o)).toBe(0);
+    expect(c0 - sim.credits).toBe(40 * 200);
+    expect(sim.trade.boughtTotal[COPPER()]).toBe(40_000);
+    expect(sim.trade.ledger.filter((l) => l.kind === 'import')).toHaveLength(4);
+    // All of it out by the exit, along the ribbon, into the Hearth; the order stands, stopped.
+    sim.run(6 * EP);
+    expect(sim.stock[COPPER()]! - cu0).toBe(40_000);
+    expect(sim.trade.inflight).toHaveLength(0);
+    expect(sim.credits).toBe(c0 - 8000); // nothing more bought, at any price
+    expect(sim.trade.boughtTotal[COPPER()]).toBe(40_000);
+    expect(sim.trade.orders).toEqual([o]);
+    expect(sim.cargoOf(post)).toEqual([COPPER()]); // its goods while it stands
+    // « Arrêter » (the notice's default): cancelled, its cargo leaves the post.
+    expect(sim.cancelImport(o.id)).toBe(true);
+    expect(sim.trade.orders).toHaveLength(0);
+    expect(sim.cargoOf(post)).toEqual([]);
+    expect(sim.continueStarter(o.id)).toBe(false);
+  });
+
+  it('« Continuer au prix du marché »: one logged command, only once fulfilled; an ordinary order from then on, capped a tenth over the ask, buying at the market’s price', () => {
+    const { sim, post } = postSim();
+    exitToHearth(sim);
+    const id = sim.takeStarter(post) as number;
+    expect(sim.continueStarter(id)).toBe(false); // still buying at its fixed price
+    expect(sim.continueStarter(id + 99)).toBe(false);
+    sim.run(4 * EP);
+    const o = starterOf(sim)!;
+    expect(orderHold(sim, o)).toBe('fulfilled');
+    sim.run(3 * EP + 41);
+    const ask = sim.prices.ask[COPPER()]!;
+    expect(ask).toBeGreaterThan(0);
+    const logged = sim.log.length;
+    expect(sim.continueStarter(id)).toBe(true);
+    expect(sim.log.length).toBe(logged + 1);
+    expect(sim.log.at(-1)!.cmd).toEqual({ k: 'starterGo', id });
+    expect(o.starter).toBeUndefined();
+    expect(starterOf(sim)).toBeUndefined();
+    expect(o).toMatchObject({ id, post, item: COPPER(), perMin: S.perMin, maxCents: Math.ceil((ask * S.continueOver) / 1000), active: true });
+    expect(sim.continueStarter(id)).toBe(false); // once
+    expect(orderHold(sim, o)).toBeNull();
+    // Its cost a minute is the market's: the next lift spends exactly that.
+    const cost = orderCentsPerMin(sim, o);
+    expect(cost).toBe(afterFee(valueCents(S.perMin * 1000, ask, 'buy'), 'buy', sim.mods.tradeFee));
+    expect(cost).toBeGreaterThan(S.perMin * S.cents); // dearer than the contract (copper ore’s ask is over 2 ◉)
+    const c0 = sim.credits, spent0 = sim.trade.spent;
+    sim.run(EP - (sim.tick % EP));
+    expect(c0 - sim.credits).toBe(cost);
+    expect(sim.trade.spent - spent0).toBe(cost);
+    expect(sim.trade.boughtTotal[COPPER()]).toBe(50_000);
+    expect(sim.trade.inflight.at(-1)!.colony).toBeGreaterThanOrEqual(0); // from a colony, not CrierBelt
+    expect(sim.trade.ledger.at(-1)).toMatchObject({ item: COPPER(), kind: 'import', mu: 10_000, cents: -cost });
+  });
+
+  it('continued, then replayed from the log: the same order and the same hash', () => {
+    const { sim, post } = postSim();
+    exitToHearth(sim);
+    const id = sim.takeStarter(post) as number;
+    sim.run(5 * EP + 213);
+    expect(sim.continueStarter(id)).toBe(true);
+    sim.run(3 * EP);
+    const copy = testSim();
+    replay(copy, sim.log, sim.tick);
+    expect(copy.trade.orders).toEqual(sim.trade.orders);
+    expect(copy.trade.orders[0]!.starter).toBeUndefined();
+    expect(copy.hash()).toBe(sim.hash());
+    sim.run(4 * EP);
+    copy.run(4 * EP);
+    expect(copy.hash()).toBe(sim.hash());
+    expect(copy.credits).toBe(sim.credits);
+    expect(copy.trade.boughtTotal[COPPER()]).toBe(sim.trade.boughtTotal[COPPER()]);
+  });
+
+  it('buys only what the purse pays at its fixed price', () => {
+    const { sim, post } = postSim();
+    exitToHearth(sim);
+    sim.takeStarter(post);
+    sim.credits = 500; // test-only: a nearly empty purse (2.5 lots of 2 ◉)
+    sim.run(EP);
+    expect(sim.credits).toBe(100);
+    expect(starterOf(sim)!.starter).toBe(38_000);
+  });
+
+  it('once per base: refused « taken » once signed, after a cancel too; « slots » when the orders are full; « no_post »', () => {
+    const { sim, post } = postSim();
+    expect(sim.takeStarter(post + 999)).toBe('no_post');
+    expect(sim.trade.starterTaken).toBe(false);
+    const id = sim.takeStarter(post) as number;
+    expect(sim.takeStarter(post)).toBe('taken');
+    expect(sim.cancelImport(id)).toBe(true);
+    expect(sim.trade.orders).toHaveLength(0);
+    expect(sim.cargoOf(post)).toEqual([]); // nothing bought, nothing on its way: no cargo left
+    expect(sim.trade.starterTaken).toBe(true);
+    expect(sim.takeStarter(post)).toBe('taken');
+    expect(sim.log.filter((l) => l.cmd.k === 'starter')).toHaveLength(1); // refusals are not logged
+    const b = postSim();
+    expect(typeof b.sim.addImport(b.post, 'iron_plate', 1, 1_000_000)).toBe('number');
+    expect(typeof b.sim.addImport(b.post, 'sand', 1, 1_000_000)).toBe('number');
+    expect(b.sim.takeStarter(b.post)).toBe('slots');
+    expect(b.sim.trade.starterTaken).toBe(false);
+  });
+
+  it('cancelled midway, the rest is forfeit; what is on its way still lands and leaves by the exit', () => {
+    const { sim, post } = postSim();
+    exitToHearth(sim);
+    const id = sim.takeStarter(post) as number;
+    const cu0 = sim.stock[COPPER()]!;
+    sim.run(EP);
+    expect(sim.cancelImport(id)).toBe(true);
+    sim.run(8 * EP);
+    expect(sim.stock[COPPER()]! - cu0).toBe(10_000);
+    expect(sim.trade.boughtTotal[COPPER()]).toBe(10_000);
+    expect(sim.cargoOf(post)).toEqual([]);
+  });
+
+  it('the market never sees it: its prices and state are those of the same base without the contract', () => {
+    const a = postSim(), b = postSim();
+    exitToHearth(a.sim);
+    exitToHearth(b.sim);
+    expect(typeof a.sim.takeStarter(a.post)).toBe('number');
+    a.sim.run(6 * EP);
+    b.sim.run(6 * EP);
+    expect(a.sim.trade.boughtTotal[COPPER()]).toBe(40_000);
+    expect(Array.from(a.sim.prices.ask)).toEqual(Array.from(b.sim.prices.ask));
+    expect(Array.from(a.sim.prices.bid)).toEqual(Array.from(b.sim.prices.bid));
+    expect(JSON.stringify(a.sim.market.save())).toBe(JSON.stringify(b.sim.market.save()));
+  });
+
+  it('replaying the log reproduces the hash', () => {
+    const { sim, post } = postSim();
+    exitToHearth(sim);
+    sim.run(EP + 77);
+    expect(typeof sim.takeStarter(post)).toBe('number');
+    sim.run(3 * EP);
+    expect(starterOf(sim)!.starter).toBe(10_000);
+    const copy = testSim();
+    replay(copy, sim.log, sim.tick);
+    expect(copy.trade.starterTaken).toBe(true);
+    expect(starterOf(copy)!.starter).toBe(10_000);
+    expect(copy.hash()).toBe(sim.hash());
+    sim.run(4 * EP);
+    copy.run(4 * EP);
+    expect(copy.hash()).toBe(sim.hash());
+    expect(copy.credits).toBe(sim.credits);
+  });
+
+  it('save → load keeps what is left of it and that it was signed (same hash, under another content order too)', () => {
+    const { sim, post } = postSim();
+    exitToHearth(sim);
+    sim.takeStarter(post);
+    sim.run(2 * EP + 123);
+    const h = sim.hash();
+    // Both are hashed.
+    sim.trade.starterTaken = false;
+    expect(sim.hash()).not.toBe(h);
+    sim.trade.starterTaken = true;
+    starterOf(sim)!.starter! += 1000;
+    expect(sim.hash()).not.toBe(h);
+    starterOf(sim)!.starter! -= 1000;
+    const data = JSON.parse(JSON.stringify(serialize(sim))) as SaveData;
+    expect(data.trade!.starterTaken).toBe(true);
+    expect(data.trade!.orders.find((o) => o.starter !== undefined)?.starter).toBe(20_000);
+    const copy = deserialize(data, sim.grid.source);
+    expect(copy.hash()).toBe(h);
+    expect(copy.takeStarter(post)).toBe('taken');
+    // Written under another registry order (D47): the order's `starter` rides along its re-pointed item.
+    const t = contentTable();
+    const other: ContentTable = { ...t, items: ['zz_probe', ...[...t.items].reverse()] };
+    const none = { renamed: { items: {}, buildings: {}, recipes: {} }, costs: {} };
+    const old = remapSave(JSON.parse(JSON.stringify(serialize(sim))) as SaveData, other, none).data;
+    expect(old.trade!.orders.find((o) => o.starter !== undefined)).toMatchObject({ starter: 20_000, item: other.items.indexOf('copper_ore') });
+    expect(deserialize(old, sim.grid.source).hash()).toBe(h);
+    sim.run(6 * EP);
+    copy.run(6 * EP);
+    expect(copy.hash()).toBe(sim.hash());
+    // A save from before the contract: not signed.
+    const before = JSON.parse(JSON.stringify(serialize(postSim().sim))) as SaveData;
+    delete before.trade!.starterTaken;
+    expect(deserialize(before, sim.grid.source).trade.starterTaken).toBe(false);
+  });
+
+  it('an absence buys, delivers and pays the same as ticking (the same tradeEpoch)', () => {
+    const make = (): { sim: Sim; post: number } => {
+      const r = postSim();
+      exitToHearth(r.sim);
+      expect(typeof r.sim.takeStarter(r.post)).toBe('number');
+      r.sim.run(30);
+      return r;
+    };
+    const a = make(), b = make();
+    const cu0 = a.sim.stock[COPPER()]!;
+    const span = 36_000;
+    a.sim.run(span);
+    catchUp(b.sim, span, { noDirect: true });
+    expect(a.sim.stock[COPPER()]! - cu0).toBe(40_000);
+    expect(b.sim.stock[COPPER()]).toBe(a.sim.stock[COPPER()]);
+    expect(b.sim.trade.boughtTotal[COPPER()]).toBe(40_000);
+    expect(b.sim.credits).toBe(a.sim.credits);
+    expect(b.sim.trade.spent).toBe(a.sim.trade.spent);
+    expect(b.sim.trade.ledger.filter((l) => l.kind === 'import').map((l) => [l.epoch, l.mu, l.cents]))
+      .toEqual(a.sim.trade.ledger.filter((l) => l.kind === 'import').map((l) => [l.epoch, l.mu, l.cents]));
+    // Fulfilled in both, it stands stopped in both.
+    expect(b.sim.trade.orders).toEqual(a.sim.trade.orders);
+    expect(orderHold(b.sim, b.sim.trade.orders[0]!)).toBe('fulfilled');
+    expect(b.sim.hash()).toBe(a.sim.hash());
   });
 });

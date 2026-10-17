@@ -14,7 +14,9 @@
 //     light column, ⇄ to trade it; an item under an event gets a badge and a coloured rule;
 //   · Échanges: one card per trade post (its icon, the minute's lift as a meter and what it earned in
 //     its head; what it does in words on hover, not on the card) with its standing orders as one-line
-//     rows (rate, cap, state chip, next delivery) and the form to add one; « Au comptant » (spot
+//     rows (rate, cap, state chip, next delivery) and the form to add one — and on top, until it is
+//     signed, CrierBelt's starter contract (D101): the ore's icon and count, its fixed price, its
+//     delay, « Signer »; its order's row then carries a « Contrat » tag and what is left to buy; « Au comptant » (spot
 //     trades with a live quote both ways); « En route » by item and post (how many, the soonest
 //     arrival), not one line per shipment;
 //   · Ce qui rapporte: the unlocked recipes by ◉ per raw tile-minute, best first, each with a bar on
@@ -32,7 +34,7 @@ import { BUILDINGS } from '@/content/buildings';
 import { RECIPES } from '@/content/recipes';
 import { CRECIPES, ITEM_IDS } from '@/content/registry';
 import type { BuildingDef, RecipeDef } from '@/content/types';
-import { el, setAttr, setText } from '@/core/dom';
+import { el, setAttr, setStyle, setText } from '@/core/dom';
 import { compact, duration, num, rate } from '@/i18n/format';
 import { locale, t, type MsgKey } from '@/i18n/i18n';
 import type { BoardRow, ColonyView, ItemMarket, MarketEvent, MarketSnapshot } from '@/market/types';
@@ -51,6 +53,7 @@ import {
   arrivalTick, feeText, minutes, nextArrival, nextBoundary, oc, ocNum, orderStateText, postFacts,
   refusalText, secondsTo, spct, TRADABLE, tradePerHour, tradeSelect, unitBuyCents, unitSellCents, type PostFacts,
 } from '../trade-view';
+import { orderCentsPerMin } from '@/sim/systems/trade';
 import { OrbitView, type OrbitLift } from '../orbit/orbit-view';
 
 export interface CrierHost {
@@ -88,6 +91,10 @@ interface Forms { spotItem: string; spotN: string; readonly orders: Map<number, 
 // ── small helpers ─────────────────────────────────────────────────────────────
 
 const colonyName = (c: ColonyView | undefined): string => (c ? c.name[locale()] : '?');
+/** Where goods in flight come from: a sister colony, or CrierBelt itself (−1: the starter contract, D101). */
+const fromName = (colonies: readonly ColonyView[], c: number): string => (c < 0 ? t('crier.starter.from') : colonyName(colonies[c]));
+/** The starter contract's fixed price (D101): « 2 ◉ », its cents shown only when it has some. */
+const starterPrice = (): string => oc(BAL.starter.cents, false, BAL.starter.cents % 100 ? 2 : 0);
 const capFirst = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 const round2 = (v: number): number => Math.round(v * 100) / 100;
 const itemOf = (id: string | null): number => (id ? ITEM_IDS.indexOf(id as never) : -1);
@@ -251,7 +258,7 @@ class PricesPane {
       list.push(this.row(snap, im, go));
     }
     const cards = [...tiers].map(([n, rows]) => {
-      const s = section({ sec: `tier-${n}`, title: t('crier.tier', { n }) }, [el('div.cr-rows', {}, rows)]);
+      const s = section({ sec: `tier-${n}`, title: () => t('crier.tier', { n }) }, [el('div.cr-rows', {}, rows)]);
       s.classList.add('cr-tiercard');
       return s;
     });
@@ -353,6 +360,18 @@ class PricesPane {
 // ── Trade: posts, spot, goods in flight ───────────────────────────────────────
 
 /** One trade post: the minute's lift in its head, its standing orders and the form to add one. */
+/**
+ * The starter contract's state (D101): an order's holds (its exit linked to nothing, a full
+ * container), but « short of ocelles » and its tip at its own fixed price, not the market's.
+ */
+function starterStateText(sim: Sim, o: ImportOrder): ReturnType<typeof orderStateText> {
+  const st = orderStateText(sim, o);
+  if (st.state === 'outlet' || st.state === 'full' || st.state === 'fulfilled') return st;
+  const price = starterPrice();
+  const state = sim.credits < BAL.starter.cents ? 'poor' : 'active';
+  return { state, text: t(`crier.order.${state}` as MsgKey), why: state === 'poor' ? t('crier.order.poor.tip', { cost: price }) : t('crier.starter.active.tip', { price }) };
+}
+
 class PostCard {
   readonly root: HTMLElement;
   /** The head's figures (the minute's lift, what it earned), the minute in words on hover. */
@@ -361,8 +380,12 @@ class PostCard {
   private readonly earn = el('span.cr-earn');
   private readonly ordersCount = el('span.cr-count');
   private readonly ordersEl = el('div.cr-orders');
-  private orders: Array<{ o: ImportOrder; state: HTMLElement; eta: HTMLElement; etaT: HTMLElement }> = [];
+  /** `left`: the starter contract's « reste n » and its bar (D101), in place of the cap; `cost`: what the order costs a minute now (D101). */
+  private orders: Array<{ o: ImportOrder; state: HTMLElement; eta: HTMLElement; etaT: HTMLElement; left: HTMLElement | null; bar: HTMLElement | null; cost: HTMLElement }> = [];
   private ordersSig: string | null = null;
+  /** CrierBelt's starter contract (D101), on top of the card until it is signed (on this post or another); then gone. */
+  private readonly starter: HTMLElement;
+  private readonly subhead: HTMLElement;
   private readonly item: ItemPicker;
   private readonly n: HTMLInputElement;
   private readonly max: HTMLInputElement;
@@ -402,11 +425,14 @@ class PostCard {
       el('span.cr-hchip', {}, [glyph('flagSister'), this.hFrom]),
     ]);
     this.act = el('span.cr-post-act', {}, [this.lift.root, this.earn]);
+    this.starter = this.starterOffer();
+    this.subhead = el('div.cr-subhead', {}, [mark('order'), el('span.lettering', {}, t('crier.orders')), this.ordersCount]);
     this.root = section({
-      sec: 'post', title: t('crier.post.name', { n: id }), icon: bIcon(ctx.atlas, 'trade_post', 24), aside: this.act,
-      tip: t('crier.post.ribbons.tip', { fee: feeText(ctx.host.sim().mods.tradeFee) }),
+      sec: 'post', title: () => t('crier.post.name', { n: id }), icon: bIcon(ctx.atlas, 'trade_post', 24), aside: this.act,
+      tip: () => t('crier.post.ribbons.tip', { fee: feeText(ctx.host.sim().mods.tradeFee) }),
     }, [
-      el('div.cr-subhead', {}, [mark('order'), el('span.lettering', {}, t('crier.orders')), this.ordersCount]),
+      this.starter,
+      this.subhead,
       this.ordersEl,
       el('div.cr-order-new', {}, [
         el('div.cr-order-form', {}, [
@@ -421,6 +447,38 @@ class PostCard {
     ]);
     this.root.classList.add('cr-post');
     this.root.setAttribute('data-post', String(id));
+  }
+
+  /**
+   * The starter contract's offer (D101), shown, not told: the ore's icon and how many, its fixed
+   * price and its delay as chips, the title in lettering, one short line, « Signer »; the deal in
+   * words on hover.
+   */
+  private starterOffer(): HTMLElement {
+    const S = BAL.starter, it = itemOf(S.item), id = this.id;
+    const price = starterPrice(), d = minutes(S.delayMin);
+    return el('div.cr-starter', { 'data-starter': String(id), title: t('crier.starter.tip', { n: S.n, item: nameOf(it), price, rate: rate(S.perMin), d }) }, [
+      el('span.cr-starter-n', { title: t('crier.starter.n.tip', { n: S.n, rate: rate(S.perMin) }) }, [itemMention(it, { name: false, big: true }), el('b', {}, num(S.n))]),
+      el('div.cr-starter-text', {}, [
+        el('div.cr-starter-head', {}, [
+          el('span.lettering', {}, t('crier.starter.title')),
+          el('span.cr-hchip', { title: t('crier.starter.price.tip') }, [el('b', {}, ocNum(S.cents, false, S.cents % 100 ? 2 : 0)), el('span.cr-coin', {}, '◉')]),
+          el('span.cr-hchip', { title: t('crier.starter.delay.tip', { d }) }, [mark('flight'), el('b', {}, d)]),
+          // Its allowance, whole until signed (D101: a small bar, the order's row empties it), and what it costs a minute.
+          el('span.cr-hchip', { title: t('crier.starter.n.tip', { n: S.n, rate: rate(S.perMin) }) }, [el('span.cr-o-bar', {}, el('i', { style: 'width:100%' }))]),
+          el('span.cr-o-cost', { title: t('crier.order.cost.tip') }, t('crier.order.cost', { v: oc(S.perMin * S.cents) })),
+        ]),
+        el('small.cr-starter-line', {}, t('crier.starter.line')),
+      ]),
+      el('button.btn.primary.cr-starter-take', { 'data-starter-take': String(id), onclick: () => this.takeStarter() }, t('crier.starter.take')),
+    ]);
+  }
+
+  private takeStarter(): void {
+    const S = BAL.starter;
+    const r = this.ctx.host.sim().takeStarter(this.id);
+    if (typeof r === 'string') { this.ctx.host.notify('bad', refusalText(r)); return; }
+    this.ctx.host.notify('good', t('crier.starter.signed', { n: S.n, item: itemRef(S.item), price: starterPrice() }));
   }
 
   /** A new item in the order form: its max price goes back to the default (the ask + 10 %). */
@@ -454,16 +512,28 @@ class PostCard {
     const rows = mine.map((o) => {
       const state = el('span.cr-state'), etaT = el('span');
       const eta = el('span.cr-o-eta', {}, [mark('flight'), mark('order'), etaT]);
-      this.orders.push({ o, state, eta, etaT });
-      return el('div.cr-order', { 'data-order': String(o.id) }, [
+      // The starter contract (D101): its tag, its fixed price, what it has left as a figure and a
+      // bar in place of a cap (live); fulfilled, it stops — « Continuer au prix du marché » or
+      // « Arrêter » (the default) in place of its state and arrival.
+      const starter = o.starter !== undefined, done = starter && (o.starter ?? 0) <= 0;
+      const bar = starter ? el('i') : null;
+      const left = starter ? el('span.cr-o-max.cr-o-left') : null;
+      const cost = el('span.cr-o-cost', { 'data-order-cost': String(o.id) });
+      this.orders.push({ o, state, eta, etaT, left, bar, cost });
+      return el('div.cr-order', { 'data-order': String(o.id), 'data-order-starter': starter ? (done ? 'done' : '') : null }, [
         el('span.cr-o-item', {}, [
           itemMention(o.item),
           o.express ? el('span.cr-tag', { title: t('crier.order.express.tip') }, t('crier.order.express')) : null,
+          // On a line of its own under the ore (the row is narrow): « Contrat de départ · prix fixe 2 ◉ ».
+          starter ? el('span.cr-tag.cr-tag-starter', { title: t('crier.starter.tag.tip', { price: starterPrice() }) }, `${t('crier.starter.title')} ${starterPrice()}`) : null,
         ]),
         el('span.cr-o-rate', { title: t('crier.order.n') }, rate(o.perMin)),
-        el('span.cr-o-max', { title: t('crier.order.max') }, `≤ ${oc(o.maxCents)}`),
-        el('span.cr-o-state', {}, [state]),
-        eta,
+        left ? el('span.cr-o-allow', {}, [left, el('span.cr-o-bar', {}, bar)]) : el('span.cr-o-max', { title: t('crier.order.max') }, `≤ ${oc(o.maxCents)}`),
+        cost,
+        ...(done ? [el('span.cr-o-acts', {}, [
+          el('button.btn.cr-continue', { 'data-starter-go': String(o.id), onclick: () => this.continueStarter(o) }, t('crier.starter.continue')),
+          el('button.btn.primary.cr-stop', { 'data-starter-stop': String(o.id), onclick: () => this.cancel(o) }, t('crier.starter.stop')),
+        ])] : [el('span.cr-o-state', {}, [state]), eta]),
         el('button.cr-x', { title: t('crier.order.cancel'), 'aria-label': t('crier.order.cancel'), 'data-order-cancel': String(o.id), onclick: () => this.cancel(o) }, '✕'),
       ]);
     });
@@ -472,6 +542,12 @@ class PostCard {
 
   private cancel(o: ImportOrder): void {
     if (this.ctx.host.sim().cancelImport(o.id)) this.ctx.host.notify('info', t('crier.order.cancelled', { item: itemRef(o.item) }));
+  }
+
+  /** The fulfilled starter contract continued at the market's price (D101): one logged click. */
+  private continueStarter(o: ImportOrder): void {
+    const sim = this.ctx.host.sim();
+    if (sim.continueStarter(o.id)) this.ctx.host.notify('info', t('crier.starter.continued', { item: itemRef(o.item), cost: oc(orderCentsPerMin(sim, o)) }));
   }
 
   refresh(sim: Sim, _e: Ent, f: PostFacts, colonies: readonly ColonyView[]): void {
@@ -486,13 +562,34 @@ class PostCard {
       ? t('crier.post.last', { used, max: f.perMin, cents: oc(last.cents, true) })
       : t('crier.post.idle'));
 
+    // The starter contract's offer (D101): until it is signed, on this post or another — then gone.
+    const offer = !sim.trade.starterTaken;
+    if (offer !== (this.starter.parentNode !== null)) { if (offer) this.subhead.before(this.starter); else this.starter.remove(); }
+
     // Standing orders: rows when the set changes; state and next delivery live.
     const mine = sim.trade.orders.filter((o) => o.post === this.id);
-    const sig = mine.map((o) => o.id).join('.');
+    // The starter contract's phase too (D101): running, fulfilled, continued as an ordinary order.
+    const sig = mine.map((o) => `${o.id}${o.starter === undefined ? '' : o.starter > 0 ? 's' : 'f'}`).join('.');
     if (sig !== this.ordersSig) { this.ordersSig = sig; this.buildOrders(mine); }
     setText(this.ordersCount, `${sim.trade.orders.length}/${f.orders}`);
     for (const r of this.orders) {
-      const st = orderStateText(sim, r.o);
+      const st = r.o.starter !== undefined ? starterStateText(sim, r.o) : orderStateText(sim, r.o);
+      if (r.left) {
+        const n = Math.ceil((r.o.starter ?? 0) / 1000);
+        setText(r.left, t('crier.starter.left', { n }));
+        setAttr(r.left, 'title', t('crier.starter.left.tip', { n, price: starterPrice() }));
+        if (r.bar) setStyle(r.bar, 'width', `${Math.round((100 * n) / BAL.starter.n)}%`);
+      }
+      // What it costs a minute now (D101; the purse's breakdown reads the same: `orderCentsPerMin`):
+      // nothing while it holds, the reason in its state chip.
+      const cents = orderCentsPerMin(sim, r.o);
+      setText(r.cost, cents > 0 ? t('crier.order.cost', { v: oc(cents) }) : t('crier.order.cost.none'));
+      setAttr(r.cost, 'data-zero', cents > 0 ? null : '');
+      setAttr(r.cost, 'title', t('crier.order.cost.tip'));
+      if (r.o.starter !== undefined && r.o.starter <= 0) {
+        const go = r.cost.parentElement?.querySelector('[data-starter-go]');
+        if (go) setAttr(go as HTMLElement, 'title', t('crier.starter.continue.tip', { price: oc(unitBuyCents(sim, r.o.item)), cost: oc(r.o.perMin * unitBuyCents(sim, r.o.item)) }));
+      }
       setText(r.state, st.text);
       setAttr(r.state, 'data-state', st.state);
       setAttr(r.state, 'data-order-state', st.state);
@@ -559,7 +656,7 @@ class SpotBox {
       cell(this.haveBid, t('crier.col.sell')),
       cell(this.haveAsk, t('crier.col.buy')),
     ]);
-    this.root = section({ sec: 'spot', title: t('crier.spot'), icon: el('span.cr-coin', {}, '◉'), tip: t('crier.spot.help') }, [
+    this.root = section({ sec: 'spot', title: () => t('crier.spot'), icon: el('span.cr-coin', {}, '◉'), tip: () => t('crier.spot.help') }, [
       el('div.cr-spot-pick', {}, [this.sel.root, this.n]),
       el('div.cr-presets', {}, [
         preset('10', num(10), () => 10), preset('100', num(100), () => 100), preset('1000', num(1000), () => 1000),
@@ -643,7 +740,7 @@ class FlightBox {
   private etas: Array<{ at: number; node: HTMLElement }> = [];
 
   constructor(private readonly ctx: Ctx) {
-    this.root = section({ sec: 'flight', title: t('crier.flight'), icon: mark('flight'), aside: this.count }, [this.list]);
+    this.root = section({ sec: 'flight', title: () => t('crier.flight'), icon: mark('flight'), aside: this.count }, [this.list]);
     this.root.classList.add('cr-flight');
     this.root.setAttribute('data-crier-section', 'flight');
   }
@@ -667,7 +764,7 @@ class FlightBox {
       const rows: HTMLElement[] = lines.slice(0, FLIGHT_MAX).map((g) => {
         const eta = el('span.cr-num.cr-eta');
         this.etas.push({ at: g.first, node: eta });
-        const from = t('crier.flight.from', { colony: g.colonies.map((c) => colonyName(colonies[c])).join(', '), post: g.post });
+        const from = t('crier.flight.from', { colony: g.colonies.map((c) => fromName(colonies, c)).join(', '), post: g.post });
         return el('div.cr-flight-row', { 'data-flight': `${g.post}:${ITEM_IDS[g.item]}`, title: `${t('crier.flight.ships', { n: g.ships })} · ${from}` }, [
           el('span.cr-fl-what', {}, [el('b.cr-fl-n', {}, `${num(g.mu / 1000)} ×`), itemMention(g.item)]),
           el('span.cr-fl-post', { title: t('crier.post.name', { n: g.post }) }, [bIcon(this.ctx.atlas, 'trade_post', 16), t('crier.post.short', { n: g.post })]),
@@ -770,7 +867,7 @@ class BoardPane {
       el('span.cr-mid', {}, t('crier.col.spark')),
       el('span', {}, t('crier.col.impact')),
     ]);
-    const card = section({ sec: 'board', title: t('crier.board.title'), icon: tabIcon('board'), aside: this.count, tip: t('crier.board.note', { energy: num(ENERGY_COST) }) }, [this.head, this.table]);
+    const card = section({ sec: 'board', title: () => t('crier.board.title'), icon: tabIcon('board'), aside: this.count, tip: () => t('crier.board.note', { energy: num(ENERGY_COST) }) }, [this.head, this.table]);
     card.classList.add('cr-board');
     this.root = el('div.cr-pane', { 'data-crier-pane': 'board' }, [card]);
   }
@@ -959,6 +1056,14 @@ export class CrierScreen {
     this.root = el('section.screen.crier', { 'data-screen': 'market' });
   }
 
+  /** A line to bring into view at the next refresh, flashed once (the purse's card, D102: an order, a post); given up after a few refreshes. */
+  private pending: { sel: string; tries: number } | null = null;
+
+  /** Bring a line of the Trade tab into view (a CSS selector: `[data-order="7"]`, `[data-post="99"]`) and flash it. */
+  focusLine(sel: string): void {
+    this.pending = { sel, tries: 8 };
+  }
+
   /** Bring a tab to the front (the trade post's inspector asks for Trade). */
   show(tab: CrierTab): void {
     this.tab = tab;
@@ -1076,6 +1181,16 @@ export class CrierScreen {
     if (this.tab === 'prices') ui.prices.refresh(sim, snap, items, f);
     else if (this.tab === 'trade') ui.trade.refresh(sim, snap, f, posts);
     else ui.board.refresh(sim, items);
+    // The purse's card asked for a line (D102): into view, flashed once.
+    if (this.pending) {
+      const n = this.root.querySelector<HTMLElement>(this.pending.sel);
+      if (n) {
+        this.pending = null;
+        n.scrollIntoView({ block: 'center' });
+        n.setAttribute('data-flash', '');
+        setTimeout(() => n.removeAttribute('data-flash'), 1800);
+      } else if (--this.pending.tries <= 0) this.pending = null;
+    }
   }
 
   frame(dt: number): void { this.orbit.frame(dt); }

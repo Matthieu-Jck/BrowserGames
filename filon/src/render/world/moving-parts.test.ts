@@ -1,34 +1,24 @@
 // moving-parts.test.ts — how fast moving parts turn: turbines with the wind they see (bounded,
-// faster in a stronger wind, a mesa or a ridge outspinning the sheltered cirque), machines only
+// faster in a stronger wind, a crest outspinning the sheltered cirque, D95), machines only
 // while they work; each building's own start phase and speed factor, stable and in range.
 import { describe, it, expect } from 'vitest';
 import { St } from '@/sim/types';
-import { GUST_LEVELS } from '@/sim/constants';
-import { BAL } from '@/content/balance';
 import { WORK_TURNS, spinSeed, windTurns, workTurns } from './moving-parts';
 
 describe('moving parts: speeds', () => {
-  it('a turbine turns faster in a stronger wind, within bounds, and never stands still on a grid', () => {
+  it('a turbine turns faster in a stronger wind, within bounds; barely below its cut-in, braked at its cut-out (D95)', () => {
     let prev = 0;
-    for (const gust of GUST_LEVELS) {
-      const v = windTurns(700, gust); // the sheltered cirque
-      expect(v).toBeGreaterThan(prev);
-      expect(v).toBeGreaterThan(0);
-      prev = v;
-    }
-    for (const local of [700, 1000, 1600, 2000]) for (const gust of GUST_LEVELS) {
-      const v = windTurns(local, gust);
+    for (let wind = 400; wind <= 3000; wind += 200) {
+      const v = windTurns(wind, 400, 3600);
+      expect(v).toBeGreaterThanOrEqual(prev);
       expect(v).toBeGreaterThanOrEqual(0.1);
       expect(v).toBeLessThanOrEqual(0.75);
+      prev = v;
     }
-    expect(windTurns(1600, 1000)).toBeGreaterThan(windTurns(700, 1000)); // a mesa outspins the cirque
-  });
-
-  it('a turbine on the mountains outspins one on the cirque floor, in any gust (D44)', () => {
-    for (const gust of GUST_LEVELS) {
-      const floor = windTurns(BAL.windCirque, gust);
-      for (const ridge of BAL.windHeight) expect(windTurns(ridge, gust)).toBeGreaterThan(floor * 2);
-    }
+    expect(windTurns(399, 400, 3600)).toBeLessThan(windTurns(400, 400, 3600) / 2);
+    expect(windTurns(399, 400, 3600)).toBeGreaterThan(0);
+    expect(windTurns(3600, 400, 3600)).toBe(0);
+    expect(windTurns(2000, 300)).toBeGreaterThan(windTurns(600, 300) * 2); // a crest outspins the cirque
   });
 
   it('a machine turns only while it works, slower on a short grid', () => {

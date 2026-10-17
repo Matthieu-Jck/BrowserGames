@@ -4,21 +4,26 @@
 // a bolt and how well its grid serves it; a cut plug when no wire reaches it; a struck bolt and
 // 0 % when its grid has nothing to give; then its own part — a producer's nominal × coefficient =
 // now, with the reasons of its coefficient one click away. A building that takes no part in power
-// shows none of this. Since D89 it is a section of the kit (tagged with the power facet: the
+// shows none of this. A wind turbine's reasons (D95) are its wind: before the Anémométrie plan only
+// what its blades give (the player learns a spot by what a turbine makes there); after it, why the
+// wind is what it is there (above the surroundings, open to the wind, in a lee, in a bowl, a pass),
+// the wind now, its curve, and its next 24 hours. Since D89 it is a section of the kit (tagged with the power facet: the
 // Électricité view lifts it, D88), the formula drawn as a bar too — the nominal's mark on a rail,
 // filled to what it gives now —, and « Relier » sits in the inspector's foot with the other
 // actions. A producer's hero (`producerHero`) puts what it gives now at the top.
-import { BAL } from '@/content/balance';
 import { BUILDING_KIND, buildingDef } from '@/content/registry';
 import { el, setAttr, setStyle, setText } from '@/core/dom';
 import { num } from '@/i18n/format';
-import { locale, t } from '@/i18n/i18n';
+import { locale, t, type MsgKey } from '@/i18n/i18n';
 import { DAY_EPOCHS } from '@/sim/constants';
 import { isLinkPoint, linkable, linkPoint } from '@/sim/power/links';
 import type { Sim } from '@/sim/state';
 import { GeneratorNode } from '@/sim/flow/nodes';
-import { dayEpoch, producerKw, producerOf, sunPermille, weatherAt, windSite, type Producer, type WindSite } from '@/sim/power/network';
+import { dayEpoch, producerKw, producerOf, sunPermille, turbineWind, weatherAt, windKw, type Producer } from '@/sim/power/network';
 import { St, type Ent } from '@/sim/types';
+import { footprint } from '@/sim/entities';
+import { bearingOf, windField } from '@/sim/world/wind';
+import { analyticsOn } from '../analytics';
 import { glyph } from '../glyphs';
 import { kw as kwText, progressBar, stat, type PanelCtx } from './kit';
 
@@ -46,10 +51,26 @@ const hourOf = (de: number): number => Math.floor((((de - 6 + DAY_EPOCHS) % DAY_
 
 /**
  * A producer now: what it gives at full rate (nominal), the factor the place and the weather put on
- * it (‰), what it gives (kW), and why — the lines under the ⓘ and a small picture: the wind's
- * ladder by height, the sun's curve over the day. `sig` changes when the reasons do.
+ * it (‰), what it gives (kW), and why — the lines under the ⓘ and a small picture: a turbine's next
+ * 24 hours (`bars`, ‰ of its rating), the sun's curve over the day. `sig` changes when the reasons do.
  */
-interface Output { nominal: number; coef: number; kw: number; lines: string[]; viz: 'wind' | 'sun' | null; site?: WindSite; sig: string; /** A factor under ×1 is no fault (a generator burns only what its grid asks). */ calm?: boolean }
+interface Output { nominal: number; coef: number; kw: number; lines: string[]; viz: 'wind' | 'sun' | null; bars?: number[]; sig: string; /** A factor under ×1 is no fault (a generator burns only what its grid asks). */ calm?: boolean }
+
+/** The wind's reasons at a turbine (D95): the readings at its footprint's centre, the two that weigh most, in words. */
+function windWhy(sim: Sim, e: Ent, veer: number): string {
+  const [w, h] = footprint(e.def, e.rot);
+  const x = windField(sim.grid.source).explain(e.x + (w >> 1), e.y + (h >> 1), bearingOf(sim.worldSeed, veer), sim.grid.level(e.x, e.y));
+  const why: Array<[number, string]> = [];
+  if (x.funnel) why.push([1000, 'funnel']);
+  if (x.shelter >= 150) why.push([x.shelter, 'lee']);
+  if (x.basin >= 625 && !x.funnel) why.push([x.basin / 2, 'basin']);
+  if (x.rel >= 400) why.push([x.rel / 2, 'top']);
+  else if (x.rel <= -700 && !x.funnel) why.push([-x.rel / 4, 'low']);
+  if (x.open >= 900 && x.shelter < 150) why.push([x.open / 3, 'open']);
+  why.sort((a, b) => b[0] - a[0]);
+  const words = why.slice(0, 2).map(([, k]) => t(`insp.pw.wind.${k}` as MsgKey));
+  return words.length ? words.join(', ') : t('insp.pw.wind.flat');
+}
 
 function outputOf(sim: Sim, e: Ent, node: PanelCtx['node']): Output | null {
   const ep = sim.absEpoch();
@@ -64,16 +85,33 @@ function outputOf(sim: Sim, e: Ent, node: PanelCtx['node']): Output | null {
   }
   // The producer as the grid would count it, wired or not (an unwired one still shows its rate).
   const net = sim.graph?.netOfEnt.get(e.id);
-  const p: Producer | null = (net !== undefined ? sim.graph.nets[net]?.producers.find((q) => q.ent === e.id) : undefined) ?? producerOf(e, buildingDef(e.def), sim.grid, sim.mods);
+  const p: Producer | null = (net !== undefined ? sim.graph.nets[net]?.producers.find((q) => q.ent === e.id) : undefined) ?? producerOf(e, buildingDef(e.def), sim.grid, sim.mods, sim.worldSeed);
   if (!p) return null;
   const kw = Math.round(producerKw(p, w));
   const sun = Math.round(w.sun / 10);
   switch (p.kind) {
     case 'wind': {
-      const { site } = windSite(sim.grid, e);
-      const where = site.k === 'height' ? t('insp.pw.why.height', { n: site.level, f: times(p.local) }) : t(`insp.pw.why.${site.k}`, { f: times(p.local) });
-      const lines = [where, t('insp.pw.why.gust', { f: times(w.gust) })];
-      return { nominal: p.kw, coef: Math.round((p.local * w.gust) / 1000), kw, lines, viz: 'wind', site, sig: `w${p.local}:${w.gust}` };
+      const coef = p.kw > 0 ? Math.round((kw * 1000) / p.kw) : 0;
+      // Before the Anémométrie plan (D95): what its blades give, and where to learn more.
+      if (!analyticsOn(sim, 'wind')) {
+        const lines = [t('insp.pw.why.blades', { pct: Math.round(coef / 10) }), t('insp.pw.why.learnWind')];
+        return { nominal: p.kw, coef, kw, lines, viz: null, sig: `w0:${coef}` };
+      }
+      const c = p.curve!, local = p.local[w.veer]!, v = turbineWind(p.local, w);
+      const bars: number[] = [];
+      let sum = 0;
+      for (let k = 0; k < DAY_EPOCHS; k++) {
+        const kwK = windKw(p.kw, c, p.local, weatherAt(ep + k, sim.worldSeed, sim.mods));
+        sum += kwK;
+        bars.push(p.kw > 0 ? Math.round((kwK * 1000) / p.kw) : 0);
+      }
+      const lines = [
+        t('insp.pw.why.windHere', { f: times(local), why: windWhy(sim, e, w.veer) }),
+        t('insp.pw.why.windNow', { f: times(w.wind), v: times(v) }),
+        c.cutOut !== undefined && v >= c.cutOut ? t('insp.pw.why.storm') : t(c.cutOut !== undefined ? 'insp.pw.why.curveOut' : 'insp.pw.why.curve', { a: times(c.cutIn), b: times(c.rated), c: times(c.cutOut ?? 0) }),
+        t('insp.pw.why.windDay', { kw: Math.round(sum / DAY_EPOCHS) }),
+      ];
+      return { nominal: p.kw, coef, kw, lines, viz: 'wind', bars, sig: `w1:${local}:${w.wind}:${w.veer}:${de}` };
     }
     case 'solar': {
       const lines = [t('insp.pw.why.sun', { time, pct: sun })];
@@ -108,23 +146,12 @@ export function producerHero({ sim, e, node, live }: PanelCtx): HTMLElement | nu
   return el('div.insp-hero', { 'data-hero': 'power' }, [s]);
 }
 
-/** The wind's ladder: a bar per kind of place, by its factor, the turbine's own inked. */
-function windLadder(site: WindSite): HTMLElement {
-  const steps: Array<{ k: string; permille: number; label: string; on: boolean }> = [
-    { k: 'cirque', permille: BAL.windCirque, label: t('insp.pw.site.cirque'), on: site.k === 'cirque' },
-    { k: 'plain', permille: BAL.windPlain, label: t('insp.pw.site.plain'), on: site.k === 'plain' },
-    { k: 'mesa', permille: BAL.windMesa[0]!, label: t('insp.pw.site.mesa'), on: site.k === 'mesa' },
-    ...BAL.windHeight.map((permille, i) => ({
-      k: `h${i + 1}`, permille, on: site.k === 'height' && Math.min(site.level, BAL.windHeight.length) === i + 1,
-      label: t(i + 1 === BAL.windHeight.length ? 'insp.pw.site.levelUp' : 'insp.pw.site.level', { n: i + 1 }),
-    })),
-  ];
-  const top = Math.max(...steps.map((s) => s.permille));
-  return el('div.pw-ladder', { 'data-pw-viz': 'wind' }, steps.map((s) => el('div.pw-step', { 'data-on': s.on ? '' : null, 'data-site': s.k, title: `${s.label} ${times(s.permille)}` }, [
-    el('small.pw-step-f', {}, times(s.permille)),
-    el('i.pw-step-bar', { style: `height:${Math.max(8, Math.round((s.permille * 100) / top))}%` }),
-    el('small.pw-step-l', {}, s.label),
-  ])));
+/** A turbine's next 24 hours (D95), a bar an epoch from now: its share of its rating; now inked. */
+function windDay(bars: readonly number[], ep: number): HTMLElement {
+  return el('div.pw-sun.pw-wind', { 'data-pw-viz': 'wind' }, [
+    el('div.pw-sun-bars', {}, bars.map((b, k) => el('i', { 'data-on': k === 0 ? '' : null, style: `height:${Math.max(2, Math.round(b / 10))}%`, title: `${t('hud.time', { h: hourOf(dayEpoch(ep + k)) })} · ${t('hud.powerPct', { v: Math.round(b / 10) })}` }))),
+    el('div.pw-sun-axis', {}, [el('small', {}, t('insp.pw.wind.now')), el('small', {}, t('insp.pw.wind.in12')), el('small', {}, t('insp.pw.wind.in24'))]),
+  ]);
 }
 
 /** The sun's curve over a day, midnight to midnight, a bar an epoch; now inked. */
@@ -151,7 +178,7 @@ function sunCurve(sim: Sim): HTMLElement {
  * by role: what it draws; or, for a producer, « nominal × coefficient = now » (owner: « la
  * production de l'éolienne, le coef, et la production actuelle… accéder à la raison… sans que
  * l'info prenne trop de place »): the coefficient a chip with ⓘ, its reasons on hover, unfolded
- * under it on a click (the wind's ladder by height, the sun's curve); an accumulator's charge; a
+ * under it on a click (a turbine's next 24 hours, the sun's curve); an accumulator's charge; a
  * pillar's wires and « Relier ». Hooks: `[data-power-card]`, `[data-power]` (on|dark|unwired) on
  * its head, `[data-pw=formula|draw|charge|wires]`, `.pw-coef`, `.pw-why`, `[data-pw-viz]`.
  */
@@ -229,7 +256,7 @@ export function gridCard({ sim, e, node, host, live, action }: PanelCtx): HTMLEl
         if (o.sig !== whySig) {
           whySig = o.sig;
           whyLines.replaceChildren(...o.lines.map((l) => el('div', {}, l)));
-          whyViz.replaceChildren(...(o.viz === 'wind' && o.site ? [windLadder(o.site)] : o.viz === 'sun' ? [sunCurve(sim)] : []));
+          whyViz.replaceChildren(...(o.viz === 'wind' && o.bars ? [windDay(o.bars, sim.absEpoch())] : o.viz === 'sun' ? [sunCurve(sim)] : []));
           setAttr(coef, 'title', [t('insp.pw.coef.tip'), ...o.lines].join('\n'));
         }
       }

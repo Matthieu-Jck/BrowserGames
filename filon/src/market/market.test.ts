@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { BAL } from '@/content/balance';
+import { timed } from '@/core/cpu-time';
 import { COLONY_PROFILES } from '@/content/colonies';
 import { ITEMS } from '@/content/items';
 import { ITEM_IDS, N_ITEMS, itemIdx } from '@/content/registry';
@@ -391,27 +392,26 @@ describe('market: service contract', () => {
     expect(a.epoch).toBe(F + 501);
   });
 
-  it('a week offline — 10 080 settles in a row — takes under 0.5 s', () => {
+  it('a week offline — 10 080 settles in a row — takes under 0.5 s of CPU', () => {
     const svc = new LocalMarketService({ worldSeed: WORLD_SEED, foundingEpoch: F });
     const sold = flows({ iron_plate: 120, glass: 40, circuit: 6, charged_cell: 1, atlas: 0.5 });
     const bought = flows({ copper_ore: 20, sporeglass: 4, embersalt: 3 });
-    const t0 = performance.now();
-    for (let e = F; e < F + 10_080; e++) svc.settle({ epoch: e, sold, bought });
-    const ms = performance.now() - t0;
-    expect(ms).toBeLessThan(500);
+    // CPU time, not the wall's: other test runs on the machine do not count (core/cpu-time.ts).
+    const { ms, wall } = timed(() => { for (let e = F; e < F + 10_080; e++) svc.settle({ epoch: e, sold, bought }); });
+    expect(ms, `${Math.round(ms)} ms of CPU (${Math.round(wall)} ms on the wall)`).toBeLessThan(500);
   });
 
   it('the board: margin per machine at the bid / ask, ◉ per raw tile-minute, and the player\'s price impact (120 plates/min ≈ −13 %)', () => {
     const svc = new LocalMarketService(calm());
     const t = svc.prices(), bid = (id: string): number => t.bid[itemIdx(id)]! / 100, ask = (id: string): number => t.ask[itemIdx(id)]! / 100;
     const [plate] = svc.board(['iron_plate'], 0.04, { flows: { iron_plate: 120 } });
-    // A smelter: 15 plates/min from 15 iron + 15 coal, no grid power (it burns the coal).
-    expect(plate!.cycles).toBe(15);
-    expect(plate!.revenue).toBeCloseTo(15 * bid('iron_plate'), 9);
-    expect(plate!.inputs).toBeCloseTo(15 * bid('iron_ore') + 15 * bid('coal'), 9);
+    // A smelter: 10 plates/min from 10 iron + 10 coal (6 s a plate, D97), no grid power (it burns the coal).
+    expect(plate!.cycles).toBe(10);
+    expect(plate!.revenue).toBeCloseTo(10 * bid('iron_plate'), 9);
+    expect(plate!.inputs).toBeCloseTo(10 * bid('iron_ore') + 10 * bid('coal'), 9);
     expect(plate!.energy).toBe(0);
-    expect(plate!.tiles).toBeCloseTo(15 / 5 + 15 / 3, 9);
-    expect(plate!.perTile).toBeCloseTo(plate!.revenue / 8, 9);
+    expect(plate!.tiles).toBeCloseTo(10 / 5 + 10 / 3, 9);
+    expect(plate!.perTile).toBeCloseTo(plate!.revenue / (10 / 5 + 10 / 3), 9);
     expect(plate!.impact).toBeCloseTo(Math.exp(lnEquilibrium(600, 600, 120, 0)) - 1, 6);
     expect(plate!.impact).toBeCloseTo(-0.134, 2);
     // Bought inputs cost the ask and use no tiles; the machine's power costs kW × c_E.

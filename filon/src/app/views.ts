@@ -1,7 +1,8 @@
 // views.ts — the specialised views (D88; owner, 2026-10-15: « Il faut améliorer l'UI. Plus clair,
 // plus séparé, des vues spécialisées par exemple pour l'électricité »): which one is on show and
-// what it reads. One at a time: Normal, Électricité (P), Logistique (F), Production (O), Terrain
-// (I: the land mode, D60, which keeps its own controller in build-mode.ts and its own look).
+// what it reads. One at a time: Normal, Électricité (P), Logistique (F), Production (O), Vent (V,
+// D95: once the Anémométrie plan is learnt), Terrain (I: the land mode, D60, which keeps its own
+// controller in build-mode.ts and its own look).
 //
 // Views are UI and render only: they read the colony and never change it — no command, nothing
 // saved. A view keeps whatever the player does around it: the iso or plan view, a building
@@ -10,16 +11,18 @@
 //
 // At the UI's pace (4 Hz) `refresh` reads what the view on show needs — the grids, their
 // forecast and each building's part in power; the ribbon lines' throughput; the production
-// buildings' states — into one `Readouts` both the renderer's view layer and the side panel use.
+// buildings' states; the wind, its next day and the turbines — into one `Readouts` both the
+// renderer's view layer and the side panel use.
 // The lines' throughput is sampled a little in every view (once a second), so the Logistique view
 // opens on figures rather than on blanks.
 import { bus } from '@/core/bus';
 import type { MapView } from '@/core/kinds';
 import type { LandTool } from '@/input/land-tool';
-import { gridReports, powerMarks } from '@/sim/readouts/power';
+import { gridReports, idleCount, powerMarks } from '@/sim/readouts/power';
 import { prodMarks } from '@/sim/readouts/production';
 import { emptyReadouts, type Readouts } from '@/sim/readouts/readouts';
 import { RibbonSampler, ribbonSummary } from '@/sim/readouts/ribbons';
+import { windReport } from '@/sim/readouts/wind';
 import type { Sim } from '@/sim/state';
 
 export interface MapViewsDeps {
@@ -95,10 +98,11 @@ export class MapViews {
     if (v !== this.last) { this.last = v; bus.emit('mapview:changed', { view: v }); }
     this.sinceSample += dt;
     const data = this.data;
-    data.power = null; data.ribbons = null; data.ribbonSummary = null; data.production = null;
-    if (v === 'power') data.power = { grids: gridReports(sim), marks: powerMarks(sim) };
+    data.power = null; data.ribbons = null; data.ribbonSummary = null; data.production = null; data.wind = null;
+    if (v === 'power') data.power = { grids: gridReports(sim), marks: powerMarks(sim), idle: idleCount(sim) };
     else if (v === 'logistics') { data.ribbons = this.ribbons.read(sim); data.ribbonSummary = ribbonSummary(data.ribbons); this.sinceSample = 0; }
     else if (v === 'production') data.production = prodMarks(sim, (id) => this.d.lit(id));
+    else if (v === 'wind') data.wind = windReport(sim);
     if (v !== 'logistics' && (this.sinceSample >= SAMPLE_S || force)) { this.sinceSample = 0; this.ribbons.sample(sim); }
     data.version++;
   }

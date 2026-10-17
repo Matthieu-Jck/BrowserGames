@@ -1,6 +1,6 @@
 // production-panel.ts — the Production view's side panel (D88): the production buildings' states
 // as one bar (at work turquoise, waiting amber, stopped coral) with their counts, then the stopped
-// ones and the waiting ones by reason — the reason's mark and words, how many, and each building's
+// ones and the waiting ones by reason (a weak grid among the waits, D91) — the reason's mark and words, how many, and each building's
 // icon a click away (it is selected and the camera goes to it). Read from `Readouts.production`
 // (sim/readouts/production.ts: `workOf` with the renderer's grace, and why); refreshed at 4 Hz, the
 // lists rebuilt when who stops, and why, changes.
@@ -14,7 +14,7 @@ import type { Sim } from '@/sim/state';
 import { buildingIcon } from '../build-bar';
 
 /** The mark of a reason (the world's badge). */
-const WHY_ICON: Record<StopWhy, ViewIcon> = { power: 'dark', unwired: 'unwired', inputs: 'inputs', output: 'output', recipe: 'recipe', asleep: 'asleep', site: 'site', idle: 'idle' };
+const WHY_ICON: Record<StopWhy, ViewIcon> = { power: 'dark', unwired: 'unwired', inputs: 'inputs', output: 'output', recipe: 'recipe', asleep: 'asleep', site: 'site', idle: 'idle', weak: 'low' };
 /** Buildings shown per reason before « +n ». */
 const PER_REASON = 8;
 

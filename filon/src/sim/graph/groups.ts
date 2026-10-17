@@ -7,7 +7,7 @@ import type { Graph } from './compile';
 import type { FNode } from '../flow/node';
 import type { ReservoirNode } from '../flow/nodes';
 import { GeneratorNode } from '../flow/nodes';
-import { stepPeriod, type Chain } from '../flow/chain';
+import { GLEAN_WINDOW, stepPeriod, type Chain } from '../flow/chain';
 
 export interface Group {
   id: number;
@@ -23,6 +23,15 @@ export interface Group {
   accOrder: FNode[];
   /** lcm of the rotation moduli used by fairness pointers and of its ribbons' step patterns (phase of `now` matters). */
   rotL: number;
+  /**
+   * The Gleaners (D103): does a ribbon of the group lose to them at night (an exposed chain)? Then at
+   * night the phase of `now` matters over their window too (`rotNight` = lcm(rotL, GLEAN_WINDOW));
+   * by day `rotL` holds. `gleanTile`: where the catch-up marks what they took (its most exposed chain's
+   * middle exposed tile; -1: none).
+   */
+  glean: boolean;
+  rotNight: number;
+  gleanTile: number;
   sig: string;
 }
 
@@ -49,7 +58,7 @@ export function buildGroups(g: Graph): Group[] {
     const r = find(i);
     let grp = byRoot.get(r);
     if (!grp) {
-      grp = { id: groups.length, nodes: [], accOrder: [], res: [], resIn: new Map(), resOut: new Map(), nets: [], gens: [], rotL: 1, sig: '' };
+      grp = { id: groups.length, nodes: [], accOrder: [], res: [], resIn: new Map(), resOut: new Map(), nets: [], gens: [], rotL: 1, glean: false, rotNight: 1, gleanTile: -1, sig: '' };
       byRoot.set(r, grp);
       groups.push(grp);
     }
@@ -89,6 +98,16 @@ export function buildGroups(g: Graph): Group[] {
       // Its outlets hand out an item on their beat (the ribbons' clock): their phase is the group's too.
       if (nOut > 0 && r.portPerMin > 0) grp.rotL = lcm(grp.rotL, stepPeriod(r.portPerMin) * (r.cycle?.length ?? 1));
     }
+    // The Gleaners' groups: their night pattern's window, and where their takings are marked.
+    let best = 0;
+    for (const node of grp.nodes) {
+      if (node.kind !== 'chain') continue;
+      const c = node as Chain;
+      if (c.gleanRate <= 0) continue;
+      grp.glean = true;
+      if (c.gleanCells.length > best) { best = c.gleanCells.length; grp.gleanTile = c.tiles[c.gleanCells[best >> 1]!]!; }
+    }
+    grp.rotNight = grp.glean ? lcm(grp.rotL, GLEAN_WINDOW) : grp.rotL;
     grp.sig = signature(g, grp);
   }
   return groups;
@@ -103,6 +122,7 @@ function signature(g: Graph, grp: Group): string {
     if (node.kind === 'chain') {
       const c = node as Chain;
       h.int(c.tier).ints(c.tiles);
+      if (c.gleanRate > 0) h.int(c.gleanRate).int(c.gleanSeed).ints(c.gleanCells);
     }
     if (typeof any.speed === 'number') h.int(any.speed);
     if (typeof any.rateEp === 'number') h.int(any.rateEp);

@@ -47,6 +47,8 @@ export class StateHasher {
   private n = 0;
 
   int(v: number): this {
+    // The common case (a count, an item, milli-items): the high word is 0, no division (the same words).
+    if (v >= 0 && v < TWO32) { this.word(v >>> 0); this.word(0); return this; }
     const hi = Math.floor(v / TWO32);
     const lo = v - hi * TWO32;
     this.word(lo >>> 0);

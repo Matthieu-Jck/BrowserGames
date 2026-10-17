@@ -14,15 +14,16 @@
 // 2. Each wish checked (`canPlace`), and what the grid cannot see yet because nothing is laid:
 //    two planned traction steps in a row (D65: the later one is refused) and a run of planned
 //    junctions (D73: junctions never chain).
-// 3. Each run of obstacles — a building, water or other ground a ribbon cannot take, a sister
-//    claim's land, a chain of junctions — is leapt by a bridge pair (`skybridge`) on the plain
+// 3. Each run of obstacles — a building, water or other ground a ribbon cannot take, a chasm or a
+//    river (D94), a sister claim's land, a chain of junctions — is leapt by a bridge pair (`skybridge`) on the plain
 //    ribbon tiles just before and after it: when bridges are learnt, the run is straight, the
 //    start is fed from straight behind (D55), the pair is within the bridges' reach on one level
 //    and no other bridge of that direction on the line would take the leap. The tiles between
 //    are left as they are. A run no pair can leap stays refused: the drag is laid in part.
 // 4. One budget in path order: a long drag runs out of materials (`unaffordable`) exactly where
 //    laying it tile by tile would.
-// Conduits get 1, 2 and 4 only: no junction, lift or bridge carries fluids.
+// Conduits get 1, 2 and 4 only: no junction, lift or bridge carries fluids. Fences (D103) are laid the
+// same way, a fence on each free tile of the drag (one already there is kept, whatever its way).
 import { BUILDING_IDS, BUILDING_KIND, buildingDef, buildingIdx, costOf } from '@/content/registry';
 import { DX, DY, type Rot } from '../types';
 import { inWorld, tileIndex } from '../world/grid';
@@ -54,7 +55,7 @@ const BRIDGE = BUILDING_KIND.indexOf('bridge');
 const LIFT = BUILDING_IDS.findIndex((_, i) => BUILDING_KIND[i] === 'belt' && !!buildingDef(i).lift);
 
 /** Refusals a bridge pair can leap: what stands or lies on the tile — not a step, nor the purse. */
-const LEAPABLE: ReadonlySet<PlaceReason> = new Set<PlaceReason>(['occupied', 'terrain', 'sister_land', 'junction_chain']);
+const LEAPABLE: ReadonlySet<PlaceReason> = new Set<PlaceReason>(['occupied', 'terrain', 'sister_land', 'junction_chain', 'chasm', 'river']);
 
 const learnt = (sim: Sim, def: number): boolean => def >= 0 && sim.unlocked(buildingDef(def).unlock);
 
@@ -79,7 +80,7 @@ export function planBelts(sim: Sim, defId: string, path: BeltPath): BeltStep[] {
     if (o) {
       const k = BUILDING_KIND[o.def];
       const keep = o.def === def
-        ? o.rot === rot
+        ? o.rot === rot || b.kind === 'fence' // a fence has no way: one already there is kept (D103)
         : n > 1 && b.replaceGroup !== undefined && buildingDef(o.def).replaceGroup === b.replaceGroup && k !== 'belt' && k !== 'conduit';
       if (keep) return kept(x, y, rot, BUILDING_IDS[o.def]!);
       if (items && k === 'belt' && ((o.rot - rot) & 1) === 1 && learnt(sim, JUNCTION) && throughAt(path, i)) what = JUNCTION;

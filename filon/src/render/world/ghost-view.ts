@@ -6,7 +6,8 @@
 // drawn as the traction ribbon that would take it. A directional routing block (router, sorters, gates:
 // in from the back only) shows its flow while it is placed: a big turquoise arrow into its
 // back, small coral ones out of its three ways out — drawn from the piece's own rotation, which
-// is the ribbon's when the block is dropped onto one (`Sim.placementRot`). While a ribbon drag
+// over a ribbon is the way the items enter that tile, its back to the feed even on a curve, until
+// the player turns it with R (`Sim.placementRot`, D98). While a ribbon drag
 // runs, nothing is laid yet (D73): its plan — traction steps, bridge pairs, a dashed leap between
 // each pair's ends — is a faint placeholder until the release. A face cutter in hand (D87) shows which
 // way it must face: the tiles its back would press on tinted turquoise where they hold a face ore,

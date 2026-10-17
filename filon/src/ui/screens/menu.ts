@@ -108,10 +108,9 @@ export class MainMenu {
     };
     this.base = el('p.menu-base.lettering');
     // The credits page: the lore, then the credits, each a kit section (D89).
-    const credits = section({ sec: 'about-credits', title: t('menu.about.credits'), icon: mark('recipe') }, [
+    const credits = section({ sec: 'about-credits', title: () => t('menu.about.credits'), icon: mark('recipe') }, [
       el('ul.about-credits', {}, (['menu.about.art', 'menu.about.fonts', 'menu.about.tech'] as const).map((k) => this.label(el('li'), k))),
     ]);
-    this.label(credits.querySelector<HTMLElement>('.ksec-title')!, 'menu.about.credits');
     this.about = el('section.about', { 'data-screen': 'about' }, [
       this.label(el('h2.lettering'), 'menu.about'),
       el('div.about-lore', {}, [

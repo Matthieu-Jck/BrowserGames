@@ -33,6 +33,8 @@ export interface AwayReport {
   incidents: Incident[];
   /** Per-item estimate of what could not be stored because storage was full (milli-items). */
   lostMu: Float64Array;
+  /** What the Gleaners took off the ribbons by night during the absence (D103), per item (milli-items). */
+  gleaned: Float64Array;
   /**
    * Averaging error at the edges of approximate regimes: mu a store would have gone below 0
    * (clamped: created) — the honest error bar of 'approx' mode, per item.
@@ -46,6 +48,6 @@ export function newReport(from: number): AwayReport {
     produced: new Float64Array(N_ITEMS), consumed: new Float64Array(N_ITEMS),
     hearthDelta: new Float64Array(N_ITEMS), creditsDelta: 0, incidents: [], lostMu: new Float64Array(N_ITEMS),
     sold: new Float64Array(N_ITEMS), bought: new Float64Array(N_ITEMS), earned: 0, spent: 0,
-    clampedMu: new Float64Array(N_ITEMS),
+    clampedMu: new Float64Array(N_ITEMS), gleaned: new Float64Array(N_ITEMS),
   };
 }

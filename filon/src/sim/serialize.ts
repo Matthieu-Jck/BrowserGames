@@ -15,6 +15,7 @@ import { modulesOf, withModules } from './cfg';
 import type { ImportOrder, PostActivity, Shipment, TradeLine } from './trade';
 import { loadQuests, saveQuests, type QuestSave } from './systems/quests';
 import { loadValue, saveValue, type ValueState } from './systems/value';
+import { loadExpertise, saveExpertise, type ExpertiseSave } from './systems/expertise';
 import type { TerrainSource } from './world/grid';
 import type { Rot } from './types';
 import { forTiles } from './entities';
@@ -30,8 +31,15 @@ import { packRuns } from './flow/chain';
  * projects with their tokens. 8: research at its table's cost, without the spread penalty (D72):
  * the running projects rebased on it at load. 9: parcels of 23 tiles, a starting square of 3 × 3
  * (D74): the land's parcel ids on the new grid. 10: the 3×3 research lab (D84: the 2×2 ones retired).
+ * 11: the tree's arc (D93): a claim holding Tier 2 holds the Synthesis that now closes Tier 1; the
+ * expertises (optional, empty by default). 12: the Electric Smelting (D106), a Tier 1 node the twin
+ * wire mill, the Synthesis and the arc furnace's recipes now hang from: a claim past it holds it.
+ * 13: the first lab on the Core's own data (D101): the data collector after « Traitement des
+ * données », the Face Cutter a plan — a claim with the lab's plan holds the one, a Face Cutter under
+ * way is the other taken. 14: a sensible tree (D107): the Fast Drill and « Second comptoir » are of
+ * Tier 1 now, so a claim past the Synthesis (learnt or under way) holds them, its Tier 1 whole.
  */
-export const SAVE_VERSION = 10;
+export const SAVE_VERSION = 14;
 
 export interface SaveData {
   v: number;
@@ -110,11 +118,21 @@ export interface SaveData {
     boughtTotal?: number[];
     /** Floor Prices: [item, centi-◉ an item]. */
     floors?: Array<[number, number]>;
+    /** The starter contract was signed (D101; absent: not yet). Its order, while it runs, is in `orders` with its `starter` left. */
+    starterTaken?: boolean;
   };
   /** The tutorial: quests done (ids), the current one's baselines, rewards in force (systems/quests.ts). */
   quests?: QuestSave;
   /** The claim's value history (systems/value.ts, D50; absent: none yet). */
   value?: ValueState;
+  /** The expertises (D93, systems/expertise.ts): ranks earned, the slots, réorientations, the Core's grid held. Absent: nothing earned yet. */
+  expertise?: ExpertiseSave;
+  /**
+   * The Gleaners (D103, systems/gleaners.ts; statistics, not hashed): what they took per item, the
+   * count at the last nightfall (absent or null: none since the base opened by day), the lines'
+   * marks since (tile, milli-items). Absent: nothing taken yet.
+   */
+  gleaners?: { gleaned: number[]; dusk?: number[] | null; dawn?: number[] | null; marks?: Array<[number, number]> };
 }
 
 export function serialize(sim: Sim): SaveData {
@@ -193,9 +211,17 @@ export function serialize(sim: Sim): SaveData {
       soldTotal: Array.from(sim.trade.soldTotal),
       boughtTotal: Array.from(sim.trade.boughtTotal),
       floors: [...sim.trade.floors].sort((a, b) => a[0] - b[0]),
+      starterTaken: sim.trade.starterTaken,
     },
     quests: saveQuests(sim.quests),
     value: saveValue(sim.value),
+    expertise: saveExpertise(sim.expertise),
+    gleaners: {
+      gleaned: Array.from(sim.gleaned),
+      dusk: sim.gleaners.dusk ? Array.from(sim.gleaners.dusk) : null,
+      dawn: sim.gleaners.dawn ? Array.from(sim.gleaners.dawn) : null,
+      marks: [...sim.gleaners.marks].sort((a, b) => a[0] - b[0]),
+    },
   };
 }
 
@@ -300,10 +326,18 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
     if (d.trade.soldTotal) t.soldTotal.set(d.trade.soldTotal.slice(0, N_ITEMS));
     if (d.trade.boughtTotal) t.boughtTotal.set(d.trade.boughtTotal.slice(0, N_ITEMS));
     for (const [it, cents] of d.trade.floors ?? []) t.floors.set(it, cents);
+    t.starterTaken = d.trade.starterTaken ?? false;
   }
   // The tutorial (a colony saved before quests existed starts them at quest 0).
   if (d.quests) loadQuests(sim, d.quests);
   loadValue(sim, d.value);
+  sim.expertise = loadExpertise(d.expertise);
+  if (d.gleaners) {
+    sim.gleaned.set(d.gleaners.gleaned.slice(0, N_ITEMS));
+    sim.gleaners.dusk = d.gleaners.dusk ? Float64Array.from(d.gleaners.dusk.slice(0, N_ITEMS)) : null;
+    sim.gleaners.dawn = d.gleaners.dawn ? Float64Array.from(d.gleaners.dawn.slice(0, N_ITEMS)) : null;
+    for (const [tile, mu] of d.gleaners.marks ?? []) sim.gleaners.marks.set(tile, mu);
+  }
   sim.rebuildDerived();
   sim.ensureCompiled();
   // Node states by entity, ribbon parcels by chain (tier + head + length).

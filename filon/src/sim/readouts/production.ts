@@ -2,20 +2,22 @@
 // as its look reads it (`workOf`, systems/work.ts, D83: at work, a passing stop, stopped) and, when
 // it does not work, why — one reason the view draws as an icon and its side panel lists: no power,
 // no wire, inputs missing (a generator's fuel too), output backed up, no recipe (a drill on nothing
-// to cut), asleep, still being built, not called on (a generator its grid does not need). Read from
-// the sim, never changing it.
+// to cut), asleep, still being built, not called on (a generator its grid does not need). A building
+// at work on a grid under 100 % (`weakGrid`, D91) runs slowed: the view counts it among the waiting,
+// its reason the weak grid. Read from the sim, never changing it.
 import { BUILDING_KIND } from '@/content/registry';
 import { DrillNode, GeneratorNode, MachineNode } from '../flow/nodes';
 import type { Sim } from '../state';
 import { St, type Ent } from '../types';
-import { looksAtWork, workOf, type Work } from '../systems/work';
+import { looksAtWork, weakGrid, workOf, type Work } from '../systems/work';
 
-/** Why a production building does not work (null: it works). */
-export type StopWhy = 'power' | 'unwired' | 'inputs' | 'output' | 'recipe' | 'asleep' | 'site' | 'idle';
+/** Why a production building does not work, or works slowed (`weak`: on a grid under 100 %, D91); null: it works. */
+export type StopWhy = 'power' | 'unwired' | 'inputs' | 'output' | 'recipe' | 'asleep' | 'site' | 'idle' | 'weak';
 /** The reasons in the order the panel groups them (the hard stops first). */
-export const STOP_ORDER: readonly StopWhy[] = ['unwired', 'power', 'recipe', 'inputs', 'output', 'asleep', 'site', 'idle'];
+export const STOP_ORDER: readonly StopWhy[] = ['unwired', 'power', 'recipe', 'inputs', 'output', 'weak', 'asleep', 'site', 'idle'];
 
-export interface ProdMark { ent: number; work: Work; why: StopWhy | null }
+/** A production building as the view shows it: its state, why, and for a weak grid its satisfaction ‰ (`sat`, else 0). */
+export interface ProdMark { ent: number; work: Work; why: StopWhy | null; sat: number }
 
 /** Why `e` is not at work (null when it is). */
 export function stopWhy(sim: Sim, e: Ent, work: Work = workOf(sim, e)): StopWhy | null {
@@ -55,7 +57,9 @@ export function stopWhy(sim: Sim, e: Ent, work: Work = workOf(sim, e)): StopWhy 
 /**
  * Every production building of the colony (the kinds whose look says whether they work), in id
  * order. `lit` — the renderer's look (render/world/work-look.ts `WorkLook.isLit`) — keeps a passing
- * stop 'on' for its grace, so the view never blinks between two crafts as the buildings do not.
+ * stop 'on' for its grace, so the view never blinks between two crafts as the buildings do not. A
+ * building at work on a weak grid (D91) waits, its reason `weak` (the grace included: it does not
+ * blink either).
  */
 export function prodMarks(sim: Sim, lit?: (id: number) => boolean): ProdMark[] {
   const out: ProdMark[] = [];
@@ -63,7 +67,8 @@ export function prodMarks(sim: Sim, lit?: (id: number) => boolean): ProdMark[] {
     if (!looksAtWork(e.def)) continue;
     const raw = workOf(sim, e);
     const work: Work = raw !== 'off' && lit?.(e.id) ? 'on' : raw;
-    out.push({ ent: e.id, work, why: stopWhy(sim, e, work) });
+    const sat = work === 'on' ? weakGrid(sim, e) : 0;
+    out.push(sat ? { ent: e.id, work: 'pause', why: 'weak', sat } : { ent: e.id, work, why: stopWhy(sim, e, work), sat: 0 });
   }
   return out;
 }

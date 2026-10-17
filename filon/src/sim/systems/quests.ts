@@ -1,8 +1,9 @@
-// quests.ts (system) — the tutorial's quests (content/quests.ts, decision D28), one at a time,
-// in content order. The current quest's objectives are read from the colony's state and its
+// quests.ts (system) — the tutorial's quests (content/quests.ts, decisions D28 and D101), one at a
+// time, in content order. The current quest's objectives are read from the colony's state and its
 // counters; when they hold, the quest completes: its reward goes into the Hearth (items, ◉,
-// a building's or a Hearth level's materials, waived Crier fees, a title), the next quest
-// becomes current and captures its baselines, and a `quest` event goes to the shell.
+// a building's or a Hearth level's materials, a title), the next quest becomes current and
+// captures its baselines, and a `quest` event goes to the shell. Guided quests and goals (D101)
+// complete alike: the difference is the guide's (ui/guide.ts), never the engine's.
 //
 // When completion is checked — well-defined points, so a replay meets the same ones:
 //   · every QUEST_CHECK_TICKS ticks (1 game second) at the end of `Sim.step` (`questStep`);
@@ -23,16 +24,18 @@
 //
 // Quest state is saved (serialize.ts) and hashed (`hashQuests`). Integers only: milli-items,
 // ticks, centi-ocelles.
+import { book } from '../purse';
 import { BAL } from '@/content/balance';
-import { COLONY_NAME_MAX, QUEST_CHECK_TICKS, QUEST_IDS, QUESTS, type QuestDef, type QuestObjective, type QuestReward, type QuestStep, type Reveal } from '@/content/quests';
-import { buildingIdx, costOf, itemIdx, recipeIdx, toMu } from '@/content/registry';
+import { COLONY_NAME_MAX, QUEST_ADDED, QUEST_CHECK_TICKS, QUEST_FOLDS, QUEST_IDS, QUEST_TABLE, QUESTS, type QuestDef, type QuestObjective, type QuestReward, type QuestStep, type Reveal } from '@/content/quests';
+import { BUILDING_KIND, buildingIdx, costOf, itemIdx, recipeIdx, toMu } from '@/content/registry';
 import type { StateHasher } from '@/core/hash';
 import { recipeOf } from '../cfg';
 import { CENTER, EPOCH } from '../constants';
 import { footprint } from '../entities';
 import { T, type Ent } from '../types';
 import type { Sim } from '../state';
-import { tradePosts } from './trade';
+import { nightCover } from '../readouts/night';
+import { cargoOf, tradePosts } from './trade';
 
 export interface QuestState {
   /** Quests completed, in the order they were (ids), and the tick each one was. */
@@ -95,6 +98,8 @@ function counter(sim: Sim, o: QuestObjective): number {
 }
 
 const SINCE = new Set<QuestObjective['k']>(['produce', 'export', 'import']);
+/** Does it count from the quest's start (a baseline), not from the founding (`ever`, D101)? */
+const since = (o: QuestObjective): boolean => SINCE.has(o.k) && !('ever' in o && o.ever);
 
 // ── reading the colony ──────────────────────────────────────────────────────
 
@@ -112,10 +117,20 @@ export function outputItem(sim: Sim, id: number): number {
   return -1;
 }
 
-/** Built, awake buildings that put out `item` (drills on its deposit, machines on a recipe making it), in id order. */
-export function producersOf(sim: Sim, item: number): number[] {
+/**
+ * Built, awake buildings that put out `item` (drills on its deposit, machines on a recipe making it,
+ * trade posts whose exit hands it out: their cargo, D62; the Core its Survey Data, once its level
+ * mounts the outlet: D86, D101), in id order. A post counts so a land without a quartz vein (maps
+ * 1–2, D87) feeds « Les pièces de la Synthèse »'s quartz workshop with the quartz it buys (D90).
+ */
+export function producersOf(sim: Sim, item: number, only?: readonly string[]): number[] {
   const out: number[] = [];
-  for (const e of sim.ents.sorted()) if (e.builtAt === 0 && !sim.isDormant(e) && outputItem(sim, e.id) === item) out.push(e.id);
+  const want = only ? new Set(only.map((d) => buildingIdx(d))) : null;
+  const data = item === itemIdx('journal_1') && sim.heartDataRate() > 0;
+  for (const e of sim.ents.sorted()) {
+    if (e.builtAt !== 0 || sim.isDormant(e) || (want && !want.has(e.def))) continue;
+    if (outputItem(sim, e.id) === item || (BUILDING_KIND[e.def] === 'trade' && cargoOf(sim, e.id).includes(item)) || (data && e.id === sim.hearthId)) out.push(e.id);
+  }
   return out;
 }
 
@@ -241,11 +256,15 @@ export function objectiveProgress(sim: Sim, o: QuestObjective, base = 0, win: re
       return count(countBuilt(sim, o.defs, (e) => (it < 0 || drillItem(sim, e.id) === it) && reachesHearth(sim, e.id)), o.n);
     }
     case 'feeds': {
-      const it = itemIdx(o.item), from = producersOf(sim, it);
+      const it = itemIdx(o.item), from = producersOf(sim, it, o.from);
       const r = o.recipe === undefined ? 0 : recipeIdx(o.recipe) + 1;
       return count(countBuilt(sim, o.to, (e) => (!r || recipeOf(e.cfg) === r) && receives(sim, e.id, it, from)), o.n);
     }
     case 'vein': { const V = sim.grid.source.quartzVein; return flag(!V || sim.land.covers(V.x, V.y)); } // no vein: nothing to buy (D87)
+    case 'night': { const c = nightCover(sim); return count(c?.pct ?? 0, o.pct); } // in %: « 54 % / 80 % » (D101)
+    case 'starter': return flag(!!sim.trade.starterTaken);
+    case 'land': return count(sim.land.heldBeyond().length, o.n);
+    case 'hearth': return flag(sim.hearthLevel >= o.level);
     default: { const never: never = o; return never; } // a new objective kind must be read here
   }
 }
@@ -255,7 +274,10 @@ export function objectiveProgress(sim: Sim, o: QuestObjective, base = 0, win: re
  * land has one (map 3), its stand-in (`'novein'`) only where it has none (D87).
  */
 export function stepApplies(sim: Sim, s: QuestStep): boolean {
-  return s.land === undefined || (s.land === 'vein') === !!sim.grid.source.quartzVein;
+  if (s.land !== undefined && (s.land === 'vein') !== !!sim.grid.source.quartzVein) return false;
+  // A hint for one way of doing it, passed by once another way did it (D101: the router's plan, once
+  // a second coal drill feeds the glass).
+  return !s.unless || !objectiveProgress(sim, s.unless).met;
 }
 
 /** Progress of every objective of the current quest (empty once all quests are done). */
@@ -289,8 +311,9 @@ export function rewardItems(r: QuestReward): Array<{ item: number; mu: number }>
 function payReward(sim: Sim, r: QuestReward, title: string | undefined): void {
   // Into the Hearth, past its cap if need be (nothing vanishes; refunds do the same).
   for (const { item, mu } of rewardItems(r)) sim.stock[item] = sim.stock[item]! + mu;
-  if (r.credits) sim.credits += r.credits * 100;
+  if (r.credits) { sim.credits += r.credits * 100; book(sim, 'reward', r.credits * 100); }
   if (r.title && title && !sim.quests.titles.includes(title)) sim.quests.titles.push(title);
+  if (r.grant && !sim.quests.titles.includes(r.grant)) sim.quests.titles.push(r.grant);
 }
 
 // ── the quest machine ───────────────────────────────────────────────────────
@@ -307,7 +330,7 @@ export function activate(sim: Sim): void {
   const st = sim.quests;
   st.cur = firstUndone(st.done);
   const objs = currentQuest(sim)?.def.objectives ?? [];
-  st.base = objs.map((o) => (SINCE.has(o.k) ? counter(sim, o) : 0));
+  st.base = objs.map((o) => (since(o) ? counter(sim, o) : 0));
   st.win = objs.flatMap((o) => (o.k === 'rate' ? [-1, 0, sim.tick, counter(sim, o)] : [-1, 0, -1, 0]));
 }
 
@@ -326,7 +349,8 @@ function finish(sim: Sim, force: boolean): string {
   st.done.push(q.id);
   st.doneAt.push(sim.tick);
   activate(sim);
-  sim.events.push(q.def.reward.title && title ? { k: 'quest', id: q.id, title } : { k: 'quest', id: q.id });
+  const granted = q.def.reward.title ? title : q.def.reward.grant;
+  sim.events.push(granted ? { k: 'quest', id: q.id, title: granted } : { k: 'quest', id: q.id });
   return q.id;
 }
 
@@ -363,6 +387,16 @@ export function skipTutorial(sim: Sim): boolean {
   sim.quests.skipped = true;
   sim.log.push({ tick: sim.tick, cmd: { k: 'skipQuests' } });
   return true;
+}
+
+/**
+ * Does the tech tree offer this plan yet (D101: each quest reveals the few it is about, then
+ * « Données d'arpentage » every plan)? A plan already taken always shows; everything once the
+ * tutorial is over or skipped. The engine itself takes any plan: the pacing is the tree's.
+ */
+export function planOffered(sim: Sim, id: string): boolean {
+  const rv = revealed(sim);
+  return !rv || rv.has('plans') || rv.has(`plan:${id}`) || sim.done.has(id);
 }
 
 /**
@@ -419,21 +453,64 @@ export interface QuestSave {
   feeFreeUntil?: number;
   titles: string[];
   skipped?: boolean;
+  /** The quest table it was saved with (D101: `QUEST_TABLE`; absent before it, i.e. table 1). */
+  table?: number;
 }
 
 export function saveQuests(st: QuestState): QuestSave {
   return {
     done: [...st.done], doneAt: [...st.doneAt], cur: QUEST_IDS[st.cur] ?? null,
-    base: [...st.base], win: [...st.win], named: st.named, titles: [...st.titles], skipped: st.skipped,
+    base: [...st.base], win: [...st.win], named: st.named, titles: [...st.titles], skipped: st.skipped, table: QUEST_TABLE,
   };
 }
 
-/** Restore a saved quest state (unknown ids are dropped; a quest table that changed re-baselines the current quest). */
+/**
+ * A saved list of quests done, in today's ids (D101): the ids gone are dropped, and a quest that
+ * folds old ones in (`QUEST_FOLDS`: « La Criée » holds « La Criée appelle », « Le filon fatigué »
+ * and « Premier achat ») is done once every one of them was, at the tick the last one was; a quest
+ * added after `table` (`QUEST_ADDED`: « Le Cœur grandit ») is done if a later one was, at the
+ * earliest such tick.
+ */
+export function foldDone(done: readonly string[], doneAt: readonly number[], table = QUEST_TABLE): { done: string[]; doneAt: number[] } {
+  const known = new Set<string>(QUEST_IDS);
+  const at = new Map<string, number>();
+  done.forEach((id, i) => at.set(id, doneAt[i] ?? 0));
+  const folded = new Map<string, number>();
+  for (const [now, olds] of Object.entries(groupFolds())) {
+    if (olds.every((o) => at.has(o))) folded.set(now, Math.max(...olds.map((o) => at.get(o)!)));
+  }
+  const out: Array<[string, number]> = [];
+  for (const [id, t] of at) if (known.has(id)) out.push([id, t]);
+  for (const [id, t] of folded) if (!at.has(id)) out.push([id, t]);
+  // A quest added since that table (`QUEST_ADDED`), passed by: done when a quest after it was.
+  for (const [id, since] of Object.entries(QUEST_ADDED).sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+    if (since === undefined || table >= since || at.has(id) || folded.has(id)) continue;
+    const i = QUEST_IDS.indexOf(id as never);
+    const later = out.filter(([q]) => QUEST_IDS.indexOf(q as never) > i).map(([, t]) => t);
+    if (later.length) out.push([id, Math.min(...later)]);
+  }
+  // In today's run order (a fold lands where its quest stands), ties by id.
+  out.sort((a, b) => QUEST_IDS.indexOf(a[0] as never) - QUEST_IDS.indexOf(b[0] as never) || (a[0] < b[0] ? -1 : 1));
+  return { done: out.map(([id]) => id), doneAt: out.map(([, t]) => t) };
+}
+
+/** Today's quests and the old ids folded into each. */
+function groupFolds(): Record<string, string[]> {
+  const g: Record<string, string[]> = {};
+  for (const [old, now] of Object.entries(QUEST_FOLDS).sort((a, b) => (a[0] < b[0] ? -1 : 1))) (g[now] ??= []).push(old);
+  return g;
+}
+
+/**
+ * Restore a saved quest state. A save from an older quest table (D101) has its ids folded into
+ * today's (`foldDone`) and its current quest re-baselined; unknown ids are dropped; a quest table
+ * that changed re-baselines the current quest.
+ */
 export function loadQuests(sim: Sim, d: QuestSave): void {
   const st = sim.quests;
-  const known = new Set<string>(QUEST_IDS);
-  st.done = []; st.doneAt = [];
-  d.done.forEach((id, i) => { if (known.has(id)) { st.done.push(id); st.doneAt.push(d.doneAt[i] ?? 0); } });
+  const old = (d.table ?? 1) < QUEST_TABLE;
+  const f = foldDone(d.done, d.doneAt, d.table ?? 1);
+  st.done = f.done; st.doneAt = f.doneAt;
   st.named = d.named;
   st.titles = [...d.titles];
   st.skipped = !!d.skipped;
@@ -441,7 +518,7 @@ export function loadQuests(sim: Sim, d: QuestSave): void {
   // The quest at that index, skipped or not: a skipped tutorial keeps the baselines it had (they are hashed).
   const id = QUEST_IDS[st.cur];
   const objs = id ? (QUESTS[id] as QuestDef).objectives : [];
-  if (d.cur === (id ?? null) && d.base.length === objs.length && d.win.length === 4 * objs.length) {
+  if (!old && d.cur === (id ?? null) && d.base.length === objs.length && d.win.length === 4 * objs.length) {
     st.base = [...d.base];
     st.win = [...d.win];
   } else activate(sim);

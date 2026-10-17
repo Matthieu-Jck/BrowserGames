@@ -5,20 +5,48 @@
 // claim's land (or on a sister claim's, D60), it adds the land mode's key cap; a ribbon facing a
 // step (D77), the traction ribbon that takes it, its key in the tray (or the tree's, T, while it is
 // still to learn). In the land mode it shows the hovered parcel's price instead (the claim's flag
-// on a parcel it holds for good).
-import { buildingDef, buildingIdx, itemDef } from '@/content/registry';
+// on a parcel it holds for good). A turbine in hand once the Anémométrie plan is learnt (D95):
+// the wind mark, a bar of what it would give over the next day against its rating, and that in
+// kW (the words — the wind's factor here — in its tooltip).
+// It stays inside the window (D96: `tipPlace` flips it to the pointer's other side near an edge)
+// and, under a finger, sits above it, where the hand does not cover it.
+import { BUILDING_KIND, buildingDef, buildingIdx, itemDef } from '@/content/registry';
 import { el, setAttr } from '@/core/dom';
 import { locale, t, tr, type MsgKey } from '@/i18n/i18n';
 import type { Atlas } from '@/render/art/atlas';
-import type { Preview } from '@/input/tools';
+import type { GhostPiece, Preview } from '@/input/tools';
+import { viewIconCanvas } from '@/render/art/view-icons';
+import { num } from '@/i18n/format';
+import { windOutlook } from '@/sim/readouts/wind';
 import type { Sim } from '@/sim/state';
+import { analyticsOn } from './analytics';
 import { buildingIcon, itemIcon, unlockedTray } from './build-bar';
 import { glyph } from './glyphs';
 import { ownsForGood, parcelState } from './land-facts';
 import { oc } from './trade-view';
 
+/** Under a finger the tip goes above the touch point (D96). */
+const coarse = typeof matchMedia === 'function' ? matchMedia('(pointer: coarse)') : null;
+
+/**
+ * Where the tip's top-left goes for a pointer at (sx, sy) (D96): below-right of a cursor, above a
+ * finger; flipped to the other side when that side lacks room, and kept 8 px inside the window.
+ */
+export function tipPlace(sx: number, sy: number, tw: number, th: number, W: number, H: number, touch: boolean): [number, number] {
+  let x = sx + 18;
+  let y = touch ? sy - th - 36 : sy + 20;
+  if (x + tw > W - 8) x = sx - tw - 18;
+  if (!touch && y + th > H - 8) y = sy - th - 14;
+  if (touch && y < 8) y = sy + 44;
+  return [Math.round(Math.max(8, Math.min(W - tw - 8, x))), Math.round(Math.max(8, Math.min(H - th - 8, y)))];
+}
+
 export class Tip {
   private sig = '';
+  /** Its size, measured when its content changes (`tipPlace` keeps it inside the window). */
+  private size: [number, number] = [0, 0];
+  /** A turbine in hand (D95): what it would give where the ghost stands, kept per spot and epoch. */
+  private wind: { key: string; mean: number; overall: number; full: number } | null = null;
 
   constructor(private readonly node: HTMLElement, private readonly atlas: Atlas) {
     node.classList.add('tip', 'cartouche');
@@ -29,10 +57,11 @@ export class Tip {
   }
 
   show(sim: Sim, def: string | null, pre: Preview, sx: number, sy: number): void {
-    this.node.style.transform = `translate(${Math.round(sx + 18)}px, ${Math.round(sy + 20)}px)`;
+    this.place(sx, sy);
     const cost = [...pre.cost].sort((a, b) => a[0] - b[0]);
     const lift = pre.reason === 'needs_lift' ? liftKey(sim) : null;
-    const sig = JSON.stringify([def, cost, pre.reason, lift, pre.doomed.length, pre.mark?.n, pre.mark?.clear, locale()]);
+    const wind = def && pre.pieces[0] && BUILDING_KIND[buildingIdx(def)] === 'wind' && analyticsOn(sim, 'wind') ? this.windOf(sim, def, pre.pieces[0]) : null;
+    const sig = JSON.stringify([def, cost, pre.reason, lift, pre.doomed.length, pre.mark?.n, pre.mark?.clear, locale(), wind?.mean, wind?.overall]);
     if (sig === this.sig) return;
     this.sig = sig;
     this.node.hidden = false;
@@ -42,6 +71,14 @@ export class Tip {
       kids.push(el('div.tip-cost', {}, cost.length
         ? cost.map(([item, mu]) => el('span.tip-chip', { 'data-poor': sim.stock[item]! < mu ? '' : null, title: itemDef(item).name[L] }, [itemIcon(this.atlas, item, 16), String(Math.ceil(mu / 1000))]))
         : [el('span', {}, t('build.free'))]));
+    }
+    // A turbine in hand with the Anémométrie plan (D95): what it would give here over the next day.
+    if (wind) {
+      kids.push(el('div.tip-wind', { title: t('build.wind.outlook', { mean: num(wind.mean), f: `×${num(Math.round(wind.overall / 10) / 100)}` }) }, [
+        viewIconCanvas('wind', 18),
+        el('i.vp-mini-bar', {}, [el('i', { style: `width:${Math.round((100 * wind.mean) / Math.max(1, wind.full))}%` })]),
+        el('span', {}, t('insp.kw', { v: num(wind.mean) })),
+      ]));
     }
     if (pre.mark) kids.push(el('div.tip-title.lettering', {}, tr(pre.mark.clear ? 'toast.cleared' : 'toast.marked', { n: pre.mark.n })));
     if (pre.reason && pre.reason !== 'ok') kids.push(el('div.tip-why', {}, t(`reason.${pre.reason}` as MsgKey)));
@@ -57,11 +94,34 @@ export class Tip {
     }
     this.node.replaceChildren(...kids);
     setAttr(this.node, 'data-bad', pre.reason && pre.reason !== 'ok' ? '' : null);
+    this.measure(sx, sy);
+  }
+
+  /** At the pointer, inside the window (D96). */
+  private place(sx: number, sy: number): void {
+    const [x, y] = tipPlace(sx, sy, this.size[0], this.size[1], window.innerWidth, window.innerHeight, !!coarse?.matches);
+    this.node.style.transform = `translate(${x}px, ${y}px)`;
+  }
+
+  /** New content: its size, and its place for that size. */
+  private measure(sx: number, sy: number): void {
+    this.size = [this.node.offsetWidth, this.node.offsetHeight];
+    this.place(sx, sy);
+  }
+
+  /** What a turbine of `def` would give at the ghost's spot (D95), worked out once per spot and epoch. */
+  private windOf(sim: Sim, def: string, p: GhostPiece): { mean: number; overall: number; full: number } {
+    const key = `${def}:${p.x},${p.y},${p.rot}:${sim.absEpoch()}`;
+    if (this.wind?.key !== key) {
+      const o = windOutlook(sim, def, p.x, p.y, p.rot);
+      this.wind = { key, mean: o.mean, overall: o.overall, full: o.full };
+    }
+    return this.wind;
   }
 
   /** The land mode: the hovered parcel's price with the ocelle sign, or the claim's flag on land it holds for good. */
   land(sim: Sim, p: number, sx: number, sy: number): void {
-    this.node.style.transform = `translate(${Math.round(sx + 18)}px, ${Math.round(sy + 20)}px)`;
+    this.place(sx, sy);
     const held = ownsForGood(parcelState(sim, p));
     const cents = held ? 0 : sim.landPrice(p);
     const sig = JSON.stringify(['land', p, held, cents, sim.credits >= cents, locale()]);
@@ -70,6 +130,7 @@ export class Tip {
     this.node.hidden = false;
     this.node.replaceChildren(el('div.tip-land', { 'data-poor': !held && sim.credits < cents ? '' : null }, held ? [glyph('flag', t('land.legend.held'))] : [glyph('parcel'), oc(cents)]));
     setAttr(this.node, 'data-bad', null);
+    this.measure(sx, sy);
   }
 }
 

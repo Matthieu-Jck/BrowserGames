@@ -63,7 +63,9 @@ export type BuildingKind =
   | 'machine' | 'lab' | 'generator' | 'wind' | 'solar' | 'geothermal' | 'storage' | 'trade'
   | 'excavator' | 'pump' | 'conduit' | 'accumulator' | 'dock' | 'backfiller' | 'sink'
   // Mints AI tokens from power (D68): research uses them as it runs, its own servers' first.
-  | 'server';
+  | 'server'
+  // A fence (D103): no node, no power; it stands in the Gleaners' way (sim/world/reach.ts).
+  | 'fence';
 
 export type BuildCategory = 'extraction' | 'logistics' | 'distribution' | 'production' | 'research' | 'energy' | 'colony' | 'commerce';
 
@@ -86,6 +88,13 @@ export type RouterLogic = 'router' | 'distributor' | 'sorter' | 'inverted' | 'ov
  * No group: never replaces, never replaced (machines, stores, the Hearth…).
  */
 export type ReplaceGroup = 'transport' | 'fluid' | 'power' | 'drill' | 'wind';
+
+/**
+ * A wind turbine's curve (D95), in ‰ of the reference wind (the local wind: the weather's × the
+ * place's exposure): nothing below `cutIn`; from there its share of its rating grows as the wind's
+ * cube up to `rated`, then holds; at `cutOut` and above it stops (a storm), without one it holds on.
+ */
+export interface WindCurve { readonly cutIn: number; readonly rated: number; readonly cutOut?: number }
 
 export interface BuildingDef {
   readonly name: Loc;
@@ -116,6 +125,8 @@ export interface BuildingDef {
   readonly belt?: { readonly ticksPerTile: number; readonly perMin: number };
   /** A traction ribbon (D45): it hands on to the tile ahead one level up or down — the only way a line changes level. */
   readonly lift?: boolean;
+  /** A glazed ribbon (D103): the glass over it keeps the Gleaners' hands off what it carries. */
+  readonly glazed?: boolean;
   /**
    * A power link point (D25: the pillars and the Hearth): `range` = how far its wires reach
    * (tiles, footprint edge to edge), `slots` = how many wires it holds. `tall`: the Reinforced Pylons
@@ -128,9 +139,10 @@ export interface BuildingDef {
   readonly pole?: { readonly range: number; readonly slots: number; readonly climb: number; readonly tall?: boolean };
   /**
    * Generator output (kW) and fuel burn at full output (items/min). A solar plant gives
-   * nothing at night (owner, 2026-10-14: « la nuit les panneaux sont à 0 »).
+   * nothing at night (owner, 2026-10-14: « la nuit les panneaux sont à 0 »). A wind turbine's
+   * `kw` is its rating, reached on its curve (`wind`, D95).
    */
-  readonly gen?: { readonly kw: number; readonly fuel?: string; readonly fuelPerMin?: number };
+  readonly gen?: { readonly kw: number; readonly fuel?: string; readonly fuelPerMin?: number; readonly wind?: WindCurve };
   /**
    * An extractor (kind `drill`): `perMin` at most. A drill mines the deposit under it (bounded by its
    * tiles' caps); with `ground`, it collects that item off the bare ground instead — every tile of
@@ -233,4 +245,7 @@ export type ModTarget =
   | 'pylonLink' | 'dockShips' | 'shipCap' | 'shipSpeed' | 'ring3Caps'
   | 'bridgeSpan' | 'orders' | 'excavatedSpeed' | 'gustVariance' | 'drifterDistance'
   // Data files a minute out of the Heart's data outlet (D68), ×1000.
-  | 'heartData';
+  | 'heartData'
+  // The expertises' own (D93, ‰): the drills' and cutters' rate (and their deposit's cap); the data
+  // makers' (the Core's outlet, the data collectors, the autonomous labs).
+  | 'drillRate' | 'dataRate';

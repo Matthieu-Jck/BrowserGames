@@ -34,7 +34,7 @@
 .ipick[data-none]:hover, .ipick[data-none][data-open] { background: var(--c-peach-l); }
 
 .ipick-pop {
-  position: fixed; z-index: 45; zoom: var(--ui-scale);
+  position: fixed; z-index: 45; zoom: var(--ui-zoom);
   overflow-y: auto; overscroll-behavior: contain; padding: 4px;
   font: 13px/1.3 var(--f-body); box-shadow: 3px 4px 0 var(--c-ink);
   pointer-events: auto; user-select: none;

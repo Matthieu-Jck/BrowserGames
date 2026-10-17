@@ -37,10 +37,18 @@ export interface Cond {
   /** Per net: satisfaction ‰ and dispatch ‰. */
   sat: Map<number, number>;
   disp: Map<number, number>;
+  /** The Gleaners are out (D103: the dark hours) — only ever set for a group they take from (`Group.glean`). */
+  night?: boolean;
 }
+
+/** Is it the Gleaners' night for this group under these conditions? */
+const nightFor = (grp: Group, c: Cond): boolean => !!c.night && grp.glean;
+/** The ticks over which the phase of `now` matters to this group: its rotations and beats, and the Gleaners' window at night (D103). */
+export const rotOf = (grp: Group, c: Cond): number => (nightFor(grp, c) ? grp.rotNight : grp.rotL);
 
 export function condKey(grp: Group, c: Cond, modsKey: string): string {
   const parts: string[] = [grp.sig, modsKey];
+  if (nightFor(grp, c)) parts.push('night');
   for (const n of grp.nets) parts.push(`n${n}:${c.sat.get(n) ?? 1000}:${c.disp.get(n) ?? 0}`);
   for (const ri of grp.res) {
     const rc = c.res.get(ri);
@@ -84,6 +92,9 @@ export interface Regime {
   statItems: number[];
   prodSeries: Array<[Float64Array, Float64Array]>;
   consSeries: Array<[Float64Array, Float64Array]>;
+  /** What the Gleaners took (D103), the same way: items taken, and per item over the transient and the period (`gleanAt`). */
+  gleanItems: number[];
+  gleanSeries: Array<[Float64Array, Float64Array]>;
   s0: GroupSnap;
   s1: GroupSnap;
   warmTicks: number;
@@ -150,17 +161,19 @@ class Virtualizer {
   }
 }
 
+/** The warm-up's fixed conditions into the tick's context: each grid's power, and whether the Gleaners are out (D103). */
 function setPower(ctx: TickCtx, grp: Group, c: Cond): void {
   for (const n of grp.nets) {
     ctx.sat[n] = c.sat.get(n) ?? 1000;
     ctx.dispatch[n] = c.disp.get(n) ?? 0;
   }
+  ctx.glean = nightFor(grp, c) ? 1 : 0;
 }
 
 const hasher = new StateHasher();
-function hashState(grp: Group, res: ReservoirNode[], now: number): number {
+function hashState(grp: Group, res: ReservoirNode[], now: number, L: number): number {
   const h = hasher.reset();
-  h.int(grp.rotL > 1 ? now % grp.rotL : 0);
+  h.int(L > 1 ? now % L : 0);
   for (const n of grp.nodes) n.hash(h, now);
   for (const r of res) r.hash(h);
   return h.key53();
@@ -215,18 +228,20 @@ export function warmUp(g: Graph, grp: Group, ctx: TickCtx, c: Cond, now: number,
   setPower(ctx, grp, c);
   ctx.produced.fill(0);
   ctx.consumed.fill(0);
+  ctx.gleaned.fill(0);
+  const L = rotOf(grp, c);
 
   const nRes = res.length;
   const width = nRes * N_ITEMS;
-  // Cumulative per tick: gross inflow and outflow per (reservoir, item), production, consumption.
+  // Cumulative per tick: gross inflow and outflow per (reservoir, item), production, consumption, the Gleaners' takings.
   const rows = WARM_MAX + 1;
-  const buf = scratch.ensure(rows * (2 * width + 2 * N_ITEMS));
-  const cIn = 0, cOut = rows * width, cProd = 2 * rows * width, cCons = cProd + rows * N_ITEMS;
+  const buf = scratch.ensure(rows * (2 * width + 3 * N_ITEMS));
+  const cIn = 0, cOut = rows * width, cProd = 2 * rows * width, cCons = cProd + rows * N_ITEMS, cGlean = cCons + rows * N_ITEMS;
   // Rows are written as they are simulated; only row 0 needs clearing.
   buf.fill(0, cIn, cIn + width); buf.fill(0, cOut, cOut + width);
-  buf.fill(0, cProd, cProd + N_ITEMS); buf.fill(0, cCons, cCons + N_ITEMS);
+  buf.fill(0, cProd, cProd + N_ITEMS); buf.fill(0, cCons, cCons + N_ITEMS); buf.fill(0, cGlean, cGlean + N_ITEMS);
   const seen = new Map<number, number>();
-  seen.set(hashState(grp, res, now), 0);
+  seen.set(hashState(grp, res, now, L), 0);
   const nNets = grp.nets.length, nGens = grp.gens.length;
   const demand = scratch.demandBuf(rows * Math.max(1, nNets));
   const fuel = scratch.fuelBuf(rows * Math.max(1, nGens));
@@ -243,6 +258,7 @@ export function warmUp(g: Graph, grp: Group, ctx: TickCtx, c: Cond, now: number,
     }
     buf.set(ctx.produced, cProd + t * N_ITEMS);
     buf.set(ctx.consumed, cCons + t * N_ITEMS);
+    buf.set(ctx.gleaned, cGlean + t * N_ITEMS);
     for (let j = 0; j < nNets; j++) {
       const net = grp.nets[j]!;
       let d = 0;
@@ -250,7 +266,7 @@ export function warmUp(g: Graph, grp: Group, ctx: TickCtx, c: Cond, now: number,
       demand[t * nNets + j] = d;
     }
     for (let j = 0; j < nGens; j++) fuel[t * nGens + j] = grp.gens[j]!.status === St.NoFuel ? 0 : 1;
-    const h = hashState(grp, res, now + t);
+    const h = hashState(grp, res, now + t, L);
     const prev = seen.get(h);
     if (prev !== undefined) { t1 = prev; p = t - prev; break; }
     seen.set(h, t);
@@ -308,6 +324,9 @@ export function warmUp(g: Graph, grp: Group, ctx: TickCtx, c: Cond, now: number,
     return [T, P];
   };
   const prodSeries = statItems.map((i) => series(cProd, i)), consSeries = statItems.map((i) => series(cCons, i));
+  const gleanItems: number[] = [];
+  for (let i = 0; i < N_ITEMS; i++) if (buf[cGlean + t2 * N_ITEMS + i]) gleanItems.push(i);
+  const gleanSeries = gleanItems.map((i) => series(cGlean, i));
   const dAvg: number[] = [], dMax: number[] = [];
   for (let j = 0; j < nNets; j++) {
     let sum = 0, mx = 0;
@@ -323,8 +342,17 @@ export function warmUp(g: Graph, grp: Group, ctx: TickCtx, c: Cond, now: number,
   }
   return {
     key, exact, t1, p, keys, prefT, prefP, inP: Float64Array.from(inP), outP: Float64Array.from(outP),
-    dAvg, dMax, fueled, prodT, consT, prodP, consP, statItems, prodSeries, consSeries, s0, s1, warmTicks: t2,
+    dAvg, dMax, fueled, prodT, consT, prodP, consP, statItems, prodSeries, consSeries, gleanItems, gleanSeries, s0, s1, warmTicks: t2,
   };
+}
+
+/** What the Gleaners took of the regime's j-th taken item after `e` ticks (e ≥ 0), transient included (D103). */
+export function gleanAt(r: Regime, j: number, e: number): number {
+  if (e <= 0) return 0;
+  const [T, P] = r.gleanSeries[j]!;
+  if (e <= r.t1) return T[e]!;
+  const k = e - r.t1;
+  return T[r.t1]! + Math.floor(k / r.p) * P[r.p]! + P[k % r.p]!;
 }
 
 /** Cumulative production (or consumption) of the regime's j-th stat item after `e` ticks (e ≥ 0), transient included. */
