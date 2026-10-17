@@ -260,9 +260,9 @@ export const BUILDINGS = {
   },
   wind_flower: {
     name: { fr: 'Éolienne', en: 'Wind Turbine' },
-    desc: { fr: 'De l’électricité au gré du vent : jusqu’à 360 kW. Le vent change d’un lieu à l’autre — fort sur les crêtes et les grands espaces dégagés, faible au creux du cirque et à l’abri des reliefs — et d’une heure à l’autre ; par grande tempête, elle s’arrête.', en: 'Power as the wind blows: up to 360 kW. The wind changes from place to place — strong on the ridges and wide open ground, weak down in the cirque and in the lee of the relief — and from hour to hour; in a great storm it stops.' },
+    desc: { fr: 'De l’électricité au gré du vent : jusqu’à 160 kW. Le vent change d’un lieu à l’autre — fort sur les crêtes et les grands espaces dégagés, faible au creux du cirque et à l’abri des reliefs — et d’une heure à l’autre ; par grande tempête, elle s’arrête.', en: 'Power as the wind blows: up to 160 kW. The wind changes from place to place — strong on the ridges and wide open ground, weak down in the cirque and in the lee of the relief — and from hour to hour; in a great storm it stops.' },
     kind: 'wind', replaceGroup: 'wind', category: 'energy', w: 2, h: 2, needsZone: true, onRock: true, unlock: 'wind_flower',
-    cost: [['iron_plate', 10], ['glass', 4], ['copper_wire', 6]], ports: [], gen: { kw: 360, wind: { cutIn: 400, rated: 1400, cutOut: 3600 } }, // D95: its rating, reached at 1.4× the reference wind
+    cost: [['iron_plate', 10], ['glass', 4], ['copper_wire', 6]], ports: [], gen: { kw: 160, wind: { cutIn: 400, rated: 1400, cutOut: 3600 } }, // D95: its rating, reached at 1.4× the reference wind; 360 → 160 kW (D116: half a coal generator at best)
   },
   sun_bulb: {
     name: { fr: 'Panneau solaire', en: 'Solar Panel' },
@@ -371,9 +371,9 @@ export const BUILDINGS = {
   },
   pitch_turbine: {
     name: { fr: 'Éolienne à pas variable', en: 'Pitch-Control Turbine' },
-    desc: { fr: 'Ses pales s’orientent au vent : jusqu’à 480 kW, dès le moindre souffle et jusque dans la tempête. Posée sur une éolienne, elle la remplace.', en: 'Its blades turn to the wind: up to 480 kW, from the lightest breeze and on through a storm. Placed over a wind turbine, it replaces it.' },
+    desc: { fr: 'Ses pales s’orientent au vent : jusqu’à 220 kW, dès le moindre souffle et jusque dans la tempête. Posée sur une éolienne, elle la remplace.', en: 'Its blades turn to the wind: up to 220 kW, from the lightest breeze and on through a storm. Placed over a wind turbine, it replaces it.' },
     kind: 'wind', replaceGroup: 'wind', category: 'energy', w: 2, h: 2, needsZone: true, onRock: true, unlock: 'en_pitch',
-    cost: [['iron_plate', 15], ['glass', 6], ['copper_wire', 8], ['gear', 4]], ports: [], gen: { kw: 480, wind: { cutIn: 300, rated: 1250 } }, // D95: feathered blades, no storm stop
+    cost: [['iron_plate', 15], ['glass', 6], ['copper_wire', 8], ['gear', 4]], ports: [], gen: { kw: 220, wind: { cutIn: 300, rated: 1250 } }, // D95: feathered blades, no storm stop; 480 → 220 kW (D116)
   },
   heavy_accumulator: {
     name: { fr: 'Accumulateur lourd', en: 'Heavy Accumulator' },

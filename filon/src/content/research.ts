@@ -147,7 +147,7 @@ export const RESEARCH = {
   tr8: trunk(8, 3, ['tr6'], 2880, 1_500_000, 360, ['Codex', 'Codex Lore'], ['Codex, résonateurs, treillis de nacre. Ouvre le Tier 4.', 'Codex, resonators, nacre lattices. Opens Tier 4.']),
 
   // ── Energy: Power Generation → Power Grid → Renewables | Power Plants ─────
-  en_pitch: node('en', undefined, 1, null, ['Éolienne à pas variable', 'Pitch-Control Turbine'], ['Débloque l’Éolienne à pas variable : jusqu’à 480 kW, dès le moindre souffle.', 'Unlocks the Pitch-Control Turbine: up to 480 kW, from the lightest breeze.']),
+  en_pitch: node('en', undefined, 1, null, ['Éolienne à pas variable', 'Pitch-Control Turbine'], ['Débloque l’Éolienne à pas variable : jusqu’à 220 kW, dès le moindre souffle.', 'Unlocks the Pitch-Control Turbine: up to 220 kW, from the lightest breeze.']),
   en2: node('en', undefined, 2, 'en_pitch', ['Panneaux solaires', 'Solar Panels'], ['Débloque le Panneau solaire.', 'Unlocks the Solar Panel.']),
   en_heavyacc: node('en', undefined, 3, 'en2', ['Accumulateur lourd', 'Heavy Accumulator'], ['Débloque l’Accumulateur lourd : 4 000 kW·min.', 'Unlocks the Heavy Accumulator: 4,000 kW·min.']),
   en4: node('en', undefined, 4, 'en_heavyacc', ['Chargeur', 'Battery Charging'], ['Débloque le Chargeur et les batteries chargées.', 'Unlocks the Battery Charger and charged batteries.']),

@@ -102,7 +102,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | pilier | pillar | content `pole` (`mast`, `pylon`, and the Cœur) | A link point: a building that carries wires — its `range` (how far, edge to edge), `slots` (how many) and `climb` (how many terraces up, down and over, D78). |
 | réseau | grid | `Net` | The buildings joined by wires: one satisfaction for all; « hors réseau » = on no wire. |
 | Générateur à charbon | Coal Generator | `brazier` [generator] | +300 kW, burning 10 coal/min. |
-| Éolienne | Wind Turbine | `wind_flower` [wind] | Up to 360 kW on its curve at the local wind: nothing below ×0.4, full from ×1.4, stopped from ×3.6 (D95). |
+| Éolienne | Wind Turbine | `wind_flower` [wind] | Up to 160 kW on its curve at the local wind: nothing below ×0.4, full from ×1.4, stopped from ×3.6 (D95). |
 | Panneau solaire | Solar Panel | `sun_bulb` [solar] | +150 kW in full sun. |
 | Accumulateur | Accumulator | `accumulator` [accumulator] | Stores 1 200 kW·min, delivers 300 kW. |
 | Centrale géothermique | Geothermal Plant | `fumarole_tap` [geothermal] | +1.5 MW on a vent. |
