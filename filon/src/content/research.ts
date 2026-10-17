@@ -5,10 +5,11 @@
 //     paths of one theme each (D41: production, logistics, energy, analytics, trade — `PLAN_PATHS`;
 //     the survey path went with the survey beacon, D117), each growing from one entry. Unlocking one is the `unlockPlan` command
 //     (src/sim/systems/research.ts).
-//   · RESEARCH (D69): the tree's advanced part, run by research labs over a minimum time and paid
-//     as it runs in data (items, by ribbon: `SCIENCE`, one more kind each tier) and AI tokens (D68: bought by the minute, the
-//     claim's own servers first). It reads in four tiers. The trunk (the Foundations) opens each
-//     tier; six families grow beside it, each named anew at every tier (Commerce: Exchange, then
+//   · RESEARCH (D69): the tree's advanced part, run by research labs on data (items, by ribbon:
+//     `SCIENCE`, one more kind each tier) and, from Tier 2, AI tokens (D68, D118: a flow, the claim's
+//     servers' and one bought from CrierBelt). No minimum time (D118): a node is done once its data
+//     is in the lab and its tokens delivered. It reads in four tiers, each opened by the Core's level
+//     (`BAL.tierCoreLevel`, D118). The trunk (the Foundations) opens each tier; six families grow beside it, each named anew at every tier (Commerce: Exchange, then
 //     Finance, then Market Economy) and most splitting in two specialities at Tier 3 (Precision
 //     Machines: Electronics or Mechanics). A node costs its table's price whatever else the
 //     claim owns: the spread penalty of D69 is gone (owner, 2026-10-15, D72).
@@ -21,18 +22,20 @@ import { BUILDINGS } from './buildings';
 import type { BuildingDef, Effect, FamilyId, Loc, PlanDef, PlanLane, ResearchDef, ResearchTier } from './types';
 
 /**
- * What a node of each depth uses up as it runs — data (`scienceCost`), AI tokens — and its minimum duration
+ * What a node of each depth takes — data (`scienceCost`), AI tokens — and the pace its tier runs at
  * (minutes). Depths 1–2 are Tier 1, 3–4 Tier 2, 5–6 Tier 3, 7 and the keystones (9) Tier 4.
- * Tokens cost `BAL.tokenCentsPerK` at CrierBelt's servers (10 ◉ the thousand), none before the servers (D105).
- * Short early, long late (D107; owner, 2026-10-17: « au début on peut mettre des temps de recherche
- * plus courts, c'est au T3-4 qu'on commence à avoir de la recherche vraiment longue »): a minute or
- * three at Tier 1, 8 and 20 at Tier 2, an hour and three at Tier 3, 8 hours and a day at Tier 4. The
- * data follows so a lab is neither starved nor flooded: about 6 Survey Data a minute at Tier 1 (the
- * Core's 3 and a collector or two), 11–12 at Tier 2, 11–16 at Tier 3, 4–6 at Tier 4.
+ * Tier 1 takes data alone (D118; owner, 2026-10-17: « ils ne sont pas mentionnés dans le Tier 1, et le
+ * Tier 1 n'a pas de temps »): done as soon as its data is in the lab. From Tier 2 a node also needs its
+ * tokens, a flow from the claim's servers and from CrierBelt (`BAL.tokenCentsPerK`, 10 ◉ the
+ * thousand). No minimum time any more: `minutes` is the pace the launch dialog aims its default flow
+ * at (`tokenBuyDefault`) — short early, long late (D107: « c'est au T3-4 qu'on commence à avoir de la
+ * recherche vraiment longue »): 8 and 20 at Tier 2, an hour and three at Tier 3, 8 hours and a day at
+ * Tier 4. The data follows so a lab is neither starved nor flooded: about 6 Survey Data a minute at
+ * Tier 1 (the Core's 3 and a collector or two), 11–12 at Tier 2, 11–16 at Tier 3, 4–6 at Tier 4.
  */
 export const DEPTH_COST: Record<number, { data: number; tokens: number; minutes: number }> = {
-  1: { data: 6, tokens: 10_000, minutes: 1 },
-  2: { data: 20, tokens: 30_000, minutes: 3 },
+  1: { data: 6, tokens: 0, minutes: 0 },
+  2: { data: 20, tokens: 0, minutes: 0 },
   3: { data: 90, tokens: 100_000, minutes: 8 },
   4: { data: 240, tokens: 300_000, minutes: 20 },
   5: { data: 960, tokens: 600_000, minutes: 60 },
@@ -59,8 +62,10 @@ export const tierOfDepth = (depth: number): ResearchTier => (depth <= 2 ? 1 : de
 
 /**
  * The trunk node a family node of each tier needs (Tier 1 needs none: the lab's plan). Tier 2's is
- * the Synthesis (D93): Tier 1 completed whole — and two expertises chosen at the Core's Archive,
- * which the Synthesis mounts (level 3): `researchBlock`'s `expertise`.
+ * the Synthesis (D93): Tier 1 completed whole. Each gate also makes the Core's next level possible
+ * (`BAL.hearthUpgrades`), and the tier waits for that level, raised by the player (D118:
+ * `BAL.tierCoreLevel`, `researchBlock`'s `core`) — Tier 2 also for two expertises chosen at the
+ * Archive level 3 mounts (D93: `researchBlock`'s `expertise`).
  */
 export const TIER_GATE: Record<ResearchTier, string | null> = { 1: null, 2: 'tr_synth', 3: 'tr6', 4: 'tr8' };
 
@@ -134,18 +139,18 @@ export const RESEARCH = {
   // Mechanics opens Tier 2, whose Mechanics Data takes quartz oscillators: the Face Cutter's plan
   // (D87; a plan since D101) is among the plans the lab needs. The Core's level 2 is no research's
   // any more (D101: the player raises it, paid in plates, glass and wire).
-  // The trunk's times follow the tiers' (D107): a minute or three in Tier 1, 8–30 in Tier 2 (the
-  // node opening Tier 3 the longest), 3 and 6 hours in Tier 3; its data at the pace of `DEPTH_COST`.
-  tr1: trunk(1, 1, ['observatory'], 6, 8_000, 1, ['Mécanique', 'Mechanics'], ['Presse et engrenages ; le banc d’essai et ses données mécaniques.', 'Press and gears; the test bench and its Mechanics Data.']),
+  // The trunk's paces follow the tiers' (D107): no time and no tokens in Tier 1 (D118), 8–30 minutes
+  // in Tier 2 (the node opening Tier 3 the longest), 3 and 6 hours in Tier 3; its data at the pace of `DEPTH_COST`.
+  tr1: trunk(1, 1, ['observatory'], 6, 0, 0, ['Mécanique', 'Mechanics'], ['Presse et engrenages ; le banc d’essai et ses données mécaniques.', 'Press and gears; the test bench and its Mechanics Data.']),
   // Tier 1 completed whole (D93): every other Tier 1 node; the Core's level 3, its Archive, where two expertises open Tier 2.
-  tr_synth: trunk(2, 1, ['tr1', 'en_pitch', 'en2', 'ex_fastdrill', 'dn3', 'dn_esmelt', 'dn_wiremill', 'cm_post2', 'cm_floor', 'an_data', 'an_relay', 'xp_swift', 'xp_bigsilo', 'xp_guard'], 20, 30_000, 3, ['Synthèse', 'Synthesis'], ['Le Tier 1 en entier\u00a0: Cœur niveau 3 et son Archive des expertises. Deux expertises choisies ouvrent le Tier 2.', 'All of Tier 1: Core level 3 and its Expertise Archive. Two expertises chosen open Tier 2.']),
+  tr_synth: trunk(2, 1, ['tr1', 'en_pitch', 'en2', 'ex_fastdrill', 'dn3', 'dn_esmelt', 'dn_wiremill', 'cm_post2', 'cm_floor', 'an_data', 'an_relay', 'xp_swift', 'xp_bigsilo', 'xp_guard'], 20, 0, 0, ['Synthèse', 'Synthesis'], ['Le Tier 1 en entier\u00a0: Cœur niveau 3 et son Archive des expertises. Le Cœur niveau 3 et deux expertises choisies ouvrent le Tier 2.', 'All of Tier 1: Core level 3 and its Expertise Archive. Core level 3 and two expertises chosen open Tier 2.']),
   tr2: trunk(2, 2, ['tr_synth'], 60, 15_000, 8, ['Terrassement', 'Earthworks'], ['Excavatrice : creuser le grès et le basalte (H1–H2).', 'Excavator: dig sandstone and basalt (H1–H2).']),
   tr3: trunk(3, 2, ['tr_synth'], 90, 60_000, 8, ['Céramique', 'Ceramics'], ['Four à céramique (l’eau de la Vapeur et la pierre de l’excavatrice) ; atelier d’assemblage, batteries vides, accumulateurs.', 'Ceramic oven (Steam Power’s water and the excavator’s stone); assembly workshop, empty batteries, accumulators.']),
   tr4: trunk(4, 2, ['tr3'], 180, 120_000, 20, ['Cadastre', 'Land Registry'], ['Baux de parcelles, pylônes.', 'Parcel leases, pylons.'], [flag('lease')]),
   tr5: trunk(5, 2, ['tr4'], 240, 200_000, 20, ['Deuxième pupitre', 'Second Desk'], ['Un deuxième emplacement de recherche.', 'A second research slot.'], [{ k: 'slots', add: 1 }]),
-  tr6: trunk(6, 2, ['tr4'], 480, 400_000, 30, ['Cartographie', 'Atlas Lore'], ['Atelier d’optique, Scriptorium ; lentilles, toiles, cœurs thermiques, atlas ; Cœur niveau 4. Ouvre le Tier 3.', 'Optics workshop, Scriptorium; lenses, canvas, thermal cores, atlases; Core level 4. Opens Tier 3.']),
+  tr6: trunk(6, 2, ['tr4'], 480, 400_000, 30, ['Cartographie', 'Atlas Lore'], ['Atelier d’optique, Scriptorium ; lentilles, toiles, cœurs thermiques, atlas ; Cœur niveau 4, qui ouvre le Tier 3.', 'Optics workshop, Scriptorium; lenses, canvas, thermal cores, atlases; Core level 4, which opens Tier 3.']),
   tr7: trunk(7, 3, ['tr6'], 1920, 800_000, 180, ['Troisième pupitre', 'Third Desk'], ['Un troisième emplacement de recherche.', 'A third research slot.'], [{ k: 'slots', add: 1 }]),
-  tr8: trunk(8, 3, ['tr6'], 2880, 1_500_000, 360, ['Codex', 'Codex Lore'], ['Codex, résonateurs, treillis de nacre. Ouvre le Tier 4.', 'Codex, resonators, nacre lattices. Opens Tier 4.']),
+  tr8: trunk(8, 3, ['tr6'], 2880, 1_500_000, 360, ['Codex', 'Codex Lore'], ['Codex, résonateurs, treillis de nacre\u202f; Cœur niveau 5, qui ouvre le Tier 4.', 'Codex, resonators, nacre lattices; Core level 5, which opens Tier 4.']),
 
   // ── Energy: Power Generation → Power Grid → Renewables | Power Plants ─────
   en_pitch: node('en', undefined, 1, null, ['Éolienne à pas variable', 'Pitch-Control Turbine'], ['Débloque l’Éolienne à pas variable : jusqu’à 220 kW, dès le moindre souffle.', 'Unlocks the Pitch-Control Turbine: up to 220 kW, from the lightest breeze.']),
@@ -230,13 +235,13 @@ export const RESEARCH = {
   xp_camo: node('xp', undefined, 3, 'xp_guard', ['Ruban camouflé', 'Camouflaged Ribbon'], ['Débloque le Ruban camouflé (40/min)\u00a0: enfoui sous le sable, il passe sur les terres des bases voisines, sans surcoût hors de tes terres, et les Glaneurs ne le voient pas.', 'Unlocks the Camouflaged Ribbon (40/min): buried under the sand, it runs across the neighbouring bases’ land, with no surcharge off your land, and the Gleaners do not see it.']),
   xp_bridges: node('xp', undefined, 3, 'xp_camo', ['Passerelles longues', 'Long Bridges'], ['Les passerelles portent à 8 tuiles.', 'Bridges reach 8 tiles.'], [add('bridgeSpan', 4)]),
   // The pylons it reaches farther with are Land Registry's (D107).
+  // Far Claim (D119, was Tier 4 after the treaties): a parcel that does not touch the claim's land, from Tier 2 — the camouflaged ribbon's neighbour in the claims lane.
+  xp_far: node('xp', undefined, 4, 'xp_camo', ['Concession lointaine', 'Far Claim'], ['Acheter une parcelle qui ne touche pas tes terres.', 'Buy a parcel that does not touch your land.'], [flag('farClaims')]),
   xp4: node('xp', undefined, 4, 'xp_bridges', ['Pylônes renforcés', 'Reinforced Pylons'], ['Les pylônes portent à 60 tuiles.', 'Pylons reach 60 tiles.'], [add('pylonLink', 20)], ['tr4']),
   xp_distrib: node('xp', 't', 5, 'xp4', ['Distributeurs', 'Distributors'], ['Débloque le Distributeur (routeur 2×2).', 'Unlocks the Distributor (a 2×2 router).']),
   xp_express: node('xp', 't', 6, 'xp_distrib', ['Ruban express', 'Express Ribbon'], ['Débloque le Ruban express (240/min).', 'Unlocks the Express Ribbon (240/min).']),
   // Its keystone, the Great Skydock (`xp_bigdock`), went with the skydocks (D108, content/retired.ts): Transport ends on the Express Ribbon.
-  xp_resell: node('xp', 'c', 5, 'xp4', ['Revente de parcelles', 'Parcel Resale'], ['Revendre une parcelle achetée, à 80 % de son prix.', 'Sell a bought parcel back, at 80% of its price.'], [flag('landResale')]),
-  xp_treaties: node('xp', 'c', 6, 'xp_resell', ['Traités de voisinage', 'Neighbour Treaties'], ['Tous tes rubans, pas seulement le camouflé, et tes poteaux traversent les terres des bases voisines, entre leurs bâtiments.', 'All your ribbons, not just the camouflaged one, and your poles cross the neighbouring bases’ land, between their buildings.'], [flag('neighbourCrossing')]),
-  xp_far: node('xp', 'c', 9, 'xp_treaties', ['Concession lointaine', 'Far Claim'], ['Acheter une parcelle qui ne touche pas tes terres.', 'Buy a parcel that does not touch your land.'], [flag('farClaims')]),
+  xp_treaties: node('xp', 'c', 6, 'xp4', ['Traités de voisinage', 'Neighbour Treaties'], ['Tous tes rubans, pas seulement le camouflé, et tes poteaux traversent les terres des bases voisines, entre leurs bâtiments.', 'All your ribbons, not just the camouflaged one, and your poles cross the neighbouring bases’ land, between their buildings.'], [flag('neighbourCrossing')]),
 } as const satisfies Record<string, ResearchDef>;
 
 export type ResearchId = keyof typeof RESEARCH;

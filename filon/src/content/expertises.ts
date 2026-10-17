@@ -75,9 +75,10 @@ const SAVING = [850, 750, 650] as const;
  * The expertises, by family in the tree's order (`FAMILY_IDS`): for each, the production one,
  * then the research one. Thresholds are set so a claim that completes Tier 1 has earned rank I of
  * several when the window opens (measured on the debug bases, 2026-10-16: the tutorial's base has
- * about 2 000 kW standing, 300 ribbon tiles, a parcel, 1 600 ◉ of sales after its first hour) — two
- * of them by Tier 1 itself, whose 13 nodes use about 530 data and 280 000 tokens (Archiving,
- * Inference) — and rank III asks for a long-grown base.
+ * about 2 000 kW standing, 300 ribbon tiles, a parcel, 1 600 ◉ of sales after its first hour) — one
+ * of them by Tier 1 itself, whose nodes use about 530 data (Archiving); Tier 1 takes no tokens since
+ * D118, so Inference's first rank (250 000) comes with Tier 2's first nodes — and rank III asks for a
+ * long-grown base.
  */
 export const EXPERTISES = {
   // ── Energy ───────────────────────────────────────────────────────────────

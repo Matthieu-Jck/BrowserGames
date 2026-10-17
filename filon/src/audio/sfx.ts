@@ -7,7 +7,8 @@
 //
 // A recipe gets the start time, a count (ribbon tiles, buildings removed) and its trim (cues.ts);
 // it returns nothing and leaves nothing behind. Peaks are measured offline (docs/audio.md) and
-// recorded in cues.ts: every cue stays under −6 dBFS at full sliders.
+// recorded in cues.ts: every cue stays under −6 dBFS at full sliders. The buildings' signatures
+// (D120, signature-sfx.ts) are built from the same primitives, exported here.
 import type { SfxCue } from '@/core/bus';
 import { clamp } from '@/core/math';
 import { ribbonTicks } from './cues';
@@ -26,7 +27,13 @@ export interface SfxKit {
   harmony(): readonly number[];
 }
 
-interface ToneOpts {
+/**
+ * Amplitude modulation: an LFO at `rate` Hz swings the level between 1 − `depth` and 1 (a grind,
+ * a thrum, grit in a scrape). `wave` is the LFO's shape (a square chops, a sine throbs).
+ */
+export interface AmOpts { rate: number; depth: number; wave?: OscillatorType }
+
+export interface ToneOpts {
   f: number;
   /** Glide towards this frequency (time constant `glide`). */
   f2?: number;
@@ -39,10 +46,29 @@ interface ToneOpts {
   /** Low-pass cutoff (Hz). */
   lp?: number;
   verb?: number;
+  am?: AmOpts;
+}
+
+/** Insert the amplitude modulation `o` after `head` (until `end`); returns the new head. */
+function modulate(ctx: BaseAudioContext, head: AudioNode, t: number, end: number, o: AmOpts | undefined): AudioNode {
+  if (!o) return head;
+  const depth = clamp(o.depth, 0, 1);
+  const vca = gainNode(ctx, 1 - depth / 2);
+  const lfo = ctx.createOscillator();
+  lfo.type = o.wave ?? 'sine';
+  lfo.frequency.value = o.rate;
+  const swing = gainNode(ctx, depth / 2);
+  lfo.connect(swing);
+  swing.connect(vca.gain);
+  head.connect(vca);
+  lfo.start(t);
+  lfo.stop(end);
+  releaseOnEnd(lfo, swing);
+  return vca;
 }
 
 /** A struck oscillator. */
-function tone(k: SfxKit, t: number, o: ToneOpts): void {
+export function tone(k: SfxKit, t: number, o: ToneOpts): void {
   const { ctx } = k;
   const osc = ctx.createOscillator();
   osc.type = o.type ?? 'sine';
@@ -54,7 +80,7 @@ function tone(k: SfxKit, t: number, o: ToneOpts): void {
   if (o.lp) { const lp = filterNode(ctx, 'lowpass', o.lp, 0.7); osc.connect(lp); head = lp; }
   head.connect(vca);
   const p = panNode(ctx, o.pan ?? 0);
-  vca.connect(p);
+  modulate(ctx, vca, t, end, o.am).connect(p);
   p.connect(k.out);
   const sv = gainNode(ctx, o.verb ?? 0);
   if (o.verb) { p.connect(sv); sv.connect(k.wet); }
@@ -63,7 +89,7 @@ function tone(k: SfxKit, t: number, o: ToneOpts): void {
   releaseOnEnd(osc, p, sv);
 }
 
-interface HissOpts {
+export interface HissOpts {
   type: BiquadFilterType;
   f: number;
   /** Sweep the filter towards this frequency (time constant `sweep`). */
@@ -75,10 +101,11 @@ interface HissOpts {
   tau: number;
   pan?: number;
   verb?: number;
+  am?: AmOpts;
 }
 
 /** A puff of filtered noise. */
-function hiss(k: SfxKit, t: number, o: HissOpts): void {
+export function hiss(k: SfxKit, t: number, o: HissOpts): void {
   const { ctx } = k;
   const src = ctx.createBufferSource();
   src.buffer = k.noise;
@@ -89,7 +116,7 @@ function hiss(k: SfxKit, t: number, o: HissOpts): void {
   const p = panNode(ctx, o.pan ?? 0);
   src.connect(f);
   f.connect(vca);
-  vca.connect(p);
+  modulate(ctx, vca, t, end, o.am).connect(p);
   p.connect(k.out);
   const sv = gainNode(ctx, o.verb ?? 0);
   if (o.verb) { p.connect(sv); sv.connect(k.wet); }
@@ -99,7 +126,7 @@ function hiss(k: SfxKit, t: number, o: HissOpts): void {
 }
 
 /** The `i`-th note of the chord in force (its pitch classes in order, cycling upwards) at or above `floor` (MIDI). */
-function chordNote(k: SfxKit, i: number, floor: number): number {
+export function chordNote(k: SfxKit, i: number, floor: number): number {
   const pcs = [...k.harmony()].sort((a, b) => a - b);
   if (!pcs.length) return floor;
   const n = pcs.length;

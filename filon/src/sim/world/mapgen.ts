@@ -41,7 +41,7 @@ import { isqrt } from '@/core/fixed';
 import { makeNoise2, qfbm, type Noise2 } from '@/core/noise';
 import { CENTER, CHUNK } from '../constants';
 import { isFloor, T } from '../types';
-import { MAX_LEVEL, type TerrainSource, type VeinSite } from './grid';
+import { MAX_LEVEL, MOUNTAIN_LEVEL, type TerrainSource, type VeinSite } from './grid';
 import { ahead, eighth, headingOf, LineKind, quarter, SegIndex, tileOf, within, type Hits, type LinePt, type Seg, type Walker } from './obstacles';
 
 export interface Site { id: UniqueBiomeId; cx: number; cy: number; r: number; item: number }
@@ -78,9 +78,9 @@ const RAMP = 1 << 19; //   …but in its ramps, half a level a tile
 const FLOW = 20; //        bits 20–22: a river's way (eighths of a turn), its class in the GROUND bits
 const SEAF = 1 << 23; //   the sea (map 4): its class in the GROUND bits
 const FIXED = 1 << 24; //  a stream up on a massif: its level is the water's, it never settles
-/** How far settling reaches: a tile comes down only for a lower one at most this many steps away. */
-const REACH = MAX_LEVEL - 1;
-/** Map 4's reach (`settle4`): a ramp comes down half a level a tile, so twice as far. */
+/** How far settling reaches: a tile comes down only for a lower one at most this many steps away (maps 1–3: no land above the mountains'). */
+const REACH = MOUNTAIN_LEVEL - 1;
+/** Map 4's reach (`settle4`): a ramp comes down half a level a tile, so twice as far — from its spring's summit, the land's highest (D115). */
 const REACH4 = 2 * MAX_LEVEL;
 /** `settle4`'s flags per tile: a massif's cliff (never comes down), a massif's ramp (half a level a tile), a stream's water up on a massif (never comes down, nor counts as a lone spike). */
 const F_CLIFF = 1, F_RAMP = 2, F_FIXED = 3;
@@ -115,8 +115,13 @@ export class MapGen implements TerrainSource {
   readonly spring: { readonly x: number; readonly y: number; readonly level: number } | null;
   /** The spring's stream (map 4, D115): the line from its head to its pool on the floor, in quarter tiles. */
   private readonly springSeg: Seg | null;
-  /** The spring's summit (map 4, D115): its top and how many levels it rises over the Crown there. */
-  private readonly summit: { readonly x: number; readonly y: number; readonly rise: number } | null;
+  /**
+   * The spring's summit (map 4, D115): its middle, its plateau's level and radius, the levels its
+   * sides fall a tile, its basin's squared radii (water, deep), and the square of its reach (where
+   * its sides run out; past the Crown's reach on its outer side — the land round it, the rivers and
+   * the deposits keep to that reach as before).
+   */
+  private readonly summit: { readonly x: number; readonly y: number; readonly level: number; readonly top: number; readonly fall: number; readonly b2: number; readonly b2deep: number; readonly reach2: number } | null;
   /** The quartz vein in the nearest mountain (map 3, D87): its face tiles; null on maps 1–2. */
   readonly quartzVein: VeinSite | null;
   /** The vein's bluff in its own frame (null: no vein). */
@@ -206,9 +211,10 @@ export class MapGen implements TerrainSource {
     this.lake = L.onCrest ? pool : water;
     this.tarnAt = L.onCrest ? { ...water, rc: isqrt(L.dx * L.dx + L.dy * L.dy), mound: L.mound ?? 0 } : null;
     this.tarn = L.onCrest && !SP ? { x: water.cx, y: water.cy, level: C.crest } : null;
-    // The spring's summit (D115: « from a higher mountain… from north to south »): its stream from
-    // the summit's top straight down to the pool.
-    this.summit = SP ? { x: CENTER + SP.summit.dx, y: CENTER + SP.summit.dy, rise: SP.summit.rise } : null;
+    // The spring's summit (D115: « from a higher mountain… from north to south… a little plateau, and
+    // at least 6 in height »): its stream from the basin on its plateau straight down to the pool.
+    const SU = SP?.summit;
+    this.summit = SU ? { x: CENTER + SU.dx, y: CENTER + SU.dy, level: SU.level, top: SU.top, fall: SU.fall, b2: SU.basin * SU.basin, b2deep: SU.deep * SU.deep, reach2: (SU.top + Math.ceil(SU.level / SU.fall)) ** 2 } : null;
     const head = this.summit;
     this.springSeg = head && pool ? { ax: 4 * head.x + 2, ay: 4 * head.y + 2, bx: 4 * pool.cx + 2, by: 4 * pool.cy + 2, hw: SP!.halfWidth, kind: LineKind.River, dir: eighth(pool.cx - head.x, pool.cy - head.y) } : null;
     // The top's outer edge is at most max(rim + lift + minCrest, foot − lift + jitter), the rim
@@ -218,7 +224,7 @@ export class MapGen implements TerrainSource {
     const S = C.shoulders, widest = S ? ((255 - S.from) * S.gain) >> 7 : 0;
     const edge = Math.max(C.floorRadius + C.rimJitter.floor + lift + C.minCrest, this.crownFoot - lift + C.rimJitter.outer) + widest;
     this.crownReach = Math.max(edge, this.tarnAt ? this.tarnAt.rc + this.tarnAt.mound : 0) + climb;
-    // The spring at the summit's top, at the summit's level there.
+    // The spring in its basin on the plateau, at the plateau's level.
     this.spring = head ? { x: head.x, y: head.y, level: this.crown(head.x, head.y, isqrt((head.x - CENTER) ** 2 + (head.y - CENTER) ** 2)) } : null;
     // Cirque deposits: shared template, ±1 tile and ±20 % richness per player. Map 4 (D104): a
     // whole block or none, along the Crown (across the deposit's bearing from the Heart, to the
@@ -384,13 +390,28 @@ export class MapGen implements TerrainSource {
     }
     const up = Math.min(top, 1 + Math.floor((r - rim) / T));
     const lv = r < edge ? up : Math.min(up, Math.max(0, top - 1 - Math.floor((r - edge) / T)));
-    // The spring's summit (map 4, D115): the Crown raised round it, `rise` levels at its top, a level
-    // less every terrace away — on the Crown only (never past its foot nor on the floor), so the way
-    // over it still climbs a level a step.
+    // The spring's summit (map 4, D115): a plateau over the Crown's outer side, past its foot too.
     const S = this.summit;
-    if (!S || lv < 1) return lv;
+    if (!S) return lv;
+    // The ledge below it: flat at its level, past the Crown's foot too (the stream runs level across
+    // it; a works stands by it); settling makes terraces of its edges, so it is reached a level a step.
+    const G = this.C.spring?.ledge;
+    if (G && this.onLedge(x, y)) return G.level;
+    // The summit: never lower than the Crown it stands on.
+    return Math.max(lv, this.peak(x, y));
+  }
+
+  /**
+   * The spring's summit at a tile (map 4, D115), 0 off it: flat at its level `top` tiles round its
+   * middle (the basin's rock rim), `fall` levels a tile down from there (a mesa, compact: no ribbon
+   * climbs its sides), never on the quartz vein's ground (its corridor home stays open).
+   */
+  private peak(x: number, y: number): number {
+    const S = this.summit;
+    if (!S) return 0;
     const d = isqrt((x - S.x) * (x - S.x) + (y - S.y) * (y - S.y));
-    return Math.min(MAX_LEVEL, lv + Math.max(0, S.rise - Math.floor(d / T)));
+    const up = S.level - S.fall * Math.max(0, d - S.top);
+    return up > 0 && !this.inVeinZone(x, y, 1) ? up : 0;
   }
 
   /**
@@ -409,6 +430,12 @@ export class MapGen implements TerrainSource {
   /** The point of a tile's bearing on the circle of `radius` round the cirque (r > 0: the tile's own radius): not a tile, any point. */
   private bearing(x: number, y: number, r: number, radius: number): [number, number] {
     return [CENTER + ((x - CENTER) * radius) / r, CENTER + ((y - CENTER) * radius) / r];
+  }
+
+  /** Is (x, y) on the spring's ledge (map 4, D115)? */
+  private onLedge(x: number, y: number): boolean {
+    const G = this.C.spring?.ledge;
+    return !!G && x >= CENTER + G.dx0 && x <= CENTER + G.dx1 && y >= CENTER + G.dy0 && y <= CENTER + G.dy1;
   }
 
   /**
@@ -479,7 +506,7 @@ export class MapGen implements TerrainSource {
     }
     const top = r < RINGS.near ? M.threshold.near : r < RINGS.reaches ? M.threshold.reaches : M.threshold.far;
     if (e < top) return 0;
-    return Math.min(MAX_LEVEL, 1 + Math.floor((e - top) / M.step));
+    return Math.min(MOUNTAIN_LEVEL, 1 + Math.floor((e - top) / M.step));
   }
 
   /**
@@ -492,16 +519,31 @@ export class MapGen implements TerrainSource {
     const dx = x - CENTER, dy = y - CENTER;
     const r = isqrt(dx * dx + dy * dy);
     if (r > RINGS.playable) return (this.heightAt(x, y, r) << HEIGHT) | (T.DuneSea << GROUND);
-    if (r <= this.crownReach) {
+    const su = this.summit;
+    if (r <= this.crownReach || (su && (x - su.x) * (x - su.x) + (y - su.y) * (y - su.y) < su.reach2)) {
       const c = this.crown(x, y, r);
       // The spring's stream (map 4, D115): down the terraces at their level (a fixed level, a fall at
       // each step; the Crown's levels only fall towards the floor), then across the floor's edge
       // into its pool.
-      const sp = this.springSeg;
-      if (sp && within(sp, 4 * x + 2, 4 * y + 2) && this.floorGround(x, y) === T.Sand) {
+      const sp = this.springSeg, S = this.summit;
+      // Its basin on the summit's plateau (owner: « the water cannot just come from nowhere »): still
+      // water at the plateau's level, deep in its middle, where the stream starts.
+      if (S && c === S.level) {
+        const b2 = (x - S.x) * (x - S.x) + (y - S.y) * (y - S.y);
+        if (b2 <= S.b2) return c | CROWN | WET | FIXED | ((b2 <= S.b2deep ? T.Deep : T.Shallow) << GROUND);
+      }
+      // (the pool takes over on the floor only: up on the Crown the stream runs on into it)
+      if (sp && within(sp, 4 * x + 2, 4 * y + 2) && (c > 0 || this.floorGround(x, y) === T.Sand)) {
         const flow = (T.River << GROUND) | (sp.dir << FLOW), w = c > 0 ? this.springLevel(x, y) : 0;
         return w > 0 ? w | CROWN | WET | FIXED | flow : FLOOR | flow;
       }
+      // Its banks and its ledge stand as the massifs' rock does (owner: « the waterfall… looks like
+      // it's levitating »): never settled lower, so the water runs between walls at least its height
+      // (it stands at the lowest the Crown reaches along its way), and the ledge stays flat.
+      if (sp && c > 0 && (within(sp, 4 * x + 2, 4 * y + 2, sp.hw + 4) || this.onLedge(x, y))) return c | CROWN | MASSIF;
+      // So does the summit (« a little plateau »): its plateau whole round the basin wherever the
+      // land beside it lies lower (the vein's corridor: a cliff there, not its top worn away).
+      if (S && c > 0 && this.peak(x, y) === c) return c | CROWN | MASSIF;
       if (c < 0) return FLOOR | (ground ? this.floorGround(x, y) << GROUND : 0);
       if (c > 0) {
         // A mountain at the Crown's foot (a Closed Cirque's) may rise over its outer terraces.
@@ -544,7 +586,7 @@ export class MapGen implements TerrainSource {
    */
   private obstacle(x: number, y: number, r: number, h: number, ground: boolean): number {
     const hb = h << HEIGHT, [corridor, chasm, rv, lake] = this.lines.hits(x, y, this.hitBuf);
-    const g = this.rough(x, y, r), lift = ((g - 128) * this.O!.rugged.mountainGain) >> 6;
+    const g = this.rough(x, y, r), lift = this.liftOf(g);
     if (corridor) {
       // A river across it: a ford (still shallows: a backfiller fills them, a skybridge leaps them).
       if (rv) return hb | (T.Shallow << GROUND);
@@ -573,7 +615,9 @@ export class MapGen implements TerrainSource {
     if (s > 0 && s >= m) return hb | s | MASSIF | (this.ramp(x, y, r) ? RAMP : 0);
     if (m > 0) return hb | m;
     if (!ground) return hb;
-    return hb | (plainGround(h, this.moistAt(x, y, r)) << GROUND);
+    // The open desert holds no pond: its low ground is sand (D94, 2026-10-17).
+    const pg = plainGround(h, this.moistAt(x, y, r));
+    return hb | ((g < this.O!.desert.below && (pg === T.Shallow || pg === T.Deep) ? T.Sand : pg) << GROUND);
   }
 
   /**
@@ -585,7 +629,7 @@ export class MapGen implements TerrainSource {
   private massif(x: number, y: number, r: number, h: number, g = this.rough(x, y, r)): number {
     const M = this.O!.massif;
     if (r < M.from) return 0;
-    let e = this.blend(this.sW, this.sP, x, y, r, M.scale, M.octaves) + this.bias(this.dE3, r) + (((g - 128) * this.O!.rugged.gain) >> 6);
+    let e = this.blend(this.sW, this.sP, x, y, r, M.scale, M.octaves) + this.bias(this.dE3, r) + (((g - 128) * this.O!.rugged.gain) >> 6) - this.desertDrop(g);
     if (r < M.full) e -= (M.full - r) * M.fade;
     if (h < M.shore) e -= (M.shore - h) * M.shoreSlope;
     if (e < M.threshold) return 0;
@@ -594,7 +638,7 @@ export class MapGen implements TerrainSource {
       if (d2 < k * k) e -= (k - isqrt(d2)) * M.slope;
     }
     if (e < M.threshold || this.inVeinZone(x, y, M.clear) || this.lines.hit(x, y, LineKind.Keep)) return 0;
-    return Math.min(MAX_LEVEL, M.rim + Math.floor((e - M.threshold) / M.step));
+    return Math.min(MOUNTAIN_LEVEL, M.rim + Math.floor((e - M.threshold) / M.step));
   }
 
   /**
@@ -603,7 +647,10 @@ export class MapGen implements TerrainSource {
    * the ore lies; low: open desert.
    */
   private rough(x: number, y: number, r: number): number {
-    const g = this.blend(this.gW, this.gP, x, y, r, this.O!.rugged.scale, 2);
+    let g = this.blend(this.gW, this.gP, x, y, r, this.O!.rugged.scale, 2);
+    // Round the Crown the open sand (D94, 2026-10-17): held low out to `sand`, rising to the land's own by `rough`.
+    const D = this.O!.desert;
+    if (r < D.rough) g = Math.min(g, r <= D.sand ? D.low : D.low + Math.floor(((255 - D.low) * (r - D.sand)) / (D.rough - D.sand)));
     // Round the copper field never rougher than middling: the first works past the Crown stand there.
     const c = this.copperField, k = this.O!.copper;
     return g > 128 && (x - c.cx) * (x - c.cx) + (y - c.cy) * (y - c.cy) < k * k ? 128 : g;
@@ -611,7 +658,18 @@ export class MapGen implements TerrainSource {
 
   /** What the roughness adds to the mountains' elevation at a tile (map 4; 0 on maps 1–3). */
   private mountainLift(x: number, y: number, r: number): number {
-    return this.O ? ((this.rough(x, y, r) - 128) * this.O.rugged.mountainGain) >> 6 : 0;
+    return this.O ? this.liftOf(this.rough(x, y, r)) : 0;
+  }
+
+  /** What a roughness `g` adds to the mountains' elevation (map 4): up where the ground is broken, down where it is open, none in the open desert. */
+  private liftOf(g: number): number {
+    return (((g - 128) * this.O!.rugged.mountainGain) >> 6) - this.desertDrop(g);
+  }
+
+  /** How far a roughness `g` sinks the massifs and the mountains (map 4, D94): under the open desert's `below`, `edge` and `drop` more a unit; 0 above. */
+  private desertDrop(g: number): number {
+    const D = this.O!.desert;
+    return g < D.below ? D.edge + (D.below - g) * D.drop : 0;
   }
 
   /** Does a massif come down in a ramp at this tile (map 4: a second noise past its `from`)? */
@@ -739,12 +797,15 @@ export class MapGen implements TerrainSource {
         const dx = x - CENTER, dy = y - CENTER, r = isqrt(dx * dx + dy * dy);
         if (r > D.radius) continue;
         if (this.seaAt(x, y)) { kind[k] = 2; continue; }
-        if (r <= this.crownReach + D.keep || this.inVeinZone(x, y, D.keep) || this.keep.some((c) => (x - c.cx) * (x - c.cx) + (y - c.cy) * (y - c.cy) <= (c.r + D.keep) * (c.r + D.keep))) continue;
+        // None round the Crown out to the open sand's edge (D94), nor by the vein or a clearing.
+        if (r <= Math.max(this.crownReach + D.keep, O.desert.rough) || this.inVeinZone(x, y, D.keep) || this.keep.some((c) => (x - c.cx) * (x - c.cx) + (y - c.cy) * (y - c.cy) <= (c.r + D.keep) * (c.r + D.keep))) continue;
         kind[k] = 1;
         const h = this.heightAt(x, y, r), g = this.rough(x, y, r);
-        const m = this.mountain(x, y, r, h, ((g - 128) * O.rugged.mountainGain) >> 6), sm = this.massif(x, y, r, h, g);
+        const m = this.mountain(x, y, r, h, this.liftOf(g)), sm = this.massif(x, y, r, h, g);
         const inland = Math.max(0, this.coast(dx, dy) - ((dx * COS64[this.seaDir]! + dy * SIN64[this.seaDir]!) >> 10));
-        E[k] = 4 * h + D.massifWeight * sm + D.mountainWeight * m + D.tilt * inland;
+        // The open desert stands a little high for the water (D94): the streams go round it.
+        const dry = g < O.desert.below ? O.desert.riseEdge + (O.desert.below - g) * O.desert.rise : 0;
+        E[k] = 4 * h + D.massifWeight * sm + D.mountainWeight * m + D.tilt * inland + dry;
         rain[k] = sm > 0 ? D.rain.massif : m > 0 ? D.rain.mountain : D.rain.plain;
         land[k] = sm > 0 && !this.ramp(x, y, r) ? sm : 0;
       }
@@ -1088,9 +1149,11 @@ export class MapGen implements TerrainSource {
           if (broken(bx + ((COS64[q * 8]! * O.near) >> 10), by + ((SIN64[q * 8]! * O.near) >> 10))) n += 2;
           if (broken(bx + ((COS64[q * 8 + 4]! * O.far) >> 10), by + ((SIN64[q * 8 + 4]! * O.far) >> 10))) n += 2;
         }
-        const chance = Math.min(O.max, O.open + O.perBroken * n), roll = hash32(ps, nx, ny, 200 + k) % 1000;
+        // The open sand round the Crown: rare, small deposits; the open desert: fewer (D94).
+        const Ds = this.O!.desert, sand = r <= Ds.sand, g = this.rough(bx, by, r);
+        const chance = sand ? Ds.sandOre : Math.floor((Math.min(O.max, O.open + O.perBroken * n) * (g < Ds.below ? Ds.ore : 1000)) / 1000), roll = hash32(ps, nx, ny, 200 + k) % 1000;
         const ring = r < RINGS.near ? 'near' : r < RINGS.reaches ? 'reaches' : 'far';
-        const rough = n > O.thin;
+        const rough = !sand && n > O.thin;
         const [r0, rs] = rough ? O.radius : O.thinRadius;
         const radius = (r0 + (hash32(ps, nx, ny, 210 + k) % rs)) / 10;
         const c = this.classify(bx, by, true);
@@ -1306,7 +1369,7 @@ export function blocksOf(b: { cx: number; cy: number; r2: number; rich: number; 
  * two above its east neighbour when both lie past `MOUNTAINS.cliffFrom` (an east-facing cliff).
  * That is the highest land under the raw one keeping those steps: tile p ends at min over q of
  * raw(q) + cost(q → p), each step costing 1, or 2 for a westward step out there. A step costs 1
- * or more and levels are at most MAX_LEVEL, so a tile only feels the tiles within REACH steps:
+ * or more and levels are at most MOUNTAIN_LEVEL, so a tile only feels the tiles within REACH steps:
  * those that far inside the window come out exact. Levels 0 and 1 never move (nothing is below
  * 0), so what is rock and where the floor ends do not change.
  */

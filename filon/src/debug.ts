@@ -16,7 +16,8 @@ import { temperatureAt } from '@/sim/world/climate';
 import { buildDemo, connect, powerLine, learnPlans } from '@/sim/dev';
 import { BUILDING_IDS, ITEM_IDS } from '@/content/registry';
 import { QUEST_IDS } from '@/content/quests';
-import { isResearch } from '@/content/research';
+import { isResearch, researchNode } from '@/content/research';
+import { projectPermille } from '@/sim/research/runtime';
 import { EXPERTISES, EXPERTISE_IDS, isExpertise } from '@/content/expertises';
 import { archiveOpen, tierTwoOpen } from '@/sim/systems/expertise';
 import { questProgress } from '@/sim/systems/quests';
@@ -131,6 +132,8 @@ export interface FilonDebug {
   gazette(): { announced: string[]; active: string[] };
   /** Research: with an id, starts it; returns the projects and what is learnt. */
   research(id?: string): { ok: boolean; reason: string | null; projects?: Array<{ id: string; permille: number }>; done?: string[] };
+  /** A research node's tier (D118: Tiers 2–4 wait for the Core's levels 3–5); 0 for anything else. */
+  researchTier(id: string): number;
   /**
    * The tech tree (D33): unlock a plan through commands — its cost granted first, so the stock is
    * unchanged, and its missing prerequisites with it; no id: every plan. A research id is learnt
@@ -186,6 +189,8 @@ export interface FilonDebug {
     gleaned: Record<string, number>; tonight: Record<string, number>; card: 'night' | 'dawn' | null; tick: number;
     /** The figures on screen last frame: all, gliding in, waiting at a post, an arm out, grabbing, carrying, at the glass, by a fence. */
     figures: number; arriving: number; waiting: number; reaching: number; grabbing: number; carrying: number; tapping: number; prowling: number;
+    /** The takes shown so far (D112): foreseen with their token gone from the belt, a token still on the belt, foreseen otherwise, not foreseen at all, first shown late (off screen, or ticks jumped). */
+    paired: number; onBelt: number; unforeseen: number; unseen: number; late: number;
     /** The next posts' turns on the exposed lines from now on (tile, tick), soonest first. */
     next: Array<{ x: number; y: number; tick: number }>;
     /** The next raids (D112), soonest first: when each starts and its posts (tiles), middle post first for aiming. */
@@ -449,8 +454,9 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
     reorientExpertise: (slot, id) => app.sim.reorient(slot, id),
     research: (id) => {
       if (id) { const r = app.sim.startResearch(id); if (!r.ok) return { ok: false, reason: r.reason }; }
-      return { ok: true, reason: null, projects: app.sim.projects.map((p) => ({ id: p.id, permille: Math.min(1000, Math.floor(p.el / Math.max(1, p.dur))) })), done: [...app.sim.done] };
+      return { ok: true, reason: null, projects: app.sim.projects.map((p) => ({ id: p.id, permille: projectPermille(p) })), done: [...app.sim.done] };
     },
+    researchTier: (id) => researchNode(id)?.tier ?? 0,
     archetype: () => {
       const src = app.sim.grid.source as unknown as { archetype?: string; secondary?: string };
       return `${src.archetype ?? '?'}/${src.secondary ?? '?'}`;
@@ -518,6 +524,7 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
         tonight: byId(sim.gleanedTonight()), card: app.gleanCard.shown, tick: sim.tick,
         figures: app.gleaners.shown, arriving: app.gleaners.arriving, waiting: app.gleaners.waiting, reaching: app.gleaners.reaching,
         grabbing: app.gleaners.grabbing, carrying: app.gleaners.carrying, tapping: app.gleaners.tapping, prowling: app.gleaners.prowling,
+        paired: app.gleaners.paired, onBelt: app.gleaners.onBelt, unforeseen: app.gleaners.unforeseen, unseen: app.gleaners.unseen, late: app.gleaners.late,
         // The next raids' posts (D112): each post's turn (the raid's start + its stagger).
         next: sim.graph.chains.flatMap((c) => Array.from(c.raidPosts, (cell, p) => {
           const t = sim.tick - (sim.tick % GLEAN_WINDOW) + c.raidAt + p * RAID_STAGGER;

@@ -19,6 +19,11 @@
 // when it differs from what is drawn (D92: a ribbon laid recompiles the graph, but leaves every
 // wire as it was — a redraw re-tessellated thousands of strokes) or a grid's powered state flips;
 // each style is one batched stroke. The glints are pooled sprites moved each frame with no allocation.
+//
+// The neighbouring bases' wires (D110, `layForeign`: world/neighbours-view.ts hands each base's grid
+// as it lays the base) hang the same way, terminal to terminal, always lit (their grids always run),
+// in a graphics of their own drawn after the claim's: never part of the claim's grids, kept until
+// another colony comes into play (`clearForeign`).
 import { CanvasSource, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import type { LinkPreview } from '@/input/link-tool';
 import type { Sim } from '@/sim/state';
@@ -128,17 +133,54 @@ export class WiresView {
   private frameNo = 0;
   private time = 0;
   private readonly pt = { x: 0, y: 0 };
+  /** The neighbouring bases' wires (D110): by base, drawn in their own graphics. */
+  private readonly foreignIso = new Graphics();
+  private readonly foreignPlan = new Graphics();
+  private readonly foreign = new Map<number, Array<{ iso: Float32Array; ax: number; ay: number; bx: number; by: number }>>();
 
   constructor(isoLayer: Container, planLayer: Container) {
     this.glintTex = glintTexture();
-    isoLayer.addChild(this.isoG, this.isoPre, this.isoGlints);
-    planLayer.addChild(this.planG, this.planPre, this.planGlints);
+    isoLayer.addChild(this.foreignIso, this.isoG, this.isoPre, this.isoGlints);
+    planLayer.addChild(this.foreignPlan, this.planG, this.planPre, this.planGlints);
     this.isoGlints.blendMode = 'add';
     this.planGlints.blendMode = 'add';
   }
 
   /** How many wires are drawn (perf overlay, smoke test). */
   get count(): number { return this.wires.length; }
+
+  /** Is this neighbouring base's grid drawn (D110)? */
+  hasForeign(key: number): boolean { return this.foreign.has(key); }
+
+  /** How many neighbouring bases' wires are drawn (smoke). */
+  get foreignCount(): number { let n = 0; for (const ws of this.foreign.values()) n += ws.length; return n; }
+
+  /** A neighbouring base's grid (D110): its wires, end to end (terminals the caller picked: its Core's are its own), hung as the claim's are, lit. */
+  layForeign(key: number, ends: ReadonlyArray<readonly [Anchor, Anchor]>): void {
+    if (this.foreign.has(key)) return;
+    this.foreign.set(key, ends.map(([A, B]) => ({ iso: wireCurve(A, B), ax: A.x, ay: A.y, bx: B.x, by: B.y })));
+    this.drawForeign();
+  }
+
+  /** Every neighbouring base's wires dropped (another colony). */
+  clearForeign(): void {
+    if (!this.foreign.size) return;
+    this.foreign.clear();
+    this.drawForeign();
+  }
+
+  private drawForeign(): void {
+    const iso = this.foreignIso, plan = this.foreignPlan;
+    iso.clear(); plan.clear();
+    const all = [...this.foreign.values()].flat();
+    if (!all.length) return;
+    for (const w of all) isoPath(iso, w.iso, 0);
+    iso.stroke({ width: LINE.iso, color: INK, alpha: LINE.on, cap: 'round', join: 'round' });
+    for (const w of all) isoPath(iso, w.iso, -LINE.hiOff);
+    iso.stroke({ width: LINE.isoHi, color: LIT, alpha: LINE.onHi, cap: 'round', join: 'round' });
+    for (const w of all) plan.moveTo(w.ax, w.ay).lineTo(w.bx, w.by);
+    plan.stroke({ width: LINE.plan, color: INK, alpha: LINE.on, cap: 'round' });
+  }
 
   /**
    * Per frame. `te`: the eased plan-ness; `preview`: the Link tool's (null when not in hand);

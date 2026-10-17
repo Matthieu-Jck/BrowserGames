@@ -182,6 +182,35 @@ describe('the Gleaners (D103)', () => {
     expect(perRaid.size).toBeGreaterThanOrEqual(2);
   });
 
+  it('every take is foreseen: the token on the post\'s cell before the step, the one the views reach for (D112)', () => {
+    const sim = desertSim();
+    desertLine(sim);
+    sim.ensureCompiled();
+    const c = sim.chainAt(530, 510)!;
+    // The head is never a post (its item may leave on that very step).
+    expect(Array.from(c.raidPosts).includes(c.length - 1)).toBe(false);
+    let takes = 0;
+    for (let k = 0; k < EPOCH * 8; k++) {
+      const now = sim.tick, night = sim.gleanNight(now);
+      const will = new Map<number, number>(); // post tile → the item it will take
+      for (let p = 0; p < c.raidPosts.length; p++) {
+        const item = c.raidWillTake(p, now, night);
+        if (item < 0) continue;
+        expect(c.cells[c.raidPosts[p]!], 'the token is on the post\'s cell').toBe(item + 1);
+        will.set(c.tiles[c.raidPosts[p]!]!, item);
+      }
+      sim.gleaners.recent.length = 0;
+      sim.step();
+      const r = sim.gleaners.recent, got = new Map<number, number>();
+      for (let i = 0; i + 2 < r.length; i += 3) { expect(r[i + 2]).toBe(now); got.set(r[i]!, r[i + 1]!); }
+      expect(got, `tick ${now}: the takes foreseen`).toEqual(will);
+      // The token taken is off the line: the post's cell no longer holds it as the step leaves it.
+      for (const tile of got.keys()) expect(c.moved[c.tiles.indexOf(tile)] === now ? 'refilled' : c.cells[c.tiles.indexOf(tile)]).not.toBe(got.get(tile)! + 1);
+      takes += got.size;
+    }
+    expect(takes).toBeGreaterThanOrEqual(5);
+  });
+
   it('a glazed ribbon keeps what it carries', () => {
     const sim = desertSim();
     const { to } = desertLine(sim, 'copper_wire', 4000, 'glazed_ribbon');

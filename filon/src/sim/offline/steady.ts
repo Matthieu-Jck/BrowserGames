@@ -144,7 +144,7 @@ class Virtualizer {
       else {
         for (let i = 0; i < N_ITEMS; i++) {
           if (r.vState[i] === V_EMPTY) r.vPool[i] = Math.max(0, r.stock[i]!);
-          else if (r.vState[i] === V_FULL) r.vPool[i] = Math.max(0, r.cap - r.stock[i]!);
+          else if (r.vState[i] === V_FULL) r.vPool[i] = Math.max(0, r.capOf(i) - r.stock[i]!);
         }
       }
       r.inE = this.grp.resIn.get(ri) ?? [];

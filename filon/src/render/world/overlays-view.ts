@@ -14,7 +14,7 @@
 // world/views-view.ts) (both views: flat in plan; in iso on the rock top the building stands
 // on, as the dig marks are — owner, 2026-10-13: a turbine on the mountains showed its outline on
 // the ground below it, as if it stood somewhere else).
-import { Container, Graphics, Sprite, Texture, TilingSprite } from 'pixi.js';
+import { Container, Graphics, Sprite, Text, Texture, TilingSprite } from 'pixi.js';
 import type { Sim } from '@/sim/state';
 import type { LinkPreview } from '@/input/link-tool';
 import { footprint } from '@/sim/entities';
@@ -96,6 +96,9 @@ export class OverlaysView {
   private readonly landFloor = new Graphics();
   /** The neighbouring bases' emblems at their hubs' middles (land mode, D110), pooled. */
   private readonly badges = new Container({ label: 'land:badges' });
+  private readonly labels = new Container({ label: 'land:labels' });
+  /** A neighbouring base's label under its emblem in the land mode: « Base voisine » and its name (the shell's: D110). */
+  neighbourLabel: ((colony: number) => string) | null = null;
   /** The selection outline: flat in plan, lifted onto the rock top in iso (cross-faded). */
   private readonly sel = new Graphics();
   private readonly selIso = new Graphics();
@@ -126,7 +129,7 @@ export class OverlaysView {
     this.grid = new TilingSprite({ texture: gridTexture(), width: 1, height: 1 });
     this.grid.tileScale.set(1 / 64);
     gridLayer.addChild(this.grid);
-    landLayer.addChild(this.landGrid, this.landHeld, this.landFloor, this.badges, this.landMark);
+    landLayer.addChild(this.landGrid, this.landHeld, this.landFloor, this.badges, this.labels, this.landMark);
     overlayLayer.addChild(this.marksPlan, this.marksIso, this.reach, this.linkG, this.blockPlan, this.blockIso, this.sel, this.selIso);
   }
 
@@ -156,7 +159,7 @@ export class OverlaysView {
     this.updateLand(sim, view, zoom);
     this.landHeld.alpha = Math.max(t, this.landOn ? 1 : 0);
     this.landHeld.visible = this.landHeld.alpha > 0.01;
-    this.landGrid.visible = this.landMark.visible = this.landFloor.visible = this.badges.visible = this.landOn;
+    this.landGrid.visible = this.landMark.visible = this.landFloor.visible = this.badges.visible = this.labels.visible = this.landOn;
 
     this.marksPlan.alpha = t;
     this.marksPlan.visible = t > 0.01;
@@ -318,6 +321,7 @@ export class OverlaysView {
     const g = this.landFloor;
     g.clear();
     for (const b of this.badges.children) b.visible = false;
+    for (const b of this.labels.children) b.visible = false;
     if (!this.landOn) return;
     const R = Math.max(1.6, 8 * px), top = -Math.PI / 2;
     let nBadge = 0;
@@ -337,6 +341,18 @@ export class OverlaysView {
           s.scale.set(k);
           s.position.set(x - fr.ox * k, y - fr.oy * k);
           s.visible = true;
+          // Under it, « Base voisine » and its name (the shell's words: render reads no i18n).
+          const text = this.neighbourLabel?.(colony) ?? '';
+          let lb = this.labels.children[nBadge - 1] as Text | undefined;
+          if (!lb) {
+            lb = new Text({ text, style: { fontFamily: "'Patrick Hand SC', 'Comic Sans MS', sans-serif", fontSize: 30, fill: C.ink, stroke: { color: C.paper, width: 7 }, align: 'center', lineHeight: 30 } });
+            lb.anchor.set(0.5, 0);
+            this.labels.addChild(lb);
+          }
+          if (lb.text !== text) lb.text = text;
+          lb.position.set(x, y + R * 1.45);
+          lb.scale.set(px * 0.5);
+          lb.visible = !!text;
           continue;
         }
         const f = parcelFloor(sim.grid, p).permille;

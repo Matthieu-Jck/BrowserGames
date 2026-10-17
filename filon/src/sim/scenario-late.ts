@@ -213,21 +213,54 @@ type Tarn = { readonly x: number; readonly y: number; readonly level: number };
  * spot tried whole, taken back up when a part cannot be laid. Whether they stand.
  */
 export function potteries(b: Builder): boolean {
-  // The tarn's peak (maps 2–3), or the spring's on map 4 (D115: the peak kept, dry, its stream's
-  // first tiles water at its level, where the pump stands).
-  const sim = b.sim, tarn = sim.grid.source.tarn ?? sim.grid.source.spring;
-  if (!tarn) { b.skip('potteries:tarn'); return false; }
+  // The tarn's peak (maps 2–3); on map 4 (D115) the spring's stream comes down the Crown from a
+  // summit, and the works stand on a ledge beside it: each level it comes down to, the highest first,
+  // the water there at that level (where the pump stands).
+  const sim = b.sim, tarn = sim.grid.source.tarn, spring = sim.grid.source.spring;
+  const anchors: Tarn[] = tarn ? [tarn] : spring ? streamLedges(sim, spring) : [];
+  if (!anchors.length) { b.skip('potteries:tarn'); return false; }
   b.affordAll(['ceramic_oven', 1], ['pump', 1], ['conduit', 24], ['silo', 1], ['excavator', POTTERY_DIGGERS]);
-  const inner = toward([tarn.x, tarn.y], b.heart, 5);
-  const ovens = spotsNear(sim, 'ceramic_oven', inner, { r: 6, onRock: true, toward: b.heart })
-    .filter(([x, y]) => sim.grid.level(x, y) === tarn.level).slice(0, 24);
-  for (const [x, y, rot] of ovens) {
-    const cp = checkpoint(sim);
-    if (pottery(b, x, y, rot, tarn)) return true;
-    rollback(sim, cp);
+  for (const at of anchors) {
+    // The tarn's peak: its side toward the Heart; down a spring's stream (a ledge, a pool), round the water itself.
+    const inner = tarn ? toward([at.x, at.y], b.heart, 5) : ([at.x, at.y] as const);
+    // On the rock at its level up on the Crown; by a pool, on the floor.
+    const ovens = spotsNear(sim, 'ceramic_oven', inner, { r: 6, onRock: at.level > 0, toward: b.heart })
+      .filter(([x, y]) => sim.grid.level(x, y) === at.level).slice(0, 24);
+    for (const [x, y, rot] of ovens) {
+      const cp = checkpoint(sim);
+      if (pottery(b, x, y, rot, at)) return true;
+      rollback(sim, cp);
+    }
   }
   b.skip('potteries');
   return false;
+}
+
+/**
+ * The places down a spring's stream (map 4, D115): from the spring along the way its water runs (the
+ * chunk's biome code), the first tile at each level it comes down to — a ledge where the potteries
+ * may stand at its water's level —, then the pool it runs into on the floor (the Crown's narrow
+ * ledges seldom hold the works; the floor round the pool does, its stone from the terraces nearby).
+ */
+function streamLedges(sim: Sim, spring: Tarn): Tarn[] {
+  const g = sim.grid, out: Tarn[] = [];
+  const FX = [1, 1, 0, -1, -1, -1, 0, 1], FY = [0, 1, 1, 1, 0, -1, -1, -1];
+  // The spring wells up in a basin on its summit's plateau: the stream starts at the stream's tile
+  // nearest it (the first found, row by row, of the nearest).
+  let x = spring.x, y = spring.y, f = 0, near = Infinity;
+  for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) {
+    if (g.terrain(spring.x + dx, spring.y + dy) === T.River && dx * dx + dy * dy < near) { near = dx * dx + dy * dy; x = spring.x + dx; y = spring.y + dy; }
+  }
+  for (let n = 0; n < 40 && g.terrain(x, y) === T.River; n++) {
+    const lv = g.level(x, y);
+    if (lv >= 1 && !out.some((a) => a.level === lv)) out.push({ x, y, level: lv });
+    f = (g.chunkAt(x >> 5, y >> 5).biome[(y & 31) * 32 + (x & 31)]! - 16) & 7;
+    x += FX[f]!;
+    y += FY[f]!;
+  }
+  // Into the pool: its middle, a tile or two on.
+  if (g.terrain(x, y) === T.Shallow || g.terrain(x, y) === T.Deep) out.push({ x: x + FX[f]!, y: y + FY[f]!, level: g.level(x, y) });
+  return out;
 }
 
 /** A pump on the tarn's edge whose conduit along its level reaches the input `wet`: the shortest. */
@@ -295,7 +328,8 @@ function pottery(b: Builder, x: number, y: number, rot: Rot, tarn: Tarn): boolea
   const stones: BeltTiles[] = [];
   const diggers: number[] = [];
   const claimed = new Set<number>();
-  const keep = (tx: number, ty: number): boolean => sim.grid.level(tx, ty) >= tarn.level || claimed.has(tileIndex(tx, ty));
+  // Never the peak's rock round the tarn (at its level); by a pool on the floor (map 4, D115) any rock.
+  const keep = (tx: number, ty: number): boolean => (tarn.level > 0 && sim.grid.level(tx, ty) >= tarn.level) || claimed.has(tileIndex(tx, ty));
   // Inside the cirque below the peak, and outside the Crown beyond it (their lines climb over).
   const beyond = toward([tarn.x, tarn.y], b.heart, -10);
   const cands = [...spotsNear(sim, 'excavator', at, { r: 14, toward: [x, y] }), ...spotsNear(sim, 'excavator', beyond, { r: 10, toward: [x, y] })]

@@ -65,12 +65,16 @@ export function landContent(sim: Sim, p: number): number {
   return cents;
 }
 
-/** What buying a parcel costs now (centi-ocelles). */
-export function landPrice(sim: Sim, p: number): number {
+/**
+ * What buying a parcel costs now (centi-ocelles). `bought` is how many parcels the claim has
+ * bought, the growth's exponent: the count today, or one fewer to price a bought parcel as it would
+ * cost once sold (`resalePrice`).
+ */
+export function landPrice(sim: Sim, p: number, bought = sim.land.bought.size): number {
   const L = BAL.land, m = sim.mods;
   let cents = landContent(sim, p);
   // Each parcel bought makes the next dearer.
-  for (let i = 0; i < sim.land.bought.size; i++) cents = Math.floor((cents * m.landGrowth) / 1000);
+  for (let i = 0; i < bought; i++) cents = Math.floor((cents * m.landGrowth) / 1000);
   cents = Math.floor((cents * m.landPrice) / 1000);
   const [cx, cy] = parcelCentre(p), dx = cx - CENTER, dy = cy - CENTER;
   if (dx * dx + dy * dy > L.farRadius * L.farRadius) cents = Math.floor((cents * m.farLand) / 1000);
@@ -109,7 +113,7 @@ export function leaseBlock(sim: Sim, p: number): LandRefusal | null {
 
 /** Why selling parcel `p` back would be refused now (null: it would go through). */
 export function sellBlock(sim: Sim, p: number): LandRefusal | null {
-  if (!sim.mods.flags.has('landResale')) return 'locked';
+  if (!valid(p)) return 'none';
   if (!sim.land.bought.has(p)) return 'not_bought';
   // Bought from a neighbouring base before D110: it does not go back to its base (which would stand on what the claim built).
   return sim.neighbours.holdingOf(p) ? 'neighbour' : null;
@@ -155,9 +159,9 @@ export function endLease(sim: Sim, p: number): LandRefusal | null {
 }
 
 /**
- * Parcel Resale (xp_resell): a bought parcel goes back to CrierBelt for a share of what it cost
- * (of what it holds today, for one bought before prices were kept); what stands on it goes
- * dormant, nothing lost; the next purchase is cheaper by one parcel's growth.
+ * A bought parcel goes back to CrierBelt at its market price less the Cadastre's tax (D119: no
+ * research; what it would cost to buy now, not what it cost); what stands on it goes dormant,
+ * nothing lost; the next purchase is cheaper by one parcel's growth.
  */
 export function sellLand(sim: Sim, p: number): LandRefusal | null {
   const r = sellBlock(sim, p);
@@ -173,9 +177,14 @@ export function sellLand(sim: Sim, p: number): LandRefusal | null {
   return null;
 }
 
-/** What selling a bought parcel back would give now (centi-ocelles). */
+/** A parcel's market price as a sale would see it (the parcel itself no longer counted in the growth), before the tax (centi-ocelles). */
+export function marketPrice(sim: Sim, p: number): number {
+  return landPrice(sim, p, Math.max(0, sim.land.bought.size - (sim.land.bought.has(p) ? 1 : 0)));
+}
+
+/** What selling a bought parcel back would give now: its market price less the Cadastre's tax (centi-ocelles). */
 export function resalePrice(sim: Sim, p: number): number {
-  return Math.floor(((sim.land.paid.get(p) ?? landContent(sim, p)) * BAL.landResale) / 1000);
+  return Math.floor((marketPrice(sim, p) * (1000 - BAL.landResaleTax)) / 1000);
 }
 
 /** Land newly held: its fog lifts, and what stands on it wakes (the graph is rebuilt). */

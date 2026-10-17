@@ -62,9 +62,10 @@ export interface QueuedCue { cue: SfxCue; n: number }
 /**
  * The cues of one frame, as they should play: duplicates merged (counts summed), generic cues
  * dropped when a covering cue is there, else only the highest-priority generic one kept.
- * Specific cues keep their first-come order.
+ * Specific cues keep their first-come order. `covered`: something else answers the moment (a
+ * building's signature, D120), so the generic cues drop as well.
  */
-export function arbitrate(batch: readonly QueuedCue[]): QueuedCue[] {
+export function arbitrate(batch: readonly QueuedCue[], covered = false): QueuedCue[] {
   const merged = new Map<SfxCue, QueuedCue>();
   for (const q of batch) {
     const m = merged.get(q.cue);
@@ -73,7 +74,7 @@ export function arbitrate(batch: readonly QueuedCue[]): QueuedCue[] {
   }
   const all = [...merged.values()];
   const specific = all.filter((q) => !CUES[q.cue].generic);
-  if (specific.some((q) => CUES[q.cue].covers)) return specific;
+  if (covered || specific.some((q) => CUES[q.cue].covers)) return specific;
   let top: QueuedCue | null = null;
   for (const q of all) if (CUES[q.cue].generic && (!top || CUES[q.cue].prio > CUES[top.cue].prio)) top = q;
   return top ? [...specific, top] : specific;

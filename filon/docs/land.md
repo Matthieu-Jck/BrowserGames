@@ -38,21 +38,36 @@ the Heart's growing disc, the waystations and the land reclaimed next to a zone 
   [content/neighbours.ts](../src/content/neighbours.ts)). Nothing of it is saved: it follows from
   the world and player seeds and the land as its source made it (`Grid.made0`: what the claim digs
   never moves it).
-  - **Where.** Map 4 (`MapParams.holdings`): the parcel grid is cut in 3 × 3 squares round the
-    Heart's parcel; 420 ‰ of them hold one base of 2–4 parcels side by side, grown from a seed
-    parcel, so each reads as one (`BAL.land.neighbours`). Maps 1–3 (and test worlds) keep the
-    sister claims' scattered parcels as they were (one in eight, the same parcels, the same
-    colony), one base each. Either way, past the ring round the starting square only, on a parcel
-    that is mostly open floor (`TerrainSource.floorAt`, sampled 5 × 5 without making a chunk) and
-    holds nothing the land guarantees the claim (`keepsClear`: a unique site, the copper field, a
-    vent, the quartz vein, a corridor): a parcel of maps 1–3 where no base fits became CrierBelt's.
-  - **The base.** On its first parcel the hub: CrierBelt's lift pad (every claim trades through
-    one), a silo, a link mast, the claim's flag beside the pad; then its trade's buildings — a
-    mining camp's drills on the deposits (a sand collector where none lies), a foundry's furnaces,
-    a wind citadel's turbines… — two on the hub's parcel, three on each other, each wholly on its
-    parcel a tile in from its edge with a tile of room round it, and ribbons from each to the next
-    and on to the silo, carrying what the claim sells. Laid out the first time something asks (a
-    placement, the Gleaners' walk, the land panel, the view), the same in any order.
+  - **Where — few, and on the horizon** (owner, 2026-10-17, after play: « Il y a trop de bases de
+    PNJ autour de moi »). None within three rings of the Heart's parcel (`BAL.land.neighbours.minRing`
+    4: the two rings round the starting square stay free; the nearest bases some 90 tiles out).
+    Map 4 (`MapParams.holdings`): the parcel grid is cut in 3 × 3 squares round the Heart's parcel;
+    120 ‰ of them hold one base of 2–4 parcels side by side, grown from a seed parcel, so each reads
+    as one — on lands 1–3, 17, 17 and 13 bases (39, 34, 31 parcels), of which 2, 2 and 5 parcels
+    on ring 4, none nearer (420 ‰ from ring 3 before: some sixty bases). Maps 1–3 (and test
+    worlds) keep a share of the sister claims' scattered parcels (40 ‰ of the same draw, the same
+    colony: fewer, never others), one base each. Either way, on a parcel that is mostly open floor
+    (`TerrainSource.floorAt`, sampled 5 × 5 without making a chunk) and holds nothing the land
+    guarantees the claim (`keepsClear`: a unique site, the copper field, a vent, the quartz vein, a
+    corridor): a parcel where none fits is CrierBelt's.
+  - **The base: a working chain round its own Core** (owner: « leurs bases sont vraiment nulles, il
+    n'y a rien qui marche, même pas de câble électrique », « ils devraient avoir un cœur, juste pas le
+    même que le mien », « plus petit »). Its Core in its hub's middle, 3 × 3 (the claim's is 5 × 5;
+    the sim lays it as `NEIGHBOUR_CORE`'s footprint, `NLayout.core`; the render draws its own), with
+    CrierBelt's lift pad set beside it (what it holds leaves for the Crier from there) and its store
+    the other way. Its trade's chain (content/neighbours.ts): its makers round the hub, its extractors out on its other parcels (a mining camp's drills on the deposits — a
+    sand collector where none lies —, a glasshouse's collectors, a scholar spire's data collectors),
+    all on the floor joined to the Core's; ribbons from each extractor into the first maker, maker
+    into maker, the last into the store, the store into the Core, carrying what each stage hands on.
+    Then its power on the hub's far side (turbines, a coal generator, panels) and its own grid: every
+    building that takes part in power wired from its Core through masts (a chain of masts that
+    cannot reach the grid is taken back), by the claim's own
+    rule of reach (a mast at one end, its range and slots: sim/power/links.ts) — never joined to the
+    claim's. Its covered depots (canvas dome tents), its flag and two banner poles by its Core, cairns
+    along its outer edge. Each building wholly on its parcel a tile in from its edge with a tile of
+    room round it; a parcel the land cuts off from the pad's floor still gets a turbine on the grid.
+    Laid out the first time something asks (a placement, the land panel, the view), the same in any
+    order.
   - **What it gates.** Its buildings, ribbons and flag are its own: nothing of the claim's stands on
     them (`occupied`, treaties or not), the Gleaners keep off its land (D103: its drones watch over
     it, as the claim's fences do), no dig or fill mark goes on its land. The rest of its land takes infrastructure only with
@@ -86,7 +101,8 @@ or water filled):
   catch-up, the same call (`Sim.landEpoch`). When the purse cannot pay, the lease **lapses**: the
   parcel goes back to its owner, and what stands on it goes dormant (nothing vanishes; leasing
   or buying it again wakes it up). `endLease` gives a lease up.
-- Selling bought land back needs Parcel Resale (`xp_resell`): CrierBelt takes it back at 80 % of what it cost (`BAL.landResale`; `sellLand`, the land panel's « Revendre »), what stands on it goes dormant.
+- **Selling back** (`sellLand`, D119; owner, 2026-10-17: « il ne devrait pas y avoir d'upgrade pour revendre une parcelle. Ce n'est pas à 80 % du prix, c'est au prix du marché, avec 20 % de taxe du gouvernement »): always available, no research, for any parcel the claim bought. CrierBelt pays the parcel's **market price** — what buying it would cost now (`marketPrice`: `landPrice` with the parcel itself left out of the growth, so land growth, ore, floor and research move it) — less `BAL.landResaleTax` (200 ‰), the **taxe du Cadastre de l'Anneau** the authority that registers land on the Ring keeps. What stands on it goes dormant. The land panel shows « Revendre · X ◉ » and under it « Prix du marché Y ◉ − taxe 20 % du Cadastre de l'Anneau ». A granted parcel is not sold (`not_bought`), nor one bought from a base before D110 (`neighbour`).
+- A lease needs no sale: `endLease` gives it back at any time, free, as before (the rent is paid by the hour, nothing was paid up front to get back).
 
 ## The fog (D117)
 
@@ -123,7 +139,7 @@ no harm), so no base loses a machine to the change. A granted parcel is held: it
 
 Version 9's migration (`parcelsResized`, D74) moves the parcel ids from the 16-tile grid to the
 23-tile one: a bought parcel stays bought where its middle tile now falls (its price kept in
-`paid`, for Parcel Resale; refunded if that is the new starting square), a lease likewise (two
+`paid`, kept for the record since D119; refunded if that is the new starting square), a lease likewise (two
 falling together make one lease with both rents; one falling on land held already is refunded
 its hour), and every new parcel under a building that needs land, standing wholly on land the
 claim held, is granted. The old start is recomputed from the land's Crown (`MapGen.crownReach`).
@@ -133,9 +149,9 @@ step still grants on the grid of its time whatever `BAL.land.parcel` becomes.
 ## Research
 
 - Land Registry (`tr4`, was Waystations): leases.
-- Parcel Resale (`xp_resell`): sell a bought parcel back (above). Neighbour Treaties
-  (`xp_treaties`, flag `neighbourCrossing`): ribbons and poles cross the neighbouring bases' land,
-  between their buildings (D110). Far Claim (`xp_far`): buy a
+- Selling back is no research (D119; `xp_resell` is retired: a save holding it forgets it at load, `RESEARCH_GONE`, a project of it refunded). Neighbour Treaties
+  (`xp_treaties`, after Reinforced Pylons `xp4`, flag `neighbourCrossing`): ribbons and poles cross the neighbouring bases' land,
+  between their buildings (D110). Far Claim (`xp_far`, Tier 2, depth 4 after the Camouflaged Ribbon since D119; it was Tier 4): buy a
   parcel that does not touch the claim's land (without it: `far`).
 - Since D70 no node changes a land price by a percentage: the `landPrice`, `landRent`,
   `landGrowth` and `farLand` modifiers stay at their base.

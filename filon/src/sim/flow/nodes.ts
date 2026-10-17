@@ -252,8 +252,12 @@ export class ReservoirNode extends FNode {
   stock: Float64Array;
   /** The Hearth's node (set at each compile): what it takes in is counted (`TickCtx.hearthIn`). */
   hearth = false;
-  /** Capacity per item (mu); a single value for every item. */
+  /** Capacity per item (mu): one value for every item, unless `caps` gives an item its own. */
   cap: number;
+  /** Per-item capacities (mu) where some item differs from `cap` (the Core's data, D118); null: `cap` for all. */
+  caps: Float64Array | null = null;
+  /** An item's capacity (mu). */
+  capOf(it: number): number { return this.caps ? this.caps[it]! : this.cap; }
   /** Item offered by each output port (-1 = closed). */
   portItems: number[];
   /** Per output port, mu per tick (on average). */
@@ -357,7 +361,7 @@ export class ReservoirNode extends FNode {
         continue;
       }
       if (this.free[it]! < 0) {
-        if (!this.virtual) this.free[it] = Math.max(0, this.cap - this.stock[it]!);
+        if (!this.virtual) this.free[it] = Math.max(0, this.capOf(it) - this.stock[it]!);
         else this.free[it] = this.vState[it] === V_FULL ? this.vPool[it]! : Number.MAX_SAFE_INTEGER;
       }
       const a = Math.min(ctx.offMu[e]!, this.free[it]!);

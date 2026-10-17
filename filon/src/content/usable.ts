@@ -38,7 +38,7 @@ export const FEATURE_NEEDS: Readonly<Record<string, readonly string[]>> = {
   // The analytics readouts (D41): they read the base.
   telemetry: [], statistics: [], power_log: [], diagnostics: [], anemometry: [],
   // The land (D60): parcels are bought and leased from the start.
-  lease: [], landResale: [], neighbourCrossing: [], farClaims: [],
+  lease: [], neighbourCrossing: [], farClaims: [],
   // Digging deeper: the excavator's bits; filling deep water: the backfiller.
   digH3: ['excavator', 'heavy_excavator'], basaltBits: ['excavator', 'heavy_excavator'], digH4: ['excavator', 'heavy_excavator'],
   deepFill: ['backfiller'],

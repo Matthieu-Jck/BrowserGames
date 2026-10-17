@@ -16,25 +16,29 @@
 // (`keepsClear`: a site, the copper field, a vent, the vein, a corridor). Past the ring round the
 // starting square only, and never cut by the world's edge.
 //
-// The base (`layout`) is laid out the first time something asks — a placement, the Gleaners' walk,
-// the land panel, the view — on the land as its source made it (`Grid.made0`: what the claim digs
-// never moves it): the hub on its first parcel (CrierBelt's lift pad, a silo, a link mast, the
-// claim's flag beside the pad), then its trade's buildings (content/neighbours.ts) two or three a
-// parcel, each wholly on its parcel a tile in from its edge with a tile of room round it, a drill
-// on a deposit (else a sand collector), then ribbons found tile by tile (a bounded breadth-first
-// search) from each working building to the next and on to the silo, carrying what the claim
-// sells. Integers and total orders only: the same base for every reader, in every order asked.
+// The base (`layout`) is laid out the first time something asks — a placement, the land panel, the
+// view — on the land as its source made it (`Grid.made0`: what the claim digs never moves it), as a
+// working chain that fits its trade (content/neighbours.ts; owner, 2026-10-17: « leurs bases sont
+// vraiment nulles, il n'y a rien qui marche, même pas de câble électrique ») — extractors on its
+// outer parcels, makers round the hub, the store and CrierBelt's lift pad in its middle — linked
+// by ribbons found tile by tile (a bounded breadth-first search), powered from its own sources
+// through masts by the claim's own rule of reach (sim/power/links.ts), its flag and banner poles by
+// the pad, covered depots, cairns along its edge (`lay`). Integers and total orders only: the same
+// base for every reader, in every order asked. None stands within `minRing` − 1 rings of the
+// Heart's parcel (owner, 2026-10-17: « Il y a trop de bases de PNJ autour de moi »).
 //
 // A parcel of a holding the claim holds (an older base's lease or grant, `systems/land.ts`
 // `neighboursGiveWay`) is left out of its base: what stood there gave way. Nothing here is saved.
 import { BAL } from '@/content/balance';
 import type { BuildingId } from '@/content/buildings';
 import { COLONY_PROFILES, COLONY_PROFILE_IDS, type ColonyProfile, type ColonyProfileId } from '@/content/colonies';
-import { NEIGHBOUR_HUB, NEIGHBOUR_KITS, NEIGHBOUR_PER_PARCEL } from '@/content/neighbours';
+import { NEIGHBOUR_CAIRN_STEP, NEIGHBOUR_CORE, NEIGHBOUR_KITS, NEIGHBOUR_MAST, NEIGHBOUR_PAD, NEIGHBOUR_TENT } from '@/content/neighbours';
 import { BUILDING_KIND, buildingDef, buildingIdx, itemDef, itemIdx } from '@/content/registry';
+import { isqrt } from '@/core/fixed';
 import { hash32 } from '@/core/hash';
 import { WORLD } from '../constants';
 import { footprint } from '../entities';
+import { gap2, linkable } from '../power/links';
 import { DX, DY, isFloor, type Rot } from '../types';
 import { inWorld, tileIndex, type Grid } from './grid';
 import { HOME_COL, PARCEL, PARCEL_COLS, parcelAt, parcelCentre, parcelRect, ringOf, type Land } from './land';
@@ -45,13 +49,25 @@ export interface NStruct { readonly def: number; readonly x: number; readonly y:
 /** A ribbon line of a neighbouring base: its tiles in the order items ride (x, y, rot each), what it carries. */
 export interface NRibbon { readonly tiles: Int32Array; readonly item: number }
 
-/** A neighbouring base's buildings and ribbons, its flag's tile, and every tile they stand on. */
+/**
+ * A neighbouring base's buildings (its masts among them), ribbons and wires (struct indices, the
+ * lower first), its flag's tile and its banner poles', its covered depots (`NEIGHBOUR_TENT` tiles a
+ * side, top-left), the cairns along its edge, and every tile any of it stands on.
+ */
 export interface NLayout {
   readonly structs: readonly NStruct[];
+  /** Its Core among `structs` (laid as `NEIGHBOUR_CORE`'s footprint; the render draws its own); −1: none. */
+  readonly core: number;
   readonly ribbons: readonly NRibbon[];
+  readonly wires: ReadonlyArray<readonly [number, number]>;
   readonly flag: readonly [number, number] | null;
+  readonly banners: ReadonlyArray<readonly [number, number]>;
+  readonly tents: ReadonlyArray<readonly [number, number]>;
+  readonly cairns: ReadonlyArray<readonly [number, number]>;
   readonly tiles: ReadonlySet<number>;
 }
+
+const EMPTY_LAYOUT: NLayout = { structs: [], core: -1, ribbons: [], wires: [], flag: null, banners: [], tents: [], cairns: [], tiles: new Set() };
 
 /** A neighbouring base's land: its colony (the Crier's, by index), its trade, its parcels (the hub's first). */
 export interface Holding {
@@ -88,11 +104,6 @@ const sideBySide = (p: number, q: number): boolean => {
   return (Math.abs(p - q) === 1 && Math.floor(p / PARCEL_COLS) === Math.floor(q / PARCEL_COLS)) || (Math.abs(p - q) === PARCEL_COLS && pc === qc);
 };
 
-/** Does a building of this kind take something in or hand something out on a ribbon (not the power: turbines, panels, cells, masts)? */
-const works = (def: number): boolean => {
-  const k = BUILDING_KIND[def];
-  return k === 'drill' || k === 'machine' || k === 'lab' || k === 'server' || k === 'storage' || k === 'trade';
-};
 /** Does a drill of this def want a deposit under it (not a sand or data collector, not a face cutter)? */
 const wantsOre = (def: number): boolean => {
   const d = buildingDef(def).drill;
@@ -176,9 +187,9 @@ export class Neighbours {
     } else this.drawScatter(p);
   }
 
-  /** Can a base stand on parcel p: past the ring round the starting square, whole, mostly open floor, nothing the land guarantees? */
+  /** Can a base stand on parcel p: from `minRing` out, whole, mostly open floor, nothing the land guarantees? */
   private eligible(p: number): boolean {
-    if (ringOf(p) <= this.land.reach + 1) return false;
+    if (ringOf(p) < BAL.land.neighbours.minRing) return false;
     const r = parcelRect(p);
     if (r.x1 - r.x0 < PARCEL || r.y1 - r.y0 < PARCEL) return false;
     const src = this.grid.source;
@@ -195,7 +206,7 @@ export class Neighbours {
   /** Maps 1–3 (and test worlds): the sister claims' parcels as they were, a base on each where one fits. */
   private drawScatter(p: number): void {
     this.ofParcel[p] = -1;
-    if (ringOf(p) <= this.land.reach + 1) return;
+    if (ringOf(p) < BAL.land.neighbours.minRing) return;
     const h = hash32(this.land.seed, p, SALT.scatter);
     if (h % 1000 >= BAL.land.neighbours.scatter || !this.eligible(p)) return;
     const colony = (h >>> 10) % COLONIES;
@@ -234,12 +245,23 @@ export class Neighbours {
 
   // ── the base ──────────────────────────────────────────────────────────────
 
+  /**
+   * A base laid out as a chain that fits its trade (content/neighbours.ts): its Core in its hub's
+   * middle (D110: a smaller one of its own), CrierBelt's lift pad and the store beside it; its makers round the hub, on the side towards its other
+   * parcels; its extractors at the chain's head, out on those parcels (a drill on a deposit, else a
+   * sand collector); its power sources and extras on the hub's far side; its covered depots by the
+   * pad. Every building wholly on its parcel a tile in from the edge, with a tile of room round it.
+   * Then the flag and two banner poles at the pad's corners, the ribbons the goods ride (each
+   * extractor into the first maker, maker into maker, the last into the store, the store into the
+   * Core), the masts and wires of its own grid from the Core (the claim's rule of reach: a mast at one end, its
+   * range and slots), and the cairns along its outer edge.
+   */
   private lay(h: Holding): NLayout {
     const kit = NEIGHBOUR_KITS[h.profile];
     // An older base's lease or grant on its land: that part of the base is not there.
     const parcels = h.parcels.filter((p) => !this.land.holds(p));
     const allowed = new Set(parcels);
-    const solid = new Set<number>(); // what stands: buildings, ribbons, the flag
+    const solid = new Set<number>(); // what stands: buildings, ribbons, masts, the flag, poles, tents, cairns
     const room = new Set<number>(); // the buildings and the tile of room round each
     const structs: NStruct[] = [];
     const made = (x: number, y: number): { terrain: number; level: number; ore: number } => this.grid.made0(x, y); // the land as made: digging never moves a base
@@ -248,75 +270,221 @@ export class Neighbours {
       const m = made(x, y);
       return m.level === 0 && isFloor(m.terrain);
     };
-    const fits = (def: number, x: number, y: number, rot: Rot, p: number, ore: boolean): boolean => {
-      const [w, hh] = footprint(def, rot), r = parcelRect(p);
+    const free = (x: number, y: number): boolean => open(x, y) && !solid.has(tileIndex(x, y));
+    // The floor the pad stands on, joined to it (4-neighbours, on the base's parcels): every other
+    // building stands there, so a ribbon can always find its way between them.
+    const region = new Set<number>();
+    const fits = (w: number, hh: number, x: number, y: number, p: number, ore: boolean, joined: boolean): boolean => {
+      const r = parcelRect(p);
       if (x < r.x0 + 1 || y < r.y0 + 1 || x + w > r.x1 - 1 || y + hh > r.y1 - 1) return false;
       for (let ty = y; ty < y + hh; ty++) for (let tx = x; tx < x + w; tx++) {
-        if (room.has(tileIndex(tx, ty)) || !open(tx, ty)) return false;
+        const t = tileIndex(tx, ty);
+        if (room.has(t) || solid.has(t) || !open(tx, ty) || (joined && region.size && !region.has(t))) return false;
         if (ore) { const o = made(tx, ty).ore; if (o < 0 || itemDef(o).face) return false; }
       }
       return true;
     };
-    const place = (id: BuildingId, p: number, ax: number, ay: number, salt: number): NStruct | null => {
-      const def = buildingIdx(id);
-      const rot = (BUILDING_KIND[def] === 'machine' ? hash32(this.land.seed, p, salt, SALT.rot) % 4 : 0) as Rot;
-      const ore = wantsOre(def), [w, hh] = footprint(def, rot);
+    /** The nearest place on parcel p round (ax, ay) where a w × hh footprint fits, its room claimed; null: none. */
+    const spot = (w: number, hh: number, p: number, ax: number, ay: number, ore = false, joined = true): [number, number] | null => {
       for (const [dx, dy] of SPIRAL) {
         const x = ax + dx - (w >> 1), y = ay + dy - (hh >> 1);
-        if (!fits(def, x, y, rot, p, ore)) continue;
+        if (!fits(w, hh, x, y, p, ore, joined)) continue;
         for (let ty = y - 1; ty <= y + hh; ty++) for (let tx = x - 1; tx <= x + w; tx++) room.add(tileIndex(tx, ty));
         for (let ty = y; ty < y + hh; ty++) for (let tx = x; tx < x + w; tx++) solid.add(tileIndex(tx, ty));
-        const s: NStruct = { def, x, y, rot };
-        structs.push(s);
-        return s;
+        return [x, y];
       }
-      // A drill with no deposit to stand on: a sand collector in its stead.
-      if (wantsOre(def)) return place('sand_collector', p, ax, ay, salt);
       return null;
     };
-    if (!parcels.length) return { structs, ribbons: [], flag: null, tiles: solid };
-    const hub = parcels[0]!, [hx, hy] = parcelCentre(hub);
-    let k = 0;
-    const lines: Array<{ makers: NStruct[] }> = [];
-    // The hub: the lift pad in the middle, the silo and the mast beside it, then its trade's first buildings.
-    const post = place(NEIGHBOUR_HUB[0]!, hub, hx, hy, 0);
-    const silo = place(NEIGHBOUR_HUB[1]!, hub, hx, hy + 4, 1);
-    place(NEIGHBOUR_HUB[2]!, hub, hx - 4, hy - 4, 2);
-    for (const p of parcels) {
-      const [cx, cy] = parcelCentre(p);
-      // The other parcels' buildings gather on the side towards the hub.
-      const ax = p === hub ? cx : cx + Math.sign(hx - cx) * 4, ay = p === hub ? cy : cy + Math.sign(hy - cy) * 4;
-      const n = p === hub ? NEIGHBOUR_PER_PARCEL.hub : NEIGHBOUR_PER_PARCEL.other;
-      const makers: NStruct[] = [];
-      for (let i = 0; i < n; i++, k++) {
-        const s = place(kit.works[k % kit.works.length]!, p, ax, ay, 10 + k);
-        if (s && works(s.def)) makers.push(s);
+    /**
+     * A building on one of `ps` (in order) round (ax, ay); a drill wants a deposit, else a sand
+     * collector stands in; `joined`: on the pad's floor (the chain's pieces). Its index, or −1.
+     */
+    const put = (id: BuildingId, ps: readonly number[], ax: number, ay: number, salt: number, joined = true): number => {
+      let def = buildingIdx(id);
+      if (wantsOre(def)) {
+        for (const p of ps) {
+          const at = spot(...footprint(def, 0), p, ax, ay, true, joined);
+          if (at) { structs.push({ def, x: at[0], y: at[1], rot: 0 }); return structs.length - 1; }
+        }
+        def = buildingIdx('sand_collector');
       }
-      lines.push({ makers });
+      const rot = (BUILDING_KIND[def] === 'machine' ? hash32(this.land.seed, h.hub, salt, SALT.rot) % 4 : 0) as Rot;
+      for (const p of ps) {
+        const at = spot(...footprint(def, rot), p, ax, ay, false, joined);
+        if (at) { structs.push({ def, x: at[0], y: at[1], rot }); return structs.length - 1; }
+      }
+      return -1;
+    };
+    if (!parcels.length) return EMPTY_LAYOUT;
+    const hub = parcels[0]!, [hx, hy] = parcelCentre(hub), others = parcels.slice(1);
+    // The side of the hub towards the other parcels (north when it stands alone).
+    const [ox, oy] = others.length ? parcelCentre(others[0]!) : [hx, hy - 1];
+    const sx = Math.sign(ox - hx), sy = Math.sign(oy - hy);
+    const hubFirst = [hub, ...others], othersFirst = others.length ? [...others, hub] : [hub];
+    // 1. Its Core in the hub's middle and the floor it stands on; CrierBelt's lift pad set beside
+    // it, away from the other parcels; the store beside it the other way.
+    const core = put(NEIGHBOUR_CORE, [hub], hx, hy, 0);
+    if (core >= 0) {
+      const s = structs[core]!, q: number[] = [tileIndex(s.x, s.y)];
+      region.add(q[0]!);
+      for (let k = 0; k < q.length; k++) {
+        const t = q[k]!, x = t % WORLD, y = (t - x) / WORLD;
+        for (let d = 0; d < 4; d++) {
+          const nx = x + DX[d]!, ny = y + DY[d]!, n = tileIndex(nx, ny);
+          if (region.has(n) || !open(nx, ny)) continue;
+          region.add(n);
+          q.push(n);
+        }
+      }
     }
-    // The claim's flag on a tile beside the pad (its north-west corner first).
-    let flag: [number, number] | null = null;
-    if (post) {
-      const [w, hh] = footprint(post.def, post.rot);
-      const around: Array<[number, number]> = [[post.x - 1, post.y - 1], [post.x + w, post.y - 1], [post.x - 1, post.y + hh], [post.x + w, post.y + hh]];
-      for (const [x, y] of around) if (open(x, y) && !solid.has(tileIndex(x, y))) { flag = [x, y]; solid.add(tileIndex(x, y)); break; }
+    put(NEIGHBOUR_PAD, hubFirst, hx - sx * 5, hy - (sy || -1) * 5, 1);
+    const store = put(kit.store, hubFirst, hx - sy * 4, hy + sx * 4, 2);
+    // 2. Its makers round the hub, towards the other parcels.
+    const makers = kit.makers.map((id, j) => put(id, hubFirst, hx + sx * 6, hy + sy * 6, 10 + j)).filter((i) => i >= 0);
+    // 3. Its extractors out on the other parcels, round their middles (towards the hub).
+    const extract: number[] = [];
+    for (let i = 0; i < kit.extractN; i++) {
+      const p = othersFirst[i % othersFirst.length]!, [cx, cy] = parcelCentre(p);
+      const k = put(kit.extract, [p, ...othersFirst.filter((q) => q !== p)], cx - Math.sign(cx - hx) * 3, cy - Math.sign(cy - hy) * 3, 20 + i);
+      if (k >= 0) extract.push(k);
     }
-    // The ribbons: each parcel's working buildings one into the next, the last into the silo (or the pad); the silo into the pad.
+    // 4. The ribbons the goods ride, carrying what each stage hands on — laid before anything else
+    // stands in their way.
     const ribbons: NRibbon[] = [];
-    const sink = silo ?? post;
-    lines.forEach((l, i) => {
-      const chain = [...l.makers.filter((s) => s !== sink && s !== post), ...(sink ? [sink] : [])];
-      const item = itemIdx(kit.carries[i % kit.carries.length]!);
-      for (let j = 0; j + 1 < chain.length; j++) {
-        const r = this.ribbon(chain[j]!, chain[j + 1]!, open, solid);
-        if (r) ribbons.push({ tiles: r, item });
-      }
-    });
-    if (silo && post) {
-      const r = this.ribbon(silo, post, open, solid);
-      if (r) ribbons.push({ tiles: r, item: itemIdx(kit.carries[0]!) });
+    const lay = (a: number, b: number, item: string | number): void => {
+      if (a < 0 || b < 0) return;
+      const r = this.ribbon(structs[a]!, structs[b]!, open, solid);
+      if (r) ribbons.push({ tiles: r, item: typeof item === 'number' ? item : itemIdx(item) });
+    };
+    const stage = (j: number): string => kit.carries[Math.min(j, kit.carries.length - 1)]!;
+    const head = makers.length ? makers[0]! : store;
+    for (const e of extract) {
+      const s = structs[e]!, o = made(s.x, s.y).ore;
+      lay(e, head, wantsOre(s.def) && o >= 0 ? o : stage(0));
     }
-    return { structs, ribbons, flag, tiles: solid };
+    makers.forEach((m, j) => lay(m, j + 1 < makers.length ? makers[j + 1]! : store, stage(j + 1)));
+    lay(store, core, stage(kit.carries.length - 1)); // into the Core: what it holds leaves from the pad beside it
+    // 5. Its power and extras on the hub's far side; its covered depots by the Core.
+    const power = kit.power.map((id, j) => put(id, hubFirst, hx - sx * 6 + sy * 3, hy - sy * 6 + sx * 3, 30 + j, false)).filter((i) => i >= 0);
+    kit.extra.forEach((id, j) => put(id, hubFirst, hx + sx * 4 - sy * 5, hy + sy * 4 + sx * 5, 40 + j, false));
+    const tents: Array<[number, number]> = [];
+    for (let j = 0; j < kit.tents; j++) {
+      const at = spot(NEIGHBOUR_TENT, NEIGHBOUR_TENT, hub, hx + sy * 6, hy - sx * 6, false, false);
+      if (at) tents.push(at);
+    }
+    // A parcel still bare (its floor cut off from the pad's by the land): a turbine on the base's grid, else a depot.
+    for (const p of parcels) {
+      if (structs.some((s) => parcelAt(s.x, s.y) === p) || tents.some(([x, y]) => parcelAt(x, y) === p)) continue;
+      const [cx, cy] = parcelCentre(p);
+      const k = put('wind_flower', [p], cx, cy, 50, false);
+      if (k >= 0) { power.push(k); continue; }
+      const at = spot(NEIGHBOUR_TENT, NEIGHBOUR_TENT, p, cx, cy, false, false);
+      if (at) tents.push(at);
+    }
+    // 6. The flag and two banner poles round the pad's corners.
+    let flag: [number, number] | null = null;
+    const banners: Array<[number, number]> = [];
+    if (core >= 0) {
+      const s = structs[core]!, [w, hh] = footprint(s.def, s.rot);
+      // The tiles round the Core, its corners first, then along its sides from their middles.
+      const ring: Array<[number, number]> = [[s.x - 1, s.y - 1], [s.x + w, s.y - 1], [s.x - 1, s.y + hh], [s.x + w, s.y + hh]];
+      for (let k = 0; k <= Math.max(w, hh); k++) for (const sg of [1, -1]) {
+        const i = (w >> 1) + sg * k, j = (hh >> 1) + sg * k;
+        if (i >= 0 && i < w) ring.push([s.x + i, s.y - 1], [s.x + i, s.y + hh]);
+        if (j >= 0 && j < hh) ring.push([s.x - 1, s.y + j], [s.x + w, s.y + j]);
+      }
+      for (const [x, y] of ring) {
+        if (flag && banners.length >= 2) break;
+        if (!free(x, y)) continue;
+        solid.add(tileIndex(x, y));
+        if (!flag) flag = [x, y];
+        else banners.push([x, y]);
+      }
+    }
+    // 7. Its grid: every building that takes part in power, wired from its Core through masts.
+    const wires = this.wire(structs, core >= 0 ? core : power[0] ?? -1, solid, free);
+    // 8. The cairns along its outer edge, a gap between each two.
+    const cairns: Array<[number, number]> = [];
+    for (const p of parcels) {
+      const r = parcelRect(p), col = p % PARCEL_COLS, row = Math.floor(p / PARCEL_COLS);
+      const out = (c: number, rr: number): boolean => c < 0 || rr < 0 || c >= PARCEL_COLS || rr >= PARCEL_COLS || !allowed.has(rr * PARCEL_COLS + c);
+      const edges: Array<[number, number, number, number]> = [];
+      if (out(col, row - 1)) edges.push([r.x0, r.y0, 1, 0]);
+      if (out(col, row + 1)) edges.push([r.x0, r.y1 - 1, 1, 0]);
+      if (out(col - 1, row)) edges.push([r.x0, r.y0, 0, 1]);
+      if (out(col + 1, row)) edges.push([r.x1 - 1, r.y0, 0, 1]);
+      for (const [x0, y0, dx, dy] of edges) for (let k = 2; k < PARCEL - 1; k += NEIGHBOUR_CAIRN_STEP) {
+        const x = x0 + dx * k, y = y0 + dy * k;
+        if (!free(x, y) || room.has(tileIndex(x, y))) continue;
+        solid.add(tileIndex(x, y));
+        cairns.push([x, y]);
+      }
+    }
+    return { structs, core, ribbons, wires, flag, banners, tents, cairns, tiles: solid };
+  }
+
+  /**
+   * A base's grid (the claim's rule of reach, sim/power/links.ts: a wire needs a mast at one end,
+   * no longer than its range edge to edge, at most its slots on it): from its Core, every
+   * other building that takes part in power is joined, nearest the Core first, by a wire from a
+   * mast of the grid within reach, else through new masts stepping towards the grid. Masts go on free
+   * open floor. Returns the wires (struct indices, the lower first); the masts join `structs`.
+   */
+  private wire(structs: NStruct[], root: number, solid: Set<number>, free: (x: number, y: number) => boolean): Array<[number, number]> {
+    const wires: Array<[number, number]> = [];
+    if (root < 0) return wires;
+    const mastDef = buildingIdx(NEIGHBOUR_MAST), pole = buildingDef(mastDef).pole!, R2 = pole.range * pole.range;
+    const deg = new Map<number, number>();
+    const isMast = (i: number): boolean => structs[i]!.def === mastDef;
+    const ok = (i: number, j: number): boolean => (isMast(i) || isMast(j)) && gap2(structs[i]!, structs[j]!) <= R2
+      && (!isMast(i) || (deg.get(i) ?? 0) < pole.slots) && (!isMast(j) || (deg.get(j) ?? 0) < pole.slots);
+    const link = (i: number, j: number): void => {
+      wires.push(i < j ? [i, j] : [j, i]);
+      deg.set(i, (deg.get(i) ?? 0) + 1); deg.set(j, (deg.get(j) ?? 0) + 1);
+    };
+    const mid = (i: number): [number, number] => { const s = structs[i]!, [w, h] = footprint(s.def, s.rot); return [s.x + (w >> 1), s.y + (h >> 1)]; };
+    const d2 = (a: [number, number], b: [number, number]): number => (a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]);
+    /** A new mast on free floor near (tx, ty), within reach of struct i; its index, or −1. */
+    const mastNear = (i: number, tx: number, ty: number): number => {
+      for (const [dx, dy] of SPIRAL) {
+        if (dx * dx + dy * dy > 16) break;
+        const x = tx + dx, y = ty + dy;
+        if (!free(x, y)) continue;
+        if (gap2(structs[i]!, { def: mastDef, x, y, rot: 0 }) > R2) continue;
+        structs.push({ def: mastDef, x, y, rot: 0 });
+        solid.add(tileIndex(x, y));
+        return structs.length - 1;
+      }
+      return -1;
+    };
+    const net = new Set<number>([root]);
+    const at0 = mid(root);
+    const todo = structs.map((s, i) => i).filter((i) => i !== root && linkable(structs[i]!.def) && !isMast(i))
+      .sort((a, b) => d2(mid(a), at0) - d2(mid(b), at0) || a - b);
+    for (const i of todo) {
+      // A chain from this building towards the grid; joined only if it gets there, else undone.
+      const w0 = wires.length, s0 = structs.length, chain = [i];
+      let cur = i, joined = false;
+      for (let step = 0; step < 14 && !joined; step++) {
+        // A node of the grid this one may be wired to, nearest first.
+        const near = [...net].sort((a, b) => gap2(structs[cur]!, structs[a]!) - gap2(structs[cur]!, structs[b]!) || a - b);
+        const j = near.find((n) => ok(cur, n));
+        if (j !== undefined) { link(cur, j); joined = true; break; }
+        // Else a mast towards the nearest node of the grid, within reach of this one, nearer the grid.
+        const [cx, cy] = mid(cur), [gx, gy] = mid(near[0]!);
+        const d = Math.max(1, isqrt(d2([cx, cy], [gx, gy]))), k = Math.min(pole.range - 1, d - 1);
+        const m = mastNear(cur, cx + Math.trunc(((gx - cx) * k) / d), cy + Math.trunc(((gy - cy) * k) / d));
+        if (m < 0 || !ok(cur, m)) break;
+        link(cur, m);
+        chain.push(m);
+        cur = m;
+      }
+      if (joined) { for (const c of chain) net.add(c); continue; }
+      // It never reached the grid: its wires and new masts taken back (an island would read as wired).
+      for (const [a, b] of wires.splice(w0)) { deg.set(a, deg.get(a)! - 1); deg.set(b, deg.get(b)! - 1); }
+      for (const s of structs.splice(s0)) solid.delete(tileIndex(s.x, s.y));
+    }
+    return wires;
   }
 
   /**

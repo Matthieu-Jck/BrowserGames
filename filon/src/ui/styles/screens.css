@@ -134,7 +134,6 @@
 .tr-chip { display: inline-flex; align-items: center; gap: 2px; font-weight: 600; }
 .tr-chip canvas { width: 14px; height: 14px; display: block; }
 .tr-chip[data-poor] { color: var(--c-coral-d); }
-.tr-time { color: var(--c-ink-soft); white-space: nowrap; margin-left: auto; }
 /* « Débloquer » hangs off the card's lower edge like a tab: the costs keep their line. */
 .tr-unlock {
   position: absolute; right: 10px; bottom: -11px; z-index: 1; padding: 1px 9px;
@@ -174,7 +173,6 @@
 .tr-costs small { margin-left: auto; padding-left: 8px; font-size: 12px; color: var(--c-ink-soft); white-space: nowrap; }
 .tr-costs li[data-poor] b, .tr-costs li[data-poor] small { color: var(--c-coral-d); font-weight: 700; }
 .tr-paid { color: var(--c-ink-soft); }
-.rs-dur { margin: 6px 0 0; font-size: 13px; }
 .rs-pre { margin: 0; padding-left: 16px; font-size: 13px; }
 .rs-pre li { color: var(--c-coral-d); }
 .rs-pre li[data-ok] { color: var(--c-turq-d); }

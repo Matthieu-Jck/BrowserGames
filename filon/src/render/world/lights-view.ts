@@ -296,8 +296,11 @@ export class LightsView {
   /** Is this neighbouring base's light laid? */
   hasForeign(key: number): boolean { return this.foreign.has(key); }
 
-  /** A neighbouring base's lights (D110): every building's, always on (they always work). */
-  layForeign(key: number, ents: readonly Ent[]): void {
+  /**
+   * A neighbouring base's lights (D110): every building's, always on (they always work), and its
+   * lanterns — points at tile (x, y), `z` levels up (its tents' doors, its banner poles' tips), warm.
+   */
+  layForeign(key: number, ents: readonly Ent[], lanterns: ReadonlyArray<{ x: number; y: number; z: number }> = []): void {
     if (this.foreign.has(key)) return;
     const recs: LightRec[] = [];
     for (const e of ents) {
@@ -306,6 +309,17 @@ export class LightsView {
       this.addBuilding(e);
       for (const b of r.beacons) this.beacons.add(b);
       for (const o of r.overlays) this.overlays.add(o);
+      recs.push(r);
+    }
+    if (lanterns.length && ents.length) {
+      const r: LightRec = { sig: '', ent: ents[0]!.id + 39, iso: [], plan: [], overlays: [], beacons: [], pit: null, watched: false, on: true, seen: 0 };
+      this.cur = r;
+      for (const l of lanterns) {
+        const [X, Y] = tileToIso(l.x, l.y, l.z);
+        this.glow('i', 'glow', X, Y, 26, 26, AMBER, 0.9);
+        this.glow('i', 'soft', X, Y + 6, 90, 50, POOL_WARM, 0.35);
+        this.glow('p', 'glow', l.x, l.y, 0.6, 0.6, AMBER, 0.7);
+      }
       recs.push(r);
     }
     this.cur = null;

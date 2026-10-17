@@ -14,7 +14,9 @@
 // head, with what the next level holds, and each row's thin gauge fills toward it — amber near the
 // top, coral and « plein » at it, where the Heart takes no more and what comes to it waits on the
 // ribbons (owner, 2026-10-17: « il faut expliquer au joueur que le core ne peut contenir que X de
-// chaque item au maximum »).
+// chaque item au maximum »). Data holds at most `BAL.hearthDataCap` (200) whatever the level (D118:
+// « pour la data, le cœur ne devrait pouvoir stocker que 200 max »): its rows fill toward that, and
+// a line under the Données section says it.
 import { BAL } from '@/content/balance';
 import { ITEM_IDS, itemIdx } from '@/content/registry';
 import { nodeName } from '@/content/research';
@@ -116,6 +118,7 @@ export class StockPanel {
         for (const i of mine) setText(this.row(i).node.querySelector('.stk-name')!, itemName(i));
         return section({ sec: `stock-${g.id}`, title: () => t(`stock.group.${g.id}` as MsgKey), icon: itemIcon(this.atlas, itemIdx(g.icon), 20), aside: String(mine.length) }, [
           el('div.stk-list', {}, mine.map((i) => this.row(i).node)),
+          g.id === 'data' ? el('p.insp-note.stk-datacap', { 'data-stock-datacap': '' }, t('stock.dataCap', { n: num(BAL.hearthDataCap) })) : null,
         ]);
       });
       this.body.replaceChildren(...sections.filter((n): n is HTMLElement => !!n));
@@ -137,13 +140,14 @@ export class StockPanel {
       setAttr(r.node, 'title', d !== null ? t('hud.stock.tipRate', { item: itemName(i), n, rate: t('hud.perMin', { v: dv || '0' }) }) : t('hud.stock.tip', { item: itemName(i), n }));
       const lack = lacks.get(i);
       setAttr(r.node, 'data-lack', lack ? (lack.out ? 'out' : 'short') : null);
-      // Its share of what the Heart can hold: near the top, full (the Heart takes no more of it).
-      const share = Math.min(1000, Math.floor((sim.stock[i]! * 1000) / Math.max(1, sim.hearthCap())));
+      // Its share of what the Heart can hold of it (data: 200, D118): near the top, full (the Heart takes no more of it).
+      const capI = sim.hearthCapOf(i);
+      const share = Math.min(1000, Math.floor((sim.stock[i]! * 1000) / Math.max(1, capI)));
       const full = share >= 1000;
       r.fill.style.width = `${share / 10}%`;
       setAttr(r.node, 'data-fill', full ? 'full' : share >= 900 ? 'near' : null);
       setText(r.need, lack ? `−${num(Math.ceil(lack.missing / 1000))}` : full ? t('stock.full') : '');
-      setAttr(r.need, 'title', lack ? t(lack.out ? 'stock.out' : 'stock.short', { n: num(Math.ceil(lack.missing / 1000)), need: needName(lack) }) : full ? t('stock.fullTip', { n: num(capN) }) : null);
+      setAttr(r.need, 'title', lack ? t(lack.out ? 'stock.out' : 'stock.short', { n: num(Math.ceil(lack.missing / 1000)), need: needName(lack) }) : full ? t('stock.fullTip', { n: num(Math.floor(capI / 1000)) }) : null);
     }
   }
 

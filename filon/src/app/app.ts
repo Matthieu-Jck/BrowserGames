@@ -31,6 +31,8 @@ import { LandingView } from '@/render/world/landing-view';
 import { DayNight } from '@/render/daynight';
 import { CloudShadows, LightsView } from '@/render/world/lights-view';
 import { NeighboursView } from '@/render/world/neighbours-view';
+import { neighbourName } from '@/ui/land-facts';
+import { NeighbourCard } from '@/ui/neighbour-card';
 import { WindHints } from '@/render/world/wind-hints-view';
 import { RiversView } from '@/render/world/rivers-view';
 import { COS64, SIN64 } from '@/content/world';
@@ -77,7 +79,7 @@ import type { AwayReport } from '@/sim/offline/report';
 import type { RemapNote } from '@/sim/save-remap';
 import type { Persistence } from './persistence';
 import { bus } from '@/core/bus';
-import { tr } from '@/i18n/i18n';
+import { t, tr } from '@/i18n/i18n';
 import { BuildMode } from './build-mode';
 import { Controls } from './controls';
 import { Picker } from './picking';
@@ -119,7 +121,7 @@ export class App {
   readonly dayNight: DayNight;
   readonly lights: LightsView;
   /** The neighbouring bases near the view (D110). */
-  private readonly neighbours: NeighboursView;
+  readonly neighbours: NeighboursView;
   readonly clouds: CloudShadows;
   /** The wind's rare hints on the land (D95): gust streaks, sand off the tops. */
   readonly windHints: WindHints;
@@ -149,6 +151,7 @@ export class App {
   readonly tip: Tip;
   /** The deposit card (D99): what a known deposit is and what works it, with nothing in hand. */
   readonly depositCard: DepositCard;
+  readonly neighbourCard = new NeighbourCard();
   /** What a building does: opens above the build bar when the pointer rests on a tray slot. */
   readonly card: BuildingCard;
   /** The tutorial (D28): the guide's arrow and the quest log with CrierBelt's naming modal. */
@@ -220,13 +223,18 @@ export class App {
     this.wires = new WiresView(this.layers.get('wires'), this.layers.get('wiresPlan'));
     this.items = new ItemsView(this.layers.get('items'), atlas, this.layers.get('itemsOver'), this.layers.get('belts'), { volumes: this.layers.get('objects'), plan: this.layers.get('plan') });
     this.buildings.carHeight = (x, y) => this.items.lift.carAt(x, y); // the traction elevators' cars ride with their items
-    this.gleaners = new GleanersView(this.layers.get('glass'), this.layers.get('items'), this.layers.get('lights'), atlas);
+    this.gleaners = new GleanersView(this.layers.get('glass'), this.layers.get('items'), this.layers.get('lights'), this.layers.get('objects'), atlas, this.items);
     this.cargo = new CargoView(this.layers.get('fxTop'), this.layers.get('fxGlow'));
     this.landing = new LandingView(this.layers.get('fxTop'), this.layers.get('fxGlow'), atlas);
     this.dayNight = new DayNight([this.layers.lit, this.layers.get('fog'), this.layers.get('status'), this.layers.get('fxTop')], stage.renderer);
     this.lights = new LightsView(this.layers.get('lights'), this.layers.get('objects'), this.layers.get('plan'), atlas);
     this.lights.work = this.buildings.work; // a production building that does not work shows no light (D83)
-    this.neighbours = new NeighboursView(this.buildings, this.lights); // the neighbouring bases near the view (D110)
+    // The neighbouring bases near the view (D110): their buildings, lamps, wires, dress, goods, smoke, names and drones.
+    this.neighbours = new NeighboursView({
+      buildings: this.buildings, lights: this.lights, wires: this.wires, cargo: this.cargo, atlas,
+      layers: { decals: this.layers.get('decals'), objects: this.layers.get('objects'), plan: this.layers.get('plan'), items: this.layers.get('items'), status: this.layers.get('status'), fx: this.layers.get('fxTop') },
+      name: (colony) => neighbourName(this.sim, colony),
+    });
     this.clouds = new CloudShadows(this.layers.get('shade'), this.lights.cloudTextures());
     this.windHints = new WindHints(this.layers.get('shade'));
     this.rivers = new RiversView(this.layers.get('decals'));
@@ -244,7 +252,7 @@ export class App {
     this.views = new MapViews({ sim: () => this.sim, land: this.landTool, setLand: (on) => this.build.land(on), lit: (id) => this.buildings.work.isLit(id) });
     this.screens = new ScreenHost(document.getElementById('screens'));
     const notify = (k: 'good' | 'bad' | 'info' | 'warn', txt: string): void => this.toasts.show(k, txt);
-    this.screens.register('research', new ResearchScreen(atlas, { sim: () => this.sim, close: () => this.screens.open(null), notify, focus: () => { const f = this.treeFocus; this.treeFocus = null; return f ?? this.guide?.focusNode() ?? null; } }));
+    this.screens.register('research', new ResearchScreen(atlas, { sim: () => this.sim, close: () => this.screens.open(null), notify, focus: () => { const f = this.treeFocus; this.treeFocus = null; return f ?? this.guide?.focusNode() ?? null; }, dataRate: (item) => { const r = this.stats.rates('10m'); return r.span > 0 ? r.made[item]! : null; } }));
     this.screens.register('stats', new StatsScreen(atlas, this.stats, { close: () => this.screens.open(null), sim: () => this.sim }));
     this.screens.register('expertise', new ExpertiseScreen(atlas, { sim: () => this.sim, close: () => this.screens.open(null), notify }));
     const openExpertise = (): void => { if (this.screens.current !== 'expertise') this.screens.open('expertise'); };
@@ -303,6 +311,7 @@ export class App {
     this.tip = new Tip(tipNode, atlas);
     this.depositCard = new DepositCard(atlas);
     document.body.append(this.depositCard.root);
+    document.body.append(this.neighbourCard.root); // a neighbouring base's card, on a click on its pieces (D110)
     document.getElementById('ui')?.append(this.hud.root, this.hud.stock.root, this.hud.purse.root, this.inspector.root, this.landPanel.root, this.viewPanel.root, this.bar.root, this.toasts.root);
     // On a narrow window the side panels and the Stock are bottom sheets with a grip (D96, ui/sheet.ts).
     for (const panel of [this.inspector.root, this.landPanel.root, this.viewPanel.root, this.hud.stock.root, this.hud.purse.root]) installSheet(panel);
@@ -577,6 +586,7 @@ export class App {
     this.overlays.landOn = land.active;
     this.overlays.landHover = land.hover;
     this.overlays.landSel = land.selected;
+    this.overlays.neighbourLabel ??= (colony) => `${t('land.state.neighbour')}\n${neighbourName(this.sim, colony)}`;
     const view = this.views.current;
     // Under the Logistique and Production views the wires fade with the base (Électricité draws them bold).
     const wiresA = this.views.veiled && view !== 'power' ? 0.3 : 1;
@@ -604,13 +614,13 @@ export class App {
       return sx >= 0 && sy >= 0 && sx <= this.stage.width && sy <= this.stage.height;
     }, (x, y) => this.relief.level(x, y));
     this.rivers.update(this.sim, vt, cam.zoom, this.paused ? 0 : dt);
-    this.gleaners.update(this.sim, P, te, simTicks, vt, cam.zoom); // the Gleaners at night, the glazed ribbons' glass (D103)
     this.cargo.update(P, te, this.paused ? 0 : dt, grade.night);
     this.landing.update(P, te, dt); // a cinematic: real time, even paused
     this.buildings.setPlanness(te);
-    this.neighbours.update(this.sim, vt); // the neighbouring bases coming near the view, laid (D110)
+    this.neighbours.update(this.sim, vt, P, te, cam.zoom, simTicks / 10, this.sim.absEpoch()); // the neighbouring bases near the view (D110)
     this.buildings.cull(vt); // off-screen buildings culled by 16-tile squares, when the view's range of them changes (D92)
     this.items.update(this.sim, simTicks, P, te, cam.zoom, vt); // first: it moves the elevators' cars the buildings view draws
+    this.gleaners.update(this.sim, P, te, simTicks, vt, cam.zoom); // the Gleaners at night (D103, D112): after the items, whose tokens on their posts they take
     this.buildings.animate(this.sim, simTicks / 10, grade); // moving parts on game time; cast shadows with the sun
     if (pre && this.tools.state && pointer) this.tip.show(this.sim, this.tools.def, pre, pointer.sx, pointer.sy);
     else if (land.hover >= 0 && pointer) this.tip.land(this.sim, land.hover, pointer.sx, pointer.sy); // the parcel's price
@@ -618,6 +628,7 @@ export class App {
     // The deposit card (D99): the pointer resting on a known deposit with nothing in hand (not while placing: D53).
     const bare = !this.tools.state && !this.link.active && !land.active && over && pointer;
     this.depositCard.update(this.sim, bare ? this.picker.seenTileAt(pointer.sx, pointer.sy) : null, pointer?.sx ?? 0, pointer?.sy ?? 0);
+    if (pointer) this.neighbourCard.update(pointer.sx, pointer.sy);
     this.stats.sample(this.sim);
     const [ox, oy] = apply(P, CENTER + 0.5, CENTER + 0.5);
     this.stressSpike.update(this.time, ox, oy);

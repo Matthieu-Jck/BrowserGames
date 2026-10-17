@@ -89,6 +89,13 @@ export const RETIRED_DRIFTER: ReadonlyArray<readonly [string, number]> = [['resi
  * queue entry gone). Frozen per version: a later removal adds its own version. 15: the Great Skydock
  * (`xp_bigdock`), whose one unlock, the Great Skydock, went with the skydocks (D108).
  */
+/**
+ * Research gone with no successor and no save step (D119): Parcel Resale (`xp_resell`), since selling
+ * a parcel back needs no research any more. Read at load (sim/serialize.ts): a node learnt is
+ * forgotten, a project of it dropped with its paid data back to the Heart. Nothing is lost.
+ */
+export const RESEARCH_GONE: ReadonlySet<string> = new Set(['xp_resell']);
+
 export const RESEARCH_RETIRED: Readonly<Record<number, readonly string[]>> = { 15: ['xp_bigdock'] };
 
 /**
@@ -100,6 +107,12 @@ export const RESEARCH_RETIRED: Readonly<Record<number, readonly string[]>> = { 1
 export const PLANS_RETIRED: Readonly<Record<number, Readonly<Record<string, ReadonlyArray<readonly [string, number]>>>>> = {
   17: { beacon: [['iron_plate', 8], ['glass', 2]], unloader: [['iron_plate', 6], ['copper_wire', 2]] },
 };
+
+/**
+ * The Tier 1 research nodes in saves 1–17, frozen (D118's step: a project of one of them under way
+ * drops its tokens and its time — Tier 1 is data alone now — and finishes once its data is paid).
+ */
+export const TIER1_V17: readonly string[] = ['tr1', 'tr_synth', 'en_pitch', 'en2', 'ex_fastdrill', 'dn3', 'dn_esmelt', 'dn_wiremill', 'cm_post2', 'cm_floor', 'an_data', 'an_relay', 'xp_swift', 'xp_bigsilo', 'xp_guard'];
 
 /** The fog round the Core by its level 1..4 in saves 1–16, frozen (`BAL.coreReveal` since D117; before, the founding's 44 at every level). */
 export const CORE_REVEAL_V17: readonly number[] = [44, 56, 68, 80];

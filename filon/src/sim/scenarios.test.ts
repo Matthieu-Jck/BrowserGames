@@ -79,7 +79,7 @@ describe('debug bases (scenarios)', () => {
       expect(dead, `${id}: lines that end nowhere`).toEqual([]);
       if (id === 'late') {
         expect(report.granted).toEqual(expect.arrayContaining(['tr2', 'tr4', 'tr6', 'tr8', 'ex5', 'ex8', 'xp_far', 'dn_etcher', 'dn8', 'enK', 'cm3', 'an_servers']));
-        expect(sim.hearthLevel).toBe(4);
+        expect(sim.hearthLevel).toBe(5); // its last level: every tier open (D118)
         // Over half the tree done (D66, D69; D108: 54 of 70 with The Crier House's third post), the Research Queue researched for real.
         expect(Object.keys(RESEARCH).filter((r) => sim.done.has(r)).length, 'late: research done').toBeGreaterThanOrEqual(44);
         // The first lab on the Research Queue (D107: the Compute Plan comes learnt with the Wider Wharf).

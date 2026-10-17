@@ -208,8 +208,9 @@ export interface ResearchDef {
   readonly prereq: readonly string[];
   /** Items it uses up as it runs (data files), whole items. */
   readonly cost: ReadonlyArray<readonly [string, number]>;
-  /** AI tokens it uses up as it runs (D68): paid at the minute, to the claim's servers first, then to CrierBelt's. */
+  /** AI tokens it needs (D68, D118): none at Tier 1; from Tier 2 delivered as a flow — the claim's servers', then one bought from CrierBelt. */
   readonly tokens: number;
+  /** The pace its tier runs at (minutes, D118: no minimum time): what the launch dialog aims its default token flow at; 0 at Tier 1. */
   readonly minutes: number;
   readonly effects: readonly Effect[];
 }

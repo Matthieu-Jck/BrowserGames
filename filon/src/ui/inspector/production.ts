@@ -15,7 +15,7 @@ import { num } from '@/i18n/format';
 import { locale, t } from '@/i18n/i18n';
 import { recipeOf } from '@/sim/cfg';
 import type { DrillNode, GeneratorNode, MachineNode } from '@/sim/flow/nodes';
-import { projectPermille, tokensDue } from '@/sim/research/runtime';
+import { projectPermille } from '@/sim/research/runtime';
 import { St } from '@/sim/types';
 import { glyph } from '../glyphs';
 import { itemMention } from '../mention';
@@ -169,7 +169,7 @@ export const labHero = ({ sim, e, live }: PanelCtx): HTMLElement => {
     const r = RESEARCH[p.id as ResearchId] as ResearchDef | undefined;
     setText(name, r ? r.name[locale()] : p.id);
     setText(pct, t('hud.powerPct', { v: Math.floor(projectPermille(p) / 10) }));
-    bar.set(projectPermille(p) / 1000, sim.researchHeld ? 'bad' : 'lilac');
+    bar.set(projectPermille(p) / 1000, sim.credits < 0 && (p.buy ?? 0) > 0 && (p.tokIn ?? 0) < (p.tokens ?? 0) ? 'bad' : 'lilac');
   });
   return el('div.insp-hero', { 'data-hero': 'lab' }, [el('div.insp-hero-line', {}, [mark('tree'), name, pct]), bar.root, none]);
 };
@@ -177,7 +177,7 @@ export const labHero = ({ sim, e, live }: PanelCtx): HTMLElement => {
 /** Per data item, what is paid of what the project costs and what waits in store; its AI tokens; what it runs next. */
 export const labPanel: Panel = ({ sim, e, host, live, action }) => {
   const rowsBox = el('div.kbufs');
-  // Its AI tokens (D68): used of the project's total, and why it may be paused (the purse in the red).
+  // Its AI tokens (D68, D118): delivered of those it needs, and why its bought flow may be paused (the purse in the red).
   const tok = meter(), tokRow = el('div.kbuf', { 'data-k': 'tokens', title: t('insp.lab.tokens') }, [el('span.kbuf-icon', {}, mark('token')), tok.root]);
   const held = el('p.insp-note', { 'data-tone': 'bad' }, t('insp.lab.held'));
   const next = el('span'), nextRow = row(t('insp.lab.next'), next);
@@ -186,9 +186,10 @@ export const labPanel: Panel = ({ sim, e, host, live, action }) => {
   const sec = section({ sec: 'data', title: t('insp.sec.data'), icon: mark('data'), tip: t('insp.lab.hint'), group: 'production' }, [rowsBox, tokRow, held, nextRow]);
   live(() => {
     const p = sim.projects.find((q) => q.lab === e.id);
-    setAttr(held, 'hidden', p && sim.researchHeld ? null : '');
+    const paused = !!p && sim.credits < 0 && (p.buy ?? 0) > 0 && (p.tokIn ?? 0) < (p.tokens ?? 0);
+    setAttr(held, 'hidden', paused ? null : '');
     setAttr(tokRow, 'hidden', p?.tokens ? null : '');
-    if (p?.tokens) tok.set(tokensDue(p), p.tokens, sim.researchHeld ? 'bad' : 'lilac', t('insp.lab.tokens.v', { used: tokensK(tokensDue(p)), of: tokensK(p.tokens) }));
+    if (p?.tokens) tok.set(p.tokIn ?? 0, p.tokens, paused ? 'bad' : 'lilac', t('insp.lab.tokens.v', { used: tokensK(p.tokIn ?? 0), of: tokensK(p.tokens) }));
     const q = sim.labQueue.get(e.id);
     setAttr(nextRow, 'hidden', q ? null : '');
     if (q) setText(next, (RESEARCH[q as ResearchId] as ResearchDef | undefined)?.name[locale()] ?? q);

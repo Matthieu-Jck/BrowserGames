@@ -24,6 +24,7 @@ import { surfaceTile } from '@/render/relief';
 import { beltZ, buildingZ, drawnLevel, standOf } from '@/render/world/stand';
 import { footprint } from '@/sim/entities';
 import type { Sim } from '@/sim/state';
+import { parcelAt } from '@/sim/world/land';
 import type { ViewState } from './view';
 
 export interface PickerDeps {
@@ -95,6 +96,46 @@ export class Picker {
     const [X, Y] = apply(this.d.view.P, tx + 0.5, ty + 0.5);
     const c = this.d.camera.state;
     return [(X - c.cx) * c.zoom + w / 2, (Y - c.cy) * c.zoom + h / 2];
+  }
+
+  /**
+   * The neighbouring base whose piece is under a screen point (D110: its hub parcel; −1: none) — its
+   * Core, buildings, tents and poles by their volumes in iso (their tiles in plan), its ribbons and
+   * cairns by their tiles. A claim's building in front wins (`entityAt` is asked first).
+   */
+  neighbourAt(sx: number, sy: number): number {
+    const sim = this.d.sim();
+    const { w: W, h: H } = this.d.size();
+    const [px, py] = screenTile(this.d.view.P, this.d.camera.state, W, H, sx, sy);
+    const gx = Math.floor(px), gy = Math.floor(py);
+    const holding = (x: number, y: number) => {
+      if (x < 0 || y < 0 || x >= 1024 || y >= 1024) return null;
+      const p = parcelAt(x, y);
+      return sim.land.neighbour(p) >= 0 ? sim.neighbours.holdingOf(p) : null;
+    };
+    const flatHit = (): number => (sim.neighbours.at(gx, gy) ? holding(gx, gy)?.hub ?? -1 : -1);
+    if (this.d.view.building) return flatHit();
+    const [X, Y] = screenToWorld(this.d.camera.state, W, H, sx, sy);
+    const seen = new Set<number>();
+    for (let y = gy - 1; y <= gy + 8; y++) for (let x = gx - 1; x <= gx + 8; x++) {
+      const h = holding(x, y);
+      if (!h || seen.has(h.hub)) continue;
+      seen.add(h.hub);
+      const L = sim.neighbours.layout(h);
+      const pieces: Array<[number, number, number, number, number]> = L.structs.map((s, i) => {
+        const [w, hh] = footprint(s.def, s.rot);
+        return [s.x, s.y, w, hh, i === L.core ? 3.2 : isoHead(BUILDING_IDS[s.def] as BuildingId)];
+      });
+      for (const [tx, ty] of L.tents) pieces.push([tx, ty, 2, 2, 2.4]);
+      for (const [tx, ty] of L.banners) pieces.push([tx, ty, 1, 1, 5.5]);
+      const P = (u: number, v: number, z: number): [number, number] => { const [a, b] = apply(ISO_LIN, u, v); return [a, b - z]; };
+      for (const [x0, y0, w, hh, head] of pieces) {
+        const top = head * LH;
+        const hull: Array<[number, number]> = [P(x0, y0, top), P(x0 + w, y0, top), P(x0 + w, y0, 0), P(x0 + w, y0 + hh, 0), P(x0, y0 + hh, 0), P(x0, y0 + hh, top)];
+        if (inConvex(hull, X, Y)) return h.hub;
+      }
+    }
+    return flatHit();
   }
 
   /** The entity under a screen point (0 = none). */

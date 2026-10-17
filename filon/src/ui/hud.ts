@@ -41,7 +41,7 @@ import { duration } from '@/i18n/format';
 import type { MsgKey } from '@/i18n/i18n';
 import { oc } from './trade-view';
 import { ANALYTICS_REVEALS, UnlockWatch, analyticsOn } from './analytics';
-import { projectTiming, readyPlans } from './tree-state';
+import { projectTiming, projectTimings, readyPlans } from './tree-state';
 import { Spotlight, type FocusShot } from './focus';
 import { expertiseDef } from '@/content/expertises';
 import { archiveOpen } from '@/sim/systems/expertise';
@@ -358,7 +358,11 @@ export class Hud {
     this.research.append(node);
   }
 
-  /** The tech tree's chip (the way into the tree, D33), then one chip per project: a progress ring, the name, the time left. */
+  /**
+   * The tech tree's chip (the way into the tree, D33), then one chip per project: two small bars — its
+   * data in, its tokens in (Tier 2 and up; D118: no time) —, the name, what it waits for or when its
+   * tokens will be in, and the tokens a minute it gets.
+   */
   private refreshResearch(sim: Sim): void {
     const L = locale();
     const sig = sim.projects.map((p) => p.id).join(',') + L;
@@ -368,7 +372,11 @@ export class Hud {
         const name = p.id.startsWith('respec:')
           ? t('research.respecName', { branch: t(`research.branch.${p.id.slice(7)}` as MsgKey) })
           : (RESEARCH[p.id as ResearchId] as ResearchDef).name[L];
-        return el('button.hud-rs.cartouche', { 'data-id': p.id }, [el('span.hud-ring'), el('span.hud-rs-name.lettering', {}, name), el('span.hud-rs-eta'), el('span.hud-rs-tok', {}, [mark('token'), el('b')])]);
+        const bar = (k: 'data' | 'tok'): HTMLElement => el('span.hud-rs-row', { 'data-k': k }, [mark(k === 'data' ? 'data' : 'token'), el('span.hud-rs-bar', { 'data-k': k }, [el('i')])]);
+        return el('button.hud-rs.cartouche', { 'data-id': p.id }, [
+          el('span.hud-rs-bars', {}, [bar('data'), bar('tok')]),
+          el('span.hud-rs-name.lettering', {}, name), el('span.hud-rs-eta'), el('span.hud-rs-tok', {}, [mark('token'), el('b')]),
+        ]);
       });
       setText(this.treeName, t('tree.hud'));
       this.research.replaceChildren(this.tree, this.stats, this.exp, ...chips, ...this.pinned);
@@ -384,9 +392,9 @@ export class Hud {
     setText(this.treeBadge, ready ? String(ready) : '');
     setAttr(this.tree, 'data-ready', ready ? '' : null);
     setAttr(this.tree, 'title', ready ? `${t('tree.hud.tip')} · ${tr('tree.hud.ready', { n: ready })}` : t('tree.hud.tip'));
-    // A purse in the red holds every project (its tokens cannot be paid): each chip turns coral
+    // A purse in the red holds the tokens bought for research (D118): a chip that buys turns coral
     // and says so, the purse in its tip — beside the toast, the lab's inspector and the tree.
-    const heldTip = sim.researchHeld ? t('tree.rs.held.tip', { v: oc(sim.credits) }) : null;
+    const heldTip = sim.credits < 0 ? t('tree.rs.held.tip', { v: oc(sim.credits) }) : null;
     const tokens = tokenFacts(sim);
     // The fold (narrow windows, D96) says the row in brief: the ready plans' badge, the first project's ring, coral while held.
     setText(this.foldBadge, ready ? String(ready) : '');
@@ -398,21 +406,30 @@ export class Hud {
     setAttr(this.foldRing, 'hidden', ft ? null : '');
     if (ft) this.foldRing.style.setProperty('--p', `${ft.permille / 10}%`);
     setAttr(this.fold, 'data-held', ft?.held ? '' : null);
+    const timings = projectTimings(sim);
     for (const p of sim.projects) {
       const chip = this.research.querySelector(`[data-id="${p.id}"]`) as HTMLElement | null;
-      if (!chip) continue;
-      // Its clock as the tree says it (tree-state.ts): held (a reconversion, with no lab, runs on), its time left, its data owed.
-      const tm = projectTiming(sim, p);
-      (chip.querySelector('.hud-ring') as HTMLElement).style.setProperty('--p', `${tm.permille / 10}%`);
+      const tm = timings.get(p.id);
+      if (!chip || !tm) continue;
+      // Its state as the tree says it (tree-state.ts, D118): its data and its tokens as two bars (Tier
+      // 1, data alone: one), what it waits for, when its tokens will be in; held, its bought flow.
+      const bars = chip.querySelectorAll<HTMLElement>('.hud-rs-bar');
+      bars[0]!.style.setProperty('--p', `${tm.data / 10}%`);
+      bars[1]!.style.setProperty('--p', `${tm.tokens / 10}%`);
+      setAttr(chip.querySelector('.hud-rs-row[data-k="tok"]')!, 'hidden', tm.usesTokens ? null : '');
       setAttr(chip, 'data-held', tm.held ? '' : null);
-      // Its tokens now (D102): a minute on the chip; their ◉ a minute and the servers' share in its tooltip.
+      // Its tokens now (D102): a minute on the chip — the servers' share and its bought flow —, their ◉ a minute in its tooltip.
       const tk = tokens.projects.get(p.id);
       const tok = chip.querySelector('.hud-rs-tok') as HTMLElement;
       setAttr(tok, 'hidden', tk && tk.perMin > 0 ? null : '');
       if (tk) setText(tok.querySelector('b')!, t('hud.perMin', { v: compact(Math.round(tk.perMin)) }));
-      const tokTip = tk && tk.perMin > 0 ? t('hud.rs.tok.tip', { n: compact(Math.round(tk.perMin)), c: oc(Math.round(tk.centsPerMin), false, 2), p: Math.round(tokens.servers / 10) }) : null;
-      setAttr(chip, 'title', [tm.held ? heldTip : null, tokTip].filter(Boolean).join('\n') || null);
-      setText(chip.querySelector('.hud-rs-eta')!, tm.held ? t('hud.rs.held') : tm.short ? t('research.waiting') : Number.isFinite(tm.left) ? duration(tm.left) : '—');
+      const tokTip = tk && tk.perMin > 0 ? t('hud.rs.tok.tip', { n: compact(Math.round(tk.perMin)), s: compact(tk.servers), b: compact(tk.bought), c: oc(Math.round(tk.centsPerMin), false, 2) }) : null;
+      const dataTip = t('hud.rs.data.tip', { p: Math.floor(tm.data / 10) });
+      const tokBarTip = tm.usesTokens ? t('hud.rs.tokbar.tip', { got: compact(p.tokIn ?? 0), of: compact(p.tokens ?? 0) }) : null;
+      setAttr(chip, 'title', [tm.held ? heldTip : null, dataTip, tokBarTip, tokTip].filter(Boolean).join('\n'));
+      const eta = tm.held ? t('hud.rs.held') : tm.waiting === 'power' ? t('research.waitPower') : tm.waiting === 'data' ? t('research.waiting')
+        : tm.waiting === 'tokens' ? t('research.waitTokens') : Number.isFinite(tm.left) ? duration(tm.left) : '—';
+      setText(chip.querySelector('.hud-rs-eta')!, eta);
     }
   }
 

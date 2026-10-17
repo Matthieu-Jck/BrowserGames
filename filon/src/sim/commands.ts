@@ -19,7 +19,8 @@ export type Command =
   | { k: 'forkFilter'; id: number; side: Rot; item: string | null }
   | { k: 'grant'; item: string; n: number }
   | { k: 'credits'; cents: number }
-  | { k: 'research'; id: string; lab: number }
+  /** Start a node; `buy`: tokens a minute bought from CrierBelt for it while it needs them (D118; absent: none). */
+  | { k: 'research'; id: string; lab: number; buy?: number }
   /** Unlock a plan of the tree (D33): paid from the Heart, at once. */
   | { k: 'unlockPlan'; id: string }
   | { k: 'cancelResearch'; id: string }
@@ -54,12 +55,14 @@ export type Command =
   | { k: 'buyLand'; p: number }
   | { k: 'rentLand'; p: number }
   | { k: 'endLease'; p: number }
-  /** Parcel Resale (xp_resell): sell a bought parcel back. */
+  /** Sell a bought parcel back (D119: no research). */
   | { k: 'sellLand'; p: number }
   /** Research Queue (an_queue): the node a lab starts once its project is done (null: none). */
   | { k: 'queueResearch'; lab: number; id: string | null }
   /** The Compute Plan (cm_plan): CrierBelt's tokens at a share of the price, for a fee an hour. */
   | { k: 'tokenPlan'; on: boolean }
+  /** Change the tokens a minute a running project buys (D118). */
+  | { k: 'tokenBuy'; id: string; perMin: number }
   /** Floor Prices (cm_floor): the trade posts hold back an item whose bid is under this (centi-◉; null: none). */
   | { k: 'floorPrice'; item: string; cents: number | null }
   /** The expertises (D93): an earned one chosen into an empty slot, in place at once. */
@@ -92,7 +95,7 @@ export type SimEvent =
   | { k: 'quest'; id: string; title?: string }
   /** A parcel changed hands, or a lease's hour was paid (centi-◉): bought, leased, rent, lapsed (the purse could not pay), ended. */
   | { k: 'land'; p: number; what: 'bought' | 'leased' | 'rent' | 'lapsed' | 'ended' | 'sold'; cents: number }
-  /** The purse went into the red (research holds: its tokens cannot be paid) or back out of it (D68). */
+  /** The purse went into the red (the tokens bought for research hold, D118) or back out of it (D68). */
   | { k: 'researchHeld'; held: boolean }
   /** A lab started the node queued for it (the Research Queue). */
   | { k: 'researchQueued'; id: string }
@@ -114,7 +117,7 @@ export function exec(sim: Sim, cmd: Command): boolean {
     case 'forkFilter': return sim.setForkFilter(cmd.id, cmd.side, cmd.item);
     case 'grant': sim.grant(cmd.item, cmd.n); return true;
     case 'credits': sim.grantCredits(cmd.cents); return true;
-    case 'research': return sim.startResearch(cmd.id, cmd.lab).ok;
+    case 'research': return sim.startResearch(cmd.id, cmd.lab, cmd.buy ?? 0).ok;
     case 'unlockPlan': return sim.unlockPlan(cmd.id).ok;
     case 'cancelResearch': return sim.cancelResearch(cmd.id);
     case 'respec': return false; // retired (D107): no reconversion starts
@@ -138,6 +141,7 @@ export function exec(sim: Sim, cmd: Command): boolean {
     case 'sellLand': return sim.sellLand(cmd.p) === null;
     case 'queueResearch': return sim.queueResearch(cmd.lab, cmd.id);
     case 'tokenPlan': return sim.setTokenPlan(cmd.on);
+    case 'tokenBuy': return sim.setTokenBuy(cmd.id, cmd.perMin);
     case 'floorPrice': return sim.setFloorPrice(cmd.item, cmd.cents);
     case 'expertise': return sim.chooseExpertise(cmd.slot, cmd.id) === null;
     case 'reorient': return sim.reorient(cmd.slot, cmd.id) === null;

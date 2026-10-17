@@ -16,9 +16,9 @@ import { Sim } from '../state';
 import { gap2 } from '../power/links';
 import { T, isFloor, isRock, isWater } from '../types';
 import { BIOME, MapGen } from './mapgen';
-import { Grid, MAX_LEVEL } from './grid';
+import { Grid, MAX_LEVEL, MOUNTAIN_LEVEL } from './grid';
 import { parcelFloor } from './floor';
-import { parcelAt, parcelRect, ringOf } from './land';
+import { PARCEL_COLS, parcelAt, parcelRect, ringOf } from './land';
 import { isFaceOre } from '../face';
 
 /** Sixteen lands, and seed 8's Closed Cirque (none of the sixteen draws one). */
@@ -116,8 +116,9 @@ describe('map generation', () => {
         for (let y = -3; y <= 3; y++) for (let x = -3; x <= 3; x++) if (g.ore(CENTER + d.dx + x, CENTER + d.dy + y) === itemIdx(d.item)) found++;
         expect(found, `seed ${seed} ${d.item}`).toBeGreaterThan(5);
       }
-      // The tarn's heart (maps 2–3); on map 4 its spring, the head of its stream (D115).
-      expect(g.terrain(CENTER + CIRQUE.lake.dx, CENTER + CIRQUE.lake.dy)).toBe(MAPS[MAP_VERSION]!.cirque.spring ? T.River : T.Deep);
+      // The tarn's heart (maps 2–3); on map 4 its peak, dry (D115: a spring elsewhere on the Crown).
+      const tarnAt = g.terrain(CENTER + CIRQUE.lake.dx, CENTER + CIRQUE.lake.dy);
+      if (MAPS[MAP_VERSION]!.cirque.spring) expect(isRock(tarnAt)).toBe(true); else expect(tarnAt).toBe(T.Deep);
       // The Crown: rock all around at r 26 (past the floor's rim, short of the thinnest Crown's
       // foot) — no pass any more (D45).
       let rock = 0;
@@ -284,7 +285,7 @@ describe('map generation', () => {
         expect(up.found, `seed ${seed}: the mountain topped at (${px}, ${py}) level ${at(px, py)}`).toBe(true);
       }
     }
-    expect(top).toBe(MAX_LEVEL);
+    expect(top).toBe(MOUNTAIN_LEVEL);
   });
 
   it('deposits lie on the floor of the land (level 0); ore under rock is a hidden vein', () => {
@@ -481,12 +482,15 @@ describe('map versions (D63)', () => {
         let w = 0, top = 0;
         for (let r = 18; r < 50; r++) {
           const x = CENTER + ((COS64[k]! * r) >> 10), y = CENTER + ((SIN64[k]! * r) >> 10);
-          if (biomeAt(g, x, y) !== BIOME.crown) continue;
+          // The Crown's tiles (map 4: its spring's stream up on it too, its way in the biome code, D115).
+          const bio = biomeAt(g, x, y);
+          if (bio !== BIOME.crown && !(bio >= BIOME.river && bio < BIOME.river + 8 && g.level(x, y) > 0)) continue;
           w++;
           top = Math.max(top, g.level(x, y));
           const t = g.terrain(x, y);
           // Lilac (H2 and harder) only on the crest's level: the peaks.
-          if (isRock(t) && t !== T.Rock1) expect(g.level(x, y), `seed ${seed} lilac at (${x}, ${y})`).toBe(CIRQUE.crest);
+          // On the crest (map 4: or above it, on the spring's summit, D115).
+          if (isRock(t) && t !== T.Rock1) expect(g.level(x, y), `seed ${seed} lilac at (${x}, ${y})`).toBeGreaterThanOrEqual(CIRQUE.crest);
         }
         widths.push(w);
         if (top === CIRQUE.crest) peaks++;
@@ -569,8 +573,14 @@ describe('map 4: obstacles (D94)', () => {
       for (const [x, y, l, t] of disc(b.g, R)) {
         const bio = biomeAt(a.g, x, y);
         if (bio !== BIOME.cirque && bio !== BIOME.crown) continue;
-        // Its water apart: map 3's tarn is map 4's dry peak, map 4's spring and pool (D115).
+        // Its water apart: map 3's tarn is map 4's dry peak, map 4's spring and pool (D115); and the
+        // summit the spring comes down from (its plateau and slopes), the ledge below it, and the
+        // stream's banks (standing unsettled) two tiles each side of it down to the pool.
         if (isWater(a.g.terrain(x, y)) || isWater(t)) continue;
+        const SP = MAPS[4]!.cirque.spring!, SM = SP.summit, G = SP.ledge!, sr = SM.top + SM.level;
+        if ((x - CENTER - SM.dx) ** 2 + (y - CENTER - SM.dy) ** 2 < sr * sr) continue;
+        if (x >= CENTER + G.dx0 && x <= CENTER + G.dx1 && y >= CENTER + G.dy0 && y <= CENTER + G.dy1) continue;
+        if (Math.abs(x - CENTER - SM.dx) <= 2 && y >= CENTER + SM.dy && y <= CENTER + SP.pool.dy) continue;
         if (l !== a.g.level(x, y) || t !== a.g.terrain(x, y) || biomeAt(b.g, x, y) !== bio) diff++;
       }
       // The vein's face and the floor two tiles in front of it.
@@ -589,13 +599,15 @@ describe('map 4: obstacles (D94)', () => {
       const R = 120, tiles = disc(g, R);
       const lv = new Map<number, number>();
       let cliffs = 0, tall = 0, top = 0, high = 0;
+      // The massifs' top (the spring's summit stands a level over them, D115: tested below).
+      const SM = MAPS[4]!.cirque.spring!.summit;
       for (const [x, y, l] of tiles) {
         lv.set(y * WORLD + x, l);
-        top = Math.max(top, l);
+        if ((x - CENTER - SM.dx) ** 2 + (y - CENTER - SM.dy) ** 2 >= (SM.top + SM.level) ** 2) top = Math.max(top, l);
         if (l >= 3) high++;
         for (const d of [Math.abs(l - g.level(x + 1, y)), Math.abs(l - g.level(x, y + 1))]) { if (d >= 2) cliffs++; if (d >= 3) tall++; }
       }
-      expect(top, `seed ${seed}`).toBe(MAX_LEVEL);
+      expect(top, `seed ${seed}`).toBe(MOUNTAIN_LEVEL);
       expect(cliffs, `seed ${seed} ${gen.archetype}: steps of two levels or more`).toBeGreaterThan(500);
       expect(tall, `seed ${seed}: sheer cliffs of three levels or more`).toBeGreaterThan(200);
       // From the floor, one level per step: most of the high ground is reached (ramps), not all (cliffs).
@@ -655,24 +667,67 @@ describe('map 4: obstacles (D94)', () => {
     }
   });
 
-  it('the rings of parcels past the starting square are cut up (usable floor, D94): far less room than on map 3', () => {
-    const shares = (v: number, seed: number): number[] => {
-      const g = world(seed, v).g, seen = new Set<number>(), out: number[] = [];
-      for (let y = CENTER - 80; y <= CENTER + 80; y += 4) for (let x = CENTER - 80; x <= CENTER + 80; x += 4) {
+  it('open sand round the cirque, the land cut up past it (usable floor, D94; owner, 2026-10-17: « le cirque notamment devrait être entouré de pas mal de sable »): the two rings round the starting square roomier than on map 3, the next three far less', () => {
+    /** Usable floor (‰) of each parcel in rings `from`…`to`, ascending. */
+    const shares = (v: number, seed: number, from: number, to: number): number[] => {
+      const g = world(seed, v).g, seen = new Set<number>(), out: number[] = [], R = 23 * to + 11;
+      for (let y = CENTER - R; y <= CENTER + R; y += 4) for (let x = CENTER - R; x <= CENTER + R; x += 4) {
         const p = parcelAt(x, y);
         if (seen.has(p)) continue;
         seen.add(p);
-        if (ringOf(p) >= 2 && ringOf(p) <= 3) out.push(parcelFloor(g, p).permille);
+        if (ringOf(p) >= from && ringOf(p) <= to) out.push(parcelFloor(g, p).permille);
       }
       return out.sort((a, b) => a - b);
     };
     const med = (a: number[]): number => a[a.length >> 1]!, q1 = (a: number[]): number => a[a.length >> 2]!;
     for (const seed of M4) {
-      const a = shares(3, seed), b = shares(4, seed);
+      const a = shares(3, seed, 2, 3), b = shares(4, seed, 2, 3);
       expect(b.length).toBe(40);
-      expect(med(b), `seed ${seed}: the median parcel's usable floor (map 3: ${med(a)} ‰)`).toBeLessThan(900);
-      expect(q1(b), `seed ${seed}: a quarter of them under (map 3: ${q1(a)} ‰)`).toBeLessThan(720);
-      expect(med(b), `seed ${seed}: less than on map 3`).toBeLessThan(med(a));
+      expect(med(b), `seed ${seed}: round the cirque, the median parcel's usable floor (map 3: ${med(a)} ‰)`).toBeGreaterThanOrEqual(Math.max(950, med(a)));
+      expect(q1(b), `seed ${seed}: a quarter of them under (map 3: ${q1(a)} ‰)`).toBeGreaterThanOrEqual(900);
+      const c = shares(3, seed, 4, 6), d = shares(4, seed, 4, 6);
+      expect(d.length).toBe(120);
+      expect(med(d), `seed ${seed}: rings 4–6, the median parcel's usable floor (map 3: ${med(c)} ‰)`).toBeLessThan(900);
+      expect(q1(d), `seed ${seed}: a quarter of them under (map 3: ${q1(c)} ‰)`).toBeLessThan(720);
+      expect(med(d), `seed ${seed}: less than on map 3`).toBeLessThan(med(c));
+    }
+  });
+
+  it('open desert (owner, 2026-10-17: « un petit peu plus de grands déserts ouverts, plats, assez vides de ressources, sans eau ni crevasse ni montagne »): most parcels round the cirque and a fair share of the next three are flat dry floor with little ore, some of them side by side; no river, chasm or pond in the sand round the cirque', () => {
+    const D = OBSTACLES.desert, WET = new Set<number>([T.Shallow, T.Deep, T.River, T.Chasm]);
+    for (const seed of [1, 2, 3]) {
+      const { g } = world(seed);
+      const open = new Set<number>(), count: Record<string, [number, number]> = { near: [0, 0], far: [0, 0] };
+      for (let p = 0; p < PARCEL_COLS * PARCEL_COLS; p++) {
+        const ring = ringOf(p);
+        if (ring < 2 || ring > 6) continue;
+        const q = parcelRect(p);
+        let n = 0, flat = 0, ore = 0;
+        for (let y = q.y0; y < q.y1; y++) for (let x = q.x0; x < q.x1; x++) {
+          n++;
+          if (g.level(x, y) === 0 && !WET.has(g.terrain(x, y)) && g.terrain(x, y) !== T.DuneSea) flat++;
+          if (g.ore(x, y) >= 0) ore++;
+        }
+        const k = ring <= 3 ? 'near' : 'far', ok = flat * 10 >= n * 9 && ore <= 8;
+        count[k]![1]++;
+        if (ok) { count[k]![0]++; open.add(p); }
+      }
+      expect(count.near![0] / count.near![1], `land ${seed}: rings 2–3 open`).toBeGreaterThanOrEqual(0.75);
+      expect(count.far![0] / count.far![1], `land ${seed}: rings 4–6 open`).toBeGreaterThanOrEqual(0.15);
+      // Large ones: a group of four parcels or more side by side past the cirque's rings.
+      let large = false;
+      const seen = new Set<number>();
+      for (const p of open) {
+        if (seen.has(p) || ringOf(p) < 4) continue;
+        const todo = [p];
+        seen.add(p);
+        for (let i = 0; i < todo.length; i++) for (const d of [1, -1, PARCEL_COLS, -PARCEL_COLS]) { const q = todo[i]! + d; if (open.has(q) && ringOf(q) >= 4 && !seen.has(q)) { seen.add(q); todo.push(q); } }
+        if (todo.length >= 4) large = true;
+      }
+      expect(large, `land ${seed}: a large open desert in rings 4–6`).toBe(true);
+      let wet = 0;
+      for (const [x, y, l, t] of disc(g, D.sand)) if (d2c(x, y) > (CIRQUE.crownOuter + 8) ** 2 && l === 0 && WET.has(t)) wet++;
+      expect(wet, `land ${seed}: water or chasm in the sand round the cirque`).toBe(0);
     }
   });
 
@@ -695,14 +750,14 @@ describe('map 4: obstacles (D94)', () => {
   });
 
   it('space or ore (owner, 2026-10-16): past the starting square the ore lies in broken ground, the open desert holds little — on lands 1–3 a parcel\'s ore and its usable floor go clearly against each other, with exceptions; map 3 shows no such rule', () => {
-    /** Per parcel of the four rings past the starting square: its ore tiles (no face ore) and its usable floor (‰). */
+    /** Per parcel of the five rings past the starting square: its ore tiles (no face ore) and its usable floor (‰). */
     const parcels = (v: number, seed: number): Array<[number, number]> => {
       const g = world(seed, v).g, seen = new Set<number>(), out: Array<[number, number]> = [];
-      for (let y = CENTER - 130; y <= CENTER + 130; y += 5) for (let x = CENTER - 130; x <= CENTER + 130; x += 5) {
+      for (let y = CENTER - 150; y <= CENTER + 150; y += 5) for (let x = CENTER - 150; x <= CENTER + 150; x += 5) {
         const p = parcelAt(x, y);
         if (seen.has(p)) continue;
         seen.add(p);
-        if (ringOf(p) < 2 || ringOf(p) > 5) continue;
+        if (ringOf(p) < 2 || ringOf(p) > 6) continue;
         const q = parcelRect(p);
         let ore = 0;
         for (let ty = q.y0; ty < q.y1; ty++) for (let tx = q.x0; tx < q.x1; tx++) { const o = g.ore(tx, ty); if (o >= 0 && !isFaceOre(o)) ore++; }
@@ -720,7 +775,7 @@ describe('map 4: obstacles (D94)', () => {
     let exceptions = 0;
     for (const seed of [1, 2, 3]) {
       const rows = parcels(4, seed), c = corr(rows);
-      expect(rows.length).toBe(112);
+      expect(rows.length).toBe(160);
       expect(c.neg && c.r2 > 0.16, `land ${seed}: r² ${c.r2.toFixed(2)}, negative ${c.neg} (wanted r < −0.4)`).toBe(true);
       // Open desert: room and little or no ore; rich ground: ore and little room.
       expect(rows.filter(([o, f]) => f >= 750 && o <= 6).length, `land ${seed}: open desert parcels`).toBeGreaterThanOrEqual(20);
@@ -794,20 +849,45 @@ describe('the spring on the Crown (map 4, D115)', () => {
   };
   const DX8 = [1, 1, 0, -1, -1, -1, 0, 1], DY8 = [0, 1, 1, 1, 0, -1, -1, -1];
 
-  it('the tarn replaced (owner: « Il reste un lac vestige… Il faut l\'enlever ou le remplacer »): a spring up on its dry peak, its stream down the terraces in small falls, never climbing, into a pool on the floor', () => {
-    const W = MAPS[4]!.cirque, P = W.spring!.pool;
+  it('the tarn replaced (owner: « Il reste un lac vestige… Il faut l\'enlever ou le remplacer… make it go from a higher mountain… from north to south… a little plateau, and at least 6 in height »): its peak dry; a spring in a basin on a summit\'s plateau over every mountain, its stream south down the terraces in falls, never climbing, into a pool on the floor', () => {
+    const W = MAPS[4]!.cirque, SP = W.spring!, P = SP.pool;
     for (const seed of SEEDS) {
       const { gen, g } = world(seed, 4);
       expect(gen.tarn).toBeNull();
-      expect(gen.spring).toEqual({ x: CENTER + W.lake.dx, y: CENTER + W.lake.dy, level: W.crest });
-      expect(g.terrain(gen.spring!.x, gen.spring!.y)).toBe(T.River);
-      expect(g.level(gen.spring!.x, gen.spring!.y)).toBe(W.crest);
-      // No still water up on the Crown any more.
+      expect(gen.spring!.x).toBe(CENTER + SP.summit.dx);
+      expect(gen.spring!.y).toBe(CENTER + SP.summit.dy);
+      // « The bigger moutain needs to be a little plateau, and at least 6 in height »: a level over
+      // every other mountain; the spring wells up in a basin in its middle (« the water cannot just
+      // come from nowhere »), still water at the plateau's level ringed by the plateau's rock.
+      const sp = gen.spring!, SM = SP.summit;
+      expect(sp.level, `seed ${seed}: at least 6 in height`).toBeGreaterThanOrEqual(6);
+      expect(sp.level, `seed ${seed}: over every other mountain`).toBeGreaterThan(MOUNTAIN_LEVEL);
+      expect(g.terrain(sp.x, sp.y)).toBe(T.Deep);
+      expect(g.level(sp.x, sp.y)).toBe(sp.level);
+      let basin = 0, rimLow = 0, plateau = 0, off = 0;
+      for (let dy = -SM.top; dy <= SM.top; dy++) for (let dx = -SM.top; dx <= SM.top; dx++) {
+        if (isqrt(dx * dx + dy * dy) > SM.top) continue;
+        const x = sp.x + dx, y = sp.y + dy, t = g.terrain(x, y), l = g.level(x, y), still = t === T.Shallow || t === T.Deep;
+        if (still) basin++;
+        else plateau++;
+        if (l !== sp.level) off++;
+        // The basin's rim: its rock (not the stream's way out) at the water's level all round.
+        if (still) for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+          const rt = g.terrain(x + i, y + j);
+          if (!isWater(rt) && rt !== T.River && g.level(x + i, y + j) < sp.level) rimLow++;
+        }
+      }
+      expect(basin, `seed ${seed}: the spring's basin`).toBeGreaterThanOrEqual(5);
+      expect(plateau, `seed ${seed}: the plateau round it`).toBeGreaterThan(2 * basin);
+      expect(off, `seed ${seed}: the plateau flat at the spring's level`).toBe(0);
+      expect(rimLow, `seed ${seed}: the basin's rim below its water`).toBe(0);
+      // No still water up on the old tarn's peak any more.
       let still = 0;
-      for (let y = -6; y <= 6; y++) for (let x = -6; x <= 6; x++) if (isWater(g.terrain(gen.spring!.x + x, gen.spring!.y + y)) && g.terrain(gen.spring!.x + x, gen.spring!.y + y) !== T.River) still++;
-      expect(still, `seed ${seed}: still water on the peak`).toBe(0);
+      const tx = CENTER + W.lake.dx, ty = CENTER + W.lake.dy;
+      for (let y = -6; y <= 6; y++) for (let x = -6; x <= 6; x++) if (isWater(g.terrain(tx + x, ty + y))) still++;
+      expect(still, `seed ${seed}: water on the old peak`).toBe(0);
       const tiles = stream(gen, g);
-      expect(tiles.length, `seed ${seed}`).toBeGreaterThanOrEqual(14);
+      expect(tiles.length, `seed ${seed}: one tile wide, the basin to the mountain's foot`).toBeGreaterThanOrEqual(5);
       let climbs = 0, falls = 0, mouth = 0;
       for (const [x, y] of tiles) {
         const b = biomeAt(g, x, y) - BIOME.river;
@@ -818,7 +898,7 @@ describe('the spring on the Crown (map 4, D115)', () => {
         for (const [dx, dy] of N4) { const u = x + dx, v = y + dy; if ((g.terrain(u, v) === T.Shallow || g.terrain(u, v) === T.Deep) && g.level(u, v) === 0) mouth++; }
       }
       expect(climbs, `seed ${seed}: climbs along its way`).toBe(0);
-      expect(falls, `seed ${seed}: falls`).toBeGreaterThanOrEqual(2);
+      expect(falls, `seed ${seed}: falls`).toBeGreaterThanOrEqual(3);
       expect(mouth, `seed ${seed}: into its pool`).toBeGreaterThan(0);
       // The pool on the floor's edge, and a pump's tile beside it on the floor, near the Core.
       expect(g.terrain(CENTER + P.dx, CENTER + P.dy)).toBe(T.Deep);

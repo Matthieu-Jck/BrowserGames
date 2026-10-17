@@ -80,6 +80,15 @@ export class Controls {
         this.app.screens.open('expertise');
         bus.emit('sfx', { cue: 'select' });
       } else {
+        // A neighbouring base's piece (D110): its card, never the inspector.
+        const hub = id ? -1 : this.app.picker.neighbourAt(p.sx, p.sy);
+        if (hub >= 0) {
+          this.app.select(0);
+          this.app.neighbourCard.show(this.app.sim, hub, p.sx, p.sy);
+          bus.emit('sfx', { cue: 'select' });
+          return;
+        }
+        this.app.neighbourCard.hide();
         this.app.select(id);
         // On bare ground, the deposit card (D99): a tap is how a finger asks for it.
         if (!id) this.app.depositCard.tap(...this.app.picker.seenTileAt(p.sx, p.sy), p.sx, p.sy);

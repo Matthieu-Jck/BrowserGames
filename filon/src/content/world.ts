@@ -77,10 +77,23 @@ export interface CirqueTemplate {
    * floor's lake (map 1).
    */
   readonly spring?: {
-    /** Where the water comes from (owner: « make it go from a higher mountain »): a summit on the Crown, up to `rise` levels over it, a level less every `terrace` tiles away. */
-    readonly summit: { readonly dx: number; readonly dy: number; readonly rise: number };
+    /**
+     * Where the water comes from (owner: « make it go from a higher mountain… the water cannot just
+     * come from nowhere too, the bigger moutain needs to be a little plateau, and at least 6 in
+     * height »): a summit on the Crown, a plateau at `level` (`MAX_LEVEL`, a level over every other
+     * mountain) `top` tiles round its middle, its sides `fall` levels down a tile (a mesa: two, so
+     * no ribbon climbs it — a line laid round it, never over); in its middle the spring's basin,
+     * still water `basin` tiles round, `deep` in its heart.
+     */
+    readonly summit: { readonly dx: number; readonly dy: number; readonly level: number; readonly top: number; readonly fall: number; readonly basin: number; readonly deep: number };
     readonly halfWidth: number;
     readonly pool: { readonly dx: number; readonly dy: number; readonly radius: number; readonly deep: number };
+    /**
+     * A flat ledge at `level` on the Crown below the summit (offsets of its corners, inclusive), the
+     * stream's column in it: the water runs level across it before its last falls, and a works
+     * stands beside it (the late base's potteries, D115: a pump on the ledge draws at its level).
+     */
+    readonly ledge?: { readonly dx0: number; readonly dy0: number; readonly dx1: number; readonly dy1: number; readonly level: number };
   };
 }
 
@@ -168,15 +181,32 @@ export const CIRQUE: CirqueTemplate = {
 };
 
 /**
- * Map 4's cirque (D104, D115): map 2–3's, its deposits in whole blocks, the tarn's peak dry, and on
- * the Crown's north side a summit three levels over it with a spring at its top: a stream one tile
- * wide straight south down a column (on the tile grid: no staircase in either view; its falls on
- * the walls that face south, the ones the iso camera sees) across the floor's edge into a small
- * pool, the north iron five tiles off (owner: « l'enlever ou le remplacer… from a higher mountain…
- * smaller… from north to south »; the lead: running water in the starting land, along an edge,
- * clear of the deposits and the tutorial's places).
+ * Map 4's cirque (D104, D115): map 2–3's, its deposits in whole blocks, the tarn's peak dry, and
+ * north of the Crown a summit — a little plateau at level 6, a level over every other mountain, the
+ * spring's basin in its middle —, a flat ledge below it (owner, via the lead: the late base's
+ * potteries by the falls): a stream one tile wide out of the basin straight south down a column,
+ * falls down the summit's side, level across the ledge (on the tile grid: no staircase in either
+ * view; its falls on the walls that face south, the ones the iso camera sees), its last fall
+ * straight into a small pool at the mountain's foot, the north iron five tiles off (owner:
+ * « l'enlever ou le remplacer… from a higher mountain… smaller… from north to south »; « it should
+ * be closer to the waterfall, next to the moutain »; « the water cannot just come from nowhere
+ * too »; the lead: running water in the starting land, along an edge, clear of the deposits and the
+ * tutorial's places).
  */
-export const CIRQUE_V4: CirqueTemplate = { ...CIRQUE, deposits: BLOCK_DEPOSITS, spring: { summit: { dx: 10, dy: -25, rise: 3 }, halfWidth: 2, pool: { dx: 10, dy: -16, radius: 1.8, deep: 0.9 } } };
+export const CIRQUE_V4: CirqueTemplate = {
+  ...CIRQUE,
+  deposits: BLOCK_DEPOSITS,
+  spring: {
+    summit: { dx: 12, dy: -33, level: 6, top: 3, fall: 2, basin: 1.5, deep: 0.5 },
+    halfWidth: 2,
+    pool: { dx: 12, dy: -17, radius: 2.3, deep: 1.2 },
+    // Nine by six at the crest's level round the stream (the late base's ceramic works: oven, pump,
+    // conduit), from the summit's foot (its side at 4, a level over it: the falls' last step down
+    // onto it), past the Crown's foot as it must (the Crown is thin here), standing as the massifs'
+    // rock does (cliffs where the land round it is lower); the Crown's terraces below it to the rim.
+    ledge: { dx0: 9, dy0: -28, dx1: 17, dy1: -23, level: 3 },
+  },
+};
 
 export const RINGS = {
   near: 160,   // Proche couronne: from the Crown's foot (r 29; r 34 on map 1) to 160
@@ -347,7 +377,7 @@ export interface Obstacles {
   /**
    * Chasms (« précipices », crevasses: the owner, 2026-10-16: « il faut que ça ressemble à une
    * crevasse »): long narrow cracks a random walk traces across the open floor, `count` of them
-   * from `r` (the first `near` from `rNear`, the rings of parcels just past the starting square),
+   * from `r` (the first `near` from `rNear`, just past the open sand round the cirque, `desert.sand`),
    * `steps` steps of `stride` tiles (min, span), turning by up to `turn` 64ths a step. Each is
    * `width` wide (quarter tiles, min + 0 … span − 1), pinching and widening along its length by up
    * to `pinch` either way (the shared noise read along the walk: a spot here and there beyond a plain
@@ -423,6 +453,23 @@ export interface Obstacles {
    */
   readonly rugged: { readonly scale: number; readonly gain: number; readonly mountainGain: number; readonly chasmMin: number };
   /**
+   * Open desert (owner, 2026-10-17: « la carte devrait contenir un petit peu plus de grands déserts
+   * ouverts, plats, assez vides de ressources, sans eau ni crevasse ni montagne »; « le cirque
+   * notamment devrait être entouré de pas mal de sable, hormis le quartz et les rares ressources aux
+   * alentours »). Round the Crown the roughness is held at `low` out to `sand` tiles from the centre
+   * (the two rings of parcels round the starting square), rising to the land's own by `rough`: the
+   * broken ground begins past them. Wherever the roughness is under `below` lies open desert: a
+   * massif's and a mountain's elevation drop `edge` and `drop` more a unit under it (none stand
+   * there), no chasm (`rugged.chasmMin`) nor pond (the plains' low ground is sand there), the
+   * rivers' lattice rises `riseEdge` and `rise` more a unit under it (the water goes round, a stream
+   * crossing one at most where it must; none within `rough`), and a deposit is taken at `ore` ‰ of
+   * its chance. Within `sand` the deposits are rare and small: `sandOre` ‰ a candidate, thin.
+   */
+  readonly desert: {
+    readonly sand: number; readonly rough: number; readonly low: number; readonly below: number;
+    readonly edge: number; readonly drop: number; readonly riseEdge: number; readonly rise: number; readonly ore: number; readonly sandOre: number;
+  };
+  /**
    * The common deposits past the Crown (in place of `DEPOSIT_CHANCE`'s one blob a chunk): `cells` × `cells`
    * candidates a chunk, each read for how broken the ground round it is — of 8 points on a circle of
    * `near` tiles and 8 on one of `far`, how many stand raised, in a gap or in water, each counting two —
@@ -446,7 +493,7 @@ export const OBSTACLES: Obstacles = {
     clear: 4, slope: 8, shore: 64, shoreSlope: 3, ramps: { scale: 11, from: 150 },
   },
   chasm: {
-    count: 20, near: 12, r: [56, 150], rNear: [38, 24], steps: [10, 12], minSteps: 5, stride: 2, turn: 3,
+    count: 20, near: 12, r: [84, 150], rNear: [84, 30], steps: [10, 12], minSteps: 5, stride: 2, turn: 3,
     width: [4, 2], pinch: 3, taper: 3, branch: { chance: 140, steps: [3, 3], angle: [12, 10] },
   },
   drainage: {
@@ -459,6 +506,7 @@ export const OBSTACLES: Obstacles = {
   corridor: { half: 3, every: 12, wobble: 3, margin: 2 },
   copper: 26,
   rugged: { scale: 72, gain: 44, mountainGain: 36, chasmMin: 120 },
+  desert: { sand: 84, rough: 116, low: 40, below: 112, edge: 40, drop: 3, riseEdge: 200, rise: 12, ore: 500, sandOre: 60 },
   // D104: `thin` 3 → 5 and `thinRadius` [15, 8] → [10, 8] (thin blobs of 5 or 9 tiles: one block or two), so whole blocks keep the desert's few and the rough ground's many apart (r −0.41 … −0.57 on lands 1–5).
   ore: { cells: 2, near: 6, far: 11, open: 15, perBroken: 32, max: 800, thin: 5, thinRadius: [10, 8], radius: [25, 21], richRough: 1250 },
 };

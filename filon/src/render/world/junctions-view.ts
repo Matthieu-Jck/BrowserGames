@@ -10,6 +10,7 @@
 import type { Container, Sprite } from 'pixi.js';
 import { BUILDING_IDS, BUILDING_KIND } from '@/content/registry';
 import type { Sim } from '@/sim/state';
+import { worldPorts } from '@/sim/entities';
 import type { Ent, Rot } from '@/sim/types';
 import { beltKey, type Atlas } from '../art/atlas';
 import { BELT_TIERS, type BeltTier } from '../art/recipes/belts';
@@ -19,31 +20,50 @@ import { tileTop } from '../relief';
 /** The ribbon under a junction: its tier and the way it runs (east or west). */
 export interface UnderPass { tier: BeltTier; rot: Rot }
 
-const isLine = (e: Ent | undefined): e is Ent => {
+const isLine = (e: Ent | undefined): boolean => {
   const k = e ? BUILDING_KIND[e.def] : undefined;
   return !!e && e.builtAt === 0 && (k === 'belt' || k === 'conduit' || k === 'bridge');
 };
 
 /**
- * The line running under the junction at (x, y), from the ribbons in line with it east and west
- * (past any junctions next to it, as the engine looks across them): one running into it feeds it,
- * one running away from it is fed through it. Null when no ribbon runs on that axis.
+ * The line running under the junction at (x, y), from what stands in line with it east and west
+ * (past any junctions next to it, as the engine looks across them): a ribbon, or a building's port
+ * facing the junction along that axis (a trade post's exit, a machine's input — the engine links a
+ * port to what is past the junctions in front of it, compile.ts `across`). Something feeding the
+ * junction sets the way (a ribbon running into it, a port giving out to it); failing that,
+ * something fed through it (a ribbon running away, a port taking in). Null when nothing is on
+ * that axis; the tier is the ribbon's, `ribbon` when only ports meet it.
  */
 export function underPass(sim: Sim, x: number, y: number): UnderPass | null {
-  const look = (dx: number): Ent | undefined => {
+  const look = (dx: number): { o: Ent | undefined; tx: number } => {
     let tx = x + dx;
     for (;;) {
       const o = sim.entityAt(tx, y);
-      if (!o || BUILDING_KIND[o.def] !== 'crossing') return o ?? undefined;
+      if (!o || BUILDING_KIND[o.def] !== 'crossing') return { o: o ?? undefined, tx };
       tx += dx;
     }
   };
-  const w = look(-1), e = look(1);
-  const tier = (o: Ent): BeltTier => { const id = BUILDING_IDS[o.def]!; return id in BELT_TIERS ? (id as BeltTier) : 'ribbon'; };
-  if (isLine(w) && w.rot === 1) return { tier: tier(w), rot: 1 };
-  if (isLine(e) && e.rot === 3) return { tier: tier(e), rot: 3 };
-  if (isLine(e) && e.rot === 1) return { tier: tier(e), rot: 1 };
-  if (isLine(w) && w.rot === 3) return { tier: tier(w), rot: 3 };
+  const tierOf = (o: Ent): BeltTier => { const id = BUILDING_IDS[o.def]!; return id in BELT_TIERS ? (id as BeltTier) : 'ribbon'; };
+  /** What a side does at the junction: 'in' feeds it, 'out' is fed by it, null nothing; and the tier if a ribbon. */
+  const side = ({ o, tx }: { o: Ent | undefined; tx: number }, dx: number): { way: 'in' | 'out' | null; tier: BeltTier | null } => {
+    if (!o) return { way: null, tier: null };
+    const toward: Rot = dx < 0 ? 1 : 3; // the way running from this side into the junction
+    if (isLine(o)) return { way: o.rot === toward ? 'in' : o.rot === ((toward + 2) & 3) ? 'out' : null, tier: tierOf(o) };
+    if (BUILDING_KIND[o.def] === 'crossing') return { way: null, tier: null };
+    let way: 'in' | 'out' | null = null;
+    for (const p of worldPorts(o)) {
+      if (p.y !== y || p.x !== tx || p.dir !== toward) continue;
+      if (p.io === 'out') { way = 'in'; break; }
+      way = 'out';
+    }
+    return { way, tier: null };
+  };
+  const wSide = side(look(-1), -1), eSide = side(look(1), 1);
+  const tier = wSide.tier ?? eSide.tier ?? 'ribbon';
+  if (wSide.way === 'in') return { tier, rot: 1 };
+  if (eSide.way === 'in') return { tier, rot: 3 };
+  if (eSide.way === 'out') return { tier, rot: 1 };
+  if (wSide.way === 'out') return { tier, rot: 3 };
   return null;
 }
 

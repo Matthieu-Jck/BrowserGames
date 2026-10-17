@@ -17,8 +17,10 @@ import { LH, TH } from './iso';
 export const LEVEL_PX = LH;
 /** Levels per terrace step: each terrace is a full tile height (a cube's wall). */
 export const STEP_LEVELS = 2;
-/** Terraces of the highest rock: the sim's highest level (mapgen's mountains reach 5). */
-export const MAX_TERRACE = 5;
+/** Terraces of the highest rock: the sim's highest level (`MAX_LEVEL`: the mountains reach 5, map 4's spring summit 6, D115). */
+export const MAX_TERRACE = 6;
+/** Terraces of the mountains (`MOUNTAIN_LEVEL`): the rock's colours deepen up to their tops, a summit over them as deep. */
+export const MOUNTAIN_TERRACE = 5;
 export const MAX_LEVEL = MAX_TERRACE * STEP_LEVELS;
 /** Ground-plane shift (tiles, along −x and −y) that lifts a point by one level on screen. */
 export const SHIFT = LEVEL_PX / TH;

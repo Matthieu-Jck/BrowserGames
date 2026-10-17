@@ -56,7 +56,7 @@ export class Land {
   readonly granted = new Set<number>();
   /** Parcels leased, by parcel. Saved. */
   readonly leases = new Map<number, Lease>();
-  /** What each bought parcel cost (centi-ocelles): Parcel Resale (xp_resell) gives a share back. Saved. */
+  /** What each bought parcel cost (centi-ocelles): kept for the record since D119 (resale follows the market price now). Saved. */
   readonly paid = new Map<number, number>();
 
   /**

@@ -1,10 +1,15 @@
-// heart-shots.mjs — the Core at each level (D86), iso and plan, by day, and the top level by
-// night: scripts/shot-heart-<view>-<level>.png (gitignored). Usage: a dev server on :5183, then
-// `node scripts/heart-shots.mjs`.
+// heart-shots.mjs — the Core at each level (D86; level 5, D118), iso and plan, by day, and the
+// first and last two levels by night: shot-heart-<view>-<level>.png (gitignored), in scripts/ or
+// in $OUT. Usage: a dev server on :5183, then `node scripts/heart-shots.mjs`; another server with
+// `URL=http://localhost:<port>`. `LEVELS`: the top level (5: `BAL.hearthUpgrades` + the landing's).
 import { chromium } from 'playwright-core';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const shot = (name) => fileURLToPath(new globalThis.URL(`./${name}`, import.meta.url));
+const OUT = process.env.OUT ?? fileURLToPath(new globalThis.URL('.', import.meta.url));
+mkdirSync(OUT, { recursive: true });
+const shot = (name) => join(OUT, name);
 const URL = process.env.URL ?? 'http://localhost:5183';
 
 const browser = await chromium.launch({
@@ -20,11 +25,12 @@ await page.waitForFunction(() => !!window.FL && window.FL.ready(), undefined, { 
 await page.evaluate(() => { window.FL.intro?.(false); window.FL.menu?.(false); window.FL.dayPhase('noon'); });
 await page.addStyleTag({ content: '.qlog, .guide, .hud, .build-bar, .toasts { display: none !important; }' });
 await page.waitForTimeout(600);
+const top = Number(process.env.LEVELS ?? 5);
 
-/** The Core's box on screen (its centre tile ± a margin), for a close crop. */
+/** The Core's box on screen (its centre tile ± a margin; the top reaches the level-5 mast's tip), for a close crop. */
 const clip = async () => {
   const [x, y] = await page.evaluate(() => window.FL.tileToScreen(512, 512));
-  return { x: Math.max(0, x - 330), y: Math.max(0, y - 290), width: 660, height: 470 };
+  return { x: Math.max(0, x - 330), y: Math.max(0, y - 310), width: 660, height: 490 };
 };
 const settle = async (ms = 900) => {
   await page.waitForTimeout(300);
@@ -37,7 +43,7 @@ const level = (n) => page.evaluate((n) => {
   sim.hearthLevel = n; sim.dirty = true; sim.events.push({ k: 'structure' });
 }, n);
 
-for (const n of [1, 2, 3, 4]) {
+for (let n = 1; n <= top; n++) {
   await level(n);
   await page.evaluate(() => { window.FL.view('iso'); window.FL.lookAt(512, 511, 3.2); });
   await settle();
@@ -49,10 +55,10 @@ for (const n of [1, 2, 3, 4]) {
   console.log(`✓ level ${n}`);
 }
 await page.evaluate(() => { window.FL.view('iso'); window.FL.dayPhase('night'); });
-for (const n of [1, 4]) {
+for (const n of [1, top - 1, top]) {
   await level(n);
   await settle(1200);
   await page.screenshot({ path: shot(`shot-heart-iso-${n}-night.png`), clip: await clip() });
 }
-console.log('✓ night');
+console.log(`✓ night → ${OUT}`);
 await browser.close();

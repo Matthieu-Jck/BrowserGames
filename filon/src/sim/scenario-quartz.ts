@@ -21,6 +21,8 @@ import { inWorld, tileIndex } from './world/grid';
 
 /** Face cutters the levels set along the vein: what one traction line carries home (30 a minute). */
 const VEIN_CUTTERS = 2;
+/** A quartz line longer than this many times its straight way home (across and down) has gone round the floor: it crosses a line instead. */
+const LONG_WAY = 2;
 
 /**
  * Where face cutters stand along the land's vein: on the floor at its foot, each with its back on two
@@ -113,11 +115,24 @@ function veinLine(b: Builder): void {
   // A free input of the Heart of its own (a line merged into another one would send its quartz
   // down that line's branches, where a machine refuses it and the branch jams); the Heart boxed in,
   // the side of a line into it.
-  let path = routeOver(sim, [out.fx, out.fy], heartInlets(sim, b.H));
-  for (const role of ['wire', 'plates', 'glass']) {
-    if (path) break;
-    const l = b.lines[role];
-    if (l) path = routeOver(sim, [out.fx, out.fy], sideGoalsOver(sim, l));
+  const home = (cross: boolean): ReturnType<typeof routeOver> => {
+    let p = routeOver(sim, [out.fx, out.fy], heartInlets(sim, b.H), undefined, cross);
+    for (const role of ['wire', 'plates', 'glass']) {
+      if (p) break;
+      const l = b.lines[role];
+      if (l) p = routeOver(sim, [out.fx, out.fy], sideGoalsOver(sim, l), undefined, cross);
+    }
+    return p;
+  };
+  let path = home(false);
+  // Its way home blocked — the floor walled off, the Core reached only round the far side: across
+  // a line on a junction instead (D115: map 4's spring pool in the north, the boiler's coal line
+  // along the floor's rim from the west, where land 2's vein lies; the quartz went right round the
+  // Core, and its works found no room by it).
+  if (!path || path.length > LONG_WAY * (Math.abs(out.fx - b.heart[0]) + Math.abs(out.fy - b.heart[1]))) {
+    b.junctions();
+    const across = sim.done.has('junction') ? home(true) : null;
+    if (across && (!path || across.length < path.length)) { b.crossings(); path = across; }
   }
   if (!path || !layRuns(b, path, 'line:quartz')) {
     b.skip('line:quartz');

@@ -5,7 +5,7 @@
 // between them); the sand through the shallows along a bank, wet sand past it, one inked shore;
 // the marks in the mesas' manner (`WATER`): ink current lines along the way a river flows (the
 // chunk's biome code holds it), highlights and glints, foam against its banks, where streams meet,
-// at a fall's lip and where it lands, ripple lines on still water; a chasm as a cut in the ground.
+// at a fall's lip and where it lands, ripples on still water; a chasm as a cut in the ground.
 // Painted into the ground texture (both views), cached with the chunks.
 import { hashUnit } from '@/core/hash';
 import { T } from '@/sim/types';
@@ -176,8 +176,8 @@ function paintSurf(ctx: Ctx2, d: PaintData, ppt: number, isSea: (i: number, j: n
  *   meeting; where a stream steps down (the next tile along its way lower: up on a massif, down the
  *   Crown), a band of foam at the lip and spray below (the plan view's fall: in iso the relief draws
  *   it down its wall), and where it lands — on a lower stream or a pool — foam boiling in a ring;
- * · on still water, broken ripple lines along its depth (two tiles from the shore) and short ripples,
- *   a glint on the deep now and then.
+ * · on still water, short ripples and a glint on the deep now and then (no line along its depth: on
+ *   a small pool it drew a square, a line where there is no bank).
  */
 function paintMarks(ctx: Ctx2, d: PaintData, ppt: number, shore: readonly number[][], depth: Uint8Array, wet: (i: number, j: number) => boolean): void {
   if (ppt < 16) return;
@@ -282,9 +282,6 @@ function paintMarks(ctx: Ctx2, d: PaintData, ppt: number, shore: readonly number
     }
   }
   ctx.restore();
-  // Still water's depth: broken ripple lines along it two tiles from the shore.
-  const ring = march((i, j) => isWaterT(t(i, j)) && depth[j * WIN + i]! >= 2, ppt).segs.filter(([ax, ay]) => hashUnit(Math.round((ax! / ppt + wx0 + B) * 4), Math.round((ay! / ppt + wy0 + B) * 4), 0x7b1) >= 0.45);
-  strokeSegs(ctx, ring, C.paper, 1.1 * k, 0.4);
 }
 
 /** A glint on the water: a small four-pointed star, paper-white. */

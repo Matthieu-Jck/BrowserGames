@@ -332,7 +332,8 @@ await step('build: a ribbon dragged across a neighbouring base’s open land bur
     const FL = window.FL, sim = FL.app.sim;
     for (const id of ['xp_swift', 'xp_bigsilo', 'xp_guard', 'xp_camo']) FL.unlock(id);
     sim.grant('iron_plate', 200); sim.grant('sand', 200);
-    for (let ring = 2; ring <= 6; ring++) for (let dy = -ring; dy <= ring; dy++) for (let dx = -ring; dx <= ring; dx++) {
+    // The bases stand from ring 4 out, a few (D110's second pass): look as far as ring 16.
+    for (let ring = 2; ring <= 16; ring++) for (let dy = -ring; dy <= ring; dy++) for (let dx = -ring; dx <= ring; dx++) {
       if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
       const q = FL.parcel(dx, dy), w = FL.parcel(dx - 1, dy);
       if (sim.land.neighbour(q.p) < 0 || sim.land.neighbour(w.p) >= 0 || sim.land.holds(w.p)) continue;
@@ -503,29 +504,97 @@ await step('sound: the first click unlocked it; the score follows the clock; cue
   await FL(() => window.FL.menu(false));
 });
 
-await step('research: start Mechanics from the screen (D101: right after the lab\'s plan; the Face Cutter is a plan), the HUD counts down, a notice lands', async () => {
+await step('research (D118): Mechanics, Tier 1, starts from the screen with no dialog, its HUD chip a data bar and no token bar; it ends as soon as its data is in the lab; a notice lands', async () => {
   await FL(() => window.FL.lookAt(512, 512, 1));
-  assert(await FL(() => window.FL.feedLab('journal_1', 40)), 'no research lab to feed');
+  await FL(() => window.FL.pause()); // the lab's data comes after the chip is read
   await page.keyboard.press('t');
   await page.waitForSelector('[data-screen="research"][data-open]', { timeout: 2000 });
   await page.click('.rs-card[data-id="tr1"]');
   await page.click('.rs-detail .btn.primary');
+  assert(!(await page.$('[data-launch]:not([hidden])')), 'a Tier 1 node opened the launch dialog');
   const r = await FL(() => window.FL.research());
   assert(r.projects?.some((p) => p.id === 'tr1'), `tr1 not running: ${JSON.stringify(r)}`);
   await page.keyboard.press('Escape');
   await page.waitForSelector('.hud-rs[data-id="tr1"]', { timeout: 2000 });
-  const eta = await page.textContent('.hud-rs[data-id="tr1"] .hud-rs-eta');
-  assert(/min|m|s/.test(eta ?? ''), `no countdown in the HUD: ${eta}`);
-  // Its minimum time at full power; the weather follows the real clock, so a calm hour browns
-  // the demo grid out: tick on until it is learnt (bounded).
+  const chip = await page.evaluate(() => {
+    const c = document.querySelector('.hud-rs[data-id="tr1"]');
+    return { data: !!c?.querySelector('.hud-rs-row[data-k="data"]:not([hidden])'), tok: !!c?.querySelector('.hud-rs-row[data-k="tok"]:not([hidden])'), eta: c?.querySelector('.hud-rs-eta')?.textContent ?? '' };
+  });
+  assert(chip.data && !chip.tok, `Tier 1's chip: ${JSON.stringify(chip)}`);
+  assert(await FL(() => window.FL.feedLab('journal_1', 40)), 'no research lab to feed');
+  await FL(() => window.FL.resume());
+  // Its data in the lab: done at once (no minimum time); the grid's power follows the real clock, so tick on a little if a calm browns the lab out.
   for (let i = 0; i < 12; i++) {
-    await FL(() => window.FL.tick(600));
+    await FL(() => window.FL.tick(60));
     if ((await FL(() => window.FL.research())).done?.includes('tr1')) break;
   }
   await page.waitForFunction(() => [...document.querySelectorAll('.toast')].some((n) => /Mécanique|Mechanics/.test(n.textContent ?? '')), undefined, { timeout: 3000 });
   const after = await FL(() => window.FL.research());
   assert(after.done?.includes('tr1'), 'tr1 not learnt');
   await page.screenshot({ path: shot('smoke-m4.png') });
+});
+
+await step('research (D118): Tier 2 locked until the Core\'s level 3; then a Tier 2 node opens the launch dialog — tokens, a bought flow and its cost — and runs on two bars', async () => {
+  // A sandbox rig (outside commands): Tier 1 whole, every node of Tier 2 and up set aside (a tier a
+  // claim holds a node of stays open to it), two expertises chosen, the purse full; all of it, and the
+  // Core's level, put back after — whatever happens.
+  const rig = await FL(() => {
+    const sim = window.FL.app.sim;
+    const t1 = ['tr1', 'tr_synth', 'en_pitch', 'en2', 'ex_fastdrill', 'dn3', 'dn_esmelt', 'dn_wiremill', 'cm_post2', 'cm_floor', 'an_data', 'an_relay', 'xp_swift', 'xp_bigsilo', 'xp_guard'];
+    const added = t1.filter((id) => !sim.done.has(id));
+    for (const id of added) sim.done.add(id);
+    const aside = [...sim.done].filter((id) => window.FL.researchTier(id) >= 2);
+    for (const id of aside) sim.done.delete(id);
+    const slots = sim.expertise.slots.slice();
+    sim.expertise.slots = [{ id: 'estate', at: 0, on: true }, { id: 'haulage', at: 0, on: true }];
+    const level = sim.hearthLevel, credits = sim.credits;
+    sim.hearthLevel = 2;
+    sim.rebuildDerived();
+    sim.grantCredits(5_000_000);
+    return { added, aside, slots, level, credits, core: sim.researchBlock('tr2') };
+  });
+  try {
+    assert(rig.core === 'core', `Tier 2 at the Core's level 2: ${rig.core}`);
+    await FL(() => window.FL.open('research'));
+    await page.waitForSelector('[data-screen="research"][data-open]', { timeout: 2000 });
+    await page.waitForSelector('.tr-tierhead[data-tier="2"][data-locked]', { timeout: 2000 }); // its next refresh (4 Hz)
+    const head = await page.evaluate(() => ({ text: document.querySelector('.tr-tierhead[data-tier="2"]')?.textContent ?? '', locked: !!document.querySelector('.tr-tierhead[data-tier="2"][data-locked]') }));
+    assert(/3/.test(head.text) && head.locked, `Tier 2's head names the Core's level 3, locked: ${JSON.stringify(head)}`);
+    await FL(() => window.FL.close());
+    await FL(() => { const sim = window.FL.app.sim; sim.hearthLevel = 3; sim.rebuildDerived(); });
+    await FL(() => window.FL.pause());
+    await FL(() => window.FL.open('research'));
+    await page.waitForSelector('[data-screen="research"][data-open]', { timeout: 2000 });
+    await page.click('.rs-card[data-id="tr2"]');
+    await page.click('.rs-detail .btn.primary');
+    await page.waitForSelector('[data-launch]:not([hidden])', { timeout: 2000 });
+    const dlg = await page.evaluate(() => ({
+      cost: document.querySelector('[data-launch-cost]')?.textContent ?? '',
+      eta: document.querySelector('[data-launch-eta]')?.textContent ?? '',
+      flow: !!document.querySelector('[data-launch-flow]'),
+    }));
+    assert(dlg.flow && dlg.cost && dlg.eta, `the launch dialog: ${JSON.stringify(dlg)}`);
+    await page.click('[data-launch-go]');
+    const p = await FL(() => window.FL.app.sim.projects.find((q) => q.id === 'tr2'));
+    assert(p && p.tokens > 0 && p.buy > 0, `tr2 launched with a bought flow: ${JSON.stringify(p)}`);
+    await FL(() => window.FL.close());
+    await page.waitForSelector('.hud-rs[data-id="tr2"] .hud-rs-row[data-k="tok"]:not([hidden])', { timeout: 2000 });
+    await page.screenshot({ path: shot('smoke-d118.png') });
+  } finally {
+    // Back as it was: the project cancelled, the Core's level, the nodes, the slots, the purse.
+    await FL((o) => {
+      const sim = window.FL.app.sim;
+      sim.cancelResearch('tr2');
+      for (const id of o.added) sim.done.delete(id);
+      for (const id of o.aside) sim.done.add(id);
+      sim.expertise.slots = o.slots;
+      sim.hearthLevel = o.level;
+      sim.credits = o.credits;
+      sim.rebuildDerived();
+    }, rig);
+    await FL(() => window.FL.close());
+    await FL(() => window.FL.resume());
+  }
 });
 
 await step('stats: the screen lists what the colony makes', async () => {
@@ -784,6 +853,8 @@ await step('neighbouring bases (D110): a base stands on a neighbour\'s land, by 
   // The base nearest the Heart: its lift pad's middle, surveyed (a rig: the fog lifted round it).
   const nb = await FL(() => {
     const sim = window.FL.app.sim;
+    // None within three rings of the Heart's parcel (D110: « trop de bases de PNJ autour de moi »).
+    for (let p = 0; p < 45 * 45; p++) if (sim.neighbours.holdingOf(p) && Math.max(Math.abs((p % 45) - 22), Math.abs(Math.floor(p / 45) - 22)) < 4) return { near: p };
     let best = null;
     for (let p = 0; p < 45 * 45; p++) {
       const h = sim.neighbours.holdingOf(p);
@@ -796,10 +867,14 @@ await step('neighbouring bases (D110): a base stands on a neighbour\'s land, by 
     if (best) sim.explored.push([best.at[0], best.at[1], 44]);
     return best;
   });
+  assert(!(nb && 'near' in nb), `a neighbouring base within three rings of the Heart: ${JSON.stringify(nb)}`);
   assert(nb && nb.n >= 4 && nb.r >= 1, `no working neighbouring base: ${JSON.stringify(nb)}`);
   console.log(`    base at ${nb.at} (hub ${nb.hub}): ${nb.n} buildings, ${nb.r} ribbons, ${nb.parcels} parcels`);
   await FL(([x, y]) => window.FL.lookAt(x, y, 1.4), nb.at);
   await page.waitForFunction((hub) => window.FL.app.buildings.hasForeign(hub), nb.hub, { timeout: 5000 });
+  // A working base (D110, owner: « il n'y a rien qui marche, même pas de câble électrique »): its own grid's wires drawn, never the claim's.
+  const grid = await FL((hub) => ({ wires: window.FL.app.wires.foreignCount, laid: window.FL.app.neighbours.count, on: window.FL.app.wires.hasForeign(hub) }), nb.hub);
+  assert(grid.on && grid.wires > 0 && grid.laid >= 1, `no grid drawn for the base: ${JSON.stringify(grid)}`);
   // Its land refuses a mast; with Neighbour Treaties its open land takes one, its buildings never.
   const placed = await FL(([x, y]) => window.FL.place('mast', x, y, 0), nb.at);
   assert(!placed.ok && placed.reason === 'neighbour_land', `a mast went on its land: ${JSON.stringify(placed)}`);
@@ -819,6 +894,19 @@ await step('neighbouring bases (D110): a base stands on a neighbour\'s land, by 
   await page.waitForTimeout(700);
   await page.screenshot({ path: shot('smoke-neighbour-night.png') });
   await FL(() => window.FL.dayPhase(null));
+  // Its Core (owner: « ils devraient avoir un cœur, juste pas le même que le mien »): a click on it shows the base's card.
+  await FL(([x, y]) => window.FL.lookAt(x, y, 1.4), nb.at);
+  await page.waitForTimeout(500);
+  const coreAt = await FL((hub) => { const sim = window.FL.app.sim, L = sim.neighbours.layout(sim.neighbours.holdingOf(hub)); const c = L.structs[L.core]; return c ? [c.x + 1.5, c.y + 1.5] : null; }, nb.hub);
+  assert(coreAt, 'the base has no Core');
+  const [csx, csy] = await tileXY(coreAt[0], coreAt[1]);
+  await page.mouse.click(csx, csy - 24);
+  await page.waitForSelector('[data-neighbour-card]:not([hidden])', { timeout: 2000 });
+  const ncard = await page.evaluate(() => document.querySelector('[data-neighbour-card]')?.innerText ?? '');
+  assert(/Base voisine|Neighbouring base/.test(ncard), `base card: ${ncard}`);
+  await page.screenshot({ path: shot('smoke-neighbour-card.png') });
+  await page.mouse.move(csx + 300, csy + 200);
+  await page.waitForTimeout(150);
   // The Terrain view and the land panel on its hub: its emblem, its name, its trade; no deal.
   await page.keyboard.press('i');
   await settleView('plan');

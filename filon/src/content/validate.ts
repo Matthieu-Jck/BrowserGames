@@ -15,7 +15,7 @@
 import { BAL } from './balance';
 import { BUILDINGS } from './buildings';
 import { ITEMS } from './items';
-import { NEIGHBOUR_HUB, NEIGHBOUR_KITS } from './neighbours';
+import { NEIGHBOUR_KITS, NEIGHBOUR_MAST, NEIGHBOUR_PAD } from './neighbours';
 import { questProblems } from './quests';
 import { MAX_RECIPES, RECIPES } from './recipes';
 import { reserveProblems } from './reserve';
@@ -23,7 +23,7 @@ import { usabilityProblems } from './usable';
 import { FAMILIES, FAMILY_IDS, PLANS, RESEARCH, TIER1_WHOLE, TIER_GATE, buildingsUnlockedBy, isPlan, isResearch, isTreeNode, pathProblems, treePrereq } from './research';
 import { expertiseProblems } from './expertises';
 import { CIRQUE, UNIQUE_BIOMES } from './world';
-import type { BuildingDef, ItemDef, PlanDef, RecipeDef, ResearchDef } from './types';
+import type { BuildingDef, ItemDef, PlanDef, RecipeDef, ResearchDef, ResearchTier } from './types';
 
 const CYCLE_LCM = 1200;
 
@@ -173,8 +173,9 @@ export function validateContent(): string[] {
 
   // The neighbouring bases' kits (D110): known buildings, and their ribbons carry known items.
   for (const [pid, k] of Object.entries(NEIGHBOUR_KITS)) {
-    for (const b of [...NEIGHBOUR_HUB, ...k.works]) if (!(b in BUILDINGS)) errs.push(`neighbour kit ${pid}: unknown building ${b}`);
-    if (!k.carries.length) errs.push(`neighbour kit ${pid}: carries nothing`);
+    for (const b of [NEIGHBOUR_PAD, NEIGHBOUR_MAST, k.extract, k.store, ...k.makers, ...k.power, ...k.extra]) if (!(b in BUILDINGS)) errs.push(`neighbour kit ${pid}: unknown building ${b}`);
+    if (!k.carries.length || !k.power.length) errs.push(`neighbour kit ${pid}: carries nothing, or has no power`);
+    if (!(BUILDINGS[NEIGHBOUR_MAST] as BuildingDef).pole) errs.push(`neighbour kit: ${NEIGHBOUR_MAST} carries no wires`);
     for (const it of k.carries) if (!items.has(it)) errs.push(`neighbour kit ${pid}: unknown item ${it}`);
   }
 
@@ -266,6 +267,23 @@ export function validateContent(): string[] {
   else for (const id of t1) if (!whole.prereq.includes(id)) errs.push(`research ${TIER1_WHOLE}: does not need ${id} (Tier 1 is completed whole)`);
   if (TIER_GATE[2] !== TIER1_WHOLE) errs.push(`Tier 2 must open with ${TIER1_WHOLE}`);
   errs.push(...expertiseProblems(FAMILY_IDS));
+  // Tier 1 is data alone, Tier 2 and up data and tokens, with no minimum time (D118): a node's
+  // `minutes` is only the pace the launch dialog aims at, so Tier 1 has none.
+  for (const [id, r] of research) {
+    if (r.tier === 1 && (r.tokens !== 0 || r.minutes !== 0)) errs.push(`research ${id}: a Tier 1 node takes no tokens and no time (D118)`);
+    if (r.tier >= 2 && (r.tokens <= 0 || r.minutes <= 0)) errs.push(`research ${id}: a Tier ${r.tier} node needs tokens and a pace (D118)`);
+  }
+  // Each tier waits for the Core's level (D118): a level the player can raise, behind the trunk node
+  // that opens the tier, never lower than the tier before's; Tier 2's is the Archive's (D93).
+  const lv = BAL.tierCoreLevel;
+  if (lv.length !== 4 || lv[0] !== 1) errs.push('BAL.tierCoreLevel: four tiers, Tier 1 at the Core\'s first level');
+  for (let tier = 2; tier <= 4; tier++) {
+    const need = lv[tier - 1]!, up = BAL.hearthUpgrades[need - 2];
+    if (need < lv[tier - 2]!) errs.push(`Tier ${tier}: the Core's level ${need} is below Tier ${tier - 1}'s`);
+    if (!up) errs.push(`Tier ${tier}: no Core level ${need}`);
+    else if (up.unlock !== TIER_GATE[tier as ResearchTier]) errs.push(`Tier ${tier}: Core level ${need} must come with ${TIER_GATE[tier as ResearchTier]} (it comes with ${up.unlock})`);
+  }
+  if (lv[1] !== BAL.expertise.level) errs.push(`Tier 2 opens at the Archive's level (${BAL.expertise.level}), not ${lv[1]}`);
 
   // Designed scarcity and the need to trade.
   if (tiredVeinPerMin() * 2 >= wirePerElectronicsWorkshop()) errs.push('the tired vein must not feed one electronics workshop');

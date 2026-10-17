@@ -1,10 +1,11 @@
 // catchup.ts — unlimited offline progression with the SAME engine. The timeline is cut into
 // segments at events (an epoch boundary, a reservoir item reaching a bound, an accumulator filling
 // or emptying, a construction or a research completing). Research labs are reservoirs whose
-// research draw is a known outflow (its allowance rate); the Heart's and the autonomous labs'
-// data files a known inflow; servers' tokens and research's are counted per segment and billed
-// at each boundary by the online call (`tokenEpoch`, D68); the expertises' feats and slots are read
-// there too (`expertiseEpoch`, D93). Within a segment every group follows a regime —
+// project takes the data it owes as it arrives (D118: a sink while owed, its next event the owed
+// data's arrival); the Heart's and the autonomous labs' data files a known inflow; servers' tokens
+// are counted per segment and delivered at each boundary by the online call (`tokenEpoch`, D68,
+// D118: the servers' minute, the bought flows), the projects they complete finished there; the
+// expertises' feats and slots are read there too (`expertiseEpoch`, D93). Within a segment every group follows a regime —
 // warmed up once from its true state, then extrapolated exactly (transient + whole periods
 // + prefix). Groups only interact through reservoirs (state flags and throttle rates) and
 // power grids (fixed satisfaction / dispatch per segment). Every per-segment pass is indexed
@@ -19,7 +20,7 @@ import { buildGroups, type Group } from '../graph/groups';
 import { makeCtx } from '../flow/step';
 import type { TickCtx } from '../flow/node';
 import { DrillNode, MachineNode, ReservoirNode, V_EMPTY, V_FULL, V_NORMAL } from '../flow/nodes';
-import { advanceProject, owedItems, projectDone, takeTokens } from '../research/runtime';
+import { advanceProject, owedItems, projectDone } from '../research/runtime';
 import { dataMakers, dataTick, serverTick } from '../systems/research';
 import { jobDone, jobRate, type Job } from '../space';
 import { renewableKw, weatherAt, weatherKey } from '../power/network';
@@ -136,8 +137,14 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
   const sumNormIn = new Map<number, number>();  // Σ runs' NORMAL-state inflow per key (shares)
   const sumNormOut = new Map<number, number>();
   const throttle = new Map<number, number>();   // key → throttle total (mu/epoch)
-  const labOut = new Map<number, number>();     // pseudo outflows: research draws, backfills (mu/tick)
+  const labOut = new Map<number, number>();     // pseudo outflows: backfills, a reconversion's draw (mu/tick)
   const pIn = new Map<number, number>();        // pseudo inflows: excavated rubble, a post's deliveries, data files (mu/tick)
+  /**
+   * A powered lab's data still owed (D118): its project takes it as it arrives, so the key is a sink
+   * — its level does not move (`rateOf` 0) and a FULL throttle passes the whole inflow; the owed
+   * data's arrival is an event (`nextEvent`), where `advance` pays it and the lab stops taking it.
+   */
+  const sinkKeys = new Set<number>();
   const RUB = itemIdx('stone');
   /**
    * Reservoir keys whose level the epoch boundary moved outside the flows (trade: deliveries,
@@ -163,12 +170,12 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     g = sim.graph;
     wctx = makeCtx(g, g.nets.length, N_ITEMS);
     mk = modsKey(sim.mods);
-    curIn.clear(); curOut.clear(); sumNormIn.clear(); sumNormOut.clear(); throttle.clear(); labOut.clear(); pIn.clear();
+    curIn.clear(); curOut.clear(); sumNormIn.clear(); sumNormOut.clear(); throttle.clear(); labOut.clear(); pIn.clear(); sinkKeys.clear();
     tradeRes = [];
     g.reservoirs.forEach((r, ri) => { if (r === g.hearth || BUILDING_KIND[sim.ents.get(r.ent)?.def ?? -1] === 'trade') tradeRes.push(ri); });
     resState = g.reservoirs.map((r) => {
       const s = new Uint8Array(N_ITEMS);
-      for (let i = 0; i < N_ITEMS; i++) s[i] = r.stock[i]! < margin ? V_EMPTY : r.stock[i]! > r.cap - margin ? V_FULL : V_NORMAL;
+      for (let i = 0; i < N_ITEMS; i++) s[i] = r.stock[i]! < margin ? V_EMPTY : r.stock[i]! > r.capOf(i) - margin ? V_FULL : V_NORMAL;
       return s;
     });
     runs = buildGroups(g).map(newRun);
@@ -429,8 +436,14 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
       const ri = Math.floor(k / N_ITEMS), i = k % N_ITEMS;
       const st = resState[ri]![i]!;
       if (st === V_NORMAL) { throttle.delete(k); continue; }
-      // EMPTY: consumers share the inflow; FULL: producers share the outflow (mu/epoch).
-      const total = Math.floor((st === V_EMPTY ? (curIn.get(k) ?? 0) + (pIn.get(k) ?? 0) : (curOut.get(k) ?? 0) + (labOut.get(k) ?? 0)) * EPOCH);
+      // EMPTY: consumers share the inflow; FULL: producers share the outflow (mu/epoch) — a research
+      // sink's outflow is its inflow (D118: the project takes it as it comes). The Core at its data
+      // cap (D118) refills what leaves with its own files first, as online (its outlet draws in the
+      // flow phases, its files come after, into the room left): the lines bringing data share the rest.
+      const inflow = (curIn.get(k) ?? 0) + (pIn.get(k) ?? 0);
+      const outflow = (curOut.get(k) ?? 0) + (labOut.get(k) ?? 0);
+      const own = st === V_FULL && g.reservoirs[ri] === g.hearth ? pIn.get(k) ?? 0 : 0;
+      const total = Math.floor((st === V_EMPTY || sinkKeys.has(k) ? inflow : Math.max(0, outflow - own)) * EPOCH);
       const old = throttle.get(k) ?? -1;
       if (Math.abs(total - old) > Math.max(10, old * 0.01)) {
         throttle.set(k, total);
@@ -453,7 +466,7 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     for (const run of [...dirtyRuns]) ensureRegime(run);
   }
 
-  const rateOf = (k: number): number => (curIn.get(k) ?? 0) + (pIn.get(k) ?? 0) - (curOut.get(k) ?? 0) - (labOut.get(k) ?? 0);
+  const rateOf = (k: number): number => (sinkKeys.has(k) ? 0 : (curIn.get(k) ?? 0) + (pIn.get(k) ?? 0) - (curOut.get(k) ?? 0) - (labOut.get(k) ?? 0));
 
   const resIndex = (ent: number): number => {
     const n = g.nodeByEnt.get(ent);
@@ -466,25 +479,28 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     return sat;
   };
 
-  /** Power satisfaction of a project this segment (its lab's grid; nothing while the purse is in the red). */
+  /** Power satisfaction of a project's lab this segment (its grid's: it takes its data only while powered). */
   const projSat = (p: (typeof sim.projects)[number]): number => sim.projectSat(p, (n) => netModes[n]?.sat ?? 0);
 
-  /** Research draws as reservoir outflows (allowance rates while the allowance grows). */
+  /**
+   * The pseudo-flows: a powered lab's owed data as a sink (D118: no allowance, the project takes it
+   * as it arrives — `sinkKeys`), a reconversion's draw (none: it has no lab), digs and fills, a post's
+   * spread deliveries, the data makers' files.
+   */
   function labFlows(): void {
     const next = new Map<number, number>();
+    const sinks = new Set<number>();
     for (const p of sim.projects) {
-      if (!p.lab || p.el >= p.dur * 1000) continue;
+      if (!p.lab) continue;
       const node = g.nodeByEnt.get(p.lab);
       if (!(node instanceof ReservoirNode)) continue;
       const ri = g.reservoirs.indexOf(node);
-      const sat = projSat(p);
-      if (ri < 0 || sat <= 0) continue;
-      for (const c of p.cost) {
-        if (!owedItems(p).includes(c.item)) continue;
-        const k = ri * N_ITEMS + c.item;
-        next.set(k, (next.get(k) ?? 0) + (c.mu * sat) / (p.dur * 1000));
-      }
+      if (ri < 0 || projSat(p) <= 0) continue;
+      for (const it of owedItems(p)) sinks.add(ri * N_ITEMS + it);
     }
+    for (const k of new Set([...sinkKeys, ...sinks])) if (sinkKeys.has(k) !== sinks.has(k)) throttleDirty.add(k);
+    sinkKeys.clear();
+    for (const k of sinks) sinkKeys.add(k);
     const nextIn = new Map<number, number>();
     const add = (m: Map<number, number>, k: number, v: number): void => { m.set(k, (m.get(k) ?? 0) + v); };
     for (const j of sim.jobs) {
@@ -514,6 +530,20 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     for (const p of sim.projects) {
       const sat = projSat(p);
       if (sat > 0 && p.el < p.dur * 1000) t = Math.min(t, now + Math.max(1, Math.ceil((p.dur * 1000 - p.el) / sat)));
+      // A lab's owed data (D118): the segment ends where the last of it arrives (paid there, the lab
+      // stops taking it), or before the store would reach its cap — it is paid down at each segment's end.
+      if (!p.lab || sat <= 0) continue;
+      const store = sim.projectStock(p), ri = resIndex(p.lab);
+      if (!store || ri < 0) continue;
+      p.cost.forEach((c, j) => {
+        const owe = c.mu - p.paid[j]!;
+        if (owe <= 0) return;
+        const k = ri * N_ITEMS + c.item, inflow = (curIn.get(k) ?? 0) + (pIn.get(k) ?? 0), lvl = store[c.item]!;
+        if (lvl >= 1000) { t = Math.min(t, now + 1); return; } // data already in: paid at once, as online
+        if (inflow <= 1e-9) return;
+        const room = g.reservoirs[ri]!.capOf(c.item) - margin - lvl;
+        t = Math.min(t, now + Math.max(1, Math.ceil(Math.min(owe - lvl, room) / inflow)));
+      });
     }
     for (const j of sim.jobs) {
       const sat = jobSatOff(j);
@@ -527,9 +557,10 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
       const res = g.reservoirs[ri]!;
       const lvl = res.stock[i]!, st = resState[ri]![i]!;
       let dt = Infinity;
-      if (st === V_NORMAL) dt = r < 0 ? (lvl - margin + 1) / -r : (res.cap - margin - lvl + 1) / r;
+      const cap = res.capOf(i);
+      if (st === V_NORMAL) dt = r < 0 ? (lvl - margin + 1) / -r : (cap - margin - lvl + 1) / r;
       else if (st === V_EMPTY && r > 0) dt = (2 * margin - lvl + 1) / r;
-      else if (st === V_FULL && r < 0) dt = (lvl - (res.cap - 2 * margin) + 1) / -r;
+      else if (st === V_FULL && r < 0) dt = (lvl - (cap - 2 * margin) + 1) / -r;
       if (dt < Infinity) t = Math.min(t, now + Math.max(MIN_STEP, Math.ceil(dt)));
     }
     g.nets.forEach((net, n) => {
@@ -565,8 +596,9 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
         // under zero until then. Clamped right here, those items were lost AND credited again: the
         // consumers made them twice (a workshop fed by the drifters of D66 made half again its output offline).
         if (res.stock[i]! < 0) short.push(k);
-        if (res.stock[i]! > res.cap && d > 0) {
-          const over = res.stock[i]! - Math.max(res.cap, res.stock[i]! - d);
+        const cap = res.capOf(i);
+        if (res.stock[i]! > cap && d > 0) {
+          const over = res.stock[i]! - Math.max(cap, res.stock[i]! - d);
           rep.lostMu[i] = rep.lostMu[i]! + over;
           res.stock[i] = res.stock[i]! - over;
         }
@@ -619,7 +651,6 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
         rep.consumed[it] = rep.consumed[it]! + mu;
         sim.consumed[it] = sim.consumed[it]! + mu;
       });
-      sim.tokenUse += takeTokens(p);
     }
     g.nets.forEach((net, n) => {
       const m = netModes[n]!;
@@ -650,9 +681,10 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
       const lvl = r.stock[i]!;
       const old = st[i]!;
       let nu = old;
-      if (old === V_NORMAL) { if (lvl < margin) nu = V_EMPTY; else if (lvl > r.cap - margin) nu = V_FULL; }
-      else if (old === V_EMPTY) { if (lvl > 2 * margin) nu = lvl > r.cap - margin ? V_FULL : V_NORMAL; }
-      else if (lvl < r.cap - 2 * margin) nu = lvl < margin ? V_EMPTY : V_NORMAL;
+      const cap = r.capOf(i);
+      if (old === V_NORMAL) { if (lvl < margin) nu = V_EMPTY; else if (lvl > cap - margin) nu = V_FULL; }
+      else if (old === V_EMPTY) { if (lvl > 2 * margin) nu = lvl > cap - margin ? V_FULL : V_NORMAL; }
+      else if (lvl < cap - 2 * margin) nu = lvl < margin ? V_EMPTY : V_NORMAL;
       if (nu === old) continue;
       st[i] = nu;
       throttleDirty.add(k);
@@ -759,11 +791,16 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
         const held = [...sim.land.leases.keys()];
         if (sim.landEpoch()) for (const p of held) if (!sim.land.leases.has(p)) rep.incidents.push({ tick: now, kind: 'leaseLapsed', parcel: p });
       }
-      // Research's tokens for the minute, as online, after the trade and the leases (D68): the purse
-      // in the red holds research (its projects' pace changes: the next segment sees it).
+      // Research's tokens for the minute, as online, after the trade and the leases (D68, D118): the
+      // servers' minute and the bought flows delivered (a purse in the red holds the bought ones),
+      // then the projects they complete, finished as online — unlocks, a new graph.
       const heldBefore = sim.researchHeld;
       sim.tokenEpoch();
       if (sim.researchHeld !== heldBefore) rep.incidents.push({ tick: now, kind: sim.researchHeld ? 'researchHeld' : 'researchResumed' });
+      if (sim.projects.some(projectDone)) {
+        materializeOnce();
+        for (const id of sim.finishProjects()) rep.incidents.push({ tick: now, kind: 'researchDone', ref: id });
+      }
       dropTradeEvents(sim);
       // The expertises' minute (D93), as online, last: the Core's grid as the segment just ended
       // served it, the feats' ranks, a réorientation's 24 h ending. An expertise in place whose

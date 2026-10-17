@@ -28,7 +28,7 @@
 // one crystal drawing the plan's seam and the machines share).
 // Worker-safe (Canvas2D only).
 import { hash32, hashUnit } from '@/core/hash';
-import { facesCamera, MAX_LEVEL, slabOutline, shadeOf, STEP_LEVELS, type OutlinePt } from '../relief';
+import { facesCamera, MAX_LEVEL, MOUNTAIN_TERRACE, slabOutline, shadeOf, STEP_LEVELS, type OutlinePt } from '../relief';
 import { C, mix, rgba } from './tokens';
 import { ink, type Ctx, type Pt } from './ink';
 
@@ -76,7 +76,7 @@ export const topColor = (cls: number, level: number): string => mix(ROCK[cls]!.t
  * with its height `z` (levels; richer high up), and a bed's `tone` (−1 … 1: a darker or a paler bed).
  */
 export function wallColor(cls: number, shade: number, z = 0, tone = 0): string {
-  const r = ROCK[cls]!, h = clamp01(z / MAX_LEVEL);
+  const r = ROCK[cls]!, h = clamp01(z / (MOUNTAIN_TERRACE * STEP_LEVELS));
   const c = mix(mix(r.lit, DEEP_LIT, h * 0.24), mix(r.dark, DEEP_DARK, h * 0.22), shade);
   return tone > 0 ? mix(c, r.rim, tone * 0.22 * (1 - shade * 0.45)) : tone < 0 ? mix(c, r.line, -tone * 0.2) : c;
 }

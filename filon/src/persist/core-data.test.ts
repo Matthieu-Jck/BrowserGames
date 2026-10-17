@@ -42,7 +42,7 @@ describe('save 12 → 13 (D101): the data collector after « Traitement des donn
     const data = JSON.parse(JSON.stringify(serialize(sim))) as SaveData;
     data.v = 12;
     data.done = data.done.filter((id) => id !== 'an_data' && id !== 'ex_quartz');
-    data.projects = [{ id: 'ex_quartz', lab: lab.id!, cost: [J, 30_000], paid: [12_000], dur: 3000, el: 600, tokens: 9000, tokUsed: 1800 }];
+    data.projects = [{ id: 'ex_quartz', lab: lab.id!, cost: [J, 30_000], paid: [12_000], dur: 3000, el: 600, tokens: 9000, tokUsed: 1800 }] as unknown as SaveData['projects']; // save 12's shape
     const j0 = data.stock[J]!;
     const m = migrate(data);
     expect(m.from).toBe(12);

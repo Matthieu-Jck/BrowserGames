@@ -1,10 +1,13 @@
 /* research.css — the research half of the tech tree (D68–D70; ui/screens/research.ts, which
    imports it): the research lab's gate between the two blocks (D71), the tier bands and their heads, the trunk and the family lanes (their names per
    tier, the specialities' divider), the links (their kinds; a hovered node's chain lit, the rest
-   faded, D107), the research nodes (what they unlock, their time and data, their tokens, the
-   queue's tag), the header's research strip (slots, labs, the
-   token bill, the purse-in-the-red warning, the Compute Plan, the queue) and the detail pane's
-   research parts. The plans' half and the shared tree rules stay in screens.css. */
+   faded, D107), the research nodes (what they unlock, their data, their tokens from Tier 2, the
+   queue's tag), the header's research strip (slots, labs, the token bill, the purse-in-the-red
+   warning, the Compute Plan, the queue), the detail pane's research parts (the running project's
+   token row, its flows now and the flow it buys) and the launch dialog (D118, ../launch-dialog.ts).
+   D118 also: each tier band's head names the Core's level it needs, padlocked and the band hatched
+   below it, and a strong ink rule parts Tier 1 from Tier 2. The plans' half and the shared tree
+   rules stay in screens.css. */
 
 /* Research lanes' colours (--path): the trunk a plum ink, each family its own. */
 [data-lane='trunk'] { --path: #6a5a86; }
@@ -17,12 +20,10 @@
 /* The research lab's gate (D71) takes research's lilac. */
 [data-lane='gate'] { --path: var(--c-lilac-d); }
 
-/* Small inked marks in a line of text: a token, the clock, a padlock. */
+/* Small inked marks in a line of text: a token, a padlock. */
 .tr-mark { display: inline-block; width: 1.15em; height: 1.15em; flex: none; vertical-align: -0.22em; overflow: visible; }
 .tr-mark .m-hex { fill: var(--c-lilac-l); stroke: var(--c-ink); stroke-width: 1.3; stroke-linejoin: round; }
 .tr-mark .m-spark { fill: var(--c-lilac-d); }
-.tr-mark .m-face { fill: var(--c-paper); stroke: var(--c-ink); stroke-width: 1.4; }
-.tr-mark .m-hand { fill: none; stroke: var(--c-ink); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 .tr-mark .m-shackle { fill: none; stroke: var(--c-ink-soft); stroke-width: 1.6; }
 .tr-mark .m-body { fill: var(--c-coral); stroke: var(--c-ink); stroke-width: 1.2; }
 
@@ -61,16 +62,40 @@
 .tr-tiercol[data-tier='2'] { background: rgba(157, 140, 201, 0.10); }
 .tr-tiercol[data-tier='3'] { background: rgba(157, 140, 201, 0.16); }
 .tr-tiercol[data-tier='4'] { background: rgba(106, 90, 134, 0.16); }
+/* A band whose Core level is not reached (D118): hatched in ink over its tint, its edge dashed. */
+.tr-tiercol[data-locked] {
+  border-style: dashed; border-color: rgba(30, 27, 46, 0.32);
+  background-image: repeating-linear-gradient(135deg, rgba(30, 27, 46, 0.075) 0 2px, transparent 2px 11px);
+}
 .tr-tierhead {
-  position: absolute; z-index: 1; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto;
-  column-gap: 14px; align-items: center; padding: 6px 14px 0;
-  border-bottom: 2px solid rgba(30, 27, 46, 0.18); border-radius: 14px 14px 0 0;
+  position: absolute; z-index: 1; display: flex; flex-direction: column; justify-content: center; gap: 3px;
+  padding: 4px 14px 2px; border-bottom: 2px solid rgba(30, 27, 46, 0.18); border-radius: 14px 14px 0 0;
   background: color-mix(in srgb, var(--c-lilac-l) 26%, rgba(255, 252, 246, 0.9));
 }
-.tr-tiername { grid-row: 1 / 3; font-size: 30px; line-height: 1; color: var(--c-ink-soft); }
+.tr-tierhead[data-locked] {
+  border-bottom-style: dashed;
+  background: repeating-linear-gradient(135deg, rgba(30, 27, 46, 0.06) 0 2px, transparent 2px 9px), color-mix(in srgb, var(--c-paper-d) 70%, rgba(255, 252, 246, 0.9));
+}
+/* « Tier 2 · Cœur niveau 3 » (D118), then « Ouvert par … ». */
+.tr-tiertitle { display: flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; }
+.tr-tiername { font-size: 27px; line-height: 1; color: var(--c-ink-soft); }
+.tr-tierdot { font-size: 22px; line-height: 1; color: var(--c-ink-soft); }
 .tr-tierhead[data-open] .tr-tiername { color: var(--c-ink); }
 .tr-tierhead[data-on] .tr-tiername { text-decoration: underline 3px var(--c-turq); text-underline-offset: 4px; }
-.tr-opens { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--c-ink-soft); }
+/* The Core's level a tier needs: the Core's look at that level; padlocked, coral, while below it; ✓ once there. */
+.tr-core {
+  display: inline-flex; align-items: center; gap: 5px; padding: 0 10px 0 6px; height: 28px; cursor: help;
+  font: 700 13px/1 var(--f-body); color: var(--c-ink);
+  border: 1.5px solid var(--c-turq-d); border-radius: 999px; background: color-mix(in srgb, var(--c-turq-l) 45%, var(--c-paper));
+}
+.tr-core canvas { width: 24px; height: 24px; display: block; }
+.tr-core .tr-mark { display: none; width: 15px; height: 15px; }
+.tr-core .tr-gatecheck { display: inline; }
+.tr-tierhead[data-locked] .tr-core { border: 2px dashed var(--c-coral-d); background: var(--c-paper); color: var(--c-coral-d); }
+.tr-tierhead[data-locked] .tr-core .tr-mark { display: inline-block; }
+.tr-tierhead[data-locked] .tr-core .tr-gatecheck { display: none; }
+.tr-tierhead[data-locked] .tr-core canvas { filter: grayscale(0.6); opacity: 0.8; }
+.tr-opens { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--c-ink-soft); white-space: nowrap; }
 .tr-gate {
   display: inline-flex; align-items: center; gap: 4px; min-width: 0; padding: 1px 8px 1px 5px; cursor: pointer;
   font: 600 12px/16px var(--f-body); color: var(--c-ink); white-space: nowrap;
@@ -80,10 +105,29 @@
 .tr-gatecheck { display: none; color: var(--c-turq-d); font-weight: 700; }
 .tr-tierhead[data-open] .tr-gate { border-style: solid; border-color: var(--c-turq-d); background: color-mix(in srgb, var(--c-turq-l) 45%, var(--c-paper)); }
 .tr-tierhead[data-open] .tr-gate .tr-mark { display: none; }
-.tr-tierhead[data-open] .tr-gatecheck { display: inline; }
+.tr-tierhead[data-open] .tr-gate .tr-gatecheck { display: inline; }
 /* The selected node opens this tier: its gate pill lights up. */
 .tr-tierhead[data-opens] .tr-gate { outline: 3px solid var(--c-turq); outline-offset: 1px; animation: tr-opens 1.4s ease-in-out infinite; }
 @keyframes tr-opens { 50% { outline-color: rgba(63, 184, 175, 0.35); } }
+/* Tier 1 | Tier 2 (D118): a strong ink rule down the wider gap — a thick stroke and a thin one beside
+   it, a padlock on a disc at its head while Tier 2's Core level is not reached. Its width holds on
+   screen whatever the zoom. */
+.tr-tierrule {
+  position: absolute; width: 0; pointer-events: none;
+  border-left: max(4px, calc(2.6px / var(--tz, 1))) solid var(--c-ink); border-radius: 3px; transform: translateX(-50%);
+}
+.tr-tierrule::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: max(5px, calc(4px / var(--tz, 1)));
+  border-left: max(1.5px, calc(1.2px / var(--tz, 1))) solid var(--c-ink); opacity: 0.55;
+}
+.tr-rulecap {
+  position: absolute; top: 14px; left: 0; width: 24px; height: 24px; transform: translateX(calc(-50% - 2px));
+  display: grid; place-items: center; border: 2px solid var(--c-ink); border-radius: 50%; background: var(--c-paper);
+}
+.tr-rulecap .tr-mark { display: none; width: 14px; height: 14px; }
+.tr-tierrule[data-locked] .tr-rulecap { border-color: var(--c-coral-d); }
+.tr-tierrule[data-locked] .tr-rulecap .tr-mark { display: block; }
+.tr-canvas[data-zoom] .tr-rulecap { display: none; }
 
 /* ── lanes: the trunk and the families ── */
 .tree .tr-lane[data-kind='research'] { gap: 2px; }
@@ -143,20 +187,12 @@
 .tr-rcost .tr-chip canvas, .tr-rcost .tr-mark { width: 13px; height: 13px; }
 .tr-oc { color: var(--c-ink-soft); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; }
 .tr-oc .coin { width: 1em; height: 1em; }
-/* No token billed before the servers' plan (D105): the token chip at 0, faded, « offert » in turquoise. */
-.tr-chip[data-k='tok'][data-free] { opacity: 0.6; }
-.tr-oc[data-free] { color: var(--c-turq-d); font-weight: 700; cursor: help; }
-.rs-rcosts li[data-free] { cursor: help; }
-.rs-free { color: var(--c-turq-d); font-weight: 600; }
-/* Its minimum time and its data on one line (D107: the time first), its tokens and their price on the next. */
+/* Its data on one line, its tokens and their price on the next from Tier 2 (D118: no time). */
 .tr-rline { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 11.5px; line-height: 16px; white-space: nowrap; }
-.tr-rline .tr-time { display: inline-flex; align-items: center; gap: 3px; margin-left: 0; font-weight: 700; color: var(--c-ink); }
 .tr-rline .tr-mark { width: 13px; height: 13px; }
 .tr-rfoot { display: flex; align-items: center; gap: 8px; font-size: 11.5px; line-height: 15px; color: var(--c-ink-soft); white-space: nowrap; }
 .tr-tokbox { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
 .tr-tokbox .tr-chip { color: var(--c-ink); }
-.tr-rfoot .tr-chip .tr-mark { width: 13px; height: 13px; }
-.tr-rfoot .tr-time { display: inline-flex; align-items: center; gap: 3px; margin-left: 0; }
 .tr-rfoot .tr-mark { width: 13px; height: 13px; }
 .tr-node[data-state='done'] .tr-rline, .tr-node[data-state='done'] .tr-tokbox { opacity: 0.55; }
 /* Queued in a lab (the Research Queue): a tag on its upper left edge, the lab's number. */
@@ -207,12 +243,27 @@
 .rs-cmp small { font-size: 10.5px; color: var(--c-ink-soft); }
 .rs-cmp b { font-weight: 700; color: var(--c-coral-d); white-space: nowrap; }
 .rs-cmp[data-best] { background: var(--c-turq-l); }
-/* A running project's tokens now (D102): a minute, their ◉ a minute, the servers' share — icons, the words on hover. */
-.rs-toknow { display: flex; align-items: center; gap: 5px; margin: 6px 0 2px; font-size: 12.5px; cursor: help; }
-.rs-toknow .kmark { width: 1.2em; height: 1.2em; }
-.rs-toknow canvas { display: block; margin-left: 6px; }
-.rs-toknow b { font-weight: 700; }
-.rs-toknow .coin-w { margin-left: 6px; }
+/* A running project's tokens now (D102, D118): the servers' share and the flow bought a minute, their ◉ a minute — icons, the words on hover. */
+.rs-toknow { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin: 6px 0 2px; font-size: 12.5px; cursor: help; }
+.rs-tk { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.rs-tk canvas { display: block; width: 16px; height: 16px; }
+.rs-tk .glyph { width: 15px; height: 15px; }
+.rs-toknow b { font-weight: 700; font-variant-numeric: tabular-nums; }
+.rs-toknow[data-held] .rs-tk[data-k='bought'] b { color: var(--c-coral-d); }
+.rs-toknow[data-in] { opacity: 0.5; }
+/* The flow it buys (D118): − / + on the launch dialog's ladder. */
+.rs-flow { display: flex; align-items: center; gap: 6px; margin: 6px 0 2px; font-size: 12.5px; }
+.rs-flow[hidden] { display: none; }
+.rs-flow .rs-plabel { flex: 1; min-width: 0; }
+.rs-flow .rs-plabel .glyph { width: 15px; height: 15px; }
+.rs-flowbtn {
+  width: 26px; height: 26px; padding: 0; display: grid; place-items: center; cursor: pointer;
+  border: 1.5px solid var(--c-ink); border-radius: 8px; background: var(--c-paper); font: 700 16px/1 var(--f-body); color: var(--c-ink);
+}
+.rs-flowbtn:hover:not([disabled]) { background: var(--c-peach-l); }
+.rs-flowbtn[disabled] { opacity: 0.35; cursor: default; }
+.rs-flowval { display: inline-flex; align-items: center; gap: 3px; min-width: 6.4em; justify-content: center; white-space: nowrap; }
+.rs-flowval b { font-variant-numeric: tabular-nums; }
 .rs-plan[aria-pressed='true'] { background: color-mix(in srgb, var(--c-turq-l) 60%, var(--c-paper)); }
 .rs-plan[aria-pressed='true'] b { background: var(--c-turq-d); color: var(--c-paper); border-color: var(--c-ink); }
 .rs-qchip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 4px 1px 8px; border-radius: 999px; background: #ebe3f8; border: 1.5px solid var(--c-lilac-d); font-size: 12px; }
@@ -232,7 +283,7 @@
 .rs-rcosts .tr-mark { width: 18px; height: 18px; }
 .rs-cl { display: inline-flex; align-items: center; gap: 5px; }
 .rs-rcosts .rs-price { flex-basis: 100%; padding-left: calc(3.4em + 6px); color: var(--c-ink); font-weight: 600; margin: -2px 0 2px; }
-/* A running project: data paid, tokens used, time run — a bar each. */
+/* A running project: data paid, tokens in — a bar each (D118: no time). */
 .rs-prog { margin-top: 4px; }
 .rs-prow { display: grid; grid-template-columns: 118px 1fr auto; align-items: center; gap: 6px; font-size: 12.5px; margin: 3px 0; }
 .rs-plabel { line-height: 1.15; }
@@ -240,6 +291,7 @@
 .rs-plabel canvas { width: 16px; height: 16px; display: block; }
 .rs-pbar { height: 8px; border: 1.5px solid var(--c-ink); border-radius: 5px; background: var(--c-paper-d); overflow: hidden; }
 .rs-pbar > span { display: block; height: 100%; width: 0; background: var(--c-turq); }
+.rs-prow[data-k='tok'] .rs-pbar > span { background: var(--c-lilac-d); }
 .rs-prow small { font-variant-numeric: tabular-nums; color: var(--c-ink-soft); white-space: nowrap; }
 .rs-heldnote { margin-top: 6px; padding: 4px 8px; border-radius: 6px; background: var(--c-coral-d); color: var(--c-paper); font-weight: 700; font-size: 12.5px; }
 /* The Research Queue: one line per lab. */
@@ -277,7 +329,29 @@
   background: color-mix(in srgb, var(--path, var(--c-lilac-l)) 22%, var(--c-paper));
   border: 1.5px solid color-mix(in srgb, var(--path, var(--c-ink)) 75%, transparent); box-shadow: 1px 1px 0 rgba(30, 27, 46, 0.35);
 }
-.tr-pin[data-kind='tier'] { padding: 2px 14px; font-size: 18px; line-height: 22px; background: var(--c-paper); border-color: var(--c-ink); }
+.tr-pin[data-kind='tier'] {
+  display: inline-flex; align-items: center; gap: 5px; padding: 2px 12px; font-size: 13px; line-height: 22px;
+  background: var(--c-paper); border-color: var(--c-ink);
+}
+.tr-pin[data-kind='tier'] .lettering { font-size: 18px; }
+.tr-pin[data-kind='tier'] canvas { width: 20px; height: 20px; display: block; }
+.tr-pin[data-kind='tier'] .tr-mark { display: none; width: 15px; height: 15px; }
+/* A tier whose Core level is not reached (D118): its pin padlocked, coral, hatched. */
+.tr-pin[data-kind='tier'][data-locked] {
+  color: var(--c-coral-d); border: 2px dashed var(--c-coral-d);
+  background: repeating-linear-gradient(135deg, rgba(30, 27, 46, 0.06) 0 2px, transparent 2px 8px), var(--c-paper);
+}
+.tr-pin[data-kind='tier'][data-locked] .tr-mark { display: inline-block; }
+.tr-pin[data-kind='tier'][data-locked] canvas { filter: grayscale(0.6); }
+.tr-pinsub { display: inline-flex; align-items: center; gap: 4px; }
+.tr-pinshort { display: none; }
+/* The whole tree in view: the tier's name over its Core level, short, so the pin fits its narrow band. */
+.tr-pins[data-on='far'] .tr-pin[data-kind='tier'] { flex-direction: column; gap: 0; padding: 1px 8px 2px; line-height: 17px; border-radius: 12px; }
+.tr-pins[data-on='far'] .tr-pin[data-kind='tier'] .lettering { font-size: 15px; }
+.tr-pins[data-on='far'] .tr-pindot, .tr-pins[data-on='far'] .tr-pinlong { display: none; }
+.tr-pins[data-on='far'] .tr-pinsub { gap: 3px; font-size: 12px; }
+.tr-pins[data-on='far'] .tr-pin[data-kind='tier'] canvas { width: 16px; height: 16px; }
+.tr-pins[data-on='far'] .tr-pinshort { display: inline; }
 .tr-pin[hidden] { display: none; }
 /* At the whole tree's size the lanes are thin: smaller lane names, so neighbours both fit. */
 .tr-pins[data-on='far'] .tr-pin[data-kind='lane'] { padding: 0 7px; font-size: 11px; line-height: 15px; }
@@ -305,8 +379,83 @@
 .tr-canvas[data-zoom] .tr-link[data-gate] { stroke-dasharray: calc(3px / var(--tz)) calc(6px / var(--tz)); }
 .tr-canvas[data-zoom] .tr-link[data-hot], .tr-canvas[data-zoom][data-chain] .tr-link[data-chain] { stroke-width: calc(3px / var(--tz)); }
 
+/* ── the launch dialog (D118, ../launch-dialog.ts): over the tree, how many tokens a minute to buy ── */
+.ld-veil {
+  position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; padding: 16px;
+  background: radial-gradient(circle at 50% 45%, rgba(30, 27, 46, 0.16), rgba(30, 27, 46, 0.42));
+}
+.ld-veil[hidden] { display: none; }
+.ld {
+  position: relative; width: min(430px, 100%); max-height: 100%; overflow: auto; padding: 16px 18px 14px;
+  display: flex; flex-direction: column; gap: 10px; animation: ld-in 200ms ease-out;
+}
+@keyframes ld-in { from { opacity: 0; transform: translateY(8px) rotate(-0.5deg); } to { opacity: 1; transform: none; } }
+/* A lilac band across the top: research's colour. */
+.ld::before {
+  content: ''; position: absolute; left: -2px; right: -2px; top: -2px; height: 9px;
+  background: var(--c-lilac-d); border: 2px solid var(--c-ink); border-radius: 14px 9px 0 0 / 10px 15px 0 0;
+}
+.ld-head { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+.ld-icon {
+  flex: none; width: 54px; height: 54px; display: grid; place-items: center;
+  border: 2px solid var(--c-ink); border-radius: 16px; background: #f4effb; box-shadow: 2px 2px 0 var(--c-ink);
+}
+.ld-icon > canvas, .ld-icon > .coin { width: 44px; height: 44px; display: block; }
+.ld-title { display: flex; flex-direction: column; min-width: 0; }
+.ld-kicker { font: 700 10.5px var(--f-body); letter-spacing: 0.14em; text-transform: uppercase; color: var(--c-lilac-d); }
+.ld-name { margin: 1px 0 1px; font-size: 25px; font-weight: 400; line-height: 1.05; }
+.ld-kind { font-size: 12px; color: var(--c-ink-soft); }
+.ld-sec { display: flex; flex-direction: column; gap: 5px; padding-top: 9px; border-top: 1.5px dashed rgba(30, 27, 46, 0.25); }
+.ld-row { display: flex; align-items: center; gap: 7px; font-size: 13px; cursor: help; }
+.ld-row > b { font-size: 17px; font-variant-numeric: tabular-nums; }
+.ld-row small { color: var(--c-ink-soft); }
+.ld-row .kmark { width: 22px; height: 22px; }
+.ld-row canvas { width: 22px; height: 22px; display: block; flex: none; }
+.ld-row[data-none] { opacity: 0.55; }
+.ld-mine { margin-left: auto; padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--c-turq-l) 55%, var(--c-paper)); color: var(--c-ink) !important; font-weight: 600; white-space: nowrap; }
+.ld-mine[data-short] { background: color-mix(in srgb, var(--c-coral) 22%, var(--c-paper)); color: var(--c-coral-d) !important; }
+.ld-note { font-size: 12px; line-height: 1.3; color: var(--c-ink-soft); padding-left: 29px; }
+.ld-note[hidden] { display: none; }
+.ld-buyhead { display: flex; align-items: center; gap: 6px; font: 600 13px var(--f-body); cursor: help; }
+.ld-buyhead .glyph { width: 18px; height: 18px; }
+.ld-slide { display: flex; align-items: center; gap: 6px; }
+.ld-step {
+  flex: none; width: 30px; height: 30px; padding: 0; display: grid; place-items: center; cursor: pointer;
+  border: 1.5px solid var(--c-ink); border-radius: 8px; background: var(--c-paper); font: 700 18px/1 var(--f-body); color: var(--c-ink);
+}
+.ld-step:hover:not([disabled]) { background: var(--c-peach-l); }
+.ld-step[disabled] { opacity: 0.35; cursor: default; }
+.ld-slider { flex: 1; min-width: 60px; accent-color: var(--c-lilac-d); cursor: pointer; }
+.ld-slider:focus-visible { outline: 2px solid var(--c-turq); outline-offset: 3px; border-radius: 6px; }
+.ld-flow { flex: none; display: inline-flex; align-items: center; gap: 4px; min-width: 7.6em; justify-content: flex-end; white-space: nowrap; font-size: 14px; }
+.ld-flow b { font-variant-numeric: tabular-nums; }
+.ld-flow .kmark { width: 18px; height: 18px; }
+.ld-cost { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding-left: 36px; }
+.ld-cost b { font-size: 16px; color: var(--c-coral-d); font-variant-numeric: tabular-nums; }
+.ld-cost b[data-free] { color: var(--c-turq-d); font-size: 14px; }
+.ld-cost small { color: var(--c-ink-soft); font-size: 12.5px; }
+.ld-end { gap: 6px; }
+.ld-eta { font: 400 22px/1.1 var(--f-title); cursor: help; }
+.ld-eta[data-never] { color: var(--c-coral-d); }
+.ld-parts { display: flex; flex-wrap: wrap; gap: 5px 7px; }
+.ld-part {
+  display: inline-flex; align-items: center; gap: 4px; padding: 1px 9px 1px 5px; cursor: help; white-space: nowrap;
+  border: 1.5px solid rgba(30, 27, 46, 0.3); border-radius: 999px; background: var(--c-paper); font-size: 12.5px; font-weight: 600;
+}
+.ld-part canvas { width: 18px; height: 18px; display: block; }
+.ld-part .kmark { width: 17px; height: 17px; }
+.ld-part[data-tone='never'] { color: var(--c-coral-d); border-color: var(--c-coral-d); border-style: dashed; }
+.ld-part[data-tone='unknown'] { color: var(--c-ink-soft); border-style: dotted; }
+.ld-part[data-tone='here'] { color: var(--c-turq-d); border-color: var(--c-turq-d); }
+.ld-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 2px; }
+/* A finger (D96): the steps and the flow's − / + big enough to tap. */
+@media (pointer: coarse) {
+  .ld-step, .rs-flowbtn { width: 44px; height: 44px; font-size: 20px; }
+  .ld-actions .btn { min-height: 44px; }
+}
+
 /* Reduced motion: the warnings and highlights hold still. */
 @media (prefers-reduced-motion: reduce) {
-  .rs-held, .tr-tierhead[data-opens] .tr-gate { animation: none; }
+  .rs-held, .tr-tierhead[data-opens] .tr-gate, .ld { animation: none; }
   .tr-canvas .tr-node, .tr-canvas .tr-link { transition: none; }
 }

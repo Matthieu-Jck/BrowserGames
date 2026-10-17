@@ -66,8 +66,14 @@ export interface Chunk {
   level: Uint8Array;
 }
 
-/** The highest level of the land (D45: mountains of height 5 at most). */
-export const MAX_LEVEL = 5;
+/** The highest level of the mountains, the massifs and the Crown (D45: height 5 at most). */
+export const MOUNTAIN_LEVEL = 5;
+/**
+ * The highest level of the land: the mountains', or a level over them on map 4's spring summit
+ * (D115; owner, 2026-10-17: « the bigger moutain needs to be a little plateau, and at least 6 in
+ * height »).
+ */
+export const MAX_LEVEL = 6;
 
 const N_CHUNK_TILES = CHUNK * CHUNK;
 

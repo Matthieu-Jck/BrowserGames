@@ -52,74 +52,170 @@ await hideUi();
 await view('iso');
 await page.evaluate(() => { window.FL.pause(); window.FL.dayPhase(null); window.FL.gleaners({ toNight: 2 }); window.FL.tick(400); });
 
-// A raid stepped through (D112), shot at near (1.7) and mid (0.85) zoom at each stop: the group
-// gliding in out of the dunes, waiting at its posts, an arm out over the line, the grab (the item
-// off the belt into a hand, at the tick the sim took it), carrying, and the group going away.
+// A raid stepped through (D112), by buildings: a silo placed just behind the band and one just in
+// front of it (on the claim's land, granted for the shot) so the depth shows; the band coming in out
+// of the empty desert, waiting; every take frame by frame — the hand on the token as it comes, the
+// token gone from the belt and in the hand, riding the arm — at near zoom (1.7, some at mid 0.85);
+// the band going back out. The view's own check of every take (`FL.gleaners()`: paired, onBelt,
+// unforeseen, unseen, late) is printed, and a contact sheet of it all: shot-gleaners-sequence.png.
 const both = async (name, at, ms = 300) => {
   await look(at, 1.7); await settle(ms); await snap(`shot-gleaners-seq-${name}.png`);
   await look(at, 0.85); await settle(ms); await snap(`shot-gleaners-seq-${name}-mid.png`);
 };
-let caught = null, reached = false;
+const near = async (name, at, ms = 250) => { await look(at, 1.7); await settle(ms); await snap(`shot-gleaners-seq-${name}.png`); };
+const sheet = [];
+let caught = null;
 for (let attempt = 0; attempt < 10 && !caught; attempt++) {
   // A raid ahead that falls in the night from its arrival to its end, a band of three or more if there is one.
   const raid = await page.evaluate(() => {
     const g = window.FL.gleaners(), sim = window.FL.app.sim;
-    const ok = g.raids.filter((r) => r.at - g.tick > 180 && sim.gleanNight(r.at - 200) && sim.gleanNight(r.at + 800));
+    const ok = g.raids.filter((r) => r.at - g.tick > 260 && sim.gleanNight(r.at - 200) && sim.gleanNight(r.at + 800));
     return ok.find((r) => r.posts.length >= 3) ?? ok[0] ?? null;
   });
   if (!raid) {
     await page.evaluate(() => { const s = window.FL.app.sim; if (s.gleanNight()) window.FL.tick(1200); else window.FL.gleaners({ toNight: 0.5 }); });
     continue;
   }
-  const t0 = raid.at, at = [raid.x, raid.y];
-  console.log(`raid at ${t0} on ${raid.x},${raid.y}: ${raid.posts.length} posts`);
-  await tick(t0 - 120 - (await now()));
-  await both('1-arrive', at, 700);
+  const t0 = raid.at;
+  // Two silos by the band: one up the screen (behind it), one down the screen (in front of it).
+  const silos = await page.evaluate(([x, y, wat]) => {
+    const sim = window.FL.app.sim, v = window.FL.app.gleaners;
+    window.FL.unlock('silo');
+    for (const [it, n] of [['iron_plate', 600], ['copper_wire', 300], ['glass', 200], ['gear', 200], ['stone', 600], ['brick', 300]]) { try { sim.grant(it, n); } catch { /* not an item here */ } }
+    sim.ensureCompiled(); v.rebuild(sim);
+    const d = v.describe_().find((r) => r.x === x && r.y === y);
+    if (!d) return { err: 'no such raid' };
+    // The band's stands, and the tile beyond each (a Gleaner on the line's near side stands 1.8 tiles out: on it).
+    const keep = new Set(d.stands.flatMap(([sx, sy]) => [0, 1].map((k) => Math.floor(sy + d.side[1] * k) * 1024 + Math.floor(sx + d.side[0] * k))));
+    // Top-left corners whose silo's centre lies 2–4.5 tiles up (or down) the screen from one of the
+    // stands and nearly in line with it on screen (so it hides or is hidden by that Gleaner), best first.
+    const ring = (sign, wide = 2.5) => {
+      const out = [];
+      const xs = d.stands.map((p) => p[0]), ys = d.stands.map((p) => p[1]);
+      for (let tx = Math.floor(Math.min(...xs)) - 6; tx <= Math.max(...xs) + 5; tx++) {
+        for (let ty = Math.floor(Math.min(...ys)) - 6; ty <= Math.max(...ys) + 5; ty++) {
+          const cx = tx + 1, cy = ty + 1;
+          let best = Infinity;
+          for (const [sx, sy] of d.stands) {
+            const dz = sign * (cx + cy - sx - sy), dx = Math.abs(cx - cy - (sx - sy));
+            if (dz >= 2 && dz <= 4.5 && dx <= wide) best = Math.min(best, dx + Math.abs(dz - 3) * 0.5);
+          }
+          if (best < Infinity) out.push([tx, ty, best]);
+        }
+      }
+      return out.sort((p, q) => p[2] - q[2] || p[0] - q[0] || p[1] - q[1]).map(([tx, ty]) => [tx, ty]);
+    };
+    const place = (cands) => {
+      for (const [tx, ty] of cands) {
+        // Off the band's stands, and a tile clear of any ribbon (touching one would change what is exposed, so the raid).
+        let clash = false;
+        for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) if (keep.has((ty + j) * 1024 + tx + i)) clash = true;
+        for (let i = -1; i <= 2 && !clash; i++) for (let j = -1; j <= 2; j++) if (/ribbon/.test(window.FL.entityAt(tx + i, ty + j)?.def ?? '')) clash = true;
+        if (clash) continue;
+        for (const [i, j] of [[0, 0], [1, 0], [0, 1], [1, 1]]) sim.land.granted.add(window.FL.parcelAt(tx + i, ty + j));
+        if (sim.place('silo', tx, ty, 0).ok) return [tx, ty];
+      }
+      return null;
+    };
+    // Behind the band may be the line and a cliff: then a little to one side of it.
+    const back = place(ring(-1)) ?? place(ring(-1, 6.5)), front = place(ring(1));
+    sim.ensureCompiled(); v.rebuild(sim);
+    // The silos may shift the line's exposure, so its posts: the same raid is the one at the same tick of the window, nearest.
+    const e = v.describe_().filter((r) => r.at === wat).sort((p, q) => Math.abs(p.x - x) + Math.abs(p.y - y) - Math.abs(q.x - x) - Math.abs(q.y - y))[0];
+    return { back, front, stands: e?.stands, side: e?.side, bearing: e?.bearing, mid: e ? [e.x, e.y] : null };
+  }, [raid.x, raid.y, raid.at % 2400]);
+  console.log(`raid at ${t0} on ${raid.x},${raid.y}: ${raid.posts.length} posts; silos`, JSON.stringify(silos));
+  if (!silos.stands) continue;
+  const mid = silos.stands[silos.stands.length >> 1];
+  const at = [mid[0], mid[1]];
+  const posts = await page.evaluate(([mx, my]) => (window.FL.gleaners().raids.find((r) => r.x === mx && r.y === my)?.posts ?? []).map(([x, y]) => y * 1024 + x), silos.mid ?? [raid.x, raid.y]);
+  const count0 = await page.evaluate(() => { const g = window.FL.gleaners(); return { paired: g.paired, onBelt: g.onBelt, unforeseen: g.unforeseen, unseen: g.unseen, late: g.late }; });
+  await tick(t0 - 150 - (await now()));
+  await both('1-arrive', at, 700); sheet.push(['seq-1-arrive-mid', 'in from the empty desert (mid zoom)']);
   await tick(t0 - 30 - (await now()));
-  await both('2-gather', at);
-  await tick(t0 + 8 - (await now()));
-  await both('3-wait', at);
-  // On tick by tick to the first take on this raid's posts.
-  const keys = raid.posts.map(([x, y]) => y * 1024 + x);
-  let take = null;
-  for (let k = 0; k < 600 && !take; k += 1) {
-    await tick(1);
-    take = await page.evaluate(([ks, from]) => { const r = window.FL.app.sim.gleaners.recent; for (let i = 0; i + 2 < r.length; i += 3) if (ks.includes(r[i]) && r[i + 2] >= from) return [r[i], r[i + 1], r[i + 2]]; return null; }, [keys, t0]);
-    if (!take && k % 5 === 0) {
-      const f = await page.evaluate(() => window.FL.gleaners());
-      if (f.reaching > 0 && !reached) { await look(at, 1.7); await settle(250); await snap('shot-gleaners-seq-4-reach.png'); reached = true; }
+  await near('2-gather', at); sheet.push(['seq-2-gather', 'gathering at the posts']);
+  await tick(t0 + 4 - (await now()));
+  await both('3-wait', at); sheet.push(['seq-3-wait', 'waiting, a silo behind and one in front']);
+  // Every take of the raid, tick by tick: when a post foresees its take on this very tick, the frame
+  // before it (the hand on the token), the one after (the token off the belt, in the hand), and four
+  // ticks on (rising up the arm); on until every post has taken (the sim's own log) or the raid is over.
+  const takenSoFar = () => page.evaluate(([ks, from]) => {
+    const r = window.FL.app.sim.gleaners.recent;
+    let n = 0;
+    for (let i = 0; i + 2 < r.length; i += 3) if (ks.includes(r[i]) && r[i + 2] >= from && r[i + 2] < from + 600) n++;
+    return n;
+  }, [posts, t0]);
+  let k = 0;
+  const riding = []; // [tick to shoot, take number, tile]
+  while ((await now()) < t0 + 600 && ((await takenSoFar()) < posts.length || riding.length)) {
+    const f = await page.evaluate(() => ({ tick: window.FL.app.sim.tick, fore: window.FL.app.gleaners.foreseen_() }));
+    const ride = riding.findIndex(([t]) => t === f.tick);
+    if (ride >= 0) {
+      const [, n, tile] = riding.splice(ride, 1)[0];
+      await near(`grab-${n}-c`, [tile & 1023, tile >> 10], 250); sheet.push([`seq-grab-${n}-c`, `take ${n}: rising up the arm`]);
     }
+    const due = f.fore.filter(([tile, T]) => T === f.tick && posts.includes(tile));
+    if (due.length) {
+      const [tile, T, item] = due[0];
+      const pt = [tile & 1023, tile >> 10];
+      k++;
+      await near(`grab-${k}-a`, pt, 300); sheet.push([`seq-grab-${k}-a`, `take ${k}: the hand on the token (tick ${T})`]);
+      await tick(1);
+      await near(`grab-${k}-b`, pt, 300); sheet.push([`seq-grab-${k}-b`, `take ${k}${due.length > 1 ? ` (+${due.length - 1} beside)` : ''}: off the belt, in the hand (${T + 1})`]);
+      const took = await page.evaluate(([tl, tk]) => { const r = window.FL.app.sim.gleaners.recent; for (let i = 0; i + 2 < r.length; i += 3) if (r[i] === tl && r[i + 2] === tk) return r[i + 1]; return -1; }, [tile, T]);
+      console.log(`  take ${k} on ${tile & 1023},${tile >> 10} at ${T}: foreseen item ${item}, the sim took ${took}${due.length > 1 ? `; ${due.length - 1} more on the same step` : ''}`);
+      if (took !== item) console.log('  ✗ the take foreseen is not the one made');
+      riding.push([T + 5, k, tile]);
+      caught = { x: tile & 1023, y: tile >> 10, item, T, silos: [silos.back, silos.front].filter(Boolean) };
+      continue;
+    }
+    await tick(1);
+    await page.waitForTimeout(40);
   }
-  if (!take) { console.log('  no take this raid'); continue; }
-  const [tile, item, T] = take;
-  const tx = tile & 1023, ty = tile >> 10;
-  console.log(`  took item ${item} at ${T} on ${tx},${ty}`);
-  caught = { x: tx, y: ty, item, T };
-  // The grab: the belt's token gone, the item riding the arm back into the hand.
-  await tick(T + 2 - (await now()));
-  await both('5-grab', [tx, ty], 250);
-  await tick(T + 7 - (await now()));
-  await both('6-grab', [tx, ty], 250);
-  await tick(T + 20 - (await now()));
-  await both('7-holding', at, 250);
+  if (!caught) { console.log('  no take this raid'); continue; }
+  const count1 = await page.evaluate(() => { const g = window.FL.gleaners(); return { paired: g.paired, onBelt: g.onBelt, unforeseen: g.unforeseen, unseen: g.unseen, late: g.late }; });
+  const delta = Object.fromEntries(Object.keys(count1).map((key) => [key, count1[key] - count0[key]]));
+  console.log('  takes checked by the view', JSON.stringify(delta));
+  if (delta.onBelt || delta.unforeseen || delta.unseen) console.log('  ✗ a grab without its token');
+  await both('7-holding', at); sheet.push(['seq-7-holding', 'held up, glowing']);
+  console.log('  holding', JSON.stringify(await page.evaluate(() => { const g = window.FL.gleaners(); return { tick: g.tick, night: g.night, figures: g.figures, waiting: g.waiting, carrying: g.carrying, raid: window.FL.app.gleaners.raidAt_, view: window.FL.view() }; })));
   // On to the band leaving: 40 ticks after every post has taken (the view's LINGER), or at the raid's end (600).
   const leaveAt = () => page.evaluate(([ks, from]) => {
     const r = window.FL.app.sim.gleaners.recent, got = new Map();
     for (let i = 0; i + 2 < r.length; i += 3) if (ks.includes(r[i]) && r[i + 2] >= from && r[i + 2] < from + 600) got.set(r[i], r[i + 2]);
     return got.size === ks.length ? Math.max(...got.values()) + 40 : null;
-  }, [keys, t0]);
+  }, [posts, t0]);
   let leave = await leaveAt();
   while (!leave && (await now()) < t0 + 600) { await tick(10); leave = await leaveAt(); }
   leave ??= t0 + 600;
-  console.log(`  leaving at ${leave} (${leave - t0} into the raid)`);
-  await tick(leave - (await now()));
-  await tick(25);
-  await both('8-leave', at, 300);
-  await tick(75);
-  await both('9-away', at, 300);
-  await look(at, 0.35); await settle(400); await snap('shot-gleaners-seq-9-away-far.png');
+  console.log(`  leaving at ${leave} (${leave - t0} into the raid), bearing ${silos.bearing.map((v) => v.toFixed(2)).join(',')}`);
+  await tick(leave + 45 - (await now()));
+  await both('8-leave', at); sheet.push(['seq-8-leave', 'back out into the desert']);
+  await tick(70);
+  const far = [at[0] + silos.bearing[0] * 4, at[1] + silos.bearing[1] * 4];
+  await both('9-away', far); sheet.push(['seq-9-away', 'fading into the empty desert']);
 }
 if (!caught) console.log('✗ no take caught');
+// The contact sheet: every frame above, cropped round its middle.
+{
+  const { writeFileSync, unlinkSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const dir = fileURLToPath(new globalThis.URL('.', import.meta.url));
+  const html = `<html><body style="margin:0;background:#1b1830;font:15px sans-serif;color:#eee">
+<style>figure{margin:6px;display:inline-block}.f{width:560px;height:373px;background-size:1120px 747px;background-position:-280px -187px;border-radius:6px}figcaption{padding:4px 2px}</style>
+<div style="padding:8px 10px;font-size:18px">D112 — a raid of the Gleaners by two silos, near zoom (1.7)</div>
+${sheet.map(([f, l]) => `<figure><div class="f" style="background-image:url('file://${dir}shot-gleaners-${f}.png')"></div><figcaption>${l}</figcaption></figure>`).join('')}</body></html>`;
+  const tmp = `${tmpdir()}/gleaner-sheet-${process.pid}.html`;
+  writeFileSync(tmp, html);
+  const sp = await context.newPage();
+  await sp.setViewportSize({ width: 1752, height: 900 });
+  await sp.goto(`file://${tmp}`);
+  await sp.waitForTimeout(800);
+  await sp.screenshot({ path: shot('shot-gleaners-sequence.png'), fullPage: true });
+  await sp.close();
+  unlinkSync(tmp);
+  console.log('✓ shot-gleaners-sequence.png');
+}
 if (process.env.ONLY === 'raid') { await browser.close(); process.exit(0); } // the raid alone, for quick looks
 
 // The Logistique view: the night's marks.
@@ -129,7 +225,9 @@ await hideUi(false);
 await settle(1200);
 await snap('shot-gleaners-logistics.png');
 
-// A stretch of the line fenced in: a box round it, two tiles off each side, the ribbon its gate; one prowls outside.
+// The silos set for the raid go (nothing lost: the Heart takes them back), so the fence has its room.
+if (caught && caught.silos) await page.evaluate((list) => { for (const [x, y] of list) window.FL.app.sim.remove(x, y); }, caught.silos);
+// A stretch of the line fenced in: a box round it, two tiles off each side, the ribbon its gate; two pace outside.
 const box = await page.evaluate(([x, y]) => {
   const sim = window.FL.app.sim;
   window.FL.unlock('xp_guard');
@@ -151,7 +249,9 @@ await page.evaluate(() => window.FL.mapView('normal'));
 await hideUi();
 await look(at, 1.2);
 await look(at, 0.8);
-// A prowler at the start of its visit ([x, y, phase]), then on into its pacing along the fence.
+// A prowler at the start of its visit ([x, y, phase]), then on into its pacing along the fence — at
+// night (the raid may have run the night out: on to the next one).
+await page.evaluate(() => { if (!window.FL.app.sim.gleanNight(window.FL.app.sim.tick + 400)) window.FL.gleaners({ toNight: 0.3 }); });
 let prowl = null;
 for (let k = 0; k < 300 && !prowl; k++) {
   await tick(17); await page.waitForTimeout(40);
@@ -160,7 +260,7 @@ for (let k = 0; k < 300 && !prowl; k++) {
 }
 if (prowl) { await tick(Math.round(120 - prowl[2])); await look(prowl, 1.5); }
 await settle(800);
-console.log('figures by the fence', prowl);
+console.log('figures by the fence', prowl, JSON.stringify(await page.evaluate(() => { const v = window.FL.app.gleaners, sim = window.FL.app.sim; v.rebuild(sim); return { tick: sim.tick, night: sim.gleanNight(), visits: v.prowls.map((w) => [w.x, w.y, (w.h + sim.tick) % 2400]) }; })));
 await snap('shot-gleaners-fenced-night.png');
 await page.evaluate(() => window.FL.dayPhase('noon'));
 await settle(800);

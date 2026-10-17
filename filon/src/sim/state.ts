@@ -12,13 +12,14 @@
 //   3. power: per grid, demands vs weather → satisfaction ‰, dispatch, accumulators
 //   4. flow phases A (offers/accepts) → B (transfers) → C (machines, drills, internal updates);
 //      at night the Gleaners take from the exposed ribbons (systems/gleaners.ts, D103)
-//   5. research projects pay their data and advance; servers make tokens; the Heart and the
+//   5. research projects take the data in their labs; servers make tokens; the Heart and the
 //      autonomous labs make data files (systems/research.ts)
 //   6. landscape: dig / fill jobs advance and finish (the drifters' freight between skydocks,
 //      which came next, went with the skydocks: D108)
 //   7. tick++; at every epoch boundary (each game minute) the trade posts trade and the Crier
 //      settles (systems/trade.ts), the leases due take their hour's rent or lapse
-//      (systems/land.ts), then research's tokens are billed (systems/research.ts `tokenEpoch`),
+//      (systems/land.ts), then research's tokens are delivered — the servers' minute, the bought
+//      flows billed — and the projects they complete finish (systems/research.ts `tokenEpoch`, D118),
 //      then the expertises' feats and slots (systems/expertise.ts `expertiseEpoch`, D93), then the
 //      Gleaners' nightfall and dawn (systems/gleaners.ts `gleanEpoch`, D103) — the catch-up calls
 //      the same functions — then an 'epoch' event
@@ -38,9 +39,9 @@ import type { Chain } from './flow/chain';
 import type { FNode, TickCtx } from './flow/node';
 import type { MachineNode, ReservoirNode } from './flow/nodes';
 import { makeCtx, runPhases } from './flow/step';
-import { compileGraph, type Graph } from './graph/compile';
+import { compileGraph, hearthCaps, type Graph } from './graph/compile';
 import { computeMods, type Mods } from './research/modifiers';
-import type { Project, StartBlock } from './research/runtime';
+import { projectDone, type Project, type StartBlock } from './research/runtime';
 import type { Job, JobKind } from './space';
 import * as build from './systems/build';
 import * as beltPlan from './systems/belt-plan';
@@ -85,7 +86,7 @@ export interface SimOptions {
 /** Last tick's power of one grid (for the HUD), kW. */
 export interface NetPower { demand: number; renew: number; fuel: number; sat: number }
 
-/** A minute's token bill (D68) and the running totals: tokens used, covered by the claim's servers, bought; centi-◉. */
+/** A minute's tokens (D68, D118) and the running totals: delivered to research, from the claim's servers, bought; centi-◉. */
 export interface TokenStats {
   used: number; fromServers: number; bought: number; cents: number; supply: number; rental: number;
   totalUsed: number; totalBought: number; totalCents: number;
@@ -132,12 +133,10 @@ export class Sim {
   projects: Project[] = [];
   /** The Research Queue (an_queue): the node each lab starts once its project is done. Saved. */
   readonly labQueue = new Map<number, string>();
-  // AI tokens (D68): never held — used as research runs, billed at each minute boundary.
-  /** Tokens research used since the last minute boundary (to bill). Saved, hashed. */
-  tokenUse = 0;
+  // AI tokens (D68, D118): never held — delivered to research at each minute boundary.
   /** The servers' output since the last boundary, in token·‰·ticks (÷ 600 000 = tokens). Saved, hashed. */
   serverAcc = 0;
-  /** The purse is in the red: research holds until it is back above zero. Saved, hashed. */
+  /** The purse is in the red: the tokens bought for research hold until it is back above zero (D118). Saved, hashed. */
   researchHeld = false;
   /** Subscribed to CrierBelt's Compute Plan (cm_plan). Saved, hashed. */
   tokenPlan = false;
@@ -242,6 +241,10 @@ export class Sim {
   }
 
   // ── derived state ─────────────────────────────────────────────────────────
+  /** What the Hearth holds at most of one item (mu): its level's `hearthCap`, a data item at most `BAL.hearthDataCap` (D118). */
+  hearthCapOf(item: number): number {
+    return hearthCaps(this.hearthCap())[item]!;
+  }
   hearthCap(): number {
     return BAL.hearthCap[Math.min(BAL.hearthCap.length, this.hearthLevel) - 1]! * 1000;
   }
@@ -462,9 +465,11 @@ export class Sim {
   rentLand(p: number): land.LandRefusal | null { return land.rentLand(this, p); }
   /** Give a lease up. */
   endLease(p: number): land.LandRefusal | null { return land.endLease(this, p); }
-  /** Parcel Resale: sell a bought parcel back to CrierBelt. */
+  /** Sell a bought parcel back to CrierBelt at its market price less the Cadastre's tax (D119). */
   sellLand(p: number): land.LandRefusal | null { return land.sellLand(this, p); }
   resalePrice(p: number): number { return land.resalePrice(this, p); }
+  /** A parcel's market price as a sale sees it, before the tax (D119). */
+  marketPrice(p: number): number { return land.marketPrice(this, p); }
   /** Why buying, leasing or selling back parcel `p` would be refused now (null: it would go through), for the UI. */
   buyBlock(p: number): land.LandRefusal | null { return land.buyBlock(this, p); }
   leaseBlock(p: number): land.LandRefusal | null { return land.leaseBlock(this, p); }
@@ -476,7 +481,14 @@ export class Sim {
   landEpoch(): boolean { return land.landEpoch(this); }
   idleLabs(): number[] { return research.idleLabs(this); }
   researchBlock(id: string): StartBlock | null { return research.researchBlock(this, id); }
-  startResearch(id: string, lab = 0): { ok: boolean; reason: StartBlock | null } { return research.startResearch(this, id, lab); }
+  /** Start a node in a lab, buying `buy` tokens a minute for it while it needs them (D118; Tier 2 and up). */
+  startResearch(id: string, lab = 0, buy = 0): { ok: boolean; reason: StartBlock | null } { return research.startResearch(this, id, lab, buy); }
+  /** Change the tokens a minute a running project buys from CrierBelt (D118; 0: the servers' alone). */
+  setTokenBuy(id: string, perMin: number): boolean { return research.setTokenBuy(this, id, perMin); }
+  /** The flow the launch dialog proposes for a node (D118): its tokens over its tier's pace, less the servers it would get. */
+  tokenBuyDefault(id: string): number { return research.tokenBuyDefault(this, id); }
+  /** Whether the Core's level opens a tier (D118: `BAL.tierCoreLevel`). */
+  tierCoreOpen(tier: number): boolean { return research.tierCoreOpen(this, tier); }
   cancelResearch(id: string): boolean { return research.cancelResearch(this, id); }
   /** Research Queue: the node a lab starts once its project is done (null: none). */
   queueResearch(lab: number, id: string | null): boolean { return research.queueResearch(this, lab, id); }
@@ -485,7 +497,7 @@ export class Sim {
   setTokenPlan(on: boolean): boolean { return research.setTokenPlan(this, on); }
   /** CrierBelt's price for 1 000 tokens now (centi-◉). */
   tokenPriceK(): number { return research.tokenPriceK(this); }
-  /** The minute boundary's token bill (online: from step; offline: the catch-up). Whether research's hold changed. */
+  /** The minute boundary's tokens (online: from step; offline: the catch-up): delivered and billed. Whether the bought flows' hold changed. */
   tokenEpoch(): boolean { return research.tokenEpoch(this); }
   projectStock(p: Project): Float64Array | null { return research.projectStock(this, p); }
   projectSat(p: Project, satOf: (net: number) => number): number { return research.projectSat(this, p, satOf); }
@@ -592,6 +604,8 @@ export class Sim {
       this.tradeEpoch();
       this.landEpoch();
       this.tokenEpoch();
+      // Tokens in at the minute's end: a project with its data paid is done there (D118).
+      if (this.projects.some(projectDone)) this.finishProjects();
       this.expertiseEpoch((n) => this.ctx.sat[n] ?? 0);
       this.gleanEpoch();
       this.events.push({ k: 'epoch', epoch: this.absEpoch() });
@@ -648,9 +662,9 @@ export class Sim {
     for (const [a, b] of this.links.pairs()) h.int(a).int(b);
     for (const id of [...this.done].sort()) h.str(id);
     h.int(this.notes).int(this.respecs).int(this.lastRespec);
-    for (const p of this.projects) { h.str(p.id).int(p.lab).int(p.dur).int(p.el).ints(p.paid).int(p.tokens ?? 0).int(p.tokUsed ?? 0); }
+    for (const p of this.projects) { h.str(p.id).int(p.lab).int(p.dur).int(p.el).ints(p.paid).int(p.tokens ?? 0).int(p.tokIn ?? 0).int(p.buy ?? 0); }
     for (const [lab, id] of [...this.labQueue].sort((a, b) => a[0] - b[0])) h.int(lab).str(id);
-    h.int(this.tokenUse).int(this.serverAcc).int(this.researchHeld ? 1 : 0).int(this.tokenPlan ? 1 : 0);
+    h.int(this.serverAcc).int(this.researchHeld ? 1 : 0).int(this.tokenPlan ? 1 : 0);
     for (const [id, v] of [...this.dataAcc].sort((a, b) => a[0] - b[0])) h.int(id).int(v);
     for (const [t, k] of this.designated) h.int(t).int(k === 'dig' ? 1 : 2);
     for (const j of this.jobs) h.int(j.ent).int(j.tile).int(j.dur).int(j.el).int(j.mu).int(j.moved).int(j.quarry ? 1 : 0);

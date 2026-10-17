@@ -673,6 +673,11 @@ function depotIso(ctx: Ctx, f: IsoFrame, mouths: ReadonlyArray<readonly [number,
         for (const t of [0.25, 0.5, 0.75]) rivet(ctx, ...A((u0 + u1) / 2, t), 1.3, C.brassL);
       }
     }
+    // Level 5's crown (D118): a brass rim along the cornice's top, lamps studded along the band.
+    if (look.crown) {
+      ink(ctx, [A(0.005, 0.99), A(0.995, 0.99)], { w: 2.2, color: C.brassL, shade: false, taper: 0, jitter: 0, seed: s + 94 });
+      for (const [j, u] of HEART_CROWN.entries()) light(ctx, ...A(u, 0.955), 1.7, j % 2 ? C.ledWarm : C.led);
+    }
   }
   const [a0, b0, a1, b1] = f.rect(x0, y0, x1, y1);
   for (const [i, [mx, my]] of mouths.entries()) {
@@ -735,21 +740,29 @@ function dataOutletIso(ctx: Ctx, f: IsoFrame, tx: number, ty: number, side: numb
  * (`HEART_CORNERS`) and fills the body out — level 2 a coral cornice round the depot's walls, a
  * second roof beacon, a second LED strip on each face of the slab; level 3 brass pilasters at the
  * depot's corners, a third beacon, a drone at work over the roof hatch; level 4 a hazard-striped
- * skirt at the depot's foot and floodlights on the slab. The plan art (buildings-top.ts) reads it too.
+ * skirt at the depot's foot and floodlights on the slab; level 5 (D118) a crown of lamps — a
+ * brass rim on the cornice, studded with lamps all round, cold and warm in turn (`HEART_CROWN`).
+ * The beacons stop at three: the roof's fourth corner holds the claim's flag (world/heart-flag.ts).
+ * The plan art (buildings-top.ts) reads it too.
  */
-export function heartLook(lv: number): { beacons: number; strips: number; cornice: boolean; pilasters: boolean; drone: boolean; skirt: boolean; floods: boolean } {
-  return { beacons: Math.min(HEART_BEACONS.length, lv), strips: lv >= 2 ? 2 : 1, cornice: lv >= 2, pilasters: lv >= 3, drone: lv >= 3, skirt: lv >= 4, floods: lv >= 4 };
+export function heartLook(lv: number): { beacons: number; strips: number; cornice: boolean; pilasters: boolean; drone: boolean; skirt: boolean; floods: boolean; crown: boolean } {
+  return { beacons: Math.min(HEART_BEACONS.length, lv), strips: lv >= 2 ? 2 : 1, cornice: lv >= 2, pilasters: lv >= 3, drone: lv >= 3, skirt: lv >= 4, floods: lv >= 4, crown: lv >= 5 };
 }
 
-/** What a level mounts on one of the Heart's corners (D86). */
-export type HeartPiece = 'outlet' | 'archive' | 'station';
+/** Level 5's crown (D118): the lamps along each visible face of the depot's cornice (u, 0…1 across it), clear of the brass pilasters at its ends. */
+export const HEART_CROWN = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9] as const;
+
+/** What a level mounts on one of the Heart's corners (D86, D118). */
+export type HeartPiece = 'outlet' | 'archive' | 'station' | 'uplink';
 
 /**
  * The Heart's four corner tiles (local) and the level that mounts a piece on each (D86): level 2
  * the data outlet, on its out port's tile (south-east, the nearest in iso); level 3 the expertise
  * archive (south-west) — the way into the Expertise window (D93: a click on it, app/picking.ts
  * `heartPieceAt`); level 4 the grid station (north-east), a placeholder that unlocks nothing yet;
- * the north-west one, behind the depot, stays bare.
+ * level 5 (D118) the uplink mast on the last one, north-west, behind the depot — a placeholder
+ * too, and tall so it shows over the depot's roof. A piece that does nothing on a click is left
+ * alone by the picker: only the Archive opens a window.
  */
 export const HEART_CORNERS: ReadonlyArray<{ tx: number; ty: number; lv: number; piece: HeartPiece | null }> = (() => {
   const out = (BUILDINGS.hearth as BuildingDef).ports.find((p) => p.io === 'out')!;
@@ -757,7 +770,7 @@ export const HEART_CORNERS: ReadonlyArray<{ tx: number; ty: number; lv: number; 
     { tx: out.x, ty: out.y, lv: BAL.hearthDataLevel, piece: 'outlet' },
     { tx: 0, ty: 4, lv: 3, piece: 'archive' },
     { tx: 4, ty: 0, lv: 4, piece: 'station' },
-    { tx: 0, ty: 0, lv: Infinity, piece: null },
+    { tx: 0, ty: 0, lv: 5, piece: 'uplink' },
   ];
 })();
 
@@ -842,6 +855,87 @@ function stationIso(ctx: Ctx, f: IsoFrame, tx: number, ty: number, s: number): v
   for (const [i, u] of [-0.1, 0.1].entries()) latheIso(ctx, f, bx + u, by - u, [[0.82, 0.05], [0.9, 0.05], [0.92, 0.07], [0.96, 0.05], [1.0, 0.065], [1.04, 0.04]], C.ice, s + 14 + i, { top: C.steelL, shadow: false, seams: false, outline: 1.1 });
   light(ctx, ...facePt(f, rr, 'R', 0.8, 0.7), 1.4, C.ledGreen);
   cableIso(ctx, f, [bx - 0.1, by + 0.1, 0.6], [Math.min(DEP.x1, Math.max(DEP.x0, bx)), Math.min(DEP.y1, Math.max(DEP.y0, by)), 0.7], 2.2, s + 20);
+}
+
+/**
+ * Where the uplink's parts stand on its corner tile (local; the Heart never turns). The tile's
+ * diagonal is the claim's flag's column in iso — its pole on the roof's back corner
+ * (world/heart-flag.ts `FLAG`, laid over the Heart, the cloth flying to the right) —, so the mast
+ * stands off it towards the screen's left, where the sky is clear, its dish on an arm towards the
+ * south — further left on screen, and over the slab in plan. The radio cabinet stands behind it,
+ * on the strip of slab the depot leaves in sight (anything nearer shows over the roof's back edge
+ * and reads as standing on the roof); the guys' three anchors round it (the third under the dish
+ * in plan, close by the dish). Heights in levels.
+ */
+export function uplinkSpots(tx: number, ty: number): { mast: [number, number]; dish: [number, number]; dishZ: number; top: number; cab: [number, number]; guys: ReadonlyArray<readonly [number, number]> } {
+  const [cx, cy] = heartCornerAt(tx, ty);
+  const mx = cx - 0.32, my = cy + 0.18;
+  return { mast: [mx, my], dish: [mx, my + 0.36], dishZ: 3.0, top: 3.85, cab: [cx - 0.41, cy - 0.15], guys: [[cx - 0.01, cy - 0.46], [cx + 0.34, cy - 0.26], [cx - 0.49, cy + 0.41]] };
+}
+
+/**
+ * A slim square lattice mast, as `trussIso`, its legs banded coral and white segment by segment
+ * like an aviation mast (`segs` odd: coral at both ends).
+ */
+function bandedMastIso(ctx: Ctx, f: IsoFrame, cx: number, cy: number, w0: number, w1: number, z0: number, z1: number, segs: number, s: number, legW = 2.2): void {
+  const K: ReadonlyArray<readonly [number, number]> = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+  const at = (k: number, t: number): Pt => {
+    const w = w0 + (w1 - w0) * t, [sx, sy] = K[k]!;
+    return f.p(cx + sx * w, cy + sy * w, z0 + (z1 - z0) * t);
+  };
+  const dep = (k: number): number => f.depth(cx + K[k]![0], cy + K[k]![1]);
+  const legs = [0, 1, 2, 3].sort((a, b) => dep(a) - dep(b));
+  const near = (k: number): boolean => dep(k) + dep((k + 1) % 4) > 2 * f.depth(cx, cy);
+  const panel = (k: number, alpha: number, w: number): void => {
+    const j = (k + 1) % 4;
+    for (let i = 0; i < segs; i++) {
+      const t0 = i / segs, t1 = (i + 1) / segs;
+      ink(ctx, [at(k, t0), at(j, t1)], { w, color: C.steelD, alpha, shade: false, taper: 0, jitter: 0, seed: s + k * 20 + i });
+      ink(ctx, [at(j, t0), at(k, t1)], { w, color: C.steelD, alpha, shade: false, taper: 0, jitter: 0, seed: s + k * 20 + i + 7 });
+      ink(ctx, [at(k, t1), at(j, t1)], { w: w + 0.3, color: C.steelDD, alpha, shade: false, taper: 0, jitter: 0, seed: s + k * 20 + i + 14 });
+    }
+  };
+  const leg = (k: number, front: boolean): void => {
+    ink(ctx, [at(k, 0), at(k, 1)], { w: legW + (front ? 2 : 1.4), color: C.ink, shade: false, taper: 0, jitter: 0, seed: s + 90 + k });
+    for (let i = 0; i < segs; i++) ink(ctx, [at(k, i / segs), at(k, (i + 1) / segs)], { w: legW, color: i % 2 ? C.paper : C.coral, shade: false, taper: 0, jitter: 0, seed: s + 100 + k * 20 + i });
+  };
+  for (let k = 0; k < 4; k++) if (!near(k)) panel(k, 0.7, 1);
+  for (const k of legs.slice(0, 2)) leg(k, false);
+  for (let k = 0; k < 4; k++) if (near(k)) panel(k, 1, 1.2);
+  for (const k of legs.slice(2)) leg(k, true);
+}
+
+/**
+ * The uplink (D118, level 5 — a placeholder: it unlocks nothing): the base's own line to
+ * CrierBelt's servers, on the north-west corner behind the depot, tall enough to show over its
+ * roof. A slim lattice mast banded coral and white, guyed to the slab, on a concrete footing; high
+ * up on an arm a small dish (`dish3d`) turned to the same sky as the roof's big one; on its top a
+ * whip with a cyan lamp. Behind it a violet radio cabinet with its LEDs, cabled to the mast.
+ * No lamp where the depot or the flag could cover it: the night glows go wherever a lamp is drawn.
+ */
+function uplinkPieceIso(ctx: Ctx, f: IsoFrame, tx: number, ty: number, s: number): void {
+  const { mast: [mx, my], dish: [dx, dy], dishZ, top, cab: [bx, by], guys } = uplinkSpots(tx, ty);
+  const z0 = SZ + 0.12, guyZ = 2.55;
+  // Behind the mast: the radio cabinet, its LEDs on its far face from the mast, its cable to the
+  // mast's foot; the guys' hazard-yellow anchor blocks on the slab, taut wires up to the mast.
+  cableIso(ctx, f, [bx + 0.06, by + 0.06, 0.55], [mx - 0.04, my - 0.04, 0.75], 1.8, s + 62);
+  const rr = box(ctx, f, bx - 0.1, by - 0.09, bx + 0.1, by + 0.09, SZ, 0.85, { top: mix(C.violet, C.steelL, 0.3), left: C.violet, right: mix(C.violet, C.ink, 0.4) }, s + 60, { outline: 1.5 });
+  faceLeds(ctx, f, rr, 'R', 0.68, 0.3, 0.7, 2, [C.led, C.ledGreen], 1.5);
+  faceGrille(ctx, f, rr, 'R', 0.2, 0.8, SZ + 0.08, 0.5, s + 61, 3);
+  for (const [i, [ax, ay]] of guys.entries()) {
+    box(ctx, f, ax - 0.06, ay - 0.06, ax + 0.06, ay + 0.06, SZ, SZ + 0.12, { top: C.hazard, left: C.brass, right: mix(C.brass, C.ink, 0.4) }, s + i, { outline: 1.1, shadow: false });
+    ink(ctx, [f.p(ax, ay, SZ + 0.12), f.p(mx, my, guyZ)], { w: 1, color: C.steelDD, alpha: 0.85, shade: false, taper: 0, jitter: 0, seed: s + 4 + i });
+  }
+  cylinder(ctx, f, mx, my, 0.16, SZ, z0, C.steelD, s + 8, { top: C.steel });
+  bandedMastIso(ctx, f, mx, my, 0.11, 0.035, z0, top, 7, s + 10, 2);
+  // The dish's arm from the mast, then the dish (nearer than the mast), its face to the far horizon (the screen's left).
+  const n = leanTo(f, -Math.SQRT1_2, Math.SQRT1_2, 0.95), R = 0.23;
+  const D: V3 = [dx, dy, dishZ / 2], back = along3(D, n, -0.2 * R - 0.03);
+  pipeIso(ctx, f, [[mx, my, dishZ - 0.05], [back[0], back[1], back[2] * 2]], 3.2, C.steelD, s + 20, false);
+  dish3d(ctx, f, D, R, n, s + 30, { focal: 0.9, struts: 3 });
+  // The whip on top and its cyan lamp.
+  pipeIso(ctx, f, [[mx, my, top - 0.05], [mx, my, top + 0.42]], 1.6, C.steelD, s + 50, false);
+  light(ctx, ...f.p(mx, my, top + 0.47), 2.6, C.led);
 }
 
 /** Where the level-4 floodlights stand along each near face of the slab (0…1): between the ports' aprons. */
@@ -3333,8 +3427,8 @@ const R: Partial<Record<BuildingId, Recipe>> = {
       // centre; two link masts for its wires, west and east, each between two of that side's
       // ribbons. It grows with its level (D86): its four slab corners stand bare at level 1, a
       // mounting plate stencilled on each, and each level mounts one piece on one (`HEART_CORNERS`:
-      // the data outlet, the expertise archive, the grid station) while its trims, beacons and
-      // lamps fill out (`heartLook`). The roof is laid out screen-fixed, so it reads the same
+      // the data outlet, the expertise archive, the grid station, the uplink mast) while its trims,
+      // beacons and lamps fill out (`heartLook`, level 5's crown of lamps). The roof is laid out screen-fixed, so it reads the same
       // however the Heart is turned (in play it never is).
       const look = heartLook(lv);
       slab(ctx, f, C.steel, 0.05, SZ, s);
@@ -3361,7 +3455,8 @@ const R: Partial<Record<BuildingId, Recipe>> = {
           const p = ports.find((q) => q.io === 'out')!;
           sc.add(d, () => dataOutletIso(ctx, f, p.x, p.y, sideIndex[p.side], k));
         } else if (c.piece === 'archive') sc.add(d, () => archiveIso(ctx, f, c.tx, c.ty, k));
-        else sc.add(d, () => stationIso(ctx, f, c.tx, c.ty, k));
+        else if (c.piece === 'station') sc.add(d, () => stationIso(ctx, f, c.tx, c.ty, k));
+        else sc.add(d, () => uplinkPieceIso(ctx, f, c.tx, c.ty, k));
       }
       // The depot, then its roof: a drone at work over the hatch (level 3), the uplink, the solar
       // rows (nearer than the dish), the beacons the level lights.

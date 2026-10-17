@@ -225,22 +225,23 @@ describe('migrations', () => {
     expect(back.stock[df]).toBeGreaterThanOrEqual(sim.stock[df]! + paid); // its project's data, not lost
   });
 
-  it('7 → 8 (D72): a project started under the spread penalty is rebased on its table cost, its progress kept', () => {
+  it('7 → 8 (D72): a project started under the spread penalty is rebased on its table cost, its progress kept (D118: as data and tokens in, no time)', () => {
     const base = effectiveCost('en_bigwind');
     const d = { ...JSON.parse(JSON.stringify(data)), v: 7 };
     // Started at ×2 by what the claim owned elsewhere; a quarter of its (doubled) time has run.
+    const ticks = base.aim;
     d.projects = [{
       id: 'en_bigwind', lab: 0, cost: base.cost.flatMap((c) => [c.item, c.mu * 2]), paid: base.cost.map((c) => c.mu / 2),
-      dur: base.ticks * 2, el: (base.ticks * 2 * 1000) / 4, tokens: base.tokens * 2, tokUsed: base.tokens / 2,
+      dur: ticks * 2, el: (ticks * 2 * 1000) / 4, tokens: base.tokens * 2, tokUsed: base.tokens / 2,
     }, { id: 'respec:en', lab: 0, cost: [], paid: [], dur: 600, el: 1000, notes: 50 }];
     const { data: m } = migrate(d);
     const back = deserialize(remapSave(m).data, sim.grid.source);
     const p = back.projects.find((q) => q.id === 'en_bigwind')!;
     expect(p.cost).toEqual(base.cost);
-    expect(p.dur).toBe(base.ticks);
-    expect(p.el).toBe((base.ticks * 1000) / 4); // the same share of its new time
+    expect(p.paid).toEqual(base.cost.map((c) => c.mu / 4)); // the lesser of its time and its data, a quarter, of the new data
+    expect([p.dur, p.el]).toEqual([0, 0]); // no minimum time any more (D118)
     expect(p.tokens).toBe(base.tokens);
-    expect(p.tokUsed).toBe(base.tokens / 4); // what it already did, taken as paid
+    expect(p.tokIn).toBe(base.tokens / 4); // what it already did, taken as delivered
     expect(back.projects.find((q) => q.id === 'respec:en')).toMatchObject({ dur: 600, el: 1000, notes: 50 });
   });
 

@@ -45,7 +45,8 @@ function forge(sim: Sim, olds: Old[], level = sim.hearthLevel): { data: Record<s
     if (o.def === 'beacon') { d.explored.push([o.x, o.y, 40]); fog.push([o.x, o.y, 40]); }
   }
   for (const [, cost] of Object.entries(PLANS_RETIRED[17]!)) for (const [it, n] of cost) owe(it, n * 1000);
-  if (level > 1) fog.push([CENTER, CENTER, CORE_REVEAL_V17[level - 1]!]);
+  // A save 16 never held a Core above level 4 (level 5 came with D118); the step reads it as 4.
+  if (level > 1) fog.push([CENTER, CENTER, CORE_REVEAL_V17[Math.min(CORE_REVEAL_V17.length, level) - 1]!]);
   return { data: { ...d, v: 16, hearthLevel: level, done: [...d.done, 'beacon', 'unloader'].sort() }, owed, fog };
 }
 
@@ -85,7 +86,7 @@ describe('save 16 → 17 (D117): no survey beacon, no unloader', () => {
     expect(run.stock).toEqual([19_000, 2000, 3000]);
     expect(run.done).toEqual(['ex_quartz', 'kiln']);
     expect(run.explored).toEqual([[512, 512, 44], [600, 480, 40], [CENTER, CENTER, 68]]);
-    expect(CORE_REVEAL_V17).toEqual(BAL.coreReveal);
+    expect(BAL.coreReveal.slice(0, CORE_REVEAL_V17.length)).toEqual(CORE_REVEAL_V17); // level 5 since D118
     // A claim that never had either, at level 1, loses and gains nothing.
     const young = beaconsRetired({ v: 16, stock: [1, 2], done: ['kiln'], hearthLevel: 1, explored: [[512, 512, 44]] });
     expect(young).toEqual({ v: 16, stock: [1, 2], done: ['kiln'], hearthLevel: 1, explored: [[512, 512, 44]] });

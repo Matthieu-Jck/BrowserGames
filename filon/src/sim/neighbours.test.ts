@@ -1,10 +1,13 @@
 // neighbours.test.ts — the neighbouring bases (D110, sim/world/neighbours.ts): drawn from the seeds
-// alone and the same in every order asked; map 4's holdings of parcels side by side, past the ring
-// round the starting square, off what the land guarantees; each a working base wholly on its own
-// open floor, which digging never moves; the Gleaners walk round it; an older save's lease or
-// building on its land makes the base give way (the parcel granted), once.
+// alone and the same in every order asked; few, and none within three rings of the Heart's parcel
+// (`minRing`); map 4's holdings of parcels side by side, off what the land guarantees; each a working
+// base — its chain of extractors, makers, store and pad linked by ribbons, every building that takes
+// part in power on its own grid by the claim's rule of reach — wholly on its own open floor, which
+// digging never moves; the Gleaners keep off it; an older save's lease or building on its land makes
+// the base give way (the parcel granted), once.
 import { describe, it, expect } from 'vitest';
-import { BUILDING_KIND, buildingIdx } from '@/content/registry';
+import { BAL } from '@/content/balance';
+import { BUILDING_KIND, buildingDef, buildingIdx } from '@/content/registry';
 import { WORLD_SEED } from '@/content/world';
 import { WORLD } from './constants';
 import { footprint } from './entities';
@@ -15,6 +18,7 @@ import { isFloor, T } from './types';
 import { MapGen } from './world/mapgen';
 import { PARCEL_COLS, parcelAt, parcelRect, ringOf } from './world/land';
 import { gleanLand } from './world/reach';
+import { gap2, linkable } from './power/links';
 import type { Holding } from './world/neighbours';
 
 const map4 = (ps = 4242): Sim => new Sim({ worldSeed: WORLD_SEED, playerSeed: ps, source: new MapGen(WORLD_SEED, ps, 4), foundingEpoch: 29453760 });
@@ -33,14 +37,15 @@ const sig = (sim: Sim, h: Holding): string => {
 };
 
 describe('neighbouring bases (D110)', () => {
-  it('map 4: holdings of parcels side by side past the starting ring, the same whatever order they are asked in', () => {
+  it('map 4: a few holdings of parcels side by side, none within three rings of the Heart\'s, the same whatever order they are asked in', () => {
     const a = map4(), b = map4();
     const all = bases(a);
-    expect(all.length).toBeGreaterThan(20);
-    expect(all.some((h) => h.parcels.length >= 3)).toBe(true);
+    expect(all.length).toBeGreaterThan(5);
+    expect(all.length).toBeLessThan(30); // was some sixty before the owner found too many (D110)
+    expect(all.some((h) => h.parcels.length >= 2)).toBe(true);
     for (const h of all) {
       for (const p of h.parcels) {
-        expect(ringOf(p)).toBeGreaterThan(a.land.reach + 1);
+        expect(ringOf(p)).toBeGreaterThanOrEqual(BAL.land.neighbours.minRing);
         const r = parcelRect(p);
         expect(a.grid.source.keepsClear!(r.x0, r.y0, r.x1, r.y1)).toBe(false);
       }
@@ -57,14 +62,36 @@ describe('neighbouring bases (D110)', () => {
     for (const h of [...all].reverse().slice(0, 8)) expect(sig(b, b.neighbours.holdingOf(h.hub)!)).toBe(sig(a, h));
   });
 
-  it('a base works: a lift pad, a silo, its trade, ribbons, a flag — wholly on its own open floor, a building on every parcel', () => {
+  it('a base works: its chain into a lift pad, ribbons between, its own grid, a flag — wholly on its own open floor, a building on every parcel', () => {
     const sim = map4();
     for (const h of bases(sim).slice(0, 12)) {
       const L = sim.neighbours.layout(h);
       const ids = L.structs.map((s) => s.def);
       expect(ids).toContain(buildingIdx('trade_post'));
       expect(L.flag).not.toBeNull();
-      expect(L.ribbons.length).toBeGreaterThan(0);
+      expect(L.ribbons.length).toBeGreaterThan(1);
+      // Its grid: every building that takes part in power is wired, each wire with a mast at one end, within its reach.
+      const wired = new Set(L.wires.flat()), mast = buildingIdx('mast'), R = buildingDef(mast).pole!.range;
+      for (const [i, j] of L.wires) {
+        const a = L.structs[i]!, b = L.structs[j]!;
+        expect(a.def === mast || b.def === mast).toBe(true);
+        expect(gap2(a, b)).toBeLessThanOrEqual(R * R);
+      }
+      const powered = L.structs.filter((s, i) => linkable(s.def) && s.def !== mast).map((s) => L.structs.indexOf(s));
+      expect(powered.filter((i) => !wired.has(i)).length).toBeLessThanOrEqual(1);
+      // Its Core (owner: « ils devraient avoir un cœur », « plus petit »): 3 × 3 at its heart, its grid
+      // all joined to it, a line running into it.
+      expect(L.core).toBeGreaterThanOrEqual(0);
+      const core = L.structs[L.core]!, [cw, ch] = footprint(core.def, core.rot);
+      expect([cw, ch]).toEqual([3, 3]);
+      expect(parcelAt(core.x + 1, core.y + 1)).toBe(h.hub);
+      const reach = new Set([L.core]);
+      for (let grew = true; grew;) { grew = false; for (const [i, j] of L.wires) if (reach.has(i) !== reach.has(j)) { reach.add(i); reach.add(j); grew = true; } }
+      for (const i of wired) expect(reach.has(i)).toBe(true);
+      expect(L.ribbons.some((r) => {
+        const n = r.tiles.length - 3, x = r.tiles[n]! + [0, 1, 0, -1][r.tiles[n + 2]!]!, y = r.tiles[n + 1]! + [-1, 0, 1, 0][r.tiles[n + 2]!]!;
+        return x >= core.x && y >= core.y && x < core.x + cw && y < core.y + ch;
+      })).toBe(true);
       for (const p of h.parcels) expect(sim.neighbours.structsOn(p).length).toBeGreaterThan(0);
       for (const s of L.structs) {
         const [w, hh] = footprint(s.def, s.rot);

@@ -182,7 +182,7 @@ describe('space', () => {
   it('a dig that research unlocks during an absence starts offline as online', () => {
     const make = (): Sim => {
       const sim = spaceSim(['tr1', 'tr_synth', 'tr2', 'tr3', 'ex_sifter', 'ex3']); // Tier 2 hangs from the Synthesis (D93)
-      sim.grantCredits(10_000_000); // the research's tokens, bought by the minute (D68)
+      sim.grantCredits(10_000_000); // the research's tokens, a flow bought by the minute (D68, D118)
       const lab = sim.place('observatory', 503, 512, 0);
       expect(lab.ok, lab.reason).toBe(true);
       const ex = sim.place('excavator', 527, 510, 0);
@@ -196,11 +196,11 @@ describe('space', () => {
       // A Tier 2 node: Survey Data and Mechanics Data (D71).
       sim.stores.get(lab.id!)![itemIdx('journal_1')] = 400 * 1000;
       sim.stores.get(lab.id!)![itemIdx('journal_2')] = 400 * 1000;
-      expect(sim.startResearch('ex4').ok).toBe(true);
+      expect(sim.startResearch('ex4', 0, 30_000).ok).toBe(true); // its 300 000 tokens over ten minutes
       return sim;
     };
     const a = make(), b = make();
-    const span = 2 * a.projects[0]!.dur + 3 * 36_000; // brownouts slow both the research and the dig
+    const span = 2 * 10 * 600 + 3 * 36_000; // brownouts slow the dig
     a.run(span);
     catchUp(b, span, { noDirect: true });
     for (const s of [a, b]) {

@@ -10,7 +10,7 @@ import { CENTER, WORLD } from '@/sim/constants';
 import { packRuns } from '@/sim/flow/chain';
 import { MapGen } from '@/sim/world/mapgen';
 import { SAVE_VERSION, type SaveData } from '@/sim/serialize';
-import { CORE_REVEAL_V17, PLANS_RETIRED, RESEARCH_RENAMED, RESEARCH_RETIRED, RETIRED_DRIFTER, TIER2_UP_V10 } from '@/content/retired';
+import { CORE_REVEAL_V17, PLANS_RETIRED, RESEARCH_RENAMED, RESEARCH_RETIRED, RETIRED_DRIFTER, TIER1_V17, TIER2_UP_V10 } from '@/content/retired';
 
 /** A step from version v to v + 1 (input: a parsed save of version v). */
 export type Migration = (d: Record<string, unknown>) => Record<string, unknown>;
@@ -432,7 +432,33 @@ export function beaconsRetired(d: Record<string, unknown>): Record<string, unkno
   return { ...d, stock, done: done.filter((id) => !(id in gone)), explored };
 }
 
-export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsToTowers, 6: researchToTokens, 7: researchAtBase, 8: parcelsResized, 9: labsToThree, 10: expertiseArc, 11: electricSmelting, 12: coreData, 13: tierOneWhole, 14: docksRetired, 15: steamPlan, 16: beaconsRetired };
+/**
+ * 17 → 18, research without time, its tokens a flow (D118; owner, 2026-10-17: « le Tier 1 n'a pas de
+ * temps. À partir du Tier 2, il faut avoir un nombre de tokens pour finir une recherche »). A project
+ * under way keeps the data it paid and loses its minimum time (`dur`, `el` to 0). A Tier 1 one
+ * (`TIER1_V17`) loses its tokens: it finishes as soon as its data is paid. A Tier 2+ one keeps the
+ * tokens it started with as those it needs, and counts as delivered what it had used by then — the
+ * allowance's share of its time run, or what was counted if more (generous: nothing used is asked
+ * again). The tokens used and not yet billed (`tokens.use`) are forgiven. A reconversion under way,
+ * and a project from before tokens (the load rebases it), stay as they are. Ids frozen here.
+ */
+export function researchFlows(d: Record<string, unknown>): Record<string, unknown> {
+  type Old = { id: string; dur: number; el: number; tokens?: number; tokUsed?: number; tokIn?: number };
+  const projects = ((d.projects as Old[] | undefined) ?? []).map((p) => {
+    // A reconversion, a project from before tokens (the load rebases it), one already in today's shape.
+    if (p.id.startsWith('respec:') || p.tokens === undefined || (p.tokUsed === undefined && p.tokIn !== undefined)) return p;
+    const { tokUsed, ...rest } = p;
+    const cap = p.dur * 1000;
+    const due = cap > 0 ? Math.floor((p.tokens * Math.min(p.el, cap)) / cap) : p.tokens;
+    const t1 = TIER1_V17.includes(p.id);
+    return { ...rest, dur: 0, el: 0, tokens: t1 ? 0 : p.tokens, tokIn: t1 ? 0 : Math.min(p.tokens, Math.max(tokUsed ?? 0, due)) };
+  });
+  const tokens = d.tokens as { use?: number } | undefined;
+  const { use: _use, ...kept } = tokens ?? {};
+  return { ...d, ...(d.projects ? { projects } : {}), ...(tokens ? { tokens: kept } : {}) };
+}
+
+export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsToTowers, 6: researchToTokens, 7: researchAtBase, 8: parcelsResized, 9: labsToThree, 10: expertiseArc, 11: electricSmelting, 12: coreData, 13: tierOneWhole, 14: docksRetired, 15: steamPlan, 16: beaconsRetired, 17: researchFlows };
 
 export class SaveTooNew extends Error {
   constructor(readonly version: number) { super(`save version ${version} is newer than this build (${SAVE_VERSION})`); }

@@ -11,7 +11,7 @@
 import { BAL } from '@/content/balance';
 import { WORLD_SEED } from '@/content/world';
 import {
-  BUILDING_KIND, CRECIPES, N_ITEMS, buildingDef, buildingIdx, itemIdx,
+  BUILDING_KIND, CRECIPES, N_ITEMS, buildingDef, buildingIdx, itemDef, itemIdx,
 } from '@/content/registry';
 import { filterOf, recipeOf } from '../cfg';
 import { MU, WORLD } from '../constants';
@@ -104,6 +104,23 @@ const NO_WIRES: WireSource = { of: () => [] };
 
 /** A research lab's store: enough data files for a while (milli-items per item). */
 export const LAB_CAP = 200 * 1000;
+
+/**
+ * The Core's per-item capacities (mu): its level's `hearthCap` for every item, but each data item
+ * (`kind: 'science'`) at most `BAL.hearthDataCap` (D118). One array per capacity, kept: the compile
+ * runs often and the Core's level changes rarely.
+ */
+const HEARTH_CAPS = new Map<number, Float64Array>();
+export function hearthCaps(cap: number): Float64Array {
+  let a = HEARTH_CAPS.get(cap);
+  if (!a) {
+    a = new Float64Array(N_ITEMS).fill(cap);
+    const data = BAL.hearthDataCap * 1000;
+    for (let i = 0; i < N_ITEMS; i++) if (itemDef(i).kind === 'science') a[i] = Math.min(cap, data);
+    HEARTH_CAPS.set(cap, a);
+  }
+  return a;
+}
 const NOTHING: ReadonlySet<number> = new Set();
 /** A server's store: it holds nothing (its node only draws the grid's power). */
 const NO_STOCK = new Float64Array(0);
@@ -173,7 +190,7 @@ export function compileGraph(inp: CompileInput): Graph {
         node = reuse(e, () => new ReservoirNode(e.id, inp.hearthStock, inp.hearthCap, items, mpt(BAL.hearthPortPerMin), false),
           (o) => o.kind === 'reservoir');
         const r = node as ReservoirNode;
-        r.cap = inp.hearthCap; r.portItems = items; r.stock = inp.hearthStock; r.hearth = true;
+        r.cap = inp.hearthCap; r.caps = hearthCaps(inp.hearthCap); r.portItems = items; r.stock = inp.hearthStock; r.hearth = true;
         hearth = r;
         break;
       }
@@ -539,7 +556,7 @@ export function compileGraph(inp: CompileInput): Graph {
   // The Gleaners (D103, D112): the ribbon tiles beside open desert floor, on lands that have them (a
   // Crown and a desert past it: `crownOuter`; a test world has none). Each item ribbon's exposed cells,
   // its own draw (from its head tile) and its raid: the group's posts along them and its time in the
-  // window (flow/chain.ts `planRaid`: three to five of them, more on a longer exposure).
+  // window (flow/chain.ts `planRaid`: three to five of them, more on a longer exposure; never the head).
   const items = [...beltAt.keys()].filter((t) => !chainByTile.get(t)?.fluid).sort((a, b) => a - b);
   const fences: number[] = [];
   for (const e of sorted) if (BUILDING_KIND[e.def] === 'fence' && e.builtAt === 0) fences.push(tileIndex(e.x, e.y));
@@ -558,7 +575,8 @@ export function compileGraph(inp: CompileInput): Graph {
       if (!cells.length) continue;
       c.gleanCells = Int32Array.from(cells);
       c.gleanSeed = hash32(seed, c.tiles[c.tiles.length - 1]!, 0x9a1e);
-      const raid = planRaid(cells, c.gleanSeed);
+      // Never a post on the head: its item may leave on the very step they would take it (D112).
+      const raid = planRaid(cells.filter((i) => i < c.tiles.length - 1), c.gleanSeed);
       c.raidPosts = raid.posts;
       c.raidAt = raid.at;
     }

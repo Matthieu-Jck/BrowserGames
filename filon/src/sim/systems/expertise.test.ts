@@ -137,7 +137,7 @@ describe('the expertises (D93)', () => {
     expect(slot).toEqual({ id: 'methods', at: sim.absEpoch() + BAL.expertise.gapMinutes, on: false });
     expect(sim.mods.landPrice).toBe(1000); // Estate gone at once
     expect(sim.mods.fam.dn.time).toBe(1000); // Methods not yet in place
-    expect(effectiveCost('dn3', sim.mods).ticks).toBe(effectiveCost('dn3').ticks);
+    expect(effectiveCost('dn4', sim.mods)).toEqual(effectiveCost('dn4'));
     // The gap ends at a minute's boundary (shortened here: the rule is the same at 24 h).
     slot.at = sim.absEpoch() + 2;
     toBoundary(sim);
@@ -147,10 +147,13 @@ describe('the expertises (D93)', () => {
     expect(slot.on).toBe(true);
     expect(expertiseEvents(sim)).toEqual([{ k: 'expertise', id: 'methods', rank: 1, what: 'ready' }]);
     expect(sim.mods.fam.dn.time).toBe(EXPERTISES.methods.permille[0]);
-    // A research expertise: its family's nodes started now take its share off; the trunk's and other families' do not.
-    const table = effectiveCost('dn3'), now = effectiveCost('dn3', sim.mods);
-    expect(now.ticks).toBe(Math.floor((table.ticks * EXPERTISES.methods.permille[0]) / 1000));
-    expect(now.tokens).toBe(table.tokens);
+    // A research expertise: its family's nodes started now take its share off; the trunk's and other
+    // families' do not. Research has no time since D118: one of research time takes its share off
+    // what the time follows, the data and the tokens.
+    const table = effectiveCost('dn4'), now = effectiveCost('dn4', sim.mods), p = EXPERTISES.methods.permille[0];
+    expect(now.tokens).toBe(Math.floor((table.tokens * p) / 1000));
+    expect(now.cost.map((c) => c.mu)).toEqual(table.cost.map((c) => Math.ceil((c.mu / 1000) * p / 1000) * 1000));
+    expect(now.aim).toBe(table.aim);
     expect(effectiveCost('tr1', sim.mods)).toEqual(effectiveCost('tr1'));
     expect(effectiveCost('en_pitch', sim.mods)).toEqual(effectiveCost('en_pitch'));
   });

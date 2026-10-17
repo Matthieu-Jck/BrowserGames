@@ -9,8 +9,7 @@
 // not explored yet, the buildings on it), its usable floor as a gauge and a share (D94: where a 2 × 2
 // machine stands; the price follows it), then the price
 // with the ocelle sign and « Acheter », the rent an hour and « Louer » (Land Registry first), or on
-// a leased parcel its hour as a bar and « Rendre le bail »; a bought one, once Parcel Resale
-// (xp_resell) is learnt, « Revendre » and what CrierBelt gives back. A button the colony would
+// a leased parcel its hour as a bar and « Rendre le bail »; a bought one, « Revendre » and what CrierBelt gives back (D119: the market price less the Cadastre's tax). A button the colony would
 // refuse is disabled, with its reason in a few words under it — the sim's own `buyBlock` /
 // `leaseBlock` / `sellBlock`, the checks its deeds make. Built with `el()`; refreshed at 4 Hz with
 // change-only writes. A neighbouring base's parcel shows its buildings on the map (coral) and no
@@ -100,7 +99,7 @@ export class LandPanel {
     setAttr(this.hint, 'hidden', p >= 0 ? '' : null);
     setText(this.title, p >= 0 ? t('land.title') : t('land.tool')); // the Terrain view (D88) until a parcel is picked
     setText(this.sub, p >= 0 ? parcelLabel(p) : t('land.tool.tip'));
-    const sig = p >= 0 ? `${p}:${parcelState(sim, p)}:${contentsSig(parcelContents(sim, p))}:${locale()}:${sim.colonyName}:${sim.mods.flags.has('landResale')}` : '';
+    const sig = p >= 0 ? `${p}:${parcelState(sim, p)}:${contentsSig(parcelContents(sim, p))}:${locale()}:${sim.colonyName}` : '';
     if (sig !== this.sig) {
       this.sig = sig;
       this.live = [];
@@ -257,10 +256,10 @@ export class LandPanel {
 
   /**
    * The deal: the price and « Acheter »; the rent and « Louer », or a lease's hour and « Rendre le
-   * bail ». Held for good: nothing to do, but a bought parcel sells back once Parcel Resale is learnt.
+   * bail ». Held for good: nothing to do, but a bought parcel sells back at any time (D119).
    */
   private deal(sim: Sim, p: number, st: ParcelState): HTMLElement[] {
-    if (st === 'bought' && sim.mods.flags.has('landResale')) return [this.resale(sim, p)];
+    if (st === 'bought') return [this.resale(sim, p)];
     if (ownsForGood(st)) return [];
     // A neighbouring base's (D110): not for sale nor lease; what treaties allow.
     if (st === 'neighbour') return [el('p.land-why.land-note', { 'data-deal': 'neighbour' }, t('land.neighbour.note'))];
@@ -312,20 +311,23 @@ export class LandPanel {
     return out;
   }
 
-  /** « Revendre » (Parcel Resale, D69): what CrierBelt gives back for it, and what would stop on it. */
+  /** « Revendre » (D119): what CrierBelt gives back — the market price less the Cadastre's tax — and what would stop on it. */
   private resale(sim: Sim, p: number): HTMLElement {
     const price = el('span.land-price');
     const why = el('p.land-why');
-    const sell = el<'button'>('button.btn.land-act', { type: 'button', 'data-land-act': 'sell', onclick: () => this.act(sim.sellLand(p), 0, 'xp_resell') }, [el('span', {}, t('land.sell')), price]);
+    const note = el('span.land-price-note', { 'data-k': 'resale-note' });
+    const sell = el<'button'>('button.btn.land-act', { type: 'button', 'data-land-act': 'sell', onclick: () => this.act(sim.sellLand(p), 0) }, [el('span', {}, t('land.sell')), price]);
     this.live.push(() => {
+      const tax = pct(BAL.landResaleTax / 1000);
       setText(price, oc(sim.resalePrice(p)));
-      setAttr(sell, 'title', tr('land.sell.tip', { pct: pct(BAL.landResale / 1000), n: buildingsOn(sim, p).length }));
+      setText(note, tr('land.sell.note', { mkt: oc(sim.marketPrice(p)), pct: tax }));
+      setAttr(sell, 'title', tr('land.sell.tip', { pct: tax, n: buildingsOn(sim, p).length }));
       const r = sim.sellBlock(p);
       setAttr(sell, 'disabled', r ? '' : null);
-      setText(why, r ? whyText(sim, r, 0, 'xp_resell') : '');
+      setText(why, r ? whyText(sim, r, 0) : '');
       setAttr(why, 'hidden', r ? null : '');
     });
-    return el('div.land-deal', { 'data-deal': 'sell' }, [el('span.land-deal-label', {}, t('land.resale')), sell, why]);
+    return el('div.land-deal', { 'data-deal': 'sell' }, [el('span.land-deal-label', {}, t('land.resale')), sell, note, why]);
   }
 
   /** A command's answer: done (the sim's `land` event tells it), or its refusal as a notice; the panel follows at once. */

@@ -90,9 +90,11 @@ export function route(sim: Sim, from: [number, number], to: [number, number], fi
  * down at a time — the tile that hands on to the next level is a traction ribbon (`lift`), every
  * other one a plain ribbon — and never two steps in a row (an elevator needs a flat ribbon tile in
  * front of it: placement refuses it, `lift_room`). It keeps off other ports' fronts and routing
- * blocks' sides (`keepOff`), the goals excepted. The tiles with their way and their ribbon, or null.
+ * blocks' sides (`keepOff`), the goals excepted. With `cross`, it may also run straight across
+ * another line on its level (`crossable`: `placeBelts` lays a junction there) to the free tile past
+ * it. The tiles with their way and their ribbon, or null.
  */
-export function routeOver(sim: Sim, from: readonly [number, number], goals: ReadonlyMap<number, Rot>, maxNodes = 60_000): Array<[number, number, Rot, 'ribbon' | 'traction_ribbon']> | null {
+export function routeOver(sim: Sim, from: readonly [number, number], goals: ReadonlyMap<number, Rot>, maxNodes = 60_000, cross = false): Array<[number, number, Rot, 'ribbon' | 'traction_ribbon']> | null {
   const avoid = keepOff(sim);
   const W = 1024;
   const lv = (t: number): number => sim.grid.level(t % W, (t - (t % W)) / W);
@@ -115,7 +117,19 @@ export function routeOver(sim: Sim, from: readonly [number, number], goals: Read
     for (let d = 0; d < 4; d++) {
       const nx = cx + DX[d]!, ny = cy + DY[d]!;
       const n = tileIndex(nx, ny);
-      if (!ok(nx, ny) || (avoid.has(n) && !goals.has(n))) continue;
+      if (avoid.has(n) && !goals.has(n)) continue;
+      if (!ok(nx, ny)) {
+        // Across a line, straight on its level, to the free tile past it (the junction's tile only
+        // passed through: a line may not turn on it).
+        const bx = nx + DX[d]!, by = ny + DY[d]!, bn = tileIndex(bx, by);
+        if (!cross || !crossable(sim, nx, ny, d as Rot) || lv(n) !== lv(cur) || !ok(bx, by) || lv(bn) !== lv(n) || (avoid.has(bn) && !goals.has(bn))) continue;
+        const jk = key(n, false), bk = key(bn, false);
+        if (prev.has(jk) || prev.has(bk)) continue;
+        prev.set(jk, k);
+        prev.set(bk, jk);
+        q.push(bk);
+        continue;
+      }
       const dl = Math.abs(lv(n) - lv(cur));
       if (dl > 1 || (dl === 1 && stepped)) continue;
       const nk = key(n, dl === 1);

@@ -10,19 +10,25 @@
 //   machines running (the music's pulses) and those in view, weighted towards the centre and
 //   panned (the machine bed).
 // - cues: bus `sfx` (build tools, power wires, sim events — see build-mode.ts and sim-events.ts),
-//   screens opening and closing, the view morphing, a building selected, clicks on buttons
-//   (tabs and segmented options sound as tabs), toasts by kind (watched on the toast stack),
-//   and spot trades at the Crier (new `spot` commands in the colony's log).
+//   screens opening and closing, the view morphing, clicks on buttons (tabs and segmented options
+//   sound as tabs), toasts by kind (watched on the toast stack), and spot trades at the Crier (new
+//   `spot` commands in the colony's log).
+// - the buildings' signatures (D120): read off the same log, a `place` command plays its
+//   building's signature as it stands — at once on the claim; off it, when its kite lands, and
+//   only near the camera (the sites are watched until then). A building selected plays its
+//   signature's softer variant. Both fade with the distance to the screen's centre.
 import { activityOf } from '@/audio/director';
 import type { SoundWorld } from '@/audio/engine';
+import { SIG_OF_DEF, spatialGain, spatialPan, type SigVariant } from '@/audio/signatures';
 import { Sound, type SoundReport } from '@/audio/sound';
 import { bus, type SfxCue } from '@/core/bus';
 import type { NotifyKind } from '@/core/kinds';
 import { apply } from '@/render/projection';
 import { EPOCH } from '@/sim/constants';
+import { footprint } from '@/sim/entities';
 import { gustPermille } from '@/sim/power/network';
 import type { Sim } from '@/sim/state';
-import { St } from '@/sim/types';
+import { St, type Ent } from '@/sim/types';
 import { settings } from '../settings';
 import type { App } from './app';
 
@@ -53,7 +59,12 @@ export function installSound(app: App, seed: number): SoundShell {
   bus.on('screen:opened', () => sound.cue('open'));
   bus.on('screen:closed', () => sound.cue('close'));
   bus.on('view:changed', () => sound.cue('view'));
-  bus.on('selection:changed', (e) => { if (e.entity) sound.cue('select'); });
+  bus.on('selection:changed', (e) => {
+    // A building plays its signature, softly; a site (not standing yet) the plain glint.
+    const b = e.entity ? app.sim.ents.get(e.entity) : undefined;
+    if (b && b.builtAt === 0) signature(b, 'pick', 0.35);
+    else if (e.entity) sound.cue('select');
+  });
   // The intro's beats (D31) borrow existing cues: a soft page turn per panel, the lift's whoosh
   // as the Heart starts down, a thud for the « Accordé » stamp and at touchdown.
   bus.on('intro:panel', (e) => sound.cue(e.panel === 'landing' ? 'lift' : 'view'));
@@ -75,14 +86,38 @@ export function installSound(app: App, seed: number): SoundShell {
   const toastWatch = new MutationObserver(toasts);
   toastWatch.observe(app.toasts.root, { childList: true });
 
-  // Spot trades are commands the Crier screen sends straight to the colony: read them off its log.
+  /** A building's signature (D120), faded by its distance to the screen's centre (`floor`: the least gain). */
+  function signature(e: Ent, variant: SigVariant, floor: number): void {
+    const s = SIG_OF_DEF[e.def];
+    if (!s) return;
+    const cam = app.camera.cur;
+    const [w, h] = footprint(e.def, e.rot);
+    const [px, py] = apply(app.view.P, e.x + w / 2 - cam.tx, e.y + h / 2 - cam.ty);
+    const u = px / Math.max(1, app.stage.width / 2 / cam.zoom), v = py / Math.max(1, app.stage.height / 2 / cam.zoom);
+    sound.signature(s, variant, spatialGain(u, v, cam.zoom, floor), spatialPan(u));
+  }
+
+  // Spot trades and placements are commands sent straight to the colony: read them off its log.
+  // A placement on the claim stands at once (its signature now); off it a kite flies the
+  // materials out, and the site is watched until it stands (`sites`: id → def).
   let sim: Sim = app.sim;
   let seen = sim.log.length;
-  const trades = (): void => {
-    if (app.sim !== sim || sim.log.length < seen) { sim = app.sim; seen = sim.log.length; }
+  const sites = new Map<number, number>();
+  const fromLog = (): void => {
+    if (app.sim !== sim || sim.log.length < seen) { sim = app.sim; seen = sim.log.length; sites.clear(); }
     for (; seen < sim.log.length; seen++) {
       const c = sim.log[seen]!.cmd;
       if (c.k === 'spot') sound.cue(c.side === 'sell' ? 'sale' : 'purchase');
+      else if (c.k === 'place') {
+        const e = sim.entityAt(c.x, c.y);
+        if (e && e.builtAt === 0) signature(e, 'build', 0.35);
+        else if (e) sites.set(e.id, e.def);
+      }
+    }
+    for (const [id, def] of sites) {
+      const e = sim.ents.get(id);
+      if (!e || e.def !== def) sites.delete(id);
+      else if (e.builtAt === 0) { sites.delete(id); signature(e, 'build', 0); }
     }
   };
 
@@ -116,8 +151,9 @@ export function installSound(app: App, seed: number): SoundShell {
     sound,
     frame(dt) {
       sound.setVolumes({ master: settings.volMaster, music: settings.volMusic, sfx: settings.volSfx });
-      if (sound.state !== 'running') { sound.frame(world); return; }
-      trades();
+      // Silent (locked, hidden): what happens meanwhile is not played later in a burst.
+      if (sound.state !== 'running') { sim = app.sim; seen = sim.log.length; sites.clear(); sound.frame(world); return; }
+      fromLog();
       scan += dt;
       if (scan >= 0.25) { scan = 0; machines(); }
       // Toasts shown during this frame's events (a quest done…) join this frame's batch, so the

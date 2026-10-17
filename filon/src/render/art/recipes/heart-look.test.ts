@@ -31,8 +31,8 @@ describe('the Core’s looks (D86)', () => {
     const out = HEART.ports.find((p) => p.io === 'out')!;
     const outlet = HEART_CORNERS.find((c) => c.piece === 'outlet')!;
     expect([outlet.tx, outlet.ty, outlet.lv]).toEqual([out.x, out.y, BAL.hearthDataLevel]);
-    // One piece a level from 2 on; one corner stays bare.
-    expect(HEART_CORNERS.filter((c) => c.piece).map((c) => c.lv)).toEqual([2, 3, 4]);
+    // One piece a level from 2 on; by level 5 (D118) every corner is mounted.
+    expect(HEART_CORNERS.filter((c) => c.piece).map((c) => c.lv)).toEqual([2, 3, 4, 5]);
     expect(portDrawn(HEART, out, BAL.hearthDataLevel - 1)).toBe(false);
     expect(portDrawn(HEART, out, BAL.hearthDataLevel)).toBe(true);
     expect(HEART.ports.filter((p) => p.io === 'in').every((p) => portDrawn(HEART, p, 1))).toBe(true);

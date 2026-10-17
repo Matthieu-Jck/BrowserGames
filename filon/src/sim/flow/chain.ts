@@ -81,6 +81,17 @@ export function planRaid(cells: readonly number[], seed: number): { posts: Int32
 }
 const NO_POSTS = new Int32Array(0);
 
+/**
+ * Does post `p` of a raid drawn `seed` take `item` at `k` ticks into its raid (D112)? Its turn come
+ * (`p × RAID_STAGGER`), the raid not over, the item to their taste (a roll under its taste ‰ below
+ * 1 000). The one rule `raidStep` runs and the views read ahead (`Chain.raidWillTake`).
+ */
+export function raidTakes(seed: number, p: number, k: number, item: number): boolean {
+  if (k < p * RAID_STAGGER || k >= RAID_TICKS) return false;
+  const taste = gleanTaste(item);
+  return taste >= 1000 || (taste > 0 && hash32(seed, k, p) % 1000 < taste);
+}
+
 let TASTE: Int16Array | null = null;
 /** How likely the Gleaners take an item of this kind when they look at it (‰; 0: they leave it). */
 export function gleanTaste(item: number): number {
@@ -360,15 +371,29 @@ export class Chain extends FNode {
       const bit = 1 << p;
       if (this.raidHeld & bit || k < p * RAID_STAGGER) continue;
       const i = posts[p]!, v = this.cells[i]!;
-      if (!v) continue;
-      const item = v - 1, taste = gleanTaste(item);
-      if (!taste || (taste < 1000 && hash32(this.gleanSeed, k, p) % 1000 >= taste)) continue;
+      if (!v || !raidTakes(this.gleanSeed, p, k, v - 1)) continue;
+      const item = v - 1;
       this.cells[i] = 0;
       this.content -= MU;
       this.raidHeld |= bit;
       ctx.gleaned[item] = ctx.gleaned[item]! + MU;
       ctx.gleanLog?.push(this.tiles[i]!, item, now);
     }
+  }
+
+  /**
+   * What post `p` takes on tick `now` (D112), or −1, read before that tick runs: the item on its cell
+   * if `now` is a step of this line, `night` (the Gleaners out on that tick), the raid on and the post
+   * empty-handed, and `raidTakes` says so — exactly what `raidStep` will do then, read on the line as it
+   * stands before that tick (a post is never the head, the one cell that hands its item on before the
+   * step; an item coming onto the first cell between two steps shows as soon as it lands). The views
+   * reach for it ahead; a test holds the sim to it.
+   */
+  raidWillTake(p: number, now: number, night: boolean): number {
+    if (!night || p >= this.raidPosts.length || this.raidHeld & (1 << p) || !stepAt(this.perMin, now)) return -1;
+    const k = (((now % GLEAN_WINDOW) + GLEAN_WINDOW) % GLEAN_WINDOW) - this.raidAt;
+    const v = this.cells[this.raidPosts[p]!]!;
+    return v && raidTakes(this.gleanSeed, p, k, v - 1) ? v - 1 : -1;
   }
 
   // ── fluids: a FIFO of runs ───────────────────────────────────────────────

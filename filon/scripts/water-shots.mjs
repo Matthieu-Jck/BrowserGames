@@ -2,7 +2,7 @@
 // « The water texture can be improved to reach the level of the mountains texture ») and the
 // Crown's spring in the old tarn's place (« Il reste un lac vestige… Il faut l'enlever ou le
 // remplacer »): a narrow stream, a broad river's middle, a confluence, a fall and where it lands, the
-// spring coming down the Crown into its pool, a lake, the sea's edge — each at near and mid zoom,
+// spring coming down the Crown into its pool (and its summit whole, further off), a lake, the sea's edge — each at near and mid zoom,
 // iso and plan, by day and by night, cropped round the spot: scripts/shot-water-<TAG>-*.png
 // (gitignored; TAG=before|after; ONLY=stream,broad,… to pick). Usage: a server on :5183 (or URL=…,
 // SEED=…), then `TAG=after node scripts/water-shots.mjs`. It starts the sandbox base over (FL.wipe:
@@ -52,7 +52,10 @@ const spots = await page.evaluate(() => {
   const DX = [1, 1, 0, -1, -1, -1, 0, 1], DY = [0, 1, 1, 1, 0, -1, -1, -1];
   const depth = (x, y) => { for (let r = 1; r <= 3; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (!wet(x + dx, y + dy)) return r; return 4; };
   const sp = g.source.spring ?? g.source.tarn;
-  const out = { spring: sp ? [Math.round((sp.x + C + 17) / 2), Math.round((sp.y + C + 8) / 2)] : null, stream: null, broad: null, confluence: null, fall: null, lake: null, sea: null };
+  // The spring's falls: a few tiles down its stream from the summit (map 4, D115), or the tarn; the
+  // whole summit (its plateau and basin, the falls, the ledge, the pool), seen from further off;
+  // the basin up close.
+  const out = { spring: sp ? (g.source.spring ? [sp.x, sp.y + 5] : [sp.x, sp.y]) : null, summit: g.source.spring ? [sp.x, sp.y + 7] : null, basin: g.source.spring ? [sp.x, sp.y] : null, stream: null, broad: null, confluence: null, fall: null, lake: null, sea: null };
   for (let r = 40; r < 440 && Object.values(out).some((v) => !v); r += 1) {
     for (let a = 0; a < 720; a++) {
       const x = Math.round(C + r * Math.cos((a * Math.PI) / 360)), y = Math.round(C + r * Math.sin((a * Math.PI) / 360));
@@ -84,16 +87,18 @@ console.log('spots', JSON.stringify(spots));
 
 const ZOOMS = { near: 3, mid: 1.2 };
 const clip = { x: 300, y: 200, width: 600, height: 400 };
+// The summit whole: further off, the whole window.
+const WIDE = { summit: { zooms: { far: 0.85 }, clip: undefined } };
 for (const [name, at] of Object.entries(spots)) {
   if (!at || (ONLY && !ONLY.includes(name))) continue;
   for (const time of ['noon', 'night']) {
     await page.evaluate((t) => window.FL.dayPhase(t), time);
     for (const mode of ['iso', 'plan']) {
       await view(mode);
-      for (const [zn, z] of Object.entries(ZOOMS)) {
+      for (const [zn, z] of Object.entries(WIDE[name]?.zooms ?? ZOOMS)) {
         await page.evaluate(([x, y, zz]) => window.FL.lookAt(x, y, zz), [at[0], at[1], z]);
         await settle();
-        await page.screenshot({ path: shot(`${name}-${zn}-${mode}-${time}`), clip });
+        await page.screenshot({ path: shot(`${name}-${zn}-${mode}-${time}`), clip: WIDE[name] ? WIDE[name].clip : clip });
         console.log(`✓ shot-water-${TAG}-${name}-${zn}-${mode}-${time}.png`);
       }
     }

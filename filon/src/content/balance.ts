@@ -7,16 +7,21 @@ export const BAL = {
   startCredits: 300, // ◉
 
   // ── hearth & storage ─────────────────────────────────────────────────────
-  hearthCap: [5000, 10000, 20000, 40000], // per item, by Hearth level 1..4
-  // The Hearth's power, by level 1..4 (D101; owner, 2026-10-16: « the solar panels from the core
+  hearthCap: [5000, 10000, 20000, 40000, 80000], // per item, by Hearth level 1..5 (level 5: D118)
+  // The Hearth's power, by level 1..5 (D101, level 5 D118; owner, 2026-10-16: « the solar panels from the core
   // should do a less important part of its electricity production »): its isotope core gives the
   // most, day and night (× genOut) — about 70 % of what it gives at noon —, its built-in solar panel
   // the rest at full sun (× SOLAR‰ and the solar research, like a sun bulb; D25). Level 1: 210 + 90 kW,
   // two drills at night, three by day: the first night asks for a turbine (« Tenir la nuit »), it
   // never cuts the base dead. The world clock is shared, so a base may be founded at night.
-  hearthSolarKw: [90, 130, 180, 240],
-  hearthCoreKw: [210, 300, 420, 560],
+  hearthSolarKw: [90, 130, 180, 240, 320],
+  hearthCoreKw: [210, 300, 420, 560, 740],
   hearthPortPerMin: 120, // an outlet's pace: the Core's data outlet (D86), a trade post's exit
+  // The Core holds at most this many of each data item (every `kind: 'science'` item, whatever its
+  // level; D118, owner 2026-10-17: « pour la data, le cœur ne devrait pouvoir stocker que 200 max »):
+  // at it, the Core makes no more of its own and the lines bringing data wait. A save holding more
+  // keeps it and takes none until it is under.
+  hearthDataCap: 200,
   reservoirMargin: 20, // items: within this of a bound, offline treats the reservoir as at the bound
 
   // ── machines ─────────────────────────────────────────────────────────────
@@ -97,10 +102,10 @@ export const BAL = {
   },
 
   // ── land & space (docs/land.md, D60) ─────────────────────────────────────
-  // The fog (D117: no survey beacon; it lifts as the claim grows). Round the Core by its level 1..4:
+  // The fog (D117: no survey beacon; it lifts as the claim grows). Round the Core by its level 1..5:
   // at founding the cirque, its Crown (r 32; a Closed Cirque's 43) and the near belt's first deposits
   // (from r 36); each level a parcel's half farther.
-  coreReveal: [44, 56, 68, 80],
+  coreReveal: [44, 56, 68, 80, 92],
   landReveal: 32,  // fog lifted round a parcel the claim comes to hold (from its centre): the parcel (23 tiles, half-diagonal 16) and a margin round it
   buildReveal: 12, // round any building placed (plus half its longer side; `revealOf`): a pole line walks the fog back, two poles' reach ahead
   remoteBuildTilesPerSec: 4,
@@ -129,31 +134,47 @@ export const BAL = {
     rentPermille: 30, // of the price, an hour
     /**
      * The neighbouring bases (D110): parcels held by another claim of the Crier, a working base on
-     * them, never for sale nor lease. Map 4 groups them in holdings (`holdings`): the parcel grid
-     * cut in `block` × `block` squares round the Heart's, `chance` ‰ of them holding one base of
-     * `size` parcels side by side (inclusive), each parcel of it with at least `floor` ‰ of its
-     * `samples` × `samples` sample points on open floor (a base stands there) and nothing the land
-     * guarantees the claim (a site, the copper field, a vent, a corridor). Maps 1–3 keep their
-     * scattered parcels, one in `scatter` ‰ past the ring round the starting square, the same ones as
-     * before D110 where a base fits.
+     * them, never for sale nor lease. None within `minRing` − 1 rings of the Heart's parcel: the two
+     * rings round the starting square stay free, the first bases on the horizon (owner, 2026-10-17:
+     * « Il y a trop de bases de PNJ autour de moi »). Map 4 groups them in holdings (`holdings`): the
+     * parcel grid cut in `block` × `block` squares round the Heart's, `chance` ‰ of them holding one
+     * base of `size` parcels side by side (inclusive), each parcel of it with at least `floor` ‰ of
+     * its `samples` × `samples` sample points on open floor (a base stands there) and nothing the land
+     * guarantees the claim (a site, the copper field, a vent, a corridor). Maps 1–3 keep a share of
+     * the sister claims' scattered parcels (`scatter` ‰ past `minRing`, the same draw as before D110:
+     * fewer, never others) where a base fits. Was 420 ‰ and 125 ‰ from ring 3 (D110's first cut).
      */
-    neighbours: { scatter: 125, block: 3, chance: 420, size: [2, 4] as readonly number[], floor: 450, samples: 5 },
+    neighbours: { minRing: 4, scatter: 40, block: 3, chance: 120, size: [2, 4] as readonly number[], floor: 450, samples: 5 },
     farRadius: 320, // tiles: land beyond is cheaper with Far Claims (xp8)
   },
 
   // ── research (D69) ───────────────────────────────────────────────────────
   // A node costs its table's price whatever else the claim owns: the spread penalty and the
   // lineage discount were removed (owner, 2026-10-15, D72).
-  // ── AI tokens (D68): never owned, paid the minute they are used ───────────
-  // Research uses tokens as it runs; each minute the claim's servers cover what they can (what
-  // they make and nobody uses is lost), CrierBelt's servers the rest, at this price.
+  /**
+   * The Core's level each tier needs (D118; owner, 2026-10-17: « il faut que le Tier 2 soit montré
+   * comme bloqué tant que le core n'est pas niveau 3, etc. »), by tier 1..4: Tier 2 at level 3 (the
+   * Archive, where the expertises open), Tier 3 at 4, Tier 4 at 5. Each level is the player's own
+   * upgrade (`hearthUpgrades`), behind the trunk node that closes the tier before.
+   */
+  tierCoreLevel: [1, 3, 4, 5] as readonly number[],
+  // ── AI tokens (D68, D118): never owned, delivered to research as a flow ───
+  // Tier 1 uses none. From Tier 2 a node needs a number of tokens, delivered at each minute's end:
+  // the claim's servers' output of the minute (the oldest project first; what nobody needs is lost,
+  // or rented with Server Rental), then each project's flow bought from CrierBelt at this price.
   tokenCentsPerK: 1000, // centi-ocelles per 1 000 tokens at CrierBelt: 10 ◉ the thousand
+  /**
+   * The flows the launch dialog offers (tokens a minute, D118): these mantissas at every power of
+   * ten from `min` up — 500, 750, 1 000, 1 500, 2 000, 3 000, 5 000, 7 500, 10 000… — so the slider
+   * moves in steps a player reads at a glance.
+   */
+  tokenFlow: { min: 500, steps: [100, 150, 200, 300, 500, 750] as readonly number[] },
   // The Compute Plan (cm_plan): CrierBelt's tokens at this share of the price, for a fee an hour.
   tokenPlan: { priceFactor: 500, feeCentsPerHour: 6000 },
   serverRental: 500, // ‰ of the price CrierBelt pays for the tokens a claim's servers leave unused (cm_rent)
   // Express freight (cm_express): ‰ of the delay, ‰ of the price.
   express: { delay: 500, price: 1250 },
-  landResale: 800, // ‰ of what a parcel cost, when sold back (xp_resell)
+  landResaleTax: 200, // ‰ of a parcel's market price the Ring's Cadastre keeps when it is sold back (D119)
 
   // ── market (see market/) ─────────────────────────────────────────────────
   tradeFee: 200, // ‰ CrierBelt takes on every trade: it holds the Ring's monopoly, and nothing lowers it (owner, 2026-10-14, D64)
@@ -246,7 +267,11 @@ export const BAL = {
   fillSeconds: 30,
   fillRubble: { shallow: 40, salt: 25, deep: 120 } as Record<string, number>,
   backfillerCap: 200,
-  /** Hearth upgrades (level 2, 3, 4): research gate and materials. */
+  /**
+   * Hearth upgrades (level 2, 3, 4, 5): the tree node that makes each possible and its materials —
+   * the player's own upgrade (`hearthUp`), never a research's gift. Levels 3–5 open Tiers 2–4
+   * (`tierCoreLevel`, D118), each behind the trunk node that closes the tier before.
+   */
   hearthUpgrades: [
     // Level 2 is the player's to raise (D101: a tutorial quest, « Le Cœur grandit »), paid in what the
     // base makes by « La Criée »: it mounts the data outlet, whose Survey Data feeds the first lab.
@@ -254,6 +279,8 @@ export const BAL = {
     // Level 3 closes Tier 1 (D93): the Synthesis, paid in Tier 1's own parts; it mounts the Archive of the expertises.
     { unlock: 'tr_synth', cost: [['gear', 150], ['circuit', 60], ['oscillator', 30]] },
     { unlock: 'tr6', cost: [['circuit', 200], ['thermal_core', 20]] },
+    // Level 5 opens Tier 4 (D118): after Codex Lore, paid in Tier 3's optics; it mounts the uplink (north-west).
+    { unlock: 'tr8', cost: [['lens', 120], ['thermal_core', 60], ['atlas', 30]] },
   ] as ReadonlyArray<{ unlock: string; cost: ReadonlyArray<readonly [string, number]> }>,
   /**
    * The Heart level that mounts its data outlet on its south-east corner (D86): below it the

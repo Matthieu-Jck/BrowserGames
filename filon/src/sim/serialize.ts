@@ -9,7 +9,8 @@ import { isEmblem, type Emblem } from '@/content/emblem';
 import { LocalMarketService } from '@/market/service';
 import type { MarketSave } from '@/market/types';
 import { Sim, newTokenStats, type TokenStats } from './state';
-import { effectiveCost, projectPermille, tokensDue } from './research/runtime';
+import { effectiveCost, projectPermille, type Project } from './research/runtime';
+import { RESEARCH_GONE } from '@/content/retired';
 import { BUILDING_KIND, hasResearch, itemDef, itemIdx } from '@/content/registry';
 import { modulesOf, withModules } from './cfg';
 import type { ImportOrder, PostActivity, Shipment, TradeLine } from './trade';
@@ -47,8 +48,12 @@ import { neighboursGiveWay } from './systems/land';
  * 17: no survey beacon and no unloader (D117): their plans dropped from `done`, their cost back to
  * the Heart; a Core above level 1 lifts the fog as far as its level does now; the buildings
  * themselves the remap's (retired ids, refunded).
+ * 18: research without time, its tokens a flow (D118): a project carries the tokens it needs, those
+ * delivered (`tokIn`) and the flow bought for it (`buy`); a project under way loses its minimum time,
+ * a Tier 1 one its tokens, a Tier 2+ one counts what it had used as delivered; the tokens used and
+ * not yet billed (`tokens.use`) are forgiven.
  */
-export const SAVE_VERSION = 17;
+export const SAVE_VERSION = 18;
 
 export interface SaveData {
   v: number;
@@ -94,9 +99,10 @@ export interface SaveData {
   produced: number[];
   consumed: number[];
   /** Research in progress (start order), archive notes, reconversion state. */
-  projects?: Array<{ id: string; lab: number; cost: number[]; paid: number[]; dur: number; el: number; notes?: number; tokens?: number; tokUsed?: number }>;
-  /** AI tokens (D68): used and not yet billed, the servers' output since the boundary, research held, the Compute Plan, the bill's statistics. */
-  tokens?: { use: number; serverAcc: number; held: boolean; plan: boolean; stats?: TokenStats };
+  /** Research under way: `dur` and `el` a reconversion's wait (0 for research since D118); `tokens` needed, `tokIn` delivered, `buy` the flow bought a minute (D118). */
+  projects?: Array<{ id: string; lab: number; cost: number[]; paid: number[]; dur: number; el: number; notes?: number; tokens?: number; tokIn?: number; buy?: number }>;
+  /** AI tokens (D68, D118): the servers' output since the boundary, the bought flows held, the Compute Plan, the minute's statistics. */
+  tokens?: { serverAcc: number; held: boolean; plan: boolean; stats?: TokenStats };
   /** The data makers' carried fractions, by entity (the Heart, autonomous labs). */
   dataAcc?: Array<[number, number]>;
   /** The Research Queue: each lab's next node. */
@@ -191,9 +197,9 @@ export function serialize(sim: Sim): SaveData {
     projects: sim.projects.map((p) => ({
       id: p.id, lab: p.lab, cost: p.cost.flatMap((c) => [c.item, c.mu]), paid: [...p.paid], dur: p.dur, el: p.el,
       ...(p.notes !== undefined ? { notes: p.notes } : {}),
-      ...(p.tokens !== undefined ? { tokens: p.tokens, tokUsed: p.tokUsed ?? 0 } : {}),
+      ...(p.tokens !== undefined ? { tokens: p.tokens, tokIn: p.tokIn ?? 0, ...(p.buy ? { buy: p.buy } : {}) } : {}),
     })),
-    tokens: { use: sim.tokenUse, serverAcc: sim.serverAcc, held: sim.researchHeld, plan: sim.tokenPlan, stats: { ...sim.tokenStats } },
+    tokens: { serverAcc: sim.serverAcc, held: sim.researchHeld, plan: sim.tokenPlan, stats: { ...sim.tokenStats } },
     dataAcc: [...sim.dataAcc].sort((a, b) => a[0] - b[0]),
     labQueue: [...sim.labQueue].sort((a, b) => a[0] - b[0]),
     notes: sim.notes,
@@ -255,7 +261,7 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
   for (const [id, v] of d.acc) sim.accEnergy.set(id, v);
   const wires = d.links ?? [];
   for (let i = 0; i + 1 < wires.length; i += 2) sim.links.add(wires[i]!, wires[i + 1]!);
-  for (const id of d.done) sim.done.add(id);
+  for (const id of d.done) if (!RESEARCH_GONE.has(id)) sim.done.add(id);
   for (const [t, v] of d.terrainDiff) sim.grid.terrainDiff.set(t, v);
   for (const [t, v] of d.levelDiff ?? []) sim.grid.levelDiff.set(t, v);
   for (const [t, v] of d.oreDiff) sim.grid.oreDiff.set(t, v);
@@ -272,24 +278,32 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
   sim.respecs = d.respecs ?? 0;
   sim.lastRespec = d.lastRespec ?? -1;
   for (const p of d.projects ?? []) {
+    if (RESEARCH_GONE.has(p.id)) {
+      // A node taken out of the tree (D119): the data it had paid goes back to the Heart.
+      p.paid.forEach((mu, i) => { const it = p.cost[2 * i] ?? -1; if (it >= 0 && it < N_ITEMS) sim.stock[it]! += mu; });
+      continue;
+    }
     const cost: Array<{ item: number; mu: number }> = [];
     for (let i = 0; i < p.cost.length; i += 2) cost.push({ item: p.cost[i]!, mu: p.cost[i + 1]! });
-    const proj = { id: p.id, lab: p.lab, cost, paid: [...p.paid], dur: p.dur, el: p.el, ...(p.notes !== undefined ? { notes: p.notes } : {}), ...(p.tokens !== undefined ? { tokens: p.tokens, tokUsed: p.tokUsed ?? 0 } : {}) };
+    const proj: Project = {
+      id: p.id, lab: p.lab, cost, paid: [...p.paid], dur: p.dur, el: p.el, ...(p.notes !== undefined ? { notes: p.notes } : {}),
+      ...(p.tokens !== undefined ? { tokens: p.tokens, tokIn: p.tokIn ?? 0, ...(p.buy ? { buy: p.buy } : {}) } : {}),
+    };
     if (p.id.startsWith('respec:') || p.tokens !== undefined) { sim.projects.push(proj); continue; }
     // A project from before AI tokens (D68), or started under the spread penalty (D72: the
     // v7 → v8 migration strips its tokens to bring it here): rebased on the node's cost today,
-    // its progress kept (the data it paid as a share of the new cost, its elapsed time as a share
-    // of the new duration) and the tokens of what it already did taken as paid. A node gone: dropped.
+    // its progress kept — the lesser of its data paid and its time run, as a share of the new data,
+    // and of the new tokens taken as delivered (D118: no time any more). A node gone: dropped.
     if (!hasResearch(p.id)) continue;
     const share = projectPermille(proj);
     const now = effectiveCost(p.id);
-    const el = p.dur > 0 ? Math.floor((Math.min(p.el, p.dur * 1000) * now.ticks) / p.dur) : 0;
-    const re = { id: p.id, lab: p.lab, cost: now.cost, paid: now.cost.map((c) => Math.floor((c.mu * share) / 1000)), dur: now.ticks, el, tokens: now.tokens, tokUsed: 0 };
-    re.tokUsed = tokensDue(re);
-    sim.projects.push(re);
+    sim.projects.push({
+      id: p.id, lab: p.lab, cost: now.cost, paid: now.cost.map((c) => Math.floor((c.mu * share) / 1000)), dur: 0, el: 0,
+      tokens: now.tokens, tokIn: Math.floor((now.tokens * share) / 1000),
+    });
   }
   if (d.tokens) {
-    sim.tokenUse = d.tokens.use; sim.serverAcc = d.tokens.serverAcc; sim.researchHeld = d.tokens.held; sim.tokenPlan = d.tokens.plan;
+    sim.serverAcc = d.tokens.serverAcc; sim.researchHeld = d.tokens.held; sim.tokenPlan = d.tokens.plan;
     sim.tokenStats = { ...newTokenStats(), ...(d.tokens.stats ?? {}) };
   }
   for (const [id, v] of d.dataAcc ?? []) sim.dataAcc.set(id, v);

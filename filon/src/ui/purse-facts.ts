@@ -131,9 +131,11 @@ export function purseSummary(sim: Sim, h: PurseHistory): PurseSummary {
   // What the journal booked for trade but the ledger no longer holds (it keeps its last lines only).
   const rest = d('sales') + d('orders') - traded;
   if (rest) lines.push({ kind: 'trade', perHour: hourly(rest) });
+  // The token flow bought for research (D118): its tokens a minute, and the share of all research's
+  // tokens the claim's servers gave meanwhile (their chip).
   if (d('tokens')) {
     const used = now.used - from.used, bought = now.bought - from.bought;
-    lines.push({ kind: 'tokens', perHour: hourly(d('tokens')), perMin: used / minutes, servers: used > 0 ? Math.round(((used - bought) * 1000) / used) : 0 });
+    lines.push({ kind: 'tokens', perHour: hourly(d('tokens')), perMin: bought / minutes, servers: used > 0 ? Math.round(((used - bought) * 1000) / used) : 0 });
   }
   if (d('fee')) lines.push({ kind: 'fee', perHour: hourly(d('fee')) });
   if (d('rental')) lines.push({ kind: 'rental', perHour: hourly(d('rental')) });

@@ -36,6 +36,10 @@
 //
 // A camouflaged ribbon (D109) is buried: what rides it is not drawn; an item comes out of the sand
 // where the line meets an open piece (its vents give the odd glint: art/recipes/belts.ts).
+//
+// The Gleaners' posts (D112, world/gleaners-view.ts): the tiles in `watch` get what was drawn on them
+// this frame in `seen` (item, tile coords, view px, size), so a Gleaner's hand meets the very token
+// on the belt and takes it from where it was last drawn.
 import { Container, Matrix, Particle, ParticleContainer, Rectangle, Sprite, type Texture } from 'pixi.js';
 import { ITEM_IDS, buildingDef } from '@/content/registry';
 import type { Sim } from '@/sim/state';
@@ -52,6 +56,8 @@ import { ISO_LIN, TOP, invert, isoToView, type Lin } from '../projection';
 /** Item frame size (world px): iso and plan (0.5 of a 32 px plan tile; the owner found 0.7, then 0.6 a bit big). */
 const ISO_PX = 21;
 const PLAN_PX = 0.5 * TOP;
+/** An item's size on screen (world px) at plan-ness `t` and `zoom`: a little bigger zoomed out, to stay legible (the Gleaners hold theirs at the same size). */
+export const itemPx = (t: number, zoom: number): number => (ISO_PX + (PLAN_PX - ISO_PX) * t) / Math.max(0.75, Math.min(1, zoom));
 /** The morph's cross-fade (layers.ts `setView`): the volumes are gone from te 0.6 on, the plan sprites show from te 0.3. */
 const ISO_UNTIL = 0.6, PLAN_FROM = 0.3;
 /** An item falling into a pit: how much it shrinks and fades by the time it is gone. */
@@ -165,6 +171,9 @@ class Sorted {
   }
 }
 
+/** An item drawn on a watched tile this frame: its item, where (tile coords), at view px, its size (world px). */
+export interface SeenItem { item: number; tx: number; ty: number; x: number; y: number; px: number }
+
 export class ItemsView {
   private readonly under: Group;
   private readonly over: Group;
@@ -184,6 +193,9 @@ export class ItemsView {
   /** Debug (FL): record every drawn item of the last frame (tile coords) for the trace rigs. */
   debugOn = false;
   private dbg: DrawnItem[] = [];
+  /** Tiles whose items another view reads this frame (the Gleaners' posts, D112), and what was drawn on each. */
+  watch: ReadonlySet<number> | null = null;
+  readonly seen = new Map<number, SeenItem[]>();
   /** The items drawn last frame (recorded while `debugOn`). */
   debugSnapshot(): DrawnItem[] { return this.dbg; }
 
@@ -230,7 +242,7 @@ export class ItemsView {
     const [vx0, vy0, vx1, vy1] = view;
     const iso = 1 - t;
     // Items grow a little when zoomed out so they stay legible; hidden when tiny.
-    const px = (ISO_PX + (PLAN_PX - ISO_PX) * t) / Math.max(0.75, Math.min(1, zoom));
+    const px = itemPx(t, zoom);
     const scale = px / IB_PX;
     const show = zoom >= 0.28;
     const sorted = t < ISO_UNTIL ? this.sorted : null, planned = t > PLAN_FROM ? this.planned : null;
@@ -242,6 +254,8 @@ export class ItemsView {
       this.planBox.setFromMatrix(new Matrix(I.a, I.b, I.c, I.d, 0, 0));
     }
     if (this.debugOn) this.dbg = [];
+    this.seen.clear();
+    const watch = this.watch?.size ? this.watch : null;
     let n = 0;
     const draw = (k: FlowItem): void => {
       if (k.x < vx0 - 1 || k.x > vx1 + 2 || k.y < vy0 - 1 || k.y > vy1 + 2) return;
@@ -266,6 +280,14 @@ export class ItemsView {
       }
       n++;
       if (this.debugOn) this.dbg.push({ id: n, x: k.x, y: k.y, z: k.z + lv * LH, item: k.item, over: !!k.o, sorted: z });
+      if (watch) {
+        const tile = Math.floor(k.y) * 1024 + Math.floor(k.x);
+        if (watch.has(tile)) {
+          let l = this.seen.get(tile);
+          if (!l) this.seen.set(tile, (l = []));
+          l.push({ item: k.item, tx: k.x, ty: k.y, x, y: y - h * iso, px });
+        }
+      }
     };
     if (show && sim.graph) this.flow.each(sim, now, view, draw);
     this.lift.settle(now);

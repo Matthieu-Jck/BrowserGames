@@ -156,8 +156,9 @@ describe('nothing unusable (D107)', () => {
     expect(RESEARCH[TIER1_WHOLE].prereq).not.toContain('cm2');
   });
 
-  it('research is short early and long late (D107): minutes by tier', () => {
-    const band: Record<number, [number, number]> = { 1: [1, 3], 2: [8, 30], 3: [60, 360], 4: [480, 1440] };
+  it('research is short early and long late (D107): the pace by tier — none at Tier 1, which takes no tokens either (D118)', () => {
+    const band: Record<number, [number, number]> = { 1: [0, 0], 2: [8, 30], 3: [60, 360], 4: [480, 1440] };
+    for (const r of Object.values(RESEARCH)) expect(r.tokens === 0, r.name.en).toBe(r.tier === 1);
     for (const [d, c] of Object.entries(DEPTH_COST)) {
       const [lo, hi] = band[tierOfDepth(Number(d))]!;
       expect(c.minutes, `depth ${d}`).toBeGreaterThanOrEqual(lo);

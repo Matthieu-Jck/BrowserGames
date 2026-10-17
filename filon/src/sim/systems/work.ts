@@ -69,7 +69,7 @@ export function workOf(sim: Sim, e: Ent): Work {
     case 'lab': {
       const p = sim.projects.find((q) => q.lab === e.id);
       if (!p || projectSat(sim, p, sat) <= 0) return 'off';
-      return p.el < p.dur * 1000 ? 'on' : 'pause'; // its time done, the data still owed
+      return 'on'; // powered with a project: it takes its data as it comes, its tokens at the minute (D118)
     }
     case 'server': {
       const net = g.netOfEnt.get(e.id);

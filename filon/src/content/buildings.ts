@@ -215,7 +215,7 @@ export const BUILDINGS = {
   observatory: {
     // The Research Lab (D68); its id stays `observatory` (saves, the plan, the unlock tree).
     name: { fr: 'Laboratoire de recherche', en: 'Research Lab' },
-    desc: { fr: 'Mène une recherche à la fois. Lance-la dans l’arbre des techniques (T) et apporte au laboratoire ses données par ruban (d’arpentage, puis mécaniques, atlas et codex selon le tier) ; elle consomme aussi des tokens d’IA à mesure qu’elle avance, ceux de tes serveurs d’abord, puis ceux de CrierBelt, payés à la minute.', en: 'Runs one research project at a time. Start it in the tech tree (T) and bring the lab its data by ribbon (Survey Data, then Mechanics Data, atlases and codices by tier); it also uses AI tokens as it runs, your own servers’ first, then CrierBelt’s, paid by the minute.' },
+    desc: { fr: 'Mène une recherche à la fois, lancée dans l’arbre des techniques (T) : elle se termine dès que ses données (d’arpentage, puis mécaniques, atlas et codex selon le tier) sont arrivées par ruban. À partir du Tier 2, il lui faut aussi des tokens d’IA, ceux de tes serveurs d’abord, puis le flux que tu achètes à CrierBelt.', en: 'Runs one research project at a time, started in the tech tree (T): it is done as soon as its data (Survey Data, then Mechanics Data, atlases and codices by tier) has arrived by ribbon. From Tier 2 it also needs AI tokens, your own servers’ first, then the flow you buy from CrierBelt.' },
     // 3×3 since D84 (owner, 2026-10-15: "the research lab should be 3x3"): an intake along its whole back.
     kind: 'lab', category: 'research', w: 3, h: 3, needsZone: true, unlock: 'observatory', kw: 150, idleKw: 15,
     cost: [['iron_plate', 30], ['glass', 20], ['copper_wire', 10]], ports: [P(0, 2, 'S', 'in'), P(1, 2, 'S', 'in'), P(2, 2, 'S', 'in')],
@@ -335,7 +335,7 @@ export const BUILDINGS = {
   },
   server: {
     name: { fr: 'Serveur', en: 'Server' },
-    desc: { fr: 'Calcule pour tes recherches : 2 000 tokens d’IA par minute pour 400 kW. Ce que les recherches n’utilisent pas dans la minute est perdu.', en: 'Computes for your research: 2,000 AI tokens a minute for 400 kW. What research does not use within the minute is lost.' },
+    desc: { fr: 'Calcule pour tes recherches : 2 000 tokens d’IA par minute pour 400 kW, aux recherches dans l’ordre où elles ont été lancées. Ce qu’aucune n’utilise dans la minute est perdu.', en: 'Computes for your research: 2,000 AI tokens a minute for 400 kW, to the research projects in the order they started. What none uses within the minute is lost.' },
     kind: 'server', category: 'research', w: 2, h: 2, needsZone: true, unlock: 'an_servers', kw: 400, idleKw: 40,
     // Its clocks are quartz oscillators since D87 (a server built before gives them back too when taken down: nothing vanishes).
     cost: [['circuit', 10], ['iron_plate', 20], ['copper_wire', 10], ['oscillator', 4]], ports: [], server: { tokensPerMin: 2000 },

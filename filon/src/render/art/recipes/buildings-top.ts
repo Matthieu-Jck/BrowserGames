@@ -3,7 +3,7 @@
 // industrial (derricks from above, hoppers, tank roofs, furnace shafts, sawtooth roofs, crates,
 // drums); nobody lives at the base (D29), so even the Heart is machinery: depot, solar rows, uplink,
 // and the pieces its levels mount on its corners (D86: the data outlet, the expertise archive, the
-// grid station). Research reads as white lab roofs banded in violet, array panels, rack roofs with fans.
+// grid station, the uplink mast). Research reads as white lab roofs banded in violet, array panels, rack roofs with fans.
 // Tall parts cast long shadows down-right (`dropShadow`), so height reads from above. Routing
 // blocks are a plate whose band-wide mouths line up with the ribbons. Recipes draw in the
 // building's own (unrotated) tile frame; the Frame rotates positions only, so light, hatching
@@ -25,8 +25,8 @@ import { CHARGER_BUSHING, HEART_MASTS, KIT_K, POLE, PYLON, kitDrawn, onArm, term
 import { BIG_ROTOR, BORE, CUTTER, PITCH_ROTOR, SAND_WHEEL, TURBINE, boreLeg, boreSquare, bucketFull, vaneAt, type HRotor } from './moving';
 import { QZ, crystal } from '../rock';
 import {
-  BIG_WIND, COOLANT, COVER, DOT, DOT_G, EMBER, EMBER_D, HEART_BEACONS, HEART_CORNERS, HEART_FLOODS, JUNCTION, LAB, PCB, PIT, PIT_TEMPER, RACK, SCORCH, SKY, TP_BAND, TP_DECK, TP_DECK_R, TP_LAMPS, TP_PAD, TP_PED, TP_RIBBON, TP_TEMPER, TP_WALL, WIND,
-  CAN, CAN_L, COPPER, ES_CAB_Z, ES_CERAMIC, ES_POT, ES_SLAB, MINER, SB, SB_COAL, SB_ENAMEL, SB_WATER, SB_WHEEL, SPOIL, apronMarks, rod, burnPts, heartCornerAt, heartLook, junctionHump, pitMarks, portDrawn, sparkIso, stationSpots, type SkyPiece, type WindSpec,
+  BIG_WIND, COOLANT, COVER, DOT, DOT_G, EMBER, EMBER_D, HEART_BEACONS, HEART_CORNERS, HEART_CROWN, HEART_FLOODS, JUNCTION, LAB, PCB, PIT, PIT_TEMPER, RACK, SCORCH, SKY, TP_BAND, TP_DECK, TP_DECK_R, TP_LAMPS, TP_PAD, TP_PED, TP_RIBBON, TP_TEMPER, TP_WALL, WIND,
+  CAN, CAN_L, COPPER, ES_CAB_Z, ES_CERAMIC, ES_POT, ES_SLAB, MINER, SB, SB_COAL, SB_ENAMEL, SB_WATER, SB_WHEEL, SPOIL, apronMarks, rod, burnPts, heartCornerAt, heartLook, junctionHump, pitMarks, portDrawn, sparkIso, stationSpots, uplinkSpots, type SkyPiece, type WindSpec,
 } from './buildings';
 
 export const TOP_PX = 64;     // px per tile in the atlas (2× of the 32 plan world px)
@@ -439,6 +439,52 @@ function stationTop(ctx: Ctx, f: Frame, tx: number, ty: number, s: number): void
   }
   light(ctx, ...f.p(bx + 0.18, by + 0.14), f.l(0.022), C.ledGreen);
   cable(ctx, f.p(bx - 0.1, by + 0.1), f.p(Math.min(4, Math.max(1, bx)), Math.min(4, Math.max(1, by))), f.l(0.035), 0.12, C.steelDD, s + 20);
+}
+
+/**
+ * The uplink from above (D118, level 5; buildings.ts `uplinkPieceIso`, the same spots): the guys
+ * to their hazard anchors, the violet radio cabinet with its LEDs, the lattice mast banded coral
+ * on its footing (its long shadow over the slab), the small dish on its arm to the south, the
+ * whip's cyan lamp on the mast's head.
+ */
+function uplinkPieceTop(ctx: Ctx, f: Frame, tx: number, ty: number, s: number): void {
+  const { mast: [mx, my], dish: [dx, dy], top, cab: [bx, by], guys } = uplinkSpots(tx, ty);
+  const m = f.p(mx, my), d = f.p(dx, dy);
+  for (const [i, [ax, ay]] of guys.entries()) {
+    ink(ctx, [f.p(ax, ay), m], { w: 1, color: C.steelDD, alpha: 0.8, shade: false, taper: 0, jitter: 0, seed: s + i });
+    shape(ctx, rr(f, ax - 0.06, ay - 0.06, ax + 0.06, ay + 0.06, 0.01), C.hazard, { w: 1, shade: false, jitter: 0, seed: s + 3 + i });
+  }
+  const cab = rr(f, bx - 0.13, by - 0.11, bx + 0.13, by + 0.11, 0.02);
+  dropShadow(ctx, f, cab, 0.95, 0.28);
+  shape(ctx, cab, mix(C.violet, C.steelL, 0.3), { w: 1.3, seed: s + 6 });
+  ledStrip(ctx, f.p(bx - 0.07, by + 0.06), f.p(bx + 0.07, by + 0.06), 3, f.l(0.02), [C.led, C.ledGreen, C.led], s + 7);
+  const foot = ellipsePts(m[0], m[1], f.l(0.16), f.l(0.16), s + 9, 0, 20);
+  shape(ctx, foot, C.steelD, { w: 1.1, shade: false, jitter: 0, seed: s + 9 });
+  derrickTop(ctx, f, mx, my, 0.11, 0.035, top, s + 10, C.coral);
+  ink(ctx, [m, d], { w: f.l(0.05), color: C.steelD, shade: false, taper: 0, jitter: 0, seed: s + 20 });
+  dropShadow(ctx, f, ellipsePts(d[0], d[1], f.l(0.15), f.l(0.15), s + 21, 0, 24), 3.0, 0.22);
+  dish(ctx, d[0], d[1], f.l(0.15), s + 22);
+  light(ctx, m[0], m[1], f.l(0.04), C.led);
+}
+
+/**
+ * Level 5's crown from above (D118; buildings.ts `HEART_CROWN`): a brass rim inside the coral
+ * cornice and lamps along it, cold and warm in turn — none where the dish or the flag's badge
+ * (world/heart-flag.ts `FLAG`, half a tile across) is laid over the roof: a covered lamp would
+ * still glow at night.
+ */
+function crownTop(ctx: Ctx, f: Frame, s: number): void {
+  const a = 1.13, b = 3.87;
+  ink(ctx, rr(f, a + 0.035, a + 0.035, b - 0.035, b - 0.035, 0.04), { closed: true, w: f.l(0.02), color: C.brassL, shade: false, taper: 0, jitter: 0, seed: s });
+  const far = (x: number, y: number, cx: number, cy: number, r: number): boolean => (x - cx) * (x - cx) + (y - cy) * (y - cy) > r * r;
+  let j = 0;
+  for (const u of HEART_CROWN) {
+    const t = a + (b - a) * u;
+    for (const [x, y] of [[t, a], [b, t], [t, b], [a, t]] as const) {
+      if (!far(x, y, HEART_DISH_TOP.x, HEART_DISH_TOP.y, HEART_DISH_TOP.r + 0.07) || !far(x, y, HEART_FLAG_AT[0], HEART_FLAG_AT[1], 0.5)) continue;
+      light(ctx, ...f.p(x, y), f.l(0.022), j++ % 2 ? C.ledWarm : C.led);
+    }
+  }
 }
 
 /** A floodlight on the slab's edge from above (level 4): a dark hood, its warm lamp. */
@@ -934,6 +980,10 @@ const MOVING_TOP: Partial<Record<BuildingId, { body: (ctx: Ctx, f: Frame, seed: 
 
 /** The Heart's solar rows (same rects as its iso art): `n` framed panels along each row. */
 
+/** The Heart's roof dish from above: its centre and radius (local tiles). */
+const HEART_DISH_TOP = { x: 2.7, y: 1.72, r: 0.62 } as const;
+/** Where the claim's flag stands on the Heart's roof, its badge's place in plan (local tiles: world/heart-flag.ts `FLAG`, which the art kit may not import). */
+const HEART_FLAG_AT = [1.3, 1.3] as const;
 const HEART_PV_TOP: ReadonlyArray<readonly [number, number, number, number, number]> = [
   [1.3, 2.35, 2.0, 2.75, 1],
   [1.3, 2.95, 3.45, 3.35, 3],
@@ -1351,8 +1401,8 @@ const R: Partial<Record<BuildingId, Recipe>> = {
     // aprons from every port into the fortified depot; on its roof the solar rows, the uplink
     // dish and a drone hatch; its two link masts, west and east; status beacons. It grows with
     // its level (D86): bare corners with a mounting plate at level 1, then the data outlet, the
-    // expertise archive and the grid station on three of them (`HEART_CORNERS`), and the trims of
-    // `heartLook`. An automated base: nothing is lit from inside.
+    // expertise archive, the grid station and the uplink mast on them (`HEART_CORNERS`), and the
+    // trims of `heartLook` (level 5's crown of lamps, D118). An automated base: nothing is lit from inside.
     const look = heartLook(lv);
     plinth(ctx, f, C.steel, 0.05, s);
     // Level 4: a hazard-striped skirt round the depot's foot (under the aprons that cross it).
@@ -1379,7 +1429,8 @@ const R: Partial<Record<BuildingId, Recipe>> = {
       if (lv < c.lv || !c.piece) mountPlateTop(ctx, f, c.tx, c.ty, k);
       else if (c.piece === 'outlet') { const p = ports.find((q) => q.io === 'out')!; dataOutletTop(ctx, f, p.x, p.y, sideIndex[p.side], k); }
       else if (c.piece === 'archive') archiveTop(ctx, f, c.tx, c.ty, k);
-      else stationTop(ctx, f, c.tx, c.ty, k);
+      else if (c.piece === 'station') stationTop(ctx, f, c.tx, c.ty, k);
+      else uplinkPieceTop(ctx, f, c.tx, c.ty, k);
     }
     // The depot: battered armour walls round a dark roof, a drone hatch, vents along the edges;
     // the level's trims (D86): a coral cornice along the walls' top, brass pilasters at the corners.
@@ -1387,6 +1438,7 @@ const R: Partial<Record<BuildingId, Recipe>> = {
     castShadow(ctx, outer, f.l(0.32), 0.32);
     batter(ctx, outer, inner, mix(C.steel, C.violet, 0.22), C.steelD, s + 200);
     if (look.cornice) ink(ctx, rr(f, 1.13, 1.13, 3.87, 3.87, 0.04), { closed: true, w: f.l(0.045), color: C.coral, shade: false, taper: 0, jitter: 0, seed: s + 205 });
+    if (look.crown) crownTop(ctx, f, s + 207);
     if (look.pilasters) for (const [x, y] of [[1, 1], [3.86, 1], [3.86, 3.86], [1, 3.86]] as const) shape(ctx, rr(f, x, y, x + 0.14, y + 0.14, 0.02), C.brass, { w: 1.1, shade: false, jitter: 0, seed: s + 206 });
     for (let i = 1; i < 12; i++) for (const y of [1.08, 3.92]) rivet(ctx, ...f.p(1 + i * 0.25, y), f.l(0.022), C.steelL);
     hatchDoor(ctx, rr(f, 1.3, 1.3, 1.85, 1.85, 0.02), s + 210);
@@ -1397,9 +1449,9 @@ const R: Partial<Record<BuildingId, Recipe>> = {
       pvPanel(ctx, [f.p(x0, y0), f.p(x1, y0), f.p(x1, y1), f.p(x0, y1)], n * 3, 2, s + 400 + i * 20);
     }
     // The uplink: a big dish over the depot's north half (no mark on its face: owner, 2026-10-13).
-    const dc = f.p(2.7, 1.72);
-    castShadow(ctx, ellipsePts(dc[0], dc[1], f.l(0.62), f.l(0.62), s + 300, 0, 32), f.l(0.45), 0.25);
-    dish(ctx, dc[0], dc[1], f.l(0.62), s + 300);
+    const dc = f.p(HEART_DISH_TOP.x, HEART_DISH_TOP.y);
+    castShadow(ctx, ellipsePts(dc[0], dc[1], f.l(HEART_DISH_TOP.r), f.l(HEART_DISH_TOP.r), s + 300, 0, 32), f.l(0.45), 0.25);
+    dish(ctx, dc[0], dc[1], f.l(HEART_DISH_TOP.r), s + 300);
     // A drone at work over the hatch (level 3).
     if (look.drone) droneTop(ctx, f, 1.66, 1.7, 0.2, s + 50);
     // The two link masts its wires meet (art/terminals.ts `HEART_MASTS`); the status beacons the level lights.

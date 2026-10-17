@@ -8,31 +8,38 @@
 // Between the two blocks stands the GATE (D71): the research lab's plan, in its own column, which
 // needs every other plan — each path's last node links into it, a caption counts the plans taken.
 // On the right the research (D68–D70) reads in four TIER BANDS (Tier 1 … Tier 4), a gutter between
-// them, each headed by what opens it (the lab's plan, then a node of the trunk, standing in the band
-// before; Tier 2 also two expertises chosen at the Core's Archive, D93). The trunk — « Fondations » —
+// them — a strong ink rule and a wider gap between Tier 1 and Tier 2 (D118: « il doit être séparé du
+// Tier 1 clairement ») —, each headed by the Core's level it needs from Tier 2 (D118, « Tier 2 · Cœur
+// niveau 3 », the Core's look at that level, padlocked and the band hatched while the Core is below
+// it) and by what opens it (the lab's plan, then a node of the trunk, standing in the band before;
+// Tier 2 also two expertises chosen at the Core's Archive, D93). The trunk — « Fondations » —
 // runs on top; under it one lane per family, well apart (D107), whose name changes with the tier
 // (Commerce: Échange → Finance → Économie de marché) and which splits in two specialities from Tier 3
 // (a sub-lane each, its name on the divider). The Synthesis stands alone at Tier 1's end, every
 // family's Tier 1 joining it on one bus. Links run in right angles through the gaps between cards and
 // lanes, never across a card; a node the player selects lights its whole chain — what it needs, what
 // needs it — and fades the rest until another is selected, the empty tree clicked or Esc pressed
-// (`chainOf`; D111: the mouse over a card only raises it). A research card
-// shows what it unlocks first (buildings, recipes' items, a glyph for a feature), then its minimum
-// time — the table's, whatever else the claim owns (D72) — and its kinds of data (one more each tier,
-// D71: Survey Data, Mechanics Data, atlases, codices), then its AI tokens and their price at
-// CrierBelt now (« offert » before the servers, D105). The header adds research's
-// strip: slots, labs, the last minute's token bill, the purse-in-the-red warning, the Compute
-// Plan's switch and the Research Queue (each lab's queued node, ✕ to clear it).
+// (`chainOf`; D111: the mouse over a card only raises it). A research card shows what it unlocks
+// first (buildings, recipes' items, a glyph for a feature), then its kinds of data (one more each
+// tier, D71: Survey Data, Mechanics Data, atlases, codices) and, from Tier 2, its AI tokens and their
+// price at CrierBelt now. No time anywhere (D118: a research takes as long as its data takes to reach
+// the lab and its tokens to come in). The header adds research's strip: slots, labs, the last
+// minute's token bill, the purse-in-the-red warning, the Compute Plan's switch and the Research
+// Queue (each lab's queued node, ✕ to clear it).
 // The detail pane gives the whole picture: what a node unlocks (a plain line per feature), its
-// cost, its progress (each kind of data paid, tokens used, time), the
-// action (start, cancel, queue in a lab). The reconversion's button is gone (D107: « retire le bouton
-// reconvert de l'arbre »); a save's reconversion under way still runs out in the HUD.
+// cost, its progress (each kind of data paid, its tokens in, the flows that bring them and the
+// flow bought, which the player can change), the action (start, cancel, queue in a lab). « Lancer »
+// starts a Tier 1 node at once; from Tier 2 it opens the launch dialog (../launch-dialog.ts, D118:
+// how many tokens a minute to buy from CrierBelt, what it costs, when it would be done). The
+// reconversion's button is gone (D107: « retire le bouton reconvert de l'arbre »); a save's
+// reconversion under way still runs out in the HUD.
 // The layout is computed once from content (`treeLayout`); the 4 Hz refresh writes states, costs
-// and progress — the nodes' states and a project's clock derived in ../tree-state.ts, which the
+// and progress — the nodes' states and a project's state derived in ../tree-state.ts, which the
 // HUD's chips read too. The sim decides; this only shows and asks (`unlockPlan`, `startResearch`,
-// `cancelResearch`, `queueResearch`, `setTokenPlan`).
-import { tokensBilled } from '@/sim/systems/research';
+// `setTokenBuy`, `cancelResearch`, `queueResearch`, `setTokenPlan`).
+import { coreLevelFor, tokenFlowSteps } from '@/sim/systems/research';
 import { tokenFacts } from '../token-facts';
+import { LaunchDialog } from '../launch-dialog';
 import '../styles/research.css';
 import { BAL } from '@/content/balance';
 import { ESSENTIAL, RESERVED } from '@/content/reserve';
@@ -50,8 +57,7 @@ import { duration, num } from '@/i18n/format';
 import type { Atlas } from '@/render/art/atlas';
 import { C } from '@/render/art/tokens';
 import type { Sim } from '@/sim/state';
-import { TPS } from '@/sim/constants';
-import { branchCounts, effectiveCost, projectPermille, tokensDue, type Project } from '@/sim/research/runtime';
+import { branchCounts, effectiveCost, projectPermille, tokensLeft, type Project } from '@/sim/research/runtime';
 import { buildingIcon, itemIcon } from '../build-bar';
 import { glyph as inkGlyph } from '../glyphs';
 import { itemMention, itemRef } from '../mention';
@@ -67,6 +73,11 @@ export interface ResearchHost {
   notify(kind: 'good' | 'bad' | 'info' | 'warn', text: string): void;
   /** The node the tutorial's guide is after (null: none): the tree opens on it. */
   focus?(): string | null;
+  /**
+   * The base's production of an item now, items a minute (the statistics' last ten minutes), for the
+   * launch dialog's estimate of when a node's data would be in; null while not measured yet.
+   */
+  dataRate?(item: number): number | null;
 }
 
 type Loc = 'fr' | 'en';
@@ -85,7 +96,7 @@ const BAND_TOP = 4, BAND_BOTTOM = 7;
 /** The research lab's gate (D71): its card, and the room left of it where the paths' links converge. */
 const GATE_W = 220, GATE_GAP = 96;
 
-// Research's geometry (D69, D107): wide cards (three lines: name; time and data; tokens), tier
+// Research's geometry (D69, D107): wide cards (three lines: name; data; tokens from Tier 2), tier
 // bands of sub-columns with a gutter between bands, lanes far enough apart for each tier's family
 // name on their edge and for the links' channels. Links never cross a card: they turn in the gaps
 // between sub-columns and run along the gaps between lanes (`route`). The rows close again after
@@ -106,7 +117,14 @@ const R_LABEL_W = 156;
 const TIER_PAD = 26;
 /** Between two tier bands: the paper shows through. */
 const TIER_GUTTER = 22;
-const TIER_HEAD_H = 52;
+/**
+ * Between Tier 1 and Tier 2 (D118; owner, 2026-10-17: « il doit être séparé du Tier 1 clairement »):
+ * wider, a strong ink rule down its middle — Tier 1 is data alone, Tier 2 on waits for the Core's
+ * level and takes AI tokens.
+ */
+const TIER_SPLIT = 58;
+/** A tier band's head: « Tier 2 · Cœur niveau 3 » over « Ouvert par … ». */
+const TIER_HEAD_H = 58;
 /** A research band reaches this far above and below its rows. */
 const R_BAND = 5;
 /** How round a link's elbow is (px). */
@@ -141,9 +159,11 @@ interface TierTag { lane: FamilyId; tier: ResearchTier; spec: string | null; x: 
 interface Split { lane: FamilyId; x: number; w: number; y: number }
 /** The research lab's gate (D71): its column between the two blocks, the card's top left. */
 interface GateCol { id: string; x: number; y: number }
+/** The ink rule between Tier 1 and Tier 2 (D118): its x, down from the heads' top to the block's bottom. */
+interface TierRule { x: number; y: number; h: number }
 export interface TreeLayout {
   nodes: Spot[]; lanes: Lane[]; blocks: Block[]; links: Link[];
-  tiers: TierCol[]; tags: TierTag[]; splits: Split[]; gate: GateCol | null;
+  tiers: TierCol[]; tags: TierTag[]; splits: Split[]; gate: GateCol | null; rule: TierRule | null;
   w: number; h: number;
 }
 
@@ -305,9 +325,11 @@ function closureOf(id: string, out = new Set<string>()): Set<string> {
  * (`TIER1_WHOLE`, D93) stands alone in Tier 1's last sub-column: every family's Tier 1 ends left of
  * it, so their links into it join one bus. The trunk's rows: the longest line keeps the top row
  * (Mechanics → Synthesis → Ceramics → Land Registry…), a side node takes the next. A family's lane
- * has one row, or two once it splits: its shared nodes sit between them, each speciality on its own.
+ * has one row, or two once it splits: its shared nodes sit between them, each speciality on its own;
+ * two shared siblings in one slot take a row each. Tier 1 and Tier 2 stand further apart than the
+ * other tiers, the rule between them (D118).
  */
-function researchPart(x0: number): { nodes: Spot[]; lanes: Lane[]; links: Link[]; tiers: TierCol[]; tags: TierTag[]; splits: Split[]; block: Block; right: number; bottom: number } {
+function researchPart(x0: number): { nodes: Spot[]; lanes: Lane[]; links: Link[]; tiers: TierCol[]; tags: TierTag[]; splits: Split[]; rule: number; block: Block; right: number; bottom: number } {
   const ids: readonly string[] = RESEARCH_IDS;
   const R = (id: string) => researchNode(id)!;
   const sub = new Map<string, number>();
@@ -325,12 +347,14 @@ function researchPart(x0: number): { nodes: Spot[]; lanes: Lane[]; links: Link[]
   const cols = new Map<ResearchTier, number>(TIERS.map((k) => [k, 1]));
   for (const id of ids) cols.set(R(id).tier, Math.max(cols.get(R(id).tier)!, subOf(id) + 1));
   const tierX = new Map<ResearchTier, number>(), tierW = new Map<ResearchTier, number>();
-  let x = x0 + R_LABEL_W;
+  let x = x0 + R_LABEL_W, rule = 0;
   for (const k of TIERS) {
     const w = cols.get(k)! * R_COL_W - R_GAP + 2 * TIER_PAD;
     tierX.set(k, x);
     tierW.set(k, w);
-    x += w + TIER_GUTTER;
+    // Tier 1 | Tier 2: the wider gap and its rule (D118).
+    if (k === 1) rule = x + w + TIER_SPLIT / 2;
+    x += w + (k === 1 ? TIER_SPLIT : TIER_GUTTER);
   }
   const right = x - TIER_GUTTER;
   const nx = (id: string): number => tierX.get(R(id).tier)! + TIER_PAD + subOf(id) * R_COL_W;
@@ -364,10 +388,19 @@ function researchPart(x0: number): { nodes: Spot[]; lanes: Lane[]; links: Link[]
     } else {
       const specs = Object.keys(FAMILIES[lane].specs ?? {});
       const split = specs.length > 1;
-      h = split ? 2 * R_NODE_H + R_SPLIT : R_NODE_H;
+      // Shared nodes (no speciality) in the same slot — siblings of one parent at one depth, such as
+      // Logistics' Long Bridges and Far Claim — take a row each, top first, instead of one spot; a
+      // lone one is centred in its lane.
+      const slot = (id: string): string => `${R(id).tier}:${subOf(id)}`;
+      const shared = new Map<string, string[]>();
+      for (const id of mine) if (specs.indexOf(R(id).spec ?? '') < 0) shared.set(slot(id), [...(shared.get(slot(id)) ?? []), id]);
+      const rows = Math.max(split ? 2 : 1, ...[...shared.values()].map((g) => g.length));
+      h = rows * R_NODE_H + (rows - 1) * R_SPLIT;
       for (const id of mine) {
         const k = specs.indexOf(R(id).spec ?? '');
-        nodes.push({ id, kind: 'research', lane, x: nx(id), y: k < 0 ? y + (h - R_NODE_H) / 2 : y + k * (R_NODE_H + R_SPLIT), w: R_NODE_W, h: R_NODE_H });
+        const g = shared.get(slot(id));
+        const row = k >= 0 ? k : g && g.length > 1 ? g.indexOf(id) : -1;
+        nodes.push({ id, kind: 'research', lane, x: nx(id), y: row < 0 ? y + (h - R_NODE_H) / 2 : y + row * (R_NODE_H + R_SPLIT), w: R_NODE_W, h: R_NODE_H });
       }
       const mid = y + R_NODE_H + R_SPLIT / 2;
       for (const k of TIERS) {
@@ -406,7 +439,7 @@ function researchPart(x0: number): { nodes: Spot[]; lanes: Lane[]; links: Link[]
     }
   }
   return {
-    nodes, lanes, links, tags, splits, right, bottom,
+    nodes, lanes, links, tags, splits, rule, right, bottom,
     tiers: TIERS.map((k) => ({ tier: k, x: tierX.get(k)!, w: tierW.get(k)!, y: top, h: bottom - top })),
     block: { kind: 'research', x: x0 - 6, y: PAD - 4, w: right - x0 + 12, h: bottom - PAD + 8 },
   };
@@ -419,6 +452,7 @@ export function treeLayout(): TreeLayout {
   return {
     nodes: [...P.nodes, ...R.nodes], lanes: [...P.lanes, ...R.lanes], links: [...P.links, ...R.links],
     blocks: [P.block, R.block], tiers: R.tiers, tags: R.tags, splits: R.splits, gate: P.gate,
+    rule: { x: R.rule, y: PAD + HEAD_H, h: R.bottom - PAD - HEAD_H },
     w: R.right + PAD, h: Math.max(P.bottom, R.bottom) + PAD,
   };
 }
@@ -500,7 +534,7 @@ const EFFECT_ICON: Readonly<Record<string, Icon | readonly Icon[]>> = {
   deepFill: [{ b: 'backfiller' }, { i: 'water' }], tunnels: { b: 'ribbon' },
   // The land (D60): leases (Land Registry's flag), prices, rents, how each purchase raises the next, far land.
   lease: { g: 'land' }, landPrice: { g: 'land' }, landRent: { g: 'land' }, landGrowth: { g: 'land' }, farLand: { g: 'land' },
-  landResale: { g: 'resale' }, neighbourCrossing: { g: 'crossing' }, farClaims: { g: 'far' },
+  neighbourCrossing: { g: 'crossing' }, farClaims: { g: 'far' },
   remoteBeltCost: { b: 'ribbon' }, remoteBuildDelay: { b: 'mast' }, pylonLink: { b: 'pylon' },
   ring3Caps: { b: 'deep_bore' }, bridgeSpan: { b: 'skybridge' }, forkFilters: { b: 'router' },
   craftSpeed: { i: 'gear' },
@@ -694,9 +728,9 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /**
  * Small inked marks that sit in a line of text (sized in em by the CSS): an AI token (a lilac
- * hexagon with its spark, D68), the minimum time's clock, a closed padlock (a tier not open yet).
+ * hexagon with its spark, D68), a closed padlock (a tier not open yet: its gate, the Core's level).
  */
-function mark(kind: 'token' | 'clock' | 'lock'): SVGSVGElement {
+function mark(kind: 'token' | 'lock'): SVGSVGElement {
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('viewBox', '0 0 16 16');
   svg.setAttribute('class', `tr-mark tr-mark-${kind}`);
@@ -709,23 +743,11 @@ function mark(kind: 'token' | 'clock' | 'lock'): SVGSVGElement {
   if (kind === 'token') {
     add('polygon', { class: 'm-hex', points: '8,1.3 14,4.7 14,11.3 8,14.7 2,11.3 2,4.7' });
     add('path', { class: 'm-spark', d: 'M8 4.4L9 7l2.6 1L9 9l-1 2.6L7 9 4.4 8 7 7z' });
-  } else if (kind === 'clock') {
-    add('circle', { class: 'm-face', cx: '8', cy: '8.8', r: '6' });
-    add('path', { class: 'm-hand', d: 'M8 5.6v3.4l2.4 1.4M6.4 1.4h3.2' });
   } else {
     add('path', { class: 'm-shackle', d: 'M5 7.4V5.2a3 3 0 0 1 6 0v2.2' });
     add('rect', { class: 'm-body', x: '3.2', y: '7.2', width: '9.6', height: '7', rx: '1.6' });
   }
   return svg;
-}
-
-/** A research's minimum time, compact enough for a node: « 45 min », « 4,2 h », « 18 h », « 1 j ». */
-function shortTime(ticks: number): string {
-  const min = ticks / TPS / 60;
-  if (min < 60) return t('tree.time.min', { n: Math.max(1, Math.round(min)) });
-  const h = min / 60;
-  if (h < 24) return t('tree.time.h', { n: num(h < 10 ? Math.round(h * 10) / 10 : Math.round(h)) });
-  return t('tree.time.d', { n: num(Math.round((h / 24) * 10) / 10) });
 }
 
 /** A big count, compact from `from` on: « 800 », « 2,4 k », « 82 k », « 1,2 M », « 46 M » (one decimal under 10 k and under 10 M). */
@@ -734,9 +756,6 @@ function shortNum(n: number, from = 1000): string {
   if (n >= from) return t('tree.rs.k', { v: num(n >= 9_950 ? Math.round(n / 1000) : Math.round(n / 100) / 10) });
   return num(Math.round(n));
 }
-
-/** The plan that unlocks the servers: before it, no token is billed (D105). */
-const SERVERS_PLAN = buildingDef(buildingIdx('server')).unlock;
 
 /** AI tokens, compact: « 800 », « 12,5 k », « 1,2 M ». */
 const tokShort = (n: number): string => shortNum(n);
@@ -750,8 +769,6 @@ function ocApprox(cents: number): string {
   return t('tree.rs.oc', { v: shortNum(v, 10_000) });
 }
 
-/** A cost multiplier (‰) as a badge: « ×1,60 ». */
-
 /** A feature's words (`tree.feat.<key>` and its line `.what`), or null when the dictionary has none. */
 function featureText(key: string, amount: number): { label: string; what: string } | null {
   const label = tr(`tree.feat.${key}`);
@@ -759,6 +776,12 @@ function featureText(key: string, amount: number): { label: string; what: string
   const what = tr(`tree.feat.${key}.what`, { n: amount });
   return { label, what: what.startsWith('⟦') ? '' : what };
 }
+
+/** What the expertises leave of each family's research (D93): the research costs follow it. */
+const famSig = (sim: Sim): string => FAMILY_IDS.map((f) => { const m = sim.mods.fam[f]; return `${m.time},${m.tokens},${m.data}`; }).join(';');
+
+/** A research node's tier (1 for anything else). */
+const tierOf = (id: string): ResearchTier => researchNode(id)?.tier ?? 1;
 
 /** The research labs, in entity order (their number on the screen: « Labo 1 »…). */
 function labsOf(sim: Sim): Array<{ id: number; def: string; n: number }> {
@@ -774,9 +797,8 @@ interface NodeView {
   cost: HTMLElement;
   /** Plans: the cost chips (their item and amount), to mark the ones the Heart lacks. */
   chips: Array<{ item: number; mu: number; node: HTMLElement }>;
-  /** Research: its tokens and their price, the minimum time's text, the queue's tag. */
+  /** Research: its tokens and their price (from Tier 2, D118), the queue's tag. */
   tok: HTMLElement | null;
-  time: HTMLElement | null;
   qtag: HTMLElement | null;
   bar: HTMLElement | null;
   unlock: HTMLButtonElement | null;
@@ -810,8 +832,16 @@ export class ResearchScreen {
   private readonly heads = new Map<string, LaneHead>();
   /** The plan paths' labels (D41): the label (its tooltip) and its « n/of » unlocked. */
   private readonly pathHeads = new Map<PlanLane, { label: HTMLElement; count: HTMLElement }>();
-  /** The tier columns' heads: what opens each (its state) and the selected node's tier. */
-  private readonly tierHeads = new Map<ResearchTier, { head: HTMLElement; gate: HTMLElement }>();
+  /**
+   * The tier bands: the head (what opens it, the selected node's tier), its gate's pill, the Core's
+   * level it needs (D118: its chip, null for Tier 1), its stripe and its pinned name — the last three
+   * padlocked and hatched while the Core is below that level.
+   */
+  private readonly tierHeads = new Map<ResearchTier, { head: HTMLElement; gate: HTMLElement; core: HTMLElement | null; col: HTMLElement; pin: HTMLElement | null }>();
+  /** The rule between Tier 1 and Tier 2 (D118). */
+  private tierRule: HTMLElement | null = null;
+  /** The launch dialog of a Tier 2+ node (D118): how many tokens a minute to buy. */
+  private readonly launch: LaunchDialog;
   /** The research lab's gate (D71): its caption and its « n/N » plans taken. */
   private gateHead: { id: string; cap: HTMLElement; count: HTMLElement } | null = null;
   private readonly view: HTMLElement;
@@ -894,6 +924,7 @@ export class ResearchScreen {
     // A window resized (or the pane folded under the tree, D96): the whole tree's fit moves.
     if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => { if (this.root.isConnected) this.setZoom(this.zoom); }).observe(this.view);
     this.labsEl = el('span.rs-labs', {}, [buildingIcon(atlas, 'observatory', 18), this.labsText]);
+    this.launch = new LaunchDialog(atlas, { sim: () => host.sim(), dataRate: (item) => host.dataRate?.(item) ?? null, launch: (id, buy) => this.begin(id, buy) });
     this.bill = {
       label: el('small'), used: el('span.v'), own: el('span.v'), bought: el('span.v'), cents: el('span.rs-bcost'), rental: el('span.rs-brent'),
     };
@@ -916,6 +947,7 @@ export class ResearchScreen {
         el('div.tr-stage', {}, [this.view, this.pins, el('div.tr-zoom.cartouche', {}, [this.zoomOut, this.zoomPct, this.zoomIn, this.zoomFit])]),
         this.detail,
       ]),
+      this.launch.root,
     ]);
     this.build();
   }
@@ -951,6 +983,9 @@ export class ResearchScreen {
       ]));
     }
     for (const col of L.tiers) canvas.append(...this.tierEls(col));
+    // Tier 1 | Tier 2 (D118): the strong ink rule down the wider gap between them.
+    this.tierRule = L.rule ? el('div.tr-tierrule', { style: `left:${L.rule.x}px;top:${L.rule.y}px;height:${L.rule.h}px` }, [el('span.tr-rulecap', {}, [mark('lock')])]) : null;
+    if (this.tierRule) canvas.append(this.tierRule);
     // Each lane's band (D41): its rows in its colour, from its first column to the block's right
     // edge. A plan path's starts after the Heart's column: the Heart stands apart, its links fan out.
     for (const lane of L.lanes) {
@@ -1013,32 +1048,40 @@ export class ResearchScreen {
     this.paintPins();
   }
 
-  /** Research's legend, in its own marks: the kinds of data (one more each tier, D71), AI tokens, the minimum time. */
+  /** Research's legend, in its own marks: the kinds of data (one more each tier, D71), AI tokens from Tier 2 (D118: no time). */
   private researchLegend(): HTMLElement {
     const L = locale();
     const kinds = SCIENCE.map(([it], k) => el('span.rs-kind', { title: `${t('tree.rs.tier', { n: k + 1 })} · ${itemDef(itemIdx(it)).name[L]}` }, [itemIcon(this.atlas, itemIdx(it), 16)]));
     return el('span.tr-legend.rs-legend', {}, [
       el('span', { title: t('tree.legend.data.tip') }, [...kinds, t('tree.legend.data')]),
-      el('span', {}, [mark('token'), t('tree.legend.tokens')]),
-      el('span', {}, [mark('clock'), t('tree.legend.time')]),
+      el('span', { title: t('tree.legend.tokens.tip') }, [mark('token'), t('tree.legend.tokens.from')]),
     ]);
   }
 
-  /** A tier column: its stripe and its head — « Tier 2 » and what opens it (a button to it). */
+  /**
+   * A tier band: its stripe and its head — « Tier 2 · Cœur niveau 3 » (D118: from Tier 2, the Core's
+   * level it needs, the Core's look at that level, padlocked while the Core is below it), and what
+   * opens it (a button to it; Tier 2 also two expertises, D93).
+   */
   private tierEls(col: TierCol): HTMLElement[] {
     const gate = gateOf(col.tier);
+    const lvl = coreLevelFor(col.tier);
     const gateBtn = el('button.tr-gate', {
       type: 'button', 'data-gate-id': gate, title: t('tree.rs.opens.tip', { name: nodeName(gate)[locale()] }),
       onclick: () => { this.select(gate); this.views.get(gate)?.node.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' }); },
     }, [mark('lock'), el('span.tr-gatecheck', {}, '✓'), nodeName(gate)[locale()]]);
+    const core = col.tier > 1
+      ? el('span.tr-core', { 'data-core': String(lvl) }, [mark('lock'), el('span.tr-gatecheck', {}, '✓'), buildingIcon(this.atlas, 'hearth', 24, lvl), el('span', {}, t('tree.heartLevel', { n: lvl }))])
+      : null;
     const head = el('div.tr-tierhead', { 'data-tier': String(col.tier), style: `left:${col.x}px;top:${col.y}px;width:${col.w}px;height:${TIER_HEAD_H}px` }, [
-      el('span.tr-tiername.lettering', {}, t('tree.rs.tier', { n: col.tier })),
+      el('span.tr-tiertitle', {}, [el('span.tr-tiername.lettering', {}, t('tree.rs.tier', { n: col.tier })), core ? el('span.tr-tierdot', {}, '·') : null, core]),
       el('span.tr-opens', {}, [el('small', {}, t('tree.rs.opens')), gateBtn,
         // Tier 2 also waits for two expertises chosen at the Core's Archive (D93).
         col.tier === 2 ? el('small.tr-gate-exp', { title: t('research.block.expertise') }, [archiveGlyph(), t('tree.rs.opens.expertise')]) : null]),
     ]);
-    this.tierHeads.set(col.tier, { head, gate: gateBtn });
-    return [el('div.tr-tiercol', { 'data-tier': String(col.tier), style: `left:${col.x}px;top:${col.y}px;width:${col.w}px;height:${col.h}px` }), head];
+    const stripe = el('div.tr-tiercol', { 'data-tier': String(col.tier), style: `left:${col.x}px;top:${col.y}px;width:${col.w}px;height:${col.h}px` });
+    this.tierHeads.set(col.tier, { head, gate: gateBtn, core, col: stripe, pin: null });
+    return [stripe, head];
   }
 
   /**
@@ -1092,7 +1135,7 @@ export class ResearchScreen {
     const name = s.id === ROOT ? t('tree.root') : nodeName(s.id)[L];
     const cost = el(res ? 'span.tr-rcost' : 'span.tr-cost');
     let chips: NodeView['chips'] = [];
-    let unlock: HTMLButtonElement | null = null, time: HTMLElement | null = null, bar: HTMLElement | null = null;
+    let unlock: HTMLButtonElement | null = null, bar: HTMLElement | null = null;
     let qtag: HTMLElement | null = null, tok: HTMLElement | null = null;
     let lines: HTMLElement[];
     if (s.kind === 'plan') {
@@ -1104,14 +1147,13 @@ export class ResearchScreen {
       unlock = el<'button'>('button.btn.primary.tr-unlock', { type: 'button', 'data-unlock': s.id, onclick: (e: Event) => { e.stopPropagation(); this.unlock(s.id); } }, t('tree.unlock'));
       lines = [el('span.tr-line', {}, [cost, unlock])];
     } else if (res) {
-      // What it unlocks first (its icons, left), then three lines (D107): the name; its minimum time
-      // and one chip per kind of data (D71: one kind a tier); its tokens and their price at CrierBelt
-      // (« offert » before the servers, D105).
-      time = el('span');
-      tok = el('span.tr-tokbox');
+      // What it unlocks first (its icons, left), then its name and one chip per kind of data (D71:
+      // one kind a tier); from Tier 2 a third line, its tokens and their price at CrierBelt now
+      // (D118: Tier 1 takes data alone, no time anywhere).
+      tok = tierOf(s.id) >= 2 ? el('span.tr-tokbox') : null;
       bar = el('span.tr-bar');
       qtag = el('span.tr-qtag');
-      lines = [el('span.tr-rline', {}, [el('span.tr-time', { title: t('tree.legend.time') }, [mark('clock'), time]), cost]), el('span.tr-rfoot', {}, [tok])];
+      lines = [el('span.tr-rline', {}, [cost]), tok ? el('span.tr-rfoot', {}, [tok]) : null].filter((x): x is HTMLElement => !!x);
     } else {
       setText(cost, t('tree.start'));
       lines = [el('span.tr-line', {}, [cost])];
@@ -1130,28 +1172,26 @@ export class ResearchScreen {
       el('span.tr-stamp', {}, '✓'),
       qtag,
     ]);
-    this.views.set(s.id, { spot: s, node, cost, chips, tok, time, qtag, bar, unlock });
+    this.views.set(s.id, { spot: s, node, cost, chips, tok, qtag, bar, unlock });
     return node;
   }
 
-  /** A research node's costs: a chip per kind of data, AI tokens and their price at CrierBelt now; its time. */
+  /**
+   * A research node's costs (what the expertises leave of its table's, D93): a chip per kind of data;
+   * from Tier 2 its AI tokens and their price at CrierBelt now (D118).
+   */
   private fillCosts(v: NodeView, sim: Sim): void {
     const id = v.spot.id;
     const L = locale();
-    const e = effectiveCost(id);
+    const e = effectiveCost(id, sim.mods);
     v.cost.replaceChildren(
-      // Compact from a thousand (« 5,8 k »): a Tier 4 card holds four kinds beside its time; the detail pane has them whole.
+      // Compact from a thousand (« 5,8 k »): a Tier 4 card holds four kinds; the detail pane has them whole.
       ...e.cost.map((c) => el('span.tr-chip', { 'data-k': 'data', title: `${num(c.mu / 1000)} ${itemDef(c.item).name[L]}` }, [itemIcon(this.atlas, c.item, 14), shortNum(c.mu / 1000)])),
     );
-    // Before the servers' plan no token is billed (D105): « 0 » and « offert », the table's count in the tooltip.
-    const billed = tokensBilled(sim), freeTip = t('tree.rs.tok.free.tip', { v: num(e.tokens), plan: nodeName(SERVERS_PLAN)[L] });
-    v.tok!.replaceChildren(
-      el('span.tr-chip', { 'data-k': 'tok', 'data-free': billed ? null : '', title: billed ? t('tree.rs.tok.tip', { v: num(e.tokens) }) : freeTip }, [mark('token'), billed ? tokShort(e.tokens) : '0']),
-      billed
-        ? el('span.tr-oc', { title: t('tree.rs.oc.tip', { p: oc(sim.tokenPriceK(), false, 0) }) }, ocApprox(tokenCents(sim, e.tokens)))
-        : el('span.tr-oc', { 'data-free': '', title: freeTip }, t('tree.rs.tok.free')),
+    v.tok?.replaceChildren(
+      el('span.tr-chip', { 'data-k': 'tok', title: t('tree.rs.tok.tip', { v: num(e.tokens) }) }, [mark('token'), tokShort(e.tokens)]),
+      el('span.tr-oc', { title: t('tree.rs.oc.tip', { p: oc(sim.tokenPriceK(), false, 0) }) }, ocApprox(tokenCents(sim, e.tokens))),
     );
-    setText(v.time!, shortTime(e.ticks));
   }
 
   // ── interaction ──
@@ -1188,9 +1228,15 @@ export class ResearchScreen {
     return true;
   }
 
-  /** Esc (D111): the focus first, then the screen closes. */
+  /** Esc (D111): the launch dialog first (D118), then the focus, then the screen closes. */
   back(): boolean {
+    if (this.launch.isOpen) { this.launch.close(); return true; }
     return this.unfocus();
+  }
+
+  /** The tree closed: a launch dialog left open goes with it (nothing was started). */
+  closed(): void {
+    this.launch.close();
   }
 
   private dragStart(e: PointerEvent): void {
@@ -1345,11 +1391,22 @@ export class ResearchScreen {
     return true;
   }
 
-  /** The pinned names (D111): one per tier band, one per lane, in this language. */
+  /** The pinned names (D111): one per tier band (D118: from Tier 2 with the Core's level, padlocked below it), one per lane, in this language. */
   private buildPins(): void {
     const L = this.layout, loc = locale();
     const pins: ResearchScreen['pinEls'] = [];
-    for (const col of L.tiers) pins.push({ el: el('span.tr-pin.lettering', { 'data-kind': 'tier', 'data-tier': String(col.tier) }, t('tree.rs.tier', { n: col.tier })), kind: 'tier', x: col.x, y: col.y, w: col.w, h: col.h });
+    for (const col of L.tiers) {
+      const lvl = coreLevelFor(col.tier);
+      const pin = el('span.tr-pin', { 'data-kind': 'tier', 'data-tier': String(col.tier) }, col.tier > 1
+        ? [el('span.lettering', {}, t('tree.rs.tier', { n: col.tier })), el('span.tr-pindot', {}, '·'),
+          // The whole tree in view: under the tier's name, the level alone, so the pin fits its band.
+          el('span.tr-pinsub', {}, [mark('lock'), buildingIcon(this.atlas, 'hearth', 20, lvl),
+            el('span.tr-pinlong', {}, t('tree.heartLevel', { n: lvl })), el('span.tr-pinshort', {}, t('tree.rs.coreShort', { n: lvl }))])]
+        : [el('span.lettering', {}, t('tree.rs.tier', { n: col.tier }))]);
+      const h = this.tierHeads.get(col.tier);
+      if (h) h.pin = pin;
+      pins.push({ el: pin, kind: 'tier', x: col.x, y: col.y, w: col.w, h: col.h });
+    }
     for (const lane of L.lanes) {
       const name = lane.kind === 'plan' ? t(`tree.lane.${lane.id}` as MsgKey) : lane.id === 'trunk' ? t('tree.rs.trunk') : FAMILIES[lane.id as FamilyId].name[loc];
       pins.push({ el: el('span.tr-pin', { 'data-kind': 'lane', 'data-lane': lane.id }, name), kind: 'lane', x: lane.x, y: lane.y, w: lane.w, h: lane.h });
@@ -1435,10 +1492,26 @@ export class ResearchScreen {
     this.refresh();
   }
 
+  /**
+   * « Lancer » (D118): a Tier 1 node starts at once (the guide's and the smoke's path); from Tier 2
+   * the launch dialog asks how many tokens a minute to buy from CrierBelt, and starts it from there.
+   */
   private start(id: string): void {
     const sim = this.host.sim();
-    const r = sim.startResearch(id);
-    if (!r.ok && r.reason) this.host.notify('bad', r.reason === 'prereq' ? t('research.block.prereq', { list: this.missing(sim, id) }) : t(`research.block.${r.reason}` as MsgKey));
+    if (tierOf(id) >= 2 && !sim.researchBlock(id) && effectiveCost(id, sim.mods).tokens > 0) {
+      const ic = iconsOf(id)[0];
+      this.launch.open(id, ic ? this.icon(ic, 44) : null);
+      return;
+    }
+    this.begin(id, 0);
+  }
+
+  /** Start a node in the first idle lab, buying `buy` tokens a minute; a refusal says why. */
+  private begin(id: string, buy: number): void {
+    const sim = this.host.sim();
+    const r = sim.startResearch(id, 0, buy);
+    if (!r.ok && r.reason) this.host.notify('bad', r.reason === 'prereq' ? t('research.block.prereq', { list: this.missing(sim, id) })
+      : r.reason === 'core' ? t('tree.rs.coreNeed', { n: coreLevelFor(tierOf(id)) }) : t(`research.block.${r.reason}` as MsgKey));
     this.detailSig = '';
     this.refresh();
   }
@@ -1478,7 +1551,15 @@ export class ResearchScreen {
     if (id === ROOT) return t('tree.root.desc');
     const st = this.stateOf(sim, id);
     if (st === 'later') return t('tree.later');
-    if (st === 'locked') return isGate(id) ? t('tree.gate.needs', this.gateCount(sim, id)) : t('tree.needs', { list: this.missing(sim, id) });
+    // A research node locked with its prerequisites in hand waits for the Core's level (D118) or Tier 2's expertises (D93).
+    const core = isResearch(id) && !sim.tierCoreOpen(tierOf(id)) ? t('tree.rs.coreNeed', { n: coreLevelFor(tierOf(id)) }) : '';
+    if (st === 'locked') {
+      if (isGate(id)) return t('tree.gate.needs', this.gateCount(sim, id));
+      const missing = this.missing(sim, id);
+      if (missing) return core ? `${t('tree.needs', { list: missing })} · ${core}` : t('tree.needs', { list: missing });
+      const block = sim.researchBlock(id);
+      return core || (block ? t(`research.block.${block}` as MsgKey) : t('research.start'));
+    }
     if (isPlan(id)) {
       if (st !== 'poor') return st === 'done' ? t('tree.unlocked') : t('tree.ready');
       const short = this.reserveShort(sim, id);
@@ -1490,14 +1571,19 @@ export class ResearchScreen {
     return block ? t(`research.block.${block}` as MsgKey) : t('research.start');
   }
 
-  /** ETA of a running project (game time at the current power; `projectTiming`, as the HUD's chip), or null. */
+  /**
+   * A running project's end (`projectTiming`, as the HUD's chip; D118: no time of its own): what it
+   * waits for — power for its lab, its data, a token flow (none reaches it; held while the purse is
+   * in the red) — or when its tokens will be in at these flows. Null when nothing can be said.
+   */
   private eta(sim: Sim, id: string): string | null {
     const p = sim.projects.find((q) => q.id === id);
     if (!p) return null;
     const tm = projectTiming(sim, p);
-    if (tm.held) return t('tree.rs.held');
-    if (tm.sat <= 0) return null;
-    return tm.short ? t('research.waiting') : t('research.eta', { d: duration(tm.left) });
+    if (tm.waiting === 'power') return t('research.waitPower');
+    if (tm.waiting === 'data') return t('research.waiting');
+    if (tm.waiting === 'tokens') return tm.held ? t('tree.rs.held') : t('research.waitTokens');
+    return Number.isFinite(tm.left) ? t('research.eta', { d: duration(tm.left) }) : null;
   }
 
   /**
@@ -1527,9 +1613,9 @@ export class ResearchScreen {
     this.refreshStrip(sim, L);
     setText(this.notesEl, sim.notes > 0 ? t('research.notes', { v: Math.round(sim.notes / 100) }) : '');
     this.refreshReserve(sim, L);
-    // Research costs are the table's (D72); what they come to in ◉ follows CrierBelt's token price,
-    // and no token is billed before the servers' plan (D105): the costs say « offert » until then.
-    const sig = `${sim.tokenPriceK()}:${tokensBilled(sim) ? 1 : 0}`;
+    // Research costs are the table's (D72) less what the expertises take off (D93); what their tokens
+    // come to in ◉ follows CrierBelt's token price.
+    const sig = `${sim.tokenPriceK()}:${famSig(sim)}`;
     const costsChanged = sig !== this.costSig;
     this.costSig = sig;
     this.refreshLanes(sim);
@@ -1571,6 +1657,7 @@ export class ResearchScreen {
     }
     this.paintChain();
     this.renderDetail(sim, L);
+    this.launch.refresh();
   }
 
   /**
@@ -1706,14 +1793,27 @@ export class ResearchScreen {
     }
   }
 
-  /** The tier heads: open once their gate is done; the selected node's tier lit, and the tier the selected node opens. */
+  /**
+   * The tier bands: open once their gate is done, the Core at their level (D118) and, for Tier 2, two
+   * expertises chosen (D93); a band whose Core level is not reached padlocked — its chip, its stripe
+   * hatched, its pinned name, the rule before Tier 2 —; the selected node's tier lit, and the tier the
+   * selected node opens.
+   */
   private refreshTiers(sim: Sim): void {
     const sel = researchNode(this.selected)?.tier ?? null;
     for (const [tier, h] of this.tierHeads) {
-      const open = sim.done.has(gateOf(tier)) && (tier !== 2 || tierTwoOpen(sim));
+      const core = sim.tierCoreOpen(tier);
+      const open = sim.done.has(gateOf(tier)) && core && (tier !== 2 || tierTwoOpen(sim));
       setAttr(h.head, 'data-open', open ? '' : null);
+      setAttr(h.head, 'data-locked', core ? null : '');
+      setAttr(h.col, 'data-locked', core ? null : '');
+      if (h.pin) setAttr(h.pin, 'data-locked', core ? null : '');
       setAttr(h.head, 'data-on', sel === tier ? '' : null);
       setAttr(h.head, 'data-opens', this.selected === gateOf(tier) ? '' : null);
+      if (h.core) setAttr(h.core, 'title', core
+        ? t('tree.rs.core.open', { n: sim.hearthLevel })
+        : t('tree.rs.core.tip', { lv: coreLevelFor(tier), n: sim.hearthLevel }));
+      if (tier === 2 && this.tierRule) setAttr(this.tierRule, 'data-locked', core ? null : '');
     }
   }
 
@@ -1727,7 +1827,8 @@ export class ResearchScreen {
     const short = plan ? this.reserveShort(sim, id) : [];
     const qOn = res && sim.mods.flags.has('researchQueue');
     const labs = qOn ? labsOf(sim).map((l) => l.id).join(',') : '';
-    const sig = `${id}:${this.costSig}:${proj ? 1 : 0}:${st}:${block}:${L}:${this.shortList(short)}:${qOn ? 1 : 0}:${labs}`;
+    const core = res ? sim.tierCoreOpen(tierOf(id)) : true;
+    const sig = `${id}:${this.costSig}:${proj ? 1 : 0}:${st}:${block}:${core ? 1 : 0}:${L}:${this.shortList(short)}:${qOn ? 1 : 0}:${labs}`;
     if (sig !== this.detailSig) {
       this.detailSig = sig;
       this.detailLive = [];
@@ -1787,8 +1888,17 @@ export class ResearchScreen {
     return null;
   }
 
-  /** Research: two expertises to choose, the slots full, no idle lab, the purse in the red (a missing prerequisite: none). */
-  private researchWhy(block: string): HTMLElement | null {
+  /**
+   * Research: the Core below the tier's level (D118: its look at that level — said even when a
+   * prerequisite is missing too, as nothing else in the pane says it), two expertises to choose, the
+   * slots full, no idle lab, the purse in the red (a missing prerequisite alone: none, its ✗ says it).
+   */
+  private researchWhy(sim: Sim, id: string, block: string): HTMLElement | null {
+    const tier = tierOf(id);
+    if (!sim.tierCoreOpen(tier)) {
+      const lvl = coreLevelFor(tier);
+      return this.whyLine('core', buildingIcon(this.atlas, 'hearth', 18, lvl), t('tree.rs.coreNeed', { n: lvl }));
+    }
     if (block === 'prereq') return null;
     const icon = block === 'expertise' ? archiveGlyph()
       : block === 'no_lab' ? buildingIcon(this.atlas, 'observatory', 16)
@@ -1867,12 +1977,12 @@ export class ResearchScreen {
       rows.length ? el('ul.tr-unlocks', {}, rows) : null,
       ...this.costPart(sim, id),
       this.prereqList(sim, id, L),
-      proj ? this.progressPart(proj) : null,
+      proj ? this.progressPart(sim, proj) : null,
       el('footer.rs-actions', {}, [
         st === 'done' ? el('span.rs-tag', {}, t('research.done'))
           : proj ? el('button.btn', { type: 'button', onclick: () => this.cancel(id) }, t('research.cancel'))
             : el('button.btn.primary', { type: 'button', disabled: block ? '' : null, onclick: () => this.start(id) }, t('research.start')),
-        st !== 'done' && !proj && block ? this.researchWhy(block) : null,
+        st !== 'done' && !proj && block ? this.researchWhy(sim, id, block) : null,
       ]),
     ];
     if (st !== 'done' && sim.mods.flags.has('researchQueue')) kids.push(this.queuePart(sim, id, L));
@@ -1880,69 +1990,118 @@ export class ResearchScreen {
   }
 
   /**
-   * A research node's cost (D68, D69): data files, AI tokens and what they would cost at CrierBelt
-   * now, the minimum time — the table's, whatever else the claim owns (D72).
+   * A research node's cost (D68, D69, D118): its data files and, from Tier 2, its AI tokens and what
+   * they would cost at CrierBelt now — the table's, whatever else the claim owns (D72), less what an
+   * expertise takes off (D93). No time: a research lasts as long as its data and tokens take to come.
    */
   private costPart(sim: Sim, id: string): HTMLElement[] {
-    const e = effectiveCost(id);
+    const e = effectiveCost(id, sim.mods);
     const lines = el('ul.tr-costs.rs-rcosts', {}, [
       ...e.cost.map((c) => el('li', {}, [el('b', {}, num(c.mu / 1000)), itemMention(c.item)])),
-      // Before the servers' plan, no token is billed (D105): 0, « offert jusqu'aux serveurs ».
-      tokensBilled(sim)
-        ? el('li', { title: t('tree.rs.oc.tip', { p: oc(sim.tokenPriceK(), false, 0) }) }, [
-          el('b', {}, tokShort(e.tokens)), el('span.rs-cl', {}, [mark('token'), t('tree.legend.tokens')]),
+      tierOf(id) >= 2
+        ? el('li', { 'data-k': 'tok', title: t('tree.rs.oc.tip', { p: oc(sim.tokenPriceK(), false, 0) }) }, [
+          el('b', {}, num(e.tokens)), el('span.rs-cl', {}, [mark('token'), t('tree.legend.tokens')]),
           el('small.rs-price', {}, t('tree.rs.price', { v: ocApprox(tokenCents(sim, e.tokens)) })),
         ])
-        : el('li', { 'data-free': '', title: t('tree.rs.tok.free.tip', { v: num(e.tokens), plan: nodeName(SERVERS_PLAN)[locale()] }) }, [
-          el('b', {}, '0'), el('span.rs-cl', {}, [mark('token'), t('tree.legend.tokens')]),
-          el('small.rs-price.rs-free', {}, t('tree.rs.tok.freeLong')),
-        ]),
-      el('li', {}, [el('b', {}, duration(e.ticks / TPS)), el('span.rs-cl', {}, [mark('clock'), t('tree.legend.time')])]),
+        : null,
     ]);
     return [el('h4.lettering.rs-costhead', {}, [t('research.cost')]), lines];
   }
 
-  /** A running project (D68): data files paid of each cost, tokens used of its total, time run of its minimum; its end. */
-  private progressPart(p: Project): HTMLElement {
+  /**
+   * A running project (D68, D118): the data files paid of each cost and, from Tier 2, its tokens in of
+   * those it needs — a bar each —; the tokens a minute it gets now from the claim's servers and from
+   * CrierBelt, their ◉ a minute (held while the purse is in the red); the flow it buys, − / + on the
+   * launch dialog's ladder (`setTokenBuy`), while it still needs tokens; its end, or what it waits for.
+   */
+  private progressPart(sim: Sim, p: Project): HTMLElement {
     const bar = (): { root: HTMLElement; fill: HTMLElement } => { const fill = el('span'); return { root: el('span.rs-pbar', {}, fill), fill }; };
     const rows: HTMLElement[] = [];
-    const row = (label: Array<Node | string>, read: (sim: Sim, q: Project) => [number, number, string]): void => {
+    const row = (label: Array<Node | string>, read: (sim: Sim, q: Project) => [number, number, string], k: string): void => {
       const b = bar(), txt = el('small');
-      rows.push(el('div.rs-prow', {}, [el('span.rs-plabel', {}, label), b.root, txt]));
-      this.detailLive.push((sim) => {
-        const q = sim.projects.find((x) => x.id === p.id);
+      rows.push(el('div.rs-prow', { 'data-k': k }, [el('span.rs-plabel', {}, label), b.root, txt]));
+      this.detailLive.push((s) => {
+        const q = s.projects.find((x) => x.id === p.id);
         if (!q) return;
-        const [a, of, text] = read(sim, q);
+        const [a, of, text] = read(s, q);
         b.fill.style.width = `${of > 0 ? Math.min(100, (a * 100) / of) : 100}%`;
         setText(txt, text);
       });
     };
-    p.cost.forEach((c, i) => row([itemIcon(this.atlas, c.item, 16) ?? '', itemDef(c.item).name[locale()]], (_s, q) => [q.paid[i]!, q.cost[i]!.mu, `${shortNum(Math.floor(q.paid[i]! / 1000), 10_000)} / ${shortNum(q.cost[i]!.mu / 1000, 10_000)}`]));
-    if (p.tokens) row([mark('token'), t('tree.rs.prog.tokens')], (_s, q) => [tokensDue(q), q.tokens ?? 0, `${tokShort(tokensDue(q))} / ${tokShort(q.tokens ?? 0)}`]);
-    // Its tokens now (D102): a minute, their ◉ a minute, and the share the claim's servers cover — icons, the words on hover.
-    const now = p.tokens ? el('div.rs-toknow', {}, [mark('token'), el('b.rs-tk-n'), el('span.coin-w', {}, '◉'), el('b.rs-tk-c'), buildingIcon(this.atlas, 'server', 16), el('b.rs-tk-s')]) : null;
-    if (now) this.detailLive.push((sim) => {
-      const tf = tokenFacts(sim), me = tf.projects.get(p.id);
-      setText(now.querySelector('.rs-tk-n')!, t('hud.perMin', { v: tokShort(Math.round(me?.perMin ?? 0)) }));
-      setText(now.querySelector('.rs-tk-c')!, t('hud.perMin', { v: ocNum(Math.round(me?.centsPerMin ?? 0), false, me && me.centsPerMin < 100 ? 2 : 0) }));
-      setText(now.querySelector('.rs-tk-s')!, `${Math.round(tf.servers / 10)}\u202f%`);
-      setAttr(now, 'title', t('tree.rs.toknow.tip', { n: tokShort(Math.round(me?.perMin ?? 0)), c: oc(Math.round(me?.centsPerMin ?? 0), false, 2), p: Math.round(tf.servers / 10) }));
-    });
-    row([mark('clock'), t('tree.rs.prog.time')], (_s, q) => {
-      const ran = Math.min(q.el, q.dur * 1000) / 1000;
-      return [ran, q.dur, `${shortTime(ran)} / ${shortTime(q.dur)}`];
-    });
+    p.cost.forEach((c, i) => row([itemIcon(this.atlas, c.item, 16) ?? '', itemDef(c.item).name[locale()]], (_s, q) => [q.paid[i]!, q.cost[i]!.mu, `${shortNum(Math.floor(q.paid[i]! / 1000), 10_000)} / ${shortNum(q.cost[i]!.mu / 1000, 10_000)}`], 'data'));
+    const usesTokens = (p.tokens ?? 0) > 0;
+    if (usesTokens) row([mark('token'), t('tree.rs.prog.tokens')], (_s, q) => [q.tokIn ?? 0, q.tokens ?? 0, `${tokShort(q.tokIn ?? 0)} / ${tokShort(q.tokens ?? 0)}`], 'tok');
+    // Its tokens now (D102, D118): the servers' share and the flow bought, a minute; their ◉ a minute — icons, the words on hover.
+    let now: HTMLElement | null = null;
+    if (usesTokens) {
+      const srv = el('b'), bought = el('b'), cents = el('b');
+      now = el('div.rs-toknow', {}, [
+        el('span.rs-tk', { 'data-k': 'servers' }, [buildingIcon(this.atlas, 'server', 16), srv]),
+        el('span.rs-tk', { 'data-k': 'bought' }, [inkGlyph('crier'), bought]),
+        el('span.rs-tk', { 'data-k': 'cents' }, [el('span.coin-w', {}, '◉'), cents]),
+      ]);
+      const nowEl = now;
+      this.detailLive.push((s) => {
+        const q = s.projects.find((x) => x.id === p.id);
+        if (!q) return;
+        const tm = projectTiming(s, q), me = tokenFacts(s).projects.get(p.id);
+        const c = Math.round(me?.centsPerMin ?? 0);
+        setText(srv, t('hud.perMin', { v: tokShort(tm.servers) }));
+        setText(bought, tm.held ? t('tree.rs.toknow.held') : t('hud.perMin', { v: tokShort(tm.bought) }));
+        setText(cents, t('hud.perMin', { v: ocNum(c, false, c < 100 ? 2 : 0) }));
+        setAttr(nowEl, 'data-held', tm.held ? '' : null);
+        setAttr(nowEl, 'data-in', tokensLeft(q) <= 0 ? '' : null);
+        setAttr(nowEl, 'title', t('tree.rs.toknow.tip', { s: tokShort(tm.servers), b: tokShort(tm.bought), c: oc(c, false, 2) }));
+      });
+    }
+    const flow = usesTokens ? this.flowControl(sim, p) : null;
     const eta = el('div.rs-live');
     const held = el('div.rs-heldnote', { hidden: '' }, t('tree.rs.held'));
-    this.detailLive.push((sim) => {
-      const q = sim.projects.find((x) => x.id === p.id);
+    this.detailLive.push((s) => {
+      const q = s.projects.find((x) => x.id === p.id);
       const pct = q ? t('research.progress', { v: Math.floor(projectPermille(q) / 10) }) : '';
-      const end = q && !sim.researchHeld ? this.eta(sim, p.id) : null;
+      const end = q ? this.eta(s, p.id) : null;
       setText(eta, end ? `${pct} · ${end}` : pct);
-      held.hidden = !sim.researchHeld;
-      setAttr(held, 'title', t('tree.rs.held.tip', { v: oc(sim.credits) }));
+      held.hidden = !(q && projectTiming(s, q).held);
+      setAttr(held, 'title', t('tree.rs.held.tip', { v: oc(s.credits) }));
     });
-    return el('section.rs-prog', {}, [el('h4.lettering', {}, t('tree.rs.progress')), ...rows, now, eta, held]);
+    return el('section.rs-prog', {}, [el('h4.lettering', {}, t('tree.rs.progress')), ...rows, now, flow, eta, held]);
+  }
+
+  /**
+   * The flow a running project buys (D118): − / + along the launch dialog's ladder (`tokenFlowSteps`,
+   * up to what would bring all its tokens in a minute), each step a logged `setTokenBuy`; gone once its
+   * tokens are in (a flow stops by itself then).
+   */
+  private flowControl(sim: Sim, p: Project): HTMLElement {
+    const steps = tokenFlowSteps(p.tokens ?? 0);
+    const val = el('b.rs-flowv', { 'data-rs-flow-v': '' });
+    const set = (dir: -1 | 1): void => {
+      const s = this.host.sim(), q = s.projects.find((x) => x.id === p.id);
+      if (!q) return;
+      const cur = q.buy ?? 0;
+      const next = dir > 0 ? steps.find((v) => v > cur) : [...steps].reverse().find((v) => v < cur);
+      if (next !== undefined) s.setTokenBuy(p.id, next);
+      this.refresh();
+    };
+    const minus = el<'button'>('button.rs-flowbtn', { type: 'button', 'data-rs-flow': 'minus', title: t('tree.rs.flow.less'), onclick: () => set(-1) }, '−');
+    const plus = el<'button'>('button.rs-flowbtn', { type: 'button', 'data-rs-flow': 'plus', title: t('tree.rs.flow.more'), onclick: () => set(1) }, '+');
+    const root = el('div.rs-flow', { 'data-rs-flow-row': '' }, [
+      el('span.rs-plabel', {}, [inkGlyph('crier'), t('tree.rs.flow')]), minus, el('span.rs-flowval', {}, [mark('token'), val]), plus,
+    ]);
+    const live = (s: Sim): void => {
+      const q = s.projects.find((x) => x.id === p.id);
+      if (!q) return;
+      const cur = q.buy ?? 0;
+      root.hidden = tokensLeft(q) <= 0;
+      setText(val, cur > 0 ? t('hud.perMin', { v: num(cur) }) : t('tree.rs.flow.none'));
+      setAttr(minus, 'disabled', cur <= 0 ? '' : null);
+      setAttr(plus, 'disabled', cur >= steps[steps.length - 1]! ? '' : null);
+      setAttr(root, 'title', t('tree.rs.flow.tip', { c: oc(Math.ceil((cur * s.tokenPriceK()) / 1000), false, 2) }));
+    };
+    this.detailLive.push(live);
+    live(sim);
+    return root;
   }
 
   /**

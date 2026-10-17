@@ -24,6 +24,8 @@ import { moodAt, Score, stepSeconds, styleWeights, type Chord, type Mood, type N
 import { busGains, dbToGain, DEFAULT_VOLUMES, MIX, VOICE, type Volumes } from './levels';
 import { Sequencer, type Tick } from './sequencer';
 import { RECIPES, type SfxKit } from './sfx';
+import { SIG_RECIPES } from './signature-sfx';
+import { SIGNATURES, VARIANTS, type Signature, type SigVariant } from './signatures';
 import { bass, filterNode, gainNode, knock, mallet, pad, panNode, pluck, shaker, type MusicBus } from './synth';
 
 /** What the engine reads of the world each frame (the shell fills it). */
@@ -272,6 +274,16 @@ export class SoundEngine {
   /** Play a cue now (or at `at`): its recipe at its trim. */
   play(cue: SfxCue, n = 1, at = this.ctx.currentTime): void {
     RECIPES[cue](this.kit, Math.max(at, this.ctx.currentTime), Math.max(1, Math.floor(n)), dbToGain(CUES[cue].trimDb));
+  }
+
+  /**
+   * Play a building's signature (D120) now (or at `at`): its recipe in that variant, at its trims
+   * times `gain` (the spatial fade), panned to where the building is.
+   */
+  playSignature(s: Signature, variant: SigVariant, gain = 1, pan = 0, at = this.ctx.currentTime): void {
+    const v = VARIANTS[variant];
+    const g = dbToGain(SIGNATURES[s].trimDb[variant === 'build' ? 0 : 1]) * Math.max(0, Math.min(1, gain));
+    SIG_RECIPES[s](this.kit, Math.max(at, this.ctx.currentTime), { g, len: v.len, full: variant === 'build', pan: Math.max(-1, Math.min(1, pan)) });
   }
 
   /** Pitch classes of the chord in force. */
