@@ -142,6 +142,9 @@ button.hud-power[aria-disabled] { cursor: default; }
 .tip-chip { display: inline-flex; align-items: center; gap: 2px; }
 .tip-chip canvas { display: block; width: 16px; height: 16px; }
 .tip-chip[data-poor] { color: var(--c-coral-d); font-weight: 700; }
+/* What the Heart holds of it, after the cost: soft, so the cost stays the figure read first. */
+.tip-have { margin-left: 2px; font-size: 11px; font-weight: 600; color: var(--c-ink-soft); }
+.tip-chip[data-poor] .tip-have { color: var(--c-coral-d); }
 .tip-why { margin-top: 3px; color: var(--c-coral-d); font-weight: 600; }
 .tip-wind { display: flex; align-items: center; gap: 5px; margin-top: 3px; font-weight: 600; font-variant-numeric: tabular-nums; } /* a turbine in hand (D95) */
 .tip[data-bad] { border-color: var(--c-coral-d); }

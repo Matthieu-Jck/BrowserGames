@@ -145,6 +145,7 @@ export const fr = {
   'build.hint.remove': 'Clic ou glisser, gauche ou droit : démolir (remboursé) · Échap : ranger',
   'build.cost': 'Coût',
   'build.free': 'Gratuit',
+  'tip.costHave': '{item} : il en faut {n}, le Cœur en a {have}',
   'build.buried': { one: '{n} enfoui', other: '{n} enfouis' },
 
   'reason.ok': 'Prêt à poser',

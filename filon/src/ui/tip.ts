@@ -25,6 +25,7 @@ import { analyticsOn } from './analytics';
 import { buildingIcon, itemIcon, unlockedTray } from './build-bar';
 import { glyph } from './glyphs';
 import { ownsForGood, parcelState } from './land-facts';
+import { compact as compactNum } from './stock-panel';
 import { oc } from './trade-view';
 
 /** Under a finger the tip goes above the touch point (D96). */
@@ -65,7 +66,11 @@ export class Tip {
     // Refused on a neighbouring base's land with no camouflaged ribbon to bury it yet (D109): point to it.
     const camo = pre.reason === 'neighbour_land' && def && BUILDING_KIND[buildingIdx(def)] === 'belt' && !sim.unlocked(buildingDef(buildingIdx(CAMO)).unlock);
     const wind = def && pre.pieces[0] && BUILDING_KIND[buildingIdx(def)] === 'wind' && analyticsOn(sim, 'wind') ? this.windOf(sim, def, pre.pieces[0]) : null;
-    const sig = JSON.stringify([def, cost, pre.reason, lift, camo, pre.buried, pre.doomed.length, pre.mark?.n, pre.mark?.clear, locale(), wind?.mean, wind?.overall]);
+    // What the Heart holds of each cost item, beside the cost (owner, 2026-10-17: « quand le joueur a
+    // sélectionné un truc à construire qui coûte des ressources, il faut lui afficher le nombre de
+    // ressources qu'il a dans le cœur »): part of the signature, so the chip follows the stock.
+    const have = cost.map(([item]) => Math.floor(sim.stock[item]! / 1000));
+    const sig = JSON.stringify([def, cost, have, pre.reason, lift, camo, pre.buried, pre.doomed.length, pre.mark?.n, pre.mark?.clear, locale(), wind?.mean, wind?.overall]);
     if (sig === this.sig) return;
     this.sig = sig;
     this.node.hidden = false;
@@ -73,7 +78,9 @@ export class Tip {
     const kids: HTMLElement[] = [];
     if (def) {
       kids.push(el('div.tip-cost', {}, cost.length
-        ? cost.map(([item, mu]) => el('span.tip-chip', { 'data-poor': sim.stock[item]! < mu ? '' : null, title: itemDef(item).name[L] }, [itemIcon(this.atlas, item, 16), String(Math.ceil(mu / 1000))]))
+        ? cost.map(([item, mu], k) => el('span.tip-chip', { 'data-poor': sim.stock[item]! < mu ? '' : null, title: t('tip.costHave', { item: itemDef(item).name[L], n: num(Math.ceil(mu / 1000)), have: num(have[k]!) }) }, [
+          itemIcon(this.atlas, item, 16), el('b', {}, String(Math.ceil(mu / 1000))), el('small.tip-have', {}, `/ ${compactNum(have[k]!)}`),
+        ]))
         : [el('span', {}, t('build.free'))]));
     }
     // A turbine in hand with the Anémométrie plan (D95): what it would give here over the next day.

@@ -143,6 +143,7 @@ export const en: Dict = {
   'build.hint.remove': 'Click or drag, left or right: demolish (refunded) · Esc: put away',
   'build.cost': 'Cost',
   'build.free': 'Free',
+  'tip.costHave': '{item}: {n} needed, the Core has {have}',
   'build.buried': { one: '{n} buried', other: '{n} buried' },
 
   'reason.ok': 'Ready to place',
