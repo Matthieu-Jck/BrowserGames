@@ -10,6 +10,12 @@
 // under the HUD on the left (over the quest log) or, on a narrow window, as a bottom sheet
 // (responsive.css, ui/sheet.ts). Rebuilt when the items, the telemetry or the language change;
 // the figures are written change-only, the amounts every frame while it is open.
+// The Heart holds at most `hearthCap` of each item (BAL, by its level): the panel says so in its
+// head, with what the next level holds, and each row's thin gauge fills toward it — amber near the
+// top, coral and « plein » at it, where the Heart takes no more and what comes to it waits on the
+// ribbons (owner, 2026-10-17: « il faut expliquer au joueur que le core ne peut contenir que X de
+// chaque item au maximum »).
+import { BAL } from '@/content/balance';
 import { ITEM_IDS, itemIdx } from '@/content/registry';
 import { nodeName } from '@/content/research';
 import { buildingDef, buildingIdx } from '@/content/registry';
@@ -53,13 +59,15 @@ function needName(s: Shortage): string {
   return s.for.k === 'plan' ? nodeName(s.for.id)[locale()] : buildingDef(buildingIdx(s.for.id)).name[locale()];
 }
 
-interface Row { node: HTMLElement; val: HTMLElement; rate: HTMLElement; need: HTMLElement }
+interface Row { node: HTMLElement; val: HTMLElement; rate: HTMLElement; need: HTMLElement; fill: HTMLElement }
 
 export class StockPanel {
   readonly root: HTMLElement;
   private readonly body = el('div.stk-body', { 'data-stock-body': '' });
   private readonly kinds = el('small.stk-kinds');
   private readonly empty = el('p.insp-note.stk-empty');
+  /** What the Heart holds of each item at most, and at the next level. */
+  private readonly cap = el('p.stk-cap', { 'data-stock-cap': '' });
   private readonly rows = new Map<number, Row>();
   private sig = '';
   private shown: number[] = [];
@@ -70,6 +78,7 @@ export class StockPanel {
     lang(x, () => t('insp.close'), 'aria-label');
     this.root = el('aside.stockp.cartouche', { 'data-screen': 'stock', hidden: true }, [
       el('header.insp-head.stk-head', {}, [crateGlyph('stk-crate'), el('div.insp-titles', {}, [lang(el('h3.lettering'), () => t('stock.title')), this.kinds]), x]),
+      this.cap,
       this.empty,
       this.body,
     ]);
@@ -82,9 +91,9 @@ export class StockPanel {
   private row(item: number): Row {
     let r = this.rows.get(item);
     if (!r) {
-      const val = el('b.stk-val'), rate = el('span.stk-rate'), need = el('span.stk-need');
-      const node = el('div.stk-row', { 'data-item': ITEM_IDS[item] }, [itemIcon(this.atlas, item, 22), el('span.stk-name'), need, val, rate]);
-      r = { node, val, rate, need };
+      const val = el('b.stk-val'), rate = el('span.stk-rate'), need = el('span.stk-need'), fill = el('i');
+      const node = el('div.stk-row', { 'data-item': ITEM_IDS[item] }, [itemIcon(this.atlas, item, 22), el('span.stk-name'), need, val, rate, el('span.stk-fill', {}, [fill])]);
+      r = { node, val, rate, need, fill };
       this.rows.set(item, r);
     }
     return r;
@@ -113,6 +122,9 @@ export class StockPanel {
       setAttr(this.root, 'data-tele', tele ? '' : null);
     }
     setText(this.kinds, tr('stock.kinds', { n: items.length }));
+    const capN = Math.floor(sim.hearthCap() / 1000), next = BAL.hearthCap[sim.hearthLevel];
+    setText(this.cap, next ? t('stock.capNext', { n: num(capN), next: num(next), level: sim.hearthLevel + 1 }) : t('stock.cap', { n: num(capN) }));
+    setAttr(this.cap, 'title', t('stock.capTip'));
     setText(this.empty, items.length ? '' : t('stock.empty'));
     setAttr(this.empty, 'hidden', items.length ? '' : null);
     for (const i of items) {
@@ -125,8 +137,13 @@ export class StockPanel {
       setAttr(r.node, 'title', d !== null ? t('hud.stock.tipRate', { item: itemName(i), n, rate: t('hud.perMin', { v: dv || '0' }) }) : t('hud.stock.tip', { item: itemName(i), n }));
       const lack = lacks.get(i);
       setAttr(r.node, 'data-lack', lack ? (lack.out ? 'out' : 'short') : null);
-      setText(r.need, lack ? `−${num(Math.ceil(lack.missing / 1000))}` : '');
-      setAttr(r.need, 'title', lack ? t(lack.out ? 'stock.out' : 'stock.short', { n: num(Math.ceil(lack.missing / 1000)), need: needName(lack) }) : null);
+      // Its share of what the Heart can hold: near the top, full (the Heart takes no more of it).
+      const share = Math.min(1000, Math.floor((sim.stock[i]! * 1000) / Math.max(1, sim.hearthCap())));
+      const full = share >= 1000;
+      r.fill.style.width = `${share / 10}%`;
+      setAttr(r.node, 'data-fill', full ? 'full' : share >= 900 ? 'near' : null);
+      setText(r.need, lack ? `−${num(Math.ceil(lack.missing / 1000))}` : full ? t('stock.full') : '');
+      setAttr(r.need, 'title', lack ? t(lack.out ? 'stock.out' : 'stock.short', { n: num(Math.ceil(lack.missing / 1000)), need: needName(lack) }) : full ? t('stock.fullTip', { n: num(capN) }) : null);
     }
   }
 

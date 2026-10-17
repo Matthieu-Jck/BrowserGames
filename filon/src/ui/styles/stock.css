@@ -50,3 +50,11 @@
 .stk-row[data-lack='out'] .stk-need { background: var(--c-coral); color: var(--c-paper); }
 .stk-row[data-lack='short'] { background: color-mix(in srgb, var(--c-warn) 16%, transparent); }
 .stk-row[data-lack='short'] .stk-need { background: var(--c-peach-l); }
+/* The Heart's limit (its level's `hearthCap`): said under the head; each row's thin gauge toward it,
+   amber near the top, coral when full (the Heart takes no more: what comes waits on the ribbons). */
+.stk-cap { margin: 6px 2px 0; font-size: 12.5px; color: var(--c-ink-soft); cursor: help; }
+.stk-fill { grid-column: 2 / -1; height: 3px; border-radius: 2px; background: rgba(30, 27, 46, 0.08); overflow: hidden; }
+.stk-fill > i { display: block; height: 100%; background: var(--c-turq); }
+.stk-row[data-fill='near'] .stk-fill > i { background: var(--c-warn); }
+.stk-row[data-fill='full'] .stk-fill > i { background: var(--c-coral); }
+.stk-row[data-fill='full']:not([data-lack]) .stk-need { background: var(--c-coral); color: var(--c-paper); }
