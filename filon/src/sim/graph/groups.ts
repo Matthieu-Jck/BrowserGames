@@ -103,9 +103,9 @@ export function buildGroups(g: Graph): Group[] {
     for (const node of grp.nodes) {
       if (node.kind !== 'chain') continue;
       const c = node as Chain;
-      if (c.gleanRate <= 0) continue;
+      if (!c.raidPosts.length) continue;
       grp.glean = true;
-      if (c.gleanCells.length > best) { best = c.gleanCells.length; grp.gleanTile = c.tiles[c.gleanCells[best >> 1]!]!; }
+      if (c.raidPosts.length > best) { best = c.raidPosts.length; grp.gleanTile = c.tiles[c.raidPosts[best >> 1]!]!; }
     }
     grp.rotNight = grp.glean ? lcm(grp.rotL, GLEAN_WINDOW) : grp.rotL;
     grp.sig = signature(g, grp);
@@ -122,11 +122,12 @@ function signature(g: Graph, grp: Group): string {
     if (node.kind === 'chain') {
       const c = node as Chain;
       h.int(c.tier).ints(c.tiles);
-      if (c.gleanRate > 0) h.int(c.gleanRate).int(c.gleanSeed).ints(c.gleanCells);
+      if (c.raidPosts.length) h.int(c.raidAt).int(c.gleanSeed).ints(c.raidPosts);
     }
     if (typeof any.speed === 'number') h.int(any.speed);
     if (typeof any.rateEp === 'number') h.int(any.rateEp);
     if (typeof any.outKw === 'number') h.int(any.outKw);
+    if (typeof any.waterEp === 'number' && any.waterEp > 0) h.int(any.waterEp); // a steam boiler's water (D114)
     if (node.kind === 'machine') h.int(((any.recipe as { idx: number } | null)?.idx ?? -1));
     if (node.kind === 'fork') {
       // Routing blocks: their logic, chosen item, buffer, which outputs go straight / aside, filters.

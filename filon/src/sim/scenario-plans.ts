@@ -34,7 +34,7 @@ export interface PlanPart {
   /** A building id, or 'mark': a tile kept free whose place (and the way `dir` into the plan) is reported. */
   readonly def: string;
   readonly recipe?: string;
-  /** A sorter's, an inverted sorter's or an unloader's item. */
+  /** A sorter's or an inverted sorter's item. */
   readonly filter?: string;
   /** Quarter turns clockwise from facing down the plan (default 0). */
   readonly turn?: Rot;

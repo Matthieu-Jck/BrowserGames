@@ -19,6 +19,7 @@ import { locale, t } from '@/i18n/i18n';
 import { credits, duration, num } from '@/i18n/format';
 import { buildingDef, N_ITEMS } from '@/content/registry';
 import { nodeName } from '@/content/research';
+import { RETIRED_NAMES } from '@/content/retired';
 import { TICK_MS } from '@/sim/constants';
 import type { AwayReport, Incident, IncidentKind } from '@/sim/offline/report';
 import type { RemapNote } from '@/sim/save-remap';
@@ -224,7 +225,8 @@ export function approxNote(r: AwayReport): HTMLElement | null {
 /** What this version of the game changed in a loaded save (D47). */
 export function changesPanel(c: RemapNote): HTMLElement {
   const rows: HTMLElement[] = [];
-  if (c.removed.length) rows.push(el('p', {}, t('away.changes.removed', { list: list(c.removed.map((b) => `${b.id} ×${b.n}`)) })));
+  // A retired building by its old name (D117: the ids meant nothing to the player), else its id.
+  if (c.removed.length) rows.push(el('p', {}, t('away.changes.removed', { list: list(c.removed.map((b) => `${RETIRED_NAMES[b.id]?.[locale()] ?? b.id} ×${b.n}`)) })));
   if (c.lost.length) rows.push(el('p', {}, t('away.changes.lost', { list: list(c.lost.map((l) => `${num(l.mu / 1000)} ${l.id}`)) })));
   if (c.reset.length) rows.push(el('p', {}, t('away.changes.reset', { list: list(c.reset) })));
   return panel('changes', () => t('away.changes'), mark('build'), rows);

@@ -16,7 +16,7 @@ export const BAL = {
   // never cuts the base dead. The world clock is shared, so a base may be founded at night.
   hearthSolarKw: [90, 130, 180, 240],
   hearthCoreKw: [210, 300, 420, 560],
-  hearthPortPerMin: 120, // each unloader port
+  hearthPortPerMin: 120, // an outlet's pace: the Core's data outlet (D86), a trade post's exit
   reservoirMargin: 20, // items: within this of a bound, offline treats the reservoir as at the bound
 
   // ── machines ─────────────────────────────────────────────────────────────
@@ -34,6 +34,8 @@ export const BAL = {
   beltDensity: 1, // items per ribbon tile: one item per square; a full ribbon blocks (owner, 2026-10-11)
   conduitDensity: 4, // water per conduit tile (a fluid, not drawn as items)
   remoteBeltCostMult: 3,
+  /** A camouflaged ribbon off the claim's land (D109): its cost × this, not `remoteBeltCostMult` (1: no surcharge; the kite's delay still applies). */
+  camoRemoteCostMult: 1,
   runSpanTicks: 20, // parcels of the same item merge over at most 2 s
 
   // ── power ────────────────────────────────────────────────────────────────
@@ -95,8 +97,12 @@ export const BAL = {
   },
 
   // ── land & space (docs/land.md, D60) ─────────────────────────────────────
-  startReveal: 44, // tiles of land explored at founding: the cirque, its Crown (r 32; a Closed Cirque's 43) and the near belt's first deposits (from r 36)
-  landReveal: 32,  // fog lifted round a parcel the claim comes to hold (from its centre)
+  // The fog (D117: no survey beacon; it lifts as the claim grows). Round the Core by its level 1..4:
+  // at founding the cirque, its Crown (r 32; a Closed Cirque's 43) and the near belt's first deposits
+  // (from r 36); each level a parcel's half farther.
+  coreReveal: [44, 56, 68, 80],
+  landReveal: 32,  // fog lifted round a parcel the claim comes to hold (from its centre): the parcel (23 tiles, half-diagonal 16) and a margin round it
+  buildReveal: 12, // round any building placed (plus half its longer side; `revealOf`): a pole line walks the fog back, two poles' reach ahead
   remoteBuildTilesPerSec: 4,
   land: {
     // Tiles a side; parcels are centred on the Heart (odd: its parcel exactly so). The starting
@@ -121,8 +127,17 @@ export const BAL = {
     oreTiers: [1, 13, 40] as readonly number[],
     growth: 1100, // ‰ on the price per parcel already bought (Land Charter lowers it)
     rentPermille: 30, // of the price, an hour
-    sisterShare: 125, // ‰ of the parcels beyond the starting ring that a sister claim owns
-    sisterMarkup: [1600, 1800, 2000, 2200, 2400] as readonly number[], // ‰ on the content price, by claim
+    /**
+     * The neighbouring bases (D110): parcels held by another claim of the Crier, a working base on
+     * them, never for sale nor lease. Map 4 groups them in holdings (`holdings`): the parcel grid
+     * cut in `block` × `block` squares round the Heart's, `chance` ‰ of them holding one base of
+     * `size` parcels side by side (inclusive), each parcel of it with at least `floor` ‰ of its
+     * `samples` × `samples` sample points on open floor (a base stands there) and nothing the land
+     * guarantees the claim (a site, the copper field, a vent, a corridor). Maps 1–3 keep their
+     * scattered parcels, one in `scatter` ‰ past the ring round the starting square, the same ones as
+     * before D110 where a base fits.
+     */
+    neighbours: { scatter: 125, block: 3, chance: 420, size: [2, 4] as readonly number[], floor: 450, samples: 5 },
     farRadius: 320, // tiles: land beyond is cheaper with Far Claims (xp8)
   },
 
@@ -180,7 +195,7 @@ export const BAL = {
     // flow), and leaves a lasting factor max(shockFloor, 1 − L/2K) on the price.
     spotKappaMin: 30,
     shockFloor: 0.25,
-    // Sister colonies: delivery delay by distance band; T3/T4 markets ramp up over the colony's
+    // The colonies (the other claims): delivery delay by distance band; T3/T4 markets ramp up over the colony's
     // first days (rampSupply: depth ramps and prices stay at V; false: demand alone ramps).
     // D113 (owner, 2026-10-17: a 10/min order's first ore 20 minutes away « it's way too long »):
     // was 15, 45, 120, 240. Near goods land within minutes; the far uniques still take an hour.
@@ -266,27 +281,26 @@ export const BAL = {
     gridPermille: 950,
   },
 
-  // ── the Gleaners (D103, content/gleaners.ts: what they take) ──────────────
-  // A small people of the open desert: at night they take a few shiny things off the ribbons they
-  // reach (sim/world/reach.ts, sim/flow/chain.ts). A ribbon chain's tiles beside open desert floor
-  // are its exposed cells; on a share of its steps (`perTile` ‰ a cell, at most `maxPermille`) they
-  // look at one of them and take what it carries, by their taste.
+  // ── the Gleaners (D103, D112; content/gleaners.ts: what they take) ───────
+  // A small people of the open desert: at night they come in groups to the ribbons they reach and
+  // take a few shiny things (sim/world/reach.ts, sim/flow/chain.ts). A ribbon chain's tiles beside open
+  // desert floor are its exposed cells; once a `window` a group raids it: each takes up a post beside
+  // one cell and takes the first thing to its taste that rides past, then they go.
   gleaners: {
-    /** ‰ of a chain's steps they try, per exposed tile: a short dash across a corner loses little. */
-    perTile: 2,
-    /** At most, on a chain: ‰ of its steps (5 % of what passes on a long exposed line, by night). */
-    maxPermille: 50,
+    /**
+     * Their raids repeat every `window` ticks on each exposed chain (D112): four minutes, three raids a
+     * night. At most `PERIOD_MAX` (2 400): a night group's period folds it in (graph/groups.ts `rotNight`).
+     */
+    window: 2400,
+    /** How long a raid's group may take (ticks): from the first of them taking up its post to the raid's end. */
+    raid: 600,
+    /** The posts open one after the other, this many ticks apart: they gather, then reach out one by one. */
+    stagger: 70,
+    /** The group: `min` to `max` of them, one more for every `per` exposed tiles past `min` (a shorter exposure, one a tile). Each takes one item a raid. */
+    group: { min: 3, max: 5, per: 8 },
     /** A pocket of desert floor this small (tiles), closed by rock, water, buildings or fences, is out of their reach. */
     pocket: 1500,
     /** The sun (‰, `SOLAR`) at or under which they are out: the dark hours. */
     darkSun: 0,
   },
-
-  // ── drifters ─────────────────────────────────────────────────────────────
-  dockShips: 4,
-  dockCap: 2000,
-  drifterCap: 200,
-  drifterTilesPerMin: 60,
-  drifterLoadMin: 1,
-  drifterCost: { resin_canvas: 20, gear: 10, circuit: 5 } as Record<string, number>,
 } as const;

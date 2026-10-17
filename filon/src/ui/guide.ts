@@ -43,6 +43,7 @@ import { planCost } from '@/sim/systems/research';
 import { looksAtWork } from '@/sim/systems/work';
 import { stopWhy } from '@/sim/readouts/production';
 import { windiest } from '@/sim/readouts/wind';
+import { nearestWater } from '@/sim/readouts/water';
 import { PARCEL, parcelAt, parcelCentre } from '@/sim/world/land';
 import { itemRef } from './mention';
 import { hintText } from './quest-log';
@@ -338,9 +339,22 @@ function windySpot(sim: Sim): [number, number, number] | null {
   return spot;
 }
 
+/** The nearest spot to the Core where a pump draws water (D114), kept while the base stands as it is. */
+const waterSpotsKept = new WeakMap<Sim, { key: string; spot: [number, number, number] | null }>();
+function waterSpot(sim: Sim): [number, number, number] | null {
+  const key = `${sim.ents.map.size}:${sim.graph?.version ?? 0}`;
+  const kept = waterSpotsKept.get(sim);
+  if (kept?.key === key) return kept.spot;
+  const w = nearestWater(sim);
+  const spot: [number, number, number] | null = w ? [w[0] + 0.5, w[1] + 0.5, 1.2] : null;
+  waterSpotsKept.set(sim, { key, spot });
+  return spot;
+}
+
 /** A place in the world (content `GuideSpot`): tile centre and radius. */
 export function spotOf(sim: Sim, at: GuideSpot): [number, number, number] | null {
   if ('windy' in at) return windySpot(sim);
+  if ('water' in at) return waterSpot(sim);
   if ('deposit' in at) {
     const d = CIRQUE.deposits.find((x) => x.item === at.deposit);
     return d ? [CENTER + d.dx, CENTER + d.dy, d.radius + 0.5] : null;
@@ -885,7 +899,8 @@ export class Guide {
     if (tool?.def === def) {
       // …and the quartz vein's foot (D87): far off past the Crown, the face cutter's one place.
       // …and the Crown's windiest spot for a turbine (D95: the guide reads the wind the player cannot see yet).
-      const first = (def === 'drill' && !sim.ents.sorted().some((e) => BUILDING_IDS[e.def] === 'drill')) || (!!at && !Array.isArray(at) && ('vein' in at || 'windy' in at));
+      // …and the water nearest the Core for the first pump (D114: up on the Crown by the tarn, today).
+      const first = (def === 'drill' && !sim.ents.sorted().some((e) => BUILDING_IDS[e.def] === 'drill')) || (!!at && !Array.isArray(at) && ('vein' in at || 'windy' in at || 'water' in at));
       const spot = !first ? null : Array.isArray(at) ? at : at ? spotOf(sim, at) : null;
       return spot ? { k: 'world', x: spot[0], y: spot[1], r: spot[2], desc: desc ?? `spot:${JSON.stringify(at)}` } : null;
     }

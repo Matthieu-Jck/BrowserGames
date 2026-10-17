@@ -59,9 +59,9 @@ export interface PortDef {
 }
 
 export type BuildingKind =
-  | 'hearth' | 'drill' | 'belt' | 'fork' | 'crossing' | 'bridge' | 'pole' | 'beacon'
+  | 'hearth' | 'drill' | 'belt' | 'fork' | 'crossing' | 'bridge' | 'pole'
   | 'machine' | 'lab' | 'generator' | 'wind' | 'solar' | 'geothermal' | 'storage' | 'trade'
-  | 'excavator' | 'pump' | 'conduit' | 'accumulator' | 'dock' | 'backfiller' | 'sink'
+  | 'excavator' | 'pump' | 'conduit' | 'accumulator' | 'backfiller' | 'sink'
   // Mints AI tokens from power (D68): research uses them as it runs, its own servers' first.
   | 'server'
   // A fence (D103): no node, no power; it stands in the Gleaners' way (sim/world/reach.ts).
@@ -74,10 +74,10 @@ export type BuildCategory = 'extraction' | 'logistics' | 'distribution' | 'produ
  * ribbons, machines and stores alike. Directional ones (placed with a rotation: in from the
  * back): `sorter` (the chosen item straight on, others to the sides), `inverted` (the chosen
  * item to the sides, others straight on), `overflow` (straight on, the sides when it is full),
- * `underflow` (the sides, straight on when they are full). `unloader`: pulls the chosen item
- * (or anything) out of an adjacent store and hands it to every other side.
+ * `underflow` (the sides, straight on when they are full). The unloader, which pulled the chosen
+ * item out of an adjacent store, is retired (D117): a silo's outputs empty it by themselves.
  */
-export type RouterLogic = 'router' | 'distributor' | 'sorter' | 'inverted' | 'overflow' | 'underflow' | 'unloader';
+export type RouterLogic = 'router' | 'distributor' | 'sorter' | 'inverted' | 'overflow' | 'underflow';
 
 /**
  * Replacement, the Mindustry way: a building may be placed over buildings of its own group
@@ -128,6 +128,12 @@ export interface BuildingDef {
   /** A glazed ribbon (D103): the glass over it keeps the Gleaners' hands off what it carries. */
   readonly glazed?: boolean;
   /**
+   * A camouflaged ribbon (D109): buried under the sand. It may be laid on a neighbouring base's open land
+   * (D110; a sister claim's before) as on free land, off the claim's land at its own cost (`BAL.camoRemoteCostMult`, not the ×3), and the
+   * Gleaners walk over it without seeing it. Flat: it never climbs a step.
+   */
+  readonly camo?: boolean;
+  /**
    * A power link point (D25: the pillars and the Hearth): `range` = how far its wires reach
    * (tiles, footprint edge to edge), `slots` = how many wires it holds. `tall`: the Reinforced Pylons
    * research (`mods.pylonLink`) lengthens its wires. `climb` (levels, D78): how far its wires may
@@ -140,9 +146,11 @@ export interface BuildingDef {
   /**
    * Generator output (kW) and fuel burn at full output (items/min). A solar plant gives
    * nothing at night (owner, 2026-10-14: « la nuit les panneaux sont à 0 »). A wind turbine's
-   * `kw` is its rating, reached on its curve (`wind`, D95).
+   * `kw` is its rating, reached on its curve (`wind`, D95). A steam boiler (D114) also drinks
+   * `water` items/min at full output, like its fuel in proportion to what the grid asks: without
+   * both in its boxes it gives nothing.
    */
-  readonly gen?: { readonly kw: number; readonly fuel?: string; readonly fuelPerMin?: number; readonly wind?: WindCurve };
+  readonly gen?: { readonly kw: number; readonly fuel?: string; readonly fuelPerMin?: number; readonly water?: number; readonly wind?: WindCurve };
   /**
    * An extractor (kind `drill`): `perMin` at most. A drill mines the deposit under it (bounded by its
    * tiles' caps); with `ground`, it collects that item off the bare ground instead — every tile of
@@ -159,11 +167,14 @@ export interface BuildingDef {
   readonly server?: { readonly tokensPerMin: number };
   /** An excavator's reach (tiles from its footprint) and digging speed (‰). */
   readonly excavator?: { readonly reach: number; readonly speed: number };
-  /** A skydock's drifters and the share of the base capacity each carries (‰). */
-  readonly dock?: { readonly ships: number; readonly capMult: number };
   /** A research lab that makes its own data files (kind `lab`): files a minute at full power (D70). */
   readonly lab?: { readonly dataPerMin: number };
   readonly storageCap?: number;
+  /**
+   * The fog it lifts for good when placed (D117), in tiles from its footprint's centre. Omitted: every
+   * building lifts `BAL.buildReveal` plus half its longer side — but a line piece (the `transport` and
+   * `fluid` groups: ribbons, routing blocks, junctions, bridges, conduits) lifts none (`revealOf`, sim/space.ts).
+   */
   readonly reveal?: number;
   readonly accumulator?: { readonly kwMin: number; readonly kw: number };
   /** Routing blocks (kind `fork`): how they hand items on. */
@@ -206,10 +217,11 @@ export interface ResearchDef {
 /**
  * The path a plan belongs to in the unlock tree (D33, D41): one theme each, drawn as its own
  * labelled band — logistics (move and sort), production (smelt and make), energy, analytics
- * (what the base shows you), trade, survey (the land). Order and checks: `PLAN_PATHS` in research.ts.
+ * (what the base shows you), trade. The survey path went with the survey beacon (D117). Order and
+ * checks: `PLAN_PATHS` in research.ts.
  */
 /** A plan path, or `gate`: the research lab's plan, between all the plans and research (D71). */
-export type PlanLane = 'logistics' | 'production' | 'energy' | 'analytics' | 'trade' | 'survey' | 'gate';
+export type PlanLane = 'logistics' | 'production' | 'energy' | 'analytics' | 'trade' | 'gate';
 
 /**
  * A plan (D33): an instant unlock of the one tree, paid with materials from the Heart the
@@ -242,8 +254,8 @@ export type ModTarget =
   | 'digSpeed' | 'rubbleYield' | 'embeddedOre' | 'windOut' | 'solarOut' | 'geoOut'
   | 'accCap' | 'accRate' | 'genOut' | 'craftSpeed' | 'tradeFee' | 'deliveryDelay' | 'slippage'
   | 'landPrice' | 'landRent' | 'landGrowth' | 'farLand' | 'remoteBeltCost' | 'remoteBuildDelay'
-  | 'pylonLink' | 'dockShips' | 'shipCap' | 'shipSpeed' | 'ring3Caps'
-  | 'bridgeSpan' | 'orders' | 'excavatedSpeed' | 'gustVariance' | 'drifterDistance'
+  | 'pylonLink' | 'ring3Caps'
+  | 'bridgeSpan' | 'orders' | 'excavatedSpeed' | 'gustVariance'
   // Data files a minute out of the Heart's data outlet (D68), ×1000.
   | 'heartData'
   // The expertises' own (D93, ‰): the drills' and cutters' rate (and their deposit's cap); the data

@@ -62,7 +62,6 @@
 [data-lane='energy'] { --path: #d9a21c; }
 [data-lane='analytics'] { --path: #23908f; }
 [data-lane='trade'] { --path: #d8584a; }
-[data-lane='survey'] { --path: #6e9638; }
 /* A lane's band: its rows on a wash of its colour, a soft rim. */
 .tr-band {
   position: absolute; border-radius: 16px 11px 18px 12px / 12px 18px 11px 16px;
@@ -178,7 +177,11 @@
 .rs-pre li[data-ok] { color: var(--c-turq-d); }
 .rs-live { margin-top: 10px; font-weight: 600; }
 .rs-actions { margin-top: 14px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
-.rs-why { color: var(--c-coral-d); }
+.rs-why { display: inline-flex; align-items: center; gap: 6px; color: var(--c-coral-d); }
+.rs-why > canvas, .rs-why > svg, .rs-why > .glyph { width: 16px; height: 16px; flex: none; display: block; }
+.rs-why > .coin { font-size: 14px; }
+.rs-whypips { display: inline-flex; gap: 2px; }
+.rs-whypips .rs-pip { width: 8px; height: 8px; }
 .rs-tag { padding: 3px 10px; border-radius: 999px; background: var(--c-turq-l); font-weight: 600; }
 
 /* ── stats ─────────────────────────────────────────────────────────────────── */

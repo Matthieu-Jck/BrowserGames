@@ -1,9 +1,9 @@
 // compile.ts — grid + entities → flow graph. Ribbon tiles are traced into chains (maximal
 // runs of one tier where each tile has exactly one feeder); a tile fed from several sides
 // starts a new chain. Buildings become nodes; every port carries at most one edge. Routing
-// blocks (kind `fork`: routers, sorters, gates, unloaders) have no fixed ports: they link to
-// whatever is around them — ribbons, machine and store ports, other routing blocks, and (an
-// unloader) the stores it pulls from — within the sides their logic allows. Junctions pass
+// blocks (kind `fork`: routers, sorters, gates) have no fixed ports: they link to whatever is
+// around them — ribbons, machine and store ports, other routing blocks — within the sides their
+// logic allows (the unloader, which pulled from the stores it touched, is retired: D117). Junctions pass
 // items straight across: whatever faces one (a ribbon, a port, a routing block's side) faces
 // the first thing past it, in line (`across`). Node state and
 // ribbon contents survive a recompile (contents are redistributed by position; anything
@@ -21,7 +21,7 @@ import { DX, DY, T, isWater, opposite, type Ent, type Rot } from '../types';
 import type { RouterLogic } from '@/content/types';
 import type { Grid } from '../world/grid';
 import { tileIndex } from '../world/grid';
-import { Chain, VIA_NONE } from '../flow/chain';
+import { Chain, VIA_NONE, planRaid } from '../flow/chain';
 import type { FNode } from '../flow/node';
 import { DrillNode, ForkNode, GeneratorNode, MachineNode, ReservoirNode, SinkNode } from '../flow/nodes';
 import type { Mods } from '../research/modifiers';
@@ -78,7 +78,9 @@ export interface CompileInput {
   heartData: number;
   /** The Heart's level (its power grows with it, D101; default 1). */
   hearthLevel?: number;
-  /** Per-entity stocks of silos, docks and trade posts (persisted by the state). */
+  /** Tiles the Gleaners keep off beyond the claim's own — a neighbouring base's land (D110, world/neighbours.ts). */
+  blocked?: (t: number) => boolean;
+  /** Per-entity stocks of silos, trade posts and the other stores (persisted by the state). */
   stores: Map<number, Float64Array>;
   old: Graph | null;
   /** Return orphaned items to the Hearth. */
@@ -179,7 +181,7 @@ export function compileGraph(inp: CompileInput): Graph {
         let st = inp.stores.get(e.id);
         if (!st) inp.stores.set(e.id, (st = new Float64Array(N_ITEMS)));
         node = reuse(e, () => new ReservoirNode(e.id, st!, (b.storageCap ?? 1000) * 1000, [], mpt(240), true), (o) => o.kind === 'reservoir');
-        (node as ReservoirNode).portItems = []; // unloaders' virtual ports are re-added below
+        (node as ReservoirNode).portItems = []; // single-item: every outlet hands out what it holds
         break;
       }
       case 'machine': {
@@ -207,7 +209,10 @@ export function compileGraph(inp: CompileInput): Graph {
         const fuel = itemIdx(b.gen!.fuel!);
         const burnEp = Math.round((b.gen!.fuelPerMin ?? 0) * 1000);
         const kw = Math.floor((b.gen!.kw * mods.genOut) / 1000);
-        node = reuse(e, () => new GeneratorNode(e.id, fuel, burnEp, kw), (o) => o.kind === 'generator');
+        // A steam boiler drinks water too (D114): its second box.
+        const water = b.gen!.water ? WATER_IDX() : -1, waterEp = Math.round((b.gen!.water ?? 0) * 1000);
+        node = reuse(e, () => new GeneratorNode(e.id, fuel, burnEp, kw, water, waterEp),
+          (o) => o.kind === 'generator' && (o as GeneratorNode).waterItem === water);
         (node as GeneratorNode).outKw = kw;
         break;
       }
@@ -253,14 +258,6 @@ export function compileGraph(inp: CompileInput): Graph {
         r.accepts = new Set([RUBBLE_IDX()]);
         r.kw = inp.busy?.has(e.id) ? b.kw ?? 0 : b.idleKw ?? 0;
         r.idleKw = r.kw;
-        break;
-      }
-      case 'dock': {
-        let st = inp.stores.get(e.id);
-        if (!st) inp.stores.set(e.id, (st = new Float64Array(N_ITEMS)));
-        const items = (e.portItems ?? []).slice();
-        node = reuse(e, () => new ReservoirNode(e.id, st!, BAL.dockCap * 1000, items, mpt(240), false, b.kw ?? 0), (o) => o.kind === 'reservoir');
-        (node as ReservoirNode).portItems = items;
         break;
       }
       case 'pump': {
@@ -329,12 +326,10 @@ export function compileGraph(inp: CompileInput): Graph {
   const outPortFacing = new Map<number, PortRef>(); // facing tile · 4 + port dir → port
   for (const op of outPorts) if (op.fx >= 0 && op.fy >= 0 && op.fx < WORLD && op.fy < WORLD) outPortFacing.set(tileIndex(op.fx, op.fy) * 4 + op.ref.dir, op.ref);
   const links: Array<{ s: FNode; sp: number; d: FNode; dp: number }> = [];
-  const nextVirtual = new Map<ReservoirNode, number>();
   for (const e of sorted) {
     if (BUILDING_KIND[e.def] !== 'fork' || e.builtAt !== 0) continue;
     const f = nodeByEnt.get(e.id);
     if (!(f instanceof ForkNode)) continue; // dormant
-    const pulls = new Set<FNode>();
     const lvE = grid.level(e.x, e.y);
     for (const r of rim(e)) {
       const nt = across(r.nx, r.ny, r.d); // what this side faces, past any junctions
@@ -350,21 +345,9 @@ export function compileGraph(inp: CompileInput): Graph {
         if (canOut(f.mode, e.rot, r.d) && canIn(on.mode, o.rot, back)) links.push({ s: f, sp: r.idx, d: on, dp: rimIndex(o, nt % WORLD, Math.floor(nt / WORLD), back) });
         continue;
       }
-      if (f.mode === 'unloader' && on instanceof ReservoirNode && on !== hearth) {
-        // Pull the chosen item out of the store, through a port of the store's own (never the
-        // Heart's: it takes, it never gives — the owner, 2026-10-12).
-        if (f.sortItem < 0) continue;
-        const k = nextVirtual.get(on) ?? Math.max(on.portItems.length, buildingDef(o.def).ports.length);
-        while (on.portItems.length < k) on.portItems.push(-1);
-        on.portItems[k] = f.sortItem;
-        nextVirtual.set(on, k + 1);
-        links.push({ s: on, sp: k, d: f, dp: r.idx });
-        pulls.add(on);
-        continue;
-      }
       if (canOut(f.mode, e.rot, r.d)) {
         const ip = inPortAt.get(nt * 4 + back);
-        if (ip && !pulls.has(ip.node)) links.push({ s: f, sp: r.idx, d: ip.node, dp: ip.port });
+        if (ip) links.push({ s: f, sp: r.idx, d: ip.node, dp: ip.port });
       }
       if (canIn(f.mode, e.rot, r.d)) {
         const op = outPortFacing.get(tileIndex(r.x, r.y) * 4 + back);
@@ -396,9 +379,11 @@ export function compileGraph(inp: CompileInput): Graph {
     while (gx >= 0 && gy >= 0 && gx < WORLD && gy < WORLD && crossingAt.has(tileIndex(gx, gy))) { gx += DX[d]!; gy += DY[d]!; }
     if (gx < 0 || gy < 0 || gx >= WORLD || gy >= WORLD) { target.set(t, null); continue; }
     const g = tileIndex(gx, gy);
-    // The next level up or down only by a traction ribbon (D45); a cliff otherwise ends the line.
+    // The next level up or down only by a traction ribbon (D45); a cliff otherwise ends the line —
+    // but a conduit's water pours one terrace down (D114), never up.
     const dl = Math.abs(lvAt(g) - lvAt(t));
-    if (dl > (isLift(e) ? 1 : 0)) { target.set(t, null); continue; }
+    const pours = BUILDING_KIND[e.def] === 'conduit' && lvAt(g) === lvAt(t) - 1;
+    if (dl > (isLift(e) ? 1 : 0) && !pours) { target.set(t, null); continue; }
     const gb = beltAt.get(g);
     const fluid = BUILDING_KIND[e.def] === 'conduit';
     const leaps = gx !== e.x + DX[d]! || gy !== e.y + DY[d]!;
@@ -551,15 +536,18 @@ export function compileGraph(inp: CompileInput): Graph {
     chains.push(c);
     for (const t of list) chainByTile.set(t, c);
   }
-  // The Gleaners (D103): the ribbon tiles beside open desert floor, on lands that have them (a Crown
-  // and a desert past it: `crownOuter`; a test world has none). Each item ribbon's exposed cells, the
-  // share of its steps they try (`BAL.gleaners`: per exposed tile, capped: a short dash across a corner
-  // loses little) and its own draw, from its head tile.
+  // The Gleaners (D103, D112): the ribbon tiles beside open desert floor, on lands that have them (a
+  // Crown and a desert past it: `crownOuter`; a test world has none). Each item ribbon's exposed cells,
+  // its own draw (from its head tile) and its raid: the group's posts along them and its time in the
+  // window (flow/chain.ts `planRaid`: three to five of them, more on a longer exposure).
   const items = [...beltAt.keys()].filter((t) => !chainByTile.get(t)?.fluid).sort((a, b) => a - b);
   const fences: number[] = [];
   for (const e of sorted) if (BUILDING_KIND[e.def] === 'fence' && e.builtAt === 0) fences.push(tileIndex(e.x, e.y));
   fences.sort((a, b) => a - b);
-  const glean = gleanLand(grid, items, (t) => !!buildingDef(beltAt.get(t)!.def).glazed, grid.source.crownOuter, BAL.gleaners.pocket, fences);
+  // A camouflaged ribbon (D109) is sand to them: walked over, never seen.
+  const buried = new Set<number>();
+  for (const t of items) if (buildingDef(beltAt.get(t)!.def).camo) buried.add(t);
+  const glean = gleanLand(grid, items, (t) => !!buildingDef(beltAt.get(t)!.def).glazed, grid.source.crownOuter, BAL.gleaners.pocket, fences, buried, inp.blocked);
   if (glean.exposed.length) {
     const exposed = new Set(glean.exposed);
     const seed = inp.worldSeed ?? WORLD_SEED;
@@ -569,10 +557,14 @@ export function compileGraph(inp: CompileInput): Graph {
       for (let i = 0; i < c.tiles.length; i++) if (exposed.has(c.tiles[i]!)) cells.push(i);
       if (!cells.length) continue;
       c.gleanCells = Int32Array.from(cells);
-      c.gleanRate = Math.min(BAL.gleaners.maxPermille, cells.length * BAL.gleaners.perTile);
       c.gleanSeed = hash32(seed, c.tiles[c.tiles.length - 1]!, 0x9a1e);
+      const raid = planRaid(cells, c.gleanSeed);
+      c.raidPosts = raid.posts;
+      c.raidAt = raid.at;
     }
   }
+  // A line no longer raided keeps no raid's state (a restored chain's bits meant its old posts).
+  for (const c of chains) if (!c.raidPosts.length) c.raidHeld = 0;
 
   // Items on removed ribbons go back to the Hearth (and a conduit's parcels on what is now a ribbon, a ribbon's on a conduit).
   for (const [t, ps] of oldParcels) {
@@ -760,12 +752,11 @@ export function drillRate(grid: Grid, e: Ent, mods: Mods): { item: number; rateE
 /** May a routing block take items in from / hand them out towards outward side d? */
 function canIn(logic: RouterLogic, rot: Rot, d: Rot): boolean {
   if (logic === 'distributor') return true;
-  if (logic === 'unloader') return false; // fed by the stores it touches
   return d === opposite(rot); // directional, the router too (owner, 2026-10-12): from the back only
 }
 
 function canOut(logic: RouterLogic, rot: Rot, d: Rot): boolean {
-  if (logic === 'distributor' || logic === 'unloader') return true;
+  if (logic === 'distributor') return true;
   return d !== opposite(rot); // straight on, and both sides
 }
 
@@ -892,5 +883,6 @@ export function refundNode(n: FNode, refund: (item: number, mu: number) => void)
     if (n.mu > 0 && n.item >= 0) refund(n.item, n.mu);
   } else if (n instanceof GeneratorNode) {
     if (n.fuel > 0) refund(n.fuelItem, n.fuel);
+    if (n.water > 0 && n.waterItem >= 0) refund(n.waterItem, n.water);
   }
 }

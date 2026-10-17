@@ -14,7 +14,7 @@ import { catchUp } from './offline/catchup';
 import { deserialize, serialize } from './serialize';
 import { replay } from './commands';
 import { gleanNight } from './systems/gleaners';
-import { GLEAN_WINDOW, gleanSchedule } from './flow/chain';
+import { GLEAN_WINDOW, raidSize } from './flow/chain';
 
 /**
  * A desert land with a Crown: a square ring of rock (level 1) round the centre, |dx| or |dy| from
@@ -89,10 +89,15 @@ describe('the Gleaners (D103)', () => {
       expect(ex.has(ti(544, y)), 'rock pocket').toBe(false);
       expect(sim.graph.glean.guarded).toContain(ti(544, y));
     }
-    // The line's chain knows its exposed cells and the share of its steps they try.
+    // The line's chain knows its exposed cells and its raid: a group of five (20 exposed tiles), on a run of them.
     const c = sim.chainAt(530, 510)!;
     expect(c.gleanCells.length).toBe(20);
-    expect(c.gleanRate).toBe(Math.min(BAL.gleaners.maxPermille, 20 * BAL.gleaners.perTile));
+    expect(c.raidPosts.length).toBe(raidSize(20));
+    expect(raidSize(20)).toBe(BAL.gleaners.group.max);
+    for (let p = 1; p < c.raidPosts.length; p++) expect(c.raidPosts[p]! - c.raidPosts[p - 1]!).toBe(1);
+    expect(c.raidAt + BAL.gleaners.raid).toBeLessThanOrEqual(GLEAN_WINDOW);
+    // A short dash across a corner: fewer of them (one a tile).
+    expect([raidSize(1), raidSize(2), raidSize(3), raidSize(11), raidSize(40)]).toEqual([1, 2, 3, 4, 5]);
     // A world with no Crown (the tests' flat world): no Gleaners.
     const flat = desertSim(NIGHT, [], new FlatSource());
     desertLine(flat);
@@ -125,13 +130,12 @@ describe('the Gleaners (D103)', () => {
     const { from, to } = desertLine(sim);
     const glass = itemIdx('glass');
     const total0 = sim.totalHeld(glass);
-    sim.run(EPOCH * 12); // the whole night
+    sim.run(EPOCH * 12); // the whole night: three raids of a group of five, one item each
     const taken = takenOf(sim, 'glass');
     const arrived = held(sim, to, 'glass');
-    // About rate ‰ of the steps, each on a full line: 720 steps × 40 ‰ ≈ 29.
-    expect(taken).toBeGreaterThan(15);
-    expect(taken).toBeLessThan(45);
-    expect(taken / (taken + arrived)).toBeLessThan(0.06);
+    expect(taken).toBeGreaterThanOrEqual(10);
+    expect(taken).toBeLessThanOrEqual(15);
+    expect(taken / (taken + arrived)).toBeLessThan(0.03);
     // Conservation: what is held anywhere is what was there, less what they took.
     expect(sim.totalHeld(glass)).toBe(total0 - sim.gleaned[glass]!);
     expect(held(sim, from, 'glass')).toBeGreaterThan(0);
@@ -148,21 +152,34 @@ describe('the Gleaners (D103)', () => {
     expect(held(ore, ore.ents.sorted().find((e) => e.x === 530 && e.y === 498)!.id, 'iron_ore')).toBeGreaterThan(100);
   });
 
-  it('every theft is one of the tries laid out ahead (the views send a Gleaner to each)', () => {
+  it('a raid: the group at its posts, each taking the first thing that comes up to it, one apiece, then gone', () => {
     const sim = desertSim();
     desertLine(sim);
     sim.ensureCompiled();
     const c = sim.chainAt(530, 510)!;
-    const tries = new Set(gleanSchedule(c).map((s) => `${s.t}:${c.tiles[s.cell]}`));
-    expect(tries.size).toBeGreaterThan(0);
+    const posts = Array.from(c.raidPosts, (i) => c.tiles[i]!);
     let seen = 0;
-    for (let k = 0; k < 40; k++) {
+    const perRaid = new Map<number, Set<number>>(); // raid (window index) → posts that took
+    for (let k = 0; k < 48; k++) {
       sim.run(EPOCH / 4);
       const r = sim.gleaners.recent;
-      for (let i = 0; i + 2 < r.length; i += 3) { expect(tries.has(`${r[i + 2]! % GLEAN_WINDOW}:${r[i]}`), `theft at ${r[i + 2]} on ${r[i]}`).toBe(true); seen++; }
+      for (let i = 0; i + 2 < r.length; i += 3) {
+        const tile = r[i]!, tick = r[i + 2]!, w = Math.floor(tick / GLEAN_WINDOW), at = tick % GLEAN_WINDOW;
+        const p = posts.indexOf(tile);
+        expect(p, `theft on ${tile}: one of the posts`).toBeGreaterThanOrEqual(0);
+        expect(at - c.raidAt, 'in the raid, its post open').toBeGreaterThanOrEqual(p * BAL.gleaners.stagger);
+        expect(at - c.raidAt).toBeLessThan(BAL.gleaners.raid);
+        const took = perRaid.get(w) ?? new Set<number>();
+        expect(took.has(p), `post ${p} took twice in raid ${w}`).toBe(false);
+        took.add(p);
+        perRaid.set(w, took);
+        seen++;
+      }
       r.length = 0;
     }
-    expect(seen).toBeGreaterThan(10);
+    expect(seen).toBeGreaterThanOrEqual(10);
+    // Between raids nobody stands at the posts.
+    expect(perRaid.size).toBeGreaterThanOrEqual(2);
   });
 
   it('a glazed ribbon keeps what it carries', () => {
@@ -259,7 +276,7 @@ describe('the Gleaners (D103)', () => {
     const rep = catchUp(off, N, { noDirect: true });
     const glass = itemIdx('glass');
     expect(off.tick).toBe(on.tick);
-    expect(on.gleaned[glass]).toBeGreaterThan(20_000);
+    expect(on.gleaned[glass]).toBeGreaterThanOrEqual(20_000);
     expect(off.gleaned[glass]).toBe(on.gleaned[glass]);
     expect(rep.gleaned[glass]).toBe(on.gleaned[glass]);
     expect(Array.from(off.stock)).toEqual(Array.from(on.stock));

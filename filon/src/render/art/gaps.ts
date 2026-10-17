@@ -1,13 +1,17 @@
-// gaps.ts — the chunk painter's water and gaps (D94), apart from the ground and the rock
-// (terrain.ts): still water (the lakes, the tarn on its rock) with a shallow ring, a deep heart, an
-// inked shore and ripples; a river as running water a little bluer than the lakes, its shores inked
-// with the lakes', short strokes along the way it flows (the chunk's biome code holds it); a chasm
-// as a cut in the ground. Painted into the ground texture (both views), cached with the chunks.
+// gaps.ts — the chunk painter's water and gaps (D94, D115), apart from the ground and the rock
+// (terrain.ts): all water from one outline — still water (the lakes, the sea, the tarn on its rock)
+// with a shallow ring and a deep heart, a river as running water a little bluer, deeper in a broad
+// river's middle, their colours feathered into each other where they meet (no line, no ground
+// between them); the sand through the shallows along a bank, wet sand past it, one inked shore;
+// the marks in the mesas' manner (`WATER`): ink current lines along the way a river flows (the
+// chunk's biome code holds it), highlights and glints, foam against its banks, where streams meet,
+// at a fall's lip and where it lands, ripple lines on still water; a chasm as a cut in the ground.
+// Painted into the ground texture (both views), cached with the chunks.
 import { hashUnit } from '@/core/hash';
 import { T } from '@/sim/types';
 import { isWaterT } from '../relief';
 import { C, mix, rgba } from './tokens';
-import { BORDER, WIN, fillPolys, march, strokeSegs, type Ctx2, type PaintData } from './paint-kit';
+import { BORDER, WIN, clipPolys, fillPolys, march, strokeSegs, type Ctx2, type PaintData } from './paint-kit';
 
 /** A river tile's biome code base (mapgen's `BIOME.river`, D94: + the way it flows); the painter keeps off the generator's module. */
 export const RIVER_BIOME = 16;
@@ -18,42 +22,109 @@ export const SEA_DEEP = mix(C.deep, '#2a6b98', 0.4);
 /** The eight ways a river flows (0 = +x, 2 = +y, clockwise): the step to the next tile along it. */
 const FLOW_DX = [1, 1, 0, -1, -1, -1, 0, 1], FLOW_DY = [0, 1, 1, 1, 0, -1, -1, -1];
 
-/** Still water and rivers (`paintChunk`'s pass 3): the beds, the deep heart, one shore round both, the ripples. */
+/**
+ * Where one water meets another — a river into its lake or the sea, the deep heart in its shallows
+ * — the colours run into each other over about a tile (owner, 2026-10-17: « les rivières sont un peu
+ * cassées des fois, à la frontière entre eau bleue claire et foncée »): the nearer water laid in
+ * seven bands further and further out of its own tiles (`march`'s `iso`, 0.06 … 0.5), laid one over
+ * the other at 1/7, 1/6 … 1/2 and whole, so its cover rises evenly, a seventh a band, to whole at
+ * its tiles' edge: steps too fine to read as stripes. Clipped to the water's outline: along a bank the bands fall outside it, so
+ * a bank keeps its crisp edge and its ink.
+ */
+const FEATHER: ReadonlyArray<readonly [iso: number, alpha: number]> = Array.from({ length: 7 }, (_, k) => [0.06 + (0.44 * k) / 6, 1 / (7 - k)] as const);
+
+/**
+ * The water's palette (D115; owner, 2026-10-17, of a mesa canyon and its falls: « the style here is
+ * great. The water texture can be improved to reach the level of the mountains texture »): the
+ * mesas' family — the sand warming the shallows along a bank, the deep going towards the ink's
+ * violet as the cliffs' shade does, the ink's own current lines, paper-white foam.
+ */
+export const WATER = {
+  /** A river's middle two and three tiles from its banks. */
+  riverMid: mix(C.river, C.riverD, 0.5),
+  riverDeep: mix(C.riverD, C.ink, 0.2),
+  /** Still water two tiles or more from its shore, short of the deep heart. */
+  lakeMid: mix(C.shallow, C.deep, 0.45),
+  /** The current lines: the river's dark drawn towards the ink. */
+  current: mix(C.riverD, C.ink, 0.35),
+  /** The sand seen through the shallows along a bank, and the wet sand just past it. */
+  bank: C.sand,
+  wetSand: mix(C.sand, '#8a6a52', 0.45),
+} as const;
+
+/** Tiles from a bank (8-neighbour steps to ground) counted at most: within the paint window's margin both sides of a chunk seam read the same (`BORDER` 8: march reads 3 tiles past the chunk). */
+const DEPTH_MAX = 3;
+
+/**
+ * Still water and rivers (`paintChunk`'s pass 3), all from one outline: the water's whole extent
+ * (lakes, the sea, the tarn, the rivers — a river's own tiles kept in however thin, tile by tile, so
+ * the outline is the same both sides of a chunk seam) filled with the shallows; then, clipped to it
+ * and feathered (`FEATHER`), the depths — the deep heart, the open sea's deeper blue, the rivers'
+ * blue and, two and three tiles from their banks, their deeper middle (D115), the lakes' middle —;
+ * the sand through the shallows along every bank; then the marks (`paintMarks`: currents, foam,
+ * glints, ripples), the wet sand round it, one inked shore, the surf. No line inside: where a river
+ * meets its lake there is no bank (D94's river art: before, two outlines, a hard seam and slivers
+ * of ground between them).
+ */
 export function paintWater(ctx: Ctx2, d: PaintData, ppt: number): void {
   const t = (i: number, j: number): number => d.terrain[j * WIN + i]!;
-  const B = BORDER, k = ppt / 32, wx0 = d.cx * 32 - B, wy0 = d.cy * 32 - B;
-  const water = march((i, j) => isWaterT(t(i, j)), ppt);
+  const k = ppt / 32;
   const isRiver = (i: number, j: number): boolean => t(i, j) === T.River;
-  const river = march(isRiver, ppt, true);
-  if (river.polys.length) paintRiver(ctx, d, river.polys, ppt);
-  if (!water.polys.length && !river.polys.length) return;
-  fillPolys(ctx, water.polys, C.shallow);
-  const deep = march((i, j) => t(i, j) === T.Deep, ppt);
-  fillPolys(ctx, deep.polys, C.deep);
+  const wet = (i: number, j: number): boolean => isWaterT(t(i, j)) || isRiver(i, j);
+  const all = march(wet, ppt, isRiver);
+  if (!all.polys.length) return;
+  const depth = depths(wet);
+  const deeper = (n: number) => (i: number, j: number): boolean => depth[j * WIN + i]! >= n;
   // The open sea's deep water a little bluer than a lake's (its biome code).
   const isSea = (i: number, j: number): boolean => d.biome[j * WIN + i] === SEA_BIOME;
-  const seaDeep = march((i, j) => t(i, j) === T.Deep && isSea(i, j), ppt);
-  if (seaDeep.polys.length) fillPolys(ctx, seaDeep.polys, SEA_DEEP);
-  strokeSegs(ctx, deep.segs, C.turqL, 1.6 * k, 0.8);
-  // One shore round still and running water together, so a river's mouth opens into its lake.
-  const shore = river.polys.length ? march((i, j) => isWaterT(t(i, j)) || isRiver(i, j), ppt, true).segs : water.segs;
-  strokeSegs(ctx, shore, C.paper, 3.6 * k, 0.75);
-  strokeSegs(ctx, shore, C.ink, 2.2 * k, 1);
-  paintSurf(ctx, d, ppt, isSea);
-  if (ppt < 16) return;
+  const still = (i: number, j: number): boolean => isWaterT(t(i, j));
   ctx.save();
-  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-  ctx.lineWidth = 1.2 * k;
-  ctx.lineCap = 'round';
-  for (let j = B; j < B + 32; j++) for (let i = B; i < B + 32; i++) {
-    if (!isWaterT(t(i, j))) continue;
-    const wx = wx0 + i, wy = wy0 + j;
-    if (hashUnit(wx, wy, 0x91) > 0.3) continue;
-    const px = (i - B + hashUnit(wx, wy, 0x92) * 0.5) * ppt, py = (j - B + 0.3 + hashUnit(wx, wy, 0x93) * 0.4) * ppt;
-    ctx.beginPath();
-    ctx.moveTo(px, py);
-    ctx.quadraticCurveTo(px + 0.2 * ppt, py - 0.1 * ppt, px + 0.4 * ppt, py);
-    ctx.stroke();
+  clipPolys(ctx, all.polys);
+  fillPolys(ctx, all.polys, C.shallow);
+  feather(ctx, (i, j) => still(i, j) && deeper(2)(i, j), ppt, WATER.lakeMid);
+  feather(ctx, (i, j) => t(i, j) === T.Deep, ppt, C.deep);
+  feather(ctx, (i, j) => t(i, j) === T.Deep && isSea(i, j), ppt, SEA_DEEP);
+  feather(ctx, isRiver, ppt, C.river, isRiver);
+  feather(ctx, (i, j) => isRiver(i, j) && deeper(2)(i, j), ppt, WATER.riverMid);
+  feather(ctx, (i, j) => isRiver(i, j) && deeper(3)(i, j), ppt, WATER.riverDeep);
+  // The sand through the shallows along every bank (the half of the stroke inside the clip).
+  strokeSegs(ctx, all.segs, WATER.bank, 14 * k, 0.32);
+  ctx.restore();
+  // The wet sand just past the bank (its inner half falls on the shallows' sand).
+  strokeSegs(ctx, all.segs, WATER.wetSand, 9 * k, 0.3);
+  paintMarks(ctx, d, ppt, all.segs, depth, wet);
+  strokeSegs(ctx, all.segs, C.paper, 3.6 * k, 0.75);
+  strokeSegs(ctx, all.segs, C.ink, 2.2 * k, 1);
+  paintSurf(ctx, d, ppt, isSea, wet);
+}
+
+/** Each window tile's steps to ground (8-neighbour), 0 on ground, at most `DEPTH_MAX`. */
+function depths(wet: (i: number, j: number) => boolean): Uint8Array {
+  const out = new Uint8Array(WIN * WIN);
+  for (let j = 0; j < WIN; j++) for (let i = 0; i < WIN; i++) out[j * WIN + i] = wet(i, j) ? DEPTH_MAX : 0;
+  for (let n = 1; n < DEPTH_MAX; n++) {
+    for (let j = 0; j < WIN; j++) for (let i = 0; i < WIN; i++) {
+      const o = j * WIN + i;
+      if (out[o]! <= n) continue;
+      let near = false;
+      for (let dj = -1; dj <= 1 && !near; dj++) for (let di = -1; di <= 1 && !near; di++) {
+        const u = i + di, v = j + dj;
+        if (u >= 0 && v >= 0 && u < WIN && v < WIN && out[v * WIN + u]! === n - 1) near = true;
+      }
+      if (near) out[o] = n;
+    }
+  }
+  return out;
+}
+
+/** One water's colour over the others, feathered out of its tiles (`FEATHER`); `keep` as `march`'s. */
+function feather(ctx: Ctx2, inside: (i: number, j: number) => boolean, ppt: number, color: string, keep: boolean | ((i: number, j: number) => boolean) = false): void {
+  ctx.save();
+  for (const [iso, alpha] of FEATHER) {
+    const m = march(inside, ppt, keep, iso);
+    if (!m.polys.length) break; // nothing of it in reach: no nearer band either
+    ctx.globalAlpha = alpha;
+    fillPolys(ctx, m.polys, color);
   }
   ctx.restore();
 }
@@ -63,14 +134,15 @@ export function paintWater(ctx: Ctx2, d: PaintData, ppt: number): void {
  * third of a tile to a tile and a fifth out, fainter further out (the coast's outline moved towards the sea, side by side with its own
  * normal; dashed by a hash of their world position), so the sea's edge reads as breaking water.
  */
-function paintSurf(ctx: Ctx2, d: PaintData, ppt: number, isSea: (i: number, j: number) => boolean): void {
+function paintSurf(ctx: Ctx2, d: PaintData, ppt: number, isSea: (i: number, j: number) => boolean, wet: (i: number, j: number) => boolean): void {
   const coast = march(isSea, ppt);
   if (!coast.segs.length) return;
   const k = ppt / 32, B = BORDER, ox = d.cx * 32, oy = d.cy * 32;
-  const sea = (px: number, py: number): boolean => {
+  const at = (px: number, py: number, f: (i: number, j: number) => boolean): boolean => {
     const i = Math.floor(px / ppt) + B, j = Math.floor(py / ppt) + B;
-    return i >= 0 && j >= 0 && i < WIN && j < WIN && isSea(i, j);
+    return i >= 0 && j >= 0 && i < WIN && j < WIN && f(i, j);
   };
+  const sea = (px: number, py: number): boolean => at(px, py, isSea);
   ctx.save();
   ctx.lineCap = 'round';
   for (const [off, a, w] of [[0.3, 0.95, 2.4], [0.72, 0.75, 1.8], [1.2, 0.45, 1.4]] as const) {
@@ -81,6 +153,8 @@ function paintSurf(ctx: Ctx2, d: PaintData, ppt: number, isSea: (i: number, j: n
       const [ax, ay, bx, by] = sg as [number, number, number, number];
       const len = Math.hypot(bx - ax, by - ay) || 1, nx = -(by - ay) / len, ny = (bx - ax) / len;
       const mx = (ax + bx) / 2, my = (ay + by) / 2, sgn = sea(mx + nx * 0.4 * ppt, my + ny * 0.4 * ppt) ? 1 : -1;
+      // No surf where the sea meets other water (a river's mouth): no bank, no breakers.
+      if (at(mx - nx * sgn * 0.6 * ppt, my - ny * sgn * 0.6 * ppt, wet)) continue;
       if (hashUnit(Math.round((mx / ppt + ox) * 4), Math.round((my / ppt + oy) * 4), 0x600 + Math.round(off * 10)) < 0.25) continue;
       const dx = nx * sgn * off * ppt, dy = ny * sgn * off * ppt;
       ctx.moveTo(ax + dx, ay + dy);
@@ -92,58 +166,168 @@ function paintSurf(ctx: Ctx2, d: PaintData, ppt: number, isSea: (i: number, j: n
 }
 
 /**
- * A river's water (D94): its bed a little bluer than the still lakes, then on every river tile
- * (near zooms) a stroke or two along the way it flows — the chunk's biome code, `RIVER_BIOME` + the
- * eighth of a turn (0 = east, 2 = south) — paper-white, hooked like a ripple, hashed off the tile's
- * world coordinates so chunks join. Where a stream steps down (the next tile along its way stands
- * lower: up on a massif, D94), a band of foam across it at the step and spray below — the plan
- * view's fall (in iso the relief draws the fall down its wall).
+ * The water's marks (D94, D115), at the near zooms, tile by tile one past the chunk and in world
+ * order (both sides of a seam draw the same strokes over it; every choice hashed from world
+ * coordinates):
+ * · on a river, its current: an ink line along the way it flows (the chunk's biome code,
+ *   `RIVER_BIOME` + the eighth of a turn, 0 = east, 2 = south), gently bent, a paper-white
+ *   highlight shorter beside it; in a broad river's middle a glint now and then;
+ * · against a river's banks, broken foam a little way in; where two streams meet, foam across the
+ *   meeting; where a stream steps down (the next tile along its way lower: up on a massif, down the
+ *   Crown), a band of foam at the lip and spray below (the plan view's fall: in iso the relief draws
+ *   it down its wall), and where it lands — on a lower stream or a pool — foam boiling in a ring;
+ * · on still water, broken ripple lines along its depth (two tiles from the shore) and short ripples,
+ *   a glint on the deep now and then.
  */
-function paintRiver(ctx: Ctx2, d: PaintData, polys: number[][], ppt: number): void {
-  const k = ppt / 32, B = BORDER;
-  fillPolys(ctx, polys, C.river);
+function paintMarks(ctx: Ctx2, d: PaintData, ppt: number, shore: readonly number[][], depth: Uint8Array, wet: (i: number, j: number) => boolean): void {
   if (ppt < 16) return;
+  const k = ppt / 32, B = BORDER, wx0 = d.cx * 32 - B, wy0 = d.cy * 32 - B;
+  const t = (i: number, j: number): number => d.terrain[j * WIN + i]!;
+  const flowOf = (i: number, j: number): number => { const f = d.biome[j * WIN + i]! - RIVER_BIOME; return f >= 0 && f < 8 ? f : 0; };
+  const isRiver = (i: number, j: number): boolean => i >= 0 && j >= 0 && i < WIN && j < WIN && t(i, j) === T.River;
   ctx.save();
   ctx.lineCap = 'round';
-  for (let j = B; j < B + 32; j++) {
-    for (let i = B; i < B + 32; i++) {
+  // Foam against a running river's banks: the shore moved a tenth of a tile into the water, broken.
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+  ctx.lineWidth = 1.5 * k;
+  ctx.beginPath();
+  for (const sg of shore) {
+    const [ax, ay, bx, by] = sg as [number, number, number, number];
+    const len = Math.hypot(bx - ax, by - ay) || 1, nx = -(by - ay) / len, ny = (bx - ax) / len, mx = (ax + bx) / 2, my = (ay + by) / 2;
+    const ti = (px: number, py: number): [number, number] => [Math.floor(px / ppt) + B, Math.floor(py / ppt) + B];
+    const [ia, ja] = ti(mx + nx * 0.3 * ppt, my + ny * 0.3 * ppt), [ib, jb] = ti(mx - nx * 0.3 * ppt, my - ny * 0.3 * ppt);
+    const sgn = isRiver(ia, ja) ? 1 : isRiver(ib, jb) ? -1 : 0;
+    if (!sgn || hashUnit(Math.round((mx / ppt + wx0 + B) * 4), Math.round((my / ppt + wy0 + B) * 4), 0x7a1) < 0.35) continue;
+    const ox = nx * sgn * 0.13 * ppt, oy = ny * sgn * 0.13 * ppt;
+    ctx.moveTo(ax + ox, ay + oy);
+    ctx.lineTo(bx + ox, by + oy);
+  }
+  ctx.stroke();
+  for (let j = B - 1; j <= B + 32; j++) {
+    for (let i = B - 1; i <= B + 32; i++) {
       const o = j * WIN + i;
-      if (d.terrain[o] !== T.River) continue;
-      const wx = d.cx * 32 - B + i, wy = d.cy * 32 - B + j;
-      const flow = d.biome[o]! - RIVER_BIOME, a = ((flow >= 0 && flow < 8 ? flow : 0) * Math.PI) / 4;
-      const ux = Math.cos(a), uy = Math.sin(a);
-      for (let q = 0; q < 2; q++) {
-        if (hashUnit(wx, wy, 0x2a0 + q) > 0.55) continue;
-        const cx = (i - B + 0.2 + hashUnit(wx, wy, 0x2b0 + q) * 0.6) * ppt, cy = (j - B + 0.2 + hashUnit(wx, wy, 0x2c0 + q) * 0.6) * ppt;
-        const L = (0.22 + hashUnit(wx, wy, 0x2d0 + q) * 0.18) * ppt, bend = 0.12 * ppt;
-        ctx.strokeStyle = q ? rgba(C.riverD, 0.55) : 'rgba(255,255,255,0.75)';
-        ctx.lineWidth = (q ? 1.1 : 1.4) * k;
-        ctx.beginPath();
-        ctx.moveTo(cx - ux * L, cy - uy * L);
-        ctx.quadraticCurveTo(cx - uy * bend, cy + ux * bend, cx + ux * L, cy + uy * L);
-        ctx.stroke();
-      }
-      // A fall: the next tile along the stream's way stands lower.
-      const f = flow >= 0 && flow < 8 ? flow : 0, ni = i + FLOW_DX[f]!, nj = j + FLOW_DY[f]!, no = nj * WIN + ni;
-      if (d.level[no]! < d.level[o]!) {
-        const ex = (i - B + 0.5 + FLOW_DX[f]! * 0.5) * ppt, ey = (j - B + 0.5 + FLOW_DY[f]! * 0.5) * ppt;
-        ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-        ctx.lineWidth = 3 * k;
-        ctx.beginPath();
-        ctx.moveTo(ex - uy * 0.42 * ppt, ey + ux * 0.42 * ppt);
-        ctx.lineTo(ex + uy * 0.42 * ppt, ey - ux * 0.42 * ppt);
-        ctx.stroke();
-        ctx.fillStyle = 'rgba(255,255,255,0.8)';
-        for (let q = 0; q < 4; q++) {
-          const s = 0.15 + hashUnit(wx, wy, 0x610 + q) * 0.35, c = (hashUnit(wx, wy, 0x620 + q) - 0.5) * 0.7;
+      if (!wet(i, j)) continue;
+      const wx = wx0 + i, wy = wy0 + j, px = (i - B) * ppt, py = (j - B) * ppt, dep = depth[o]!;
+      if (t(i, j) === T.River) {
+        const f = flowOf(i, j), a = (f * Math.PI) / 4, ux = Math.cos(a), uy = Math.sin(a);
+        // The current: an ink line along the way, gently bent, across the tile at a hashed place.
+        if (hashUnit(wx, wy, 0x2a0) < 0.7) {
+          const c = (hashUnit(wx, wy, 0x2b0) - 0.5) * 0.7, s = (hashUnit(wx, wy, 0x2c0) - 0.5) * 0.4;
+          const cx = px + (0.5 - uy * c + ux * s) * ppt, cy = py + (0.5 + ux * c + uy * s) * ppt;
+          const L = (0.38 + hashUnit(wx, wy, 0x2d0) * 0.3) * ppt, bend = (hashUnit(wx, wy, 0x2e0) - 0.5) * 0.24 * ppt;
+          ctx.strokeStyle = rgba(WATER.current, dep >= 2 ? 0.5 : 0.38);
+          ctx.lineWidth = 1 * k;
           ctx.beginPath();
-          ctx.arc(ex + ux * s * ppt - uy * c * ppt, ey + uy * s * ppt + ux * c * ppt, (0.035 + hashUnit(wx, wy, 0x630 + q) * 0.03) * ppt, 0, Math.PI * 2);
-          ctx.fill();
+          ctx.moveTo(cx - ux * L, cy - uy * L);
+          ctx.quadraticCurveTo(cx - uy * bend, cy + ux * bend, cx + ux * L, cy + uy * L);
+          ctx.stroke();
         }
+        // The highlight: shorter, paper-white, beside it.
+        if (hashUnit(wx, wy, 0x2a1) < 0.5) {
+          const c = (hashUnit(wx, wy, 0x2b1) - 0.5) * 0.6, s = (hashUnit(wx, wy, 0x2c1) - 0.5) * 0.5;
+          const cx = px + (0.5 - uy * c + ux * s) * ppt, cy = py + (0.5 + ux * c + uy * s) * ppt, L = (0.12 + hashUnit(wx, wy, 0x2d1) * 0.14) * ppt;
+          ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+          ctx.lineWidth = 1.4 * k;
+          ctx.beginPath();
+          ctx.moveTo(cx - ux * L, cy - uy * L);
+          ctx.quadraticCurveTo(cx - uy * 0.06 * ppt, cy + ux * 0.06 * ppt, cx + ux * L, cy + uy * L);
+          ctx.stroke();
+        }
+        if (dep >= 2 && hashUnit(wx, wy, 0x2f0) < 0.12) glint(ctx, px + (0.2 + hashUnit(wx, wy, 0x2f1) * 0.6) * ppt, py + (0.2 + hashUnit(wx, wy, 0x2f2) * 0.6) * ppt, 0.13 * ppt);
+        // Where two streams meet: a neighbour flowing in from another way.
+        let meets = 0;
+        for (let q = 0; q < 8; q++) {
+          const ni = i - FLOW_DX[q]!, nj = j - FLOW_DY[q]!;
+          if (isRiver(ni, nj) && flowOf(ni, nj) === q && ((q - f + 8) % 8 >= 2 && (q - f + 8) % 8 <= 6)) meets++;
+        }
+        if (meets && hashUnit(wx, wy, 0x640) < 0.8) foamArcs(ctx, px, py, ppt, ux, uy, wx, wy, 0x650);
+        // A fall: the next tile along the stream's way stands lower.
+        const ni = i + FLOW_DX[f]!, nj = j + FLOW_DY[f]!, no = nj * WIN + ni;
+        if (ni >= 0 && nj >= 0 && ni < WIN && nj < WIN && d.level[no]! < d.level[o]!) {
+          const ex = px + (0.5 + FLOW_DX[f]! * 0.5) * ppt, ey = py + (0.5 + FLOW_DY[f]! * 0.5) * ppt;
+          ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+          ctx.lineWidth = 3 * k;
+          ctx.beginPath();
+          ctx.moveTo(ex - uy * 0.42 * ppt, ey + ux * 0.42 * ppt);
+          ctx.lineTo(ex + uy * 0.42 * ppt, ey - ux * 0.42 * ppt);
+          ctx.stroke();
+          ctx.fillStyle = 'rgba(255,255,255,0.8)';
+          for (let q = 0; q < 4; q++) {
+            const s = 0.15 + hashUnit(wx, wy, 0x610 + q) * 0.35, c = (hashUnit(wx, wy, 0x620 + q) - 0.5) * 0.7;
+            ctx.beginPath();
+            ctx.arc(ex + ux * s * ppt - uy * c * ppt, ey + uy * s * ppt + ux * c * ppt, (0.035 + hashUnit(wx, wy, 0x630 + q) * 0.03) * ppt, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      } else {
+        // Still water: short ripples, a glint on the deep.
+        if (hashUnit(wx, wy, 0x91) < 0.3) {
+          const rx = px + hashUnit(wx, wy, 0x92) * 0.5 * ppt, ry = py + (0.3 + hashUnit(wx, wy, 0x93) * 0.4) * ppt;
+          ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+          ctx.lineWidth = 1.2 * k;
+          ctx.beginPath();
+          ctx.moveTo(rx, ry);
+          ctx.quadraticCurveTo(rx + 0.2 * ppt, ry - 0.1 * ppt, rx + 0.4 * ppt, ry);
+          ctx.stroke();
+        }
+        if (dep >= 2 && hashUnit(wx, wy, 0x2f3) < 0.06) glint(ctx, px + (0.2 + hashUnit(wx, wy, 0x2f4) * 0.6) * ppt, py + (0.2 + hashUnit(wx, wy, 0x2f5) * 0.6) * ppt, 0.12 * ppt);
+      }
+      // Where a fall lands: a stream up-tile pouring in from a level higher.
+      for (let q = 0; q < 8; q++) {
+        const ui = i - FLOW_DX[q]!, uj = j - FLOW_DY[q]!;
+        if (!isRiver(ui, uj) || flowOf(ui, uj) !== q || d.level[uj * WIN + ui]! <= d.level[o]!) continue;
+        plunge(ctx, px, py, ppt, wx, wy);
+        break;
       }
     }
   }
   ctx.restore();
+  // Still water's depth: broken ripple lines along it two tiles from the shore.
+  const ring = march((i, j) => isWaterT(t(i, j)) && depth[j * WIN + i]! >= 2, ppt).segs.filter(([ax, ay]) => hashUnit(Math.round((ax! / ppt + wx0 + B) * 4), Math.round((ay! / ppt + wy0 + B) * 4), 0x7b1) >= 0.45);
+  strokeSegs(ctx, ring, C.paper, 1.1 * k, 0.4);
+}
+
+/** A glint on the water: a small four-pointed star, paper-white. */
+function glint(ctx: Ctx2, x: number, y: number, r: number): void {
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.beginPath();
+  ctx.moveTo(x, y - r); ctx.lineTo(x + r * 0.22, y - r * 0.22); ctx.lineTo(x + r, y); ctx.lineTo(x + r * 0.22, y + r * 0.22);
+  ctx.lineTo(x, y + r); ctx.lineTo(x - r * 0.22, y + r * 0.22); ctx.lineTo(x - r, y); ctx.lineTo(x - r * 0.22, y - r * 0.22);
+  ctx.closePath();
+  ctx.fill();
+}
+
+/** Foam across a tile where streams meet: two or three white arcs across the way, broken. */
+function foamArcs(ctx: Ctx2, px: number, py: number, ppt: number, ux: number, uy: number, wx: number, wy: number, salt: number): void {
+  const k = ppt / 32, n = 2 + Math.floor(hashUnit(wx, wy, salt) * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+  ctx.lineWidth = 1.6 * k;
+  for (let q = 0; q < n; q++) {
+    const s = (hashUnit(wx, wy, salt + 1 + q) - 0.5) * 0.6, half = (0.18 + hashUnit(wx, wy, salt + 5 + q) * 0.16) * ppt;
+    const cx = px + (0.5 + ux * s) * ppt, cy = py + (0.5 + uy * s) * ppt;
+    ctx.beginPath();
+    ctx.moveTo(cx - uy * half, cy + ux * half);
+    ctx.quadraticCurveTo(cx + ux * 0.12 * ppt, cy + uy * 0.12 * ppt, cx + uy * half, cy - ux * half);
+    ctx.stroke();
+  }
+}
+
+/** Where a fall lands (D115): the water boiling — a pale disc, a ring of foam broken, spray. */
+function plunge(ctx: Ctx2, px: number, py: number, ppt: number, wx: number, wy: number): void {
+  const k = ppt / 32, cx = px + 0.5 * ppt, cy = py + 0.5 * ppt;
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.beginPath(); ctx.ellipse(cx, cy, 0.42 * ppt, 0.34 * ppt, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+  ctx.lineWidth = 1.5 * k;
+  for (let q = 0; q < 3; q++) {
+    const a0 = hashUnit(wx, wy, 0x660 + q) * Math.PI * 2;
+    ctx.beginPath(); ctx.ellipse(cx, cy, 0.36 * ppt, 0.28 * ppt, 0, a0, a0 + 1.2 + hashUnit(wx, wy, 0x664 + q)); ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  for (let q = 0; q < 6; q++) {
+    const a = hashUnit(wx, wy, 0x670 + q) * Math.PI * 2, r = (0.1 + hashUnit(wx, wy, 0x678 + q) * 0.35) * ppt;
+    ctx.beginPath(); ctx.arc(cx + Math.cos(a) * r, cy + Math.sin(a) * r * 0.8, (0.03 + hashUnit(wx, wy, 0x680 + q) * 0.035) * ppt, 0, Math.PI * 2); ctx.fill();
+  }
 }
 
 /**

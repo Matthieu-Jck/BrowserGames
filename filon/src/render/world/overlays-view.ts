@@ -1,8 +1,8 @@
 // overlays-view.ts — what the plan plane draws over the land, in tile units: the build grid
 // (fades in with the plan view, out when zoomed far), the claim's land (D60, docs/land.md: the
 // parcels it holds for good washed turquoise inside one solid border, leased ones in a dashed
-// amber frame, a sister claim's hatched coral — shown while building, and always in the land
-// mode, which adds the parcel grid over the land for sale, each parcel's usable floor as a gauge at
+// amber frame, a neighbouring base's (D110) in one coral outline round its holding, hatched in the
+// land mode — shown while building, and always in the land mode, which adds the parcel grid over the land for sale, each parcel's usable floor as a gauge at
 // its middle and its ore as three pips beside it (D94: space or ore, sim/world/floor.ts) and marks the hovered
 // and the selected parcel; only the parcels near the view are drawn, rebuilt when the held set, the view's parcels
 // or the zoom's step change, its lines a constant width on screen), the Link tool's
@@ -14,7 +14,7 @@
 // world/views-view.ts) (both views: flat in plan; in iso on the rock top the building stands
 // on, as the dig marks are — owner, 2026-10-13: a turbine on the mountains showed its outline on
 // the ground below it, as if it stood somewhere else).
-import { Container, Graphics, Texture, TilingSprite } from 'pixi.js';
+import { Container, Graphics, Sprite, Texture, TilingSprite } from 'pixi.js';
 import type { Sim } from '@/sim/state';
 import type { LinkPreview } from '@/input/link-tool';
 import { footprint } from '@/sim/entities';
@@ -28,6 +28,8 @@ import { parcelFloor, parcelOre } from '@/sim/world/floor';
 import { PARCEL_COLS, parcelAt, parcelCentre, parcelRect } from '@/sim/world/land';
 import { WORLD } from '@/sim/constants';
 import { TOP } from '../projection';
+import { colonyEmblem } from '@/content/emblem';
+import { flagFrames } from './heart-flag';
 
 /** The parcel holding a tile, the tile clamped to the world: its column and row on the parcel grid. */
 function cellOf(x: number, y: number): [number, number] {
@@ -86,19 +88,20 @@ function gridTexture(): Texture {
 
 export class OverlaysView {
   private readonly grid: TilingSprite;
-  /** The claim's land (D60): held, leased and sister parcels; the parcel grid (land mode); the hovered and selected parcel. */
+  /** The claim's land (D60): held, leased and a neighbouring base's (D110); the parcel grid (land mode); the hovered and selected parcel. */
   private readonly landHeld = new Graphics();
   private readonly landGrid = new Graphics();
   private readonly landMark = new Graphics();
   /** The land mode's gauges: each parcel's usable floor (D94). */
   private readonly landFloor = new Graphics();
+  /** The neighbouring bases' emblems at their hubs' middles (land mode, D110), pooled. */
+  private readonly badges = new Container({ label: 'land:badges' });
   /** The selection outline: flat in plan, lifted onto the rock top in iso (cross-faded). */
   private readonly sel = new Graphics();
   private readonly selIso = new Graphics();
   /** Marked tiles: flat in plan, lifted onto the rock tops in iso (cross-faded). */
   private readonly marksPlan = new Graphics();
   private readonly marksIso = new Graphics();
-  private readonly routes = new Graphics();
   private readonly reach = new Graphics();
   private readonly linkG = new Graphics();
   /** The tile that bars the Link tool's hovered wire (D78): flat in plan, on its rock top in iso (cross-faded). */
@@ -109,15 +112,12 @@ export class OverlaysView {
   private landMarkSig = '';
   private selSig = '';
   private markSig = '';
-  private routeSig = '';
   private reachSig = '';
   /** The land mode (I, the HUD's « Terrain »): the land overlay at full strength in both views, with the parcel grid. */
   landOn = false;
   /** The land mode's hovered and selected parcels (−1: none), set by the shell each frame. */
   landHover = -1;
   landSel = -1;
-  /** The freight routes' dashes: hidden under a specialised view's veil (D88; the Logistique view draws them bold itself). */
-  routesOn = true;
   /** The Link tool's preview while it is in hand, else a pole's or pylon's held to be placed (set by the shell each frame), else null. */
   linking: LinkPreview | null = null;
 
@@ -126,8 +126,8 @@ export class OverlaysView {
     this.grid = new TilingSprite({ texture: gridTexture(), width: 1, height: 1 });
     this.grid.tileScale.set(1 / 64);
     gridLayer.addChild(this.grid);
-    landLayer.addChild(this.landGrid, this.landHeld, this.landFloor, this.landMark);
-    overlayLayer.addChild(this.routes, this.marksPlan, this.marksIso, this.reach, this.linkG, this.blockPlan, this.blockIso, this.sel, this.selIso);
+    landLayer.addChild(this.landGrid, this.landHeld, this.landFloor, this.badges, this.landMark);
+    overlayLayer.addChild(this.marksPlan, this.marksIso, this.reach, this.linkG, this.blockPlan, this.blockIso, this.sel, this.selIso);
   }
 
   /**
@@ -136,8 +136,6 @@ export class OverlaysView {
    */
   update(sim: Sim, view: [number, number, number, number], t: number, zoom: number, selected: number, levelAt: (x: number, y: number) => number = () => 0, ghostReach: [number, number, number] | null = null): void {
     this.updateMarks(sim, t, levelAt);
-    this.updateRoutes(sim);
-    this.routes.visible = this.routesOn;
     this.updateReach(sim, selected, ghostReach);
     this.updateLinking(sim, levelAt);
     this.blockPlan.alpha = t;
@@ -158,7 +156,7 @@ export class OverlaysView {
     this.updateLand(sim, view, zoom);
     this.landHeld.alpha = Math.max(t, this.landOn ? 1 : 0);
     this.landHeld.visible = this.landHeld.alpha > 0.01;
-    this.landGrid.visible = this.landMark.visible = this.landFloor.visible = this.landOn;
+    this.landGrid.visible = this.landMark.visible = this.landFloor.visible = this.badges.visible = this.landOn;
 
     this.marksPlan.alpha = t;
     this.marksPlan.visible = t > 0.01;
@@ -194,8 +192,9 @@ export class OverlaysView {
    * The claim's land over the parcels near the view (one beyond each side): the parcels held for
    * good (the starting square, bought, granted) washed turquoise, one solid border round all of
    * them — drawn where a held parcel meets one that is not — and a faint line between two held
-   * ones; a leased parcel washed amber in a dashed frame; a sister claim's hatched coral in a thin
-   * frame (nothing may be built or laid on it). The land mode adds the parcel grid and the hovered
+   * ones; a leased parcel washed amber in a dashed frame; a neighbouring base's holding (D110) in one
+   * coral outline round its parcels, hatched in the land mode (its buildings stand there, drawn by
+   * the buildings view; nothing of the claim's may stand on them). The land mode adds the parcel grid and the hovered
    * (paper wash, ink frame) and selected (cyan frame, ink corners) parcels. Line widths are screen
    * pixels at the zoom's step (`TOP` px a tile in plan): a border reads the same zoomed in or out.
    */
@@ -218,13 +217,13 @@ export class OverlaysView {
         const p = at(c, r);
         return L.inStart(p) || L.bought.has(p) || L.granted.has(p);
       };
-      const held: Array<[number, number]> = [], leased: number[] = [], sister: number[] = [];
+      const held: Array<[number, number]> = [], leased: number[] = [], nb: number[] = [];
       for (let r = r0; r <= r1; r++) {
         for (let c = c0; c <= c1; c++) {
           const p = at(c, r);
           if (good(c, r)) held.push([c, r]);
           else if (L.leases.has(p)) leased.push(p);
-          else if (L.sister(p) >= 0) sister.push(p);
+          else if (L.neighbour(p) >= 0) nb.push(p);
         }
       }
       // Held for good: the wash, the faint cut between two held parcels, the border round them all.
@@ -253,17 +252,28 @@ export class OverlaysView {
         dash(g, x0, y0, x1, y0, on, off); dash(g, x1, y0, x1, y1, on, off); dash(g, x1, y1, x0, y1, on, off); dash(g, x0, y1, x0, y0, on, off);
       }
       if (leased.length) g.stroke({ width: 2.8 * px, color: num(C.peachD), alpha: 0.95 });
-      // A sister claim's: hatched coral (every two tiles, along x + y), a thin frame.
-      for (const p of sister) {
-        const q = parcelRect(p);
-        for (let k = q.x0 + q.y0 + 2; k < q.x1 + q.y1; k += 2) {
-          const xa = Math.max(q.x0, k - q.y1), xb = Math.min(q.x1, k - q.y0);
-          if (xb > xa) g.moveTo(xa, k - xa).lineTo(xb, k - xb);
+      // A neighbouring base's (D110): hatched coral in the land mode (every three tiles, along x + y),
+      // and one outline round its holding — drawn where its parcel meets one that is not its own.
+      if (this.landOn) {
+        for (const p of nb) {
+          const q = parcelRect(p);
+          for (let k = q.x0 + q.y0 + 3; k < q.x1 + q.y1; k += 3) {
+            const xa = Math.max(q.x0, k - q.y1), xb = Math.min(q.x1, k - q.y0);
+            if (xb > xa) g.moveTo(xa, k - xa).lineTo(xb, k - xb);
+          }
         }
+        if (nb.length) g.stroke({ width: 1.2 * px, color: num(C.coral), alpha: 0.32 });
       }
-      if (sister.length) g.stroke({ width: 1.3 * px, color: num(C.coral), alpha: 0.5 });
-      for (const p of sister) { const q = parcelRect(p); g.rect(q.x0 + inset, q.y0 + inset, q.x1 - q.x0 - 2 * inset, q.y1 - q.y0 - 2 * inset); }
-      if (sister.length) g.stroke({ width: 1.6 * px, color: num(C.coralD), alpha: 0.7 });
+      const hubOf = (p: number): number => (L.neighbour(p) >= 0 ? sim.neighbours.holdingOf(p)?.hub ?? -1 : -1);
+      for (const p of nb) {
+        const q = parcelRect(p), h = hubOf(p), c = p % PARCEL_COLS, r = Math.floor(p / PARCEL_COLS);
+        const same = (cc: number, rr: number): boolean => cc >= 0 && rr >= 0 && cc < PARCEL_COLS && rr < PARCEL_COLS && hubOf(at(cc, rr)) === h;
+        if (!same(c - 1, r)) g.moveTo(q.x0 + inset, q.y0 + inset).lineTo(q.x0 + inset, q.y1 - inset);
+        if (!same(c + 1, r)) g.moveTo(q.x1 - inset, q.y0 + inset).lineTo(q.x1 - inset, q.y1 - inset);
+        if (!same(c, r - 1)) g.moveTo(q.x0 + inset, q.y0 + inset).lineTo(q.x1 - inset, q.y0 + inset);
+        if (!same(c, r + 1)) g.moveTo(q.x0 + inset, q.y1 - inset).lineTo(q.x1 - inset, q.y1 - inset);
+      }
+      if (nb.length) g.stroke({ width: 2.2 * px, color: num(C.coralD), alpha: 0.8 });
       // The land mode's parcel grid over everything in range: where each parcel for sale begins.
       if (this.landOn) {
         const a = parcelRect(at(c0, r0)), b = parcelRect(at(c1, r1));
@@ -307,11 +317,28 @@ export class OverlaysView {
   private drawFloors(sim: Sim, c0: number, r0: number, c1: number, r1: number, px: number): void {
     const g = this.landFloor;
     g.clear();
+    for (const b of this.badges.children) b.visible = false;
     if (!this.landOn) return;
     const R = Math.max(1.6, 8 * px), top = -Math.PI / 2;
+    let nBadge = 0;
     for (let r = r0; r <= r1; r++) {
       for (let c = c0; c <= c1; c++) {
         const p = r * PARCEL_COLS + c, [mx, my] = parcelCentre(p), x = mx + 0.5, y = my + 0.5;
+        // A neighbouring base's parcel (D110): not for sale, no gauge; its emblem at its hub's middle.
+        const colony = sim.land.neighbour(p);
+        if (colony >= 0) {
+          if (sim.neighbours.holdingOf(p)?.hub !== p) continue;
+          const fr = flagFrames(colonyEmblem(sim.worldSeed, colony)).badge;
+          let s = this.badges.children[nBadge] as Sprite | undefined;
+          if (!s) { s = new Sprite(); this.badges.addChild(s); }
+          nBadge++;
+          const k = (R * 2.6) / fr.w;
+          s.texture = fr.tex;
+          s.scale.set(k);
+          s.position.set(x - fr.ox * k, y - fr.oy * k);
+          s.visible = true;
+          continue;
+        }
         const f = parcelFloor(sim.grid, p).permille;
         g.circle(x, y, R).fill({ color: num(C.paper), alpha: 0.9 });
         if (f > 0) {
@@ -357,26 +384,6 @@ export class OverlaysView {
           g.rect(ox + 0.12, oy + 0.78, 0.76 * f, 0.1).fill({ color: num(C.ink), alpha: 0.85 });
         }
       }
-    }
-  }
-
-  /** Freight routes: a dashed line from dock to dock. */
-  private updateRoutes(sim: Sim): void {
-    const sig = sim.routes.map((r) => `${r.from}>${r.to}`).join(',');
-    if (sig === this.routeSig) return;
-    this.routeSig = sig;
-    const g = this.routes;
-    g.clear();
-    for (const r of sim.routes) {
-      const a = sim.ents.get(r.from), b = sim.ents.get(r.to);
-      if (!a || !b) continue;
-      const ax = a.x + 1.5, ay = a.y + 1.5, bx = b.x + 1.5, by = b.y + 1.5;
-      const len = Math.hypot(bx - ax, by - ay), n = Math.max(2, Math.floor(len / 0.8));
-      for (let i = 0; i < n; i += 2) {
-        const t0 = i / n, t1 = Math.min(1, (i + 1) / n);
-        g.moveTo(ax + (bx - ax) * t0, ay + (by - ay) * t0).lineTo(ax + (bx - ax) * t1, ay + (by - ay) * t1);
-      }
-      g.stroke({ width: 0.16, color: num(C.violet), alpha: 0.8 });
     }
   }
 

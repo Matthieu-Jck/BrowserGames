@@ -1,31 +1,27 @@
 // logistics.ts — inspector panels of the moving parts: what rides a ribbon, a fork's per-side
-// filters, what a store holds, what each outlet of a store hands out, and a skydock's drifters
-// and freight routes. Items show their icons (mention.ts); item choices are pickers with icons
-// (item-picker.ts). A router's ways are named from where it faces (ahead, left, right; the
-// compass beside them), as the player sees the block, not as the map's north. Rows show rather
-// than tell (D53, owner 2026-10-13): « Contenu : [items] », « Sortie 1 : [item] », an empty slot
-// for nothing, the explanations on hover. Each part is a section of the kit (D89) tagged with the
+// filters, a silo's one item (the skydock's store, outlet pickers, drifters and freight routes
+// went with it in D108; a trade post has no outlet to set, D62). Items show their icons
+// (mention.ts); item choices are pickers with icons (item-picker.ts). A router's ways are named
+// from where it faces (ahead, left, right; the compass beside them), as the player sees the
+// block, not as the map's north. Rows show rather than tell (D53, owner 2026-10-13): « Devant :
+// [item] », an empty slot for nothing, the explanations on hover. Each part is a section of the kit (D89) tagged with the
 // logistics facet (D88: the Logistique view lifts it); a silo's one item and its gauge sit at the
 // top (`storeHero`), what it does. A ribbon the Gleaners reach at night (D103) says so under what it
 // carries — « Exposé la nuit », the crescent — or that it is safe (under glass, behind a fence), and
 // what they took on its line since the last nightfall.
-import { BAL } from '@/content/balance';
-import { BUILDING_KIND, ITEM_IDS, buildingDef } from '@/content/registry';
+import { ITEM_IDS, buildingDef } from '@/content/registry';
 import type { BuildingDef } from '@/content/types';
 import { el, setAttr, setText } from '@/core/dom';
-import { rate } from '@/i18n/format';
 import { t, type MsgKey } from '@/i18n/i18n';
 import { filterOf } from '@/sim/cfg';
 import type { Chain } from '@/sim/flow/chain';
 import type { ReservoirNode } from '@/sim/flow/nodes';
-import { dockShips } from '@/sim/space';
 import type { Rot } from '@/sim/types';
 import { glyph } from '../glyphs';
 import { viewIconCanvas } from '@/render/art/view-icons';
 import { tileIndex } from '@/sim/world/grid';
-import { itemPicker } from '../item-picker';
-import { itemMention, itemRef } from '../mention';
-import { CARGO, costChips, fmt, heldList, itemSelect, mark, meter, note, row, section, seenBy, type Panel, type PanelCtx } from './kit';
+import { itemMention } from '../mention';
+import { fmt, heldList, itemSelect, mark, meter, note, row, section, type Panel, type PanelCtx } from './kit';
 
 export const ribbonPanel: Panel = ({ sim, e, live }) => {
   const list = heldList(live, () => {
@@ -46,7 +42,7 @@ const listed = (arr: Int32Array, t: number): boolean => {
 
 /**
  * The Gleaners at night (D103): whether they reach this ribbon from the desert (sim/world/reach.ts),
- * or it is kept from them — under glass, behind a fence — and what they took on its line since the
+ * or it is kept from them — under glass, buried (D109), behind a fence — and what they took on its line since the
  * last nightfall (the line's marks). Nothing for a ribbon nowhere near the open desert.
  */
 function nightSection(sim: PanelCtx['sim'], e: PanelCtx['e'], live: PanelCtx['live']): HTMLElement | null {
@@ -54,7 +50,8 @@ function nightSection(sim: PanelCtx['sim'], e: PanelCtx['e'], live: PanelCtx['li
   const tile = tileIndex(e.x, e.y), g = sim.graph.glean;
   const exposed = listed(g.exposed, tile);
   if (!exposed && !listed(g.guarded, tile)) return null;
-  const say = exposed ? t('insp.glean.exposed') : buildingDef(e.def).glazed ? t('insp.glean.glass') : t('insp.glean.fence');
+  const b = buildingDef(e.def);
+  const say = exposed ? t('insp.glean.exposed') : b.glazed ? t('insp.glean.glass') : b.camo ? t('insp.glean.buried') : t('insp.glean.fence');
   const state = el('div.insp-row.insp-glean', { 'data-glean': exposed ? 'exposed' : 'guarded' }, [viewIconCanvas(exposed ? 'moon' : 'guard', 18), el('span.insp-label', {}, say)]);
   const taken = el('b');
   const takenRow = row(t('insp.glean.taken'), taken);
@@ -77,7 +74,7 @@ function sideLabel(d: number, front: number | null): { node: HTMLElement; name: 
 }
 
 /**
- * Routing blocks: a sorter's / inverted sorter's / unloader's chosen item, a gate's rule; a
+ * Routing blocks: a sorter's / inverted sorter's chosen item, a gate's rule; a
  * router's way in (its back) and what each of its three ways out takes (owner, 2026-10-12:
  * "where to send which entry"); a distributor's filter per side.
  */
@@ -86,7 +83,7 @@ export const forkPanel: Panel = ({ sim, e }) => {
   // The rule in a line — but a router's and a distributor's description says it already, just above.
   const rule = logic === 'router' || logic === 'distributor' ? null : note(t(`insp.route.${logic}` as MsgKey));
   const set = (d: number) => (v: number): void => { sim.setForkFilter(e.id, (d & 3) as Rot, v < 0 ? null : ITEM_IDS[v]!); };
-  if (logic === 'sorter' || logic === 'inverted' || logic === 'unloader') {
+  if (logic === 'sorter' || logic === 'inverted') {
     const sel = itemSelect(sim, filterOf(e.cfg, 0), t('insp.route.none'), set(0), 'fork:0', t('insp.route.item'));
     return [section({ sec: 'filters', title: t('insp.route.item'), icon: mark('filter'), group: 'logistics' }, [rule, row(t('insp.route.item'), sel)])];
   }
@@ -138,79 +135,4 @@ export const storeHero = (ctx: PanelCtx): HTMLElement | null => {
     g.set(n * 1000, capMu, capMu > 0 && n * 1000 >= capMu ? 'bad' : 'good', t('insp.store.of', { n: fmt(n, 0), cap: fmt(capMu / 1000, 0) }));
   });
   return el('div.insp-hero', { 'data-hero': 'store' }, [line, empty]);
-};
-
-/** What a skydock or a trade post holds, as chips (a silo's is its hero); empty, an empty slot. */
-export const storePanel: Panel = (ctx) => {
-  const { stock, capMu, single } = storeOf(ctx);
-  if (single) return [];
-  const list = heldList(ctx.live, () => {
-    const st = stock();
-    const out: Array<readonly [number, number]> = [];
-    if (st) for (let i = 0; i < st.length; i++) if (st[i]! >= 1000) out.push([i, Math.floor(st[i]! / 1000)]);
-    return out;
-  }, glyph('empty', t('insp.store.emptyMany')), { named: false });
-  return [section({ sec: 'store', title: t('insp.store'), icon: mark('store'), group: 'logistics', tip: capMu ? t('insp.store.each', { n: fmt(capMu / 1000, 0) }) : null }, [list])];
-};
-
-/** One item picker per outlet of a store (a skydock; a trade post has none to set: its one exit hands out what it bought, in turn, D62). */
-export const outletsPanel: Panel = ({ sim, e }) => {
-  const b = buildingDef(e.def) as BuildingDef;
-  const outs = b.ports.map((p, i) => ({ p, i })).filter((q) => q.p.io === 'out');
-  if (!outs.length) return [];
-  return [section({ sec: 'outlets', title: t('insp.outlets'), icon: mark('gate'), group: 'logistics', tip: t('insp.outlets.hint') }, outs.map(({ i }, k) => {
-    const label = t('insp.outlet', { n: k + 1 });
-    // `data-outlet`: the tutorial's guide points at these. Closed: an empty slot (the word in its list and on hover).
-    const sel = itemSelect(sim, e.portItems?.[i] ?? -1, t('insp.outlet.closed'), (v) => sim.setPortItem(e.id, i, v < 0 ? null : ITEM_IDS[v]!), `outlet:${k}`, label, { 'data-outlet': String(k) }, '');
-    return el('div.insp-row', {}, [el('span.insp-label', {}, label), sel]);
-  }))];
-};
-
-/** Drifters (buy), the routes flown from this dock (close), and a new route form. */
-export const dockPanel: Panel = ({ sim, e, host, live }) => {
-  // « Dirigeables  0/4  [+ cost] »: the buy button carries its price.
-  const count = el('b');
-  const buy = el('button.btn.insp-recipe.insp-buy', {
-    title: t('insp.dock.buy'), 'aria-label': t('insp.dock.buy'),
-    onclick: () => { if (!sim.buyDrifter(e.id)) host.notify('bad', t('reason.unaffordable')); },
-  }, ['+', costChips(sim, Object.entries(BAL.drifterCost))]);
-  const body: Array<HTMLElement | null> = [
-    el('div.insp-row', {}, [el('span.insp-label', {}, t('insp.dock.ships.label')), el('span.insp-value.insp-gv', {}, [count, buy])]),
-  ];
-  live(() => setText(count, `${sim.fleet.get(e.id) ?? 0}/${dockShips(sim.mods, buildingDef(e.def).dock)}`));
-  const list = el('div.insp-routes');
-  body.push(list);
-  live(() => {
-    const mine = sim.routes.filter((r) => r.from === e.id);
-    const sig = mine.map((r) => `${r.id}:${r.ships}`).join(',');
-    if (list.dataset.sig === sig) return;
-    list.dataset.sig = sig;
-    list.replaceChildren(...mine.map((r) => {
-      const perMin = sim.routeRateNow(r, () => 1000) * 600 / 1000;
-      return el('div.insp-row', {}, [
-        el('span', {}, t('insp.dock.route', { to: t('insp.dock.name', { n: r.to }), item: itemRef(r.item), ships: r.ships, rate: rate(perMin) })),
-        el('button.insp-x', { title: t('insp.dock.remove'), 'aria-label': t('insp.dock.remove'), onclick: () => sim.removeRoute(r.id) }, '✕'),
-      ]);
-    }));
-  });
-  const sec = (kids: Array<HTMLElement | null>): HTMLElement[] => [section({ sec: 'routes', title: t('insp.dock.routes'), icon: mark('route'), group: 'logistics' }, kids)];
-  const others = sim.ents.sorted().filter((o) => o.id !== e.id && BUILDING_KIND[o.def] === 'dock');
-  if (!others.length) {
-    // No route yet, and none possible: an empty slot (what it takes, on hover).
-    const r = row(t('insp.dock.routes.none'), glyph('empty', t('insp.dock.noOther')));
-    r.title = t('insp.dock.noOther');
-    return sec([...body, r]);
-  }
-  const to = el('select.insp-select', { 'aria-label': t('insp.dock.to') }, others.map((o) => el('option', { value: String(o.id) }, t('insp.dock.name', { n: o.id })))) as HTMLSelectElement;
-  const cargo = CARGO();
-  let item = cargo[0]!;
-  const pick = itemPicker({ items: cargo, value: item, none: null, onPick: (i) => { item = i; }, known: seenBy(sim), label: t('insp.dock.item'), attrs: { 'data-pick': 'dock:item' } });
-  return sec([...body, el('div.insp-row.insp-route-form', {}, [to, pick.root]),
-    el('button.btn.insp-recipe', {
-      onclick: () => {
-        const free = sim.freeShips(e.id);
-        if (free <= 0) { host.notify('warn', t('insp.dock.noShip')); return; }
-        sim.addRoute(e.id, Number(to.value), ITEM_IDS[item]!, free);
-      },
-    }, t('insp.dock.new'))]);
 };

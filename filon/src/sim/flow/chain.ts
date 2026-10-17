@@ -21,14 +21,17 @@
 // Conduits (fluids) still flow continuously: a FIFO of parcels ("runs": an item, a quantity and
 // the window of ticks in which it reaches the head), only the head run leaving, up to `thrMu` a tick.
 //
-// The Gleaners (D103): at night (`ctx.glean`) a ribbon's exposed cells (`gleanCells`: its tiles
-// beside open desert floor, sim/world/reach.ts) lose a little. On `gleanRate` ‰ of its steps —
-// spread evenly over a window of `GLEAN_WINDOW` ticks on the world's clock (`gleanStep`) — they look
-// at one exposed cell, picked by a hash of the chain and the step, and take what it carries by their
-// taste (content/gleaners.ts). So they take a fraction of what passes (an empty cell gives nothing),
-// the same on every machine, and the pattern repeats with the window: the catch-up folds the window
-// into a night group's period (graph/groups.ts `rotNight`) and the warm-ups count what is taken
-// (`ctx.gleaned`), exactly as online. Whole items, counted: nothing vanishes unseen.
+// The Gleaners (D103, D112: they come in groups): a ribbon's exposed cells (`gleanCells`: its tiles
+// beside open desert floor, sim/world/reach.ts) are raided once every `GLEAN_WINDOW` ticks on the
+// world's clock. A raid (`raidAt`, from the chain's own draw) puts a group of three to five on posts
+// beside a run of its exposed cells (`raidPosts`); from their turn on (`stagger` apart) each waits for
+// the first thing to its taste that comes onto its cell, takes it — the whole item leaves the line,
+// before the step moves it on — and takes no more that raid (`raidHeld`, a bit a post, hashed, saved:
+// cleared once the raid is over). At night only (`ctx.glean`). So what the views show is what the sim
+// does: a group waiting by the line, an item that rides up to one of them and is gone into its hands.
+// The pattern repeats with the window: the catch-up folds it into a night group's period
+// (graph/groups.ts `rotNight`) and the warm-ups count what is taken (`ctx.gleaned`), exactly as
+// online. Whole items, counted: nothing vanishes unseen.
 import { BAL } from '@/content/balance';
 import { GLEANER_TASTE } from '@/content/gleaners';
 import { N_ITEMS, itemDef, itemIdx } from '@/content/registry';
@@ -50,36 +53,33 @@ export const isFluidItem = (item: number): boolean => {
 const TPM = 600;
 
 /**
- * The Gleaners' pattern repeats every GLEAN_WINDOW ticks (D103): two minutes, the recipes' common
- * cycle (`CYCLE_LCM`), so a night group keeps a short exact period offline.
+ * The Gleaners' raids repeat every GLEAN_WINDOW ticks (D112, `BAL.gleaners.window`: four minutes), so
+ * a night group keeps an exact period offline (at most `PERIOD_MAX`).
  */
-export const GLEAN_WINDOW = 1200;
+export const GLEAN_WINDOW = BAL.gleaners.window;
+/** How long a raid's group may take (ticks), and how far apart their posts open. */
+export const RAID_TICKS = BAL.gleaners.raid;
+export const RAID_STAGGER = BAL.gleaners.stagger;
 
-/** The index (0…) of the step a ribbon of `perMin` takes at tick `t` of the Gleaners' window (only meaningful on a step tick). */
-export const windowStep = (t: number, perMin: number): number => Math.floor(((t + 1) * perMin) / TPM) - 1;
-/** The tick of the window on which step `s` falls (the inverse of `windowStep`, `stepAt`'s beat). */
-export const windowStepTick = (s: number, perMin: number): number => Math.ceil(((s + 1) * TPM) / perMin) - 1;
-/** Do the Gleaners try on step `s` of the window, at `rate` ‰ of the steps from the chain's phase (an error-diffusion line)? */
-export const gleanTriesAt = (s: number, rate: number, phase: number): boolean =>
-  Math.floor(((s + 1) * rate + phase) / 1000) !== Math.floor((s * rate + phase) / 1000);
-/** Which of its exposed cells they look at on step `s` (index into `gleanCells`). */
-export const gleanPick = (seed: number, s: number, n: number): number => hash32(seed, s) % n;
+/** How many come to raid a chain with `n` exposed cells: `group.min` to `group.max` (fewer cells: one a cell). */
+export function raidSize(n: number): number {
+  const g = BAL.gleaners.group;
+  return n < g.min ? n : Math.min(g.max, g.min + Math.floor((n - g.min) / g.per));
+}
 
 /**
- * Every try of an exposed chain in one window (D103), in order: its tick in the window and the
- * chain cell they look at. The very rule `gleanStep` runs, laid out ahead of time: the views send a
- * Gleaner to each one before it happens, and the sim's log says whether it took something.
+ * A chain's raid (D112), from its exposed cells (ascending) and its own draw: the posts — a run of its
+ * exposed cells round a drawn one, one a Gleaner — and the tick of the window its group takes up the
+ * first (each next one `RAID_STAGGER` later; they all go at `at + RAID_TICKS`).
  */
-export function gleanSchedule(c: Pick<Chain, 'perMin' | 'gleanRate' | 'gleanSeed' | 'gleanCells'>): Array<{ t: number; cell: number }> {
-  const out: Array<{ t: number; cell: number }> = [];
-  const n = c.gleanCells.length;
-  if (!n || c.gleanRate <= 0) return out;
-  const steps = (GLEAN_WINDOW * c.perMin) / TPM, phase = c.gleanSeed % 1000;
-  for (let s = 0; s < steps; s++) {
-    if (gleanTriesAt(s, c.gleanRate, phase)) out.push({ t: windowStepTick(s, c.perMin), cell: c.gleanCells[gleanPick(c.gleanSeed, s, n)]! });
-  }
-  return out;
+export function planRaid(cells: readonly number[], seed: number): { posts: Int32Array; at: number } {
+  const n = cells.length, size = raidSize(n);
+  if (!size) return { posts: NO_POSTS, at: 0 };
+  const centre = hash32(seed, 1) % n;
+  const start = Math.max(0, Math.min(n - size, centre - (size >> 1)));
+  return { posts: Int32Array.from(cells.slice(start, start + size)), at: hash32(seed, 2) % (GLEAN_WINDOW - RAID_TICKS) };
 }
+const NO_POSTS = new Int32Array(0);
 
 let TASTE: Int16Array | null = null;
 /** How likely the Gleaners take an item of this kind when they look at it (‰; 0: they leave it). */
@@ -151,13 +151,16 @@ export class Chain extends FNode {
   /** Per tick: the step's verdict, the first empty cell (worked out once, in `accept`). */
   private stepNow = -1;
 
-  // ── the Gleaners (D103): set at compile from the land, never saved ────────
+  // ── the Gleaners (D103, D112): set at compile from the land ──────────────
   /** Its cells the Gleaners reach at night (indices, ascending); empty: none. */
   gleanCells: Int32Array = NO_CELLS;
-  /** ‰ of its steps they try at night (`BAL.gleaners`: per exposed tile, capped). */
-  gleanRate = 0;
-  /** Its own draw: which steps they try, which cell they look at. */
+  /** Its raid: the posts (cell indices, one a Gleaner; empty: never raided) and the window tick the first is taken up. */
+  raidPosts: Int32Array = NO_CELLS;
+  raidAt = 0;
+  /** Its own draw: the raid's place and time, a taste's roll. */
   gleanSeed = 0;
+  /** The raid's state: a bit a post that has taken its item (hashed, snapshotted, saved; cleared once the raid is over). */
+  raidHeld = 0;
 
   // ── fluids ───────────────────────────────────────────────────────────────
   runs: Run[] = [];
@@ -316,6 +319,8 @@ export class Chain extends FNode {
     if (this.fluid) { this.updateFluid(ctx); return; }
     const c = this.cells, L = c.length, now = ctx.now;
     if (this.steps(now)) {
+      // The Gleaners at their posts take what has come up to them, before the line moves on (D112).
+      if (this.raidPosts.length) this.raidStep(ctx);
       for (let i = L - 2; i >= 0; i--) {
         if (!c[i] || c[i + 1]) continue;
         c[i + 1] = c[i]!;
@@ -337,30 +342,33 @@ export class Chain extends FNode {
       this.stageMu -= MU;
       if (this.stageMu <= 0) { this.stageMu = 0; this.stageItem = -1; }
     }
-    if (ctx.glean && this.gleanRate > 0 && this.steps(now)) this.gleanStep(ctx);
   }
 
   /**
-   * A step at night on an exposed chain (D103). The step's index in the window `s` (0…): they try
-   * on `gleanRate` ‰ of the steps, spread evenly (an error-diffusion line from the chain's own phase:
-   * the same count every window, never bunched), look at one exposed cell (a hash of the chain and
-   * `s`) and take what it carries if it is to their taste (a second hash against the taste ‰). The
-   * whole item leaves the line, counted in `ctx.gleaned` (and logged online for the views).
+   * A step on a raided chain (D112). Outside its raid the posts are empty (`raidHeld` cleared); in it,
+   * at night, each post whose turn has come and that holds nothing yet takes the item on its cell if
+   * it is to their taste (a roll against the taste ‰ when below 1 000): the whole item leaves the line,
+   * counted in `ctx.gleaned` (and logged online for the views), and that post takes no more this raid.
    */
-  private gleanStep(ctx: TickCtx): void {
+  private raidStep(ctx: TickCtx): void {
     const now = ctx.now;
-    const t = ((now % GLEAN_WINDOW) + GLEAN_WINDOW) % GLEAN_WINDOW;
-    const s = windowStep(t, this.perMin);
-    if (!gleanTriesAt(s, this.gleanRate, this.gleanSeed % 1000)) return;
-    const i = this.gleanCells[gleanPick(this.gleanSeed, s, this.gleanCells.length)]!;
-    const v = this.cells[i]!;
-    if (!v) return;
-    const item = v - 1;
-    if (hash32(this.gleanSeed, s, 1) % 1000 >= gleanTaste(item)) return;
-    this.cells[i] = 0;
-    this.content -= MU;
-    ctx.gleaned[item] = ctx.gleaned[item]! + MU;
-    ctx.gleanLog?.push(this.tiles[i]!, item, now);
+    const k = (((now % GLEAN_WINDOW) + GLEAN_WINDOW) % GLEAN_WINDOW) - this.raidAt;
+    if (k < 0 || k >= RAID_TICKS) { this.raidHeld = 0; return; }
+    if (!ctx.glean) return;
+    const posts = this.raidPosts;
+    for (let p = 0; p < posts.length; p++) {
+      const bit = 1 << p;
+      if (this.raidHeld & bit || k < p * RAID_STAGGER) continue;
+      const i = posts[p]!, v = this.cells[i]!;
+      if (!v) continue;
+      const item = v - 1, taste = gleanTaste(item);
+      if (!taste || (taste < 1000 && hash32(this.gleanSeed, k, p) % 1000 >= taste)) continue;
+      this.cells[i] = 0;
+      this.content -= MU;
+      this.raidHeld |= bit;
+      ctx.gleaned[item] = ctx.gleaned[item]! + MU;
+      ctx.gleanLog?.push(this.tiles[i]!, item, now);
+    }
   }
 
   // ── fluids: a FIFO of runs ───────────────────────────────────────────────
@@ -440,6 +448,7 @@ export class Chain extends FNode {
     if (!this.fluid) {
       // What is where; when it got there is the views' business (and the step's phase is the group's).
       h.ints(this.cells).int(this.stageItem).int(this.stageMu);
+      if (this.raidPosts.length) h.int(this.raidHeld);
       return;
     }
     // Canonical form: due runs are equivalent whatever their age (clamped to 0), and
@@ -465,7 +474,7 @@ export class Chain extends FNode {
     if (!this.fluid) {
       return {
         cells: Array.from(this.cells), moved: Array.from(this.moved), via: Array.from(this.via),
-        stage: [this.stageItem, this.stageMu, this.stageVia], content: this.content, out: { ...this.lastOut },
+        stage: [this.stageItem, this.stageMu, this.stageVia], content: this.content, out: { ...this.lastOut }, raid: this.raidHeld,
       };
     }
     return { runs: this.live().map((r) => ({ ...r })), content: this.content };
@@ -473,13 +482,14 @@ export class Chain extends FNode {
 
   override restore(s: unknown, shift: number): void {
     if (!this.fluid) {
-      const o = s as { cells: number[]; moved: number[]; via: number[]; stage: [number, number, number]; content: number; out: { item: number; tick: number; edge: number } };
+      const o = s as { cells: number[]; moved: number[]; via: number[]; stage: [number, number, number]; content: number; out: { item: number; tick: number; edge: number }; raid?: number };
       this.cells.set(o.cells);
       for (let i = 0; i < this.moved.length; i++) this.moved[i] = o.moved[i]! + shift;
       this.via.set(o.via);
       [this.stageItem, this.stageMu, this.stageVia] = o.stage;
       this.content = o.content;
       this.lastOut = { ...o.out, tick: o.out.tick + shift };
+      this.raidHeld = o.raid ?? 0;
       this.inbox = -1;
       return;
     }

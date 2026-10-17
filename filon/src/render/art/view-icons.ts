@@ -18,7 +18,7 @@ export type ViewIcon =
   // why a building has no power / does not work
   | 'unwired' | 'asleep' | 'dark' | 'low' | 'site' | 'inputs' | 'output' | 'recipe' | 'idle' | 'gear'
   // logistics
-  | 'jam' | 'dead' | 'dock'
+  | 'jam' | 'dead'
   // the Gleaners (D103): a ribbon they reach at night (the crescent over a hatch), one kept from them (a glass hood)
   | 'moon' | 'guard'
   // the view selector: Normal (an eye), Électricité (the bolt), Logistique (a ribbon running)
@@ -182,11 +182,6 @@ const SYMBOL: Record<ViewIcon, (g: Ctx) => void> = {
   flow: (g) => {
     shape(g, roundRectPts(6, 21, 52, 22, 5), C.steelL, { w: 2.6 });
     for (const x of [16, 30, 44]) line(g, [[x - 3, 26], [x + 4, 32], [x - 3, 38]], 3.2, C.paper);
-  },
-  dock: (g) => {
-    shape(g, ellipsePts(32, 26, 15, 13, 5, 0.02, 28), C.violetL, { w: 2.6 });
-    line(g, [[22, 36], [28, 46]], 2); line(g, [[42, 36], [36, 46]], 2);
-    shape(g, roundRectPts(26, 45, 12, 8, 1.5), C.peachD, { w: 2 });
   },
   // Exposed at night (D103): a crescent moon over the ribbon's hatch, as the Logistique view marks the tiles.
   moon: (g) => {

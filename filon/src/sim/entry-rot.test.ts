@@ -49,8 +49,8 @@ describe('a routing block dropped on a ribbon takes the way its items enter (D98
     expect(sim.entityAt(511, 504)!.rot).toBe(2);
     for (const asked of [0, 1, 2, 3] as Rot[]) expect(sim.placementRot('router', 511, 504, asked)).toBe(3);
     for (const def of ['sorter', 'inverted_sorter', 'overflow_gate', 'underflow_gate']) expect(sim.placementRot(def, 511, 504, 0), def).toBe(3);
-    // Neither the distributor nor the unloader is directional: they keep what was asked.
-    expect(sim.placementRot('unloader', 511, 504, 1)).toBe(1);
+    // The distributor is not directional: it keeps what was asked.
+    expect(sim.placementRot('distributor', 511, 504, 1)).toBe(1);
     expect(sim.place('router', 511, 504, 0).ok).toBe(true);
     expect(sim.entityAt(511, 504)!.rot).toBe(3);
     delivers(sim, d);

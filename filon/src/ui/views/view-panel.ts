@@ -46,7 +46,7 @@ const LEGEND: Record<Veiled, ReadonlyArray<{ mark: ViewIcon | `swatch:${string}`
   ],
   logistics: [
     { mark: `swatch:${heatColor(150)}`, label: 'mapview.heat.empty' }, { mark: `swatch:${heatColor(1000)}`, label: 'mapview.heat.full' }, { mark: 'jam', label: 'mapview.jam' },
-    { mark: 'dead', label: 'mapview.dead' }, { mark: 'dock', label: 'mapview.routes' },
+    { mark: 'dead', label: 'mapview.dead' },
   ],
   production: [
     { mark: 'swatch:var(--c-turq)', label: 'mapview.work.on' }, { mark: 'swatch:var(--c-warn)', label: 'mapview.work.pause' }, { mark: 'swatch:var(--c-coral)', label: 'mapview.work.off' },

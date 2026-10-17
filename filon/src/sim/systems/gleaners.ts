@@ -39,8 +39,8 @@ export interface GleanState {
 
 export const newGleanState = (): GleanState => ({ dusk: null, dawn: null, marks: new Map(), struck: false, recent: [] });
 
-/** How many thefts `recent` keeps (the views draw a figure for each one still under way). */
-const RECENT = 48;
+/** How many thefts `recent` keeps (the views read a raid's takes from it: a few a group, many groups). */
+const RECENT = 256;
 
 /** Are the Gleaners out in this world minute (D103)? The dark hours: the sun at or under `darkSun`. */
 export function gleanNight(absEpoch: number): boolean {

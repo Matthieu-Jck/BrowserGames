@@ -35,3 +35,12 @@ export function defaultEmblem(seed: number): Emblem {
 
 /** A key per emblem (the views bake one texture per key). */
 export const emblemKey = (e: Emblem): string => `${e.shape}:${e.symbol}:${e.field}:${e.ink}`;
+
+/**
+ * The emblem a claim of the Crier flies (D110: a neighbouring base's flag, on its land and in the
+ * land panel): picked like a new claim's, from the world's seed and the colony's index, so every
+ * player of the world sees the same colours on the same neighbour.
+ */
+export function colonyEmblem(worldSeed: number, colony: number): Emblem {
+  return defaultEmblem((Math.imul(worldSeed ^ 0x5bd1e995, 0x27d4eb2f) + Math.imul(colony + 1, 0x165667b1)) >>> 0);
+}

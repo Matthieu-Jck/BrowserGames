@@ -1,6 +1,6 @@
 # Quests: the tutorial
 
-The claim's name, then nine quests, played in order, one at a time (design plan §8 « Prise en main »; decisions D28, D33, D34 and, for today's shape, **D101** in [decisions.md](decisions.md)). CrierBelt, the player's partner (see [lore.md](lore.md)), sets each quest in a short message and pays a reward when it is met. The player sees the quests numbered 1–9; the claim's name is the register's entry, not a numbered quest. Code and content use indices 0–9.
+The claim's name, then ten quests, played in order, one at a time (design plan §8 « Prise en main »; decisions D28, D33, D34 and, for today's shape, **D101** in [decisions.md](decisions.md)). CrierBelt, the player's partner (see [lore.md](lore.md)), sets each quest in a short message and pays a reward when it is met. The player sees the quests numbered 1–9; the claim's name is the register's entry, not a numbered quest. Code and content use indices 0–9.
 
 Two kinds of quest (D101; owner, 2026-10-16: « le début va trop vite et le tutoriel est trop long. Le joueur débloque plein de trucs, mais comme le tutoriel lui dit toujours sur quoi cliquer partout, le joueur ne va pas lire et perdre de l'intérêt. Parfois, on peut mettre une quête sans exiger du joueur qu'il clique à un endroit en particulier, le laisser expérimenter »):
 
@@ -30,13 +30,14 @@ Two rules still shape it (owner, 2026-10-12): **the Heart only takes in** (D34) 
 | 2 | `bloom_kiln` · La fonderie | guided: 11 steps, 7 sentences to read | the tree (its chip, T), the clock, the Production and Électricité views; plan Fonderie | iron ore and coal reach a smelter by lines (`feeds`); 10 plates made (`ever`) | 30 iron plates |
 | 3 | `first_wind` · Tenir la nuit | goal | plans Éolienne, Générateur à charbon | the Core's grid would hold 80 % of its demand without the sun (`night`) | a coal generator kit (its cost) |
 | 4 | `glassworks` · La verrerie | goal | the Logistique view; plans Collecteur de sable, Routeur, Jonction | 10 glass made (`ever`); glass reaches the Core | 20 plates, 20 glass |
-| 5 | `crier_trade` · La Criée | goal | ocelles, the Crier; plans Télémétrie, Comptoir, Tréfileuse | 5 glass sold (`ever`); 10 copper ore bought and delivered (`import`, `ever`); the bought ore reaches a wire mill (`feeds` `from` the trade post) | 150 ◉, 40 copper wire |
-| 6 | `core_upgrade` · Le Cœur grandit | goal | — | the Core at level 2 (`hearth`): the player's own `hearthUp`, paid in 120 plates, 40 glass and 40 copper wire | 100 ◉ |
-| 7 | `field_journal` · Données d’arpentage | goal | every plan; the brush | every plan unlocked (a calm count, « Plans pris 9/25 »; the Face Cutter's among them); the Core's Survey Data reaches the lab (`feeds` `from` the Core); Mechanics (`tr1`) started | 600 ◉ |
-| 8 | `wall_quartz` · Le quartz de la paroi | goal | the Terrain view | the vein's parcel held (`vein`); 10 quartz in the Core | a quartz workshop kit; the title « Passe-Crête » (`grant`) |
-| 9 | `synth_parts` · Les pièces de la Synthèse | goal | — | oscillators and circuits each led into the Core | 300 ◉ |
+| 5 | `steam_power` · La vapeur (D114) | goal | plan Vapeur | water reaches a steam boiler from a pump (`feeds`); coal reaches it (`feeds`); the boiler on a grid (`linked`) | 30 plates, 10 glass |
+| 6 | `crier_trade` · La Criée | goal | ocelles, the Crier; plans Télémétrie, Comptoir, Tréfileuse | 5 glass sold (`ever`); 10 copper ore bought and delivered (`import`, `ever`); the bought ore reaches a wire mill (`feeds` `from` the trade post) | 150 ◉, 40 copper wire |
+| 7 | `core_upgrade` · Le Cœur grandit | goal | — | the Core at level 2 (`hearth`): the player's own `hearthUp`, paid in 120 plates, 40 glass and 40 copper wire | 100 ◉ |
+| 8 | `field_journal` · Données d’arpentage | goal | every plan; the brush | every plan unlocked (a calm count, « Plans pris 9/25 »; the Face Cutter's among them); the Core's Survey Data reaches the lab (`feeds` `from` the Core); Mechanics (`tr1`) started | 600 ◉ |
+| 9 | `wall_quartz` · Le quartz de la paroi | goal | the Terrain view | the vein's parcel held (`vein`); 10 quartz in the Core | a quartz workshop kit; the title « Passe-Crête » (`grant`) |
+| 10 | `synth_parts` · Les pièces de la Synthèse | goal | — | oscillators and circuits each led into the Core | 300 ◉ |
 
-The first tutorial (D28–D98) had twelve quests after the name and 81 steps; today's has two guided quests of 4 and 11 steps after the name (one step), and 54 hints on request. D101 kept its arc — the cirque's basics → glass and power → copper and the Crier → past the Crown → the lab and Tier 1 → quartz — and merged or cut the rest:
+The first tutorial (D28–D98) had twelve quests after the name and 81 steps; today's has two guided quests of 4 and 11 steps after the name (one step), and 61 hints on request (D114: « La vapeur »'s 7). D101 kept its arc — the cirque's basics → glass and power → copper and the Crier → past the Crown → the lab and Tier 1 → quartz — and merged or cut the rest:
 
 - « Le Ruban » (a second drill, the telemetry) is gone: the second drill is the smelter's, and the telemetry is an optional objective.
 - « La fonderie » has no router any more: one drill of each feeds one smelter (D97: 10 ore and 10 coal a minute). The router comes with the glass, where the coal is shared — or a second coal drill does it, and that hint passes by (`unless`).
@@ -46,7 +47,7 @@ The first tutorial (D28–D98) had twelve quests after the name and 81 steps; to
 
 The second pass (D101, owner's notes of the same night) took out every wait that is not building time:
 
-- **No research wait** (owner: « le face cutter devrait être beaucoup plus rapide à obtenir, ce tutoriel est chiant »). The Face Cutter (`ex_quartz`) is a plan of the Survey path, taken with every plan in « Données d'arpentage »; « Le quartz de la paroi » no longer waits on it. « Données d'arpentage » only *starts* Mechanics (`tr1`, whose prerequisite is now the lab's plan alone), and « Les pièces de la Synthèse » asks for the two parts it can build at once: the gears wait for Mechanics' press, learnt in its own time.
+- **No research wait** (owner: « le face cutter devrait être beaucoup plus rapide à obtenir, ce tutoriel est chiant »). The Face Cutter (`ex_quartz`) is a plan (of the Production path since D117), taken with every plan in « Données d'arpentage »; « Le quartz de la paroi » no longer waits on it. « Données d'arpentage » only *starts* Mechanics (`tr1`, whose prerequisite is now the lab's plan alone), and « Les pièces de la Synthèse » asks for the two parts it can build at once: the gears wait for Mechanics' press, learnt in its own time.
 - **The Core grows by the player's hand** (owner: « there should be a quest in the tutorial where you upgrade it »). « Le Cœur grandit » is the Core's level 2 (`BAL.hearthUpgrades[0]`, unlock `start`): one click on the Core's card once its plates, glass and copper wire are in the Core. No quest grants a level any more (« La Criée » used to pay level 2's materials, and Mechanics gated it).
 - **The first lab runs on the Core's own data** (owner: « The quest where you start researching could use the core's data production rather than a data collector, which could be unlocked later »). From level 2 the Core makes 2 Survey Data a minute at its data outlet (`BAL.hearthDataBase`, research or not); a ribbon from the outlet feeds the lab. The data collector comes with « Traitement des données » (`an_data`, Tier 1, +1 a minute at the Core).
 - **No tokens to talk about**: research costs no tokens before the servers (D105), so no quest text mentions them.
@@ -76,12 +77,12 @@ The second pass (D101, owner's notes of the same night) took out every wait that
 - the production ledger (G);
 - the wind survey (V).
 
-**Saves** (`QUEST_TABLE` 3, `QUEST_FOLDS`, `QUEST_ADDED`): a save from an older table loads into today's quests (`loadQuests` → `foldDone`). Kept ids stay done. « La Criée » is done once « La Criée appelle », « Le filon fatigué » and « Premier achat » all were, at the last one's tick. « Le Ruban » and « Au-delà de la Couronne » are dropped. « Le Cœur grandit » (added with table 3) counts as done when a quest after it was. The current quest is the first not done in today's order, its baselines taken afresh: the old ones belonged to the old table.
+**Saves** (`QUEST_TABLE` 4, `QUEST_FOLDS`, `QUEST_ADDED`): a save from an older table loads into today's quests (`loadQuests` → `foldDone`). Kept ids stay done. « La Criée » is done once « La Criée appelle », « Le filon fatigué » and « Premier achat » all were, at the last one's tick. « Le Ruban » and « Au-delà de la Couronne » are dropped. « Le Cœur grandit » (added with table 3) and « La vapeur » (table 4, D114) count as done when a quest after them was. The current quest is the first not done in today's order, its baselines taken afresh: the old ones belonged to the old table.
 
 So a base saved at…
 
 - « Le Ruban » goes on at « La fonderie »;
-- « Le filon fatigué » or « Premier achat » goes on at « La Criée »;
+- « La Criée appelle », « Le filon fatigué » or « Premier achat » goes on at « La vapeur » (D114: it comes before « La Criée » now), then « La Criée »;
 - « Au-delà de la Couronne », or « Données d'arpentage » not done, goes on at « Le Cœur grandit » (met at once by a Core already at level 2);
 - « Le quartz de la paroi » or later goes on where it was.
 
@@ -125,7 +126,7 @@ Pacing: the scripted run (`quests.test.ts`, every line laid by hand, `QUEST_REPO
     - A guided quest ends on a closing line, a step with no `done` (D98; `questProblems` checks it). Once every other step holds, that line is the step, so the guide never asks again for the last thing the player did (owner, 2026-10-16: « it keeps telling me what to do (put a ribbon) even though it's done already »); a step whose `done` holds is never pointed at.
     - A goal shows nothing until its hint is asked for (`toggleHint`) or comes after a long stall (`nudge`). Then it shows `hintIndex`'s hint — the first that applies on this land, whose `unless` does not hold, and not done — until that hint's `done` holds or the player puts it away; the next one waits to be asked for.
   - **Its target follows the UI.**
-    - `build`: the tab, then the slot (with what the Core lacks to pay for it, if anything: « Il manque au Cœur : 2 Plaque de fer, 2 Verre »), then (in hand) a spot in the world. The spot is shown only for the very first drill, for the quartz vein's foot (`{ vein: true }`) and for a turbine (`{ windy: true }`, D95: the Crown's windiest free spot); elsewhere the hint alone says where.
+    - `build`: the tab, then the slot (with what the Core lacks to pay for it, if anything: « Il manque au Cœur : 2 Plaque de fer, 2 Verre »), then (in hand) a spot in the world. The spot is shown only for the very first drill, for the quartz vein's foot (`{ vein: true }`), for a turbine (`{ windy: true }`, D95: the Crown's windiest free spot) and for the first pump (`{ water: true }`, D114: the nearest spot to the Core where a pump draws water, on any level — [readouts/water.ts](../src/sim/readouts/water.ts) `nearestWater`; on map 4 D115's spring pool at the floor's edge, on maps 2–3 the tarn up on the Crown); elsewhere the hint alone says where.
     - `unlock`: the HUD's tree chip (`[data-hud-tree]`), then in the tree the first of its nodes the Core can take now, else the first still locked (`unlockNode`: « all plans » points at one ready plan, never down the list), scrolled into view, then its « Débloquer » (`[data-unlock="<id>"]`) or, for a research, its card and « Lancer ». A plan the Heart cannot pay for yet: the bubble says what it lacks.
     - `branch`: while no routing block stands on the line of that item (or none on it has a side free for one more branch), the router (its tab, its slot); then a ribbon on to the building still to feed.
     - `recipe`: the machine still to set (one with no recipe first), then its recipe button once it is the one inspected. The building still in hand: « Range d’abord l’outil… ».
@@ -176,10 +177,10 @@ The tutorial debug levels ([sim/scenarios.ts](../src/sim/scenarios.ts)) play the
 
 - `claim` stands at quest 1;
 - `smelter` at « La fonderie »;
-- `survey` at « La Criée »;
+- `survey` at « La Criée » (« La vapeur » played: [scenario-steam.ts](../src/sim/scenario-steam.ts));
 - `tutorial` at « Les pièces de la Synthèse », Mechanics learnt and the lab's next node under way (D107: Tier 1 takes minutes; `labNext`). It is a base to play the last quest from; the bot and the smoke start there.
 
-Its « Tenir la nuit » plants two turbines on the Crown's windiest spot (`crownWind`) beside the two on the floor. Its glass smelter goes down with its first sand collector, on the collector's far side from the Heart; a spot that leaves no way in for the sand is taken back up and the next point of the coal line tried (D104: the coal's irregular patch can box the smelter's inlet in). Its « La Criée » signs the starter contract and leads the post's exit into the side of the copper drill's line. Once the contract is delivered it stops the fulfilled order (« Arrêter ») and takes that ribbon up, so the exit can feed the Heart later (`tradeLine`); a junction it crossed goes back to the crossed line's ribbon. « Le Cœur grandit » raises the Core with the logged command; « Données d'arpentage » sets the lab east of the Core, a ribbon from its data outlet, and starts Mechanics. The `grown` level learns « Traitement des données » and sets its data collector by the lab. D85's idle check (`idleAfter`) leaves out a lab with no project and the data maker behind it: research waiting on the player's choice is not a broken line. The smelter's own iron drill gets an overflow gate into the Heart (`ironSurplus`): it cuts more than one smelter takes. The `grown` level completes the last quest by force: its circuit workshop's and press's lines take room the crowded core does not always leave. The scripted run in `quests.test.ts` plays it with real commands.
+Its « Tenir la nuit » plants two turbines on the Crown's windiest spot (`crownWind`) beside the two on the floor. Its glass smelter goes down with its first sand collector, on the collector's far side from the Heart; a spot that leaves no way in for the sand is taken back up and the next point of the coal line tried (D104: the coal's irregular patch can box the smelter's inlet in). Its « La vapeur » (D114, [scenario-steam.ts](../src/sim/scenario-steam.ts)) sets a pump on the far shore from the Core of the water nearest it (`waterSpots`: map 4's spring pool at the floor's edge, D115), the boiler beyond it, a conduit between (`routeLevel` with `fall`: water may pour down the terraces), and a coal drill of the boiler's own on the cirque's coal whose line keeps to the floor's rim (`rimRoute`: the middle is the post's, the lab's and the quartz lines', laid after) and crosses the lines in its way on junctions; all wired pole by pole. D85's idle check counts a source that feeds only generators on standby, backed up behind them, as on standby too. Its « La Criée » signs the starter contract and leads the post's exit into the side of the copper drill's line. Once the contract is delivered it stops the fulfilled order (« Arrêter ») and takes that ribbon up, so the exit can feed the Heart later (`tradeLine`); a junction it crossed goes back to the crossed line's ribbon. « Le Cœur grandit » raises the Core with the logged command; « Données d'arpentage » sets the lab east of the Core, a ribbon from its data outlet, and starts Mechanics. No survey beacon past the Crown since D117 (it planted one before): the quartz vein's parcel, bought, and the poles that carry the power over the Crown lift the fog out there, as they do in play. The `grown` level learns « Traitement des données » and sets its data collector by the lab. D85's idle check (`idleAfter`) leaves out a lab with no project and the data maker behind it: research waiting on the player's choice is not a broken line. The smelter's own iron drill gets an overflow gate into the Heart (`ironSurplus`): it cuts more than one smelter takes. The `grown` level completes the last quest by force: its circuit workshop's and press's lines take room the crowded core does not always leave. The scripted run in `quests.test.ts` plays it with real commands.
 
 `FL.vein()` gives the land's quartz vein: its face tiles, the side it looks to, its parcel, the face cutters' four spots; null on maps 1–2.
 
@@ -218,7 +219,7 @@ The interface grows with the tutorial (owner, 2026-10-12: nothing on screen befo
 
 `revealed(sim)` (in [sim/systems/quests.ts](../src/sim/systems/quests.ts)) returns the set, or `null` for everything once the tutorial is done or **skipped** (« Passer le tutoriel » in the log: the `skipQuests` command; the demo base starts skipped). Skipping the tutorial shows the whole interface, not what is still locked in the tree.
 
-The bar's **tabs** are no tutorial reveal: once `build` is revealed, a tab shows as soon as one of its buildings is unlocked (D27, D33). At the start that is Extraction, Logistique and Énergie (drill, ribbon, pole); then Production with the smelter, Distribution with the router, Commerce with the trade post, Colonie with the beacon.
+The bar's **tabs** are no tutorial reveal: once `build` is revealed, a tab shows as soon as one of its buildings is unlocked (D27, D33). At the start that is Extraction, Logistique and Énergie (drill, ribbon, pole); then Production with the smelter, Distribution with the router, Commerce with the trade post, Colonie with the fence (D103; the survey beacon was its first, until D117).
 
 The HUD's rates (what comes into the Heart each minute, D79) are no tutorial reveal but a plan: **Télémétrie** (the `telemetry` flag), the first step of the tree's Analytics path (D41), offered with « La Criée » (the trade post needs it) and an optional objective. The HUD, the build bar (the brush, the Build button) and the hotkeys (T, G, M, C, L) all read what is revealed and unlocked.
 
@@ -228,6 +229,7 @@ The HUD's rates (what comes into the Heart each minute, D79) are no tutorial rev
 | 2 bloom_kiln | the tech tree (its HUD chip, T); the clock (day / night, temperature); the Production and Électricité views; plan Fonderie |
 | 3 first_wind | plans Éolienne, Générateur à charbon |
 | 4 glassworks | the Logistique view; plans Collecteur de sable, Routeur, Jonction |
-| 5 crier_trade | ocelles; the Crier; copper ore; plans Télémétrie, Comptoir, Tréfileuse |
-| 7 field_journal | every plan; the landscaping brush |
-| 8 wall_quartz | the Terrain view |
+| 5 steam_power | plan Vapeur |
+| 6 crier_trade | ocelles; the Crier; copper ore; plans Télémétrie, Comptoir, Tréfileuse |
+| 8 field_journal | every plan; the landscaping brush |
+| 9 wall_quartz | the Terrain view |

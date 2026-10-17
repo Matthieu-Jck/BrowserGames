@@ -5,7 +5,7 @@
 // through the gates.
 import { describe, it, expect } from 'vitest';
 import { RESEARCH, TIER1_WHOLE } from '@/content/research';
-import { chainOf, elbowPath, treeLayout } from './research';
+import { ZOOM_FLOOR, ZOOM_MAX, chainOf, elbowPath, fitZoom, treeLayout, zoomLevel } from './research';
 
 /** The straight legs of a route (its corners' curves cut to their ends: they stay within the gap). */
 function legs(d: string): Array<[number, number, number, number]> {
@@ -78,5 +78,17 @@ describe('the tech tree’s layout (D107)', () => {
     // Across lanes: the Compute Plan needs the Server Room.
     expect(chainOf('cm_plan').nodes.has('an_servers')).toBe(true);
     expect(chainOf('cm_plan').links.has('an_servers>cm_plan')).toBe(true);
+  });
+
+  it('the zoom (D111): from the whole tree in the view up to a little past its size; the cards simplify as it shrinks', () => {
+    // A 1 440 × 900 window leaves the tree about 1 060 × 770: the whole tree is a fifth of its size.
+    const fit = fitZoom(1060, 770, L);
+    expect(fit).toBeCloseTo(Math.min(1060 / L.w, 770 / L.h), 6);
+    expect(fit).toBeGreaterThan(0.12);
+    expect(fit).toBeLessThan(0.3);
+    expect(fitZoom(1e6, 1e6, L)).toBe(1); // never above its own size to fit
+    expect(fitZoom(10, 10, L)).toBe(ZOOM_FLOOR);
+    expect(ZOOM_MAX).toBeGreaterThan(1);
+    expect([1, 0.7, 0.5, 0.36, 0.3, fit].map(zoomLevel)).toEqual(['near', 'near', 'mid', 'mid', 'far', 'far']);
   });
 });

@@ -26,12 +26,6 @@ export const BUILDINGS = {
     // gen.kw: the built-in solar panel's peak (BAL.hearthSolarKw and hearthCoreKw win, by level: D25, D101). A link point of 6 wires.
     gen: { kw: 240 }, pole: { range: 8, slots: 6, climb: 1 }, storageCap: 5000,
   },
-  beacon: {
-    name: { fr: "Balise d'arpentage", en: 'Survey Beacon' },
-    desc: { fr: 'Dissipe le brouillard dans un rayon de 40 tuiles, pour repérer gisements et passages. Se pose aussi hors de vos terres, sans énergie.', en: 'Lifts the fog within 40 tiles, to scout deposits and passes. Can stand off your land and needs no power.' },
-    kind: 'beacon', category: 'colony', w: 1, h: 1, needsZone: false, onRock: true, unlock: 'beacon',
-    cost: [['iron_plate', 5], ['glass', 2]], ports: [], reveal: 40,
-  },
 
   // ── extraction ────────────────────────────────────────────────────────────
   drill: {
@@ -55,8 +49,9 @@ export const BUILDINGS = {
   },
   pump: {
     name: { fr: 'Pompe à eau', en: 'Water Pump' },
-    desc: { fr: 'Au bord de l’eau, pompe 60 eau/min dans un conduit. L’eau ne voyage pas sur les rubans.', en: 'At the water’s edge, pumps 60 water/min into a conduit. Water does not ride ribbons.' },
-    kind: 'pump', category: 'extraction', w: 1, h: 1, needsZone: true, onRock: true, unlock: 'tr3', kw: 30, idleKw: 3, // onRock: by the tarn up on the Crown (D63)
+    desc: { fr: 'Au bord de l’eau, pompe 60 eau/min dans un conduit, pour les chaudières et les fours à céramique. L’eau ne voyage pas sur les rubans.', en: 'At the water’s edge, pumps 60 water/min into a conduit, for boilers and ceramic ovens. Water does not ride ribbons.' },
+    // Tier 1 since D114 (the Steam plan: water's first use is the steam boiler); onRock: by the tarn up on the Crown (D63)
+    kind: 'pump', category: 'extraction', w: 1, h: 1, needsZone: true, onRock: true, unlock: 'steam', kw: 30, idleKw: 3,
     cost: [['iron_plate', 5], ['glass', 2]], ports: [P(0, 0, 'N', 'out')], drill: { perMin: 60 },
   },
   backfiller: {
@@ -122,12 +117,6 @@ export const BUILDINGS = {
     kind: 'fork', logic: 'underflow', replaceGroup: 'transport', category: 'distribution', w: 1, h: 1, needsZone: false, unlock: 'underflow_gate',
     cost: [['iron_plate', 1], ['copper_wire', 1]], ports: [],
   },
-  unloader: {
-    name: { fr: 'Déchargeur', en: 'Unloader' },
-    desc: { fr: 'Collé à une réserve (Cœur, silo…), en sort l’objet choisi vers les rubans et machines qui le touchent. Choisis l’objet dans l’inspecteur.', en: 'Set against a store (the Core, a silo…), takes out the chosen item to the ribbons and machines touching it. Pick the item in the inspector.' },
-    kind: 'fork', logic: 'unloader', replaceGroup: 'transport', category: 'distribution', w: 1, h: 1, needsZone: false, unlock: 'unloader',
-    cost: [['iron_plate', 2], ['copper_wire', 1]], ports: [],
-  },
   distributor: {
     name: { fr: 'Distributeur', en: 'Distributor' },
     desc: { fr: 'Un grand routeur 2×2 : prend de tous côtés et rend sur tous les autres, avec un plus grand tampon. Se pose par-dessus quatre routeurs ou des rubans, qu’il remplace.', en: 'A big 2×2 router: takes from every side and deals out to all the others, with a bigger buffer. Can be placed over four routers or ribbons, replacing them.' },
@@ -148,9 +137,10 @@ export const BUILDINGS = {
   },
   conduit: {
     name: { fr: 'Conduit', en: 'Conduit' },
-    desc: { fr: 'Le ruban de l’eau : 240/min, des pompes au four à céramique. Ne porte que des fluides ; se trace en glissant.', en: 'The water ribbon: 240/min, from pumps to the ceramic oven. Carries fluids only; lay it by dragging.' },
-    kind: 'conduit', replaceGroup: 'fluid', category: 'logistics', w: 1, h: 1, needsZone: false, onRock: true, unlock: 'tr3',
-    cost: [['ceramic', 1]], ports: [], belt: { ticksPerTile: 2, perMin: 240 },
+    desc: { fr: 'Le ruban de l’eau : 240/min, des pompes aux chaudières et aux fours à céramique. Ne porte que des fluides ; se trace en glissant.', en: 'The water ribbon: 240/min, from pumps to boilers and ceramic ovens. Carries fluids only; lay it by dragging.' },
+    // Tier 1 since D114, a plate a tile (it was a ceramic, which only Tier 2 makes).
+    kind: 'conduit', replaceGroup: 'fluid', category: 'logistics', w: 1, h: 1, needsZone: false, onRock: true, unlock: 'steam',
+    cost: [['iron_plate', 1]], ports: [], belt: { ticksPerTile: 2, perMin: 240 },
   },
   silo: {
     name: { fr: 'Silo', en: 'Silo' },
@@ -158,13 +148,6 @@ export const BUILDINGS = {
     kind: 'storage', category: 'logistics', w: 2, h: 2, needsZone: true, unlock: 'silo',
     cost: [['iron_plate', 8], ['glass', 2]],
     ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(0, 0, 'N', 'out'), P(1, 0, 'N', 'out')], storageCap: 1000,
-  },
-  skydock: {
-    name: { fr: 'Embarcadère', en: 'Skydock' },
-    desc: { fr: 'Mât d’amarrage des Dérivants, cargos volants sans équipage : achètes-en jusqu’à 4 et ouvre des routes de fret vers un autre embarcadère, pour transporter loin sans rubans.', en: 'Mooring mast for the Drifters, uncrewed freight airships: buy up to 4 and open freight routes to another skydock, to haul goods far without ribbons.' },
-    kind: 'dock', category: 'logistics', w: 3, h: 3, needsZone: true, unlock: 'tr6', kw: 200, idleKw: 20,
-    cost: [['ceramic', 40], ['gear', 20], ['lens', 10]],
-    ports: [P(0, 2, 'S', 'in'), P(2, 2, 'S', 'in'), P(0, 0, 'N', 'out'), P(2, 0, 'N', 'out')], dock: { ships: 4, capMult: 1000 },
   },
 
   // ── production ────────────────────────────────────────────────────────────
@@ -247,9 +230,10 @@ export const BUILDINGS = {
   },
   pylon: {
     name: { fr: 'Pylône', en: 'Pylon' },
-    desc: { fr: 'Un grand pylône de 2×2 qui porte loin : 4 fils jusqu’à 40 tuiles (60 avec Pylônes renforcés), qui montent ou descendent de 3 gradins et passent 3 gradins de relief, jamais une montagne.', en: 'A big 2×2 pylon that carries far: 4 wires up to 40 tiles long (60 with Reinforced Pylons), climbing or coming down 3 terraces and clearing a 3-terrace rise, never a mountain.' },
+    desc: { fr: 'Un grand pylône de 2×2 qui porte loin : 4 fils jusqu’à 40 tuiles (60 avec Pylônes renforcés), qui montent ou descendent de 3 gradins et passent 3 gradins de relief, jamais une montagne. Dissipe le brouillard sur 40 tuiles alentour.', en: 'A big 2×2 pylon that carries far: 4 wires up to 40 tiles long (60 with Reinforced Pylons), climbing or coming down 3 terraces and clearing a 3-terrace rise, never a mountain. It lifts the fog 40 tiles around it.' },
     kind: 'pole', replaceGroup: 'power', category: 'energy', w: 2, h: 2, needsZone: false, onRock: true, unlock: 'tr4', // 2×2 and twice as tall since D75 (owner, 2026-10-14)
-    cost: [['iron_plate', 20], ['copper_wire', 10], ['ceramic', 4]], ports: [], pole: { range: 40, slots: 4, climb: 3, tall: true }, // three terraces up or down, three above the land: never over a mountain (D78)
+    // It lifts the fog as far as its wires reach (D117: the survey beacon's 40 tiles), so a pylon line walks it back.
+    cost: [['iron_plate', 20], ['copper_wire', 10], ['ceramic', 4]], ports: [], reveal: 40, pole: { range: 40, slots: 4, climb: 3, tall: true }, // three terraces up or down, three above the land: never over a mountain (D78)
   },
   brazier: {
     name: { fr: 'Générateur à charbon', en: 'Coal Generator' },
@@ -257,6 +241,20 @@ export const BUILDINGS = {
     kind: 'generator', category: 'energy', w: 1, h: 2, needsZone: true, unlock: 'brazier',
     cost: [['iron_plate', 20], ['copper_wire', 4]], ports: [P(0, 1, 'S', 'in')],
     gen: { kw: 300, fuel: 'coal', fuelPerMin: 10 },
+  },
+  // The steam boiler (D114; owner, 2026-10-17: « Il faudrait que l'eau serve assez tôt dans le jeu,
+  // dès le Tier 1 »): water's first use. Coal under a boiler, its steam through an engine: 600 kW for
+  // 8 coal a minute, 75 kW a coal against the coal generator's 30 (two and a half times), so the
+  // cirque's scarce coal goes further — at the price of a pump by water, a conduit and a bigger
+  // build. Fuel still: it burns, by night and day alike, only what the grid asks for; the wind and
+  // the sun stay free. 3×2: the firebox and the coal intake on the left, the drum across, the engine
+  // and the water intake on the right; onRock, like the pump, to stand by the Crown's tarn (D63).
+  steam_boiler: {
+    name: { fr: 'Chaudière à vapeur', en: 'Steam Boiler' },
+    desc: { fr: 'Change le charbon et l’eau en vapeur, et la vapeur en électricité : 600 kW pour 8 charbon et 30 eau par minute, deux fois et demie ce que le charbon donne au générateur. Elle ne brûle que ce que le réseau demande.', en: 'Turns coal and water into steam, and steam into power: 600 kW for 8 coal and 30 water a minute, two and a half times what coal gives in the generator. It burns only what the grid asks for.' },
+    kind: 'generator', category: 'energy', w: 3, h: 2, needsZone: true, onRock: true, unlock: 'steam',
+    cost: [['iron_plate', 30], ['glass', 6], ['copper_wire', 6]], ports: [P(0, 1, 'S', 'in'), P(2, 1, 'S', 'in')],
+    gen: { kw: 600, fuel: 'coal', fuelPerMin: 8, water: 30 },
   },
   wind_flower: {
     name: { fr: 'Éolienne', en: 'Wind Turbine' },
@@ -497,13 +495,6 @@ export const BUILDINGS = {
     cost: [['iron_plate', 30], ['glass', 6], ['gear', 6]],
     ports: [P(0, 2, 'S', 'in'), P(1, 2, 'S', 'in'), P(2, 2, 'S', 'in'), P(0, 0, 'N', 'out'), P(1, 0, 'N', 'out'), P(2, 0, 'N', 'out')], storageCap: 5000,
   },
-  big_dock: {
-    name: { fr: 'Grand embarcadère', en: 'Great Skydock' },
-    desc: { fr: 'Un mât d’amarrage pour 8 Dérivants, chacun portant deux fois plus de fret.', en: 'A mooring mast for 8 Drifters, each carrying twice the freight.' },
-    kind: 'dock', category: 'logistics', w: 4, h: 4, needsZone: true, unlock: 'xp_bigdock', kw: 400, idleKw: 40,
-    cost: [['ceramic', 60], ['gear', 30], ['lens', 15]],
-    ports: [P(0, 3, 'S', 'in'), P(3, 3, 'S', 'in'), P(0, 0, 'N', 'out'), P(3, 0, 'N', 'out')], dock: { ships: 8, capMult: 2000 },
-  },
   // ── appended (D87): quartz, from the cliff face to the oscillator ─────────
   // The face cutter stands on the floor beside a wall, never on it (owner, 2026-10-15: « une
   // machine particulière qui le récupère et qui se pose à côté et pas au-dessus, car c'est dans une
@@ -524,7 +515,7 @@ export const BUILDINGS = {
   // The Gleaners walk the open desert floor at night and take shiny things off the ribbons they
   // reach (sim/world/reach.ts). A fence stands in their way (a pocket of floor fenced in is out of
   // their reach); a glazed ribbon is a ribbon under glass, as fast as the plain one. The fence sits in
-  // the Base tray (the base's perimeter, beside the survey beacon), the glazed ribbon with the ribbons.
+  // the Base tray (the base's perimeter), the glazed ribbon with the ribbons.
   fence: {
     name: { fr: 'Grille', en: 'Fence' },
     desc: { fr: 'Une grille basse que les Glaneurs ne franchissent pas\u00a0: clos un avant-poste du désert, et ses rubans sont hors de leur portée la nuit. Se trace en glissant.', en: 'A low fence the Gleaners do not cross: close in a desert outpost and its ribbons are out of their reach at night. Lay it by dragging.' },
@@ -536,6 +527,19 @@ export const BUILDINGS = {
     desc: { fr: 'Un ruban sous verre, aussi rapide que le ruban (60/min)\u00a0: les Glaneurs ne prennent rien de ce qu’il porte. Trace-le par-dessus un ruban pour le couvrir.', en: 'A ribbon under glass, as fast as the ribbon (60/min): the Gleaners take nothing it carries. Drag it over a ribbon to cover it.' },
     kind: 'belt', glazed: true, replaceGroup: 'transport', category: 'logistics', w: 1, h: 1, needsZone: false, onRock: true, unlock: 'xp_guard',
     cost: [['glass', 1]], ports: [], belt: { ticksPerTile: 6, perMin: 60 },
+  },
+  // ── appended (D109): the camouflaged ribbon ───────────────────────────────
+  // Buried under the sand (owner, 2026-10-17: « un type de tapis camouflé qui permet de construire
+  // des tapis même dans les zones qui ne t'appartiennent pas »): it may run over a neighbouring
+  // base's open parcels (a sister claim's before D110; never through its buildings), costs the same anywhere (no remote ×3, `BAL.camoRemoteCostMult`), and the Gleaners walk
+  // over it unseeing. Its price: slower than the plain ribbon (40/min), paid in plates and sand, and
+  // flat (a traction ribbon still takes the steps). A drag lays it by itself where its land refuses
+  // the dragged ribbon (systems/belt-plan.ts).
+  camo_ribbon: {
+    name: { fr: 'Ruban camouflé', en: 'Camouflaged Ribbon' },
+    desc: { fr: 'Un ruban enfoui sous le sable, plus lent (40/min) : il passe aussi sur les terres libres d’une base voisine, sans surcoût hors de tes terres, et les Glaneurs marchent dessus sans le voir. Il ne monte pas les marches.', en: 'A ribbon buried under the sand, slower (40/min): it also runs across a neighbouring base’s open land, with no surcharge off your land, and the Gleaners walk over it unseeing. It does not climb steps.' },
+    kind: 'belt', camo: true, replaceGroup: 'transport', category: 'logistics', w: 1, h: 1, needsZone: false, onRock: true, unlock: 'xp_camo',
+    cost: [['iron_plate', 1], ['sand', 2]], ports: [], belt: { ticksPerTile: 9, perMin: 40 },
   },
 } as const satisfies Record<string, BuildingDef>;
 

@@ -8,7 +8,7 @@ Step-by-step checklists for the changes that come up most, across every layer th
 
 ## 1. Add an item
 
-1. [src/content/items.ts](../src/content/items.ts): an entry `id: { name: { fr, en }, tier, kind, value, depth, glyph, color }`. `value` is the reference price in ◉; `depth` is the NPC market depth in items/min (0 = not tradable, as for fluids). `kind` drives a few rules (`fluid` never rides ribbons or routes; `science`, `unique`…).
+1. [src/content/items.ts](../src/content/items.ts): an entry `id: { name: { fr, en }, tier, kind, value, depth, glyph, color }`. `value` is the reference price in ◉; `depth` is the NPC market depth in items/min (0 = not tradable, as for fluids). `kind` drives a few rules (`fluid` never rides ribbons; `science`, `unique`…).
 2. A glyph: reuse one, or add it to `GLYPHS` in [render/art/recipes/items.ts](../src/render/art/recipes/items.ts). The atlas bakes every item automatically (`iKey(id)`), and the UI's `itemIcon` uses the same frame.
 3. Where it comes from: a recipe output (§2), a deposit (drills: the world template / mapgen ore tables), or another source (stone from digging, water from pumps).
 4. Where it goes: recipe inputs, research costs, building costs. [validate.ts](../src/content/validate.ts) fails on items no recipe or deposit can produce (`reachableItems`), and on some scarcity rules.
@@ -46,7 +46,7 @@ Everything in §3, plus:
 | i18n | `fr.ts` / `en.ts` | inspector strings; status keys if it introduces a status |
 | tests | `flow.test.ts`, `space.test.ts`… | its behaviour, conservation, and save → load at the same hash |
 
-Then grep for an existing comparable kind (`grep -rn "'dock'" src`) and check every hit: those are the places a kind is special-cased.
+Then grep for an existing comparable kind (`grep -rn "'excavator'" src`) and check every hit: those are the places a kind is special-cased.
 
 ## 5. Add a research node or a branch effect
 
@@ -65,7 +65,7 @@ Then grep for an existing comparable kind (`grep -rn "'dock'" src`) and check ev
 
 ## 6. Add a mechanic that runs over time (a new system)
 
-Examples: digging, freight, trading, the land's leases. The engine must stay **exact offline**.
+Examples: digging, trading, the land's leases, the Gleaners' nights. The engine must stay **exact offline**.
 
 1. **Pure rules** first: `src/sim/<domain>.ts` (formulas, durations, rates; integers), with unit tests that reproduce the plan's numbers.
 2. **State** on the `Sim` (`state.ts`): the fields, with a comment saying what is saved.
@@ -92,7 +92,7 @@ Examples: digging, freight, trading, the land's leases. The engine must stay **e
 
 1. [src/sim/serialize.ts](../src/sim/serialize.ts): add it to the save type **as optional** (`field?:`), write it in `serialize`, read it in `deserialize` with a default (`d.field ?? default`). Old saves keep loading, and the plan's rule is never to reset a colony silently. A change that cannot default bumps `SAVE_VERSION` and adds a step to `MIGRATIONS` ([persist/migrate.ts](../src/persist/migrate.ts)).
 1. Declare it in `FIELDS` ([src/sim/save-remap.ts](../src/sim/save-remap.ts)): `plain`, `index` (it holds item / building / recipe indices: remap it in `remapSave`) or `refs` (entity ids: drop what refers to a building that came down). The build fails until it is declared ([persistence.md](persistence.md)).
-2. Never save what can be recomputed (graph, `Mods`, occupancy, the starting square and the sister claims' parcels, anything derived from the seeds).
+2. Never save what can be recomputed (graph, `Mods`, occupancy, the starting square and the neighbouring bases (D110), anything derived from the seeds).
 3. Floats that the engine evolves (rare: a carry) round-trip exactly through JSON; save them as they are.
 4. `Sim.hash()`: include the field (sorted when it comes from a Map / Set).
 5. Test: save → load → same hash, then continue both copies the same number of ticks → same hash.

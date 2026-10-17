@@ -1,5 +1,5 @@
 // configure.ts — per-building settings: a machine's recipe (speed modules are gone, D81), what
-// an unloader port of a store hands out, a fork's per-side filters. Each change marks the flow
+// an output port of a store hands out, a fork's per-side filters. Each change marks the flow
 // graph for recompilation and is logged as a command.
 import { BUILDING_KIND, CRECIPES, buildingDef, itemIdx, recipeIdx } from '@/content/registry';
 import { recipeOf, withFilter, withRecipe } from '../cfg';
@@ -32,8 +32,10 @@ export function setRecipe(sim: Sim, id: number, recipe: string | null): boolean 
 }
 
 /**
- * What an output port of a store (waystation, skydock, trade post) hands out (null: nothing).
- * Only outputs: the Heart has none — it takes, it never gives (the owner, 2026-10-12).
+ * What an output port of a store hands out (null: nothing). Only outputs: the Heart has none — it
+ * takes, it never gives (the owner, 2026-10-12) — and a trade post's exit hands out what it bought,
+ * in turn (D62). The stores whose outlets were set this way, the waystation and the skydocks, are
+ * retired (D60, D108): no building of today's takes it; kept for the command older logs hold.
  */
 export function setPortItem(sim: Sim, id: number, port: number, item: string | null): boolean {
   const e = sim.ents.get(id);
@@ -48,7 +50,7 @@ export function setPortItem(sim: Sim, id: number, port: number, item: string | n
 
 /**
  * A routing block's item: a router's output filter on one side (null: anything goes); a
- * sorter's, inverted sorter's or unloader's chosen item is side 0.
+ * sorter's or inverted sorter's chosen item is side 0.
  */
 export function setForkFilter(sim: Sim, id: number, side: Rot, item: string | null): boolean {
   const e = sim.ents.get(id);

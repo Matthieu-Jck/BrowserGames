@@ -1,9 +1,10 @@
-// gleaner-shots.mjs — the Gleaners (D103) for review, the whole act by night: on the grown debug base
-// (its quartz line home crosses the desert floor), the game paused and stepped tick by tick to a try
-// the sim really makes — a Gleaner out of the dunes, up to the line, the grab (the item off the belt
-// into its hand), the carry-away — at near and mid zoom, and from afar as small moving lights; the
-// Logistique view's night marks; a stretch of the line fenced in, with one prowling outside; the
-// late base's glazed lines by day and by night, with one tapping the glass; the first-night card and
+// gleaner-shots.mjs — the Gleaners (D103, D112) for review, the whole raid by night: on the grown
+// debug base (its quartz line home crosses the desert floor), the game paused and stepped tick by
+// tick through a raid the sim really makes — the group out of the dunes, waiting at its posts, an arm
+// out over the line, the grab (the item off the belt into a hand), the group away with what it took —
+// at near and mid zoom, and from afar as small moving lights; the Logistique view's night marks; a
+// stretch of the line fenced in, with two pacing outside; the late base's glazed lines by day and by
+// night, a few tapping the glass; the first-night card and
 // the morning report in French and English; a ribbon's inspector: scripts/shot-gleaners-*.png
 // (gitignored). Usage: a server (default :5183; URL=… for another), then `node scripts/gleaner-shots.mjs`.
 import { chromium } from 'playwright-core';
@@ -51,60 +52,75 @@ await hideUi();
 await view('iso');
 await page.evaluate(() => { window.FL.pause(); window.FL.dayPhase(null); window.FL.gleaners({ toNight: 2 }); window.FL.tick(400); });
 
-// A try that takes something, stepped through: out of the dunes, up to the line, the grab, the carry-away.
-let caught = null;
-for (let attempt = 0; attempt < 30 && !caught; attempt++) {
-  const g = await page.evaluate(() => window.FL.gleaners());
-  const next = g.next.find((t) => t.tick - g.tick > 110);
-  if (!next) { await tick(200); continue; }
-  const t0 = next.tick;
-  await tick(t0 - 100 - (await now()));
-  await look([next.x, next.y], 1.7);
-  await settle(700);
-  await snap('shot-gleaners-seq-1-out.png');
-  await tick(t0 - 45 - (await now()));
-  await settle(300);
-  await snap('shot-gleaners-seq-2-up.png');
-  await tick(t0 - (await now()));
-  await settle(300);
-  await snap('shot-gleaners-seq-3-reach.png');
-  await tick(1); // the try itself
-  const took = await page.evaluate(([x, y, t]) => { const r = window.FL.app.sim.gleaners.recent; for (let i = 0; i + 2 < r.length; i += 3) if (r[i] === y * 1024 + x && r[i + 2] === t) return window.FL.app.sim.gleaners.recent[i + 1]; return null; }, [next.x, next.y, t0]);
-  console.log(`try at ${t0} on ${next.x},${next.y}: ${took === null ? 'nothing taken' : `took item ${took}`}`);
-  if (took === null) continue;
-  caught = { ...next, item: took };
-  await tick(t0 + 4 - (await now()));
-  await settle(300);
-  await snap('shot-gleaners-seq-4-grab.png');
-  await tick(t0 + 30 - (await now()));
-  await settle(300);
-  await snap('shot-gleaners-seq-5-carry.png');
-  await look([next.x, next.y], 0.85);
-  await settle(500);
-  await snap('shot-gleaners-seq-5-carry-mid.png');
-  await look([next.x, next.y], 0.35);
-  await settle(500);
-  await snap('shot-gleaners-seq-5-carry-far.png');
-  await look([next.x, next.y], 1.7);
-  await tick(t0 + 65 - (await now()));
-  await settle(300);
-  await snap('shot-gleaners-seq-6-away.png');
-}
-if (!caught) console.log('✗ no theft caught in 30 tries');
-// The same act at mid zoom: the next try, its approach and (if it takes) its carry.
-{
-  const g = await page.evaluate(() => window.FL.gleaners());
-  const next = g.next.find((t) => t.tick - g.tick > 110);
-  if (next) {
-    await look([next.x, next.y], 0.85);
-    await tick(next.tick - 40 - (await now()));
-    await settle(600);
-    await snap('shot-gleaners-mid-approach.png');
-    await tick(next.tick + 25 - (await now()));
-    await settle(300);
-    await snap('shot-gleaners-mid-after.png');
+// A raid stepped through (D112), shot at near (1.7) and mid (0.85) zoom at each stop: the group
+// gliding in out of the dunes, waiting at its posts, an arm out over the line, the grab (the item
+// off the belt into a hand, at the tick the sim took it), carrying, and the group going away.
+const both = async (name, at, ms = 300) => {
+  await look(at, 1.7); await settle(ms); await snap(`shot-gleaners-seq-${name}.png`);
+  await look(at, 0.85); await settle(ms); await snap(`shot-gleaners-seq-${name}-mid.png`);
+};
+let caught = null, reached = false;
+for (let attempt = 0; attempt < 10 && !caught; attempt++) {
+  // A raid ahead that falls in the night from its arrival to its end, a band of three or more if there is one.
+  const raid = await page.evaluate(() => {
+    const g = window.FL.gleaners(), sim = window.FL.app.sim;
+    const ok = g.raids.filter((r) => r.at - g.tick > 180 && sim.gleanNight(r.at - 200) && sim.gleanNight(r.at + 800));
+    return ok.find((r) => r.posts.length >= 3) ?? ok[0] ?? null;
+  });
+  if (!raid) {
+    await page.evaluate(() => { const s = window.FL.app.sim; if (s.gleanNight()) window.FL.tick(1200); else window.FL.gleaners({ toNight: 0.5 }); });
+    continue;
   }
+  const t0 = raid.at, at = [raid.x, raid.y];
+  console.log(`raid at ${t0} on ${raid.x},${raid.y}: ${raid.posts.length} posts`);
+  await tick(t0 - 120 - (await now()));
+  await both('1-arrive', at, 700);
+  await tick(t0 - 30 - (await now()));
+  await both('2-gather', at);
+  await tick(t0 + 8 - (await now()));
+  await both('3-wait', at);
+  // On tick by tick to the first take on this raid's posts.
+  const keys = raid.posts.map(([x, y]) => y * 1024 + x);
+  let take = null;
+  for (let k = 0; k < 600 && !take; k += 1) {
+    await tick(1);
+    take = await page.evaluate(([ks, from]) => { const r = window.FL.app.sim.gleaners.recent; for (let i = 0; i + 2 < r.length; i += 3) if (ks.includes(r[i]) && r[i + 2] >= from) return [r[i], r[i + 1], r[i + 2]]; return null; }, [keys, t0]);
+    if (!take && k % 5 === 0) {
+      const f = await page.evaluate(() => window.FL.gleaners());
+      if (f.reaching > 0 && !reached) { await look(at, 1.7); await settle(250); await snap('shot-gleaners-seq-4-reach.png'); reached = true; }
+    }
+  }
+  if (!take) { console.log('  no take this raid'); continue; }
+  const [tile, item, T] = take;
+  const tx = tile & 1023, ty = tile >> 10;
+  console.log(`  took item ${item} at ${T} on ${tx},${ty}`);
+  caught = { x: tx, y: ty, item, T };
+  // The grab: the belt's token gone, the item riding the arm back into the hand.
+  await tick(T + 2 - (await now()));
+  await both('5-grab', [tx, ty], 250);
+  await tick(T + 7 - (await now()));
+  await both('6-grab', [tx, ty], 250);
+  await tick(T + 20 - (await now()));
+  await both('7-holding', at, 250);
+  // On to the band leaving: 40 ticks after every post has taken (the view's LINGER), or at the raid's end (600).
+  const leaveAt = () => page.evaluate(([ks, from]) => {
+    const r = window.FL.app.sim.gleaners.recent, got = new Map();
+    for (let i = 0; i + 2 < r.length; i += 3) if (ks.includes(r[i]) && r[i + 2] >= from && r[i + 2] < from + 600) got.set(r[i], r[i + 2]);
+    return got.size === ks.length ? Math.max(...got.values()) + 40 : null;
+  }, [keys, t0]);
+  let leave = await leaveAt();
+  while (!leave && (await now()) < t0 + 600) { await tick(10); leave = await leaveAt(); }
+  leave ??= t0 + 600;
+  console.log(`  leaving at ${leave} (${leave - t0} into the raid)`);
+  await tick(leave - (await now()));
+  await tick(25);
+  await both('8-leave', at, 300);
+  await tick(75);
+  await both('9-away', at, 300);
+  await look(at, 0.35); await settle(400); await snap('shot-gleaners-seq-9-away-far.png');
 }
+if (!caught) console.log('✗ no take caught');
+if (process.env.ONLY === 'raid') { await browser.close(); process.exit(0); } // the raid alone, for quick looks
 
 // The Logistique view: the night's marks.
 const at = caught ? [caught.x, caught.y] : (await page.evaluate(() => window.FL.gleaners().exposedTiles[0]));
@@ -198,8 +214,8 @@ for (let k = 0; k < 300 && !tap; k++) {
   const p = await page.evaluate(() => window.FL.app.gleaners.tapAt_);
   if (p && p[2] < 50) tap = p;
 }
-// On to its first tap (70 ticks into its visit), the glint on the glass.
-if (tap) { await tick(Math.round(71 - tap[2])); await look(tap, 1.7); }
+// On to the first tap (75 ticks into the visit), the glint on the glass.
+if (tap) { await tick(Math.round(76 - tap[2])); await look(tap, 1.7); }
 await settle(800);
 console.log('figures by the glass', tap);
 await snap('shot-gleaners-glazed-night.png');

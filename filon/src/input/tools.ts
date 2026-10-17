@@ -10,15 +10,18 @@
 // then the ghost is a transparent placeholder of that plan; one laid in part says how many tiles
 // it left out and why. The preview tells the ghost what would happen — what it replaces, what it
 // costs net — and why not.
-import { BUILDING_IDS, BUILDING_KIND, buildingIdx, costOf, isDragDef } from '@/content/registry';
+import { BUILDING_IDS, BUILDING_KIND, buildingDef, buildingIdx, costOf, isDragDef } from '@/content/registry';
 import { footprint, forTiles } from '@/sim/entities';
 import { oreSnap } from '@/sim/ore-blocks';
+import { landReason } from '@/sim/systems/belt-plan';
 import type { PlaceCheck, PlaceReason, Sim } from '@/sim/state';
 import { isRock, T, type Rot } from '@/sim/types';
 import { beltPath } from './belt-path';
 
 /** The bridge end a drag lays in pairs over its obstacles (D73). */
 const BRIDGE_ID = BUILDING_IDS[BUILDING_KIND.indexOf('bridge')] ?? '';
+/** The camouflaged ribbon a drag buries where the land refuses the dragged one (D109). */
+const CAMO_ID = BUILDING_IDS.find((_, i) => !!buildingDef(i).camo) ?? '';
 
 export type ToolState =
   /** `turned`: R pressed since this building was taken in hand: its rotation is the player's, over a ribbon too (D98). */
@@ -51,6 +54,11 @@ export interface Preview {
   drag?: boolean;
   /** The drag's bridge pairs, start and end tiles [x0, y0, x1, y1]: what they leap over stays as it is. */
   leaps?: Array<[number, number, number, number]>;
+  /**
+   * Camouflaged pieces off the claim's land (D109): how many, and the land they are buried in — a
+   * neighbouring base's (`neighbour_land`) when any is, else free land (`outside_zone`). The tip says it.
+   */
+  buried?: { n: number; land: PlaceReason };
 }
 
 export interface ToolResult {
@@ -300,6 +308,16 @@ export class Tools {
         } else if (st.def === s.def) out.pieces.push({ def: s.def, x: st.x, y: st.y, rot: st.rot, ok: true, reason: 'ok' });
       }
     }
+    // Buried pieces off the claim's land (D109): the tip names the land and their count.
+    let n = 0, land: PlaceReason | null = null;
+    for (const p of out.pieces) {
+      if (p.def !== CAMO_ID) continue;
+      const why = landReason(sim, p.x, p.y);
+      if (!why) continue;
+      n++;
+      if (land !== 'neighbour_land') land = why;
+    }
+    if (n && land) out.buried = { n, land };
     // Only what is actually spent (a downgrade gives more back than it costs).
     for (const [item, mu] of out.cost) if (mu <= 0) out.cost.delete(item);
     return out;

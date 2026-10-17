@@ -29,7 +29,7 @@ export interface EventSink {
   toasts: Toasts;
   /** Set by handlers: the building / item views must rebuild after the drain. */
   structure: boolean;
-  /** The world's sister colonies (Gazette lines name them), and the epoch now. */
+  /** The world's other claims (colonies) (Gazette lines name them), and the epoch now. */
   colonies(): readonly ColonyView[];
   epoch: number;
   /** A trade post lifted cargo (the shell launches the drone for a sale and feeds the orbital view). */

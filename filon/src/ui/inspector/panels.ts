@@ -8,7 +8,7 @@
 import type { BuildingKind } from '@/content/types';
 import { hearthHero, hearthPanel, landscapeHero, landscapePanel } from './colony';
 import type { Panel, PanelCtx } from './kit';
-import { dockPanel, forkPanel, outletsPanel, ribbonPanel, storeHero, storePanel } from './logistics';
+import { forkPanel, ribbonPanel, storeHero } from './logistics';
 import { producerHero } from './power';
 import { drillHero, drillPanel, generatorHero, generatorPanel, labHero, labPanel, machineHero, machinePanel, serverHero, serverPanel } from './production';
 import { tradeHero, tradePanel } from './trade';
@@ -44,8 +44,7 @@ export const PANELS: Partial<Record<BuildingKind, readonly Panel[]>> = {
   conduit: [ribbonPanel],
   fork: [forkPanel],
   hearth: [hearthPanel], // no outlets to set: the Heart takes, it never gives (but its data outlet, D68)
-  storage: [storePanel], // a silo's one item is its hero; nothing more
-  dock: [storePanel, outletsPanel, dockPanel],
+  // storage: none — a silo's one item is its hero (`storeHero`), nothing more.
   excavator: [landscapePanel],
   backfiller: [landscapePanel],
   trade: [tradePanel], // no outlets: its one exit hands out everything it bought, in turn (D62)

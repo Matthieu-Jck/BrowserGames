@@ -7,7 +7,7 @@
 // the painted relief are drawn at, so it meets the rock top at any zoom: no floating, no sinking) —
 // the highest under its footprint: 0 on the floor, which is where everything stands but the
 // buildings that may stand on the mountains (content `onRock`: the wind turbine, the pole, the
-// pylon, the survey beacon). A level shows as `level·LH` px up in iso, as a shift of `level·SHIFT`
+// pylon…). A level shows as `level·LH` px up in iso, as a shift of `level·SHIFT`
 // tiles along −x −y on a ground plane, and as nothing in plan.
 //
 // Ribbons and conduits have no stand: each piece lies on its own tile's top (`tileTop`). On the

@@ -1,9 +1,9 @@
 // research.ts — the one unlock tree (D33): everything the base uses beyond its starting kit
 // (drill, ribbon, pole and the Link tool) is unlocked here, in two kinds of node.
 //   · PLANS: instant unlocks paid with materials from the Heart, Mindustry-style — no lab, no
-//     time. Cheap near the root (the starting stock affords every root plan), dearer deeper; six
-//     paths of one theme each (D41: production, logistics, energy, analytics, trade, survey —
-//     `PLAN_PATHS`), each growing from one entry. Unlocking one is the `unlockPlan` command
+//     time. Cheap near the root (the starting stock affords every root plan), dearer deeper; five
+//     paths of one theme each (D41: production, logistics, energy, analytics, trade — `PLAN_PATHS`;
+//     the survey path went with the survey beacon, D117), each growing from one entry. Unlocking one is the `unlockPlan` command
 //     (src/sim/systems/research.ts).
 //   · RESEARCH (D69): the tree's advanced part, run by research labs over a minimum time and paid
 //     as it runs in data (items, by ribbon: `SCIENCE`, one more kind each tier) and AI tokens (D68: bought by the minute, the
@@ -77,7 +77,8 @@ export const FAMILY_IDS: readonly FamilyId[] = ['en', 'ex', 'dn', 'cm', 'an', 'x
  * A family's names (D69): one per tier for its shared lineage (Tiers 1–2, and 3–4 when it does not
  * split), and its specialities from Tier 3 on, by key. Each family carries on a plan path's theme
  * (D107): production → Machines, logistics → Logistics, energy → Energy, analytics → Analytics,
- * trade → Commerce, survey → Extraction; the same name on both sides is the same theme, deeper.
+ * trade → Commerce (Extraction carried on the survey path's, gone with the survey beacon, D117); the
+ * same name on both sides is the same theme, deeper.
  */
 export interface FamilyDef {
   readonly name: Loc;
@@ -139,10 +140,10 @@ export const RESEARCH = {
   // Tier 1 completed whole (D93): every other Tier 1 node; the Core's level 3, its Archive, where two expertises open Tier 2.
   tr_synth: trunk(2, 1, ['tr1', 'en_pitch', 'en2', 'ex_fastdrill', 'dn3', 'dn_esmelt', 'dn_wiremill', 'cm_post2', 'cm_floor', 'an_data', 'an_relay', 'xp_swift', 'xp_bigsilo', 'xp_guard'], 20, 30_000, 3, ['Synthèse', 'Synthesis'], ['Le Tier 1 en entier\u00a0: Cœur niveau 3 et son Archive des expertises. Deux expertises choisies ouvrent le Tier 2.', 'All of Tier 1: Core level 3 and its Expertise Archive. Two expertises chosen open Tier 2.']),
   tr2: trunk(2, 2, ['tr_synth'], 60, 15_000, 8, ['Terrassement', 'Earthworks'], ['Excavatrice : creuser le grès et le basalte (H1–H2).', 'Excavator: dig sandstone and basalt (H1–H2).']),
-  tr3: trunk(3, 2, ['tr_synth'], 90, 60_000, 8, ['Céramique', 'Ceramics'], ['Four à céramique, pompes et conduits ; atelier d’assemblage, batteries vides, accumulateurs.', 'Ceramic oven, pumps and conduits; assembly workshop, empty batteries, accumulators.']),
+  tr3: trunk(3, 2, ['tr_synth'], 90, 60_000, 8, ['Céramique', 'Ceramics'], ['Four à céramique (l’eau de la Vapeur et la pierre de l’excavatrice) ; atelier d’assemblage, batteries vides, accumulateurs.', 'Ceramic oven (Steam Power’s water and the excavator’s stone); assembly workshop, empty batteries, accumulators.']),
   tr4: trunk(4, 2, ['tr3'], 180, 120_000, 20, ['Cadastre', 'Land Registry'], ['Baux de parcelles, pylônes.', 'Parcel leases, pylons.'], [flag('lease')]),
   tr5: trunk(5, 2, ['tr4'], 240, 200_000, 20, ['Deuxième pupitre', 'Second Desk'], ['Un deuxième emplacement de recherche.', 'A second research slot.'], [{ k: 'slots', add: 1 }]),
-  tr6: trunk(6, 2, ['tr4'], 480, 400_000, 30, ['Cartographie', 'Atlas Lore'], ['Atelier d’optique, Scriptorium, Embarcadère ; lentilles, toiles, cœurs thermiques, atlas ; Cœur niveau 4. Ouvre le Tier 3.', 'Optics workshop, Scriptorium, Skydock; lenses, canvas, thermal cores, atlases; Core level 4. Opens Tier 3.']),
+  tr6: trunk(6, 2, ['tr4'], 480, 400_000, 30, ['Cartographie', 'Atlas Lore'], ['Atelier d’optique, Scriptorium ; lentilles, toiles, cœurs thermiques, atlas ; Cœur niveau 4. Ouvre le Tier 3.', 'Optics workshop, Scriptorium; lenses, canvas, thermal cores, atlases; Core level 4. Opens Tier 3.']),
   tr7: trunk(7, 3, ['tr6'], 1920, 800_000, 180, ['Troisième pupitre', 'Third Desk'], ['Un troisième emplacement de recherche.', 'A third research slot.'], [{ k: 'slots', add: 1 }]),
   tr8: trunk(8, 3, ['tr6'], 2880, 1_500_000, 360, ['Codex', 'Codex Lore'], ['Codex, résonateurs, treillis de nacre. Ouvre le Tier 4.', 'Codex, resonators, nacre lattices. Opens Tier 4.']),
 
@@ -224,14 +225,17 @@ export const RESEARCH = {
   xp_bigsilo: node('xp', undefined, 2, 'xp_swift', ['Grand silo', 'Great Silo'], ['Débloque le Grand silo : 5 000 objets.', 'Unlocks the Great Silo: 5,000 items.']),
   // The Gleaners (D103): the fence they do not cross and the ribbon under glass, by the time a line runs out past the Crown (the quartz, D87); the third of the lineage's Tier 1 (a lane holds one node a column).
   xp_guard: node('xp', undefined, 2, 'xp_bigsilo', ['Grilles et rubans vitrés', 'Fences and Glazed Ribbons'], ['Débloque la Grille, que les Glaneurs ne franchissent pas, et le Ruban vitré, dont ils ne prennent rien.', 'Unlocks the Fence, which the Gleaners do not cross, and the Glazed Ribbon, from which they take nothing.']),
-  xp_bridges: node('xp', undefined, 3, 'xp_guard', ['Passerelles longues', 'Long Bridges'], ['Les passerelles portent à 8 tuiles.', 'Bridges reach 8 tiles.'], [add('bridgeSpan', 4)]),
+  // The camouflaged ribbon (D109): Reach opens on the ribbon that runs across land the claim does not
+  // hold — a neighbouring base's too (D110) — buried, for its pace; Neighbour Treaties later opens that land to every ribbon and the poles.
+  xp_camo: node('xp', undefined, 3, 'xp_guard', ['Ruban camouflé', 'Camouflaged Ribbon'], ['Débloque le Ruban camouflé (40/min)\u00a0: enfoui sous le sable, il passe sur les terres des bases voisines, sans surcoût hors de tes terres, et les Glaneurs ne le voient pas.', 'Unlocks the Camouflaged Ribbon (40/min): buried under the sand, it runs across the neighbouring bases’ land, with no surcharge off your land, and the Gleaners do not see it.']),
+  xp_bridges: node('xp', undefined, 3, 'xp_camo', ['Passerelles longues', 'Long Bridges'], ['Les passerelles portent à 8 tuiles.', 'Bridges reach 8 tiles.'], [add('bridgeSpan', 4)]),
   // The pylons it reaches farther with are Land Registry's (D107).
   xp4: node('xp', undefined, 4, 'xp_bridges', ['Pylônes renforcés', 'Reinforced Pylons'], ['Les pylônes portent à 60 tuiles.', 'Pylons reach 60 tiles.'], [add('pylonLink', 20)], ['tr4']),
   xp_distrib: node('xp', 't', 5, 'xp4', ['Distributeurs', 'Distributors'], ['Débloque le Distributeur (routeur 2×2).', 'Unlocks the Distributor (a 2×2 router).']),
   xp_express: node('xp', 't', 6, 'xp_distrib', ['Ruban express', 'Express Ribbon'], ['Débloque le Ruban express (240/min).', 'Unlocks the Express Ribbon (240/min).']),
-  xp_bigdock: node('xp', 't', 9, 'xp_express', ['Grand embarcadère', 'Great Skydock'], ['Débloque le Grand embarcadère : 8 Dérivants, deux fois plus de fret.', 'Unlocks the Great Skydock: 8 Drifters, twice the freight.']),
+  // Its keystone, the Great Skydock (`xp_bigdock`), went with the skydocks (D108, content/retired.ts): Transport ends on the Express Ribbon.
   xp_resell: node('xp', 'c', 5, 'xp4', ['Revente de parcelles', 'Parcel Resale'], ['Revendre une parcelle achetée, à 80 % de son prix.', 'Sell a bought parcel back, at 80% of its price.'], [flag('landResale')]),
-  xp_treaties: node('xp', 'c', 6, 'xp_resell', ['Traités de voisinage', 'Neighbour Treaties'], ['Tes rubans et poteaux traversent les parcelles des concessions sœurs.', 'Your ribbons and poles cross the sister claims’ parcels.'], [flag('sisterCrossing')]),
+  xp_treaties: node('xp', 'c', 6, 'xp_resell', ['Traités de voisinage', 'Neighbour Treaties'], ['Tous tes rubans, pas seulement le camouflé, et tes poteaux traversent les terres des bases voisines, entre leurs bâtiments.', 'All your ribbons, not just the camouflaged one, and your poles cross the neighbouring bases’ land, between their buildings.'], [flag('neighbourCrossing')]),
   xp_far: node('xp', 'c', 9, 'xp_treaties', ['Concession lointaine', 'Far Claim'], ['Acheter une parcelle qui ne touche pas tes terres.', 'Buy a parcel that does not touch your land.'], [flag('farClaims')]),
 } as const satisfies Record<string, ResearchDef>;
 
@@ -254,6 +258,21 @@ const PATH_PLANS = {
   wire_mill: plan('production', ['kiln'], [['iron_plate', 15]]),
   // Circuits are copper wire and glass (D107): the workshop after the wire mill and the sand collector.
   workshop: plan('production', ['sand_collector', 'wire_mill'], [['iron_plate', 15], ['glass', 2]]),
+  // The Face Cutter (D87): a plan since D101 (owner, 2026-10-17: « le face cutter devrait être
+  // beaucoup plus rapide à obtenir »), taken with the others before the lab — the quartz a parcel
+  // away is cut as soon as the parcel is bought. Its id kept from the research node it was: saves
+  // that learnt it hold it still. It brings the Face Cutter, the Quartz Workshop and its oscillator
+  // (quartz and copper wire: after the wire mill). Its quartz is a cliff face's: maps 1–2 have no vein
+  // and buy it at the Crier, so the trade post comes first (D107: nothing unlocked that cannot be
+  // used). On the Production path since the Survey path went with the survey beacon (D117; owner,
+  // 2026-10-17: « le face cutter va dans production »).
+  ex_quartz: plan('production', ['wire_mill', 'trade_post'], [['iron_plate', 20], ['glass', 6], ['copper_wire', 6]], {
+    name: { fr: 'Haveuse', en: 'Face Cutter' },
+    desc: {
+      fr: 'La Haveuse, qui taille le quartz d’une paroi depuis son pied, et l’Atelier de quartz\u00a0: ses oscillateurs.',
+      en: 'The Face Cutter, which cuts quartz out of a cliff face from its foot, and the Quartz Workshop: its oscillators.',
+    },
+  }),
 
   // ── logistics: moving and sorting goods, the routing vocabulary (D20), from the router out.
   // Cheap (owner, 2026-10-12: "most of the logistics is too expensive"): a few plates, the
@@ -267,13 +286,23 @@ const PATH_PLANS = {
   bridge: plan('logistics', ['junction'], [['iron_plate', 6], ['copper_wire', 2]]),
   inverted_sorter: plan('logistics', ['sorter'], [['iron_plate', 6], ['copper_wire', 2]]),
   overflow_gate: plan('logistics', ['sorter'], [['iron_plate', 6], ['copper_wire', 2]]),
-  // Unloaders pull from stores (silos…), never from the Heart: they come after the silo.
-  unloader: plan('logistics', ['silo'], [['iron_plate', 6], ['copper_wire', 2]]),
+  // The unloader, after the silo, is retired (D117; owner, 2026-10-17: « le "Unloader" n'est plus
+  // nécessaire »): a silo's outputs empty it by themselves. Its plan, held, is dropped (save v17).
   underflow_gate: plan('logistics', ['overflow_gate'], [['iron_plate', 6], ['copper_wire', 2]]),
 
   // ── energy ────────────────────────────────────────────────────────────────
   wind_flower: plan('energy', [], [['iron_plate', 10]]),
   brazier: plan('energy', ['wind_flower'], [['iron_plate', 15], ['copper_wire', 2]]),
+  // Water's first use, in Tier 1 (D114; owner, 2026-10-17: « Il faudrait que l'eau serve assez tôt
+  // dans le jeu, dès le Tier 1 »): the steam boiler, and the pump and conduit that bring it water
+  // (they were Ceramics', Tier 2). After the coal generator: the same coal, two and a half times the power.
+  steam: plan('energy', ['brazier'], [['iron_plate', 20], ['glass', 4], ['copper_wire', 2]], {
+    name: { fr: 'Vapeur', en: 'Steam Power' },
+    desc: {
+      fr: 'La Chaudière à vapeur, et ce qui lui porte son eau\u00a0: la Pompe à eau et le Conduit.',
+      en: 'The Steam Boiler, and what brings it its water: the Water Pump and the Conduit.',
+    },
+  }),
 
   // ── analytics (D41): what the base shows you, one readout per step. Each turns on its own
   // flag, named after it (`ANALYTICS` below); the UI reads them through src/ui/analytics.ts.
@@ -323,22 +352,6 @@ const PATH_PLANS = {
 
   // ── trade: the Crier's door. Its entry hangs from the telemetry (know your rates, then sell).
   trade_post: plan('trade', ['telemetry'], [['iron_plate', 20]]),
-
-  // ── survey: the land around the base ───────────────────────────────────────
-  beacon: plan('survey', [], [['iron_plate', 8], ['glass', 2]]),
-  // The Face Cutter (D87): a plan since D101 (owner, 2026-10-17: « le face cutter devrait être
-  // beaucoup plus rapide à obtenir »), taken with the others before the lab — the quartz a parcel
-  // away is cut as soon as the parcel is bought. Its id kept from the research node it was: saves
-  // that learnt it hold it still. It brings the Face Cutter, the Quartz Workshop and its oscillator.
-  // Its quartz is a cliff face's: maps 1–2 have no vein and buy it at the Crier, so the trade post
-  // comes first (D107: nothing unlocked that cannot be used).
-  ex_quartz: plan('survey', ['beacon', 'trade_post'], [['iron_plate', 20], ['glass', 6], ['copper_wire', 6]], {
-    name: { fr: 'Haveuse', en: 'Face Cutter' },
-    desc: {
-      fr: 'La Haveuse, qui taille le quartz d’une paroi depuis son pied, et l’Atelier de quartz : ses oscillateurs.',
-      en: 'The Face Cutter, which cuts quartz out of a cliff face from its foot, and the Quartz Workshop: its oscillators.',
-    },
-  }),
 } as const satisfies Record<string, PlanDef>;
 
 /**
@@ -384,8 +397,12 @@ export function nodeName(id: string): Loc {
 // path's: the trade post from the telemetry) and every other plan of it hangs from a plan of
 // the same path.
 
-/** The plan paths, top to bottom on the tree: making things first, then knowing, selling, reaching. */
-export const PLAN_PATHS: readonly PlanLane[] = ['production', 'logistics', 'energy', 'analytics', 'trade', 'survey'];
+/**
+ * The plan paths, top to bottom on the tree: making things first, then knowing and selling. The
+ * survey path (the survey beacon, then the Face Cutter) went with the beacon (D117): the fog lifts as
+ * the claim grows, and the Face Cutter makes things.
+ */
+export const PLAN_PATHS: readonly PlanLane[] = ['production', 'logistics', 'energy', 'analytics', 'trade'];
 
 /**
  * Analytics (D41): the flag each analytics plan turns on — its own id —, by the readout it gates.

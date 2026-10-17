@@ -6,8 +6,9 @@
 // bridge), drawn top-down in tile units, flat on the ground in either view; a straight piece
 // fed from a side opens its rail there (an inlet). A piece on rock lies on its column's top in
 // iso, among the volumes (`layBelt`; world/stand.ts `beltZ`), and flat in plan; a traction ribbon
-// that hands on a terrace up or down gets its lift against the wall between (traction-lifts.ts). A skybridge's deck spans the gap to its far
-// end, lifted above the ground in iso. Sorters and unloaders show their chosen item.
+// that hands on a terrace up or down gets its lift against the wall between (traction-lifts.ts), a
+// conduit pouring a terrace down its downpipe (D114, the same file). A skybridge's deck spans the
+// gap to its far end, lifted above the ground in iso. Sorters show their chosen item.
 //
 // Updated on structural changes, entity by entity (D92): each entity keeps its sprites with what
 // they were drawn from (`sigOf`: its kind, place, turn, stand, piece, lift, look…), and a change
@@ -52,6 +53,13 @@
 // greyed. The unlit pictures are baked the first time one is needed (a DynAtlas of their own, a
 // few ms a frame at most; until then a grey tint stands in), then a look that flips is a texture
 // swap on its sprites — `WorkLook` reports the flips, sampled once per game tick.
+//
+// The neighbouring bases (D110, sim/world/neighbours.ts; laid by world/neighbours-view.ts as they
+// come near the view): their buildings with the same art as the claim's, tinted a little towards
+// their emblem's colour, their ribbons as laid (bends from the line's own turns), their flag waving
+// by their lift pad. Kept apart from the claim's records (`foreign`): a rebuild leaves them be,
+// another colony drops them (`foreignEpoch`). Their moving parts turn steadily, the turbines with
+// the open desert's wind: they always work.
 import { Container, Matrix, Sprite, type Texture } from 'pixi.js';
 import { BUILDING_IDS, BUILDING_KIND, ITEM_IDS, buildingDef } from '@/content/registry';
 import type { BuildingId } from '@/content/buildings';
@@ -62,7 +70,7 @@ import { footprint } from '@/sim/entities';
 import { tileIndex } from '@/sim/world/grid';
 import { TPS, WORLD } from '@/sim/constants';
 import { turbineWind, weatherAt, type Producer } from '@/sim/power/network';
-import { bKey, bodyKey, btKey, beltKey, iKey, inletKey, partKey, type Atlas } from '../art/atlas';
+import { CAMO_VENT_KEY, bKey, bodyKey, btKey, beltKey, iKey, inletKey, partKey, type Atlas } from '../art/atlas';
 import { DynAtlas, type DynFrame } from '../art/dyn-atlas';
 import { BELT_PX, BELT_TIERS, type BeltTier } from '../art/recipes/belts';
 import { SKY, artLevelOf, drawBuildingShadow, isoHead, shadowFrameOf, type SkyPiece } from '../art/recipes/buildings';
@@ -79,15 +87,18 @@ import { OFF_TINT, WorkLook, looksAtWork } from './work-look';
 import { ISO_K, PLAN_K, skyFrames } from './sky-decks';
 import { PLAN_Z, beltZ, buildingZ, computeStands, liftOf, liftZ, riseOffset, standOf, standZ, type Stand } from './stand';
 import { PIT_ISO_K, PIT_PLAN_K, PIT_Z, flameFrames, flameLevel, flicker, pitFire, pitFrames, planFlameFrame } from './pits';
-import { LIFT_ISO_K, LIFT_PLAN_K, liftFrames, liftOfBelt, type Lift } from './traction-lifts';
+import { LIFT_ISO_K, LIFT_PLAN_K, fallFrames, fallOfConduit, liftFrames, liftOfBelt, type Fall, type Lift } from './traction-lifts';
 import { FLAG, FLAG_K, flagFrames, type FlagFrames } from './heart-flag';
-import { defaultEmblem, emblemKey } from '@/content/emblem';
+import { defaultEmblem, emblemKey, type Emblem } from '@/content/emblem';
 
 /** The shadows' colour: ink with a little lilac (Moebius shadows are cool on the warm sand); also the plan's hint of height. */
 export const SHADOW_TINT = num(mix(C.ink, C.lilacD, 0.3));
 
 /** A skybridge deck's height above its ends' ground (iso world px): the art's running surface (`SKY.deck`), which items ride. */
 export const DECK_Z = SKY.deck * LH;
+
+/** One buried tile in five wears a vent (D109): a fixed hash of the tile, not of the frame. */
+const camoVent = (x: number, y: number): boolean => ((Math.imul(x, 0x45d9f3b) ^ Math.imul(y, 0x2c1b3c6d)) >>> 0) % 5 === 0;
 
 const tierOf = (def: number): BeltTier | null => {
   const id = BUILDING_IDS[def]!;
@@ -99,6 +110,10 @@ export { buildingZ } from './stand';
 
 /** Plan: how dark the hint of height is under a building standing above the floor (its offset: `riseOffset`). */
 const RISE_ALPHA = 0.3;
+
+/** A neighbouring base's turbines see the open desert's wind (D110: no wind map of theirs), its machines turn this fast (turns a second). */
+const OPEN_DESERT: readonly [number, number, number] = [1000, 1000, 1000];
+const FOREIGN_TURNS = 0.5;
 
 /** Dormant (its unlock given up, its land lost): a grey wash, like an unpainted model. */
 const DORMANT_TINT = 0x9b97a8;
@@ -211,6 +226,8 @@ interface Spinner {
   /** Off screen (culled): it turns on, its sprites wait. */
   culled: boolean;
   sprites: Array<{ s: Sprite; tex: Texture[] }>;
+  /** A neighbouring base's (D110): it always works. */
+  foreign?: boolean;
 }
 
 /** A cast shadow: its sprite, where it was laid (iso world px) and its building's foot, the stretch's centre. */
@@ -308,6 +325,10 @@ export class BuildingsView {
   private range: [number, number, number, number] | null = null;
   /** Sprites laid and removed by the last update (perf, tests). */
   lastUpdate = { laid: 0, removed: 0, entities: 0 };
+  /** The neighbouring bases laid (D110), by key (their hub parcel), and their flags; bumped when they are all dropped (another colony). */
+  private readonly foreign = new Map<number, Rec[]>();
+  private foreignFlags: Array<{ s: Sprite; frames: FlagFrames; k: number }> = [];
+  foreignEpoch = 0;
 
   constructor(
     beltLayer: Container,
@@ -331,7 +352,7 @@ export class BuildingsView {
    * colony (a debug base swapped in, an import) starts from nothing.
    */
   rebuild(sim: Sim): void {
-    if (sim !== this.of) { this.clear(); this.of = sim; }
+    if (sim !== this.of) { this.clear(true); this.of = sim; }
     sim.ensureCompiled(); // the ribbons' bends come from the graph
     this.work.rebuild(sim);
     this.heartLv = sim.hearthLevel; // the Heart's look (D86): a new level comes with a structure event, so a rebuild
@@ -389,8 +410,9 @@ export class BuildingsView {
 
   /** Throw every sprite away and draw the colony from scratch (what `rebuild` must match: the shots' check, tests). */
   rebuildAll(sim: Sim): void {
-    this.clear();
-    this.of = null;
+    // The neighbouring bases stay (D110): laid once, they never depend on the claim's entities.
+    this.clear(sim !== this.of);
+    this.of = sim;
     this.rebuild(sim);
   }
 
@@ -402,7 +424,7 @@ export class BuildingsView {
   /**
    * What an entity's sprites are drawn from: if any of it changes, the entity is re-drawn. A
    * building: its kind, place and turn, built or not, dormant or not, where it stands, the look it
-   * wears (the Heart's level), the item it shows (sorters, unloaders). A ribbon: its kind, place,
+   * wears (the Heart's level), the item it shows (sorters). A ribbon: its kind, place,
    * its piece (bend, turn, mirror), its inlets, its tile's height and its elevator.
    */
   private sigOf(sim: Sim, e: Ent, st: Stand | undefined): string {
@@ -410,17 +432,22 @@ export class BuildingsView {
     if (kind === 'belt' || kind === 'conduit') {
       const p = beltPiece(sim, e);
       const fed = p.corner ? 0 : (sim.graph?.feedDirs.get(tileIndex(e.x, e.y)) ?? 0) & ((1 << ((e.rot + 3) & 3)) | (1 << ((e.rot + 1) & 3)));
-      const l = this.liftOf(sim, e);
-      return `r${e.def},${e.x},${e.y},${e.rot},${+p.corner}${p.rot}${+p.mirror},${fed},${tileTop(sim.grid, e.x, e.y)}${l?.shaft ? `,${l.rot}${+l.up},${l.x},${l.y},${l.low}` : ''}`;
+      const l = this.liftOf(sim, e), fl = this.fallOf(sim, e);
+      return `r${e.def},${e.x},${e.y},${e.rot},${+p.corner}${p.rot}${+p.mirror},${fed},${tileTop(sim.grid, e.x, e.y)}${l?.shaft ? `,${l.rot}${+l.up},${l.x},${l.y},${l.low}` : ''}${fl ? `,f${fl.low},${fl.h}` : ''}`;
     }
     const id = BUILDING_IDS[e.def]! as BuildingId;
     const logic = buildingDef(e.def).logic;
-    const item = logic === 'sorter' || logic === 'inverted' || logic === 'unloader' ? filterOf(e.cfg, 0) : -1;
+    const item = logic === 'sorter' || logic === 'inverted' ? filterOf(e.cfg, 0) : -1;
     return `b${e.def},${e.x},${e.y},${e.rot},${+(e.builtAt !== 0)}${+sim.isDormant(e)},${st ? `${st.level},${st.z}` : ''},${artLevelOf(id, this.heartLv)},${item}`;
   }
 
   private liftOf(sim: Sim, e: Ent): Lift | null {
     return liftOfBelt(sim.grid, (x, y) => sim.ents.get(sim.grid.occ[tileIndex(x, y)]!)?.def ?? -1, e);
+  }
+
+  /** A conduit's fall one terrace down (D114, traction-lifts.ts `fallOfConduit`), or null. */
+  private fallOf(sim: Sim, e: Ent): Fall | null {
+    return fallOfConduit(sim.grid, (x, y) => sim.ents.get(sim.grid.occ[tileIndex(x, y)]!)?.def ?? -1, e);
   }
 
   /** The culling square of a tile. */
@@ -437,6 +464,11 @@ export class BuildingsView {
     if (r.look) this.looks.set(r.ent, r.look);
     if (r.pit) this.pits.add(r.pit);
     if (r.car) this.cars.add(r.car);
+    this.joinBucket(r);
+  }
+
+  /** A record into its culling square (culled or shown as the square is). */
+  private joinBucket(r: Rec): void {
     if (r.bucket < 0) return;
     let b = this.buckets.get(r.bucket);
     if (!b) {
@@ -445,7 +477,7 @@ export class BuildingsView {
       this.buckets.set(r.bucket, b);
     }
     b.recs.add(r);
-    if (b.off) this.setCulled(r, true);
+    if (b.off !== r.culled) this.setCulled(r, b.off);
   }
 
   /** Records gone: their sprites taken off their layers (in one pass where many leave one layer) and destroyed, their parts forgotten. The sprites removed. */
@@ -478,16 +510,23 @@ export class BuildingsView {
     return n;
   }
 
-  /** Forget every sprite (another colony, or a full rebuild). */
-  private clear(): void {
+  /** Forget every sprite (another colony, or a full rebuild: the neighbouring bases' only with `foreign`, another colony). */
+  private clear(foreign = true): void {
     const all = [...this.recs.values()];
     if (this.decks) all.push(this.decks);
     if (this.flagRec) all.push(this.flagRec);
+    if (foreign) {
+      for (const rs of this.foreign.values()) all.push(...rs);
+      this.foreign.clear();
+      this.foreignFlags = [];
+      this.foreignEpoch++;
+    }
     this.recs.clear();
     this.decks = null;
     this.flagRec = null;
     this.drop(all); // their moving parts kept by entity (`kept`), as they were before a full rebuild
     this.buckets.clear();
+    if (!foreign) for (const rs of this.foreign.values()) for (const r of rs) this.joinBucket(r);
     this.lookL = -1;
     this.liftAlpha = -1;
   }
@@ -570,13 +609,14 @@ export class BuildingsView {
     const w = weatherAt(sim.absEpoch(), sim.worldSeed, sim.mods);
     for (const sp of this.spinners) {
       let turns = 0;
-      if (sp.still || !this.work.isLit(sp.ent)) turns = 0; // switched off: nothing moves (D83)
+      if (sp.foreign) turns = sp.wind ? windTurns(turbineWind(OPEN_DESERT, w)) : FOREIGN_TURNS; // a neighbouring base always works (D110)
+      else if (sp.still || !this.work.isLit(sp.ent)) turns = 0; // switched off: nothing moves (D83)
       else if (sp.wind) {
         const p = this.windLocal.get(sp.ent);
         turns = p === undefined ? 0 : windTurns(turbineWind(p.local, w), p.curve?.cutIn, p.curve?.cutOut);
       } else {
         const node = g?.nodeByEnt.get(sp.ent);
-        turns = node ? workTurns(node.status, node.net >= 0 ? sim.ctx.sat[node.net] ?? 0 : 0) : 0;
+        turns = node ? workTurns(node.status, node.net >= 0 ? sim.ctx.sat[node.net] ?? 0 : 0, node.kind === 'generator') : 0; // a generator flat out on a short grid (D114)
       }
       sp.rate += (turns * sp.sym * sp.vary - sp.rate) * Math.min(1, step * 1.5);
       sp.phase = (sp.phase + sp.rate * step) % 1;
@@ -921,6 +961,31 @@ export class BuildingsView {
     this.lay(plan, this.planLayer, PLAN_Z.mark);
   }
 
+  /**
+   * A conduit's fall one terrace down (D114): in iso its downpipe against the wall on the low tile,
+   * one sprite on the lift's frame and at the lift's depth (`liftZ`: behind the high column when the
+   * wall faces away, only its hood peeking over); in plan its mark centred on the wall, turned with
+   * the conduit, in the marks' band.
+   */
+  private addFall(sim: Sim, e: Ent): void {
+    const l = this.fallOf(sim, e);
+    if (!l) return;
+    const fr = fallFrames(l.rot, l.h);
+    const ox = Math.min(l.x, l.lowX), oy = Math.min(l.y, l.lowY);
+    const [wx, wy] = tileToIso(ox, oy, l.low);
+    const s = new Sprite(fr.pipe.tex);
+    s.scale.set(LIFT_ISO_K);
+    s.position.set(wx - fr.pipe.ox * LIFT_ISO_K, wy - fr.pipe.oy * LIFT_ISO_K);
+    this.lay(s, this.objectLayer, liftZ(l.lowX, l.lowY));
+    const plan = new Sprite(fr.plan.tex);
+    plan.setFromMatrix(new Matrix()
+      .translate(-fr.plan.ox, -fr.plan.oy)
+      .scale(LIFT_PLAN_K, LIFT_PLAN_K)
+      .rotate((l.rot * Math.PI) / 2)
+      .translate(l.x + 0.5 + DX[l.rot]! * 0.5, l.y + 0.5 + DY[l.rot]! * 0.5));
+    this.lay(plan, this.planLayer, PLAN_Z.mark);
+  }
+
   /** The claim's flag on the Heart (heart-flag.ts): its sprites, the emblem it shows, its wave's frame. */
   private flag: { iso: Sprite; badge: Sprite; key: string; frames: FlagFrames; k: number } | null = null;
 
@@ -961,6 +1026,11 @@ export class BuildingsView {
 
   /** Per frame: the flag's wave (game time: paused, it hangs still); a new emblem re-bakes it. */
   private waveFlag(sim: Sim, seconds: number): void {
+    // The neighbouring bases' flags (D110), on the same wave.
+    if (this.foreignFlags.length) {
+      const n = FLAG.phases, k = ((Math.floor(seconds * FLAG.wavesPerSec * n) % n) + n) % n;
+      if (Number.isFinite(k)) for (const f of this.foreignFlags) if (f.k !== k && !f.s.culled) { f.k = k; f.s.texture = f.frames.iso[k]!.tex; }
+    }
     const fl = this.flagRec ? this.flag : null;
     if (!fl) return;
     const e = sim.emblem ?? defaultEmblem(sim.playerSeed);
@@ -970,6 +1040,61 @@ export class BuildingsView {
     if (k === fl.k || !Number.isFinite(k)) return;
     fl.k = k;
     fl.iso.texture = fl.frames.iso[k]!.tex;
+  }
+
+  /** Is this neighbouring base laid (D110)? */
+  hasForeign(key: number): boolean { return this.foreign.has(key); }
+
+  /**
+   * Lay a neighbouring base (D110): its buildings (ghost entities, ids out of the claim's range, a
+   * tint), its ribbons (x, y, rot per tile in the order items ride: a tile turning from the one before
+   * is a bend) and its flag on the ground at (x, y) in its emblem. Each building and each ribbon is a
+   * record of its own, culled with its bucket.
+   */
+  layForeign(key: number, ents: readonly Ent[], ribbons: readonly Int32Array[], tint: number, flag: { x: number; y: number; emblem: Emblem } | null): void {
+    if (this.foreign.has(key)) return;
+    const recs: Rec[] = [];
+    for (const e of ents) {
+      const r = (this.cur = newRec('', e.id, e.id * 16, this.bucketOf(e.x, e.y)));
+      this.addBuilding(e, false, undefined, tint);
+      this.adopt(r);
+      recs.push(r);
+    }
+    const tex = { s: this.atlas.textures.get(beltKey('ribbon', false)), c: this.atlas.textures.get(beltKey('ribbon', true)) };
+    ribbons.forEach((tl, j) => {
+      if (!tex.s || !tex.c || tl.length < 3) return;
+      const r = (this.cur = newRec('', ents.length ? ents[0]!.id + 40 + j : 0, (ents.length ? ents[0]!.id + 40 + j : 0) * 16, this.bucketOf(tl[0]!, tl[1]!)));
+      for (let i = 0; i < tl.length; i += 3) {
+        const x = tl[i]!, y = tl[i + 1]!, rot = tl[i + 2]! as Rot, enter = (i ? tl[i - 1]! : rot) as Rot;
+        // A bend where the line turns (the buildings view's `beltPiece`, read from the line itself).
+        if (enter !== rot) this.beltSprite(tex.c, x, y, enter, rot === ((enter + 3) & 3), 0);
+        else this.beltSprite(tex.s, x, y, rot, false, 0);
+      }
+      for (const s of r.sprites) s.tint = tint;
+      this.adopt(r);
+      recs.push(r);
+    });
+    if (flag) {
+      const frames = flagFrames(flag.emblem), f0 = frames.iso[0]!;
+      const r = (this.cur = newRec('', ents.length ? ents[0]!.id + 39 : 0, (ents.length ? ents[0]!.id + 39 : 0) * 16, this.bucketOf(flag.x, flag.y)));
+      const [wx, wy] = tileToIso(flag.x + 0.5, flag.y + 0.5, 0);
+      const iso = new Sprite(f0.tex);
+      iso.scale.set(FLAG_K);
+      iso.position.set(wx - f0.ox * FLAG_K, wy - f0.oy * FLAG_K);
+      this.lay(iso, this.objectLayer, buildingZ(flag.x, flag.y, 1, 1));
+      const badge = new Sprite(frames.badge.tex);
+      const k = 0.8 / frames.badge.w;
+      badge.scale.set(k);
+      badge.position.set(flag.x + 0.5 - frames.badge.ox * k, flag.y + 0.5 - frames.badge.oy * k);
+      this.lay(badge, this.planLayer, 0);
+      this.foreignFlags.push({ s: iso, frames, k: 0 });
+      this.adopt(r);
+      recs.push(r);
+    }
+    this.cur = null;
+    this.shadowSheet.flush();
+    this.liftAlpha = -1;
+    this.foreign.set(key, recs);
   }
 
   /** A sprite of an atlas frame anchored at (x, y) (the frame's own anchor), on a layer at depth key `key`. */
@@ -985,12 +1110,12 @@ export class BuildingsView {
   }
 
   /** A building's sprites; `st`: where it stands when above the floor (D44: lifted onto the rock top, sorted by its stand). */
-  private addBuilding(e: Ent, dormant = false, st?: Stand): void {
+  private addBuilding(e: Ent, dormant = false, st?: Stand, foreign?: number): void {
     const id = BUILDING_IDS[e.def]!;
     const pending = e.builtAt !== 0;
     const alpha = pending ? 0.45 : 1;
-    // Dormant (its unlock given up): a grey wash, like an unpainted model.
-    const tint = dormant ? DORMANT_TINT : 0xffffff;
+    // Dormant (its unlock given up): a grey wash, like an unpainted model; a neighbouring base's (D110): its tint.
+    const tint = foreign ?? (dormant ? DORMANT_TINT : 0xffffff);
     const [w, h] = footprint(e.def, e.rot);
     const z = st ? st.z : buildingZ(e.x, e.y, w, h);
     const parts: Spinner['sprites'] = [];
@@ -1003,7 +1128,7 @@ export class BuildingsView {
     const artRot = isoKey === bKey(id, e.rot, lv) ? e.rot : 0;
     const pit = BUILDING_KIND[e.def] === 'sink';
     this.addShadow(e, id as BuildingId, artRot, pending ? 0.35 : 1, st, lv);
-    const look: Look | null = looksAtWork(e.def) ? { ent: e.id, id: id as BuildingId, dormant, views: [], parts: [], off: false, waits: false, dead: false } : null;
+    const look: Look | null = foreign === undefined && looksAtWork(e.def) ? { ent: e.id, id: id as BuildingId, dormant, views: [], parts: [], off: false, waits: false, dead: false } : null;
     if (pit) this.addPit(e, artRot, wx, wy, alpha, tint, z);
     else {
       const key = isoMv ? bodyKey(isoKey) : isoKey;
@@ -1026,7 +1151,7 @@ export class BuildingsView {
       const s = this.place(partKey(topKey, 0), this.planLayer, e.x, e.y, alpha, tint, 0);
       if (s) parts.push({ s, tex: this.phases(topKey, topMv.n) });
     }
-    if (parts.length) this.addSpinner(e, id as BuildingId, pending || dormant, parts);
+    if (parts.length) this.addSpinner(e, id as BuildingId, pending || dormant, parts, foreign !== undefined);
     if (look) {
       look.parts = parts.map((p) => p.s);
       this.cur!.look = look;
@@ -1052,23 +1177,23 @@ export class BuildingsView {
   }
 
   /** Register a moving part: where it was before it was re-drawn (else its own start), how it turns. */
-  private addSpinner(e: Ent, id: BuildingId, still: boolean, sprites: Spinner['sprites']): void {
+  private addSpinner(e: Ent, id: BuildingId, still: boolean, sprites: Spinner['sprites'], foreign = false): void {
     const spec = MOVING[id];
     if (!spec) return;
     const old = this.kept.get(e.id), seed = spinSeed(e.id);
     const sp: Spinner = {
       ent: e.id, wind: BUILDING_KIND[e.def] === 'wind', still, n: spec.frames, sym: spec.sym, vary: seed.vary,
-      phase: old?.phase ?? seed.phase, rate: old?.rate ?? 0, k: -1, shown: -1, culled: false, sprites,
+      phase: old?.phase ?? seed.phase, rate: old?.rate ?? 0, k: -1, shown: -1, culled: false, sprites, ...(foreign ? { foreign } : {}),
     };
     sp.k = sp.shown = Math.floor(sp.phase * sp.n) % sp.n;
     for (const p of sprites) p.s.texture = p.tex[sp.k]!;
     this.cur!.spinner = sp;
   }
 
-  /** Sorters and unloaders wear their chosen item on top (both views; in iso on the lid, lifted with the block). */
+  /** Sorters wear their chosen item on top (both views; in iso on the lid, lifted with the block). */
   private addChosenItem(e: Ent, id: string, st?: Stand): void {
     const logic = buildingDef(e.def).logic;
-    if (logic !== 'sorter' && logic !== 'inverted' && logic !== 'unloader') return;
+    if (logic !== 'sorter' && logic !== 'inverted') return;
     const item = filterOf(e.cfg, 0);
     const key = item >= 0 ? iKey(ITEM_IDS[item]!) : '';
     const tex = key ? this.atlas.textures.get(key) : undefined, fr = key ? this.atlas.frames.get(key) : undefined;
@@ -1090,11 +1215,14 @@ export class BuildingsView {
   private addBelt(sim: Sim, e: Ent): void {
     const tier = tierOf(e.def) ?? 'ribbon';
     const p = beltPiece(sim, e);
-    const tex = this.atlas.textures.get(beltKey(tier, p.corner));
+    // A buried line (D109) shows a vent on the odd straight tile, by a hash of the tile: the same tiles every time.
+    const vent = tier === 'camo_ribbon' && !p.corner && camoVent(e.x, e.y);
+    const tex = this.atlas.textures.get(vent ? CAMO_VENT_KEY : beltKey(tier, p.corner));
     if (!tex) return;
     const lv = tileTop(sim.grid, e.x, e.y);
     this.beltSprite(tex, e.x, e.y, p.rot, p.mirror, lv);
     this.addLift(sim, e);
+    this.addFall(sim, e);
     if (p.corner) return;
     // A straight piece fed from a side (a merging line, a router, a machine's outlet): open the
     // rail there so the connection reads. The inlet art comes in from the left; mirror for the right.

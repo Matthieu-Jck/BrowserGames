@@ -5,12 +5,12 @@
 // building or a recipe inserted, renamed, removed) need no migration: saves carry their content
 // table and are re-pointed by id on load (sim/save-remap.ts, D47).
 import { BUILDINGS } from '@/content/buildings';
-import { BUILDING_IDS } from '@/content/registry';
+import { BUILDING_IDS, ITEM_IDS } from '@/content/registry';
 import { CENTER, WORLD } from '@/sim/constants';
 import { packRuns } from '@/sim/flow/chain';
 import { MapGen } from '@/sim/world/mapgen';
 import { SAVE_VERSION, type SaveData } from '@/sim/serialize';
-import { RESEARCH_RENAMED, TIER2_UP_V10 } from '@/content/retired';
+import { CORE_REVEAL_V17, PLANS_RETIRED, RESEARCH_RENAMED, RESEARCH_RETIRED, RETIRED_DRIFTER, TIER2_UP_V10 } from '@/content/retired';
 
 /** A step from version v to v + 1 (input: a parsed save of version v). */
 export type Migration = (d: Record<string, unknown>) => Record<string, unknown>;
@@ -358,7 +358,81 @@ export function tierOneWhole(d: Record<string, unknown>): Record<string, unknown
   };
 }
 
-export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsToTowers, 6: researchToTokens, 7: researchAtBase, 8: parcelsResized, 9: labsToThree, 10: expertiseArc, 11: electricSmelting, 12: coreData, 13: tierOneWhole };
+/**
+ * 14 → 15, no skydocks (D108, owner 2026-10-17: « retire le skydock du jeu, je n'aime pas ce
+ * bâtiment »): the drifters and their freight routes go with them. Every drifter a save held
+ * (`fleet`, per dock) is refunded to the Heart at `RETIRED_DRIFTER`, by the save's own item table;
+ * the routes and their counter go — a route's `carry` was the sub-item remainder of its flow, never
+ * taken from a dock: nothing to refund. The Great Skydock's node (`RESEARCH_RETIRED[15]`) is
+ * forgotten: dropped from `done`, a project of it cancelled, the data it had paid back to the Heart,
+ * its queue entry gone. The docks themselves are the remap's: their ids are gone from the content,
+ * so it takes them down, refunds them at `RETIRED_COSTS`, hands what they held docked to the Heart
+ * and drops their wires and outlets (sim/save-remap.ts) — nothing vanishes, and the report lists them.
+ */
+export function docksRetired(d: Record<string, unknown>): Record<string, unknown> {
+  const { fleet, routes: _routes, nextRouteId: _next, ...rest } = d;
+  const gone = new Set(RESEARCH_RETIRED[15] ?? []);
+  const items = (d.content as { items?: string[] } | undefined)?.items ?? (ITEM_IDS as readonly string[]);
+  const stock = [...((d.stock as number[] | undefined) ?? [])];
+  const give = (it: number, mu: number): void => { if (it >= 0 && mu > 0) stock[it] = (stock[it] ?? 0) + mu; };
+  for (const [, n] of (fleet as Array<[number, number]> | undefined) ?? []) {
+    for (const [id, q] of RETIRED_DRIFTER) give(items.indexOf(id), n * q * 1000);
+  }
+  const projects = (d.projects as Array<{ id: string; cost?: number[]; paid?: number[] }> | undefined) ?? [];
+  for (const p of projects) {
+    if (gone.has(p.id)) (p.paid ?? []).forEach((mu, i) => give(p.cost?.[2 * i] ?? -1, mu));
+  }
+  const done = (d.done as string[] | undefined) ?? [];
+  const queue = (d.labQueue as Array<[number, string]> | undefined) ?? [];
+  return {
+    ...rest,
+    stock,
+    done: done.filter((id) => !gone.has(id)),
+    ...(d.projects ? { projects: projects.filter((p) => !gone.has(p.id)) } : {}),
+    ...(d.labQueue ? { labQueue: queue.filter(([, id]) => !gone.has(id)) } : {}),
+  };
+}
+
+/**
+ * 15 → 16, Steam Power (D114, owner 2026-10-17: « Il faudrait que l'eau serve assez tôt dans le jeu,
+ * dès le Tier 1 »): the water pump and the conduit leave Ceramics (`tr3`, Tier 2) for a plan of the
+ * Energy path, `steam`, with the steam boiler. A claim holding the research lab's plan — the gate
+ * that needs every plan, D71; every claim with Ceramics holds it — holds the new plan too: its pumps
+ * and conduits stay awake and the gate's prerequisites stay met. A claim before the lab takes it as
+ * any other plan. Ids frozen here: the tree may change.
+ */
+export function steamPlan(d: Record<string, unknown>): Record<string, unknown> {
+  const done = (d.done as string[] | undefined) ?? [];
+  if (done.includes('steam') || !done.includes('observatory')) return d;
+  return { ...d, done: [...done, 'steam'].sort() };
+}
+
+/**
+ * 16 → 17, no survey beacon and no unloader (D117; owner, 2026-10-17: « On va supprimer le survey
+ * beacon, je n'aime pas. Et toute cette ligne du tech tree peut être supprimée », « le "Unloader"
+ * n'est plus nécessaire »). Their plans (`PLANS_RETIRED[17]`), held, are dropped from `done` and
+ * their cost handed back to the Heart, by the save's own item table. The fog now lifts as the claim
+ * grows, the Core's level widening it (`BAL.coreReveal`): a Core above level 1 lifts it now as far
+ * as its level would have (`CORE_REVEAL_V17`); what the beacons lifted stays lifted (`explored` is
+ * kept whole). The beacons and unloaders themselves are the remap's: their ids are gone from the
+ * content, so it takes them down, refunds them at `RETIRED_COSTS` and hands an unloader's held item
+ * to the Heart (sim/save-remap.ts) — nothing vanishes, and the report lists them.
+ */
+export function beaconsRetired(d: Record<string, unknown>): Record<string, unknown> {
+  const gone = PLANS_RETIRED[17] ?? {};
+  const done = (d.done as string[] | undefined) ?? [];
+  const items = (d.content as { items?: string[] } | undefined)?.items ?? (ITEM_IDS as readonly string[]);
+  const stock = [...((d.stock as number[] | undefined) ?? [])];
+  for (const id of done) {
+    for (const [it, q] of gone[id] ?? []) { const i = items.indexOf(it); if (i >= 0) stock[i] = (stock[i] ?? 0) + q * 1000; }
+  }
+  const lv = Math.max(1, Math.min(CORE_REVEAL_V17.length, (d.hearthLevel as number | undefined) ?? 1));
+  const explored = [...((d.explored as Array<[number, number, number]> | undefined) ?? [])];
+  if (lv > 1) explored.push([CENTER, CENTER, CORE_REVEAL_V17[lv - 1]!]);
+  return { ...d, stock, done: done.filter((id) => !(id in gone)), explored };
+}
+
+export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsToTowers, 6: researchToTokens, 7: researchAtBase, 8: parcelsResized, 9: labsToThree, 10: expertiseArc, 11: electricSmelting, 12: coreData, 13: tierOneWhole, 14: docksRetired, 15: steamPlan, 16: beaconsRetired };
 
 export class SaveTooNew extends Error {
   constructor(readonly version: number) { super(`save version ${version} is newer than this build (${SAVE_VERSION})`); }

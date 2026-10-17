@@ -144,9 +144,9 @@ There are two kinds of binding:
 | `deconstruct` | `x` | key | Toggles the demolition tool |
 | `cancel` | Escape | code | Unwinds one layer: screen (a page of it first) → drag or tool → selection → a specialised view (back to Normal, D88) → build mode → the main menu (not under automation, [app.md](app.md)) |
 | `undo` | `z` + Ctrl/Cmd | key | Not handled (M8) |
-| `zoomIn` / `zoomOut` | codes `Equal` `NumpadAdd` (+ key `+`) / `Minus` `NumpadSubtract` | code | ×1.25 / ×0.8 about the screen centre. By position: `-` `=` on QWERTY, `)` `=` on AZERTY (whose `-` is the 6, a build slot) |
+| `zoomIn` / `zoomOut` | codes `Equal` `NumpadAdd` (+ key `+`) / `Minus` `NumpadSubtract` | code | ×1.25 / ×0.8 about the screen centre — while the tech tree is open, its zoom instead (D111: `ScreenHost.zoomKey`), and `0` (Digit0, the tenth slot) shows the whole tree. By position: `-` `=` on QWERTY, `)` `=` on AZERTY (whose `-` is the 6, a build slot) |
 | `viewPower` | `p` | key | The **Électricité** view (D88: the grids, their sources and draw, the troubles; [ui.md](ui.md#the-specialised-views-d88)), or back to Normal — P was the power overlay's key, which the view replaces; offered once the tutorial shows the power. KeyP on both layouts |
-| `viewLogistics` | `f` | key | The **Logistique** view (D88: the ribbons' throughput as a heat, jams, dead ends, drifter routes), or back to Normal — F (flux, flow) was kept for a flow overlay. KeyF on both layouts |
+| `viewLogistics` | `f` | key | The **Logistique** view (D88: the ribbons' throughput as a heat, jams, dead ends, the Gleaners' night), or back to Normal — F (flux, flow) was kept for a flow overlay. KeyF on both layouts |
 | `viewProduction` | `o` | key | The **Production** view (D88: at work, waiting, stopped and why), or back to Normal — O for ouvrages / output; free on both layouts (KeyO) |
 | `viewWind` | `v` | key | The **Vent** view (D95: where the wind blows, from where, the turbines; [ui.md](ui.md#the-specialised-views-d88)), or back to Normal — V for vent; offered once the Anémométrie plan is learnt (`App.viewShown`). KeyV on both layouts |
 | `scrResearch` / `scrStats` | `t` / `g` | key | Opens the screen (the tree once the tutorial has revealed it; the Statistics once the ledger plan is unlocked, D41) |
@@ -212,15 +212,19 @@ Space (pan modifier) is hard-coded in `input.ts`, not in the table.
     `junction_chain`): a ribbon runs between two of them;
   - **a step** a plain ribbon would face takes a **traction ribbon** by itself once `traction` is
     learnt (D73); never two steps in a row (`lift_room`, D65);
+  - **a neighbouring base's open land** a flat ribbon may not cross is laid with **camouflaged
+    ribbons** by itself once `xp_camo` is learnt (D109), after the bridges (a short run a pair can
+    leap keeps the line's pace); a plain ribbon on free land stays plain;
   - **an obstacle** — a run of tiles refused as `occupied`, `terrain` (water…), `chasm` or `river`
-    (map 4, D94), `sister_land` or `junction_chain` (two lines side by side) — is leapt by a **bridge pair** on the ribbon tiles
+    (map 4, D94), `neighbour_land` (D110) or `junction_chain` (two lines side by side) — is leapt by a **bridge pair** on the ribbon tiles
     just before and after it, when `bridge` is learnt, the run is straight, the start is fed from
     straight behind, the pair is within reach (`4 + bridgeSpan`) on one level and no other bridge of
     that direction on the line would take the leap; what lies between stays as it is (`leapt`);
   - the tiles share one budget in path order, so a drag that runs short turns `unaffordable` from
     the tile where it would stop;
   - a tile facing a step its piece cannot take is left out (D77: `needs_lift` for a ribbon before
-    traction is learnt, `steep` two terraces away, `cliff` for a conduit), and so is an obstacle no
+    traction is learnt, `steep` two terraces away, `cliff` for a conduit facing a step up or two down —
+    one down it pours, D114), and so is an obstacle no
     bridge pair can leap; the rest is laid and the toast counts what was left out.
 - **Rotation.** `rotate(dir)` flips the bend during a ribbon drag, turns a build or ribbon tool
   otherwise (remembered in `lastRot` for the next pick), and does nothing for remove and mark.
@@ -248,6 +252,7 @@ the remove tool's `from ?? hover`), then a mark box, then build or ribbon pieces
 |---|---|
 | `pieces` | `GhostPiece {def, x, y, rot, ok, reason}`: one for a building, one per planned tile of a ribbon drag (a `crossing`, `traction_ribbon` or `skybridge` piece where the plan lays one). Tiles already holding this ribbon in this direction are shown as `ok` and free; a block the drag keeps, and a tile a bridge pair leaps, get no piece (they stay as they are). |
 | `drag`, `leaps` | A ribbon drag in progress (nothing laid before the release: the ghost draws the plan faint), and its bridge pairs' ends `[x0, y0, x1, y1]` (a dashed line between them) |
+| `buried` | `{n, land}` (D109): how many camouflaged pieces stand off the claim's land, and whose land — a neighbouring base's (`neighbour_land`) when any does, else free land (`outside_zone`; `landReason`). The tip names it |
 | `box`, `doomed` | Demolition box (tiles, inclusive) and the entity ids it would remove. Without a box, `doomed` lists what the pieces that fit would replace |
 | `mark` | `{box, clear, n}`: `n` tiles would be marked or cleared |
 | `reason` | First refusal along the preview (`PlaceReason`) |

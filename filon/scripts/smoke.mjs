@@ -326,6 +326,48 @@ await step('build: a drag across two lines side by side lays a bridge pair over 
   await page.screenshot({ path: shot('smoke-bridge-laid.png') });
 });
 
+await step('build: a ribbon dragged across a neighbouring base’s open land buries itself there (D109): the ghost and the tip say so; the rest stays plain', async () => {
+  await page.keyboard.press('Escape');
+  const at = await FL(() => {
+    const FL = window.FL, sim = FL.app.sim;
+    for (const id of ['xp_swift', 'xp_bigsilo', 'xp_guard', 'xp_camo']) FL.unlock(id);
+    sim.grant('iron_plate', 200); sim.grant('sand', 200);
+    for (let ring = 2; ring <= 6; ring++) for (let dy = -ring; dy <= ring; dy++) for (let dx = -ring; dx <= ring; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
+      const q = FL.parcel(dx, dy), w = FL.parcel(dx - 1, dy);
+      if (sim.land.neighbour(q.p) < 0 || sim.land.neighbour(w.p) >= 0 || sim.land.holds(w.p)) continue;
+      let x0 = q.at[0];
+      while (FL.parcelAt(x0 - 1, q.at[1]) === q.p) x0--;
+      sim.explored.push([x0, q.at[1], 30]);
+      for (let k = 0; k < 20; k++) {
+        const y = q.at[1] + (k % 2 ? -1 : 1) * (k >> 1);
+        let ok = true;
+        for (let x = x0 - 4; x < x0 + 8 && ok; x++) ok = !sim.neighbours.at(x, y) && sim.canPlace('camo_ribbon', x, y, 1).ok && !sim.entityAt(x, y);
+        if (ok) return { x0, y, p: q.p };
+      }
+    }
+    return null;
+  });
+  assert(at, 'no neighbouring base beside free land with an open row');
+  await FL(([x, y]) => window.FL.lookAt(x, y, 1.2), [at.x0 + 2, at.y]);
+  await page.waitForTimeout(300);
+  await FL(() => window.FL.tool('ribbon'));
+  const [ax, ay] = await tileXY(at.x0 - 4, at.y);
+  const [bx, by] = await tileXY(at.x0 + 7, at.y);
+  await page.mouse.move(ax, ay);
+  await page.mouse.down();
+  await page.mouse.move(bx, by, { steps: 8 });
+  await page.waitForTimeout(250);
+  const pre = await FL(() => { const p = window.FL.app.tools.preview(); return { buried: p.buried ?? null, camo: p.pieces.filter((q) => q.def === 'camo_ribbon').length }; });
+  const tip = await page.evaluate(() => !!document.querySelector('.tip-buried'));
+  await page.screenshot({ path: shot('smoke-camo-ghost.png') });
+  await page.mouse.up();
+  assert(pre.camo === 8 && pre.buried?.n === 8 && pre.buried?.land === 'neighbour_land', `the ghost buries no neighbour tiles: ${JSON.stringify(pre)}`);
+  assert(tip, 'the tip does not name the buried pieces');
+  const row = await FL(([x, y]) => [-4, -1, 0, 7].map((d) => window.FL.entityAt(x + d, y)?.def ?? null), [at.x0, at.y]);
+  assert(row[0] === 'ribbon' && row[1] === 'ribbon' && row[2] === 'camo_ribbon' && row[3] === 'camo_ribbon', `laid: ${JSON.stringify(row)}`);
+});
+
 await step('inspect: in the iso view a click on the Heart’s uplink (above its footprint) opens the inspector', async () => {
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
@@ -354,10 +396,21 @@ await step('produce: the demo line turns iron ore into plates', async () => {
 await step('power: the Relier tool wires a mast to a wind flower by mouse, a second click unwires it, right-click ends', async () => {
   await page.keyboard.press('Escape');
   const ids = await FL(() => {
-    const m = window.FL.freeSpot('mast', 530, 520, 10);
+    // Spots on the floor (level 0): one up on a terrace is drawn lifted, away from its tile's floor
+    // point the clicks aim at (the map's springs and streams moved the free floor round, D94).
+    const sim = window.FL.app.sim;
+    const floorSpot = (def, x, y, r) => {
+      for (let d = 0; d <= r; d++) for (let dy = -d; dy <= d; dy++) for (let dx = -d; dx <= d; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== d || sim.grid.level(x + dx, y + dy) !== 0) continue;
+        const c = sim.canPlace(def, x + dx, y + dy, 0);
+        if (c.ok && c.replaces.length === 0) return [x + dx, y + dy];
+      }
+      return null;
+    };
+    const m = floorSpot('mast', 530, 520, 14);
     if (!m) return null;
     const mast = window.FL.place('mast', m[0], m[1], 0);
-    const f = window.FL.freeSpot('wind_flower', m[0] + 2, m[1], 6);
+    const f = floorSpot('wind_flower', m[0] + 2, m[1], 8);
     if (!f) return null;
     const flower = window.FL.place('wind_flower', f[0], f[1], 0);
     return { mast: mast.id, flower: flower.id, m, f };
@@ -622,7 +675,9 @@ await step('space: mark rock with the brush, an excavator digs six tiles (stone,
   await page.keyboard.press('Escape');
 });
 
-await step('space: a parcel bought past the starting square takes a skydock; a drifter route carries plates between skydocks', async () => {
+await step('space: a parcel bought past the starting square takes a silo; a ribbon carries its plates home to a silo on the starting square', async () => {
+  // Until D108 two skydocks and a drifter route carried the plates; the skydocks are retired, so
+  // the far goods go home by ribbon (the plain ribbon free everywhere, the claim's land between).
   const r = await FL(() => {
     const sim = window.FL.app.sim;
     // The parcel two east of the Heart's (ring 2: just past the 3 × 3 starting square, D74), bought
@@ -631,33 +686,39 @@ await step('space: a parcel bought past the starting square takes a skydock; a d
     if (sim.credits < cents) sim.grantCredits(cents - sim.credits);
     if (sim.land.holds(p) ? false : sim.buyLand(p) !== null) return { err: 'land not bought' };
     if (!sim.land.covers(at[0], at[1])) return { err: 'parcel not held' }; // its middle tile
-    // Two skydocks: one by the Hearth, one on the new parcel.
-    const find = (cx, cy, rad) => { for (let d = 0; d <= rad; d++) for (let y = cy - d; y <= cy + d; y++) for (let x = cx - d; x <= cx + d; x++) if ((() => { const c = sim.canPlace('skydock', x, y, 0); return c.ok && c.replaces.length === 0; })()) return [x, y]; return null; };
-    const pa = find(512 + 6, 512 + 6, 10), pb = find(at[0] - 1, at[1] - 1, 6);
-    if (!pa || !pb) return { err: `dock spots ${pa} ${pb}` };
-    const a = sim.place('skydock', pa[0], pa[1], 0), b = sim.place('skydock', pb[0], pb[1], 0);
-    if (!a.ok || !b.ok) return { err: `docks ${a.reason} ${b.reason}` };
-    // Off the starting square it arrives by drone: wait for the build to complete.
-    sim.run(Math.max(0, sim.ents.get(b.id).builtAt - sim.tick) + 5);
-    return { a: a.id, b: b.id, ws: at };
+    // A silo on the new parcel (it needs the claim's land), full of plates, and a silo at home on the
+    // starting square's east edge, past the Crown on the same floor (a plain ribbon climbs no terrace,
+    // D77): both face west (outlets toward the Heart, inlets toward the parcel).
+    const spotNear = (cx, cy) => {
+      for (let d = 0; d <= 8; d++) for (let y = cy - d; y <= cy + d; y++) for (let x = cx - d; x <= cx + d; x++) {
+        const c = sim.canPlace('silo', x, y, 3);
+        if (c.ok && c.replaces.length === 0) return [x, y];
+      }
+      return null;
+    };
+    const far = spotNear(at[0], at[1]), near = spotNear(at[0] - 14, at[1]);
+    if (!far || !near) return { err: `silo spots ${far} ${near}` };
+    const s = sim.place('silo', far[0], far[1], 3), h = sim.place('silo', near[0], near[1], 3);
+    if (!s.ok || !h.ok) return { err: `silos ${s.reason} ${h.reason}` };
+    // Its plates in its store before the graph first builds its node: a silo locks onto the one item
+    // it holds then (or the first that comes in), and hands out only that.
+    const plates = new Float64Array(sim.stock.length);
+    plates[window.FL.itemIndex('iron_plate')] = 800 * 1000;
+    sim.stores.set(s.id, plates);
+    sim.run(Math.max(0, sim.ents.get(s.id).builtAt - sim.tick, sim.ents.get(h.id).builtAt - sim.tick) + 5);
+    sim.ensureCompiled();
+    const n = window.FL.connect(s.id, h.id);
+    if (!(n > 0)) return { err: 'no line home' };
+    return { silo: s.id, home: h.id, tiles: n, ws: at };
   });
   assert(!r.err, r.err);
-  await FL(({ a, b }) => { window.FL.powerTo(a); window.FL.powerTo(b); }, r);
-  const ok = await FL(({ a, b }) => {
-    const sim = window.FL.app.sim;
-    sim.ensureCompiled();
-    if (!sim.buyDrifter(a) || !sim.buyDrifter(a)) return 'buy';
-    sim.stores.get(a)[sim.stock.length ? window.FL.itemIndex('iron_plate') : 0] = 800 * 1000;
-    return sim.addRoute(a, b, 'iron_plate', 2) > 0 ? 'ok' : 'route';
-  }, r);
-  assert(ok === 'ok', `route setup: ${ok}`);
   await FL(() => window.FL.tick(1800));
-  const got = await FL(({ b }) => window.FL.app.sim.stores.get(b)[window.FL.itemIndex('iron_plate')] / 1000, r);
-  console.log(`    delivered ${got.toFixed(1)} plates in 3 min`);
-  assert(got > 10, `drifters delivered ${got}`);
-  await FL(({ ws }) => window.FL.lookAt(ws[0], ws[1] - 10, 0.55), r);
+  const got = await FL(({ home }) => window.FL.app.sim.stores.get(home)[window.FL.itemIndex('iron_plate')] / 1000, r);
+  console.log(`    a ${r.tiles}-tile line carried ${got.toFixed(1)} plates home in 3 min`);
+  assert(got > 10, `the line carried ${got}`);
+  await FL(({ ws }) => window.FL.lookAt(ws[0] - 12, ws[1], 0.55), r);
   await page.waitForTimeout(1200);
-  await page.screenshot({ path: shot('smoke-m5-route.png') });
+  await page.screenshot({ path: shot('smoke-m5-parcel-line.png') });
 });
 
 // ── D60: land in parcels ───────────────────────────────────────────────────
@@ -666,7 +727,7 @@ await step('land (D60): I opens the land mode over the plan view; a click picks 
   await settleView('iso');
   // A parcel for sale just past the starting square (ring 2: 3 × 3 parcels of 23 tiles round the
   // Heart's, D74), clicked on its explored tile nearest its middle: a ring-2 middle lies 46 tiles
-  // out and more, past the founding's reveal (`startReveal` 44), so whether one was explored
+  // out and more, past the founding's reveal (`coreReveal[0]` 44), so whether one was explored
   // depended on the run; its inner edge (35 out) always is. The ocelles granted if short (a rig:
   // the purse of the demo base).
   const pick = await FL(() => {
@@ -674,7 +735,8 @@ await step('land (D60): I opens the land mode over the plan view; a click picks 
     for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
       if (Math.max(Math.abs(dx), Math.abs(dy)) !== 2) continue;
       const { p, at: mid } = window.FL.parcel(dx, dy);
-      if (sim.land.holds(p) || sim.land.sister(p) >= 0) continue;
+      // Not one the claim cannot buy: held, a neighbouring base's (D110), or a corner only touching its land.
+      if (sim.land.holds(p) || sim.land.neighbour(p) >= 0 || sim.buyBlock(p) === 'far') continue;
       let at = null, best = Infinity;
       for (let y = mid[1] - 11; y <= mid[1] + 11; y++) for (let x = mid[0] - 11; x <= mid[0] + 11; x++) {
         const d = (x - mid[0]) ** 2 + (y - mid[1]) ** 2;
@@ -716,36 +778,85 @@ await step('land (D60): I opens the land mode over the plan view; a click picks 
   assert(!(await FL(() => window.FL.app.landTool.active)), 'land mode still on');
 });
 
-await step('perf: 10 000 items riding ribbons stay above 30 fps', async () => {
-  // Ribbons may cross land the claim does not hold, never a sister claim's (D60): the claim buys
-  // the sister parcels under the field first (the ocelles granted, and Far Claim, since they do not
-  // touch its land: a rig).
-  await FL(() => window.FL.unlock('xp_far'));
-  // The field's place: of a few blocks east of the cirque, the one with the least land a ribbon cannot
-  // take (map 4, D94: rivers, crevasses, water and rock cross the plains), the first on a tie.
-  const [fx, fy] = await FL(() => {
-    const g = window.FL.app.sim.grid;
-    let best = [600, 450], bad = Infinity;
-    for (const [x0, y0] of [[600, 450], [600, 400], [600, 500], [640, 430], [560, 560], [560, 340], [380, 450], [420, 560]]) {
-      let n = 0;
-      for (let y = y0; y < y0 + 100; y += 2) for (let x = x0; x < x0 + 105; x += 2) { const t = g.terrain(x, y); if (t > 1 && t !== 8) n++; }
-      if (n < bad) { bad = n; best = [x0, y0]; }
+await step('neighbouring bases (D110): a base stands on a neighbour\'s land, by day and by night; nothing of the claim\'s goes on its buildings; its parcel in the land panel: its name, its trade, not for sale', async () => {
+  await FL(() => { window.FL.tool(null); window.FL.category(null); window.FL.close(); window.FL.selected(0); });
+  await settleView('iso');
+  // The base nearest the Heart: its lift pad's middle, surveyed (a rig: the fog lifted round it).
+  const nb = await FL(() => {
+    const sim = window.FL.app.sim;
+    let best = null;
+    for (let p = 0; p < 45 * 45; p++) {
+      const h = sim.neighbours.holdingOf(p);
+      if (!h || h.hub !== p || sim.land.neighbour(p) < 0) continue;
+      const L = sim.neighbours.layout(h), pad = L.structs[0];
+      if (!pad) continue;
+      const d = (pad.x - 512) ** 2 + (pad.y - 512) ** 2;
+      if (!best || d < best.d) best = { d, hub: p, at: [pad.x + 2, pad.y + 2], n: L.structs.length, r: L.ribbons.length, parcels: h.parcels.length };
     }
+    if (best) sim.explored.push([best.at[0], best.at[1], 44]);
     return best;
   });
-  const sisters = await FL(([fx, fy]) => {
-    const sim = window.FL.app.sim, ps = new Set();
-    for (let y = fy; y < fy + 102; y++) for (let x = fx; x < fx + 105; x++) ps.add(window.FL.parcelAt(x, y));
-    let n = 0;
-    for (const p of [...ps].sort((a, b) => a - b)) {
-      if (sim.land.sister(p) < 0) continue;
-      const cents = sim.landPrice(p);
-      if (sim.credits < cents) sim.grantCredits(cents - sim.credits);
-      if (sim.buyLand(p) === null) n++;
+  assert(nb && nb.n >= 4 && nb.r >= 1, `no working neighbouring base: ${JSON.stringify(nb)}`);
+  console.log(`    base at ${nb.at} (hub ${nb.hub}): ${nb.n} buildings, ${nb.r} ribbons, ${nb.parcels} parcels`);
+  await FL(([x, y]) => window.FL.lookAt(x, y, 1.4), nb.at);
+  await page.waitForFunction((hub) => window.FL.app.buildings.hasForeign(hub), nb.hub, { timeout: 5000 });
+  // Its land refuses a mast; with Neighbour Treaties its open land takes one, its buildings never.
+  const placed = await FL(([x, y]) => window.FL.place('mast', x, y, 0), nb.at);
+  assert(!placed.ok && placed.reason === 'neighbour_land', `a mast went on its land: ${JSON.stringify(placed)}`);
+  await FL(() => window.FL.unlock('xp_treaties'));
+  const treaty = await FL(([x, y]) => window.FL.place('mast', x, y, 0), nb.at);
+  assert(!treaty.ok && treaty.reason === 'occupied', `a mast went on its pad: ${JSON.stringify(treaty)}`);
+  await FL(() => window.FL.dayPhase('noon'));
+  await page.waitForTimeout(700);
+  await page.screenshot({ path: shot('smoke-neighbour-day.png') });
+  await FL(([x, y]) => window.FL.lookAt(x, y, 0.6), nb.at);
+  await page.waitForTimeout(700);
+  await page.screenshot({ path: shot('smoke-neighbour-mid.png') });
+  await FL(() => window.FL.dayPhase('night'));
+  await page.waitForTimeout(700);
+  await page.screenshot({ path: shot('smoke-neighbour-night-mid.png') });
+  await FL(([x, y]) => window.FL.lookAt(x, y, 1.4), nb.at);
+  await page.waitForTimeout(700);
+  await page.screenshot({ path: shot('smoke-neighbour-night.png') });
+  await FL(() => window.FL.dayPhase(null));
+  // The Terrain view and the land panel on its hub: its emblem, its name, its trade; no deal.
+  await page.keyboard.press('i');
+  await settleView('plan');
+  await page.waitForSelector('[data-screen="land"]:not([hidden])', { timeout: 3000 });
+  await FL((hub) => { window.FL.app.landTool.selected = hub; }, nb.hub);
+  await page.waitForSelector('[data-screen="land"] [data-deal="neighbour"]', { timeout: 3000 });
+  const card = await page.evaluate(() => document.querySelector('[data-screen="land"]')?.innerText ?? '');
+  assert(/Base voisine|Neighbouring base/.test(card) && !/Acheter|Buy/.test(card), `land panel: ${card}`);
+  assert(!(await page.$('[data-screen="land"] [data-land-act="buy"]')), 'a neighbouring base\'s parcel offered for sale');
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: shot('smoke-neighbour-land.png') });
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await settleView('iso');
+});
+
+await step('perf: 10 000 items riding ribbons stay above 30 fps', async () => {
+  // Ribbons may cross land the claim does not hold; a neighbouring base's only with Neighbour Treaties,
+  // and never its buildings (D110: its land is not for sale): the treaties learnt (a rig).
+  await FL(() => window.FL.unlock('xp_treaties'));
+  // The field's place: of a few blocks east of the cirque, the one with the least land a ribbon cannot
+  // take (map 4, D94: rivers, crevasses, water and rock cross the plains; a neighbouring base's
+  // buildings, D110), the first on a tie.
+  const [fx, fy, nbTiles] = await FL(() => {
+    const sim = window.FL.app.sim, g = sim.grid;
+    let best = [600, 450], bad = Infinity, nb = 0;
+    for (const [x0, y0] of [[600, 450], [600, 400], [600, 500], [640, 430], [560, 560], [560, 340], [380, 450], [420, 560], [640, 560], [380, 340]]) {
+      let n = 0, m = 0;
+      for (let y = y0; y < y0 + 100; y += 2) for (let x = x0; x < x0 + 105; x += 2) {
+        const t = g.terrain(x, y);
+        if (t > 1 && t !== 8) n++;
+        else if (sim.neighbours.at(x, y)) { n++; m++; }
+      }
+      if (n < bad) { bad = n; best = [x0, y0]; nb = m; }
     }
-    return n;
-  }, [fx, fy]);
-  console.log(`    ${sisters} sister parcels bought under the field at ${fx},${fy}`);
+    return [...best, nb];
+  });
+  console.log(`    the field at ${fx},${fy} (${nbTiles} sampled tiles under a neighbouring base)`);
   // One item per square: 10 710 squares, of which map 4's obstacles take a few hundred — the field alone
   // carries 10 000 (at 100 rows it laid 9 920 and leaned on the base's other lines, fewer under load).
   const laid = await FL(([fx, fy]) => window.FL.ribbonField(fx, fy, 102, 105), [fx, fy]);
@@ -1136,12 +1247,13 @@ await step('weak grid (D91): the tutorial base by night, its turbines and accumu
   const own = await FL(() => window.FL.hash());
   const r = await FL(() => window.FL.debugSave('tutorial'));
   assert(r.ok, `tutorial base: ${JSON.stringify(r)}`);
-  // Night, its panels asleep; the wind follows the real clock, so its turbines' and accumulators'
-  // wires are cut (a rig): the Core's isotope core and the brazier serve part of the demand.
+  // Night, its panels asleep; the wind follows the real clock, so its turbines', accumulators' and
+  // steam boiler's wires are cut (a rig; D114: the boiler alone would carry the night): the Core's
+  // isotope core and the brazier serve part of the demand.
   await FL(() => {
     window.FL.menu(false);
     window.FL.dayPhase('night');
-    const sim = window.FL.app.sim, off = new Set(['wind_flower', 'pitch_turbine', 'big_turbine', 'accumulator', 'heavy_accumulator']);
+    const sim = window.FL.app.sim, off = new Set(['wind_flower', 'pitch_turbine', 'big_turbine', 'accumulator', 'heavy_accumulator', 'steam_boiler']);
     for (const e of sim.ents.sorted()) if (off.has(window.FL.entityAt(e.x, e.y)?.def)) for (const o of window.FL.links(e.id)) window.FL.unlink(e.id, o);
     window.FL.tick(20);
   });
@@ -1289,7 +1401,7 @@ await step('quests: CrierBelt has the claim named; the log moves on; rewards pay
   const c0 = await FL(() => window.FL.credits());
   assert((await FL(() => window.FL.completeQuest('synth_parts'))) === null, 'completeQuest refused'); // the last quest (D90)
   q = await FL(() => window.FL.quests());
-  assert(q.done.length === 10, `done: ${q.done.length}`); // the claim's name and the tutorial's nine quests (D101: « Le Cœur grandit » added; the Synthesis's parts last, D90)
+  assert(q.done.length === 11, `done: ${q.done.length}`); // the claim's name and the tutorial's ten quests (D101: « Le Cœur grandit » added; D114: « La vapeur »; the Synthesis's parts last, D90)
   const c1 = await FL(() => window.FL.credits());
   assert(Math.abs(c1 - c0 - 1150) < 0.01, `credits ${c0} → ${c1}`); // 150 (« La Criée ») + 100 (« Le Cœur grandit ») + 600 (Survey Data) + 300 (the Synthesis's parts), D90, D101
   await FL(() => window.FL.completeQuest('synth_parts'));
@@ -1398,7 +1510,7 @@ await step('gaps (D94): today\'s land (map 4) has chasms and rivers past the Cro
   await FL(() => window.FL.mapView('normal'));
 });
 
-await step('intro (D31): not by itself under automation; FL.intro plays it; the register refuses a sister claim; the landing names the claim and gives it the emblem designed on the form', async () => {
+await step('intro (D31): not by itself under automation; FL.intro plays it; the register refuses another claim’s name; the landing names the claim and gives it the emblem designed on the form', async () => {
   let st = await FL(() => window.FL.intro());
   assert(!st.open && !st.heartHidden, `intro under webdriver: ${JSON.stringify(st)}`);
   await FL(() => window.FL.intro(true));
@@ -1413,7 +1525,7 @@ await step('intro (D31): not by itself under automation; FL.intro plays it; the 
   await page.click('[data-intro-name-ok]');
   const err = (re) => page.waitForFunction((src) => new RegExp(src, 'i').test(document.querySelector('[data-intro-err]')?.textContent ?? ''), re, { timeout: 2000 });
   await err('registre|register');
-  assert((await FL(() => window.FL.intro())).panel === 'name', 'a sister claim name went through');
+  assert((await FL(() => window.FL.intro())).panel === 'name', 'another claim\'s name went through');
   // A free name, but the form is not signed yet: refused.
   await page.fill('[data-intro-name-input]', 'Mines du Smoke');
   // The emblem: round, the ocelle, coral with the symbol in paper (owner, 2026-10-13: the Heart flies it).
@@ -1444,7 +1556,7 @@ await step('intro (D31): not by itself under automation; FL.intro plays it; the 
   assert(!st.heartHidden && !(await FL(() => document.body.hasAttribute('data-intro'))), 'Heart or HUD not back');
 });
 
-await step('tree (D33): the HUD chip opens the tech tree; one click on a plan unlocks it, paid by the Heart; a hovered card lights its chain (D107)', async () => {
+await step('tree (D33): the HUD chip opens the tech tree; one click on a plan unlocks it, paid by the Heart; a selected card focuses its chain, a hover only raises it, Esc lets go (D107, D111); « Tout voir » zooms out on the whole tree (D111)', async () => {
   // This base's quests were forced, which unlocks no plan; the quartz step took the Face Cutter's
   // with its prerequisites (D107: the trade post first, so the telemetry too). The first plan still
   // to take, its prerequisites met (the Statistics' stays for the next step), is bought here.
@@ -1460,30 +1572,63 @@ await step('tree (D33): the HUD chip opens the tech tree; one click on a plan un
   await page.waitForSelector(`.tr-node[data-id="${id}"][data-state="done"]`, { timeout: 2000 });
   const after = await FL((p) => ({ plates: window.FL.stocks().iron_plate ?? 0, on: window.FL.app.sim.unlocked(p) }), id);
   assert(!before.on && after.on && Math.abs(before.plates - after.plates - cost) < 0.01, `${id} ${after.on}, plates ${before.plates} → ${after.plates} (cost ${cost})`);
-  // A research card under the mouse lights its chain (D107): the Compute Plan, its Server Room
-  // across the lanes; the rest fades; off the cards, all comes back.
+  // The focus (D107, D111): opened, the tree focuses nothing, and a card under the mouse is only
+  // raised. Selecting the Compute Plan lights its chain — its Server Room across the lanes —, the
+  // rest faded; it stays when the mouse goes; Esc lets it go and leaves the tree open.
+  assert(!(await page.$('.tr-canvas[data-chain]')), 'a chain lit on opening');
   await page.hover('.tr-node[data-id="cm_plan"]');
+  await page.waitForTimeout(150);
+  assert(!(await page.$('.tr-canvas[data-chain]')), 'a hover lights a chain');
+  await page.click('.tr-node[data-id="cm_plan"]');
   const chain = await page.evaluate(() => ({
     on: document.querySelector('.tr-canvas')?.hasAttribute('data-chain'),
     self: document.querySelector('.tr-node[data-id="cm_plan"]')?.getAttribute('data-chain'),
     servers: document.querySelector('.tr-node[data-id="an_servers"]')?.getAttribute('data-chain'),
     far: document.querySelector('.tr-node[data-id="en_tower"]')?.hasAttribute('data-chain'),
     link: !!document.querySelector('.tr-link[data-chain][data-kind="cross"]'),
+    detail: document.querySelector('.rs-detail h3')?.textContent,
   }));
-  assert(chain.on && chain.self === 'self' && chain.servers === '' && !chain.far && chain.link, `chain: ${JSON.stringify(chain)}`);
+  assert(chain.on && chain.self === 'self' && chain.servers === '' && !chain.far && chain.link && chain.detail, `chain: ${JSON.stringify(chain)}`);
   await page.mouse.move(2, 2);
+  await page.waitForTimeout(200);
+  assert(await page.$('.tr-canvas[data-chain]'), 'the focus went with the mouse');
+  await page.keyboard.press('Escape');
   await page.waitForFunction(() => !document.querySelector('.tr-canvas')?.hasAttribute('data-chain'), undefined, { timeout: 2000 });
+  assert(await page.$('[data-screen="research"][data-open]'), 'Esc closed the tree instead of letting the focus go');
+  // The zoom (D111): « Tout voir » fits the whole tree, its cards simplified; a click there focuses,
+  // a zoom step keeps the focus, a click on the empty tree lets it go; « 100 % » brings the size
+  // back (the next steps click its tabs).
+  await page.click('[data-tree-zoom="fit"]');
+  const zoomed = await page.evaluate(() => {
+    const c = document.querySelector('.tr-canvas'), v = document.querySelector('.tr-view');
+    return { z: Number(c.style.zoom), level: c.getAttribute('data-zoom'), fits: c.getBoundingClientRect().width <= v.getBoundingClientRect().width + 2 };
+  });
+  assert(zoomed.z < 0.5 && zoomed.level === 'far' && zoomed.fits, `fit: ${JSON.stringify(zoomed)}`);
+  await page.click('.tr-node[data-id="cm_plan"]');
+  assert(await page.$('.tr-node[data-id="an_servers"][data-chain]'), 'no chain at the whole tree');
+  await page.click('[data-tree-zoom="in"]');
+  assert(await page.$('.tr-node[data-id="an_servers"][data-chain]'), 'a zoom step lost the focus');
+  const vr = await page.locator('.tr-view').boundingBox();
+  await page.mouse.click(vr.x + 30, vr.y + vr.height - 30);
+  await page.waitForFunction(() => !document.querySelector('.tr-canvas')?.hasAttribute('data-chain'), undefined, { timeout: 2000 });
+  await page.click('[data-tree-zoom="fit"]');
+  await page.click('.tr-node[data-id="tr1"]');
+  assert(await page.$('.tr-node[data-id="tr1"][data-on][data-chain="self"]'), 'a click at the whole tree does not select and focus');
+  await page.click('[data-tree-zoom="reset"]');
+  assert(await page.evaluate(() => !document.querySelector('.tr-canvas').hasAttribute('data-zoom') && document.querySelector('.tr-canvas').style.zoom === '1'), 'not back to 100 %');
+  assert(await page.$('.tr-canvas[data-chain]'), 'back to 100 % lost the focus');
   await page.screenshot({ path: shot('smoke-tree.png') });
   await page.click('.rs-close');
   await FL(() => window.FL.resume());
 });
 
-await step('analytics (D41): the tree’s six paths; the ledger brings the Statistics chip and G; no reveal by itself under automation; FL.focusReveal dims the base around the chip, Esc skips it', async () => {
+await step('analytics (D41): the tree’s five paths (D117: no survey path); the ledger brings the Statistics chip and G; no reveal by itself under automation; FL.focusReveal dims the base around the chip, Esc skips it', async () => {
   await FL(() => window.FL.close());
   await page.click('[data-hud-tree]');
   await page.waitForSelector('[data-screen="research"][data-open]', { timeout: 3000 });
   const paths = await page.$$eval('.tr-lane[data-kind="plan"]', (ns) => ns.map((n) => n.getAttribute('data-lane')));
-  assert(paths.join() === 'production,logistics,energy,analytics,trade,survey', `paths: ${paths}`);
+  assert(paths.join() === 'production,logistics,energy,analytics,trade', `paths: ${paths}`);
+  assert(await page.$('.tr-node[data-id="ex_quartz"][data-lane="production"]'), 'the Face Cutter is not on the Production path (D117)');
   for (const id of ['telemetry', 'statistics', 'power_log', 'diagnostics']) assert(await page.$(`.tr-node[data-id="${id}"][data-lane="analytics"]`), `${id} is not on the Analytics path`);
   assert(!(await page.isVisible('[data-hud-stats]')), 'the Statistics chip shows before the ledger');
   await page.click('[data-unlock="statistics"]');

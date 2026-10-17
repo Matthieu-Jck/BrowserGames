@@ -123,9 +123,6 @@ button.vp-group:hover { background: var(--c-peach-l); }
 .vp-hist-bar { flex: 1; min-height: 2px; border: 1.2px solid var(--c-ink); border-bottom: none; border-radius: 3px 3px 0 0; transition: height 300ms ease; }
 .vp-heat { height: 9px; margin-top: 4px; border: 1.5px solid var(--c-ink); border-radius: 5px; }
 .vp-heat-ends { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--c-ink-soft); }
-.vp-routes { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 13px; }
-.vp-routes[hidden] { display: none; }
-.vp-routes b { margin-left: auto; }
 
 /* ── Production ────────────────────────────────────────────────────────────── */
 .vp-seg[data-work='on'], .vp-swatch[data-work='on'] { background: var(--c-turq); }

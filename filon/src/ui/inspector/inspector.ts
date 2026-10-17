@@ -85,7 +85,9 @@ function why(node: FNode | undefined, kind: BuildingKind, st: number, unwired: b
     case St.LowPower: return { icons: () => [glyph('power', t('insp.status.lowpower'))], sig: 'l', text: t('insp.why.lowpower') };
     case St.NoFuel: {
       const g = node?.kind === 'generator' ? (node as GeneratorNode) : null;
-      return g ? { icons: () => [itemReason(g.fuelItem, 'missing')], sig: `f${g.fuelItem}`, text: itemRef(g.fuelItem) } : none;
+      // What is missing: its fuel, or a boiler's water (D114).
+      const it = g ? (g.fuel > 0 && g.drinks ? g.waterItem : g.fuelItem) : -1;
+      return g ? { icons: () => [itemReason(it, 'missing')], sig: `f${it}`, text: itemRef(it) } : none;
     }
     // Asleep, it is cut from its grid: the way to wake it, not a wire (owner, 2026-10-14: "I cannot
     // wire the solar panels here… it just puts a dot line and tells me the solar panels aren't wired").
@@ -114,7 +116,7 @@ export class Inspector {
 
   /** Everything a rebuild depends on: change it and the panels are built again (a trade post: also its streams and orders; the view's facet). */
   private signature(sim: Sim, e: Ent): string {
-    const base = `${e.id}:${e.cfg}:${e.builtAt !== 0}:${sim.graph?.nodeByEnt.get(e.id) ? 1 : 0}:${locale()}:${(e.portItems ?? []).join('.')}:${sim.hearthLevel}:${sim.fleet.get(e.id) ?? 0}:${sim.done.size}:${this.host.facet?.() ?? ''}:${e.id === sim.hearthId ? sim.expertise.slots.map((x) => (x ? `${x.id}${x.on ? '+' : '-'}${sim.expertise.ranks.get(x.id) ?? 0}` : '')).join('/') : ''}`;
+    const base = `${e.id}:${e.cfg}:${e.builtAt !== 0}:${sim.graph?.nodeByEnt.get(e.id) ? 1 : 0}:${locale()}:${(e.portItems ?? []).join('.')}:${sim.hearthLevel}:${sim.done.size}:${this.host.facet?.() ?? ''}:${e.id === sim.hearthId ? sim.expertise.slots.map((x) => (x ? `${x.id}${x.on ? '+' : '-'}${sim.expertise.ranks.get(x.id) ?? 0}` : '')).join('/') : ''}`;
     return BUILDING_KIND[e.def] === 'trade' ? `${base}:${tradeSig(sim, e.id)}` : base;
   }
 

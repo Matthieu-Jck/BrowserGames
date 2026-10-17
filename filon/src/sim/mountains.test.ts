@@ -1,5 +1,5 @@
-// mountains.test.ts — buildings on the mountains (D44): a wind turbine, a pole, a pylon or a
-// beacon may stand on rock — its whole footprint, never astride a cliff; a turbine, like any
+// mountains.test.ts — buildings on the mountains (D44): a wind turbine, a pole or a pylon may
+// stand on rock — its whole footprint, never astride a cliff; a turbine, like any
 // building that needs land, on the claim's parcels (D60) — and the Sough blows harder on the rock's
 // top than on the flat round it (D95: the wind field, world/wind.test.ts).
 import { describe, it, expect } from 'vitest';
@@ -33,16 +33,16 @@ const windOf = (sim: Sim, id: number): number | undefined => {
 };
 
 describe('the mountains (D44)', () => {
-  it('a turbine, a pole, a pylon or a beacon stands on rock; never astride a cliff; a drill never; a turbine on the claim\'s land', () => {
+  it('a turbine, a pole or a pylon stands on rock; never astride a cliff; a drill never; a turbine on the claim\'s land', () => {
     const sim = mountainSim();
-    for (const def of ['wind_flower', 'mast', 'pylon', 'beacon']) expect(sim.canPlace(def, 534, 505, 0).reason, def).toBe('ok');
+    for (const def of ['wind_flower', 'mast', 'pylon']) expect(sim.canPlace(def, 534, 505, 0).reason, def).toBe('ok');
     expect(sim.canPlace('wind_flower', 533, 505, 0).reason).toBe('uneven'); // half on the floor: not level ground (D45)
     expect(sim.canPlace('drill', 534, 505, 0).reason).toBe('terrain');
     expect(sim.canPlace('kiln', 534, 505, 0).reason).toBe('terrain');
-    // Past the starting square the mountain is CrierBelt's: poles and beacons go up, a turbine waits for the parcel.
+    // Past the starting square the mountain is CrierBelt's: poles and pylons go up, a turbine waits for the parcel.
     sim.explored.push([562, 507, 6]); // surveyed
     expect(sim.canPlace('wind_flower', 560, 505, 0).reason).toBe('outside_zone');
-    for (const def of ['mast', 'beacon']) expect(sim.canPlace(def, 560, 505, 0).reason, def).toBe('ok');
+    for (const def of ['mast', 'pylon']) expect(sim.canPlace(def, 560, 505, 0).reason, def).toBe('ok');
     sim.grantCredits(sim.landPrice(parcelAt(560, 505)));
     expect(sim.buyLand(parcelAt(560, 505))).toBe(null);
     expect(sim.canPlace('wind_flower', 560, 505, 0).reason).toBe('ok');

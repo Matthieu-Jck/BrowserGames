@@ -202,7 +202,7 @@ describe('market: spot trades', () => {
   });
 });
 
-describe('market: sister colonies', () => {
+describe('market: the colonies', () => {
   it('forty colonies with the §6 profiles, Port-Écume, Sept-Cornes and Hameau-Lilas among them, every name unique', () => {
     const cols = makeColonies(WORLD_SEED);
     expect(cols).toHaveLength(40);

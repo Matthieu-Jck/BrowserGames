@@ -40,9 +40,9 @@ import { hash32 } from '@/core/hash';
 import { isqrt } from '@/core/fixed';
 import { makeNoise2, qfbm, type Noise2 } from '@/core/noise';
 import { CENTER, CHUNK } from '../constants';
-import { T } from '../types';
+import { isFloor, T } from '../types';
 import { MAX_LEVEL, type TerrainSource, type VeinSite } from './grid';
-import { ahead, eighth, headingOf, LineKind, quarter, SegIndex, tileOf, type Hits, type LinePt, type Seg, type Walker } from './obstacles';
+import { ahead, eighth, headingOf, LineKind, quarter, SegIndex, tileOf, within, type Hits, type LinePt, type Seg, type Walker } from './obstacles';
 
 export interface Site { id: UniqueBiomeId; cx: number; cy: number; r: number; item: number }
 interface Blob {
@@ -109,8 +109,14 @@ export class MapGen implements TerrainSource {
   readonly crownReach: number;
   /** The cirque template's own Crown foot, whatever the archetype (the cirque's wind shelter, D44). */
   readonly crownOuter: number;
-  /** The Crown's tarn (map 2): its centre tile and the level of its water; null on map 1 (the lake is on the floor). */
+  /** The Crown's tarn (map 2): its centre tile and the level of its water; null on map 1 (the lake is on the floor) and on map 4 (its spring instead). */
   readonly tarn: { readonly x: number; readonly y: number; readonly level: number } | null;
+  /** The Crown's spring (map 4, D115): its head tile up on the tarn's old peak and the level of its water; null on maps 1–3. */
+  readonly spring: { readonly x: number; readonly y: number; readonly level: number } | null;
+  /** The spring's stream (map 4, D115): the line from its head to its pool on the floor, in quarter tiles. */
+  private readonly springSeg: Seg | null;
+  /** The spring's summit (map 4, D115): its top and how many levels it rises over the Crown there. */
+  private readonly summit: { readonly x: number; readonly y: number; readonly rise: number } | null;
   /** The quartz vein in the nearest mountain (map 3, D87): its face tiles; null on maps 1–2. */
   readonly quartzVein: VeinSite | null;
   /** The vein's bluff in its own frame (null: no vein). */
@@ -144,6 +150,8 @@ export class MapGen implements TerrainSource {
   private readonly cirqueBlobs: Blob[] = [];
   /** The deposits' blocks (map 4, D104: content `MapParams.oreBlock`): 1, tile by tile. */
   readonly oreBlock: number;
+  /** The neighbouring bases in holdings of a few parcels (map 4, D110: content `MapParams.holdings`). */
+  readonly holdings: boolean;
   /** The copper field's and the sites' deposits, made on first need. */
   private fixedBlobs: Blob[] | null = null;
   private readonly clearings: Clearing[] = [];
@@ -192,9 +200,17 @@ export class MapGen implements TerrainSource {
     this.crownOuter = C.crownOuter;
     const L = C.lake;
     const water = { cx: CENTER + L.dx, cy: CENTER + L.dy, r2: L.radius * L.radius, r2deep: L.deep * L.deep };
-    this.lake = L.onCrest ? null : water;
+    // Map 4 (D115): the tarn's peak kept (its mound) but dry, a spring at its top, its stream down
+    // the terraces to a pool on the floor (`floorGround` reads it as map 1 reads its lake).
+    const SP = C.spring, pool = SP ? { cx: CENTER + SP.pool.dx, cy: CENTER + SP.pool.dy, r2: SP.pool.radius * SP.pool.radius, r2deep: SP.pool.deep * SP.pool.deep } : null;
+    this.lake = L.onCrest ? pool : water;
     this.tarnAt = L.onCrest ? { ...water, rc: isqrt(L.dx * L.dx + L.dy * L.dy), mound: L.mound ?? 0 } : null;
-    this.tarn = L.onCrest ? { x: water.cx, y: water.cy, level: C.crest } : null;
+    this.tarn = L.onCrest && !SP ? { x: water.cx, y: water.cy, level: C.crest } : null;
+    // The spring's summit (D115: « from a higher mountain… from north to south »): its stream from
+    // the summit's top straight down to the pool.
+    this.summit = SP ? { x: CENTER + SP.summit.dx, y: CENTER + SP.summit.dy, rise: SP.summit.rise } : null;
+    const head = this.summit;
+    this.springSeg = head && pool ? { ax: 4 * head.x + 2, ay: 4 * head.y + 2, bx: 4 * pool.cx + 2, by: 4 * pool.cy + 2, hw: SP!.halfWidth, kind: LineKind.River, dir: eighth(pool.cx - head.x, pool.cy - head.y) } : null;
     // The top's outer edge is at most max(rim + lift + minCrest, foot − lift + jitter), the rim
     // and the jitter at their highest (amp − 1), plus the widest shoulder, or the tarn's mound;
     // the foot lies `climb` tiles past it (the way down from the crest, the deepest).
@@ -202,9 +218,12 @@ export class MapGen implements TerrainSource {
     const S = C.shoulders, widest = S ? ((255 - S.from) * S.gain) >> 7 : 0;
     const edge = Math.max(C.floorRadius + C.rimJitter.floor + lift + C.minCrest, this.crownFoot - lift + C.rimJitter.outer) + widest;
     this.crownReach = Math.max(edge, this.tarnAt ? this.tarnAt.rc + this.tarnAt.mound : 0) + climb;
+    // The spring at the summit's top, at the summit's level there.
+    this.spring = head ? { x: head.x, y: head.y, level: this.crown(head.x, head.y, isqrt((head.x - CENTER) ** 2 + (head.y - CENTER) ** 2)) } : null;
     // Cirque deposits: shared template, ±1 tile and ±20 % richness per player. Map 4 (D104): a
     // whole block or none, along the Crown (across the deposit's bearing from the Heart, to the
     // nearest eighth), never towards the Heart: its distance from it, the tutorial's, is everyone's.
+    this.holdings = !!P.holdings;
     const OB = (this.oreBlock = P.oreBlock ?? 1);
     C.deposits.forEach((d, i) => {
       let jx = (hash32(ps, 30 + i) % 3) - 1, jy = (hash32(ps, 40 + i) % 3) - 1;
@@ -364,7 +383,14 @@ export class MapGen implements TerrainSource {
       edge = Math.max(edge, rim + (C.crest - 1) * T + C.minCrest);
     }
     const up = Math.min(top, 1 + Math.floor((r - rim) / T));
-    return r < edge ? up : Math.min(up, Math.max(0, top - 1 - Math.floor((r - edge) / T)));
+    const lv = r < edge ? up : Math.min(up, Math.max(0, top - 1 - Math.floor((r - edge) / T)));
+    // The spring's summit (map 4, D115): the Crown raised round it, `rise` levels at its top, a level
+    // less every terrace away — on the Crown only (never past its foot nor on the floor), so the way
+    // over it still climbs a level a step.
+    const S = this.summit;
+    if (!S || lv < 1) return lv;
+    const d = isqrt((x - S.x) * (x - S.x) + (y - S.y) * (y - S.y));
+    return Math.min(MAX_LEVEL, lv + Math.max(0, S.rise - Math.floor(d / T)));
   }
 
   /**
@@ -385,10 +411,28 @@ export class MapGen implements TerrainSource {
     return [CENTER + ((x - CENTER) * radius) / r, CENTER + ((y - CENTER) * radius) / r];
   }
 
-  /** The tarn's water at a tile (map 2): its class, deep at its heart; 0 off it. */
+  /**
+   * The spring's water at a tile of its stream (map 4, D115): the lowest the Crown stands along the
+   * stream's line from its head to that tile (tile by tile), so the water only ever falls — cutting
+   * into the rock where the Crown under it rises again — and steps down a terrace in a fall.
+   */
+  private springLevel(x: number, y: number): number {
+    const S = this.summit!, P = this.lake!;
+    const dx = P.cx - S.x, dy = P.cy - S.y, len = Math.max(Math.abs(dx), Math.abs(dy)), l2 = dx * dx + dy * dy;
+    if (!len) return 0;
+    const k = Math.max(0, Math.min(len, Math.round((((x - S.x) * dx + (y - S.y) * dy) * len) / l2)));
+    let lv = MAX_LEVEL;
+    for (let j = 0; j <= k; j++) {
+      const px = S.x + Math.round((dx * j) / len), py = S.y + Math.round((dy * j) / len);
+      lv = Math.min(lv, Math.max(0, this.crown(px, py, isqrt((px - CENTER) * (px - CENTER) + (py - CENTER) * (py - CENTER)))));
+    }
+    return lv;
+  }
+
+  /** The tarn's water at a tile (map 2): its class, deep at its heart; 0 off it (and on map 4: a spring instead, D115). */
   private tarnWater(x: number, y: number): number {
     const t = this.tarnAt;
-    if (!t) return 0;
+    if (!t || this.spring) return 0;
     const d2 = (x - t.cx) * (x - t.cx) + (y - t.cy) * (y - t.cy);
     return d2 <= t.r2deep ? T.Deep : d2 <= t.r2 ? T.Shallow : 0;
   }
@@ -450,6 +494,14 @@ export class MapGen implements TerrainSource {
     if (r > RINGS.playable) return (this.heightAt(x, y, r) << HEIGHT) | (T.DuneSea << GROUND);
     if (r <= this.crownReach) {
       const c = this.crown(x, y, r);
+      // The spring's stream (map 4, D115): down the terraces at their level (a fixed level, a fall at
+      // each step; the Crown's levels only fall towards the floor), then across the floor's edge
+      // into its pool.
+      const sp = this.springSeg;
+      if (sp && within(sp, 4 * x + 2, 4 * y + 2) && this.floorGround(x, y) === T.Sand) {
+        const flow = (T.River << GROUND) | (sp.dir << FLOW), w = c > 0 ? this.springLevel(x, y) : 0;
+        return w > 0 ? w | CROWN | WET | FIXED | flow : FLOOR | flow;
+      }
       if (c < 0) return FLOOR | (ground ? this.floorGround(x, y) << GROUND : 0);
       if (c > 0) {
         // A mountain at the Crown's foot (a Closed Cirque's) may rise over its outer terraces.
@@ -921,6 +973,32 @@ export class MapGen implements TerrainSource {
     return (c & LV) > 0 && !(c & WET) ? T.Rock1 : (c >> GROUND) & 15;
   }
 
+  /**
+   * Is tile (x, y) open floor at level 0, as `fill` writes it (D110: where a neighbouring base may
+   * stand, sampled without making a chunk)? A tile raw at level 0 is never raised by the settling.
+   */
+  floorAt(x: number, y: number): boolean {
+    const c = this.classify(x, y, true);
+    return (c & LV) === 0 && !(c & WET) && isFloor((c >> GROUND) & 15);
+  }
+
+  /**
+   * Does the tile rect [x0, x1) × [y0, y1) hold what the land guarantees the claim (D110): the copper
+   * field, a unique site or a vent (their clearings), the quartz vein (map 3), a corridor of floor to
+   * a site (map 4, sampled every other tile)? No neighbouring base takes such a parcel.
+   */
+  keepsClear(x0: number, y0: number, x1: number, y1: number): boolean {
+    const disc = (cx: number, cy: number, r: number): boolean => {
+      const dx = Math.max(x0, Math.min(x1 - 1, cx)) - cx, dy = Math.max(y0, Math.min(y1 - 1, cy)) - cy;
+      return dx * dx + dy * dy <= r * r;
+    };
+    for (const c of this.clearings) if (disc(c.cx, c.cy, c.r)) return true;
+    const v = this.quartzVein;
+    if (v) for (let k = 0; k < v.n; k++) if (disc(v.x + k * v.dx, v.y + k * v.dy, 8)) return true;
+    if (this.O) for (let y = y0; y < y1; y += 2) for (let x = x0; x < x1; x += 2) if (this.lines.hit(x, y, LineKind.Corridor)) return true;
+    return false;
+  }
+
   /** Base terrain class of a tile (before deposits), as `fill` writes it. */
   terrainAt(x: number, y: number): number {
     const c = this.classify(x, y, true), raw = c & LV;
@@ -1071,7 +1149,8 @@ export class MapGen implements TerrainSource {
           height[k] = clamp255(base + this.jitter(x * 3, y * 3, SHADE.jitter));
         }
         if (biome) {
-          let b: number = c & FLOOR ? BIOME.cirque : c & CROWN ? BIOME.crown : c & SEAF ? BIOME.sea : ((c >> GROUND) & 15) === T.River ? BIOME.river + ((c >> FLOW) & 7) : BIOME.none;
+          // A river's tile its way first (the Crown's spring runs on the floor and the terraces, D115).
+          let b: number = ((c >> GROUND) & 15) === T.River ? BIOME.river + ((c >> FLOW) & 7) : c & FLOOR ? BIOME.cirque : c & CROWN ? BIOME.crown : c & SEAF ? BIOME.sea : BIOME.none;
           for (const s of this.sites) {
             if ((x - s.cx) * (x - s.cx) + (y - s.cy) * (y - s.cy) <= s.r * s.r) b = UNIQUE_BIOMES[s.id].code;
           }

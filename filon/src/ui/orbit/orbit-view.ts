@@ -1,7 +1,7 @@
 // orbit-view.ts — "Économie visible": the Crier seen from orbit, the hero panel of the Crier
 // screen. Ysmère is an inked globe in orthographic projection, framed so the cirque sits a
 // little up-left of the disc's centre; its night side follows the world day (sunDir: 36 epochs
-// a day). The forty sister colonies stand on it as little profile glyphs (lit windows at
+// a day). The forty other claims (colonies) stand on it as little profile glyphs (lit windows at
 // night; hidden on the far side), the player's Hearth marks the cirque, and the Crier Ring
 // passes behind the planet and in front of it with its station. The player's trade shows as
 // dashed great-circle routes lifted above the ground (coral: goods sold, turquoise: goods

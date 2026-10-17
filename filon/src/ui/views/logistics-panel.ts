@@ -1,8 +1,8 @@
 // logistics-panel.ts — the Logistique view's side panel (D88): the ribbon lines in a few marks —
 // how many, how many full, jammed (a click goes to the next), dead ends (likewise), idle — then
 // the heat's key (empty pale turquoise to full coral; a ribbon carries 60 a minute, a swift one 120)
-// over a histogram of the lines by how loaded they are, each bar in its heat, and the skydocks'
-// drifter routes. Read from `Readouts.ribbons` (sim/readouts/ribbons.ts); refreshed at 4 Hz with
+// over a histogram of the lines by how loaded they are, each bar in its heat (the skydocks'
+// drifter routes went in D108). Read from `Readouts.ribbons` (sim/readouts/ribbons.ts); refreshed at 4 Hz with
 // change-only writes. Then the night (D103): how many ribbon tiles the Gleaners reach (the crescent,
 // as the map marks them) and how many are kept from them (the glass hood), and what they took last
 // night, each item by its icon — the block gone where no ribbon runs by the open desert.
@@ -27,8 +27,6 @@ export class LogisticsPanel {
   readonly root: HTMLElement;
   private readonly chips = new Map<string, { node: HTMLElement; n: HTMLElement }>();
   private readonly bars: HTMLElement[] = [];
-  private readonly routes = el('b');
-  private readonly routesRow: HTMLElement;
   /** The night (D103): exposed and guarded tiles, last night's takings. */
   private readonly night: HTMLElement;
   private readonly exposed = el('b');
@@ -54,7 +52,6 @@ export class LogisticsPanel {
     ]);
     const grad = `linear-gradient(90deg, ${HEAT.map(([u, c]) => `${c} ${u / 10}%`).join(', ')})`;
     for (let i = 0; i < BUCKETS; i++) this.bars.push(el('i.vp-hist-bar', { style: `background:${heatColor((i + 0.5) * (1000 / BUCKETS))}` }));
-    this.routesRow = el('div.vp-routes', {}, [viewIconCanvas('dock', 20), el('span', { 'data-label': 'mapview.routes' }), this.routes]);
     this.night = el('div.vp-glean', { 'data-glean': '' }, [
       el('div.vp-flags', {}, [
         el('span.vp-flag', { 'data-k': 'exposed' }, [viewIconCanvas('moon', 20), this.exposed]),
@@ -68,7 +65,6 @@ export class LogisticsPanel {
       el('div.vp-hist', {}, this.bars),
       el('div.vp-heat', { style: `background:${grad}` }),
       el('div.vp-heat-ends', {}, [el('small', { 'data-label': 'mapview.heat.empty' }), el('small', { 'data-label': 'mapview.heat.full' })]),
-      this.routesRow,
       this.night,
     ]);
   }
@@ -105,8 +101,6 @@ export class LogisticsPanel {
       setStyle(this.bars[i]!, 'height', `${Math.max(n ? 8 : 2, Math.round((n * 100) / max))}%`);
       setAttr(this.bars[i]!, 'title', `${i * 10}–${t('hud.powerPct', { v: (i + 1) * 10 })} · ${n}`);
     });
-    setText(this.routes, String(sim.routes.length));
-    setAttr(this.routesRow, 'hidden', sim.routes.length ? null : '');
     // The night (D103).
     const g = sim.graph?.glean;
     const ne = g?.exposed.length ?? 0, ng = g?.guarded.length ?? 0;

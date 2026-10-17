@@ -107,9 +107,12 @@
 /* From another lane (the Synthesis's bus, the Compute Plan's Server Room…): the same states, a finer line. */
 .tree .tr-link[data-kind='cross'] { stroke-width: 1.6; }
 
-/* A node's chain (D107): under the mouse (on a touch screen, the selection), what it needs and what
-   needs it stay, the rest fades back; its links thicken. */
+/* A node's chain (D107): the node the player selected — what it needs and what needs it stay, the
+   rest fades back, its links thicken — until another is selected, the empty tree clicked or Esc. */
 .tr-canvas .tr-node, .tr-canvas .tr-link { transition: opacity 0.15s ease; }
+/* The mouse over a card only raises it (D111: a cue, no focus); zoomed out, a ring. */
+.tr-canvas .tr-node { transition: opacity 0.15s ease, transform 0.12s ease, box-shadow 0.12s ease; }
+.tr-canvas .tr-node:hover { transform: translateY(-2px); box-shadow: 3px 5px 0 var(--c-ink); }
 .tr-canvas[data-chain] .tr-node:not([data-chain]) { opacity: 0.2; }
 .tr-canvas[data-chain] .tr-node[data-chain] { opacity: 1; }
 .tr-canvas[data-chain] .tr-link:not([data-chain]) { opacity: 0.06; }
@@ -251,6 +254,56 @@
 .rs-qinfo small { color: var(--c-ink-soft); font-size: 11.5px; line-height: 1.3; }
 .rs-qnext { color: var(--c-lilac-d) !important; font-weight: 600; }
 .rs-qput { flex: none; font-size: 13px; padding: 2px 7px; }
+
+/* ── zoom (D111): the view on a stage, its zoom bar in a corner, the titles pinned over it ── */
+.tr-stage { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; }
+.tr-zoom { position: absolute; right: 12px; bottom: 12px; z-index: 4; display: flex; align-items: center; gap: 3px; padding: 4px; }
+.tr-zbtn {
+  min-width: 32px; height: 32px; padding: 0 6px; display: grid; place-items: center; cursor: pointer;
+  border: 1.5px solid var(--c-ink); border-radius: 8px; background: var(--c-paper); color: var(--c-ink);
+  font: 700 19px/1 var(--f-body);
+}
+.tr-zbtn:hover:not([disabled]) { background: var(--c-peach-l); }
+.tr-zbtn[disabled] { opacity: 0.38; cursor: default; }
+.tr-zpct { min-width: 58px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.tr-fitglyph { width: 17px; height: 17px; fill: none; stroke: var(--c-ink); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+@media (pointer: coarse) { .tr-zbtn { min-width: 46px; height: 46px; } .tr-zpct { min-width: 64px; } }
+/* The tiers' and lanes' names, at reading size whatever the zoom, while the cards are small. */
+.tr-pins { position: absolute; inset: 0; z-index: 3; overflow: hidden; pointer-events: none; display: none; }
+.tr-pins[data-on] { display: block; }
+.tr-pin {
+  position: absolute; left: 0; top: 0; white-space: nowrap; padding: 1px 9px; border-radius: 999px;
+  font: 700 12.5px/18px var(--f-body); color: var(--c-ink);
+  background: color-mix(in srgb, var(--path, var(--c-lilac-l)) 22%, var(--c-paper));
+  border: 1.5px solid color-mix(in srgb, var(--path, var(--c-ink)) 75%, transparent); box-shadow: 1px 1px 0 rgba(30, 27, 46, 0.35);
+}
+.tr-pin[data-kind='tier'] { padding: 2px 14px; font-size: 18px; line-height: 22px; background: var(--c-paper); border-color: var(--c-ink); }
+.tr-pin[hidden] { display: none; }
+/* At the whole tree's size the lanes are thin: smaller lane names, so neighbours both fit. */
+.tr-pins[data-on='far'] .tr-pin[data-kind='lane'] { padding: 0 7px; font-size: 11px; line-height: 15px; }
+/* Zoomed out: what the pins say is not drawn small on the canvas too. */
+.tr-canvas[data-zoom] .tr-lane > *, .tr-canvas[data-zoom] .tr-tierhead > *, .tr-canvas[data-zoom] .tr-ttag,
+.tr-canvas[data-zoom] .tr-blockhead, .tr-canvas[data-zoom] .tr-gatecap { visibility: hidden; }
+/* Mid: a card is its icon and its name, larger, on two lines; far: its icon alone (`zoomLevel`). */
+.tr-canvas[data-zoom] .tr-main > :not(.tr-name), .tr-canvas[data-zoom] .tr-unlock, .tr-canvas[data-zoom] .tr-qtag { display: none; }
+.tree .tr-canvas[data-zoom] .tr-node .tr-name {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: normal; overflow: hidden;
+  font-size: clamp(15px, calc(10.5px / var(--tz)), 27px); line-height: 1.03;
+}
+.tree .tr-canvas[data-zoom='far'] .tr-node .tr-name { display: none; }
+.tr-canvas[data-zoom='far'] .tr-node { justify-content: center; padding: 2px; }
+.tree .tr-canvas[data-zoom='far'] .tr-node .tr-icons { width: 52px; height: 52px; }
+.tree .tr-canvas[data-zoom='far'] .tr-node .tr-icons > :first-child { width: 50px; height: 50px; }
+.tree .tr-canvas[data-zoom='far'] .tr-node .tr-icons > :nth-child(n + 2) { display: none; }
+.tr-canvas[data-zoom] .tr-node { border-width: calc(1.6px / var(--tz)); box-shadow: none; }
+.tr-canvas[data-zoom] .tr-node:hover { box-shadow: 0 0 0 calc(3px / var(--tz)) var(--c-turq); }
+.tr-canvas[data-zoom] .tr-node::before { width: calc(3px / var(--tz)); }
+/* The links keep their width and their dashes on screen: crisp, never a hairline. */
+.tr-canvas[data-zoom] .tr-link { stroke-width: calc(1.7px / var(--tz)); }
+.tr-canvas[data-zoom] .tr-link[data-state='open'] { stroke-dasharray: calc(7px / var(--tz)) calc(5px / var(--tz)); }
+.tr-canvas[data-zoom] .tr-link[data-state='locked'] { stroke-dasharray: calc(2px / var(--tz)) calc(6px / var(--tz)); }
+.tr-canvas[data-zoom] .tr-link[data-gate] { stroke-dasharray: calc(3px / var(--tz)) calc(6px / var(--tz)); }
+.tr-canvas[data-zoom] .tr-link[data-hot], .tr-canvas[data-zoom][data-chain] .tr-link[data-chain] { stroke-width: calc(3px / var(--tz)); }
 
 /* Reduced motion: the warnings and highlights hold still. */
 @media (prefers-reduced-motion: reduce) {

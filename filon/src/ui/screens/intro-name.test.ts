@@ -1,4 +1,4 @@
-// intro-name.test.ts — the company name's rules (D31): length, sister claims (pinned and
+// intro-name.test.ts — the company name's rules (D31): length, the other claims (pinned and
 // generated, both languages), reserved names, the comparison (case, accents, dashes), the
 // async seam for a server, and the ↻ ideas.
 import { describe, expect, it } from 'vitest';
@@ -30,7 +30,7 @@ describe('company name', () => {
     expect(why(nameVerdict('x'.repeat(COLONY_NAME_MAX + 1), taken))).toBe('long');
   });
 
-  it('refuses a sister claim’s name in either language, whatever the case, accents or dashes', () => {
+  it('refuses another claim’s name in either language, whatever the case, accents or dashes', () => {
     for (const p of PINNED_COLONIES) {
       expect(why(nameVerdict(p.name.fr, taken)), p.name.fr).toBe('taken');
       expect(why(nameVerdict(p.name.en, taken)), p.name.en).toBe('taken');

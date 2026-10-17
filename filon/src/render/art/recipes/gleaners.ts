@@ -1,10 +1,16 @@
-// gleaners.ts — the art of the Gleaners (D103) and of what keeps them off: the small desert people
-// themselves, their lantern eyes' glow, the glass hood over a glazed ribbon, and the fence.
+// gleaners.ts — the art of the Gleaners (D103, D112) and of what keeps them off: the small desert
+// people themselves, their lantern eyes' glow, the glass hood over a glazed ribbon, and the fence.
 //
-// - **A Gleaner** (`drawGleaner`): a small, quick, lanky figure, a bent hood ending in a long tip
-//   blown back by the Sough, a dusty ochre cloak over spindly legs (four walk frames), a thin arm
-//   reaching forward, and under the hood two lantern eyes. Drawn upright, its feet at the canvas's
-//   bottom centre. The eyes are bright in the picture; their halo is a separate soft glow
+// - **A Gleaner** (`drawGleaner`; owner, 2026-10-17: « un style amélioré … pas de jambes si c'est
+//   trop compliqué à animer »): no legs — a hunched hooded cloak that floats a hand's breadth over
+//   the sand and tapers behind into a tail like a blown flame, trailing two wisps of mist (four
+//   frames: the tail and the wisps wave), a lumpy sack on its back, a deep hood bent low in front of the hunch with a long tip blown back, two lantern
+//   eyes in the hood's dark, and a thin arm with three long fingers. It glides, carries (the arm
+//   raised, holding up what it took: the views draw the item at `GLEANER_HAND`) or reaches (leant
+//   in, armless: the views draw its long arm, `drawGleanerArm`, from `GLEANER_SHOULDER_REACH` out
+//   to the ribbon, as long as it needs). A moonlit rim on the hood and the hunch gives it a shape
+//   at night. Drawn facing right; the ground under it (its shadow, `drawGleanerShadow`) at
+//   `GLEANER_GROUND`. The eyes are bright in the picture; their halo is a separate soft glow
 //   (`drawEyeGlow`) the views lay on the additive lights layer, so the night never dims it.
 // - **The glass hood** (`drawGlassCover`): what covers a glazed ribbon, laid by the views over the
 //   items it carries — a pale translucent sheet over the band and its rails, two white glints, a
@@ -20,76 +26,146 @@ import type { IsoFrame } from '../iso-shapes';
 import type { Frame } from '../shapes';
 import { BELT_PX } from './belts';
 
-/** A Gleaner's canvas (px) and where its feet stand in it. */
-export const GLEANER_W = 40, GLEANER_H = 52;
+/** A Gleaner's canvas (px) and its frames (the wisps' wave). */
+export const GLEANER_W = 56, GLEANER_H = 60;
 export const GLEANER_FRAMES = 4;
-/** Its eyes in the canvas (px, before any flip): the lantern glows go there. */
-export const GLEANER_EYE: Pt = [22.5, 15.5];
-/** Its raised hand, where it carries what it took (px). */
-export const GLEANER_HAND: Pt = [32, 20];
-/** Its hand reaching down onto a ribbon (px, the body leant in): where it picks the item up, or taps the glass. */
-export const GLEANER_REACH: Pt = [33.5, 44.8];
-/** Its eyes when it leans in to reach (px). */
-export const GLEANER_EYE_REACH: Pt = [30, 16.9];
+/** The body's axis and its hem, floating `FLOAT` px over the ground. */
+const BX = 30, FLOAT = 8, GY = GLEANER_H - 3, HY = GY - FLOAT;
+/** The ground under it: where its shadow lies and the views stand it (px). */
+export const GLEANER_GROUND: Pt = [BX, GY];
+/** How far it leans in to reach (radians, about its hem). */
+const LEAN = 0.2;
+const leant = (p: Pt): Pt => {
+  const c = Math.cos(LEAN), s = Math.sin(LEAN), dx = p[0] - BX, dy = p[1] - HY;
+  return [BX + dx * c - dy * s, HY + dx * s + dy * c];
+};
+/** Its eyes (px, facing right): upright, and leant in. */
+export const GLEANER_EYE: Pt = [BX + 11.8, HY - 26.6];
+export const GLEANER_EYE_REACH: Pt = leant(GLEANER_EYE);
+/** Its shoulder, where the long arm starts when it reaches (leant in). */
+export const GLEANER_SHOULDER_REACH: Pt = leant([BX + 7, HY - 20]);
+/** What it carries, held up before its hood (px). */
+export const GLEANER_HAND: Pt = [BX + 19, HY - 35];
+/** The middle of its body (px): the halo's centre. */
+export const GLEANER_HEART: Pt = [BX - 1, HY - 20];
 
-/** How it stands: walking (arm forward), carrying (arm up, holding), reaching (leaning in, arm down onto the ribbon). */
-export type GleanerPose = 'walk' | 'carry' | 'reach';
+/** How it floats: gliding (arm hanging), carrying (arm up, holding), reaching (leant in, its long arm drawn apart). */
+export type GleanerPose = 'glide' | 'carry' | 'reach';
 
-// A dark silhouette against the night and its own halo, so the lantern eyes are what one sees first.
-const CLOAK = mix(C.mesa, C.inkSoft, 0.5);
-const CLOAK_D = mix(C.inkSoft, C.ink, 0.35);
-const LIMB = mix(C.ink, C.lilacD, 0.3);
-const EYE = '#e9fff6';
+// A dusky silhouette against the night and its own halo, so the lantern eyes are what one sees first.
+const CLOAK = mix(C.mesa, C.inkSoft, 0.55);
+const CLOAK_D = mix(C.inkSoft, C.ink, 0.3);
+const SACK = mix(C.mesa, C.inkSoft, 0.3);
+const SACK_D = mix(SACK, C.ink, 0.35);
+const LIMB = mix(C.mesa, C.lilacD, 0.55);
+const RIM = C.lilacL;
+const MIST = mix(C.lilacL, '#ffffff', 0.3);
+const EYE = '#effffa';
 
 /**
- * One frame of a Gleaner facing right (`frame` 0…3: the legs' stride): walking, carrying (its arm
- * raised with something held up: the views draw the item there), or reaching (leaning in, its long
- * arm down onto the ribbon, `GLEANER_REACH`).
+ * One frame of a Gleaner facing right (`frame` 0…3: its wisps' wave): gliding, carrying (its arm
+ * raised, something held up at `GLEANER_HAND`: the views draw the item there) or reaching (leant
+ * in, without its arm: the views draw it, `drawGleanerArm`).
  */
 export function drawGleaner(ctx: Ctx, frame: number, pose: GleanerPose | boolean, seed = 7): void {
-  const p: GleanerPose = pose === true ? 'carry' : pose === false ? 'walk' : pose;
-  const carry = p === 'carry';
-  const bx = 20, by = GLEANER_H - 2; // feet
-  const k = p === 'reach' ? 1 : frame % GLEANER_FRAMES;
+  const p: GleanerPose = pose === true ? 'carry' : pose === false ? 'glide' : pose;
+  const ph = ((((frame % GLEANER_FRAMES) + GLEANER_FRAMES) % GLEANER_FRAMES) / GLEANER_FRAMES) * Math.PI * 2;
+  const x = BX, y = HY;
   ctx.save();
-  if (p === 'reach') { ctx.translate(bx, by); ctx.rotate(0.22); ctx.translate(-bx, -by); } // leaning in
-  // Legs: two pairs, spindly, striding (a quick alien gait: the far pair opposite the near).
-  const stride = ([[-5, 4], [-1, 1], [4, -5], [1, -1]] as const)[k]!;
-  const hip: Pt = [bx + 1, by - 17];
-  for (const [i, dx] of [stride[1], stride[0]].entries()) {
-    const foot: Pt = [bx + dx * 1.2, by];
-    const knee: Pt = [bx + dx * 0.5 + 3, by - 9 - (i ? 0 : 1)];
-    ink(ctx, [hip, knee, foot], { w: i ? 2.2 : 1.6, color: i ? LIMB : mix(LIMB, C.lilacD, 0.4), shade: false, taper: 0.2, jitter: 0.2, seed: seed + i });
+  if (p === 'reach') { ctx.translate(x, y); ctx.rotate(LEAN); ctx.translate(-x, -y); }
+  // The cloak: a hunched bell, its back high and round, tapering behind into a tail that streams
+  // back like a blown flame (no legs: it floats); two wisps of mist trail off the tail's tip.
+  const w = Math.sin(ph) * 1.6, w2 = Math.sin(ph + 1.3) * 1.8;
+  for (let j = 0; j < 2; j++) {
+    const pts: Pt[] = [];
+    for (let i = 0; i <= 8; i++) {
+      const t = i / 8;
+      pts.push([x - 19 - t * (9 - j * 2), y + 0.5 + w2 * (1 - t) - j * 2.5 + Math.sin(t * 4 + ph + j * 2) * 1.4 * t - t * (1 + j)]);
+    }
+    ink(ctx, pts, { w: 1.6 - j * 0.3, color: MIST, alpha: 0.42 - j * 0.1, shade: false, taper: 0.8, jitter: 0, seed: seed + 20 + j });
   }
-  // The cloak: a teardrop from the shoulders to the hips, hem fluttering back.
-  const flutter = k % 2 ? 1.5 : -0.5;
   const cloak: Pt[] = [
-    [bx - 3, by - 34], [bx + 5, by - 33], [bx + 9, by - 26], [bx + 8, by - 18], [bx + 3, by - 13],
-    [bx - 4, by - 14 + flutter], [bx - 10, by - 15 + flutter], [bx - 8, by - 22], [bx - 6, by - 29],
+    [x + 4, y - 31], [x + 8, y - 21], [x + 8.5, y - 12], [x + 6, y - 4], [x + 2, y - 0.5],
+    [x - 3, y + 1 + w * 0.3], [x - 9, y + 1.5 + w * 0.6], [x - 15, y + 2.5 + w], [x - 21, y + 0.5 + w2],
+    [x - 17, y - 1.5 + w2 * 0.6], [x - 14.5, y - 6], [x - 13.5, y - 13], [x - 14, y - 21], [x - 10, y - 30], [x - 4, y - 34.5],
   ];
-  shape(ctx, cloak, CLOAK, { w: 1.6, seed: seed + 3 });
-  flat(ctx, [[bx - 8, by - 22], [bx - 6, by - 29], [bx - 3, by - 33], [bx - 1, by - 22], [bx - 4, by - 14 + flutter], [bx - 10, by - 15 + flutter]], CLOAK_D, 0.55);
-  // The arm: reaching forward, or raised with what it carries.
-  const sh: Pt = [bx + 5, by - 29];
-  // Reaching, the hand is where the ribbon is once the body leans (GLEANER_REACH in the upright frame).
-  const hand: Pt = carry ? GLEANER_HAND : p === 'reach' ? [bx + 12, by - 8] : [bx + 15, by - 22];
-  const elbow: Pt = carry ? [bx + 10, by - 24] : p === 'reach' ? [bx + 11, by - 19] : [bx + 10, by - 25];
-  ink(ctx, [sh, elbow, hand], { w: 1.8, color: LIMB, shade: false, taper: 0.1, jitter: 0.2, seed: seed + 4 });
-  for (let i = 0; i < 3; i++) ink(ctx, [hand, [hand[0] + 2 + i, hand[1] - 2 + i * 2]], { w: 0.9, color: LIMB, shade: false, taper: 0.4, jitter: 0, seed: seed + 5 + i });
-  // The hood: a round head bent forward, its long tip blown back by the wind.
-  const hood: Pt[] = [
-    [bx - 4, by - 33], [bx - 6, by - 39], [bx - 3, by - 44], [bx + 3, by - 46], [bx + 9, by - 43],
-    [bx + 11, by - 37], [bx + 8, by - 32], [bx + 2, by - 31],
-  ];
-  shape(ctx, hood, CLOAK, { w: 1.7, seed: seed + 8 });
-  shape(ctx, [[bx - 3, by - 44], [bx - 12, by - 47], [bx - 19, by - 45], [bx - 11, by - 43], [bx - 5, by - 40]], CLOAK_D, { w: 1.3, seed: seed + 9 });
-  // The hood's dark mouth and the two lantern eyes in it.
-  flat(ctx, ellipsePts(bx + 5, by - 37, 5, 4, seed + 10, 0.05, 20), C.ink, 0.92);
+  shape(ctx, cloak, CLOAK, { w: 1.8, seed: seed + 3 });
+  flat(ctx, [[x - 13.5, y - 13], [x - 14, y - 21], [x - 10, y - 30], [x - 6, y - 24], [x - 5, y - 4], [x - 9, y + 1.5 + w * 0.6], [x - 15, y + 2.5 + w], [x - 21, y + 0.5 + w2], [x - 17, y - 1.5 + w2 * 0.6], [x - 14.5, y - 6]], CLOAK_D, 0.45);
+  // Folds running back into the tail.
+  ink(ctx, [[x + 1, y - 25], [x - 0.5, y - 13], [x - 4, y - 3], [x - 12, y + 0.5 + w * 0.7]], { w: 1.1, color: CLOAK_D, alpha: 0.75, shade: false, taper: 0.6, jitter: 0.2, seed: seed + 4 });
+  ink(ctx, [[x - 8, y - 9], [x - 13, y - 2], [x - 18, y + 0.5 + w2 * 0.8]], { w: 1, color: CLOAK_D, alpha: 0.6, shade: false, taper: 0.6, jitter: 0.2, seed: seed + 11 });
+  // The sack on its back: lumpy, a darker patch, tied at the neck, its strap over the shoulder.
+  ink(ctx, [[x - 8, y - 27], [x - 1, y - 26], [x + 6, y - 22]], { w: 1.4, color: SACK_D, shade: false, taper: 0, jitter: 0.2, seed: seed + 5 });
+  shape(ctx, ellipsePts(x - 12, y - 19, 6.8, 6.2, seed + 6, 0.18, 22), SACK, { w: 1.5, seed: seed + 7 });
+  flat(ctx, ellipsePts(x - 14, y - 17, 3.4, 3.4, seed + 8, 0.12, 14), SACK_D, 0.5);
+  ink(ctx, [[x - 16.5, y - 20], [x - 13, y - 23], [x - 8.5, y - 21]], { w: 0.9, color: SACK_D, alpha: 0.8, shade: false, taper: 0.4, jitter: 0, seed: seed + 9 });
+  shape(ctx, [[x - 11, y - 25], [x - 9.5, y - 28.5], [x - 7, y - 27.5], [x - 8, y - 24.5]], SACK_D, { w: 1, seed: seed + 12 });
+  // The hood: bent low before the hunch, its long tip blown back over the sack.
+  const fl = Math.sin(ph) * 1.2;
+  shape(ctx, [[x + 1, y - 34], [x - 5, y - 38], [x - 11, y - 37.5 + fl], [x - 15.5, y - 34 + fl * 1.4], [x - 10, y - 33.5], [x - 4, y - 31.5]], CLOAK_D, { w: 1.3, seed: seed + 13 });
+  const hood: Pt[] = [[x - 1, y - 31], [x + 3, y - 36.5], [x + 10, y - 37], [x + 15.5, y - 32], [x + 17.5, y - 25], [x + 15, y - 19.5], [x + 9, y - 18.5], [x + 4, y - 22.5]];
+  shape(ctx, hood, CLOAK, { w: 1.9, seed: seed + 14 });
+  // The moonlit rim: along the hood's crown and the hunch.
+  ink(ctx, [[x - 9, y - 31], [x - 4, y - 34.5], [x + 3, y - 36.4], [x + 10, y - 36.6], [x + 14.5, y - 32.5]], { w: 1.6, color: RIM, alpha: 0.8, shade: false, taper: 0.4, jitter: 0, seed: seed + 15 });
+  // The hood's deep mouth, lit faintly from within, and the lantern eyes.
+  flat(ctx, ellipsePts(x + 11.8, y - 25.8, 4.6, 5, seed + 16, 0.06, 20), C.ink, 0.97);
+  ink(ctx, [[x + 8, y - 22], [x + 11.5, y - 21.2], [x + 15.2, y - 23]], { w: 1, color: C.glowTurq, alpha: 0.45, shade: false, taper: 0.5, jitter: 0, seed: seed + 17 });
   const [ex, ey] = GLEANER_EYE;
-  for (const dx of [-2.2, 2]) {
-    flat(ctx, ellipsePts(ex + dx, ey, 1.6, 1.4, seed + 11, 0, 12), EYE);
-    flat(ctx, ellipsePts(ex + dx, ey, 2.8, 2.4, seed + 12, 0, 12), C.glowTurq, 0.35);
+  for (const dx of [-1.9, 1.9]) {
+    flat(ctx, ellipsePts(ex + dx, ey + dx * 0.25, 2.9, 2.5, seed + 18, 0, 12), C.glowTurq, 0.4);
+    flat(ctx, ellipsePts(ex + dx, ey + dx * 0.25, 1.5, 1.35, seed + 19, 0, 12), EYE);
   }
+  if (p !== 'reach') arm(ctx, p === 'carry', seed + 40);
+  ctx.restore();
+}
+
+/** The arm in the picture: hanging forward (gliding), or raised before the hood (carrying). */
+function arm(ctx: Ctx, carry: boolean, seed: number): void {
+  const sh: Pt = [BX + 7, HY - 20];
+  const el: Pt = carry ? [BX + 15, HY - 18] : [BX + 11, HY - 13];
+  const hd: Pt = carry ? [BX + 18.5, HY - 30] : [BX + 14, HY - 8];
+  ink(ctx, [sh, el, hd], { w: 3.4, color: C.ink, shade: false, taper: 0.3, jitter: 0.2, seed });
+  ink(ctx, [sh, el, hd], { w: 2, color: LIMB, shade: false, taper: 0.3, jitter: 0.2, seed });
+  const fingers: ReadonlyArray<readonly [number, number]> = carry ? [[-3.5, -3.5], [0, -5], [3.5, -3]] : [[2.5, 2.5], [4, 0.5], [0.5, 4]];
+  for (const [i, [dx, dy]] of fingers.entries()) {
+    ink(ctx, [hd, [hd[0] + dx * 0.55 + (carry ? 0 : 0.6), hd[1] + dy * 0.55], [hd[0] + dx, hd[1] + dy]], { w: 1.1, color: LIMB, shade: false, taper: 0.7, jitter: 0, seed: seed + 1 + i });
+  }
+}
+
+/** The long arm's canvas (px): from its root (the shoulder) to its hand, where it holds what it takes. */
+export const ARM_W = 64, ARM_H = 16;
+export const ARM_ROOT: Pt = [3, 8];
+export const ARM_TIP: Pt = [57, 8];
+
+/** A Gleaner's long arm, reaching right: a thin tendril bowed a little, a small palm, three long fingers spread. */
+export function drawGleanerArm(ctx: Ctx, seed = 9): void {
+  const pts: Pt[] = [];
+  for (let i = 0; i <= 12; i++) {
+    const t = i / 12;
+    pts.push([ARM_ROOT[0] + t * 49, ARM_ROOT[1] - Math.sin(t * Math.PI) * 2.4 + Math.sin(t * Math.PI * 2) * 0.7]);
+  }
+  ink(ctx, pts, { w: 4.4, color: C.ink, shade: false, taper: 0.4, jitter: 0, seed });
+  ink(ctx, pts, { w: 2.8, color: LIMB, shade: false, taper: 0.45, jitter: 0, seed });
+  ink(ctx, pts.slice(1, 9), { w: 0.9, color: RIM, alpha: 0.7, shade: false, taper: 0.5, jitter: 0, seed: seed + 1 });
+  const fingers = [[61, 3], [63, 8], [61, 13]] as const;
+  for (const [i, [fx, fy]] of fingers.entries()) ink(ctx, [[53, 8], [(53 + fx) / 2 + 0.5, (8 + fy) / 2], [fx, fy]], { w: 2.4, color: C.ink, shade: false, taper: 0.7, jitter: 0, seed: seed + 3 + i });
+  shape(ctx, ellipsePts(53, 8, 2.8, 2.5, seed + 2, 0, 12), LIMB, { w: 1, seed: seed + 6 });
+  for (const [i, [fx, fy]] of fingers.entries()) ink(ctx, [[53, 8], [(53 + fx) / 2 + 0.5, (8 + fy) / 2], [fx, fy]], { w: 1.3, color: LIMB, shade: false, taper: 0.7, jitter: 0, seed: seed + 3 + i });
+}
+
+/** Its shadow on the sand (32 × 16 px): soft, dark, under where it floats. */
+export function drawGleanerShadow(ctx: Ctx): void {
+  ctx.save();
+  ctx.translate(16, 8);
+  ctx.scale(1, 0.48);
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 15);
+  g.addColorStop(0, 'rgba(20, 16, 40, 0.6)');
+  g.addColorStop(0.6, 'rgba(20, 16, 40, 0.3)');
+  g.addColorStop(1, 'rgba(20, 16, 40, 0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(0, 0, 15, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
 }
 

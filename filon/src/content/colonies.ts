@@ -1,4 +1,4 @@
-// colonies.ts — the forty sister colonies of the Crier Ring, as content: eight profiles (design
+// colonies.ts — the forty colonies of the Crier Ring (the other claims: « concessions » in the UI; some hold land beside the player's as neighbouring bases, D110), as content: eight profiles (design
 // §6), what each supplies and needs, its unique resources, daily growth and distance band, plus
 // the syllables their names are drawn from. Trade lines are weighted: 3 = the profile's staple
 // from the design table, 1 = a secondary line added so that every tradable good has at least

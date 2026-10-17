@@ -33,8 +33,11 @@
 // a traction ribbon's elevator car, waiting on it while it rises or sinks. Into an incinerator, it
 // rides up a chute and tips into the pit (pits.ts): drawn behind the near rim as it falls, shrinking
 // and fading. After the items, the idle cars go back to wait (`settle`).
+//
+// A camouflaged ribbon (D109) is buried: what rides it is not drawn; an item comes out of the sand
+// where the line meets an open piece (its vents give the odd glint: art/recipes/belts.ts).
 import { Container, Matrix, Particle, ParticleContainer, Rectangle, Sprite, type Texture } from 'pixi.js';
-import { ITEM_IDS } from '@/content/registry';
+import { ITEM_IDS, buildingDef } from '@/content/registry';
 import type { Sim } from '@/sim/state';
 import { IB_PX, ibKey, type Atlas } from '../art/atlas';
 import { DECK_Z, beltPiece } from './buildings-view';
@@ -175,6 +178,8 @@ export class ItemsView {
   readonly lift = new BeltLift();
   /** The ribbons laid through the junctions' tunnels (null without a ground layer). */
   readonly junctions: JunctionsView | null;
+  /** The buried ribbons' tiles (D109): nothing drawn on them. */
+  private buried = new Set<number>();
   count = 0;
   /** Debug (FL): record every drawn item of the last frame (tile coords) for the trace rigs. */
   debugOn = false;
@@ -208,6 +213,8 @@ export class ItemsView {
   /** Re-read the ribbon pieces and the junctions' passages (after structural changes; after the buildings view's: the depth keys read its stands); another colony starts afresh. */
   rebuild(sim: Sim): void {
     this.flow.setPieces(buildPieces(sim, beltPiece, DECK_Z));
+    this.buried.clear();
+    for (const e of sim.ents.map.values()) if (buildingDef(e.def).camo) this.buried.add(e.y * 1024 + e.x);
     this.lift.rebuild(sim);
     this.junctions?.rebuild(sim);
   }
@@ -238,6 +245,7 @@ export class ItemsView {
     let n = 0;
     const draw = (k: FlowItem): void => {
       if (k.x < vx0 - 1 || k.x > vx1 + 2 || k.y < vy0 - 1 || k.y > vy1 + 2) return;
+      if (this.buried.size && this.buried.has(Math.floor(k.y) * 1024 + Math.floor(k.x))) return; // under the sand (D109)
       const key = ibKey(ITEM_IDS[k.item]!);
       const fr = this.atlas.frames.get(key);
       const tex = this.atlas.textures.get(key);

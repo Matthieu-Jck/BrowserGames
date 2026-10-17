@@ -1,6 +1,6 @@
 // nodes.ts — flow nodes for buildings: machines (discrete integer crafting cycles scaled by
-// power), drills (continuous, capped by deposit tiles), reservoirs (Hearth, silos, docks:
-// stocks with capacity and unloader ports), forks (split/merge/filter), fuel generators and
+// power), drills (continuous, capped by deposit tiles), reservoirs (Hearth, silos, trade posts:
+// stocks with capacity and outlet ports), forks (split/merge/filter), fuel generators and
 // observatories. Reservoirs have a "virtual" mode used by the offline catch-up.
 import type { RouterLogic } from '@/content/types';
 import { BAL } from '@/content/balance';
@@ -310,11 +310,7 @@ export class ReservoirNode extends FNode {
    * every port; the catch-up reads the same rule to know what a group pulls.
    */
   portItem(port: number): number {
-    if (this.single) {
-      // An unloader's virtual port names its chosen item: it gets it only while the silo holds it.
-      const want = this.portItems[port] ?? -1;
-      return want < 0 || want === this.locked ? this.locked : -1;
-    }
+    if (this.single) return this.locked;
     return this.portItems[port] ?? -1;
   }
 
@@ -447,7 +443,7 @@ export class ReservoirNode extends FNode {
 // ── Fork (junction) ─────────────────────────────────────────────────────────
 /**
  * A routing block (kind `fork`: router, sorter, inverted sorter, overflow / underflow gate,
- * unloader, distributor): a small one-item buffer fed round-robin by its inputs, handed on by
+ * distributor): a small one-item buffer fed round-robin by its inputs, handed on by
  * its `mode` — see RouterLogic in content/types.ts. Its edges (to ribbons, machines, stores,
  * other routing blocks) and their roles are set by the graph compiler.
  */
@@ -457,7 +453,7 @@ export class ForkNode extends FNode {
   mu = 0;
   cap = BAL.forkBufItems * MU;
   mode: RouterLogic = 'router';
-  /** The chosen item of a sorter / inverted sorter / unloader (-1 = none). */
+  /** The chosen item of a sorter / inverted sorter (-1 = none). */
   sortItem = -1;
   /** Directional modes: the outputs (indices into outE) straight on, and to the sides. */
   fronts: number[] = [];
@@ -526,7 +522,7 @@ export class ForkNode extends FNode {
       case 'underflow': give(this.sides); give(this.fronts); return;
       default: break;
     }
-    // Router / unloader: filtered outputs matching the item first; non-matching filtered
+    // Router / distributor: filtered outputs matching the item first; non-matching filtered
     // outputs get nothing; the rest share round-robin.
     const rot = n > 1 ? this.turn % n : 0;
     for (let pass = 0; pass < 2; pass++) {
@@ -567,39 +563,67 @@ export class ForkNode extends FNode {
   }
 }
 
-// ── Fuel generator (coal generator, sunheart) ──────────────────────────────────────
+// ── Fuel generator (coal generator, steam boiler, sunheart) ──────────────────────────
+/**
+ * Burns its fuel in proportion to its grid's dispatch (‰), with a carry. A steam boiler (D114)
+ * has a second box, its water (`waterItem`, `waterEp` a minute at full output), drunk the same
+ * way: it gives power only with both in hand (`fueled`), and lacking either it waits (`NoFuel`),
+ * so the solve, the night's cover and the catch-up's fuelled share (offline/steady.ts reads the
+ * status) treat it as any fuel generator. A generator without water hashes and saves as before.
+ */
 export class GeneratorNode extends FNode {
   readonly kind = 'generator' as const;
   fuel = 0;
   carry = 0;
+  /** A boiler's water held (mu) and its carry; 0 for a generator that drinks none. */
+  water = 0;
+  wCarry = 0;
   readonly fuelCap: number;
+  readonly waterCap: number;
   /** Output at full dispatch (kW, after modifiers). */
   outKw: number;
 
-  constructor(ent: number, readonly fuelItem: number, /** mu per epoch at full output */ readonly burnEp: number, outKw: number) {
+  constructor(
+    ent: number, readonly fuelItem: number, /** mu per epoch at full output */ readonly burnEp: number, outKw: number,
+    /** The water a boiler drinks (−1: none) and how much, mu per epoch at full output. */
+    readonly waterItem = -1, readonly waterEp = 0,
+  ) {
     super(ent);
     this.outKw = outKw;
     this.fuelCap = Math.max(5 * MU, Math.ceil(burnEp / 2));
+    this.waterCap = waterItem >= 0 ? Math.max(5 * MU, Math.ceil(waterEp / 2)) : 0;
   }
 
-  /** Can it produce this tick? */
-  fueled(): boolean { return this.fuel > 0; }
+  /** Does it drink water as well as burn its fuel (a steam boiler)? */
+  get drinks(): boolean { return this.waterItem >= 0; }
+
+  /** Can it produce this tick? Fuel in its box, and water too for a boiler. */
+  fueled(): boolean { return this.fuel > 0 && (this.waterItem < 0 || this.water > 0); }
 
   override accept(ctx: TickCtx): void {
-    let free = this.fuelCap - this.fuel;
+    let free = this.fuelCap - this.fuel, wet = this.waterCap - this.water;
     for (const e of this.inE) {
-      if (ctx.offItem[e] !== this.fuelItem || free <= 0) { ctx.acc[e] = 0; continue; }
-      const a = Math.min(ctx.offMu[e]!, free);
-      ctx.acc[e] = a;
-      free -= a;
+      const it = ctx.offItem[e];
+      if (it === this.fuelItem && free > 0) {
+        const a = Math.min(ctx.offMu[e]!, free);
+        ctx.acc[e] = a;
+        free -= a;
+      } else if (this.waterItem >= 0 && it === this.waterItem && wet > 0) {
+        const a = Math.min(ctx.offMu[e]!, wet);
+        ctx.acc[e] = a;
+        wet -= a;
+      } else ctx.acc[e] = 0;
     }
   }
 
-  override give(_port: number, _item: number, mu: number): void { this.fuel += mu; }
+  override give(_port: number, item: number, mu: number): void {
+    if (this.waterItem >= 0 && item === this.waterItem) this.water += mu;
+    else this.fuel += mu;
+  }
 
   override update(ctx: TickCtx): void {
     const g = this.net >= 0 ? ctx.dispatch[this.net]! : 0;
-    if (this.fuel <= 0) { this.status = St.NoFuel; this.carry = 0; return; }
+    if (!this.fueled()) { this.status = St.NoFuel; this.carry = 0; this.wCarry = 0; return; }
     if (g <= 0) { this.status = St.Idle; return; }
     const w = this.carry + this.burnEp * g;
     let burn = Math.floor(w / 600000);
@@ -607,14 +631,31 @@ export class GeneratorNode extends FNode {
     if (burn > this.fuel) burn = this.fuel;
     this.fuel -= burn;
     ctx.consumed[this.fuelItem] = ctx.consumed[this.fuelItem]! + burn;
+    if (this.waterItem >= 0) {
+      const v = this.wCarry + this.waterEp * g;
+      let drink = Math.floor(v / 600000);
+      this.wCarry = v - drink * 600000;
+      if (drink > this.water) drink = this.water;
+      this.water -= drink;
+      ctx.consumed[this.waterItem] = ctx.consumed[this.waterItem]! + drink;
+    }
     this.status = St.Ok;
   }
 
-  override hash(h: StateHasher): void { h.int(this.fuel).int(this.carry); }
-  override snapshot(): unknown { return { fuel: this.fuel, carry: this.carry, status: this.status }; }
+  override hash(h: StateHasher): void {
+    h.int(this.fuel).int(this.carry);
+    if (this.waterItem >= 0) h.int(this.water).int(this.wCarry);
+  }
+  override snapshot(): unknown {
+    return this.waterItem >= 0
+      ? { fuel: this.fuel, carry: this.carry, water: this.water, wCarry: this.wCarry, status: this.status }
+      : { fuel: this.fuel, carry: this.carry, status: this.status };
+  }
   override restore(s: unknown): void {
-    const o = s as { fuel: number; carry: number; status: number };
+    const o = s as { fuel: number; carry: number; water?: number; wCarry?: number; status: number };
     this.fuel = o.fuel; this.carry = o.carry; this.status = o.status;
+    this.water = this.waterItem >= 0 ? o.water ?? 0 : 0;
+    this.wCarry = this.waterItem >= 0 ? o.wCarry ?? 0 : 0;
   }
 }
 

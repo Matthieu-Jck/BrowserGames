@@ -16,7 +16,7 @@ import { el, setAttr, setText } from '@/core/dom';
 import type { NotifyKind } from '@/core/kinds';
 import { locale, t, tr, type MsgKey } from '@/i18n/i18n';
 import { pipetteCap } from './keycap';
-import { beltKey, btKey, frameCanvas, iKey, type Atlas } from '@/render/art/atlas';
+import { CAMO_VENT_KEY, beltKey, btKey, frameCanvas, iKey, type Atlas } from '@/render/art/atlas';
 import { BELT_TIERS } from '@/render/art/recipes/belts';
 import { TOP_MARGIN, TOP_PX } from '@/render/art/recipes/buildings-top';
 import { C } from '@/render/art/tokens';
@@ -127,7 +127,9 @@ export function buildingIcon(atlas: Atlas, def: string, size: number, lv = 1): H
 /**
  * Ribbons and conduits have no plan frame (they are baked as belt pieces): their straight piece,
  * upright, one tile wide at the scale of a 1×1 plan frame (so it sits with the router and the
- * junction), repeated down the icon's height — the piece is seamless — so it reads as a line.
+ * junction), repeated down the icon's height — the piece is seamless — so it reads as a line. The
+ * camouflaged ribbon (D109), sand on the cream card, lies on a strip of dune ground, its vent tile in
+ * the middle, so its icon reads as a trail in the sand.
  */
 function beltIcon(atlas: Atlas, def: string, size: number): HTMLCanvasElement | null {
   const key = beltKey(def in BELT_TIERS ? def : 'ribbon', false);
@@ -139,7 +141,13 @@ function beltIcon(atlas: Atlas, def: string, size: number): HTMLCanvasElement | 
   ctx.imageSmoothingQuality = 'high';
   const s = (TOP_PX * c.width) / (TOP_PX + 2 * TOP_MARGIN); // a tile, as a 1×1 building's frame shows it
   const x = (c.width - s) / 2;
-  for (let y = (c.height - s) / 2 - s; y < c.height; y += s) ctx.drawImage(atlas.pages[f.page]!, f.x, f.y, f.w, f.h, x, y, s, s);
+  const camo = !!buildingDef(buildingIdx(def)).camo;
+  if (camo) { ctx.fillStyle = C.dune; ctx.globalAlpha = 0.75; ctx.fillRect(x + s * 0.06, 0, s * 0.88, c.height); ctx.globalAlpha = 1; }
+  const vent = camo ? atlas.frames.get(CAMO_VENT_KEY) : undefined;
+  for (let y = (c.height - s) / 2 - s; y < c.height; y += s) {
+    const g = vent && Math.abs(y - (c.height - s) / 2) < 1 ? vent : f;
+    ctx.drawImage(atlas.pages[g.page]!, g.x, g.y, g.w, g.h, x, y, s, s);
+  }
   return c;
 }
 

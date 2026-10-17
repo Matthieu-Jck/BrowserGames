@@ -199,37 +199,6 @@ describe('logistics (routing blocks)', () => {
     expect(sides(u.sim)).toBeGreaterThan(4 * front(u.sim));
   });
 
-  it('an unloader against a silo pulls out its chosen item, only while the silo holds it', () => {
-    const sim = testSim();
-    const silo = stockedSilo(sim, 518, 508, 0, 'iron_ore', 100); // (518..519, 508..509)
-    const u = sim.place('unloader', 520, 508, 0); // against the silo's east side
-    expect(u.ok, u.reason).toBe(true);
-    sim.placeBelts('ribbon', line(521, 508, 1, 4));
-    sim.run(600);
-    expect(onChain(sim, 522, 508, IRON())).toBe(0); // no item chosen: nothing moves
-    expect(sim.setForkFilter(u.id!, 0, 'sand')).toBe(true);
-    sim.run(600);
-    expect(onChain(sim, 522, 508, IRON())).toBe(0); // the silo holds no sand: still nothing
-    expect(sim.setForkFilter(u.id!, 0, 'iron_ore')).toBe(true);
-    sim.run(600);
-    expect(onChain(sim, 522, 508, IRON())).toBeGreaterThan(3);
-    expect(sim.stores.get(silo)![IRON()]!).toBeLessThan(100_000);
-  });
-
-  it('an unloader against the Heart pulls nothing: the Heart takes, it never gives', () => {
-    const sim = testSim();
-    sim.grant('iron_ore', 100);
-    const u = sim.place('unloader', 515, 512, 0); // against the Heart's east side
-    expect(u.ok, u.reason).toBe(true);
-    sim.placeBelts('ribbon', line(516, 512, 1, 4));
-    expect(sim.setForkFilter(u.id!, 0, 'iron_ore')).toBe(true);
-    const stock0 = sim.stock[IRON()]!;
-    sim.run(600);
-    expect(onChain(sim, 517, 512, IRON())).toBe(0);
-    expect(sim.stock[IRON()]!).toBe(stock0);
-    expect(sim.setPortItem(sim.hearthId, 1, 'iron_ore')).toBe(false); // no outlet to choose for
-  });
-
   it('a ribbon fed from its side by a router is drawn as a bend (the graph says where it is fed from)', () => {
     const sim = testSim();
     drillToHearth(sim);
@@ -241,7 +210,7 @@ describe('logistics (routing blocks)', () => {
     expect(sim.graph.feedDirs.get(tileIndex(511, 508))! & (1 << 0)).toBeTruthy(); // the line above: fed from the north
   });
 
-  it('routing blocks run the same offline as online (sorter → router → Hearth; an unloader beside)', () => {
+  it('routing blocks run the same offline as online (sorter → router → Hearth; a silo emptying beside)', () => {
     const make = (): Sim => {
       const sim = testSim();
       steadyPower(sim); // the drill runs day and night: one steady regime
@@ -251,10 +220,9 @@ describe('logistics (routing blocks)', () => {
       if (!s.ok) throw new Error(`sorter ${s.reason}`);
       sim.setForkFilter(s.id!, 0, 'iron_ore');
       sim.place('router', 511, 509, 0);
-      sim.grant('sand', 50);
-      const u = sim.place('unloader', 515, 512, 0);
-      sim.setForkFilter(u.id!, 0, 'sand');
-      sim.placeBelts('ribbon', line(516, 512, 1, 6));
+      // A silo's outlets empty it by themselves (the unloader retired, D117): onto a dead-end line.
+      stockedSilo(sim, 522, 520, 0, 'sand', 50);
+      sim.placeBelts('ribbon', line(522, 519, 0, 6));
       sim.run(20);
       return sim;
     };

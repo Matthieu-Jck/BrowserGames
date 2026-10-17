@@ -66,6 +66,22 @@ export interface CirqueTemplate {
    * `mound` tiles past its centre (a tile less per tile away from it) so rock of that level rings it.
    */
   readonly lake: { readonly dx: number; readonly dy: number; readonly radius: number; readonly deep: number; readonly onCrest?: boolean; readonly mound?: number };
+  /**
+   * A spring in the tarn's place (map 4, D115; owner, 2026-10-17: « Il reste un lac vestige de ce
+   * qu'on faisait avant avec l'eau, sur la couronne. Il faut l'enlever ou le remplacer »; then « make
+   * it go from a higher mountain, and make it smaller… make it go from north to south, so we can
+   * see the waterfall »): the tarn's peak kept (`lake`'s `mound`) but dry; a `summit` on the Crown,
+   * a spring at its top, and its stream `halfWidth` quarter tiles each side of the straight line from
+   * there down the Crown's terraces — a fall at each — to `pool` (offsets from the centre, radius,
+   * deep heart) on the floor: running water in the starting land. Absent: the tarn (maps 2–3) or the
+   * floor's lake (map 1).
+   */
+  readonly spring?: {
+    /** Where the water comes from (owner: « make it go from a higher mountain »): a summit on the Crown, up to `rise` levels over it, a level less every `terrace` tiles away. */
+    readonly summit: { readonly dx: number; readonly dy: number; readonly rise: number };
+    readonly halfWidth: number;
+    readonly pool: { readonly dx: number; readonly dy: number; readonly radius: number; readonly deep: number };
+  };
 }
 
 /**
@@ -151,8 +167,16 @@ export const CIRQUE: CirqueTemplate = {
   lake: { dx: 27, dy: 13, radius: 2.3, deep: 1.5, onCrest: true, mound: 5 },
 };
 
-/** Map 4's cirque (D104): map 2–3's, its deposits in whole blocks. */
-export const CIRQUE_V4: CirqueTemplate = { ...CIRQUE, deposits: BLOCK_DEPOSITS };
+/**
+ * Map 4's cirque (D104, D115): map 2–3's, its deposits in whole blocks, the tarn's peak dry, and on
+ * the Crown's north side a summit three levels over it with a spring at its top: a stream one tile
+ * wide straight south down a column (on the tile grid: no staircase in either view; its falls on
+ * the walls that face south, the ones the iso camera sees) across the floor's edge into a small
+ * pool, the north iron five tiles off (owner: « l'enlever ou le remplacer… from a higher mountain…
+ * smaller… from north to south »; the lead: running water in the starting land, along an edge,
+ * clear of the deposits and the tutorial's places).
+ */
+export const CIRQUE_V4: CirqueTemplate = { ...CIRQUE, deposits: BLOCK_DEPOSITS, spring: { summit: { dx: 10, dy: -25, rise: 3 }, halfWidth: 2, pool: { dx: 10, dy: -16, radius: 1.8, deep: 0.9 } } };
 
 export const RINGS = {
   near: 160,   // Proche couronne: from the Crown's foot (r 29; r 34 on map 1) to 160
@@ -458,6 +482,13 @@ export interface MapParams {
    * per-player shift moves by whole blocks too. Absent: discs tile by tile (maps 1–3).
    */
   readonly oreBlock?: number;
+  /**
+   * The neighbouring bases in holdings of a few parcels side by side, each a working base (map 4,
+   * D110; owner, 2026-10-17: « S'il y a un endroit possédé par un PNJ, il faut qu'il y ait vraiment
+   * une base »). Absent: one parcel each, scattered as the sister claims were (maps 1–3, whose bases
+   * keep the land they had: a base stands on each where one fits).
+   */
+  readonly holdings?: boolean;
 }
 
 /**
@@ -508,6 +539,7 @@ export const MAPS: Readonly<Record<number, MapParams>> = {
     quartz: QUARTZ_VEIN,
     obstacles: OBSTACLES,
     oreBlock: 2,
+    holdings: true,
   },
 };
 

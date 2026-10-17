@@ -2,8 +2,8 @@
 // and the UI all read it through these helpers). Machines: recipe index + 1 in the low 16 bits
 // (0 = none); bits 16–19 held the speed modules fitted, gone since D81 (the load hands any still
 // there back to the Heart as servomotors and clears them: `modulesOf`, `withModules`). Routing blocks: a router's
-// output filter per side, item index + 1 in byte `side` (0 = anything); a sorter's, inverted
-// sorter's or unloader's chosen item in byte 0. Values stay unsigned 32-bit.
+// output filter per side, item index + 1 in byte `side` (0 = anything); a sorter's or inverted
+// sorter's chosen item in byte 0. Values stay unsigned 32-bit.
 
 /** A machine's recipe as `index + 1` (0 = no recipe). */
 export const recipeOf = (cfg: number): number => cfg & 0xffff;

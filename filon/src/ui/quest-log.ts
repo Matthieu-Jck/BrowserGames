@@ -323,7 +323,7 @@ export class QuestLog {
   }
 
   private submitName(): void {
-    // The register's rules, as in the intro (D31): no sister claim's name, nothing reserved.
+    // The register's rules, as in the intro (D31): no other claim's name, nothing reserved.
     const sim = this.host.sim();
     const v = nameVerdict(this.input.value, registerOf(sim).taken);
     if (!v.ok) { setText(this.err, refusalText(v, this.input.value)); return; }

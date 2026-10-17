@@ -200,7 +200,7 @@ export function takeStarter(sim: Sim, post: number): number | TradeRefusal {
 }
 
 /**
- * Price Forecast (an_forecast): the Crier's bid and ask `minutes` from now, as the sister claims
+ * Price Forecast (an_forecast): the Crier's bid and ask `minutes` from now, as the other claims
  * alone would move them (a copy of the market run on, trade-free — the « Avant de partir »
  * forecast's way: the world's own answer, not a guess, as long as the claim does not trade).
  * Pure: the colony's market is untouched.

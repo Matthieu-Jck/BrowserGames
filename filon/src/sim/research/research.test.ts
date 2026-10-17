@@ -323,7 +323,18 @@ describe('plans (D33): the tree’s instant unlocks, paid from the Heart', () =>
     expect(sim.researchBlock('ex_sifter')).toBe('prereq');
     // The lab's plan is the gate (D71): it waits for every other plan.
     expect(sim.unlockPlan('observatory').reason).toBe('prereq');
-    for (const id of PLAN_IDS) if (PLANS[id].lane !== 'gate') { for (const [it, n] of PLANS[id].cost) sim.grant(it, n); expect(sim.unlockPlan(id).ok, id).toBe(true); }
+    // In passes, prerequisites first: a plan may hang from a later path's (the Face Cutter, on
+    // Production since D117, from the trade post).
+    const left = PLAN_IDS.filter((id) => PLANS[id].lane !== 'gate');
+    for (let pass = 0; left.length && pass < 4; pass++) {
+      for (const id of [...left]) {
+        if (!PLANS[id].prereq.every((q) => sim.done.has(q))) continue;
+        for (const [it, n] of PLANS[id].cost) sim.grant(it, n);
+        expect(sim.unlockPlan(id).ok, id).toBe(true);
+        left.splice(left.indexOf(id), 1);
+      }
+    }
+    expect(left).toEqual([]);
     expect(sim.researchBlock('tr1')).toBe('prereq');
     expect(sim.unlockPlan('observatory').ok).toBe(true);
     expect(sim.researchBlock('tr1')).toBe('no_lab'); // now only a lab is missing (D101: Mechanics straight after the lab's plan)

@@ -110,7 +110,7 @@ export interface ImportSource {
   readonly share: number;
 }
 
-/** A sister colony as the UI and the orbital view see it (fixed for the world). */
+/** A colony (another claim of the Crier) as the UI and the orbital view see it (fixed for the world). */
 export interface ColonyView {
   readonly idx: number;
   /** Stable key: a pinned colony's (`port_ecume`) or `<profile>_<rank>`. */

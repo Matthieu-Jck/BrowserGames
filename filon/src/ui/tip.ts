@@ -2,12 +2,14 @@
 // while placing (owner, 2026-10-13: "delete those texts when you want to place something") —
 // what it costs, as icons and amounts (missing materials in coral), and, when it does not fit,
 // why. What the building does is on its card in the tray, before it is in hand. Refused off the
-// claim's land (or on a sister claim's, D60), it adds the land mode's key cap; a ribbon facing a
+// claim's land (or on a neighbouring base's, D60, D110), it adds the land mode's key cap; a ribbon facing a
 // step (D77), the traction ribbon that takes it, its key in the tray (or the tree's, T, while it is
 // still to learn). In the land mode it shows the hovered parcel's price instead (the claim's flag
 // on a parcel it holds for good). A turbine in hand once the Anémométrie plan is learnt (D95):
 // the wind mark, a bar of what it would give over the next day against its rating, and that in
-// kW (the words — the wind's factor here — in its tooltip).
+// kW (the words — the wind's factor here — in its tooltip). A drag that buries pieces off the
+// claim's land (D109): the camouflaged ribbon's icon, how many, and whose land; a ribbon refused on a
+// neighbouring base's land, the camouflaged ribbon that would take it (T, the tree, while it is still to learn).
 // It stays inside the window (D96: `tipPlace` flips it to the pointer's other side near an edge)
 // and, under a finger, sits above it, where the hand does not cover it.
 import { BUILDING_KIND, buildingDef, buildingIdx, itemDef } from '@/content/registry';
@@ -60,8 +62,10 @@ export class Tip {
     this.place(sx, sy);
     const cost = [...pre.cost].sort((a, b) => a[0] - b[0]);
     const lift = pre.reason === 'needs_lift' ? liftKey(sim) : null;
+    // Refused on a neighbouring base's land with no camouflaged ribbon to bury it yet (D109): point to it.
+    const camo = pre.reason === 'neighbour_land' && def && BUILDING_KIND[buildingIdx(def)] === 'belt' && !sim.unlocked(buildingDef(buildingIdx(CAMO)).unlock);
     const wind = def && pre.pieces[0] && BUILDING_KIND[buildingIdx(def)] === 'wind' && analyticsOn(sim, 'wind') ? this.windOf(sim, def, pre.pieces[0]) : null;
-    const sig = JSON.stringify([def, cost, pre.reason, lift, pre.doomed.length, pre.mark?.n, pre.mark?.clear, locale(), wind?.mean, wind?.overall]);
+    const sig = JSON.stringify([def, cost, pre.reason, lift, camo, pre.buried, pre.doomed.length, pre.mark?.n, pre.mark?.clear, locale(), wind?.mean, wind?.overall]);
     if (sig === this.sig) return;
     this.sig = sig;
     this.node.hidden = false;
@@ -82,8 +86,15 @@ export class Tip {
     }
     if (pre.mark) kids.push(el('div.tip-title.lettering', {}, tr(pre.mark.clear ? 'toast.cleared' : 'toast.marked', { n: pre.mark.n })));
     if (pre.reason && pre.reason !== 'ok') kids.push(el('div.tip-why', {}, t(`reason.${pre.reason}` as MsgKey)));
+    // Buried off the claim's land (D109): the piece, how many, whose land — at the price above, no surcharge.
+    if (pre.buried) {
+      kids.push(el('div.tip-key.tip-buried', {}, [
+        buildingIcon(this.atlas, CAMO, 18), el('span', {}, tr('build.buried', { n: pre.buried.n })), glyph('parcel'), el('span', {}, t(`reason.${pre.buried.land}` as MsgKey)),
+      ]));
+    }
     // Not the claim's land: the way to it, the land mode's key (I).
-    if (pre.reason === 'outside_zone' || pre.reason === 'sister_land') kids.push(el('div.tip-key', {}, [el('span.bb-key', {}, 'I'), glyph('parcel'), t('land.keyAct')]));
+    if (pre.reason === 'outside_zone' || pre.reason === 'neighbour_land') kids.push(el('div.tip-key', {}, [el('span.bb-key', {}, 'I'), glyph('parcel'), t('land.keyAct')]));
+    if (camo) kids.push(el('div.tip-key.tip-lift', { 'data-locked': '' }, [el('span.bb-key', {}, 'T'), buildingIcon(this.atlas, CAMO, 18), t('tree.hud')]));
     // A step (D77): the piece that takes it, and the key that takes it in hand (the tree's while it is still to learn).
     if (lift !== null) {
       kids.push(el('div.tip-key.tip-lift', { 'data-locked': lift === 'T' ? '' : null }, [
@@ -136,6 +147,8 @@ export class Tip {
 
 /** The piece that takes a ribbon up or down a step (D45). */
 const LIFT = 'traction_ribbon';
+/** The piece buried where the land refuses the others (D109). */
+const CAMO = 'camo_ribbon';
 
 /**
  * The key that takes the traction ribbon in hand: its digit in the logistics tray (the ribbon in

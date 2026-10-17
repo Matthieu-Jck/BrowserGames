@@ -4,12 +4,12 @@ What the unlock tree holds and the rules it keeps. The tables are in [src/conten
 
 ## The arc
 
-1. **Plans** (instant, paid from the Heart): six paths of one theme each — production, logistics, energy, analytics, trade, survey. The tutorial offers them a few at a time (D101).
+1. **Plans** (instant, paid from the Heart): five paths of one theme each — production, logistics, energy, analytics, trade (the survey path went with the survey beacon, D117: the Face Cutter is Production's). The tutorial offers them a few at a time (D101).
 2. **The research lab's plan** (the gate, D71): every plan first.
 3. **Tier 1**, completed whole: its last node, the **Synthesis**, needs every other Tier 1 node and gives the Core's level 3, whose Archive opens the **expertises** (D93).
 4. **Tier 2** waits for the Synthesis and two expertises chosen. **Tier 3** opens with Atlas Lore (`tr6`), **Tier 4** with Codex Lore (`tr8`): the trunk's gates stand in the tier before the one they open.
 
-Each research family carries on a plan path's theme, deeper: production → **Machines**, logistics → **Logistique**, energy → **Énergie**, analytics → **Analytique**, trade → **Commerce**, survey → **Extraction**. The same name on both sides is the same theme.
+Each research family carries on a plan path's theme, deeper: production → **Machines**, logistics → **Logistique**, energy → **Énergie**, analytics → **Analytique**, trade → **Commerce** (**Extraction** carried on the survey path's, gone with the survey beacon, D117). The same name on both sides is the same theme.
 
 ## Time and data by tier (D107)
 
@@ -36,7 +36,7 @@ Each family is one lineage through Tiers 1–2, then (but Commerce) two speciali
 | Machines: Métallurgie · Automatisation | Compact Smelter → Electric Smelting → Twin Wire Mill | Servomotors → Compact Assembly (+ Ceramics) | Electronics: Etcher → Robotics → Chip Fab ★ · Mechanics: Forging Press → Arc Furnace → Assembly Tower ★ |
 | Commerce: Échange · Finance · Économie de marché | Second Post → Floor Prices | Standing Orders → Compute Plan (+ Server Room) → Server Rental | Wider Wharf → Express Freight → Grand Post → The Crier House ★ |
 | Analytique: Données · Serveurs | Data Processing (data collector) → Data Relay | Server Room → Research Queue | Computing: Cooled Server → Shared Computing → Supercomputer ★ · Data Mining: Data Mining → Price Forecast → Autonomous Lab ★ |
-| Logistique: Manutention · Portée | Swift Ribbon → Great Silo → Fences and Glazed Ribbons | Long Bridges → Reinforced Pylons (+ Land Registry) | Transport: Distributors → Express Ribbon → Great Skydock ★ · Claims: Parcel Resale → Neighbour Treaties → Far Claim ★ |
+| Logistique: Manutention · Portée | Swift Ribbon → Great Silo → Fences and Glazed Ribbons | Camouflaged Ribbon (D109) → Long Bridges → Reinforced Pylons (+ Land Registry) | Transport: Distributors → Express Ribbon (no keystone: the Great Skydock went with the skydocks, [D108](decisions.md)) · Claims: Parcel Resale → Neighbour Treaties → Far Claim ★ |
 
 ## The rules (validated)
 
@@ -50,7 +50,7 @@ Each family is one lineage through Tiers 1–2, then (but Commerce) two speciali
   - **Usable** means one of:
     - **extracted** by a machine known: the land's common deposits, the ground's sand, water, stone, the Core's own Survey Data;
     - **made** by a known recipe on a buildable machine, from usable inputs;
-    - **bought** at the Crier: a market depth, a sister colony that supplies it, and a trade post the base can build.
+    - **bought** at the Crier: a market depth, a colony that supplies it, and a trade post the base can build.
   - What only some maps hold counts only as **bought**: the T3 and T4 uniques, and a cliff face's quartz (maps 1–2 have no vein).
   - When the rule fails, fix it by moving the node (a prerequisite, `also`), listing the item at the Crier (`COLONY_PROFILES`), or changing the recipe.
 - **Every node unlocks something**, a building, a recipe or a feature, never a bare percentage (D70). At most three recipes per machine (D70).
@@ -63,4 +63,4 @@ Each family is one lineage through Tiers 1–2, then (but Commerce) two speciali
 
 - Retime by `DEPTH_COST` (families) or a trunk node's own numbers. `validate.test.ts` checks each tier's time band.
 - A new node: see [content.md](content.md#add-a-research-node-or-an-effect). Run `npx vitest run src/content src/sim/research src/persist src/ui/screens/tree-layout.test.ts`. The debug bases' research lists live in [scenarios.ts](../src/sim/scenarios.ts) (`GROWN_RESEARCH`, `GROWN_NEXT`, `LATE_RESEARCH`); the scenario tests check D85's never-idle lines.
-- Look at it: `node scripts/tree-shots.mjs` (with `URL=` for a frozen build, `TAG=` and `OUT=`) takes the whole tree and hovered chains at 1440 × 900 and on a tablet.
+- Look at it: `node scripts/tree-shots.mjs` (with `URL=` for a frozen build, `TAG=` and `OUT=`) takes the whole tree, focused chains and the zoom at 1440 × 900 and on a tablet.

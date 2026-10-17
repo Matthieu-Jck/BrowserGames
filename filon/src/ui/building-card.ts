@@ -184,10 +184,11 @@ function recipesBlock(list: readonly RecipeFact[]): HTMLElement {
 const ROW_ICON: Readonly<Record<string, () => HTMLElement>> = {
   power: () => glyph('power'), wind: () => glyph('power'), wires: () => glyph('power'), grid: () => glyph('unwired'),
   place: () => glyph('parcel'), reveal: () => glyph('fog'), replace: () => mark('build'),
-  fee: () => glyph('crier'), lift: () => mark('flight'), drifters: () => mark('route'), tokens: () => mark('order'),
+  fee: () => glyph('crier'), lift: () => mark('flight'), tokens: () => mark('order'),
   mines: () => mark('job'), makes: () => mark('job'), yields: () => mark('job'), rate: () => mark('job'), speed: () => mark('job'), climb: () => mark('level'),
   store: () => mark('store'), buffer: () => mark('store'), fills: () => mark('store'), takes: () => mark('store'),
   reach: () => mark('filter'), fuel: () => mark('cargo'),
+  water: () => itemMention(ITEM_IDS.indexOf('water'), { name: false }), // a steam boiler's water (D114)
 };
 
 /** A figure's icon (an empty slot for a key without one: the column stays aligned). */
@@ -239,14 +240,6 @@ const EDGE: Record<Side, [number, number, number, number]> = {
 
 function sideMark(side: Side, s: RuleSide): SVGElement {
   const [ix, iy, ox, oy] = EDGE[side];
-  if (s.flow === 'store') {
-    // A store pressed against that side: a little crate.
-    const cx = (ix + ox) / 2, cy = (iy + oy) / 2;
-    return svg('g', { class: 'bc-store' }, [
-      svg('rect', { x: cx - 13, y: cy - 10, width: 26, height: 20, rx: 3 }),
-      svg('path', { d: `M${cx - 13} ${cy - 3}H${cx + 13}M${cx} ${cy - 3}V${cy + 10}` }),
-    ]);
-  }
   if (s.flow === 'in') return arrow(ox, oy, ix, iy, s);
   return arrow(ix, iy, ox, oy, s, s.flow === 'both');
 }
@@ -293,13 +286,12 @@ function bridgeDiagram(): SVGElement {
 
 /**
  * A legend swatch in its line's tone, read against a little block as on the diagram: an arrow
- * out of it, into it, both ways, or a crate pressed against it.
+ * out of it, into it, or both ways.
  */
 function swatch(l: RuleLegend): SVGElement {
   const block = (x: number): SVGElement => svg('rect', { class: 'bc-sw-block', x, y: 3.5, width: 7, height: 7, rx: 1.5 });
   let kids: Element[];
   switch (l.flow) {
-    case 'store': kids = [svg('g', { class: 'bc-store' }, [svg('rect', { x: 2, y: 1.5, width: 14, height: 11, rx: 2 })]), block(18)]; break;
     case 'in': kids = [arrow(1, 7, 17, 7, l), block(18)]; break;
     case 'both': kids = [arrow(2, 7, 24, 7, l, true)]; break;
     default: kids = [block(1), arrow(9, 7, 25, 7, l)]; break;

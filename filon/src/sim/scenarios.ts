@@ -24,8 +24,8 @@
 //             mill (taken up once delivered, the fulfilled contract stopped: the exit then goes into the
 //             Heart, fed by a small import order of plates, what the base builds with), the Core raised
 //             to level 2 (« Le Cœur grandit »), every plan (the Face Cutter's among them), the Core's
-//             own Survey Data into the research lab, Mechanics started, a beacon past the Crown, a coal
-//             generator, the quartz vein's parcel and two face cutters at its wall, their
+//             own Survey Data into the research lab, Mechanics started, a coal generator, the
+//             quartz vein's parcel and two face cutters at its wall, their
 //             quartz over the Crown into the Heart, and the quartz workshop the quest pays for, its
 //             oscillators into the Heart (scenario-quartz.ts, D87) — the whole tutorial factory
 //             running; « Les pièces de la Synthèse » current (D90), Mechanics learnt and the lab's next
@@ -41,10 +41,12 @@
 //             line upgraded to swift ribbons with a bridge pair (owner, 2026-10-13: "improve the late
 //             stage debug save to have more of the features we developed"), solar panels; then the
 //             works of scenario-late.ts (owner, 2026-10-14: "actuellement elle n'est pas tres
-//             avancée", D66): the Fabrique on the copper field (circuits, gears, servomotors in a
-//             tower workshop, Mechanics Data researched for real, thermal cores, round a second trade
-//             post), the potteries on the tarn's peak, the Ember Fields mine, coal and copper flown
-//             home, drifters between them, a geothermal plant where there is a vent, pylon lines;
+//             avancée", D66): the Fabrique on the copper field (circuits, gears, servomotors in an
+//             etcher, Mechanics Data into its lab, round a second trade post), the potteries on the
+//             tarn's peak (their ceramic down into the Core), the Ember Fields mine selling its
+//             embersalt at a third post on the spot, a coal pit's coal back over the Crown where the
+//             cirque is short of it, a geothermal plant where there is a vent, pylon lines — every
+//             far good by ribbon or sold where it is made since the skydocks went (D108);
 //             last, a sand field of arc furnaces on the cirque's free floor (`fillCirque`, D82); and
 //             two expertises chosen at the Core's Archive among those its feats earned (D93)
 //
@@ -74,9 +76,10 @@ import { parcelAt } from './world/land';
 import { MapGen } from './world/mapgen';
 import { producerKw, weatherAt, windKw, windSite } from './power/network';
 import { windiest } from './readouts/wind';
-import { coalPit, copperHome, emberMine, geothermal, emberSite, fabrique, flyRoute, potteries, toward, waitKites } from './scenario-late';
+import { coalPit, emberMine, geothermal, emberSite, fabrique, potteries, toward, waitKites } from './scenario-late';
 import { fillCirque, mineCirque, reattach } from './scenario-cirque';
 import { quartzWorks, wallQuartz } from './scenario-quartz';
+import { steamPower } from './scenario-steam';
 import { workOf, looksAtWork, type Work } from './systems/work';
 import { flows } from './systems/quests';
 
@@ -134,8 +137,8 @@ export function buildScenario(sim: Sim, id: ScenarioId, name: string): ScenarioR
   if (!sim.nameColony(name)) b.until('claim'); // an unusable name: quest 0 is forced
   if (upTo >= 3) tradeSpot(b); // the trade post's place by the Heart, taken before the lines ring it
   if (upTo >= 1) firstStrike(b);
-  if (upTo >= 2) { bloomKiln(b); firstWind(b); glassworks(b); }
-  if (upTo >= 3) { crierTrade(b); coreUpgrade(b); beyondCrown(b); fieldJournal(b); morePower(b); wallQuartz(b, () => powerUp(b, 12, 1000, 'veinPower')); postLine(b); tradeLine(b); ironSurplus(b); quartzWorks(b); }
+  if (upTo >= 2) { bloomKiln(b); firstWind(b); glassworks(b); steamPower(b); }
+  if (upTo >= 3) { crierTrade(b); coreUpgrade(b); fieldJournal(b); morePower(b); wallQuartz(b, () => powerUp(b, 12, 1000, 'veinPower')); postLine(b); tradeLine(b); ironSurplus(b); quartzWorks(b); }
   if (upTo >= 4) grown(b);
   if (upTo >= 5) late(b);
   // The rest of the cirque's floor (D82), last: the late base's works take their places first.
@@ -189,7 +192,9 @@ const SETTLE_MIN = 6, SETTLE_RUN = 2;
  * runs `minutes` more (sampled every five seconds; D85, owner 2026-10-15: « tu devrais tester une
  * fois fini de faire tourner le jeu simulé pendant quelques minutes et voir si une machine reste
  * éteinte plusieurs minutes d'affilée »). Off is D83's look (`workOf`): not 'on'. A fuel generator
- * on standby (the wind covers the grid: 'pause') is the grid's reserve, not a fault, and is left out.
+ * on standby (the wind covers the grid: 'pause') is the grid's reserve, not a fault, and is left out;
+ * so are the sources that feed only such generators, backed up behind it (D114: a steam boiler's
+ * coal drill and its pump, waiting with it for the night).
  * So is research waiting on the player's next choice, not on a line (D101, D107: Tier 1's nodes take
  * a minute or three, so a grown base's lab is soon done): a lab with no project, and a data maker
  * whose every lab has none.
@@ -200,8 +205,14 @@ export function idleAfter(sim: Sim, minutes = 6, limit = 3): Array<{ id: number;
   const run = new Map<number, number>(), worst = new Map<number, number>();
   const labs = watch.filter((e) => BUILDING_KIND[e.def] === 'lab');
   const free = (lab: number): boolean => !sim.projects.some((p) => p.lab === lab);
+  // The generators each source feeds (drills, pumps), through ribbons and conduits only.
+  const gens = watch.filter((e) => BUILDING_KIND[e.def] === 'generator');
+  const feeds = new Map(watch.filter((e) => BUILDING_KIND[e.def] === 'drill' || BUILDING_KIND[e.def] === 'pump')
+    .map((e) => [e.id, gens.filter((g) => flows(sim, e.id, g.id))] as const).filter(([, g]) => g.length > 0));
   const resting = (e: Ent): boolean => {
     if (BUILDING_KIND[e.def] === 'lab') return free(e.id);
+    const into = feeds.get(e.id);
+    if (into) return workOf(sim, e) === 'pause' && into.every((g) => workOf(sim, g) === 'pause'); // backed up behind its generators
     if (buildingDef(e.def).drill?.anywhere !== 'journal_1') return false;
     const fed = labs.filter((l) => flows(sim, e.id, l.id));
     return fed.length > 0 && fed.every((l) => free(l.id));
@@ -822,25 +833,6 @@ function starterDone(b: Builder): void {
   b.run(EPOCH); // the cargo leaves the post at the next boundary: its entrance takes the ore again
 }
 
-/** A survey beacon past the Crown (the old « Au-delà de la Couronne »: the land beyond seen), on the nearest free tile out there. */
-function beyondCrown(b: Builder): void {
-  b.plan('beacon');
-  b.affordDef('beacon');
-  const r = CIRQUE.crownOuter, sim = b.sim;
-  const out: Array<[number, number, number]> = [];
-  for (let y = CENTER - r - 6; y <= CENTER + r + 6; y++) {
-    for (let x = CENTER - r - 6; x <= CENTER + r + 6; x++) {
-      const d = (x - CENTER) * (x - CENTER) + (y - CENTER) * (y - CENTER);
-      if (d >= r * r && d <= (r + 6) * (r + 6)) out.push([x, y, d]);
-    }
-  }
-  out.sort((p, q) => p[2] - q[2] || p[1] - q[1] || p[0] - q[0]);
-  const at = out.find(([x, y]) => { const c = sim.canPlace('beacon', x, y, 0); return c.ok && !c.replaces.length; });
-  const id = at ? sim.place('beacon', at[0], at[1], 0).id : undefined;
-  if (id) b.ids.beacon = id;
-  else b.skip('beacon');
-}
-
 /**
  * Two wind turbines on the Crown's windiest spot and next to it (D95: the Sough is read off the land,
  * not guessed): « Tenir la nuit »'s answer (D101), planted there since; `morePower` once did it.
@@ -1047,12 +1039,16 @@ function grown(b: Builder): void {
   if (lab0 && (b.optional(() => b.source('collector', 'data_collector', b.centre('observatory'), lab0, { r: 10 }))
     || (b.lines['data.lab'] && b.optional(() => b.source('collector', 'data_collector', b.centre('observatory'), 'data.lab', { r: 10 }))))) b.wireByPole('collector');
   for (const id of GROWN_RESEARCH) learn(id);
-  // Gears (Mechanics' recipe, the press) off a plate line, into the Heart; a silo off a glass line (a store to draw from: unloaders, D34).
+  // Gears (Mechanics' recipe, the press) off a plate line, into the Heart; a silo off a glass line (a store its outlets empty, D34).
   const plates = b.laid('plates'), glass = b.laid('glass');
   b.fed('gears', 'press', b.middle('plates'), [plates.length ? { lines: plates } : 0], b.H, 'gears.out');
   b.recipe('gears', 'gear');
   b.wire('gears');
-  b.fed('silo', 'silo', b.middle('glass'), [glass.length ? { lines: glass } : 0], null);
+  // A silo of glass off its line: an extra since D117 retired the unloaders that drew from it (D34);
+  // by the line's middle, else by the glass smelter, else left out (D114: where the steam boiler's
+  // coal drill took a corner of the deposit, the base's later drills move and can take its room).
+  b.optional(() => b.fed('silo', 'silo', b.middle('glass'), [glass.length ? { lines: glass } : 0], null)
+    || (glass.length && b.ids.kiln2 ? b.fed('silo', 'silo', b.centre('kiln2'), [{ lines: glass }], null) : 0));
   // The coal generator retired (the wind carries the grid; `powerUp` sizes it without it): its
   // drill's coal into the kilns' coal line, which one drill fed for two kilns (D85: both stood
   // starved, the generator's drill backed up while the wind did the work).
@@ -1072,12 +1068,13 @@ function grown(b: Builder): void {
  * Lore); Extraction through Excavation to Deep Fill, and the Deep Bore (Drilling) its far mines need; Machines through both specialities (the etcher
  * makes its servomotors, the assembly tower stands ready); Energy through Power Plants to the
  * Sunheart; Expansion through Claims to the Far Claim (its works stand on parcels far from the
- * claim's land); Commerce to the Standing Orders (D107: its second post with « Second comptoir »); Analytics to the servers (D68–D70). 44 of the tree's
- * 77 nodes, one more under way on the first lab's data files (D107: the Commerce path reaches the
- * Wider Wharf, the Fabrique's post level 2, through the Compute Plan, so the Fabrique's lab — every
- * node it could run on its data learnt — waits for the player's choice).
+ * claim's land); Commerce to The Crier House (D108: the Ember Fields' embersalt is sold at a third
+ * post beside the mine, no skydock to fly it home; its second post with « Second comptoir », D107);
+ * Analytics to the servers (D68–D70). 54 of the tree's 70 research nodes, one more under way on the
+ * first lab's data files (the Commerce path runs through the Compute Plan, so the Fabrique's lab —
+ * every node it could run on its data learnt — waits for the player's choice).
  */
-const LATE_RESEARCH = ['tr2', 'tr5', 'tr7', 'tr8', 'ex5', 'ex8', 'xp_far', 'dn_etcher', 'dn8', 'enK', 'cm3', 'an_servers'];
+const LATE_RESEARCH = ['tr2', 'tr5', 'tr7', 'tr8', 'ex5', 'ex8', 'xp_far', 'dn_etcher', 'dn8', 'enK', 'cmK', 'an_servers'];
 /** What its first lab researches for real, on the Core's and its collector's data (a depth-4 node). */
 const SURVEY_PROJECT = 'an_queue';
 /** What the Fabrique's lab researches for real, on its own collector's data: a depth-4 node. */
@@ -1109,10 +1106,9 @@ function late(b: Builder): void {
     if (!sim.upgradeHearth().ok) { b.skip(`hearth:${sim.hearthLevel + 1}`); break; }
   }
   // The far works first (scenario-late.ts): the Fabrique's purchases are twenty minutes away, and
-  // the rest of the build runs meanwhile. The Ember Fields mine before it: the Fabrique lays its
-  // thermal cores' part only where embersalt comes.
-  const mine = !!emberSite(sim) && emberMine(b);
-  fabrique(b, mine);
+  // the rest of the build runs meanwhile; the Ember Fields mine and its post, where the land has the site.
+  if (emberSite(sim)) emberMine(b);
+  fabrique(b);
   // The purse topped up for its purchases (a late base has the ocelles to buy with; the land bought
   // for the works left it bare), before the first lift: its orders buy in full.
   if (sim.credits < LATE_PURSE) sim.grantCredits(LATE_PURSE - sim.credits);
@@ -1127,6 +1123,10 @@ function late(b: Builder): void {
   }
   excavate(b);
   b.optional(() => surplus(b));
+  // The potteries on the tarn's peak (the spring's on map 4), their ceramic down into the Core:
+  // before the far deposit's climb, which would otherwise take the dry peak's slopes (D115) and
+  // fence the oven in; the climb finds its way round them.
+  potteries(b);
   // The deposit nearest past the Crown, its parcels bought (when the starting square does not
   // hold them already): a drill on it, its ore over the Crown on traction ribbons.
   const far = farDeposit(b);
@@ -1158,10 +1158,9 @@ function expertises(b: Builder): void {
  * The late base's advanced part (each piece skipped, and reported, where the map does not allow
  * it): solar panels and accumulators, the coal generator retired; the first observatory's next
  * project; the cirque's lines served in order; then the rest of the works (scenario-late.ts): the
- * coal pit where the cirque is short of coal, the potteries on the tarn's peak, drifters flying
- * the ceramic and the embersalt to the Fabrique and copper home to the cirque's mill, the
- * Fabrique's observatory on its project, a geothermal plant on a vent; the longest plain line
- * upgraded to express ribbons; and time until the Fabrique's first purchases land.
+ * coal pit where the cirque is short of coal (its coal back over the Crown), the Fabrique's research
+ * lab on its project, a geothermal plant on a vent (the potteries come before, in `late`); the longest plain line upgraded to express ribbons; and time until
+ * the Fabrique's first purchases land.
  */
 function advanced(b: Builder): void {
   const sim = b.sim;
@@ -1179,15 +1178,10 @@ function advanced(b: Builder): void {
   // (Since D101 the plate smelter has its own drill, served first by its overflow gate: `ironSurplus`.)
   if (b.lines['kiln1.in0']) serveFirst(b, 'kiln1.in0');
   b.optional(() => farCopper(b));
-  // The cirque short of coal (one drill left on its deposit): coal flown home from a pit past the Crown.
+  // The cirque short of coal (one drill left on its deposit): coal from a pit past the Crown, back over it.
   coalPit(b, sim.grid.source.crownOuter ?? CIRQUE.crownOuter);
-  const pots = potteries(b);
-  if (b.ids.dockW) {
-    if (pots) { flyRoute(b, 'dockT', 'dockW', 'ceramic', 1); b.optional(() => copperHome(b)); }
-    if (b.ids.dockE) flyRoute(b, 'dockE', 'dockW', 'embersalt', 1);
-    // The Fabrique's lab on its own node where one is left on its data (none since D107: Tier 3 wants atlases).
-    if (b.ids.observatory2 && !sim.done.has(ADVANCED_PROJECT) && !sim.startResearch(ADVANCED_PROJECT, b.ids.observatory2).ok) b.skip(`research:${ADVANCED_PROJECT}`);
-  }
+  // The Fabrique's lab on its own node where one is left on its data (none since D107: Tier 3 wants atlases).
+  if (b.ids.observatory2 && !sim.done.has(ADVANCED_PROJECT) && !sim.startResearch(ADVANCED_PROJECT, b.ids.observatory2).ok) b.skip(`research:${ADVANCED_PROJECT}`);
   // A geothermal plant where the land has a vent: power day and night for the far works.
   b.optional(() => geothermal(b));
   // The longest plain line left, upgraded to express ribbons.

@@ -26,7 +26,7 @@ import { eventLine } from '@/ui/gazette';
 import type { Rot } from '@/sim/types';
 import { CENTER, EPOCH } from '@/sim/constants';
 import { catchUp } from '@/sim/offline/catchup';
-import { GLEAN_WINDOW, gleanSchedule } from '@/sim/flow/chain';
+import { GLEAN_WINDOW, RAID_STAGGER } from '@/sim/flow/chain';
 import { veinSpots } from '@/sim/scenario-quartz';
 import { PARCEL, parcelAt, parcelCentre, ringOf } from '@/sim/world/land';
 
@@ -183,9 +183,13 @@ export interface FilonDebug {
    */
   gleaners(o?: { toNight?: number; card?: 'night' | 'dawn' | null }): {
     night: boolean; exposed: number; guarded: number; exposedTiles: Array<[number, number]>; guardedTiles: Array<[number, number]>;
-    gleaned: Record<string, number>; tonight: Record<string, number>; figures: number; carrying: number; tapping: number; prowling: number; card: 'night' | 'dawn' | null; tick: number;
-    /** The next tries on the exposed lines from now on (tile, tick), soonest first: where to look for one. */
+    gleaned: Record<string, number>; tonight: Record<string, number>; card: 'night' | 'dawn' | null; tick: number;
+    /** The figures on screen last frame: all, gliding in, waiting at a post, an arm out, grabbing, carrying, at the glass, by a fence. */
+    figures: number; arriving: number; waiting: number; reaching: number; grabbing: number; carrying: number; tapping: number; prowling: number;
+    /** The next posts' turns on the exposed lines from now on (tile, tick), soonest first. */
     next: Array<{ x: number; y: number; tick: number }>;
+    /** The next raids (D112), soonest first: when each starts and its posts (tiles), middle post first for aiming. */
+    raids: Array<{ at: number; x: number; y: number; posts: Array<[number, number]> }>;
   };
   /** A goal quest's hint (D101): `true` asks for it, `false` puts it away; the guide's hint state. */
   questHint(show?: boolean): { goal: boolean; shown: boolean; left: boolean; auto: boolean };
@@ -511,12 +515,21 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
         exposedTiles: [...g.exposed].slice(0, 24).map((t) => [t & 1023, t >> 10] as [number, number]),
         guardedTiles: [...g.guarded].slice(0, 24).map((t) => [t & 1023, t >> 10] as [number, number]),
         gleaned: byId([...sim.gleaned].map((mu, i) => [i, mu] as const).filter(([, mu]) => mu > 0)),
-        tonight: byId(sim.gleanedTonight()), figures: app.gleaners.shown, carrying: app.gleaners.carrying, tapping: app.gleaners.tapping, prowling: app.gleaners.prowling, card: app.gleanCard.shown, tick: sim.tick,
-        next: sim.graph.chains.filter((c) => c.gleanRate > 0).flatMap((c) => gleanSchedule(c).map((s) => {
-          const t = sim.tick - (sim.tick % GLEAN_WINDOW) + s.t;
-          const tile = c.tiles[s.cell]!;
+        tonight: byId(sim.gleanedTonight()), card: app.gleanCard.shown, tick: sim.tick,
+        figures: app.gleaners.shown, arriving: app.gleaners.arriving, waiting: app.gleaners.waiting, reaching: app.gleaners.reaching,
+        grabbing: app.gleaners.grabbing, carrying: app.gleaners.carrying, tapping: app.gleaners.tapping, prowling: app.gleaners.prowling,
+        // The next raids' posts (D112): each post's turn (the raid's start + its stagger).
+        next: sim.graph.chains.flatMap((c) => Array.from(c.raidPosts, (cell, p) => {
+          const t = sim.tick - (sim.tick % GLEAN_WINDOW) + c.raidAt + p * RAID_STAGGER;
+          const tile = c.tiles[cell]!;
           return { x: tile & 1023, y: tile >> 10, tick: t > sim.tick ? t : t + GLEAN_WINDOW };
         })).sort((a, b) => a.tick - b.tick).slice(0, 24),
+        raids: sim.graph.chains.filter((c) => c.raidPosts.length > 0).map((c) => {
+          const t = sim.tick - (sim.tick % GLEAN_WINDOW) + c.raidAt;
+          const posts = Array.from(c.raidPosts, (cell) => [c.tiles[cell]! & 1023, c.tiles[cell]! >> 10] as [number, number]);
+          const mid = posts[posts.length >> 1]!;
+          return { at: t > sim.tick ? t : t + GLEAN_WINDOW, x: mid[0], y: mid[1], posts };
+        }).sort((a, b) => a.at - b.at || a.x - b.x || a.y - b.y).slice(0, 24),
       };
     },
     questHint: (show) => {

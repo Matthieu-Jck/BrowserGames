@@ -29,7 +29,7 @@ import { pvPanel } from '../solar';
 import { UNLIT, isUnlit } from '../unlit';
 import {
   ILH, IS, IsoFrame, Scene, ShadowFrame, box, bucketWheelIso, cableIso, chevronIso, cupIso, cylinder,
-  dishIso, drumIso, faceGlow, faceGrille, faceHazard, faceInk, faceLeds, facePanel, facePt, faceQuad, frustumIso,
+  drumIso, faceGlow, faceGrille, faceHazard, faceInk, faceLeds, facePanel, facePt, faceQuad, frustumIso,
   latheIso, pipeIso, portIso, prismIso, slab, sphereIso, spireIso, terminalIso, trussIso, vaultIso, wheelIso, type Face, type Faces, type RRect,
 } from '../iso-shapes';
 import { CHARGER_BUSHING, HEART_MASTS, INSULATOR, KIT_K, POLE, PYLON, kitDrawn, onArm, terminalProbe, terminalsOf, turnsArt } from '../terminals';
@@ -61,21 +61,6 @@ interface Moving {
   over(f: IsoFrame): boolean;
   /** What the part casts as a shadow, if not its phase 0 (a spinning crown casts a solid band). */
   shadow?(ctx: Ctx, f: IsoFrame, s: number): void;
-}
-
-/** A derrick: legs from base points up to an apex, cross braces, a beacon on top. */
-function derrick(ctx: Ctx, f: IsoFrame, legs: ReadonlyArray<readonly [number, number, number]>, apex: readonly [number, number, number], s: number): void {
-  const sorted = [...legs].sort((a, b) => f.depth(a[0], a[1]) - f.depth(b[0], b[1]));
-  for (const [i, l] of sorted.entries()) {
-    pipeIso(ctx, f, [l, apex], 3.2, C.steelL, s + i, false);
-    const m: [number, number, number] = [(l[0] + apex[0]) / 2, (l[1] + apex[1]) / 2, (l[2] + apex[2]) / 2];
-    const n = sorted[(i + 1) % sorted.length]!;
-    const m2: [number, number, number] = [(n[0] + apex[0]) / 2, (n[1] + apex[1]) / 2, (n[2] + apex[2]) / 2];
-    ink(ctx, [f.p(...m), f.p(...m2)], { w: 1.4, color: C.steelD, shade: false, taper: 0, seed: s + 10 + i });
-  }
-  const [ax, ay] = f.p(...apex);
-  shape(ctx, ellipsePts(ax, ay, 5, 4, s + 20, 0, 14), C.steelD, { w: 1.2, shade: false });
-  light(ctx, ax, ay - 2, 2.6, C.ledWarm);
 }
 
 // ── machine parts shared by several recipes ─────────────────────────────────
@@ -884,8 +869,6 @@ function container(ctx: Ctx, f: IsoFrame, x0: number, y0: number, x1: number, y1
 
 /** Lid height of the routing blocks (levels). The game seats the chosen-item glyph on it. */
 const LID = 0.5;
-/** Top of the unloader's suction head, where its glyph window is. */
-const UNLOADER_TOP = LID + 0.27;
 /** Height of a ribbon mouth on a face (levels). */
 const MOUTH = 0.3;
 /** Lip colour of each side's mouths, by local side (N, E, S, W). */
@@ -2947,6 +2930,397 @@ function boreTable(ctx: Ctx, f: IsoFrame, s: number, t: number): void {
   boreLegIso(ctx, f, boreNearLeg(f), s);
 }
 
+// ── the steam boiler (D114) ─────────────────────────────────────────────────
+
+/**
+ * The steam boiler (D114, 3×2, its front north at rot 0): where its parts stand, in local tiles
+ * and levels, the same in iso and in plan (buildings-top.ts). On the left the brick firebox
+ * (`fire`, its roof at `fireZ`), a fire door on its east and west faces over `doors` (y), the coal
+ * hopper behind it over the coal intake (`hop`) and the brick chimney on its roof (`stack`); the
+ * boiler drum across the middle along x (`drum`: centre, axis height, radius, half-length) with
+ * its steam dome, safety valve and gauge; on the right the engine on one shaft (`shaft`, along x):
+ * the dynamo (`dyn`), the cylinder lying along y (`eng`) and, beyond the plane x = `split`, the
+ * flywheel (`wheel`, its part in moving.ts); the feed pump by the water intake (`pump`).
+ */
+export const SB = {
+  fire: [0.1, 0.14, 0.95, 1.38], fireZ: 1.5, doors: [0.2, 0.62], hop: [0.14, 1.44, 0.86, 1.9], hopZ: 1.02,
+  stack: { x: 0.52, y: 0.62, r0: 0.25, r1: 0.17, z0: 1.5, top: 4.0 },
+  drum: { x: 1.42, y: 1.12, z: 1.08, r: 0.34, half: 0.47 },
+  dome: [1.22, 1.12], valve: [1.84, 1.02], gauge: [1.04, 0.84],
+  shaft: { y: 0.55, z: 1.15 },
+  dyn: { x: 2.18, r: 0.27, half: 0.15 },
+  eng: { x: 2.52, y0: 1.15, y1: 1.66, r: 0.16 },
+  pump: [2.17, 1.74],
+  wheel: { x: 2.84, r: 0.46, half: 0.06 },
+  split: 2.7,
+} as const;
+/** The boiler drum's pale enamel; coal (content colour of `coal`); the feed water's pipes; the flywheel's paint. */
+export const SB_ENAMEL = mix(C.paper, C.ice, 0.55), SB_COAL = '#34303f', SB_WATER = mix(C.steelL, C.cyan, 0.45), SB_WHEEL = C.coral;
+/** The boiler's tallest part: its chimney's cap (the plume rises over it in the sprite's margin). */
+const SB_HEAD = SB.stack.top + 0.5;
+
+/** Ink fraction of a local vertical face whose outward normal is local (nx, ny), once rotated (`faceInk`: the light from −x whatever the rotation). */
+function localInk(f: IsoFrame, nx: number, ny: number): number {
+  const [ax, ay] = f.r(0, 0), [bx, by] = f.r(nx, ny);
+  return faceInk(bx - ax, by - ay);
+}
+
+/** Twice the signed area of a screen polygon (its winding). */
+const wind2 = (q: readonly Pt[]): number => {
+  let a = 0;
+  for (let i = 0; i < q.length; i++) { const p = q[i]!, n = q[(i + 1) % q.length]!; a += p[0] * n[1] - n[0] * p[1]; }
+  return a;
+};
+/** A ring as one polygon: `outer` with `inner` cut out (wound the other way, so a plain fill leaves the hole). */
+function ringPoly(outer: readonly Pt[], inner: readonly Pt[]): Pt[] {
+  const inn = Math.sign(wind2(inner)) === Math.sign(wind2(outer)) ? inner.slice().reverse() : inner.slice();
+  return [...outer, outer[0]!, ...inn, inn[0]!];
+}
+
+/**
+ * Thin plain polylines in one path, for marks by the hundred — brick courses and joints: ink's
+ * ribbons would cost the bake for no visible wobble at this size (as the deep bore's `rod`).
+ */
+function hairlines(ctx: Ctx, lines: ReadonlyArray<readonly Pt[]>, w: number, color: string, alpha: number): void {
+  ctx.save();
+  ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  for (const l of lines) { if (l.length < 2) continue; ctx.moveTo(l[0]![0], l[0]![1]); for (let i = 1; i < l.length; i++) ctx.lineTo(l[i]![0], l[i]![1]); }
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Small bolt heads in one path: plain discs with an ink rim (`rivet` inks each, too dear by the dozen in every phase of a part). */
+function bolts(ctx: Ctx, at: readonly Pt[], r: number, color: string): void {
+  ctx.save();
+  ctx.beginPath();
+  for (const [x, y] of at) { ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, Math.PI * 2); }
+  ctx.fillStyle = color; ctx.fill();
+  ctx.globalAlpha = 0.7; ctx.strokeStyle = C.ink; ctx.lineWidth = 0.7; ctx.stroke();
+  ctx.restore();
+}
+
+/** Brick courses and staggered joints on a box face (`brickwork`'s marks, in `hairlines`). */
+function brickFace(f: IsoFrame, rr: RRect, face: Face, z0: number, z1: number): Pt[][] {
+  const out: Pt[][] = [];
+  for (let z = z0 + 0.1, row = 0; z < z1 - 0.02; z += 0.1, row++) {
+    out.push([facePt(f, rr, face, 0.01, z), facePt(f, rr, face, 0.99, z)]);
+    for (let u = row % 2 ? 0.06 : 0.12; u < 0.98; u += 0.12) out.push([facePt(f, rr, face, u, z), facePt(f, rr, face, u, z - 0.1)]);
+  }
+  return out;
+}
+
+/** The arc of a closed screen ring (centre c) that faces the light (top-left of the screen): where a rim catches it. */
+function litArc(ring: readonly Pt[], c: Pt): Pt[] {
+  const lit = (p: Pt): boolean => { const dx = p[0] - c[0], dy = p[1] - c[1], l = Math.hypot(dx, dy) || 1; return (-0.6 * dx - 0.8 * dy) / l > 0.5; };
+  const k = ring.findIndex((p) => !lit(p));
+  const from = k < 0 ? 0 : k;
+  return Array.from({ length: ring.length }, (_, i) => ring[(from + i) % ring.length]!).filter(lit);
+}
+
+/** A dark puff of coal smoke (the steam `puff`'s shape, in soot). */
+function sootPuff(ctx: Ctx, x: number, y: number, r: number, s: number): void {
+  const lobes = [[0, 0, 1], [-0.7, 0.3, 0.7], [0.7, 0.25, 0.7], [0.1, -0.5, 0.62]] as const;
+  for (const [dx, dy, k] of lobes) flat(ctx, ellipsePts(x + dx * r, y + dy * r, r * k + 1.4, r * k + 1.4, s, 0.06, 18), C.ink, 0.7);
+  for (const [dx, dy, k] of lobes) flat(ctx, ellipsePts(x + dx * r, y + dy * r, r * k, r * k, s, 0.06, 18), mix(C.steel, C.inkSoft, 0.35));
+  flat(ctx, ellipsePts(x - r * 0.3, y - r * 0.35, r * 0.42, r * 0.3, s + 1, 0.05, 14), mix(C.steel, C.steelL, 0.5), 0.85);
+}
+
+/**
+ * The chimney's plume while the boiler burns: coal smoke at the mouth thinning into white steam
+ * puffs that drift up and to the right (screen-fixed, as the light). Gone when it is switched off
+ * (D83) and in its cast shadow (a plume is no solid).
+ */
+function plumeIso(ctx: Ctx, f: IsoFrame, s: number): void {
+  if (isUnlit(ctx) || f instanceof ShadowFrame) return;
+  const { x, y, top } = SB.stack;
+  const [tx, ty] = f.p(x, y, top);
+  sootPuff(ctx, tx + 4, ty - 15, 7, s);
+  puff(ctx, tx + 12, ty - 26, 11, s + 1);
+  sootPuff(ctx, tx + 5, ty - 22, 5, s + 2);
+  puff(ctx, tx + 27, ty - 38, 12.5, s + 3);
+  puff(ctx, tx + 46, ty - 46, 9, s + 4);
+}
+
+/**
+ * A fire door on the firebox's local face x = X (its outward normal ±x: `out`), over `SB.doors`:
+ * a riveted plate, the arched opening with the fire in it — lamp tokens, so it goes dark when the
+ * boiler stops and glows at night —, the grate bars across it, the ash-pit door under it.
+ */
+function fireDoorIso(ctx: Ctx, f: IsoFrame, X: number, out: number, s: number): void {
+  const [y0, y1] = SB.doors;
+  const at = (u: number, z: number): Pt => f.p(X + out * 0.004, y0 + (y1 - y0) * u, z);
+  const quad = (u0: number, u1: number, z0: number, z1: number): Pt[] => [at(u0, z1), at(u1, z1), at(u1, z0), at(u0, z0)];
+  const k = localInk(f, out, 0), zd = SB.fireZ - 0.12; // the plate's top
+  shape(ctx, quad(0, 1, SZ + 0.06, zd), mix(C.steelD, C.ink, k * 0.6), { w: 1.3, shade: false, jitter: 0, seed: s });
+  for (const [u, z] of [[0.08, zd - 0.08], [0.92, zd - 0.08], [0.08, SZ + 0.14], [0.92, SZ + 0.14]] as const) rivet(ctx, ...at(u, z), 1.2, C.steelL);
+  const arch = (w: number, zb: number, zt: number): Pt[] => {
+    const pts: Pt[] = [at(0.5 - w, zb)];
+    for (let i = 0; i <= 10; i++) { const a = Math.PI - (i / 10) * Math.PI; pts.push(at(0.5 + Math.cos(a) * w, zt - 0.14 + Math.sin(a) * 0.14)); }
+    pts.push(at(0.5 + w, zb));
+    return pts;
+  };
+  const z0 = zd - 0.54, z1 = zd - 0.1; // the opening
+  flat(ctx, arch(0.42, z0 - 0.06, z1 + 0.06), C.ledWarm, 0.28);
+  shape(ctx, arch(0.33, z0, z1), C.ledWarm, { w: 1.4, shade: false, jitter: 0, seed: s + 1 });
+  flat(ctx, arch(0.2, z0 + 0.02, z1 - 0.1), C.glowPeach);
+  for (const u of [0.36, 0.5, 0.64]) ink(ctx, [at(u, z0 + 0.01), at(u, z1 - 0.04)], { w: 1.3, color: C.steelDD, shade: false, taper: 0, jitter: 0, seed: s + 2 + u * 10 });
+  light(ctx, ...at(0.5, z0 + 0.16), 2.8, C.ledWarm);
+  // The ash-pit door: dark steel, a latch.
+  shape(ctx, quad(0.24, 0.76, SZ + 0.12, z0 - 0.14), C.steelDD, { w: 1.1, shade: false, jitter: 0, seed: s + 5 });
+  ink(ctx, [at(0.42, (SZ + z0) / 2 - 0.02), at(0.58, (SZ + z0) / 2 - 0.02)], { w: 1.6, color: C.brass, shade: false, taper: 0, jitter: 0, seed: s + 6 });
+}
+
+/** The brick chimney on the firebox's roof: a steel collar, the battered shaft in courses with iron bands, an iron cap round its dark throat. */
+function chimneyIso(ctx: Ctx, f: IsoFrame, s: number): void {
+  const { x, y, r0, r1, z0, top } = SB.stack;
+  const rAt = (z: number): number => r0 + ((r1 - r0) * (z - z0)) / (top - z0);
+  latheIso(ctx, f, x, y, [[z0, r0 + 0.07], [z0 + 0.14, r0 + 0.07]], C.steelD, s, { top: C.steel, seams: false });
+  const z1 = top - 0.22, bands = [2.2, 3.0];
+  latheIso(ctx, f, x, y, [[z0 + 0.14, rAt(z0 + 0.14)], ...bands.map((z) => [z, rAt(z)] as const), [z1, rAt(z1)]], BRICK, s + 1, { top: C.steelD });
+  // Courses, and a staggered joint here and there, on the near half of the shaft.
+  const courses: Pt[][] = [], joints: Pt[][] = [];
+  for (let z = z0 + 0.26, i = 0; z < z1 - 0.04; z += 0.13, i++) {
+    const c = f.p(x, y, z), [ex, ey] = f.ell(rAt(z));
+    courses.push(Array.from({ length: 13 }, (_, k) => { const a = (k / 12) * Math.PI; return [c[0] + Math.cos(a) * ex, c[1] + Math.sin(a) * ey] as Pt; }));
+    for (let j = 0; j < 3; j++) {
+      const a = Math.PI * (0.2 + 0.3 * j + (i % 2 ? 0.15 : 0)), px = c[0] + Math.cos(a) * ex, py = c[1] + Math.sin(a) * ey;
+      joints.push([[px, py], [px, py - 0.13 * ILH]]);
+    }
+  }
+  hairlines(ctx, courses, 0.9, C.ink, 0.26);
+  hairlines(ctx, joints, 0.8, C.ink, 0.22);
+  // Iron bands over the courses where the shaft is strapped.
+  for (const [i, z] of bands.entries()) {
+    const c = f.p(x, y, z), [ex, ey] = f.ell(rAt(z) + 0.01);
+    ink(ctx, ellipsePts(c[0], c[1], ex, ey, s + 60, 0, 28).filter(([, py]) => py >= c[1] - 0.5).sort((p, q) => p[0] - q[0]), { w: 2.6, color: C.steelD, shade: false, taper: 0, jitter: 0, seed: s + 61 + i });
+  }
+  // The crown: a corbelled brick lip, an iron rim round the dark throat.
+  const rc = rAt(z1);
+  latheIso(ctx, f, x, y, [[z1, rc], [z1 + 0.08, rc + 0.045], [top - 0.05, rc + 0.045]], BRICK, s + 70, { top: C.steelL, shadow: false });
+  latheIso(ctx, f, x, y, [[top - 0.05, rc + 0.06], [top, rc + 0.06]], C.steelL, s + 71, { open: C.ink, shadow: false, seams: false });
+}
+
+/** The coal hopper over the coal intake, flared and heaped with coal, its chute into the firebox's back. */
+function coalHopperIso(ctx: Ctx, f: IsoFrame, s: number): void {
+  const [x0, y0, x1, y1] = SB.hop;
+  box(ctx, f, 0.32, SB.fire[3] - 0.04, 0.68, y0 + 0.06, 0.6, 0.86, { top: C.steelD, left: C.steel, right: mix(C.steel, C.ink, 0.4) }, s, { outline: 1.4, shadow: false });
+  const mouth = frustumIso(ctx, f, x0, y0, x1, y1, SZ, SB.hopZ, -0.07, { top: C.steelL, left: C.steel, right: mix(C.steel, C.ink, 0.4) }, s + 1, { open: C.ink });
+  let mx = 0, my = 0;
+  for (const [px, py] of mouth) { mx += px / mouth.length; my += py / mouth.length; }
+  let w = 0, h = 0;
+  for (const [px, py] of mouth) { w = Math.max(w, Math.abs(px - mx)); h = Math.max(h, Math.abs(py - my)); }
+  // Coal heaped in it: angular lumps, back to front, higher in the middle, a lit facet on each.
+  flat(ctx, ellipsePts(mx, my + 1, w * 0.78, h * 0.7, s + 2, 0.1, 22), SB_COAL);
+  const rng = makeRng(s + 3), lumps: Array<[number, number, number]> = [];
+  for (let i = 0; i < 16; i++) {
+    const a = rng.range(0, Math.PI * 2), d = Math.sqrt(rng.next());
+    lumps.push([mx + Math.cos(a) * d * w * 0.64, my + 1 + Math.sin(a) * d * h * 0.56 - (1 - d) * 4, rng.range(2.4, 3.8)]);
+  }
+  lumps.sort((p, q) => p[1] - q[1]);
+  for (const [i, [px, py, r]] of lumps.entries()) {
+    const pts = ellipsePts(px, py, r * 1.25, r, s + 10 + i, 0.28, 6);
+    shape(ctx, pts, SB_COAL, { w: 0.9, shade: false, jitter: 0, seed: s + 30 + i });
+    flat(ctx, [pts[3]!, pts[4]!, pts[5]!, [px, py]], mix(SB_COAL, C.steelL, i % 3 ? 0.3 : 0.55));
+  }
+}
+
+/** One of the boiler drum's brass bands: the half of the ring at t (−1…1 along the drum) that faces the camera. */
+function drumBandIso(ctx: Ctx, f: IsoFrame, t: number, s: number): void {
+  const { x, y, z, r, half } = SB.drum;
+  const sg = Math.sign(f.depth(x, y + 1) - f.depth(x, y)) || 1;
+  const P = (a: number, k = 1): Pt => f.p(x + t * half, y + Math.cos(a) * r * k, z + Math.sin(a) * r * 2 * k);
+  const arc = Array.from({ length: 17 }, (_, i) => P(Math.PI / 2 + (sg > 0 ? -1 : 1) * (i / 16) * Math.PI, 1.01));
+  ink(ctx, arc, { w: 4.4, color: C.ink, alpha: 0.8, shade: false, taper: 0, jitter: 0, seed: s });
+  ink(ctx, arc, { w: 2.6, color: C.brass, shade: false, taper: 0, jitter: 0, seed: s + 1 });
+  ink(ctx, arc.slice(0, 7), { w: 0.9, color: C.brassL, shade: false, taper: 0, jitter: 0, seed: s + 2 });
+  bolts(ctx, [2, 5, 8, 11, 14].map((i) => arc[i]!), 1.1, C.brassL);
+}
+
+/**
+ * The boiler drum on its saddles: pale enamel, three brass bands, the steam dome and the safety
+ * valve on top (its wisp while it works), the pressure gauge on a stalk at the front, its dial
+ * turned to the camera.
+ */
+function boilerDrumIso(ctx: Ctx, f: IsoFrame, s: number): void {
+  const { x, y, z, r, half } = SB.drum;
+  for (const [i, sx] of [x - half * 0.62, x + half * 0.62].entries()) {
+    box(ctx, f, sx - 0.07, y - 0.26, sx + 0.07, y + 0.26, SZ, 0.62, { top: C.steelD, left: C.steel, right: mix(C.steel, C.ink, 0.4) }, s + i, { outline: 1.4 });
+  }
+  const body = drumIso(ctx, f, x, y, z, r, half, 'x', SB_ENAMEL, s + 2, { hub: false });
+  ctx.save(); pathOf(ctx, body); ctx.clip();
+  for (const [i, t] of [-0.66, 0, 0.66].entries()) drumBandIso(ctx, f, t, s + 3 + i * 4);
+  ctx.restore();
+  // The near end again, over the bands (drumIso's end disc), with a manhole and its bolts.
+  const nearT = f.depth(x + half, y) >= f.depth(x - half, y) ? 1 : -1;
+  const end = Array.from({ length: 32 }, (_, i) => { const a = (i / 32) * Math.PI * 2; return f.p(x + nearT * half, y + Math.cos(a) * r, z + Math.sin(a) * r * 2); });
+  shape(ctx, end, mix(SB_ENAMEL, C.ink, localInk(f, nearT, 0) * 0.7), { w: 1.6, seed: s + 16 });
+  const mh = Array.from({ length: 20 }, (_, i) => { const a = (i / 20) * Math.PI * 2; return f.p(x + nearT * (half + 0.01), y + Math.cos(a) * r * 0.36, z - 0.12 + Math.sin(a) * r * 0.5); });
+  shape(ctx, mh, mix(SB_ENAMEL, C.steelD, 0.45), { w: 1.1, shade: false, jitter: 0, seed: s + 17 });
+  bolts(ctx, Array.from({ length: 8 }, (_, i) => { const a = (i / 8) * Math.PI * 2; return f.p(x + nearT * (half + 0.01), y + Math.cos(a) * r * 0.78, z + Math.sin(a) * r * 1.56); }), 1.1, C.steelL);
+  const top = z + r * 2;
+  const parts: Array<[number, number, () => void]> = [
+    [SB.dome[0], SB.dome[1], () => latheIso(ctx, f, SB.dome[0], SB.dome[1], [[top - 0.1, 0.17], [top - 0.02, 0.17], [top - 0.02, 0.15], [top + 0.26, 0.15], [top + 0.33, 0.12], [top + 0.37, 0.06]], C.brass, s + 20, { top: C.brassL })],
+    [SB.valve[0], SB.valve[1], () => {
+      const [vx, vy] = SB.valve, vt = top - 0.04;
+      latheIso(ctx, f, vx, vy, [[vt, 0.06], [vt + 0.16, 0.06], [vt + 0.16, 0.085], [vt + 0.22, 0.085], [vt + 0.22, 0.04], [vt + 0.3, 0.04]], C.brass, s + 21, { top: C.brassL, seams: false });
+      const a = f.p(vx, vy, vt + 0.26), b = f.p(vx + 0.26, vy, vt + 0.26);
+      ink(ctx, [a, b], { w: 2, color: C.steelD, shade: false, taper: 0, jitter: 0, seed: s + 22 });
+      shape(ctx, ellipsePts(b[0], b[1] + 1, 3.2, 3.2, s + 23, 0, 12), C.steelD, { w: 1.1, shade: false, jitter: 0, seed: s + 23 });
+      if (!isUnlit(ctx) && !(f instanceof ShadowFrame)) {
+        const w0 = f.p(vx, vy, vt + 0.32);
+        puff(ctx, w0[0] + 2, w0[1] - 7, 3.6, s + 24);
+        puff(ctx, w0[0] + 7, w0[1] - 14, 2.8, s + 25);
+      }
+    }],
+    [SB.gauge[0], SB.gauge[1], () => {
+      const [gx, gy] = SB.gauge;
+      pipeIso(ctx, f, [[gx, gy, z + 0.3], [gx, gy, top + 0.28]], 2.2, C.steelL, s + 26, false);
+      const [dx, dy] = f.p(gx, gy, top + 0.4);
+      shape(ctx, ellipsePts(dx, dy, 6, 6, s + 27, 0, 18), C.brass, { w: 1.3, shade: false, jitter: 0, seed: s + 27 });
+      flat(ctx, ellipsePts(dx, dy, 4.4, 4.4, s + 28, 0, 18), C.paper);
+      for (let i = 0; i < 5; i++) { const a = Math.PI * (0.8 + i * 0.35); ink(ctx, [[dx + Math.cos(a) * 3.2, dy + Math.sin(a) * 3.2], [dx + Math.cos(a) * 4.2, dy + Math.sin(a) * 4.2]], { w: 0.8, shade: false, taper: 0, jitter: 0, seed: s + 29 + i }); }
+      ink(ctx, [[dx, dy], [dx + 2.8, dy - 2.2]], { w: 1.2, color: C.coralD, shade: false, taper: 0, jitter: 0, seed: s + 35 });
+    }],
+  ];
+  parts.sort((p, q) => f.depth(p[0], p[1]) - f.depth(q[0], q[1]));
+  for (const [, , draw] of parts) draw();
+}
+
+/** The dynamo on the shaft: a teal field drum between coral end bells on a pedestal, the brass commutator and its brushes at its west end, status LEDs. */
+function dynamoIso(ctx: Ctx, f: IsoFrame, s: number): void {
+  const { y, z } = SB.shaft, { x, r, half } = SB.dyn;
+  const rr = box(ctx, f, x - half - 0.16, y - 0.27, x + half + 0.06, y + 0.27, SZ, z - r * 2 + 0.08, { top: C.steelD, left: mix(C.teal, C.steelD, 0.45), right: mix(C.teal, C.ink, 0.55) }, s, { outline: 1.6 });
+  faceLeds(ctx, f, rr, 'L', SZ + 0.18, 0.25, 0.75, 3, [C.ledGreen, C.led, C.led], 1.7);
+  hvSignIso(ctx, f, rr, 'R', 0.5, SZ + 0.2, s + 1);
+  const pieces: Array<[number, () => void]> = [
+    [x - half - 0.1, () => {
+      drumIso(ctx, f, x - half - 0.1, y, z, 0.11, 0.05, 'x', C.brass, s + 2, { shadow: false, hub: false });
+      for (const k of [-1, 1]) ink(ctx, [f.p(x - half - 0.1, y + k * 0.06, z + 0.3), f.p(x - half - 0.1, y + k * 0.04, z + 0.2)], { w: 2.2, color: C.steelDD, shade: false, taper: 0, jitter: 0, seed: s + 3 + k });
+    }],
+    [x - half, () => drumIso(ctx, f, x - half, y, z, r * 0.86, 0.035, 'x', C.coral, s + 4, { shadow: false, hub: false })],
+    [x, () => drumIso(ctx, f, x, y, z, r, half - 0.03, 'x', C.teal, s + 5, { bands: [-0.4, 0.4], shadow: false, hub: false })],
+    [x + half, () => drumIso(ctx, f, x + half, y, z, r * 0.86, 0.035, 'x', C.coral, s + 6, { shadow: false })],
+  ];
+  pieces.sort((p, q) => f.depth(p[0], y) - f.depth(q[0], y));
+  for (const [, draw] of pieces) draw();
+}
+
+/**
+ * The engine: its bed along y, the cylinder lying on it (brass-banded, the steam chest on top),
+ * the piston rod into the crosshead between its guides, the connecting rod down to the crank on
+ * the shaft, the main bearing; a work lamp on a post at the bed's end.
+ */
+function engineIso(ctx: Ctx, f: IsoFrame, s: number): void {
+  const { x, y0, y1, r } = SB.eng, { y: sy, z: sz } = SB.shaft, bz = sz - r * 2 - 0.02;
+  const bed = box(ctx, f, x - 0.13, sy - 0.2, x + 0.13, y1 + 0.06, SZ, bz, { top: C.steelD, left: C.steel, right: mix(C.steel, C.ink, 0.42) }, s, { outline: 1.6 });
+  faceHazard(ctx, f, bed, 'L', 0.08, 0.92, SZ + 0.08, SZ + 0.18, s + 1);
+  const xh = 0.97; // the crosshead's place (y)
+  const parts: Array<[number, () => void]> = [
+    // The crank on the shaft, its main bearing, the connecting rod up to the crosshead.
+    [sy, () => {
+      pipeIso(ctx, f, [[SB.dyn.x + SB.dyn.half, sy, sz], [SB.split, sy, sz]], 4.6, C.steelL, s + 2, false);
+      box(ctx, f, x + 0.04, sy - 0.12, x + 0.13, sy + 0.12, bz, sz + 0.1, { top: C.steel }, s + 3, { outline: 1.3, shadow: false });
+      drumIso(ctx, f, x - 0.03, sy, sz, 0.15, 0.03, 'x', C.steelD, s + 4, { shadow: false });
+      const pin: [number, number, number] = [x - 0.07, sy + Math.cos(1) * 0.1, sz + Math.sin(1) * 0.2];
+      pipeIso(ctx, f, [pin, [x - 0.03, xh, sz]], 3.2, C.steelL, s + 5, false);
+      rivet(ctx, ...f.p(...pin), 2, C.brassL);
+    }],
+    // The crosshead between its guides, the piston rod into the cylinder.
+    [xh, () => {
+      for (const dz of [-0.12, 0.12]) pipeIso(ctx, f, [[x - 0.03, xh - 0.2, sz + dz], [x - 0.03, y0, sz + dz]], 2, C.steelD, s + 6 + dz * 10, false);
+      ink(ctx, [f.p(x - 0.03, xh, sz), f.p(x - 0.03, y0, sz)], { w: 2.2, color: C.ice, shade: false, taper: 0, jitter: 0, seed: s + 8 });
+      box(ctx, f, x - 0.09, xh - 0.06, x + 0.03, xh + 0.06, sz - 0.1, sz + 0.1, { top: C.brassL, left: C.brass, right: mix(C.brass, C.ink, 0.4) }, s + 9, { outline: 1.2, shadow: false });
+    }],
+    // The cylinder, its covers and the steam chest; the work lamp at the bed's end.
+    [(y0 + y1) / 2, () => {
+      drumIso(ctx, f, x, (y0 + y1) / 2, sz, r, (y1 - y0) / 2, 'y', C.steelL, s + 10, { bands: [-0.55, 0, 0.55], shadow: false, end: C.steel });
+      box(ctx, f, x - 0.08, y0 + 0.08, x + 0.08, y1 - 0.08, sz + r * 2 - 0.05, sz + r * 2 + 0.14, { top: C.steel, left: C.steelD, right: mix(C.steelD, C.ink, 0.4) }, s + 11, { outline: 1.3, shadow: false });
+      pipeIso(ctx, f, [[x + 0.1, y1 + 0.04, bz], [x + 0.1, y1 + 0.04, bz + 0.5]], 2.2, C.steelD, s + 12, false);
+      box(ctx, f, x + 0.04, y1 - 0.02, x + 0.16, y1 + 0.1, bz + 0.48, bz + 0.6, { top: C.steelD }, s + 13, { outline: 1, shadow: false });
+      light(ctx, ...f.p(x + 0.1, y1 + 0.04, bz + 0.44), 2.4, C.ledWarm);
+    }],
+  ];
+  parts.sort((p, q) => f.depth(x, p[0]) - f.depth(x, q[0]));
+  for (const [, draw] of parts) draw();
+}
+
+/** The feed pump by the water intake (a brass air vessel on top) and its pipes: from the intake, and up into the drum's east end. */
+function feedPumpIso(ctx: Ctx, f: IsoFrame, s: number): void {
+  const [px, py] = SB.pump, { x, y, z, half } = SB.drum;
+  pipeIso(ctx, f, [[2.5, 1.95, 0.42], [2.5, 1.86, 0.42], [px + 0.04, 1.86, 0.42]], 3.4, SB_WATER, s, false);
+  cylinder(ctx, f, px, py, 0.1, SZ, 0.78, C.steel, s + 1, { top: C.steelL, rings: 1 });
+  latheIso(ctx, f, px, py, [[0.78, 0.06], [0.82, 0.09], [0.98, 0.09], [1.04, 0.06], [1.08, 0.02]], C.brass, s + 2, { top: C.brassL, seams: false });
+  pipeIso(ctx, f, [[px - 0.04, py - 0.08, 0.66], [x + half + 0.1, y + 0.24, 0.8], [x + half - 0.01, y + 0.22, z - 0.24]], 3, SB_WATER, s + 3);
+}
+
+/** The steam main: from the dome's crown over the back of the drum, along to the engine and down into its steam chest; a stop valve's handwheel on it. */
+function steamMainIso(ctx: Ctx, f: IsoFrame, s: number): void {
+  const top = SB.drum.z + SB.drum.r * 2, zm = top + 0.4, ym = SB.drum.y + 0.2, { x: ex, y0, r } = SB.eng, cz = SB.shaft.z + r * 2 + 0.14;
+  pipeIso(ctx, f, [[SB.dome[0], SB.dome[1], top + 0.34], [SB.dome[0], ym, zm], [ex, ym, zm], [ex, y0 + 0.2, cz]], 4, C.steelL, s);
+  const w = f.p(1.72, ym, zm + 0.1);
+  ink(ctx, [f.p(1.72, ym, zm), w], { w: 1.6, color: C.steelD, shade: false, taper: 0, jitter: 0, seed: s + 1 });
+  ink(ctx, ellipsePts(w[0], w[1], 5, 2.4, s + 2, 0, 16), { closed: true, w: 3.2, color: C.ink, shade: false, taper: 0, jitter: 0, seed: s + 2 });
+  ink(ctx, ellipsePts(w[0], w[1], 5, 2.4, s + 2, 0, 16), { closed: true, w: 1.7, color: C.brass, shade: false, taper: 0, jitter: 0, seed: s + 3 });
+}
+
+/** Everything of the steam boiler but its flywheel: the far side of the plane x = `SB.split`. */
+function boilerBody(ctx: Ctx, f: IsoFrame, s: number): void {
+  slab(ctx, f, C.steel, 0.06, SZ, s);
+  // The flywheel's pit in the slab.
+  const { x: wx, r: wr, half: wh } = SB.wheel, wy = SB.shaft.y;
+  shape(ctx, [f.p(wx - wh - 0.04, wy - wr - 0.03, SZ), f.p(wx + wh + 0.04, wy - wr - 0.03, SZ), f.p(wx + wh + 0.04, wy + wr + 0.03, SZ), f.p(wx - wh - 0.04, wy + wr + 0.03, SZ)], C.steelDD, { w: 1.2, shade: false, jitter: 0, seed: s + 1 });
+  const [fx0, fy0, fx1, fy1] = SB.fire;
+  const sc = new Scene();
+  sc.add(f.depth((fx0 + fx1) / 2, (fy0 + fy1) / 2), () => {
+    const rr = box(ctx, f, fx0, fy0, fx1, fy1, SZ, SB.fireZ, { top: C.steelD, left: BRICK, right: mix(BRICK, C.ink, 0.35) }, s + 2);
+    hairlines(ctx, [...brickFace(f, rr, 'L', SZ, SB.fireZ), ...brickFace(f, rr, 'R', SZ, SB.fireZ)], 0.9, C.ink, 0.28);
+    for (const face of ['L', 'R'] as const) for (const z of [0.55, SB.fireZ - 0.08]) ink(ctx, [facePt(f, rr, face, 0, z), facePt(f, rr, face, 1, z)], { w: 2.6, color: C.steelD, shade: false, taper: 0, jitter: 0, seed: s + 4 + z * 10 });
+    // A fire door on whichever of the east and west faces turns to the camera (one in each rotation).
+    if (facing(f, 1)) fireDoorIso(ctx, f, fx1, 1, s + 10);
+    if (facing(f, 3)) fireDoorIso(ctx, f, fx0, -1, s + 20);
+    chimneyIso(ctx, f, s + 30);
+    plumeIso(ctx, f, s + 110);
+  });
+  sc.add(f.depth(0.5, (SB.hop[1] + SB.hop[3]) / 2), () => coalHopperIso(ctx, f, s + 130));
+  sc.add(f.depth(SB.drum.x, SB.drum.y), () => { boilerDrumIso(ctx, f, s + 160); steamMainIso(ctx, f, s + 230); });
+  sc.add(f.depth(SB.dyn.x, SB.shaft.y), () => dynamoIso(ctx, f, s + 260));
+  sc.add(f.depth(SB.eng.x, 1.0), () => engineIso(ctx, f, s + 290));
+  sc.add(f.depth(SB.pump[0], SB.pump[1]), () => feedPumpIso(ctx, f, s + 330));
+  sc.run();
+}
+
+/**
+ * The flywheel on the shaft's east end, at phase t of a sixth of a turn (its six spokes): the
+ * shaft's stub from the split plane, the rim's tread and the near face's ring in the boiler's
+ * coral, the inner tread glimpsed through it, the spokes, the steel hub and its brass boss.
+ */
+function flywheelIso(ctx: Ctx, f: IsoFrame, s: number, t: number): void {
+  const { x, r, half } = SB.wheel, { y: cy, z: cz } = SB.shaft;
+  const near = f.depth(x + 1, cy) > f.depth(x, cy) ? 1 : -1;
+  const W = (a: number, rho: number, d: number): Pt => f.p(x + d, cy + Math.cos(a) * rho, cz + Math.sin(a) * rho * 2);
+  const ring = (d: number, rho: number, m = 48): Pt[] => Array.from({ length: m }, (_, i) => W((i / m) * Math.PI * 2, rho, d));
+  pipeIso(ctx, f, [[SB.split, cy, cz], [x + near * (half + 0.05), cy, cz]], 4.6, C.steelL, s, false);
+  const ri = r * 0.84, outer = hull([...ring(-half, r), ...ring(half, r)]);
+  const innerNear = ring(near * half, ri), innerFar = ring(-near * half, ri);
+  castShadow(ctx, outer, 6, 0.26);
+  flat(ctx, ringPoly(outer, innerNear), mix(SB_WHEEL, C.ink, 0.45));
+  ctx.save(); pathOf(ctx, innerNear); ctx.clip();
+  flat(ctx, ringPoly(innerNear, innerFar), mix(SB_WHEEL, C.ink, 0.6));
+  ctx.restore();
+  const face = mix(SB_WHEEL, C.ink, localInk(f, near, 0) * 0.75);
+  const a0 = (t * Math.PI * 2) / 6 + 0.3;
+  for (let i = 0; i < 6; i++) { const a = a0 + (i * Math.PI) / 3; rod(ctx, W(a, r * 0.16, 0), W(a, ri + 0.01, 0), 3.8, mix(SB_WHEEL, C.ink, 0.25)); }
+  flat(ctx, ringPoly(ring(near * half, r), innerNear), face);
+  ink(ctx, ring(near * half, r), { closed: true, w: 1.7, seed: s + 20 });
+  ink(ctx, innerNear, { closed: true, w: 1.2, alpha: 0.8, shade: false, seed: s + 21 });
+  ink(ctx, litArc(ring(near * half, r * 0.92), W(0, 0, near * half)), { w: 1.2, color: '#ffffff', alpha: 0.4, shade: false, taper: 0.2, jitter: 0, seed: s + 22 });
+  const hubRing = ring(near * (half + 0.02), r * 0.2, 20);
+  shape(ctx, hubRing, C.steel, { w: 1.3, shade: false, jitter: 0, seed: s + 23 });
+  bolts(ctx, Array.from({ length: 6 }, (_, i) => W(a0 + (i * Math.PI) / 3 + Math.PI / 6, r * 0.13, near * (half + 0.03))), 1, C.steelL);
+  rivet(ctx, ...W(0, 0, near * (half + 0.05)), 3.2, C.brassL);
+}
+
 const R: Partial<Record<BuildingId, Recipe>> = {
   // ── colony ────────────────────────────────────────────────────────────────
   hearth: {
@@ -3012,18 +3386,6 @@ const R: Partial<Record<BuildingId, Recipe>> = {
         if (look.strips > 1) faceLeds(ctx, f, rr, face, SZ * 0.5, 0.83, 0.95, 3, leds);
         if (look.floods) for (const [j, u] of HEART_FLOODS.entries()) floodIso(ctx, f, rr, face, u, s + 700 + j * 3 + (face === 'L' ? 0 : 10));
       }
-    },
-  },
-  beacon: {
-    head: 3.2,
-    draw(ctx, f, s) {
-      const c = f.p(0.5, 0.55, 0);
-      for (let k = 1; k <= 2; k++) {
-        const [ex, ey] = f.ell(0.2 + k * 0.12);
-        ink(ctx, ellipsePts(c[0], c[1], ex, ey, s + k, 0.02), { closed: true, w: 1.3, alpha: 0.7, shade: false, color: C.cyan, seed: s + 10 + k });
-      }
-      derrick(ctx, f, [[0.15, 0.2, 0], [0.9, 0.35, 0], [0.4, 0.92, 0]], [0.5, 0.5, 2.4], s);
-      dishIso(ctx, f, 0.5, 0.5, 0.3, 2.45, s + 5);
     },
   },
 
@@ -3204,29 +3566,6 @@ const R: Partial<Record<BuildingId, Recipe>> = {
   inverted_sorter: { head: LID, draw: (ctx, f, s) => sorterIso(ctx, f, s, true) },
   overflow_gate: { head: 0.85, draw: (ctx, f, s) => gateIso(ctx, f, s, false) },
   underflow_gate: { head: 0.85, draw: (ctx, f, s) => gateIso(ctx, f, s, true) },
-  unloader: {
-    head: UNLOADER_TOP,
-    draw(ctx, f, s) {
-      forkBox(ctx, f, C.violet, [C.brassL, C.brassL, C.brassL, C.brassL], s);
-      for (let side = 0; side < 4; side++) lidLane(ctx, f, laneRect(side, 0.5, 0.5, 0.2, 0.46, 0.13), mix(C.violet, C.ink, 0.4), s + side);
-      // Clamp jaws at the corners, far ones first; the suction head and its window in the middle.
-      const jaws = ([[0.15, 0.15], [0.85, 0.15], [0.15, 0.85], [0.85, 0.85]] as const).slice().sort((a, b) => f.depth(a[0], a[1]) - f.depth(b[0], b[1]));
-      const sc = new Scene();
-      for (const [i, [x, y]] of jaws.entries()) {
-        sc.add(f.depth(x, y), () => {
-          box(ctx, f, x - 0.09, y - 0.09, x + 0.09, y + 0.09, LID, LID + 0.13, { top: C.brass }, s + 30 + i, { outline: 1.6, shadow: false });
-          const [jx, jy] = f.p(x + (x < 0.5 ? -0.03 : 0.03), y + (y < 0.5 ? -0.03 : 0.03), LID + 0.13);
-          rivet(ctx, jx, jy, 1.6, C.brassL);
-        });
-      }
-      sc.add(f.depth(0.5, 0.5), () => {
-        latheIso(ctx, f, 0.5, 0.5, [[LID, 0.3], [LID + 0.04, 0.3], [LID + 0.04, 0.25], [LID + 0.08, 0.28], [LID + 0.12, 0.24], [LID + 0.16, 0.28], [LID + 0.2, 0.25], [LID + 0.2, 0.22]], C.violetL, s + 40, { top: C.violet, shadow: false });
-        box(ctx, f, 0.26, 0.26, 0.74, 0.74, LID + 0.2, UNLOADER_TOP, { top: C.steelL }, s + 41, { outline: 1.8, shadow: false });
-        windowIso(ctx, f, 0.5, 0.5, 0.2, UNLOADER_TOP, s + 42);
-      });
-      sc.run();
-    },
-  },
   crossing: {
     // A little humped bridge: the north–south line over its deck, the east–west one through its
     // tunnel (`junctionIso`, with the routing blocks above).
@@ -3278,55 +3617,6 @@ const R: Partial<Record<BuildingId, Recipe>> = {
       light(ctx, ...f.p(1, 1.02, 3.3), 2.6, C.coral);
       const rr = f.rect(0.05, 0.05, 1.95, 1.95);
       faceLeds(ctx, f, rr, 'L', SZ * 0.5, 0.15, 0.4, 3, LEDS);
-    },
-  },
-  skydock: {
-    head: 5.5,
-    draw(ctx, f, s) {
-      // An automated mooring mast for the uncrewed drifters: a lattice tower over a lit landing
-      // ring with three docking clamps; high up under the mooring cup, the winch pod that reels
-      // the mooring line (a drum, LEDs, a hazard band — no cabin); at the mast's foot the hoist
-      // cabinet whose cable runs up the tower.
-      slab(ctx, f, C.steelD, 0.04, SZ, s);
-      cylinder(ctx, f, 1.5, 1.5, 1.28, SZ, 0.5, C.steelDD, s + 1, { top: C.steelD });
-      const c = f.p(1.5, 1.5, 0.5);
-      const [ex, ey] = f.ell(1.06);
-      ink(ctx, ellipsePts(c[0], c[1], ex, ey, s + 2, 0, 48), { closed: true, w: 3, color: C.cyan, shade: false, seed: s + 2 });
-      for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; light(ctx, c[0] + Math.cos(a) * ex, c[1] + Math.sin(a) * ey, 2.2, i % 2 ? C.led : C.ledWarm); }
-      const sc = new Scene();
-      for (const [i, a] of [0.5, 2.6, 4.7].entries()) {
-        const x = 1.5 + Math.cos(a) * 0.82, y = 1.5 + Math.sin(a) * 0.82;
-        sc.add(f.depth(x, y) - 0.5, () => {
-          box(ctx, f, x - 0.1, y - 0.1, x + 0.1, y + 0.1, 0.5, 0.66, { top: C.hazard, left: C.brass, right: mix(C.brass, C.ink, 0.4) }, s + 30 + i, { outline: 1.4 });
-          light(ctx, ...f.p(x, y, 0.7), 1.5, C.ledGreen);
-        });
-      }
-      sc.add(f.depth(1.5, 1.5), () => {
-        trussIso(ctx, f, 1.5, 1.5, 0.3, 0.12, 0.5, 4.35, 7, C.steelL, s + 3, 3);
-        ink(ctx, [f.p(1.62, 1.86, 1.0), f.p(1.56, 1.62, 3.3)], { w: 1.6, color: C.steelDD, shade: false, taper: 0, seed: s + 9 });
-        // The winch pod round the mast: a banded drum, its line drum on the side, LEDs.
-        latheIso(ctx, f, 1.5, 1.5, [[3.3, 0.2], [3.36, 0.3], [3.86, 0.3], [3.92, 0.22], [3.96, 0.22]], C.steel, s + 4, { top: C.steelD });
-        const pc = f.p(1.5, 1.5, 3.62), [px, py] = f.ell(0.3);
-        ink(ctx, ellipsePts(pc[0], pc[1], px, py, s + 10, 0, 32).filter(([, y]) => y >= pc[1] - 0.5).sort((p, q) => p[0] - q[0]), { w: 5, color: C.hazard, shade: false, taper: 0, seed: s + 10 });
-        for (let i = 0; i < 5; i++) {
-          const a = Math.PI * (0.15 + i * 0.17);
-          light(ctx, pc[0] + Math.cos(a) * px * 0.98, pc[1] + Math.sin(a) * py * 0.98 + 7, 1.6, i % 2 ? C.led : C.ledGreen);
-        }
-        const [dx, dy] = facingDir(f, 0.36, 0);
-        drumIso(ctx, f, 1.5 + dx, 1.5 + dy, 3.55, 0.09, 0.12, Math.abs(dx) > Math.abs(dy) ? 'y' : 'x', C.brass, s + 11, { bands: [-0.4, 0.4] });
-        latheIso(ctx, f, 1.5, 1.5, [[4.3, 0.08], [4.45, 0.12], [4.75, 0.34], [4.8, 0.36]], C.brass, s + 5, { open: C.steelDD });
-        light(ctx, ...f.p(1.5, 1.5, 4.95), 3, C.ledRed);
-        pipeIso(ctx, f, [[1.5, 1.5, 4.5], [2.35, 1.0, 4.4]], 3, C.steelD, s + 6);
-        light(ctx, ...f.p(2.35, 1.0, 4.4), 2.4, C.ledWarm);
-      });
-      sc.add(f.depth(1.5, 2.15), () => {
-        const rr = box(ctx, f, 1.22, 1.95, 1.78, 2.32, 0.5, 1.02, C.steel, s + 7);
-        faceGrille(ctx, f, rr, 'L', 0.12, 0.55, 0.58, 0.92, s + 8, 3);
-        faceLeds(ctx, f, rr, 'L', 0.82, 0.68, 0.9, 3, LEDS);
-        faceHazard(ctx, f, rr, 'R', 0.08, 0.92, 0.56, 0.68, s + 12);
-        drumIso(ctx, f, 1.5, 2.13, 1.1, 0.08, 0.2, 'x', C.steelL, s + 13, { bands: [0], shadow: false });
-      });
-      sc.run();
     },
   },
 
@@ -3755,6 +4045,20 @@ const R: Partial<Record<BuildingId, Recipe>> = {
         pipeIso(ctx, f, [[0.5, 0.95, 1.25], [0.5, 0.6, 1.45]], 4, C.brass, s + 9);
       });
       sc.run();
+    },
+  },
+  steam_boiler: {
+    // A steam power plant (D114): the brick firebox with its glowing fire door and coal hopper,
+    // the tall brick chimney and its plume, the pale riveted drum, and the engine — cylinder,
+    // crosshead, the dynamo and the big coral flywheel on one shaft (SB, `boilerBody`). The
+    // flywheel turns while it burns (moving.ts: six spokes, a sixth of a turn a period).
+    head: SB_HEAD,
+    moving: {
+      body: boilerBody,
+      part: (ctx, f, s, t) => flywheelIso(ctx, f, s + 400, t),
+      // The flywheel stands beyond the plane x = SB.split, all the rest this side of it: it is the
+      // nearer when the east side faces the camera.
+      over: (f) => facing(f, 1),
     },
   },
   wind_flower: {
@@ -4438,56 +4742,6 @@ const R: Partial<Record<BuildingId, Recipe>> = {
       light(ctx, ...f.p(hx, hy, zw + 0.5), 2.4, C.coral);
       const sr = f.rect(0.05, 0.05, 2.95, 2.95);
       faceLeds(ctx, f, sr, 'L', SZ * 0.5, 0.1, 0.3, 4, LEDS);
-    },
-  },
-  big_dock: {
-    head: 7.0,
-    draw(ctx, f, s) {
-      // The skydock grown: a broader landing ring with five docking clamps, a taller lattice
-      // mast with two winch pods, three mooring arms fanning out under the brass mooring cup,
-      // the hoist cabinet at the mast's foot.
-      slab(ctx, f, C.steelD, 0.04, SZ, s);
-      cylinder(ctx, f, 2, 2, 1.76, SZ, 0.5, C.steelDD, s + 1, { top: C.steelD });
-      const c = f.p(2, 2, 0.5);
-      for (const [k, r] of [1.5, 0.95].entries()) {
-        const [ex, ey] = f.ell(r);
-        ink(ctx, ellipsePts(c[0], c[1], ex, ey, s + 2 + k, 0, 56), { closed: true, w: k ? 2 : 3.2, color: k ? C.hazard : C.cyan, shade: false, seed: s + 2 + k });
-        if (!k) for (let i = 0; i < 16; i++) { const a = (i / 16) * Math.PI * 2; light(ctx, c[0] + Math.cos(a) * ex, c[1] + Math.sin(a) * ey, 2.2, i % 2 ? C.led : C.ledWarm); }
-      }
-      const sc = new Scene();
-      for (let i = 0; i < 5; i++) {
-        const a = (i / 5) * Math.PI * 2 + 0.3, x = 2 + Math.cos(a) * 1.22, y = 2 + Math.sin(a) * 1.22;
-        sc.add(f.depth(x, y) - 0.5, () => {
-          box(ctx, f, x - 0.12, y - 0.12, x + 0.12, y + 0.12, 0.5, 0.7, { top: C.hazard, left: C.brass, right: mix(C.brass, C.ink, 0.4) }, s + 30 + i, { outline: 1.4 });
-          light(ctx, ...f.p(x, y, 0.74), 1.6, C.ledGreen);
-        });
-      }
-      sc.add(f.depth(2, 2), () => {
-        trussIso(ctx, f, 2, 2, 0.42, 0.15, 0.5, 6.0, 9, C.steelL, s + 3, 3.6);
-        ink(ctx, [f.p(2.12, 2.5, 1.15), f.p(2.08, 2.12, 3.4)], { w: 1.6, color: C.steelDD, shade: false, taper: 0, seed: s + 9 });
-        for (const [k, [z0, z1]] of ([[2.7, 3.2], [4.1, 4.65]] as const).entries()) {
-          latheIso(ctx, f, 2, 2, [[z0, 0.24], [z0 + 0.06, 0.34], [z1 - 0.06, 0.34], [z1, 0.26], [z1 + 0.04, 0.26]], C.steel, s + 4 + k, { top: C.steelD });
-          const pc = f.p(2, 2, (z0 + z1) / 2), [px, py] = f.ell(0.34);
-          ink(ctx, ellipsePts(pc[0], pc[1], px, py, s + 10 + k, 0, 32).filter(([, y]) => y >= pc[1] - 0.5).sort((p, q) => p[0] - q[0]), { w: 5, color: C.hazard, shade: false, taper: 0, seed: s + 10 + k });
-          for (let i = 0; i < 5; i++) { const a = Math.PI * (0.15 + i * 0.17); light(ctx, pc[0] + Math.cos(a) * px * 0.98, pc[1] + Math.sin(a) * py * 0.98 + 8, 1.6, i % 2 ? C.led : C.ledGreen); }
-        }
-        for (let k = 0; k < 3; k++) {
-          const a = (k / 3) * Math.PI * 2 + 0.9;
-          const e: V3 = [2 + Math.cos(a) * 1.15, 2 + Math.sin(a) * 1.15, 5.35];
-          pipeIso(ctx, f, [[2, 2, 5.6], e], 3.4, C.steelD, s + 20 + k);
-          light(ctx, ...f.p(...e), 2.4, C.ledWarm);
-        }
-        latheIso(ctx, f, 2, 2, [[5.95, 0.1], [6.1, 0.15], [6.45, 0.42], [6.5, 0.44]], C.brass, s + 5, { open: C.steelDD });
-        light(ctx, ...f.p(2, 2, 6.68), 3.2, C.ledRed);
-      });
-      sc.add(f.depth(2, 2.72), () => {
-        const rr = box(ctx, f, 1.62, 2.5, 2.38, 2.94, 0.5, 1.12, C.steel, s + 40);
-        faceGrille(ctx, f, rr, 'L', 0.08, 0.45, 0.58, 1.0, s + 41, 3);
-        faceLeds(ctx, f, rr, 'L', 0.92, 0.55, 0.9, 3, LEDS);
-        faceHazard(ctx, f, rr, 'R', 0.08, 0.92, 0.56, 0.68, s + 42);
-        drumIso(ctx, f, 2, 2.72, 1.22, 0.09, 0.28, 'x', C.steelL, s + 43, { bands: [0], shadow: false });
-      });
-      sc.run();
     },
   },
 

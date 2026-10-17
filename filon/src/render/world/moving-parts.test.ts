@@ -1,6 +1,6 @@
 // moving-parts.test.ts — how fast moving parts turn: turbines with the wind they see (bounded,
 // faster in a stronger wind, a crest outspinning the sheltered cirque, D95), machines only
-// while they work; each building's own start phase and speed factor, stable and in range.
+// while they work, generators at full speed while they burn; each building's own start phase and speed factor, stable and in range.
 import { describe, it, expect } from 'vitest';
 import { St } from '@/sim/types';
 import { WORK_TURNS, spinSeed, windTurns, workTurns } from './moving-parts';
@@ -25,6 +25,12 @@ describe('moving parts: speeds', () => {
     expect(workTurns(St.Ok, 1000)).toBeCloseTo(WORK_TURNS, 9);
     expect(workTurns(St.LowPower, 500)).toBeCloseTo(WORK_TURNS / 2, 9);
     for (const st of [St.Starved, St.Blocked, St.Unpowered, St.NoJob, St.Idle, St.NoFuel]) expect(workTurns(st, 1000)).toBe(0);
+  });
+
+  it('a generator turns at full speed while it burns, short grid or not; still when idle or out of fuel (D114)', () => {
+    expect(workTurns(St.Ok, 400, true)).toBeCloseTo(WORK_TURNS, 9);
+    expect(workTurns(St.Ok, 1000, true)).toBeCloseTo(WORK_TURNS, 9);
+    for (const st of [St.Idle, St.NoFuel, St.Starved]) expect(workTurns(st, 1000, true)).toBe(0);
   });
 
   it('each building has its own start phase and speed factor, stable and in range', () => {

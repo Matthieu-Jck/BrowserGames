@@ -33,7 +33,7 @@ const CHIPS = 6;
 const prefs = makeStore<{ version: 1; met: string[] }>('filon.gleaners.v1', 1, () => ({ version: 1, met: [] }));
 const baseKey = (sim: Sim): string => `${sim.playerSeed}:${sim.foundingEpoch}`;
 
-/** A Gleaner, drawn (carrying something, or reaching out). */
+/** A Gleaner, drawn (carrying something, or gliding). */
 function figure(carry: boolean): HTMLCanvasElement {
   const cv = document.createElement('canvas');
   cv.width = GLEANER_W * 2; cv.height = GLEANER_H * 2;
@@ -46,7 +46,7 @@ function figure(carry: boolean): HTMLCanvasElement {
     // What it took, a small glint over its hand.
     const [hx, hy] = GLEANER_HAND;
     g.fillStyle = 'rgba(255, 246, 210, 0.9)';
-    g.beginPath(); g.arc(hx + 2, hy - 4, 3.2, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.arc(hx, hy, 3.4, 0, Math.PI * 2); g.fill();
   }
   return cv;
 }

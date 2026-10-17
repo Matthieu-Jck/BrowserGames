@@ -3,11 +3,10 @@
 // parcels. By default you have a square that includes the Cirque, but then you need to pay"): the
 // grid, and which parcels the claim holds — the starting square round the cirque (3×3 parcels of
 // 23 tiles since D74, sized to hold the cirque and its Crown), those it bought and those it leases. A building that needs the claim's land stands wholly on held parcels. What a
-// parcel costs, buying and leasing are systems/land.ts. The starting square and the sister claims'
-// parcels follow from the land and the seeds, so only what was bought and leased is saved.
+// parcel costs, buying and leasing are systems/land.ts. The starting square and the neighbouring
+// bases' parcels (D110, world/neighbours.ts) follow from the land and the seeds, so only what was
+// bought and leased is saved.
 import { BAL } from '@/content/balance';
-import { COLONY_PROFILES } from '@/content/colonies';
-import { hash32 } from '@/core/hash';
 import { CENTER, WORLD } from '../constants';
 import { footprint } from '../entities';
 
@@ -16,12 +15,12 @@ export const PARCEL = BAL.land.parcel;
 const HALF = PARCEL >> 1;
 /** The Heart's parcel's column and row: parcels are centred on its tile, as many columns west of it as reach x = 0. */
 const HOME = Math.ceil((CENTER - HALF) / PARCEL);
+/** The Heart's parcel's column (and row). */
+export const HOME_COL = HOME;
 /** Column 0's first tile (≤ 0: the first column, like the last, is cut short by the world's edge). Same on both axes. */
 const ORIGIN = CENTER - HALF - HOME * PARCEL;
 /** Parcels a side across the world. */
 export const PARCEL_COLS = Math.floor((WORLD - 1 - ORIGIN) / PARCEL) + 1;
-/** The sister claims of the Crier Ring (market/colonies.ts draws as many). */
-const SISTERS = Object.values(COLONY_PROFILES).reduce((n, p) => n + p.count, 0);
 
 /** The parcel holding tile (x, y). */
 export const parcelAt = (x: number, y: number): number => Math.floor((y - ORIGIN) / PARCEL) * PARCEL_COLS + Math.floor((x - ORIGIN) / PARCEL);
@@ -60,7 +59,14 @@ export class Land {
   /** What each bought parcel cost (centi-ocelles): Parcel Resale (xp_resell) gives a share back. Saved. */
   readonly paid = new Map<number, number>();
 
-  constructor(private readonly seed: number) {}
+  /**
+   * Whose land a parcel is when nobody else's says so: the neighbouring base holding it (its
+   * colony's index) or −1. The Sim sets it to its `Neighbours` (D110); a bare Land knows none.
+   */
+  owner: (p: number) => number = () => -1;
+
+  /** The land's seed (the world's and the player's): the neighbouring bases are drawn from it. */
+  constructor(readonly seed: number) {}
 
   /** Is the parcel the claim's grant (the starting square)? */
   inStart(p: number): boolean { return ringOf(p) <= this.reach; }
@@ -88,14 +94,13 @@ export class Land {
   }
 
   /**
-   * The sister claim that owns a parcel (its colony index), or −1: about one in `sisterShare` beyond
-   * the ring round the starting square, the claim drawn from the seeds. A parcel the claim holds is
-   * its own, whoever it was bought from.
+   * The neighbouring base (D110) whose land a parcel is — its colony's index at the Crier — or −1:
+   * the claim's own (held, whoever it came from), or CrierBelt's to sell. Never within the ring
+   * round the starting square.
    */
-  sister(p: number): number {
-    if (ringOf(p) <= this.reach + 1 || this.bought.has(p) || this.granted.has(p)) return -1;
-    const h = hash32(this.seed, p, 0x1a4d);
-    return h % 1000 < BAL.land.sisterShare ? (h >>> 10) % SISTERS : -1;
+  neighbour(p: number): number {
+    if (ringOf(p) <= this.reach + 1 || this.holds(p)) return -1;
+    return this.owner(p);
   }
 
   /** The parcels held beyond the starting square, sorted. */

@@ -312,7 +312,7 @@ describe('CrierBelt’s restart reserve (D36): a base can always rebuild its pro
 
   it('a plan that would eat into it is refused — nothing paid, nothing logged — while the smelter’s plan, wholly in the reserve, never is', () => {
     const sim = testSim(undefined, { plans: false });
-    for (const id of ['router', 'wind_flower', 'telemetry', 'beacon', 'junction', 'sorter', 'bridge', 'inverted_sorter']) expect(sim.unlockPlan(id).ok, id).toBe(true);
+    for (const id of ['router', 'wind_flower', 'telemetry', 'incinerator', 'traction', 'junction', 'sorter', 'bridge', 'inverted_sorter']) expect(sim.unlockPlan(id).ok, id).toBe(true);
     expect(sim.stockOf('iron_plate')).toBe(66); // 120 − 54: seven plates above the reserve's 59
     const stock = Float64Array.from(sim.stock), log = sim.log.length;
     expect(sim.planBlock('silo')).toBe('reserve'); // 8 plates: affordable, but 58 would be left for 59
@@ -329,7 +329,7 @@ describe('CrierBelt’s restart reserve (D36): a base can always rebuild its pro
 
   it('buildings count, so placing and removing never move the verdict; production and rewards lift it', () => {
     const sim = testSim(undefined, { plans: false });
-    for (const id of ['router', 'kiln', 'wind_flower', 'telemetry', 'beacon', 'junction', 'trade_post']) expect(sim.unlockPlan(id).ok, id).toBe(true);
+    for (const id of ['router', 'kiln', 'wind_flower', 'telemetry', 'incinerator', 'traction', 'junction', 'trade_post']) expect(sim.unlockPlan(id).ok, id).toBe(true);
     expect(sim.planBlock('silo')).toBe('reserve'); // 54 plates, 8 for the silo: 46 left for 49
     const drill = sim.place('drill', 511, 502, 2);
     const kiln = sim.place('kiln', 506, 505, 1);

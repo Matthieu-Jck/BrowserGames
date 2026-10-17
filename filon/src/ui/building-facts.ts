@@ -12,7 +12,7 @@
 // yet researched are left out, and so are locked buildings in the « replaces » list.
 import { BAL } from '@/content/balance';
 import {
-  BUILDING_IDS, ITEM_IDS, buildingDef, buildingIdx, costOf, itemDef, itemIdx, recipeDef, recipesFor,
+  BUILDING_IDS, ITEM_IDS, buildingDef, buildingIdx, costOf, itemDef, itemIdx, recipeDef, recipesFor, revealOf,
 } from '@/content/registry';
 import { nodeName } from '@/content/research';
 import type { BuildingDef, ItemDef, Side } from '@/content/types';
@@ -24,7 +24,6 @@ import { EPOCH, TPS } from '@/sim/constants';
 import { LAB_CAP } from '@/sim/graph/compile';
 import { climbOf, isLinkPoint, linkPoint, linkable } from '@/sim/power/links';
 import type { Mods } from '@/sim/research/modifiers';
-import { dockShips } from '@/sim/space';
 import type { Sim } from '@/sim/state';
 import { throughputMu, tradeLevel } from '@/sim/trade';
 import { TP_PAD } from '@/render/art/recipes/buildings';
@@ -59,13 +58,13 @@ export interface RecipeFact { readonly name: string; readonly ins: readonly Item
  */
 /** Lines of a diagram: a, b (the rule's two ways), in (the way in); pin / pout: a building's inlets and outlets (the world's port colours). */
 export type RuleTone = 'a' | 'b' | 'in' | 'pin' | 'pout';
-export type RuleFlow = 'in' | 'out' | 'both' | 'store';
+export type RuleFlow = 'in' | 'out' | 'both';
 export interface RuleSide { readonly flow: RuleFlow; readonly tone: RuleTone; readonly dashed?: boolean }
 export interface RuleLegend { readonly tone: RuleTone; readonly flow: RuleFlow; readonly dashed?: boolean; readonly text: string }
 export interface RuleFact {
   /** `block`: a routing block and its four sides; `cross`: two lines straight through; `bridge`: a leap. */
   readonly shape: 'block' | 'cross' | 'bridge';
-  /** Has a front (sorters, gates): drawn with a chevron; routers and unloaders work the same every way. */
+  /** Has a front (sorters, gates): drawn with a chevron; a distributor works the same every way. */
   readonly directed?: boolean;
   readonly sides?: Partial<Record<Side, RuleSide>>;
   readonly legend: readonly RuleLegend[];
@@ -204,13 +203,6 @@ function kindRows(def: number, b: BuildingDef, m: Readonly<Mods>): FactRow[] {
     case 'storage':
       if (b.storageCap) add('store', t('card.store'), t('card.store.single', { n: num(b.storageCap) }));
       break;
-    case 'beacon':
-      if (b.reveal) add('reveal', t('card.reveals'), t('card.radius', { n: b.reveal }));
-      break;
-    case 'dock':
-      add('drifters', t('card.drifters'), t('card.drifters.v', { n: dockShips(m), cap: num(Math.floor((BAL.drifterCap * m.shipCap) / 1000)) }));
-      add('store', t('card.store'), t('card.items', { n: BAL.dockCap }));
-      break;
     case 'lab':
       add('takes', t('card.takes'), t('card.lab.takes'), ITEM_IDS.map((_, i) => i).filter((i) => itemDef(i).kind === 'science'));
       // The autonomous lab makes Survey Data for its own project (systems/research.ts).
@@ -226,6 +218,8 @@ function kindRows(def: number, b: BuildingDef, m: Readonly<Mods>): FactRow[] {
         ? t('card.fuel.every', { item: itemRef(fuel), d: minutes(Math.round(1 / per)) })
         : t('card.fuel.rate', { item: itemRef(fuel), rate: rate(per) });
       add('fuel', t('card.fuel'), text);
+      // A steam boiler drinks water too (D114), by conduit from a pump.
+      if (g.water) add('water', t('card.water'), t('card.fuel.rate', { item: itemRef(itemIdx('water')), rate: rate(g.water) }));
       break;
     }
     case 'wind': {
@@ -248,6 +242,8 @@ function kindRows(def: number, b: BuildingDef, m: Readonly<Mods>): FactRow[] {
       const p = linkPoint(def, m);
       if (p) add('wires', t('card.wires'), t('card.wires.v', { n: p.slots, r: p.range }));
       if (p) add('climb', t('card.climb'), t('card.climb.v', { n: climbOf(def) }));
+      // The fog it lifts round itself (D117: every building does, but a pillar is how a line walks it back).
+      if (revealOf(b)) add('reveal', t('card.reveals'), t('card.radius', { n: revealOf(b) }));
       break;
     }
     default:
@@ -314,10 +310,6 @@ function ruleOf(b: BuildingDef): RuleFact | null {
     case 'underflow': return {
       shape: 'block', directed: true, sides: { S: IN, N: out('b', true), E: out('a'), W: out('a') },
       legend: [back, { tone: 'a', flow: 'out', text: t('card.rule.sidesFirst') }, { tone: 'b', flow: 'out', dashed: true, text: t('card.rule.frontIfFull') }],
-    };
-    case 'unloader': return {
-      shape: 'block', sides: { S: { flow: 'store', tone: 'in' }, N: out('a'), E: out('a'), W: out('a') },
-      legend: [{ tone: 'in', flow: 'store', text: t('card.rule.store') }, { tone: 'a', flow: 'out', text: t('card.rule.unload') }],
     };
     default: {
       const both: RuleSide = { flow: 'both', tone: 'a' };

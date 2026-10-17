@@ -116,13 +116,16 @@ describe('map generation', () => {
         for (let y = -3; y <= 3; y++) for (let x = -3; x <= 3; x++) if (g.ore(CENTER + d.dx + x, CENTER + d.dy + y) === itemIdx(d.item)) found++;
         expect(found, `seed ${seed} ${d.item}`).toBeGreaterThan(5);
       }
-      expect(g.terrain(CENTER + CIRQUE.lake.dx, CENTER + CIRQUE.lake.dy)).toBe(T.Deep); // the tarn's heart
+      // The tarn's heart (maps 2–3); on map 4 its spring, the head of its stream (D115).
+      expect(g.terrain(CENTER + CIRQUE.lake.dx, CENTER + CIRQUE.lake.dy)).toBe(MAPS[MAP_VERSION]!.cirque.spring ? T.River : T.Deep);
       // The Crown: rock all around at r 26 (past the floor's rim, short of the thinnest Crown's
       // foot) — no pass any more (D45).
       let rock = 0;
       for (let k = 0; k < 360; k++) {
         const x = CENTER + Math.round(26 * Math.cos((k * Math.PI) / 180)), y = CENTER + Math.round(26 * Math.sin((k * Math.PI) / 180));
-        if (isRock(g.terrain(x, y)) && g.level(x, y) > 0) rock++;
+        // Rock, or the spring's stream down the terraces at their level (map 4, D115).
+        const t = g.terrain(x, y);
+        if ((isRock(t) || t === T.River) && g.level(x, y) > 0) rock++;
       }
       expect(rock, `seed ${seed}`).toBe(360);
     }
@@ -440,9 +443,9 @@ describe('map versions (D63)', () => {
     expect(() => new MapGen(WORLD_SEED, 1, MAP_VERSION + 1)).toThrow(/map version/);
   });
 
-  it('the tarn: up on the crest, its water at the crest\'s level, ringed by rock of that level, the same for every player', () => {
+  it('the tarn (maps 2–3; map 4 has a spring in its place, D115): up on the crest, its water at the crest\'s level, ringed by rock of that level, the same for every player', () => {
     for (const seed of SEEDS) {
-      const { gen, g } = world(seed);
+      const { gen, g } = world(seed, 3);
       expect(gen.tarn, `seed ${seed}`).toEqual({ x: CENTER + CIRQUE.lake.dx, y: CENTER + CIRQUE.lake.dy, level: CIRQUE.crest });
       let water = 0, deep = 0, ringBad = 0;
       for (let y = -4; y <= 4; y++) for (let x = -4; x <= 4; x++) {
@@ -521,12 +524,13 @@ describe('map versions (D63)', () => {
   it('water at a level in play: a pump stands by the tarn on its own level, a backfiller marks it, the floor\'s lake stays a floor pump\'s (map 1)', () => {
     const at = (v: number): Sim => {
       const sim = new Sim({ worldSeed: WORLD_SEED, playerSeed: SEEDS[0]!, source: new MapGen(WORLD_SEED, SEEDS[0]!, v), foundingEpoch: WORLD_EPOCH0 + 24 });
-      sim.done.add('tr3'); // pumps, conduits, the ceramic oven
+      sim.done.add('tr3'); // conduits, the ceramic oven
+      sim.done.add(buildingDef(buildingIdx('pump')).unlock); // the pump, wherever its unlock now stands (D114: Tier 1)
       sim.rebuildDerived();
       sim.grant('iron_plate', 50); sim.grant('glass', 20);
       return sim;
     };
-    const sim = at(MAP_VERSION), t = sim.grid.source.tarn!;
+    const sim = at(3), t = sim.grid.source.tarn!;
     // On the tarn's shallows (its west tip): the pump's tile is the tarn's level.
     expect(sim.grid.terrain(t.x - 2, t.y)).toBe(T.Shallow);
     expect(sim.canPlace('pump', t.x - 2, t.y, 0).reason).toBe('ok');
@@ -565,6 +569,8 @@ describe('map 4: obstacles (D94)', () => {
       for (const [x, y, l, t] of disc(b.g, R)) {
         const bio = biomeAt(a.g, x, y);
         if (bio !== BIOME.cirque && bio !== BIOME.crown) continue;
+        // Its water apart: map 3's tarn is map 4's dry peak, map 4's spring and pool (D115).
+        if (isWater(a.g.terrain(x, y)) || isWater(t)) continue;
         if (l !== a.g.level(x, y) || t !== a.g.terrain(x, y) || biomeAt(b.g, x, y) !== bio) diff++;
       }
       // The vein's face and the floor two tiles in front of it.
@@ -609,7 +615,7 @@ describe('map 4: obstacles (D94)', () => {
     }
   });
 
-  it('chasms cut the plains at level 0, rivers too but up on a massif; none on the Crown; a river flows (its way in the biome code)', () => {
+  it('chasms cut the plains at level 0, rivers too but up on a massif; none on the Crown but its spring\'s stream; a river flows (its way in the biome code)', () => {
     for (const seed of M4) {
       const { gen, g } = world(seed);
       let chasm = 0, river = 0, wrong = 0, inner = 0, flow = 0;
@@ -617,7 +623,8 @@ describe('map 4: obstacles (D94)', () => {
         if (t !== T.Chasm && t !== T.River) continue;
         if (t === T.Chasm) chasm++; else river++;
         if (t === T.Chasm && l !== 0) wrong++;
-        if (d2c(x, y) <= (gen.crownReach + 4) ** 2) inner++;
+        // On the Crown only its spring's stream (D115, tested below).
+        if (d2c(x, y) <= (gen.crownReach + 4) ** 2 && !(t === T.River && gen.spring)) inner++;
         const b = biomeAt(g, x, y);
         if (t === T.River && b >= BIOME.river && b < BIOME.river + 8) flow++;
       }
@@ -776,4 +783,62 @@ describe('map 4: obstacles (D94)', () => {
     }
   });
 
+});
+
+describe('the spring on the Crown (map 4, D115)', () => {
+  /** The spring's stream: the river tiles within the Crown's reach. */
+  const stream = (gen: MapGen, g: Grid): Array<[number, number]> => {
+    const out: Array<[number, number]> = [], R = gen.crownReach;
+    for (let y = CENTER - R; y <= CENTER + R; y++) for (let x = CENTER - R; x <= CENTER + R; x++) if (d2c(x, y) <= R * R && g.terrain(x, y) === T.River) out.push([x, y]);
+    return out;
+  };
+  const DX8 = [1, 1, 0, -1, -1, -1, 0, 1], DY8 = [0, 1, 1, 1, 0, -1, -1, -1];
+
+  it('the tarn replaced (owner: « Il reste un lac vestige… Il faut l\'enlever ou le remplacer »): a spring up on its dry peak, its stream down the terraces in small falls, never climbing, into a pool on the floor', () => {
+    const W = MAPS[4]!.cirque, P = W.spring!.pool;
+    for (const seed of SEEDS) {
+      const { gen, g } = world(seed, 4);
+      expect(gen.tarn).toBeNull();
+      expect(gen.spring).toEqual({ x: CENTER + W.lake.dx, y: CENTER + W.lake.dy, level: W.crest });
+      expect(g.terrain(gen.spring!.x, gen.spring!.y)).toBe(T.River);
+      expect(g.level(gen.spring!.x, gen.spring!.y)).toBe(W.crest);
+      // No still water up on the Crown any more.
+      let still = 0;
+      for (let y = -6; y <= 6; y++) for (let x = -6; x <= 6; x++) if (isWater(g.terrain(gen.spring!.x + x, gen.spring!.y + y)) && g.terrain(gen.spring!.x + x, gen.spring!.y + y) !== T.River) still++;
+      expect(still, `seed ${seed}: still water on the peak`).toBe(0);
+      const tiles = stream(gen, g);
+      expect(tiles.length, `seed ${seed}`).toBeGreaterThanOrEqual(14);
+      let climbs = 0, falls = 0, mouth = 0;
+      for (const [x, y] of tiles) {
+        const b = biomeAt(g, x, y) - BIOME.river;
+        expect(b >= 0 && b < 8, `seed ${seed}: its way at (${x}, ${y})`).toBe(true);
+        const nx = x + DX8[b]!, ny = y + DY8[b]!, nt = g.terrain(nx, ny), l = g.level(x, y);
+        if (nt === T.River) { if (g.level(nx, ny) > l) climbs++; if (g.level(nx, ny) < l) falls++; }
+        // Into the pool on the floor.
+        for (const [dx, dy] of N4) { const u = x + dx, v = y + dy; if ((g.terrain(u, v) === T.Shallow || g.terrain(u, v) === T.Deep) && g.level(u, v) === 0) mouth++; }
+      }
+      expect(climbs, `seed ${seed}: climbs along its way`).toBe(0);
+      expect(falls, `seed ${seed}: falls`).toBeGreaterThanOrEqual(2);
+      expect(mouth, `seed ${seed}: into its pool`).toBeGreaterThan(0);
+      // The pool on the floor's edge, and a pump's tile beside it on the floor, near the Core.
+      expect(g.terrain(CENTER + P.dx, CENTER + P.dy)).toBe(T.Deep);
+      let pumpable = 0;
+      for (let y = -24; y <= 24; y++) for (let x = -24; x <= 24; x++) {
+        const tx = CENTER + x, ty = CENTER + y;
+        if (x * x + y * y > 22 * 22 || g.terrain(tx, ty) !== T.Sand || g.level(tx, ty) !== 0) continue;
+        if (N4.some(([dx, dy]) => isWater(g.terrain(tx + dx, ty + dy)) && g.level(tx + dx, ty + dy) === 0)) pumpable++;
+      }
+      expect(pumpable, `seed ${seed}: floor tiles a pump draws from`).toBeGreaterThan(6);
+      // Clear of the deposits: no ore within three tiles of its water.
+      let ore = 0;
+      for (const [x, y] of tiles) for (let j = -3; j <= 3; j++) for (let i = -3; i <= 3; i++) if (g.ore(x + i, y + j) >= 0) ore++;
+      expect(ore, `seed ${seed}: ore by the stream`).toBe(0);
+    }
+  });
+
+  it('the same stream for every player, tile for tile', () => {
+    const ref = world(SEEDS[0]!, 4), key = (gen: MapGen, g: Grid): string => stream(gen, g).map(([x, y]) => `${x},${y},${g.level(x, y)}`).join(' ');
+    const want = key(ref.gen, ref.g);
+    for (const seed of SEEDS.slice(1)) { const { gen, g } = world(seed, 4); expect(key(gen, g), `seed ${seed}`).toBe(want); }
+  });
 });

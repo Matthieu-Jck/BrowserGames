@@ -1,6 +1,6 @@
 // intro-name.ts — the company name the player registers in the intro (D31), as pure rules. The
 // name goes through the same cleaning as the `name` command (`cleanName`: control characters
-// dropped, spaces folded, 1 to COLONY_NAME_MAX characters), then it must be free: no sister
+// dropped, spaces folded, 1 to COLONY_NAME_MAX characters), then it must be free: no other
 // claim's name (in either language: the pinned ones and those the market draws from the world
 // seed), none of CrierBelt's or the world's own names, and nothing passing itself off as
 // CrierBelt. Names are compared the way a register would: no case, no accents, « œ » spelt
@@ -24,11 +24,11 @@ export type NameRefusal = 'empty' | 'long' | 'taken' | 'reserved' | 'unavailable
 
 export type NameVerdict =
   | { readonly ok: true; readonly name: string }
-  /** `clash`: the registered name it collides with (a sister claim), or the reserved one typed. */
+  /** `clash`: the registered name it collides with (another claim of the Crier), or the reserved one typed. */
   | { readonly ok: false; readonly why: NameRefusal; readonly clash?: Loc | string };
 
 export interface NameRegister {
-  /** Names already on the register: the sister claims', in both languages. */
+  /** Names already on the register: the other claims', in both languages. */
   readonly taken: ReadonlyArray<Loc>;
   /**
    * The future server's say on a name that passed the local rules (other players' companies):
@@ -60,7 +60,7 @@ const RESERVED_FOLDED = new Set(RESERVED.map(foldName));
 /** The brand, wherever it appears in a name (« CrierBelt Mining » passes itself off as CrierBelt). */
 const BRAND = 'crierbelt';
 
-/** The local verdict, synchronous: length, then reserved names, then the sister claims. */
+/** The local verdict, synchronous: length, then reserved names, then the other claims. */
 export function nameVerdict(raw: string, taken: ReadonlyArray<Loc>): NameVerdict {
   const name = cleanName(raw);
   const folded = name === null ? '' : foldName(name);
@@ -91,7 +91,7 @@ export async function checkName(raw: string, reg: NameRegister): Promise<NameVer
   }
 }
 
-/** The register a base's name is checked against: its world's sister claims. */
+/** The register a base's name is checked against: its world's other claims (the Crier's colonies). */
 export function registerOf(sim: Sim): NameRegister {
   return { taken: sim.market.snapshot().colonies.map((c) => c.name) };
 }

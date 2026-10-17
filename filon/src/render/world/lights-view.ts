@@ -16,7 +16,9 @@
 //   uniform), the beacon's pulse, the incinerators' fire (a glow over each pit and up its flame,
 //   bright as an item burns: world/pits.ts) and, during a morph, two transforms. A production
 //   building that does not work is dark (D83): its glows and its work lamp hidden while the
-//   buildings view's `WorkLook` says it is switched off — re-applied only when a look flips.
+//   buildings view's `WorkLook` says it is switched off — re-applied only when a look flips. A
+//   neighbouring base's buildings (D110, `layForeign`) get their lights too, always on: kept apart
+//   from the claim's records, dropped with them for another colony.
 // - **Solar states**: solar panels wear an overlay above their sprite (iso: in `objects`, depth-
 //   sorted just above the bulb; plan: on `plan`): a closed bud at night, half-open petals at
 //   dawn and dusk, nothing when open, a sheen in full sun. Any solar cells drawn in `PV` (the
@@ -287,6 +289,30 @@ export class LightsView {
   private workVer = -1;
   /** Building records laid and dropped by the last rebuild (perf, tests). */
   lastUpdate = { laid: 0, dropped: 0 };
+  /** The neighbouring bases' lights (D110), by key (their hub parcel); bumped when they are dropped. */
+  private readonly foreign = new Map<number, LightRec[]>();
+  foreignEpoch = 0;
+
+  /** Is this neighbouring base's light laid? */
+  hasForeign(key: number): boolean { return this.foreign.has(key); }
+
+  /** A neighbouring base's lights (D110): every building's, always on (they always work). */
+  layForeign(key: number, ents: readonly Ent[]): void {
+    if (this.foreign.has(key)) return;
+    const recs: LightRec[] = [];
+    for (const e of ents) {
+      const r: LightRec = { sig: '', ent: e.id, iso: [], plan: [], overlays: [], beacons: [], pit: null, watched: false, on: true, seen: 0 };
+      this.cur = r;
+      this.addBuilding(e);
+      for (const b of r.beacons) this.beacons.add(b);
+      for (const o of r.overlays) this.overlays.add(o);
+      recs.push(r);
+    }
+    this.cur = null;
+    this.foreign.set(key, recs);
+    this.stage = -1;
+    this.sheet.flush();
+  }
 
   constructor(
     private readonly layer: Container,
@@ -355,7 +381,7 @@ export class LightsView {
 
   /** Every light laid again from scratch (what `rebuild` must match: the shots' check). */
   rebuildAll(sim: Sim): void {
-    this.clear();
+    this.clear(sim !== this.sim); // the neighbouring bases' lights stay (D110), but for another colony
     this.rebuild(sim);
   }
 
@@ -378,10 +404,14 @@ export class LightsView {
     if (r.pit) this.pits.delete(r.pit);
   }
 
-  /** Every record dropped (another colony). */
-  private clear(): void {
+  /** Every record dropped (another colony; a full rebuild keeps the neighbouring bases', `foreign` false). */
+  private clear(foreign = true): void {
     for (const r of this.recs.values()) this.drop(r);
     this.recs.clear();
+    if (!foreign) return;
+    for (const rs of this.foreign.values()) for (const r of rs) this.drop(r);
+    this.foreign.clear();
+    this.foreignEpoch++;
   }
 
   private sprite(view: 'i' | 'p', key: 'glow' | 'soft'): Sprite {

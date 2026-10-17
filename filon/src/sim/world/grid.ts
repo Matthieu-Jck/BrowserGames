@@ -17,12 +17,20 @@ export interface TerrainSource {
   readonly crownOuter?: number;
   /** The Crown's tarn, where there is one (map 2): its centre tile and the level of its water. */
   readonly tarn?: { readonly x: number; readonly y: number; readonly level: number } | null;
+  /** The Crown's spring, where there is one (map 4, D115: in the tarn's place): its head tile and the level of its water there; its stream runs down to a pool on the floor. */
+  readonly spring?: { readonly x: number; readonly y: number; readonly level: number } | null;
   /** The land's quartz vein, where there is one (map 3, D87): its face tiles and the way they look. */
   readonly quartzVein?: VeinSite | null;
   /** A point on the sea's coast straight out from the cirque (map 4, D94: the shared world's sea); null where there is none. */
   seaPoint?(): [number, number] | null;
   /** The land's deposits come in whole blocks this wide on the world's grid (map 4, D104: a drill's footprint); absent or 1: tile by tile. */
   readonly oreBlock?: number;
+  /** The neighbouring bases come in holdings of a few parcels (map 4, D110); absent: one parcel each, scattered (maps 1–3, test worlds). */
+  readonly holdings?: boolean;
+  /** Is tile (x, y) open floor at level 0 as the source makes it (a building stands there)? Pure and cheap, no chunk made: the neighbouring bases' sampling (D110). Absent: everywhere. */
+  floorAt?(x: number, y: number): boolean;
+  /** Does the tile rect [x0, x1) × [y0, y1) hold something the land guarantees the claim — a unique site, the copper field, a vent, the quartz vein, a corridor (D94)? No neighbouring base takes it (D110). Absent: nothing. */
+  keepsClear?(x0: number, y0: number, x1: number, y1: number): boolean;
 }
 
 /**
@@ -77,6 +85,12 @@ export class Grid {
   readonly levelDiff = new Map<number, number>();
   /** Chunks whose look changed (renderer re-bakes them). */
   readonly dirtyChunks = new Set<number>();
+  /**
+   * The land as its source made it, on the tiles play changed (dug, filled, ore taken): tile →
+   * terrain | level << 8 | (ore + 1) << 16. The neighbouring bases (D110, world/neighbours.ts) are
+   * laid out on it, so what the claim digs never moves them. Read when a chunk is made, never saved.
+   */
+  private readonly made = new Map<number, number>();
 
   constructor(readonly source: TerrainSource) {}
 
@@ -95,6 +109,11 @@ export class Grid {
       };
       this.source.fill(cx, cy, c.terrain, c.ore, c.rich, c.height, c.biome, c.level);
       this.chunks[k] = c;
+      // What the saved overrides cover, as the source made it (`made`), before they are applied.
+      for (const m of [this.terrainDiff, this.levelDiff, this.oreDiff]) for (const t of m.keys()) {
+        const x = t % WORLD, y = (t - x) / WORLD;
+        if ((x >> 5) === cx && (y >> 5) === cy) this.keepMade(c, t);
+      }
       // Re-apply saved overrides that fall in this chunk.
       for (const [t, v] of this.terrainDiff) {
         const x = t % WORLD, y = (t - x) / WORLD;
@@ -113,6 +132,22 @@ export class Grid {
       }
     }
     return c;
+  }
+
+  /** Note tile t as its source made it, before play first changes it (`made`). */
+  private keepMade(c: Chunk, t: number): void {
+    if (this.made.has(t)) return;
+    const x = t % WORLD, i = (((t - x) / WORLD) & 31) * CHUNK + (x & 31);
+    this.made.set(t, c.terrain[i]! | (c.level[i]! << 8) | (c.ore[i]! << 16));
+  }
+
+  /** A tile's terrain, level and ore (item index, −1: none) as the land's source made it, whatever play changed since (D110). */
+  made0(x: number, y: number): { terrain: number; level: number; ore: number } {
+    if (!inWorld(x, y)) return { terrain: T.DuneSea, level: 0, ore: -1 };
+    const c = this.chunkAt(x >> 5, y >> 5), t = tileIndex(x, y), m = this.made.get(t);
+    if (m !== undefined) return { terrain: m & 255, level: (m >>> 8) & 255, ore: (m >>> 16) - 1 };
+    const i = (y & 31) * CHUNK + (x & 31);
+    return { terrain: c.terrain[i]!, level: c.level[i]!, ore: c.ore[i]! - 1 };
   }
 
   /** Is this chunk already generated (renderer asks before painting)? */
@@ -135,6 +170,7 @@ export class Grid {
 
   setLevel(x: number, y: number, v: number): void {
     const c = this.chunkAt(x >> 5, y >> 5);
+    this.keepMade(c, tileIndex(x, y));
     c.level[(y & 31) * CHUNK + (x & 31)] = v;
     this.levelDiff.set(tileIndex(x, y), v);
     this.dirtyChunks.add((y >> 5) * CHUNKS + (x >> 5));
@@ -156,6 +192,7 @@ export class Grid {
 
   setTerrain(x: number, y: number, t: number): void {
     const c = this.chunkAt(x >> 5, y >> 5);
+    this.keepMade(c, tileIndex(x, y));
     c.terrain[(y & 31) * CHUNK + (x & 31)] = t;
     this.terrainDiff.set(tileIndex(x, y), t);
     this.dirtyChunks.add((y >> 5) * CHUNKS + (x >> 5));
@@ -163,6 +200,7 @@ export class Grid {
 
   setOre(x: number, y: number, item: number, rich: number): void {
     const c = this.chunkAt(x >> 5, y >> 5);
+    this.keepMade(c, tileIndex(x, y));
     c.ore[(y & 31) * CHUNK + (x & 31)] = item + 1;
     c.rich[(y & 31) * CHUNK + (x & 31)] = rich;
     this.oreDiff.set(tileIndex(x, y), ((item + 1) << 16) | rich);

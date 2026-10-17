@@ -4,16 +4,17 @@
 // floor past the Crown, never rock, terraces, mountains, water, chasms or rivers — and they never
 // come into the cirque (the floor within the Crown's foot, `TerrainSource.crownOuter`, is not
 // theirs even where it lies open). Anything standing on a tile — a building, a ribbon, a pole, a
-// fence (D103) — is in their way too: a ribbon line across the desert is a wall to them, and a
-// fence across the line home closes an outpost in.
+// fence (D103) — is in their way too, and they keep off a neighbouring base's land (D110): a ribbon line across the desert is a wall to them, and a
+// fence across the line home closes an outpost in. A camouflaged ribbon (D109) is not: buried under
+// the sand, it is desert floor to them — they walk over it without knowing it is there.
 //
 // Reach is a flood over that floor, bounded: a pocket of floor of at most `pocket` tiles closed in
 // by what they cannot cross (rock, water, buildings, fences) is out of their reach; anything larger
 // is the open desert. The verdict is the pocket's — the same from any of its tiles — so the order
 // the flood runs in changes nothing (determinism), and each tile is flooded once per call (`memo`).
 // A ribbon tile is **exposed** when a tile beside it (4-neighbours) is reachable floor; a glazed
-// ribbon beside reachable floor, or a ribbon beside a fenced pocket, is **guarded** (what the
-// Logistique view marks as protected). For the views' night (render only), two more lists: the
+// ribbon beside reachable floor, a camouflaged one anywhere by the desert (they do not see it), or a
+// ribbon beside a fenced pocket, is **guarded** (what the Logistique view marks as protected). For the views' night (render only), two more lists: the
 // glazed tiles they would reach but for the glass (`glass`: one may come and tap it), and the open
 // floor along a fence (`prowl`: they pace outside it). Derived state: rebuilt with the flow graph on
 // every structural change (compile.ts), never saved.
@@ -24,7 +25,7 @@ import type { Grid } from './grid';
 export interface GleanLand {
   /** Ribbon tiles the Gleaners reach at night: a free floor tile beside them is open desert. Ascending. */
   readonly exposed: Int32Array;
-  /** Ribbon tiles beside desert floor that are safe all the same: under glass, or the floor beside them fenced in. Ascending. */
+  /** Ribbon tiles beside desert floor that are safe all the same: under glass, buried (D109), or the floor beside them fenced in. Ascending. */
   readonly guarded: Int32Array;
   /** Glazed ribbon tiles beside open desert floor (they would be exposed but for the glass). Ascending. */
   readonly glass: Int32Array;
@@ -33,6 +34,7 @@ export interface GleanLand {
 }
 
 const NONE = new Int32Array(0);
+const NO_TILES: ReadonlySet<number> = new Set();
 export const NO_GLEAN_LAND: GleanLand = { exposed: NONE, guarded: NONE, glass: NONE, prowl: NONE };
 
 const NB = [-WORLD, 1, WORLD, -1] as const; // N E S W, as tile index offsets
@@ -54,8 +56,10 @@ let queue = new Int32Array(4096);
  * - `glazed(t)`: the ribbon on tile t is under glass.
  * - `pocket`: the largest pocket of floor, closed in, that is out of their reach (tiles).
  * - `fences`: the fence tiles (ascending), for `prowl`.
+ * - `buried`: the camouflaged ribbon tiles (D109): floor they walk over, a ribbon they never see.
+ * - `blocked(t)`: tile t is not theirs to walk — a neighbouring base's land (D110: its drones watch over it, as the claim's fences do).
  */
-export function gleanLand(grid: Grid, ribbons: readonly number[], glazed: (t: number) => boolean, rim: number | undefined, pocket: number, fences: readonly number[] = []): GleanLand {
+export function gleanLand(grid: Grid, ribbons: readonly number[], glazed: (t: number) => boolean, rim: number | undefined, pocket: number, fences: readonly number[] = [], buried: ReadonlySet<number> = NO_TILES, blocked: (t: number) => boolean = () => false): GleanLand {
   if (rim === undefined || !ribbons.length) return NO_GLEAN_LAND;
   if (!seenAt) { seenAt = new Uint16Array(N); memoAt = new Uint16Array(N); memoVal = new Uint8Array(N); }
   const seen = seenAt, mAt = memoAt!, mVal = memoVal!;
@@ -64,9 +68,9 @@ export function gleanLand(grid: Grid, ribbons: readonly number[], glazed: (t: nu
   if (queue.length < pocket + 8) queue = new Int32Array(pocket + 8);
   const rim2 = rim * rim;
   const occ = grid.occ;
-  /** May a Gleaner stand on tile t? Free floor at level 0, past the Crown's foot. */
+  /** May a Gleaner stand on tile t? Free floor at level 0 (or the sand over a buried ribbon), past the Crown's foot. */
   const walkable = (t: number): boolean => {
-    if (t < 0 || t >= N || occ[t]) return false;
+    if (t < 0 || t >= N || (occ[t] && !buried.has(t)) || blocked(t)) return false;
     const x = t % WORLD, y = (t - x) / WORLD;
     const dx = x - CENTER, dy = y - CENTER;
     if (dx * dx + dy * dy < rim2) return false;
@@ -112,9 +116,10 @@ export function gleanLand(grid: Grid, ribbons: readonly number[], glazed: (t: nu
       beside = true;
       if (open(v)) reach = true;
     }
-    if (reach && !glazed(t)) exposed.push(t);
+    const hid = buried.has(t);
+    if (reach && !hid && !glazed(t)) exposed.push(t);
     else if (beside) guarded.push(t);
-    if (reach && glazed(t)) glass.push(t);
+    if (reach && !hid && glazed(t)) glass.push(t);
   }
   const prowl = new Set<number>();
   for (const t of fences) {

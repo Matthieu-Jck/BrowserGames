@@ -8,6 +8,12 @@
 // The glazed ribbon (D103) is a ribbon whose rails are glass-edged, pale ice with a bright edge;
 // its hood is laid over its items by the views (recipes/gleaners.ts `drawGlassCover`).
 //
+// The camouflaged ribbon (D109) is buried: a low mound of sand over the line, soft at its edges,
+// small dune ridges across it (a lit crest, its shadow behind), the buried rails' edges as a faint
+// dashed outline, a faint chevron for its way — the trail one reads in plan —, and on the odd tile a
+// vent, a dark seam with a glint of what rides inside (`drawCamoVent`; the views pick it by tile).
+// No rails, no lights: the items it carries are not drawn (items-view.ts).
+//
 // The traction ribbon is a track, not a belt (owner, 2026-10-13: "the traction ribbon needs to
 // look like a traction thing"): brass grouser plates on a dark rubber band, between heavy rails
 // with sprocket wheels. Where it changes level, its lift up the terrace's wall is drawn apart
@@ -28,11 +34,13 @@ export const BELT_TIERS = {
   traction_ribbon: { fill: mix(C.steelDD, C.inkSoft, 0.45), slat: C.brass, chevron: C.brassL, rail: C.steelD }, // a track: grouser plates (`treadPlates`)
   conduit: { fill: C.steelL, slat: C.steel, chevron: C.shallow, rail: C.steel },
   glazed_ribbon: { fill: C.tealL, slat: C.teal, chevron: C.ice, rail: mix(C.ice, C.steelL, 0.35) }, // under glass (D103): its hood is laid over the items
+  camo_ribbon: { fill: C.sand, slat: C.dune, chevron: mix(C.dune, C.ink, 0.45), rail: C.dune }, // buried (D109): a mound of sand (`camoStraight`…)
 } as const;
 export type BeltTier = keyof typeof BELT_TIERS;
 
 /** Straight piece, motion towards the top. Canvas S×S (seamless top/bottom edges). */
 export function drawStraight(ctx: Ctx, tier: BeltTier, seed: number): void {
+  if (tier === 'camo_ribbon') { camoStraight(ctx, seed, false); return; }
   const t = BELT_TIERS[tier];
   const x0 = (S * (1 - BAND)) / 2, x1 = S - x0;
   flat(ctx, [[x0 - RAIL - 2, 0], [x1 + RAIL + 2, 0], [x1 + RAIL + 2, S], [x0 - RAIL - 2, S]], C.ink, 0.12); // soft halo
@@ -103,6 +111,7 @@ function treadRails(ctx: Ctx, x0: number, x1: number, seed: number): void {
 
 /** Corner piece: enters through the bottom edge, leaves through the right edge. */
 export function drawCorner(ctx: Ctx, tier: BeltTier, seed: number): void {
+  if (tier === 'camo_ribbon') { camoCorner(ctx, seed); return; }
   const t = BELT_TIERS[tier];
   const rIn = (S * (1 - BAND)) / 2, rOut = S - rIn; // radii around the bottom-right corner (S, S)
   const arc = (r: number, n = 20): Pt[] => Array.from({ length: n + 1 }, (_, i) => {
@@ -152,6 +161,7 @@ export function drawCorner(ctx: Ctx, tier: BeltTier, seed: number): void {
  * feeder's own. Drawn over the straight piece; mirrored for the east side.
  */
 export function drawInlet(ctx: Ctx, tier: BeltTier, seed: number): void {
+  if (tier === 'camo_ribbon') { camoInlet(ctx, seed); return; }
   const t = BELT_TIERS[tier];
   const x0 = (S * (1 - BAND)) / 2, x1 = S - x0; // the feeder's band spans y ∈ [x0, x1]
   const reach = x0 + 2; // just past the opened rail, onto the belt
@@ -198,4 +208,86 @@ export function drawDeck(ctx: Ctx, seed: number): void {
     light(ctx, (xa + xb) / 2, S * 0.75, 1.5, C.ledWarm);
   }
   void mix;
+}
+
+// ── the camouflaged ribbon (D109) ────────────────────────────────────────────
+
+/** The buried line's ink: dune shadow, never black (it hides). */
+const CAMO_EDGE = mix(C.dune, C.ink, 0.45);
+const CAMO_SHADE = mix(C.dune, C.ink, 0.3);
+
+/** The mound over the band [x0, x1] from y0 to y1: soft edges (two low washes of dune), a paler crown. */
+function camoMound(ctx: Ctx, x0: number, x1: number, y0: number, y1: number): void {
+  flat(ctx, [[x0 - 7, y0], [x1 + 7, y0], [x1 + 7, y1], [x0 - 7, y1]], C.dune, 0.16);
+  flat(ctx, [[x0 - 3, y0], [x1 + 3, y0], [x1 + 3, y1], [x0 - 3, y1]], C.dune, 0.3);
+  flat(ctx, [[x0 + 2, y0], [x1 - 2, y0], [x1 - 2, y1], [x0 + 2, y1]], C.sand, 0.6);
+}
+
+/** A small dune ridge across the band at y (moving north): an asymmetric crest, lit, its shadow just behind. */
+function camoRidge(ctx: Ctx, x0: number, x1: number, y: number, seed: number): void {
+  const m = (x0 + x1) / 2, flip = seed % 2 ? 1 : -1;
+  const crest: Pt[] = [[x0 + 2, y + 1.4], [m - 7 * flip, y - 0.8], [m + 5 * flip, y - 1.6], [x1 - 2, y + 0.8]];
+  ink(ctx, crest.map(([x, yy]) => [x, yy + 2.2] as Pt), { w: 2, color: CAMO_SHADE, alpha: 0.45, shade: false, taper: 0.3, jitter: 0.3, seed });
+  ink(ctx, crest, { w: 1.5, color: C.paper, alpha: 0.8, shade: false, taper: 0.3, jitter: 0.3, seed: seed + 1 });
+}
+
+/** A buried line, straight (moving north): its mound, three ridges, the dashed edges of what lies under it, a faint chevron. */
+function camoStraight(ctx: Ctx, seed: number, vent: boolean): void {
+  const x0 = (S * (1 - BAND)) / 2, x1 = S - x0;
+  camoMound(ctx, x0, x1, 0, S);
+  for (let k = 0; k < 3; k++) camoRidge(ctx, x0, x1, 9 + k * 21, seed + 10 * k);
+  // The buried rails' edges: short dashes, seamless top to bottom (a dash every 8 px).
+  for (const x of [x0 - 1, x1 + 1]) {
+    for (let y = 2; y < S; y += 8) ink(ctx, [[x, y], [x, y + 3.6]], { w: 1.25, color: CAMO_EDGE, alpha: 0.7, shade: false, taper: 0, jitter: 0.2, seed: seed + y + Math.round(x) });
+  }
+  ink(ctx, [[S / 2 - 7, S * 0.5 + 4], [S / 2, S * 0.5 - 3], [S / 2 + 7, S * 0.5 + 4]], { w: 2.2, color: CAMO_EDGE, alpha: vent ? 0.25 : 0.4, shade: false, taper: 0, jitter: 0.2, seed: seed + 9 });
+  if (!vent) return;
+  // A vent: a dark seam across the mound, its lip lit, a glint of what rides inside.
+  const vy = S * 0.66;
+  flat(ctx, [[x0 + 6, vy - 1.6], [x1 - 6, vy - 2.2], [x1 - 6, vy + 1.8], [x0 + 6, vy + 1.4]], C.ink, 0.5);
+  ink(ctx, [[x0 + 6, vy - 2.6], [x1 - 6, vy - 3.2]], { w: 1.2, color: C.paper, alpha: 0.85, shade: false, taper: 0.2, jitter: 0.2, seed: seed + 31 });
+  light(ctx, S / 2 + 4, vy, 1.4, C.glowPeach);
+}
+
+/** The vent tile of a buried straight line (the views lay it on the odd tile). */
+export function drawCamoVent(ctx: Ctx, seed: number): void {
+  camoStraight(ctx, seed, true);
+}
+
+/** A buried corner: in at the bottom edge, out at the right. */
+function camoCorner(ctx: Ctx, seed: number): void {
+  const rIn = (S * (1 - BAND)) / 2, rOut = S - rIn;
+  const arc = (r: number, a0 = 0, a1 = 1, n = 20): Pt[] => Array.from({ length: n + 1 }, (_, i) => {
+    const a = Math.PI + (a0 + ((a1 - a0) * i) / n) * (Math.PI / 2);
+    return [S + Math.cos(a) * r, S + Math.sin(a) * r] as Pt;
+  });
+  const band = (ra: number, rb: number): Pt[] => [...arc(ra), ...arc(rb).reverse()];
+  flat(ctx, band(Math.max(0, rIn - 7), rOut + 7), C.dune, 0.16);
+  flat(ctx, band(Math.max(0, rIn - 3), rOut + 3), C.dune, 0.3);
+  flat(ctx, band(rIn + 2, rOut - 2), C.sand, 0.6);
+  // Ridges across the bend, each a crest lit and its shadow on the outer side.
+  for (let k = 0; k < 3; k++) {
+    const a = Math.PI + ((k + 0.5) / 3) * (Math.PI / 2);
+    const pt = (r: number, da: number): Pt => [S + Math.cos(a + da) * r, S + Math.sin(a + da) * r];
+    const crest: Pt[] = [pt(rIn + 2, 0.02), pt((rIn + rOut) / 2, -0.04), pt(rOut - 2, 0.01)];
+    ink(ctx, crest.map(([x, y]) => [x + 1.4, y + 1.4] as Pt), { w: 2, color: CAMO_SHADE, alpha: 0.45, shade: false, taper: 0.3, jitter: 0.3, seed: seed + k });
+    ink(ctx, crest, { w: 1.5, color: C.paper, alpha: 0.8, shade: false, taper: 0.3, jitter: 0.3, seed: seed + 5 + k });
+  }
+  // The dashed edges along the arcs.
+  for (const r of [rIn - 1, rOut + 1]) {
+    for (let i = 0; i < 8; i++) ink(ctx, arc(r, i / 8 + 0.02, i / 8 + 0.08, 4), { w: 1.25, color: CAMO_EDGE, alpha: 0.7, shade: false, taper: 0, jitter: 0.2, seed: seed + 20 + i });
+  }
+  const m = arc(S / 2)[10]!;
+  ink(ctx, [[m[0] - 3, m[1] - 7], [m[0] + 4, m[1]], [m[0] - 3, m[1] + 7]], { w: 2.2, color: CAMO_EDGE, alpha: 0.4, shade: false, taper: 0, seed: seed + 3 });
+}
+
+/** A buried line merging in from the west edge: its mound up to the band, one ridge across it, its dashed edges. */
+function camoInlet(ctx: Ctx, seed: number): void {
+  const x0 = (S * (1 - BAND)) / 2, x1 = S - x0; // the feeder's band spans y ∈ [x0, x1]
+  const reach = x0 + 2;
+  flat(ctx, [[0, x0 - 3], [reach, x0 - 3], [reach, x1 + 3], [0, x1 + 3]], C.dune, 0.3);
+  flat(ctx, [[0, x0 + 2], [reach, x0 + 2], [reach, x1 - 2], [0, x1 - 2]], C.sand, 0.6);
+  ink(ctx, [[6.6, x0 + 2], [5.2, S / 2], [6.2, x1 - 2]], { w: 2, color: CAMO_SHADE, alpha: 0.45, shade: false, taper: 0.3, jitter: 0.3, seed });
+  ink(ctx, [[4.4, x0 + 2], [3, S / 2], [4, x1 - 2]], { w: 1.5, color: C.paper, alpha: 0.8, shade: false, taper: 0.3, jitter: 0.3, seed: seed + 1 });
+  for (const y of [x0 - 1, x1 + 1]) for (let x = 1; x < reach; x += 8) ink(ctx, [[x, y], [x + 3.6, y]], { w: 1.25, color: CAMO_EDGE, alpha: 0.7, shade: false, taper: 0, jitter: 0.2, seed: seed + x });
 }

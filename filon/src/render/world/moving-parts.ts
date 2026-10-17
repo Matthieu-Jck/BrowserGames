@@ -6,7 +6,8 @@
 // grid stands still, braked and switched off (D83: a building that does not work shows no motion);
 // wiring it sets it going. A
 // machine's part (the sand collector's wheel) turns while it works, slower on a short grid, and
-// stops when it starves, backs up or loses power. Speeds are turns per second of game time: a
+// stops when it starves, backs up or loses power; a generator's (the steam boiler's flywheel) at
+// full speed while it burns. Speeds are turns per second of game time: a
 // paused game stands still.
 import { St } from '@/sim/types';
 
@@ -24,8 +25,13 @@ export function windTurns(wind: number, cutIn = 0, cutOut = Infinity): number {
   return Math.min(0.75, Math.max(0.1, 0.06 + (0.26 * wind) / 1000));
 }
 
-/** A machine's part (turns per second) from its node's status and its grid's satisfaction ‰. */
-export function workTurns(status: number, sat: number): number {
+/**
+ * A machine's part (turns per second) from its node's status and its grid's satisfaction ‰. A
+ * generator's (the steam boiler's flywheel, D114) turns at full speed while it burns (`Ok`),
+ * whatever the satisfaction: a short grid is one its generators feed flat out.
+ */
+export function workTurns(status: number, sat: number, generator = false): number {
+  if (generator) return status === St.Ok ? WORK_TURNS : 0;
   if (status !== St.Ok && status !== St.LowPower) return 0;
   return WORK_TURNS * Math.min(1, Math.max(0, sat) / 1000);
 }

@@ -17,7 +17,7 @@ export interface FamilyMods { time: number; tokens: number; data: number }
 export type Mods = Record<ModTarget, number> & { flags: ReadonlySet<string>; slots: number; fam: Readonly<Record<FamilyId, FamilyMods>> };
 
 const ADDITIVE: ReadonlySet<ModTarget> = new Set<ModTarget>([
-  'landGrowth', 'pylonLink', 'dockShips', 'bridgeSpan', 'orders', 'tradeFee', 'heartData',
+  'landGrowth', 'pylonLink', 'bridgeSpan', 'orders', 'tradeFee', 'heartData',
 ]);
 
 export function baseMods(): Mods {
@@ -25,8 +25,8 @@ export function baseMods(): Mods {
   const targets: ModTarget[] = [
     'digSpeed', 'rubbleYield', 'embeddedOre', 'windOut', 'solarOut', 'geoOut', 'accCap', 'accRate',
     'genOut', 'craftSpeed', 'tradeFee', 'deliveryDelay', 'slippage', 'landPrice', 'landRent', 'landGrowth', 'farLand',
-    'remoteBeltCost', 'remoteBuildDelay', 'pylonLink', 'dockShips', 'shipCap', 'shipSpeed', 'ring3Caps',
-    'bridgeSpan', 'orders', 'excavatedSpeed', 'gustVariance', 'drifterDistance', 'heartData', 'drillRate', 'dataRate',
+    'remoteBeltCost', 'remoteBuildDelay', 'pylonLink', 'ring3Caps',
+    'bridgeSpan', 'orders', 'excavatedSpeed', 'gustVariance', 'heartData', 'drillRate', 'dataRate',
   ];
   for (const t of targets) m[t] = ADDITIVE.has(t) ? 0 : 1000;
   m.tradeFee = BAL.tradeFee; // nothing lowers it (D64)

@@ -16,7 +16,7 @@ import { artLevels, drawBuilding, drawBuildingMoving, needsRotations } from './r
 import { drawBuildingTop, drawBuildingTopMoving, needsRotationsTop, TOP_MARGIN, TOP_PX } from './recipes/buildings-top';
 import { MOVING } from './recipes/moving';
 import { drawItem, GLYPH } from './recipes/items';
-import { BELT_PX, BELT_TIERS, drawCorner, drawDeck, drawInlet, drawStraight, type BeltTier } from './recipes/belts';
+import { BELT_PX, BELT_TIERS, drawCamoVent, drawCorner, drawDeck, drawInlet, drawStraight, type BeltTier } from './recipes/belts';
 import { C } from './tokens';
 import { drawIcon, ICON, ICON_IDS } from './recipes/icons';
 
@@ -72,6 +72,8 @@ export const iconKey = (id: string): string => `ic:${id}`;
 export const ibKey = (id: string): string => `ib:${id}`;
 /** Side inlet of a straight ribbon piece (a line merging in from its left). */
 export const inletKey = (tier: string): string => `belt:${tier}:inlet`;
+/** The camouflaged ribbon's vent tile (D109): a straight piece with a seam and a glint, on the odd tile. */
+export const CAMO_VENT_KEY = 'belt:camo_ribbon:vent';
 export const DECK_KEY = 'belt:deck';
 /** The body alone of a building sprite (`bKey` / `btKey`) whose moving part is drawn apart. */
 export const bodyKey = (key: string): string => `${key}/body`;
@@ -195,6 +197,11 @@ export function bakeAtlas(): Atlas {
     const { canvas, ctx } = canvasOf(BELT_PX, BELT_PX);
     drawInlet(ctx, tier, 7);
     pieces.push({ key: inletKey(tier), canvas, ox: BELT_PX / 2, oy: BELT_PX / 2, k: 1 / BELT_PX });
+  }
+  {
+    const { canvas, ctx } = canvasOf(BELT_PX, BELT_PX);
+    drawCamoVent(ctx, 5);
+    pieces.push({ key: CAMO_VENT_KEY, canvas, ox: BELT_PX / 2, oy: BELT_PX / 2, k: 1 / BELT_PX });
   }
   {
     const { canvas, ctx } = canvasOf(BELT_PX, BELT_PX);

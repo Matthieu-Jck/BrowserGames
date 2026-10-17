@@ -3,7 +3,7 @@
 // · the header: the purse as a big figure with its pace an hour, then the posts' facts as one bar of
 //   icon chips (level, CrierBelt's fee, what a post lifts a minute, the lift's delay, posts built) —
 //   the words on hover;
-// · on the left, the orbital view (the planet, the sister colonies, the arcs of the player's trade;
+// · on the left, the orbital view (the planet, the other claims, the arcs of the player's trade;
 //   its legend as two chips in its corner) over the Gazette: each event an item's icon (a rank's
 //   badge for a boom), its kind as a coloured chip, ▲ / ▼ and its factor, the host colony, and its
 //   countdown (announced) or what is left of it (running); the sentence on hover;
@@ -91,7 +91,7 @@ interface Forms { spotItem: string; spotN: string; readonly orders: Map<number, 
 // ── small helpers ─────────────────────────────────────────────────────────────
 
 const colonyName = (c: ColonyView | undefined): string => (c ? c.name[locale()] : '?');
-/** Where goods in flight come from: a sister colony, or CrierBelt itself (−1: the starter contract, D101). */
+/** Where goods in flight come from: another claim (a colony), or CrierBelt itself (−1: the starter contract, D101). */
 const fromName = (colonies: readonly ColonyView[], c: number): string => (c < 0 ? t('crier.starter.from') : colonyName(colonies[c]));
 /** The starter contract's fixed price (D101): « 2 ◉ », its cents shown only when it has some. */
 const starterPrice = (): string => oc(BAL.starter.cents, false, BAL.starter.cents % 100 ? 2 : 0);
@@ -422,7 +422,7 @@ class PostCard {
     this.hint = el('div.cr-hint.cr-order-hint', {}, [
       el('span.cr-hchip', {}, [tabIcon('prices'), this.hAsk]),
       el('span.cr-hchip', {}, [mark('flight'), this.hEta]),
-      el('span.cr-hchip', {}, [glyph('flagSister'), this.hFrom]),
+      el('span.cr-hchip', {}, [glyph('flagNeighbour'), this.hFrom]),
     ]);
     this.act = el('span.cr-post-act', {}, [this.lift.root, this.earn]);
     this.starter = this.starterOffer();
@@ -993,7 +993,7 @@ class GazetteBox {
         el('div.cr-gz-meta', {}, [
           el('span.cr-gz-kind', {}, t(`crier.kind.${ev.kind}` as MsgKey)),
           el('span.cr-gz-mult', {}, `${ev.side === 'demand' ? '▲' : '▼'} ×${num(Math.round(ev.mult * 10) / 10)}`),
-          col ? el('span.cr-gz-where', {}, [glyph('flagSister'), colonyName(col)]) : null,
+          col ? el('span.cr-gz-where', {}, [glyph('flagNeighbour'), colonyName(col)]) : null,
         ]),
       ]),
       el('div.cr-gz-side', {}, [at, held]),
@@ -1032,7 +1032,7 @@ interface Parts {
   readonly through: Fact;
   readonly lift: Fact;
   readonly posts: Fact;
-  /** The orbit's legend: the sister colonies, those the player trades with. */
+  /** The orbit's legend: the other claims, those the player trades with. */
   readonly colonies: Fact;
   readonly partners: Fact;
   readonly tabs: ReadonlyMap<CrierTab, HTMLButtonElement>;
@@ -1107,7 +1107,7 @@ export class CrierScreen {
       through: fact('throughput', el('span.cr-sym', {}, '⇅')),
       lift: fact('lift', el('span.cr-sym', {}, '⇡')),
       posts: fact('posts', bIcon(this.atlas, 'trade_post', 22)),
-      colonies: fact('colonies', glyph('flagSister'), 'cr-lchip'),
+      colonies: fact('colonies', glyph('flagNeighbour'), 'cr-lchip'),
       partners: fact('partners', mark('route'), 'cr-lchip'),
       tabs,
       prices: new PricesPane(ctx, snap, (item) => this.tradeItem(item)),

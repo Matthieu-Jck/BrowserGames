@@ -7,7 +7,7 @@ import { buildingDef, buildingIdx } from '@/content/registry';
 import type { Rot } from '@/sim/types';
 import { arrowPoly } from '../art/shapes';
 
-/** Routing logics that take in at the back only (a distributor and an unloader have no way in). */
+/** Routing logics that take in at the back only (a distributor takes from every side). */
 const DIRECTIONAL: ReadonlySet<string> = new Set(['router', 'sorter', 'inverted', 'overflow', 'underflow']);
 /** Outward unit vectors of the sides (0 N, 1 E, 2 S, 3 W). */
 const DIRS: ReadonlyArray<readonly [number, number]> = [[0, -1], [1, 0], [0, 1], [-1, 0]];

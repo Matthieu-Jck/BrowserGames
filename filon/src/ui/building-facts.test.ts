@@ -74,7 +74,7 @@ describe('building facts', () => {
   it('derives the figures from the content tables', () => {
     setLocale('en');
     expect(row(buildingFacts('ribbon', fresh), 'rate')).toBe('60/min · 1 item per tile');
-    expect(row(buildingFacts('ribbon', fresh), 'place')).toBe('Anywhere; costs ×3 off your land, never on a sister claim’s');
+    expect(row(buildingFacts('ribbon', fresh), 'place')).toBe('Anywhere; costs ×3 off your land, never on a neighbouring base’s');
     expect(row(buildingFacts('express_ribbon', fresh), 'speed')).toBe('4 tiles/s'); // a tile a step, 240 steps a minute (D57)
     expect(row(buildingFacts('drill', fresh), 'rate')).toBe('Up to 20/min');
     expect(buildingFacts('drill', fresh).rows.find((r) => r.k === 'mines')?.items).toContain(itemIdx('copper_ore'));
@@ -128,10 +128,16 @@ describe('building facts', () => {
     expect(buildingFacts('overflow_gate', fresh).rule!.sides?.E).toMatchObject({ dashed: true });
     expect(buildingFacts('underflow_gate', fresh).rule!.sides?.N).toMatchObject({ dashed: true });
     expect(buildingFacts('router', fresh).rule!.sides?.W).toMatchObject({ flow: 'both' });
-    expect(buildingFacts('unloader', fresh).rule!.sides?.S).toMatchObject({ flow: 'store' });
     expect(buildingFacts('crossing', fresh).rule!.shape).toBe('cross');
     expect(buildingFacts('skybridge', fresh).rule!.shape).toBe('bridge');
     expect(buildingFacts('kiln', fresh).rule).toBeNull();
+  });
+
+  it('a pillar says how far round it the fog lifts (D117: the survey beacon retired)', () => {
+    setLocale('en');
+    expect(row(buildingFacts('pylon', fresh), 'reveal')).toBe('40-tile radius');
+    expect(row(buildingFacts('mast', fresh), 'reveal')).toBe('12-tile radius');
+    expect(row(buildingFacts('kiln', fresh), 'reveal')).toBeUndefined();
   });
 
   it('every description is one or two sentences, and the first stands alone', () => {

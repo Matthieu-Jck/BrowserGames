@@ -214,7 +214,7 @@ body[data-noui] #ui { opacity: 0; visibility: hidden; transition: opacity 200ms 
 .glyph .g-dunes { fill: var(--c-dune); stroke: var(--c-ink); stroke-width: 1.1; stroke-linejoin: round; }
 .glyph .g-works { fill: var(--t-steelL, #6c84b6); stroke: var(--c-ink); stroke-width: 1.2; stroke-linejoin: round; }
 .glyph .g-flag { fill: var(--c-turq); stroke: var(--c-ink); stroke-width: 1.1; stroke-linejoin: round; }
-.glyph .g-flag.g-sister { fill: var(--c-coral); }
+.glyph .g-flag.g-neighbour { fill: var(--c-coral); }
 .glyph .g-planet { fill: var(--c-peach); stroke: var(--c-ink); stroke-width: 1.2; }
 .glyph .g-ring { fill: none; stroke: var(--c-ink); stroke-width: 1.3; }
 .glyph .g-glass { fill: var(--c-peach-l); stroke: var(--c-ink); stroke-width: 1.1; stroke-linejoin: round; }
@@ -240,7 +240,7 @@ body[data-noui] #ui { opacity: 0; visibility: hidden; transition: opacity 200ms 
 .land-swatch { flex: none; width: 22px; height: 15px; border-radius: 2px; background: var(--c-paper); border: 1px solid rgba(30, 27, 46, 0.35); }
 .land-swatch[data-k='held'] { background: rgba(31, 178, 168, 0.18); border: 2.5px solid var(--c-turq-d); }
 .land-swatch[data-k='leased'] { background: rgba(242, 163, 58, 0.18); border: 2px dashed var(--c-peach-d); }
-.land-swatch[data-k='sister'] { border: 1.5px solid var(--c-coral-d); background: repeating-linear-gradient(-45deg, rgba(236, 95, 67, 0.55) 0 1.5px, transparent 1.5px 5px); }
+.land-swatch[data-k='neighbour'] { border: 1.5px solid var(--c-coral-d); background: repeating-linear-gradient(-45deg, rgba(236, 95, 67, 0.55) 0 1.5px, transparent 1.5px 5px); }
 .land-hint { margin-top: 8px; }
 /* A parcel: its map and who holds it, what it holds, the deal. */
 .land-top { display: flex; gap: 10px; align-items: flex-start; margin-top: 8px; }
@@ -250,11 +250,14 @@ body[data-noui] #ui { opacity: 0; visibility: hidden; transition: opacity 200ms 
 .land-owner .glyph { width: 1.5em; height: 1.5em; }
 .land-owner b { font-weight: 600; overflow-wrap: anywhere; }
 .land-tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.land-markup { font-size: 12.5px; font-weight: 700; color: var(--c-coral-d); font-variant-numeric: tabular-nums; }
+/* A neighbouring base (D110): its emblem in place of a flag, its trade beside the tag, the note in place of a deal. */
+.land-emblem { width: 22px; height: 22px; flex: none; }
+.land-trade { font-size: 12.5px; font-weight: 700; color: var(--c-coral-d); }
+.land-why.land-note { color: var(--c-ink-soft); font-style: italic; }
 .land-tag { align-self: flex-start; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--c-paper-d); }
 .land-tag[data-state='start'], .land-tag[data-state='bought'], .land-tag[data-state='granted'] { background: var(--c-turq-l); }
 .land-tag[data-state='leased'] { background: var(--c-peach); }
-.land-tag[data-state='sister'] { background: var(--c-coral); color: var(--c-paper); }
+.land-tag[data-state='neighbour'] { background: var(--c-coral); color: var(--c-paper); }
 .land-holds { display: flex; flex-wrap: wrap; gap: 5px 12px; margin: 10px 0 4px; font-size: 13.5px; }
 /* Usable floor (D94): a gauge of the share where a 2 × 2 machine stands, and the figure. */
 .land-floor { display: flex; align-items: center; gap: 6px; margin-top: 9px; font-size: 13px; }
@@ -294,3 +297,7 @@ body[data-noui] #ui { opacity: 0; visibility: hidden; transition: opacity 200ms 
 /* A ribbon facing a step (D77): the traction ribbon that takes it, faded while it is still to learn (its key then the tree's). */
 .tip-lift canvas { display: block; }
 .tip-lift[data-locked] canvas { opacity: 0.5; filter: grayscale(1); }
+/* Buried off the claim's land (D109): the camouflaged ribbon, how many, whose land. */
+.tip-buried canvas { display: block; }
+.tip-buried .glyph { margin-left: 4px; }
+.tip-buried span { white-space: nowrap; }

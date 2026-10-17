@@ -133,8 +133,9 @@ export class Controls {
         if (app.build.category) { app.build.open(null); break; }
         if (app.screens.escapeTo) app.screens.open(app.screens.escapeTo); // nothing left: the main menu
         break;
-      case 'zoomIn': app.camera.zoomBy(1.25, w / 2, h / 2, w, h); break;
-      case 'zoomOut': app.camera.zoomBy(0.8, w / 2, h / 2, w, h); break;
+      // The tech tree has its own zoom (D111): while it is open the keys are its.
+      case 'zoomIn': if (!app.screens.zoomKey('in')) app.camera.zoomBy(1.25, w / 2, h / 2, w, h); break;
+      case 'zoomOut': if (!app.screens.zoomKey('out')) app.camera.zoomBy(0.8, w / 2, h / 2, w, h); break;
       default: break;
     }
   }

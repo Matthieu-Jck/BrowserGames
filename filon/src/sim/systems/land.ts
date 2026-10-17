@@ -1,9 +1,11 @@
 // land.ts — the land's rules (docs/land.md, D60): what a parcel costs — what it holds today, how
-// much land the claim already bought, the Heart's standing and research, a sister claim's markup
-// (owner, 2026-10-14: "the price should vary depending on what's on it, when no other player owns
-// it") — buying it, leasing it by the hour, and the hour's rent taken at the minute boundary it falls
-// on (`landEpoch`: online and in the catch-up, the same call). A lease the purse cannot pay lapses:
-// the parcel goes back to its owner and what stands on it goes dormant (`isDormant`), nothing lost.
+// much land the claim already bought, the Heart's standing and research (owner, 2026-10-14: "the
+// price should vary depending on what's on it, when no other player owns it") — buying it, leasing
+// it by the hour, and the hour's rent taken at the minute boundary it falls on (`landEpoch`: online
+// and in the catch-up, the same call). A lease the purse cannot pay lapses: the parcel goes back to
+// CrierBelt and what stands on it goes dormant (`isDormant`), nothing lost. A neighbouring base's
+// land (D110, world/neighbours.ts) is not for sale nor lease; an older base that held some of it
+// keeps it (`neighboursGiveWay`, at load).
 import { book } from '../purse';
 import { BAL } from '@/content/balance';
 import { ITEMS } from '@/content/items';
@@ -13,16 +15,19 @@ import { isFaceOre } from '../face';
 import type { Sim } from '../state';
 import { T } from '../types';
 import { parcelFloor } from '../world/floor';
-import { PARCEL_COLS, parcelCentre, parcelRect } from '../world/land';
+import { footprint } from '../entities';
+import { PARCEL_COLS, parcelAt, parcelCentre, parcelRect } from '../world/land';
 
 /** A lease's hour, in ticks. */
 export const LEASE_TICKS = 60 * EPOCH;
 
 /**
  * Why the land would not change hands (null: it did). `far`: the parcel does not touch the
- * claim's land (Far Claim lifts it, D70); `not_bought`: only a bought parcel sells back.
+ * claim's land (Far Claim lifts it, D70); `not_bought`: only a bought parcel sells back;
+ * `neighbour`: a neighbouring base's (D110), never for sale nor lease, and a parcel bought from one
+ * before D110 does not go back to it.
  */
-export type LandRefusal = 'none' | 'held' | 'credits' | 'locked' | 'not_leased' | 'far' | 'not_bought';
+export type LandRefusal = 'none' | 'held' | 'credits' | 'locked' | 'not_leased' | 'far' | 'not_bought' | 'neighbour';
 
 /** May the claim take this parcel: next to its land, or anywhere with the Far Claim research (D70)? */
 const reachable = (sim: Sim, p: number): boolean => sim.mods.flags.has('farClaims') || sim.land.touches(p);
@@ -69,8 +74,6 @@ export function landPrice(sim: Sim, p: number): number {
   cents = Math.floor((cents * m.landPrice) / 1000);
   const [cx, cy] = parcelCentre(p), dx = cx - CENTER, dy = cy - CENTER;
   if (dx * dx + dy * dy > L.farRadius * L.farRadius) cents = Math.floor((cents * m.farLand) / 1000);
-  const owner = sim.land.sister(p);
-  if (owner >= 0) cents = Math.floor((cents * L.sisterMarkup[owner % L.sisterMarkup.length]!) / 1000);
   return cents;
 }
 
@@ -89,6 +92,7 @@ export const canLease = (sim: Sim): boolean => sim.mods.flags.has('lease');
 export function buyBlock(sim: Sim, p: number): LandRefusal | null {
   if (!valid(p)) return 'none';
   if (sim.land.inStart(p) || sim.land.bought.has(p) || sim.land.granted.has(p)) return 'held';
+  if (sim.land.neighbour(p) >= 0) return 'neighbour';
   if (!sim.land.leases.has(p) && !reachable(sim, p)) return 'far';
   return sim.credits < landPrice(sim, p) ? 'credits' : null;
 }
@@ -98,6 +102,7 @@ export function leaseBlock(sim: Sim, p: number): LandRefusal | null {
   if (!valid(p)) return 'none';
   if (!canLease(sim)) return 'locked';
   if (sim.land.holds(p)) return 'held';
+  if (sim.land.neighbour(p) >= 0) return 'neighbour';
   if (!reachable(sim, p)) return 'far';
   return sim.credits < landRent(sim, p) ? 'credits' : null;
 }
@@ -105,7 +110,9 @@ export function leaseBlock(sim: Sim, p: number): LandRefusal | null {
 /** Why selling parcel `p` back would be refused now (null: it would go through). */
 export function sellBlock(sim: Sim, p: number): LandRefusal | null {
   if (!sim.mods.flags.has('landResale')) return 'locked';
-  return sim.land.bought.has(p) ? null : 'not_bought';
+  if (!sim.land.bought.has(p)) return 'not_bought';
+  // Bought from a neighbouring base before D110: it does not go back to its base (which would stand on what the claim built).
+  return sim.neighbours.holdingOf(p) ? 'neighbour' : null;
 }
 
 /** Buy a parcel outright (a leased one too: its lease ends). */
@@ -213,4 +220,42 @@ export function landEpoch(sim: Sim): boolean {
   }
   if (lapsed) sim.dirty = true;
   return lapsed;
+}
+
+/**
+ * An older base on a neighbouring base's land (D110: map 4's bases moved into holdings, and every
+ * map's NPC parcels now carry a base): where the claim leases a parcel of a base, or where anything
+ * of the claim's stands on a tile one of the base's buildings or ribbons would take, the base gives
+ * way — the parcel is granted to the claim (held for good, no rent: nothing of the claim's ever
+ * stands on another's building, nothing is lost). Run at load (serialize.ts `deserialize`), before
+ * anything reads the bases; on a base built under D110's rules it finds nothing (placement keeps off
+ * their land and buildings), so it is idempotent. Returns the parcels granted, ascending.
+ */
+export function neighboursGiveWay(sim: Sim): number[] {
+  const out: number[] = [];
+  const grant = (p: number): void => {
+    if (sim.land.granted.has(p)) return;
+    sim.land.leases.delete(p);
+    sim.land.granted.add(p);
+    out.push(p);
+  };
+  for (const p of [...sim.land.leases.keys()].sort((a, b) => a - b)) if (sim.neighbours.holdingOf(p)) grant(p);
+  if (out.length) sim.neighbours.forget();
+  // Each grant takes a parcel out of its base, whose layout is then laid again: until nothing overlaps.
+  for (let pass = 0; pass < 8; pass++) {
+    let more = false;
+    for (const e of sim.ents.sorted()) {
+      if (e.id === sim.hearthId) continue;
+      const [w, h] = footprint(e.def, e.rot);
+      for (let y = e.y; y < e.y + h; y++) for (let x = e.x; x < e.x + w; x++) {
+        if (!sim.neighbours.at(x, y)) continue;
+        grant(parcelAt(x, y));
+        more = true;
+      }
+    }
+    if (!more) break;
+    sim.neighbours.forget();
+  }
+  if (out.length) sim.dirty = true;
+  return out.sort((a, b) => a - b);
 }

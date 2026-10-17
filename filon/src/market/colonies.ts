@@ -1,4 +1,4 @@
-// colonies.ts — the forty sister colonies of a world, generated from content/colonies.ts and
+// colonies.ts — the forty colonies of a world, generated from content/colonies.ts and
 // the world seed, so every player of that world trades with the same ones: a name drawn from
 // syllables (« Port-Écume », the design's pinned names kept), a distance band (→ delivery
 // delay; a profile spanning two bands alternates them by rank) and a place on the planet for
@@ -62,7 +62,7 @@ function placeAt(bearing: number, arc: number): { lat: number; lon: number } {
   return { lat: round1(la2 / DEG), lon: round1(lon) };
 }
 
-/** The forty sister colonies of a world, in profile order (COLONY_PROFILE_IDS), then by rank. */
+/** The forty colonies of a world, in profile order (COLONY_PROFILE_IDS), then by rank. */
 export function makeColonies(seed: number): Colony[] {
   const out: Colony[] = [];
   const taken = new Set(PINNED_COLONIES.map((p) => p.name.fr));

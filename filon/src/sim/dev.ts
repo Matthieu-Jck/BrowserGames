@@ -140,16 +140,22 @@ export function routeOver(sim: Sim, from: readonly [number, number], goals: Read
 }
 
 /**
- * A line on one level only (D45: a conduit has no lift, water does not fall): from tile `from` to
- * one of `goals` (tile → the way its last tile points), breadth first over free floor and rock
- * of `from`'s level, off other ports' fronts and routing blocks' sides (the goals excepted).
+ * A line on one level only (D45: a conduit has no lift): from tile `from` to one of `goals` (tile →
+ * the way its last tile points), breadth first over free floor and rock of `from`'s level, off other
+ * ports' fronts and routing blocks' sides (the goals excepted). With `fall`, a conduit's water may
+ * also pour one terrace down at each step (D114), never climb: the line ends lower than it starts.
  */
-export function routeLevel(sim: Sim, from: readonly [number, number], goals: ReadonlyMap<number, Rot>, maxNodes = 4000): BeltTiles | null {
+export function routeLevel(sim: Sim, from: readonly [number, number], goals: ReadonlyMap<number, Rot>, maxNodes = 4000, fall = false): BeltTiles | null {
   const avoid = keepOff(sim), W = 1024, lv = sim.grid.level(from[0], from[1]);
   const ok = (x: number, y: number): boolean => {
-    if (!inWorld(x, y) || sim.grid.occ[tileIndex(x, y)] !== 0 || !sim.revealed(x, y) || sim.grid.level(x, y) !== lv) return false;
+    if (!inWorld(x, y) || sim.grid.occ[tileIndex(x, y)] !== 0 || !sim.revealed(x, y) || (!fall && sim.grid.level(x, y) !== lv)) return false;
     const t = sim.grid.terrain(x, y);
     return isFloor(t) || isRock(t);
+  };
+  // A move keeps the level, or (`fall`) goes one level down.
+  const step = (a: number, bx: number, by: number): boolean => {
+    const d = sim.grid.level(a % W, (a - (a % W)) / W) - sim.grid.level(bx, by);
+    return d === 0 || (fall && d === 1);
   };
   if (!ok(from[0], from[1])) return null;
   const start = tileIndex(from[0], from[1]);
@@ -162,7 +168,7 @@ export function routeLevel(sim: Sim, from: readonly [number, number], goals: Rea
     const cx = cur % W, cy = (cur - cx) / W;
     for (let d = 0; d < 4; d++) {
       const nx = cx + DX[d]!, ny = cy + DY[d]!, n = tileIndex(nx, ny);
-      if (prev.has(n) || !ok(nx, ny) || (avoid.has(n) && !goals.has(n))) continue;
+      if (prev.has(n) || !ok(nx, ny) || !step(cur, nx, ny) || (avoid.has(n) && !goals.has(n))) continue;
       prev.set(n, cur);
       q.push(n);
     }
@@ -302,7 +308,7 @@ export function powerLine(sim: Sim, targetId: number, maxMasts = 24): number {
  * (with Reinforced Pylons, 60) and strung by the wire rule's land (D78: three terraces up or down,
  * three above the land between, so the line goes round a mountain), the last reaching the building — found breadth first over a lattice of free tiles (every `step` tiles) in a
  * corridor between the two, off every port's front. Pylons off the claim's land come by kite
- * (their cost ×3, granted by the caller); a sister claim's parcel is refused by placement, so the
+ * (their cost ×3, granted by the caller); a neighbouring base's parcel is refused by placement, so the
  * lattice goes round it. Paid, logged placements and `link` commands. Returns the pylons placed
  * (0 when the building already hangs on the grid, or no line was found).
  */
@@ -605,9 +611,13 @@ export function spotsNear(sim: Sim, def: string, near: readonly [number, number]
         // would leave half a block on either side that no drill can then cover whole.
         const ddx = 2 * x + w - 2 * near[0] - 1, ddy = 2 * y + h - 2 * near[1] - 1, off = it >= 0 && blockDrill(di, rot, B) && !onBlockGrid(x, y, B) ? OFF_GRID : 0;
         // Anything but a drill keeps off the deposits where it can (D82): each ore tile it would
-        // cover counts as standing some tiles farther off.
+        // cover counts as standing some tiles farther off. A drill hands its ore off the deposit
+        // where it can: an output onto ore would lay its line across the tiles the next drills
+        // want (D104: on a land of blocks, whole blocks lost under a ribbon).
         let ore = 0;
-        if (it < 0) for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) if (sim.grid.ore(x + i, y + j) >= 0) ore++;
+        if (it < 0) {
+          for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) if (sim.grid.ore(x + i, y + j) >= 0) ore++;
+        } else if (p0 && sim.grid.ore(p0.fx, p0.fy) >= 0) ore = 1;
         out.push([x, y, rot, ddx * ddx + ddy * ddy + ORE_SPOT * ore + off, p0 ? (p0.fx - tx) * (p0.fx - tx) + (p0.fy - ty) * (p0.fy - ty) : 0]);
       }
     }
@@ -622,7 +632,7 @@ export function spotsNear(sim: Sim, def: string, near: readonly [number, number]
  * ribbon; a router's ports come from the ribbons beside it, so one next to a junction would lose
  * that side.
  */
-function crossable(sim: Sim, x: number, y: number, d: Rot): boolean {
+export function crossable(sim: Sim, x: number, y: number, d: Rot): boolean {
   const e = sim.entityAt(x, y);
   if (!e || BUILDING_KIND[e.def] !== 'belt' || ((e.rot - d) & 1) === 0) return false;
   const back = sim.entityAt(x - DX[e.rot]!, y - DY[e.rot]!), ahead = sim.entityAt(x + DX[e.rot]!, y + DY[e.rot]!);

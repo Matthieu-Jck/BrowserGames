@@ -8,8 +8,8 @@
 // (cargo-flight.ts); this file bakes the textures and places the sprites.
 //
 // Pure decoration: it never reads or writes the sim (the shell hands it each post's footprint at
-// launch). Billboards in view world px placed with P, like the drifters: high over the land in
-// iso, smaller and flatter in plan. On `fxTop` (graded with the world): the iris, the shadows,
+// launch). Billboards in view world px placed with P: high over the land in iso, smaller and
+// flatter in plan. On `fxTop` (graded with the world): the iris, the shadows,
 // dust, the container, its cables. On `fxGlow` (outside the grade, bright at night): the plumes'
 // light on the ground, the halos and flames, the drone and, at night, the drone's own lights.
 // The drone sits on `fxGlow`, over its exhaust, so it hides it as the real thing would: each
@@ -46,7 +46,7 @@ const MAX_PUFFS = 40;
 /** How much of any altitude, and of the sprites' size, the plan view keeps. */
 const PLAN_ALT = 0.18;
 const PLAN_SCALE = 0.45;
-/** The Sough (tiles per second), as the landing's dust and the drifters lean. */
+/** The Sough (tiles per second), as the landing's dust leans. */
 const WIND_X = 0.32, WIND_Y = -0.12;
 /** Steps baked for the lift: the container drawn 1/PHASES, 2/PHASES … all the way out of the hatch. */
 const PHASES = 12;

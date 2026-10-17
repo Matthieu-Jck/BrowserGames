@@ -4,7 +4,7 @@
 // is what the player can find on the overlay), what it holds tile by tile (floor, rock, water, salt
 // flats, vents, the dune sea, chasms and rivers (D94), each deposit's ore — of the tiles explored: the fog keeps the rest,
 // counted apart; the price, the engine's, knows it all), who holds it (the claim — its starting square,
-// bought, granted or leased —, a sister claim, or nobody: CrierBelt sells it), and the buildings
+// bought, granted or leased —, a neighbouring base (D110), or nobody: CrierBelt sells it), and the buildings
 // standing on it. Pure text and numbers, no DOM, so it is tested in node (land-facts.test.ts).
 import { WORLD, CENTER } from '@/sim/constants';
 import type { Sim } from '@/sim/state';
@@ -33,8 +33,8 @@ export function parcelLabel(p: number): string {
   return parts.length ? parts.join(' · ') : t('land.here');
 }
 
-/** Who holds a parcel and how: the claim (its grant, bought, granted at a save's migration, leased), a sister claim, or CrierBelt (for sale). */
-export type ParcelState = 'start' | 'bought' | 'granted' | 'leased' | 'sister' | 'free';
+/** Who holds a parcel and how: the claim (its grant, bought, granted at a save's migration, leased), a neighbouring base (D110), or CrierBelt (for sale). */
+export type ParcelState = 'start' | 'bought' | 'granted' | 'leased' | 'neighbour' | 'free';
 
 export function parcelState(sim: Sim, p: number): ParcelState {
   const L = sim.land;
@@ -42,14 +42,14 @@ export function parcelState(sim: Sim, p: number): ParcelState {
   if (L.bought.has(p)) return 'bought';
   if (L.granted.has(p)) return 'granted';
   if (L.leases.has(p)) return 'leased';
-  return L.sister(p) >= 0 ? 'sister' : 'free';
+  return L.neighbour(p) >= 0 ? 'neighbour' : 'free';
 }
 
 /** Held for good (the overlay's solid border): the starting square, bought or granted — not a lease. */
 export const ownsForGood = (s: ParcelState): boolean => s === 'start' || s === 'bought' || s === 'granted';
 
-/** The sister claim's name (the Crier's colony of that index), in the current language; '' if the market does not know it. */
-export function sisterName(sim: Sim, idx: number): string {
+/** A neighbouring base's name (the Crier's colony of that index, D110), in the current language; '' if the market does not know it. */
+export function neighbourName(sim: Sim, idx: number): string {
   const cs = sim.market.snapshot().colonies;
   const c = cs.find((k) => k.idx === idx) ?? cs[idx];
   return c ? c.name[locale()] : '';

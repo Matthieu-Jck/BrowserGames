@@ -11,8 +11,10 @@
 // runs, nothing is laid yet (D73): its plan — traction steps, bridge pairs, a dashed leap between
 // each pair's ends — is a faint placeholder until the release. A face cutter in hand (D87) shows which
 // way it must face: the tiles its back would press on tinted turquoise where they hold a face ore,
-// coral where not, and an arrow from the machine into the wall on its working side. Redrawn only
-// when the preview changes.
+// coral where not, and an arrow from the machine into the wall on its working side. A piece a drag
+// buries (D109: the camouflaged ribbon, where the land refuses the dragged one) is drawn a little
+// stronger — sand on sand fades — inside a dashed ink frame, so a mixed drag shows which tiles go
+// underground. Redrawn only when the preview changes.
 //
 // A building that would stand above the floor (D44: on the mountains; world/stand.ts, from the
 // one height function, relief.ts `tileTop`) is shown where it would stand: in iso its ghost is
@@ -21,7 +23,7 @@
 // it lays the same ink hint of height under it as a placed one; red where `canPlace` refuses it
 // (astride a cliff). Per frame only the lift's position, while the view morphs.
 import { Container, Graphics, Sprite } from 'pixi.js';
-import { buildingIdx } from '@/content/registry';
+import { buildingDef, buildingIdx } from '@/content/registry';
 import { footprint } from '@/sim/entities';
 import { backRow, faceTiles, workSide, worksFace } from '@/sim/face';
 import type { Sim } from '@/sim/state';
@@ -47,6 +49,18 @@ const SIDE_V: ReadonlyArray<readonly [number, number]> = [[0, -1], [1, 0], [0, 1
 const RISE_ALPHA = 0.24;
 /** A ribbon drag's placeholder: its pieces this faint until the release lays them (D73). */
 const DRAG_ALPHA = 0.55;
+/** A buried piece's frame (D109): ink dashes round the tile, inset. */
+const BURIED_INK = num(C.inkSoft);
+
+/** A dashed square frame round tile (x, y), inset by `m`: one dash per side's third. */
+function buriedFrame(g: Graphics, x: number, y: number, m: number): void {
+  const a = m, b = 1 - m, d = (b - a) / 5;
+  for (let k = 0; k < 5; k += 2) {
+    const s = a + k * d, e = s + d;
+    g.moveTo(x + s, y + a).lineTo(x + e, y + a).moveTo(x + s, y + b).lineTo(x + e, y + b);
+    g.moveTo(x + a, y + s).lineTo(x + a, y + e).moveTo(x + b, y + s).lineTo(x + b, y + e);
+  }
+}
 
 /** A bridge pair's leap (tile units, centre to centre): turquoise dashes, gaps between. */
 function leapDash(g: Graphics, ax: number, ay: number, bx: number, by: number): void {
@@ -120,6 +134,7 @@ export class GhostView {
     if (pre) {
       // A ribbon drag is not laid before the release (D73): its plan shows as a placeholder, faint.
       const a = pre.drag ? DRAG_ALPHA : 1;
+      const buriedAt: Array<[number, number]> = [];
       for (const p of pre.pieces) {
         const [w, h] = footprint(buildingIdx(p.def), p.rot);
         g.rect(p.x, p.y, w, h).fill({ color: p.ok ? OK : BAD, alpha: 0.2 * a }).stroke({ width: 0.06, color: p.ok ? OK : BAD, alpha: 0.95 * a });
@@ -131,9 +146,11 @@ export class GhostView {
           if (!tex) continue;
           const s = new Sprite(tex);
           s.setFromMatrix(beltMatrix(p.x, p.y, p.rot, false));
-          s.alpha = 0.8 * a;
+          const buried = !!buildingDef(buildingIdx(p.def)).camo && p.reason !== 'needs_lift';
+          s.alpha = (buried ? 1 : 0.8) * Math.max(a, buried ? 0.8 : 0);
           s.tint = tint;
           this.box.addChild(s);
+          if (buried) buriedAt.push([p.x, p.y]);
         } else {
           const key = this.atlas.frames.has(btKey(p.def, p.rot)) ? btKey(p.def, p.rot) : btKey(p.def, 0);
           const tex = this.atlas.textures.get(key), fr = this.atlas.frames.get(key);
@@ -157,6 +174,11 @@ export class GhostView {
           const di = buildingIdx(p.def);
           if (worksFace(di)) this.face(sim, di, p.x, p.y, p.rot);
         }
+      }
+      // The buried pieces' frames (D109), one stroke after the footprints (they share the path otherwise).
+      if (buriedAt.length) {
+        for (const [x, y] of buriedAt) buriedFrame(g, x, y, 0.16);
+        g.stroke({ width: 0.07, color: BURIED_INK, alpha: 0.9, cap: 'round' });
       }
       // A bridge pair's leap: a dashed line from end to end, over what it leaves as it is.
       for (const [x0, y0, x1, y1] of pre.leaps ?? []) leapDash(g, x0 + 0.5, y0 + 0.5, x1 + 0.5, y1 + 0.5);

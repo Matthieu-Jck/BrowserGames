@@ -1,6 +1,8 @@
-// tree-shots.mjs — the tech tree (D33, D107) for visual review: the whole canvas, the window at
-// 1440 × 900 on the grown and the late debug bases, a hovered node's chain (upstream and
-// downstream lit, the rest faded), and the same on a tablet held upright (768 × 1024, touch).
+// tree-shots.mjs — the tech tree (D33, D107, D111) for visual review: the whole canvas, the window at
+// 1440 × 900 on the grown and the late debug bases, a selected node's focused chain (upstream and
+// downstream lit, the rest faded), the zoom (the whole tree in the view, a chain focused there and
+// kept through a zoom step, a mid zoom, Ctrl+wheel about the pointer), and the same on a tablet held
+// upright (768 × 1024, touch).
 // Usage: a server (the dev one on :5183, or a frozen preview build: URL=…), then
 // `node scripts/tree-shots.mjs` → scripts/tree-<tag>-*.png (gitignored).
 // Env: URL, CHROME, TAG (a prefix for the files: « before », « after »…), OUT (a folder for them).
@@ -54,12 +56,23 @@ async function centre(page, id) {
   await page.waitForTimeout(250);
 }
 
-/** Hover a node (a mouse), or tap it (a finger): its chain lights. */
-async function hover(page, id, touch) {
+/** The zoom bar's button (D111): fit, in, out, reset; a finger taps it. */
+async function zoom(page, how, touch, times = 1) {
+  for (let k = 0; k < times; k++) {
+    if (touch) await page.tap(`[data-tree-zoom="${how}"]`);
+    else await page.click(`[data-tree-zoom="${how}"]`);
+    await page.waitForTimeout(150);
+  }
+  await page.waitForTimeout(250);
+  return page.evaluate(() => ({ z: Number(document.querySelector('.tr-canvas')?.style.zoom || 1), level: document.querySelector('.tr-canvas')?.getAttribute('data-zoom') ?? 'near' }));
+}
+
+/** Select a node (a click, or a finger's tap): its chain is focused (D107, D111), the rest fades. */
+async function focus(page, id, touch) {
   const box = await page.locator(`.tr-node[data-id="${id}"]`).boundingBox();
   if (!box) { console.log(`✗ no node ${id}`); process.exitCode = 1; return; }
   if (touch) await page.tap(`.tr-node[data-id="${id}"]`);
-  else await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  else await page.click(`.tr-node[data-id="${id}"]`);
   await page.waitForTimeout(350);
 }
 
@@ -69,23 +82,54 @@ async function hover(page, id, touch) {
   await page.screenshot({ path: shot('1440-open') });
   await whole(page, 'whole', { width: 1440, height: 900 });
   await centre(page, 'dn_etcher');
-  await hover(page, 'dn_etcher', false);
-  await page.screenshot({ path: shot('1440-hover-etcher') });
+  await focus(page, 'dn_etcher', false);
+  await page.screenshot({ path: shot('1440-focus-etcher') });
   await centre(page, 'cm3');
-  await hover(page, 'cm3', false);
-  await page.screenshot({ path: shot('1440-hover-commerce') });
+  await focus(page, 'cm3', false);
+  await page.screenshot({ path: shot('1440-focus-commerce') });
   await centre(page, 'tr1');
+  await page.keyboard.press('Escape'); // the focus let go: the whole tree back
   await page.mouse.move(5, 5);
-  await page.waitForTimeout(400); // the chain's fade back
+  await page.waitForTimeout(400);
   await page.screenshot({ path: shot('1440-tier1') });
+  // The zoom (D111): the whole tree in the view, a chain lit at that size, then a mid zoom.
+  const fit = await zoom(page, 'fit', false);
+  console.log(`fit: ${JSON.stringify(fit)}`);
+  await page.screenshot({ path: shot('1440-zoom-fit') });
+  await focus(page, 'dn_etcher', false);
+  await page.screenshot({ path: shot('1440-zoom-fit-focus') });
+  const mid = await zoom(page, 'in', false, 4);
+  console.log(`mid: ${JSON.stringify(mid)}`);
+  const kept = await page.evaluate(() => document.querySelector('.tr-node[data-id="dn_etcher"]')?.getAttribute('data-chain'));
+  console.log(`${kept === 'self' ? '✓' : '✗'} zooming keeps the focus (${kept})`);
+  if (kept !== 'self') process.exitCode = 1;
+  await page.screenshot({ path: shot('1440-zoom-mid-focus') });
+  await page.keyboard.press('Escape');
+  await centre(page, 'en4');
+  await page.mouse.move(5, 5);
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: shot('1440-zoom-mid') });
+  // Ctrl+wheel about the pointer: the card under it stays under it.
+  const b = await page.locator('.tr-node[data-id="en4"]').boundingBox();
+  const px = b.x + b.width * 0.3, py = b.y + b.height / 2;
+  await page.mouse.move(px, py);
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, -300);
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(300);
+  const a = await page.locator('.tr-node[data-id="en4"]').boundingBox();
+  const z2 = await page.evaluate(() => Number(document.querySelector('.tr-canvas').style.zoom));
+  const held = px >= a.x && px <= a.x + a.width && py >= a.y && py <= a.y + a.height;
+  console.log(`${held && z2 > mid.z ? '✓' : '✗'} Ctrl+wheel: ${mid.z.toFixed(3)} → ${z2.toFixed(3)}, the card under the pointer stays (${held})`);
+  if (!(held && z2 > mid.z)) process.exitCode = 1;
   await context.close();
 }
 {
   const { page, context } = await open({ width: 1440, height: 900 }, 'grown');
   await whole(page, 'whole-grown', { width: 1440, height: 900 });
   await centre(page, 'tr_synth');
-  await hover(page, 'tr_synth', false);
-  await page.screenshot({ path: shot('1440-hover-synth') });
+  await focus(page, 'tr_synth', false);
+  await page.screenshot({ path: shot('1440-focus-synth') });
   await context.close();
 }
 
@@ -94,8 +138,15 @@ async function hover(page, id, touch) {
   const { page, context } = await open({ width: 768, height: 1024 }, 'late', true);
   await page.screenshot({ path: shot('tablet-open') });
   await centre(page, 'en_cellgen');
-  await hover(page, 'en_cellgen', true);
-  await page.screenshot({ path: shot('tablet-hover') });
+  await focus(page, 'en_cellgen', true);
+  await page.screenshot({ path: shot('tablet-focus') });
+  const fit = await zoom(page, 'fit', true);
+  console.log(`tablet fit: ${JSON.stringify(fit)}`);
+  await page.screenshot({ path: shot('tablet-zoom-fit') });
+  const mid = await zoom(page, 'in', true, 3);
+  console.log(`tablet mid: ${JSON.stringify(mid)}`);
+  await centre(page, 'cm2');
+  await page.screenshot({ path: shot('tablet-zoom-mid') });
   await context.close();
 }
 

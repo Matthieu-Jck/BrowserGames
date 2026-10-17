@@ -28,17 +28,18 @@ const AT: Record<ScenarioId, string | null> = { claim: 'first_strike', smelter: 
 const BUILT: Record<ScenarioId, readonly string[]> = {
   claim: [],
   smelter: ['iron1'],
-  survey: ['iron1', 'iron2', 'kiln1', 'coal', 'wind1', 'wind2', 'kiln2', 'sand1', 'sand2'],
+  // « La vapeur » (D114): the boiler, its pump at the water and its own coal drill, from this level on.
+  survey: ['iron1', 'iron2', 'kiln1', 'coal', 'wind1', 'wind2', 'kiln2', 'sand1', 'sand2', 'boiler', 'boilerPump', 'coalB'],
   // No data collector in the tutorial (D101): its lab runs on the Core's own data; the collector comes at the grown level.
-  tutorial: ['post', 'kiln1', 'kiln2', 'observatory', 'mill', 'copper', 'beacon', 'wind3', 'wind4', 'cutter1', 'cutter2', 'osc'],
-  grown: ['post', 'kiln1', 'kiln2', 'collector', 'observatory', 'mill', 'copper', 'cutter1', 'cutter2', 'osc'],
-  // The late base's works (scenario-late.ts): the potteries on the tarn's peak, the Fabrique on
-  // the copper field — on every land (the Ember Fields mine and its thermal cores where the land has
-  // that site: checked below).
+  tutorial: ['post', 'kiln1', 'kiln2', 'observatory', 'mill', 'copper', 'wind3', 'wind4', 'cutter1', 'cutter2', 'osc', 'boiler', 'boilerPump', 'coalB'],
+  grown: ['post', 'kiln1', 'kiln2', 'collector', 'observatory', 'mill', 'copper', 'cutter1', 'cutter2', 'osc', 'boiler', 'boilerPump', 'coalB'],
+  // The late base's works (scenario-late.ts): the potteries on the tarn's peak (their silo at its
+  // foot), the Fabrique on the copper field — on every land (the Ember Fields mine and its post where
+  // the land has that site: checked below). No skydock since D108.
   late: [
-    'post', 'kiln1', 'collector', 'observatory', 'cutter1', 'cutter2', 'osc',
-    'oven', 'pump', 'dockT', 'digger1',
-    'boreCu', 'post2', 'dockW', 'mill2', 'mill3', 'circuits', 'circuits2', 'gears2', 'bells', 'data2', 'observatory2', 'sorter2',
+    'post', 'kiln1', 'collector', 'observatory', 'cutter1', 'cutter2', 'osc', 'boiler', 'boilerPump', 'coalB',
+    'oven', 'pump', 'potSilo', 'digger1',
+    'boreCu', 'post2', 'mill2', 'mill3', 'circuits', 'circuits2', 'gears2', 'bells', 'data2', 'observatory2', 'sorter2',
   ],
 };
 
@@ -79,12 +80,12 @@ describe('debug bases (scenarios)', () => {
       if (id === 'late') {
         expect(report.granted).toEqual(expect.arrayContaining(['tr2', 'tr4', 'tr6', 'tr8', 'ex5', 'ex8', 'xp_far', 'dn_etcher', 'dn8', 'enK', 'cm3', 'an_servers']));
         expect(sim.hearthLevel).toBe(4);
-        // Over half the tree done (D66, D69: 44 of 77), the Research Queue researched for real.
+        // Over half the tree done (D66, D69; D108: 54 of 70 with The Crier House's third post), the Research Queue researched for real.
         expect(Object.keys(RESEARCH).filter((r) => sim.done.has(r)).length, 'late: research done').toBeGreaterThanOrEqual(44);
         // The first lab on the Research Queue (D107: the Compute Plan comes learnt with the Wider Wharf).
         expect(sim.projects.map((p) => p.id).sort(), 'late: research under way').toEqual(['an_queue']);
-        // The Ember Fields mine where the land has the site, its embersalt flown to the Fabrique's thermal cores.
-        if (report.ids.boreE) for (const role of ['dockE', 'cores']) expect(report.ids[role], `late: ${role}`).toBeGreaterThan(0);
+        // The Ember Fields mine where the land has the site, its embersalt sold at a third post beside it (D108).
+        if (report.ids.boreE) expect(report.ids.postE, 'late: postE').toBeGreaterThan(0);
         // Nothing the map refused (each part of the works is laid whole, or skipped by name) but the
         // grown base's gear workshop where its plate line is too short to branch (land 3).
         expect(report.skipped.filter((s) => s !== 'gears'), 'late skipped').toEqual([]);
@@ -133,10 +134,10 @@ describe('debug bases (scenarios)', () => {
       expect(low, `${id}: the grid's lowest satisfaction over a day`).toBeGreaterThanOrEqual(900);
       expect(sim.credits - credits0, `${id}: ocelles earned over a day`).toBeGreaterThan(20_000);
       if (id === 'late') {
-        // The late base's chains run over the day (D66): the Fabrique's wire, circuits, gears, speed
-        // modules and data files, the potteries' ceramic, the thermal cores where embersalt comes.
+        // The late base's chains run over the day (D66): the Fabrique's wire, circuits, gears,
+        // servomotors and data files, the potteries' ceramic, the Ember Fields' embersalt where it is mined.
         const made = (it: string): number => sim.produced[itemIdx(it)]! - produced0[itemIdx(it)]!;
-        for (const it of ['copper_wire', 'circuit', 'gear', 'pace_bell', 'journal_1', 'ceramic', ...(report.ids.cores ? ['thermal_core'] : [])]) expect(made(it), `late: ${it} made over a day`).toBeGreaterThan(0);
+        for (const it of ['copper_wire', 'circuit', 'gear', 'pace_bell', 'journal_1', 'ceramic', ...(report.ids.boreE ? ['embersalt'] : [])]) expect(made(it), `late: ${it} made over a day`).toBeGreaterThan(0);
         // Far more than its way: its sales of what it makes, after what it buys.
         expect(sim.credits - credits0, 'late: ocelles earned over a day').toBeGreaterThan(100_000);
       }

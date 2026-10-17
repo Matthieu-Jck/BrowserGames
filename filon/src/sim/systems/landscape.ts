@@ -15,6 +15,7 @@ import {
   advanceJob, canDig, digRubble, digTicks, embedded, fillCost, fillTicks, jobDone, type Job, type JobKind,
 } from '../space';
 import type { Sim } from '../state';
+import { parcelAt } from '../world/land';
 
 const RUBBLE = (): number => itemIdx('stone');
 
@@ -26,6 +27,7 @@ export function designate(sim: Sim, tiles: readonly number[], on = true): number
     if (!inWorld(x, y)) continue;
     if (!on) { if (sim.designated.delete(t)) n++; continue; }
     if (sim.designated.has(t) || !sim.revealed(x, y)) continue;
+    if (sim.land.neighbour(parcelAt(x, y)) >= 0) continue; // a neighbouring base's land (D110): not the claim's to dig or fill
     const tt = sim.grid.terrain(x, y);
     const kind: JobKind | null = isRock(tt) ? 'dig' : tt === T.Shallow || tt === T.Deep || tt === T.Salt ? 'fill' : null;
     if (!kind || sim.grid.occ[t] !== 0) continue; // a building stands there (on rock too, D44)

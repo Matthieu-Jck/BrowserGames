@@ -1,6 +1,6 @@
 // research.ts — the tech tree screen (D33; T, or the HUD's tree chip): one tree, two kinds of
-// node. On the left the plans grow from the Heart's starting kit in six paths of one theme each
-// (D41, `PLAN_PATHS`: production, logistics, energy, analytics, trade, survey), each drawn as a
+// node. On the left the plans grow from the Heart's starting kit in five paths of one theme each
+// (D41, `PLAN_PATHS`: production, logistics, energy, analytics, trade; survey went, D117), each drawn as a
 // band of its own colour with its name, what it is for and how much of it is unlocked: a plan
 // unlocks with one click, paid from the Heart at once. A plan whose cost would eat into
 // CrierBelt's restart reserve (D36) reads « short of materials » with that reason, and the header
@@ -14,8 +14,9 @@
 // (Commerce: Échange → Finance → Économie de marché) and which splits in two specialities from Tier 3
 // (a sub-lane each, its name on the divider). The Synthesis stands alone at Tier 1's end, every
 // family's Tier 1 joining it on one bus. Links run in right angles through the gaps between cards and
-// lanes, never across a card; a node under the mouse lights its whole chain — what it needs, what
-// needs it — and fades the rest (`chainOf`; on a touch screen, the selected node's). A research card
+// lanes, never across a card; a node the player selects lights its whole chain — what it needs, what
+// needs it — and fades the rest until another is selected, the empty tree clicked or Esc pressed
+// (`chainOf`; D111: the mouse over a card only raises it). A research card
 // shows what it unlocks first (buildings, recipes' items, a glyph for a feature), then its minimum
 // time — the table's, whatever else the claim owns (D72) — and its kinds of data (one more each tier,
 // D71: Survey Data, Mechanics Data, atlases, codices), then its AI tokens and their price at
@@ -43,6 +44,7 @@ import { RECIPES } from '@/content/recipes';
 import { BUILDING_IDS, BUILDING_KIND, RESEARCH_IDS, buildingDef, buildingIdx, itemDef, itemIdx, toMu } from '@/content/registry';
 import type { Effect, FamilyId, PlanLane, RecipeDef, ResearchTier } from '@/content/types';
 import { el, setAttr, setText } from '@/core/dom';
+import { makeStore } from '@/core/store';
 import { locale, t, tr, type MsgKey } from '@/i18n/i18n';
 import { duration, num } from '@/i18n/format';
 import type { Atlas } from '@/render/art/atlas';
@@ -86,24 +88,27 @@ const GATE_W = 220, GATE_GAP = 96;
 // Research's geometry (D69, D107): wide cards (three lines: name; time and data; tokens), tier
 // bands of sub-columns with a gutter between bands, lanes far enough apart for each tier's family
 // name on their edge and for the links' channels. Links never cross a card: they turn in the gaps
-// between sub-columns and run along the gaps between lanes (`route`).
+// between sub-columns and run along the gaps between lanes (`route`). The rows close again after
+// D107 widened them (owner, 2026-10-17: « reduce the space between each row of the research tree,
+// this is too much »): half the gaps between rows, specialities and lanes; the tier gutters a little
+// narrower; the gaps between sub-columns, where the links turn, as they were.
 const R_NODE_W = 276, R_NODE_H = 60;
 /** The gap between two sub-columns, where a link turns. */
 const R_GAP = 60;
-/** A sub-column: a node and its gap; a row: a node and 10 px. */
-const R_COL_W = R_NODE_W + R_GAP, R_ROW_H = R_NODE_H + 10;
+/** A sub-column: a node and its gap; a row: a node and 6 px. */
+const R_COL_W = R_NODE_W + R_GAP, R_ROW_H = R_NODE_H + 6;
 /** Between a family's two specialities (their divider and the second one's name sit there). */
-const R_SPLIT = 26;
+const R_SPLIT = 14;
 /** Between research lanes: room for the family's name over each tier band, and a channel links run along. */
-const R_LANE_GAP = 38;
+const R_LANE_GAP = 20;
 const R_LABEL_W = 156;
 /** Inside a tier band, before its first node and after its last. */
-const TIER_PAD = 30;
+const TIER_PAD = 26;
 /** Between two tier bands: the paper shows through. */
-const TIER_GUTTER = 30;
-const TIER_HEAD_H = 60;
+const TIER_GUTTER = 22;
+const TIER_HEAD_H = 52;
 /** A research band reaches this far above and below its rows. */
-const R_BAND = 8;
+const R_BAND = 5;
 /** How round a link's elbow is (px). */
 const ELBOW_R = 10;
 
@@ -124,7 +129,7 @@ interface Block { kind: 'plan' | 'research'; x: number; y: number; w: number; h:
  * A link and its route (`d`, an SVG path: elbows in the gaps, never across a card). Its kind: a
  * `line` within a lane (a path, a family's lineage, the trunk), a `cross` link from another lane (the
  * Synthesis's Tier 1, the Compute Plan's Server Room…), a `gate` — a trunk node opening a tier for a
- * family node, drawn only while that node is hovered or selected (the tier heads say what opens each
+ * family node, drawn only while that node is selected (the tier heads say what opens each
  * tier). `path`: a plan path's last node into the research lab's gate (inked once the whole path is taken).
  */
 interface Link { from: string; to: string; gate: boolean; kind: 'line' | 'cross' | 'gate'; d: string; path?: PlanLane }
@@ -380,7 +385,7 @@ function researchPart(x0: number): { nodes: Spot[]; lanes: Lane[]; links: Link[]
   const bottom = y - R_LANE_GAP + R_BAND + 4;
   // Links (D107): a lineage within its lane; from another lane, only what the node does not already
   // need through another of its prerequisites (the Synthesis takes each family's last Tier 1 node,
-  // not all of them); a tier's gate apart, drawn while the node it opens is hovered or selected. The
+  // not all of them); a tier's gate apart, drawn while the node it opens is selected. The
   // lab's plan, which opens Tier 1, is named by its head alone (its links would cross the labels).
   const at = new Map(nodes.map((s) => [s.id, s]));
   const links: Link[] = [];
@@ -416,6 +421,27 @@ export function treeLayout(): TreeLayout {
     blocks: [P.block, R.block], tiers: R.tiers, tags: R.tags, splits: R.splits, gate: P.gate,
     w: R.right + PAD, h: Math.max(P.bottom, R.bottom) + PAD,
   };
+}
+
+// ── zoom (D111) ─────────────────────────────────────────────────────────────
+
+/** The closest the tree zooms in: a little past its own size. */
+export const ZOOM_MAX = 1.25;
+/** The farthest it ever zooms out, whatever the window (the whole tree's fit is usually above). */
+export const ZOOM_FLOOR = 0.08;
+
+/** The zoom at which the whole tree fits a view of this size (never above its own size). */
+export function fitZoom(viewW: number, viewH: number, L: Pick<TreeLayout, 'w' | 'h'>): number {
+  return Math.max(ZOOM_FLOOR, Math.min(1, viewW / L.w, viewH / L.h));
+}
+
+/**
+ * How much a card shows at a zoom: `near` all of it; `mid` its icon and its name, larger, on two
+ * lines (what it costs is too small to read); `far` its icon alone (its name in its tooltip): the
+ * tree reads as a map, its tiers and lanes named by the pinned titles.
+ */
+export function zoomLevel(z: number): 'near' | 'mid' | 'far' {
+  return z >= 0.7 ? 'near' : z >= 0.36 ? 'mid' : 'far';
 }
 
 /**
@@ -474,10 +500,9 @@ const EFFECT_ICON: Readonly<Record<string, Icon | readonly Icon[]>> = {
   deepFill: [{ b: 'backfiller' }, { i: 'water' }], tunnels: { b: 'ribbon' },
   // The land (D60): leases (Land Registry's flag), prices, rents, how each purchase raises the next, far land.
   lease: { g: 'land' }, landPrice: { g: 'land' }, landRent: { g: 'land' }, landGrowth: { g: 'land' }, farLand: { g: 'land' },
-  landResale: { g: 'resale' }, sisterCrossing: { g: 'crossing' }, farClaims: { g: 'far' },
-  remoteBeltCost: { b: 'ribbon' }, remoteBuildDelay: { b: 'beacon' }, pylonLink: { b: 'pylon' },
-  ring3Caps: { b: 'deep_bore' }, dockShips: { b: 'skydock' }, shipCap: { b: 'skydock' }, shipSpeed: { b: 'skydock' },
-  drifterDistance: { b: 'skydock' }, bridgeSpan: { b: 'skybridge' }, forkFilters: { b: 'router' },
+  landResale: { g: 'resale' }, neighbourCrossing: { g: 'crossing' }, farClaims: { g: 'far' },
+  remoteBeltCost: { b: 'ribbon' }, remoteBuildDelay: { b: 'mast' }, pylonLink: { b: 'pylon' },
+  ring3Caps: { b: 'deep_bore' }, bridgeSpan: { b: 'skybridge' }, forkFilters: { b: 'router' },
   craftSpeed: { i: 'gear' },
   windOut: { b: 'wind_flower' }, gustVariance: { b: 'wind_flower' }, stormHarvest: { b: 'wind_flower' }, solarOut: { b: 'sun_bulb' },
   accCap: { b: 'accumulator' }, accRate: { b: 'accumulator' }, geoOut: { b: 'fumarole_tap' },
@@ -522,8 +547,8 @@ function iconsOf(id: string): Icon[] {
  * A glyph inked on a paper card. The analytics readouts (D41): telemetry — three bars and a rising
  * line; the ledger — ruled rows with a coral tab; the power log — a bolt over a jagged line; the
  * diagnostics — a dial leaning to coral. The land (D60): parcels, the claim's washed turquoise, a
- * sister claim's hatched coral, a boundary stone; resale — the parcels and a coin; crossing — a
- * ribbon through the sister's parcels; far — a parcel away from the claim's, a dashed way to it.
+ * neighbouring base's hatched coral, a boundary stone; resale — the parcels and a coin; crossing — a
+ * ribbon through the neighbour's parcels; far — a parcel away from the claim's, a dashed way to it.
  * Research's features (D70): a price line held by a coral floor; a token stamped ½ (the Compute
  * Plan); a crate with speed lines (express freight); a server rack and a coin (rental); three
  * queued slabs, the first running; a price line going on dashed past « now » (forecast).
@@ -549,12 +574,12 @@ function glyph(kind: Exclude<Glyph, 'coin'>, size: number): HTMLCanvasElement {
     g.lineWidth = 1.1 * s; g.beginPath(); g.arc(x * s, y * s, r * 0.55 * s, 0, Math.PI * 2); g.stroke();
     g.fillStyle = C.ink; g.beginPath(); g.arc(x * s, y * s, r * 0.18 * s, 0, Math.PI * 2); g.fill();
   };
-  /** The parcels (3 × 3 from x0, y0, k a side): `held` washed turquoise, `sister` hatched coral. */
-  const parcels = (x0: number, y0: number, k: number, held: ReadonlyArray<readonly [number, number]>, sister: ReadonlyArray<readonly [number, number]>): void => {
+  /** The parcels (3 × 3 from x0, y0, k a side): `held` washed turquoise, `theirs` hatched coral (a neighbouring base's). */
+  const parcels = (x0: number, y0: number, k: number, held: ReadonlyArray<readonly [number, number]>, theirs: ReadonlyArray<readonly [number, number]>): void => {
     for (let i = 1; i < 3; i++) { line([[x0 + i * k, y0], [x0 + i * k, y0 + 3 * k]], C.inkSoft, 1); line([[x0, y0 + i * k], [x0 + 3 * k, y0 + i * k]], C.inkSoft, 1); }
     g.fillStyle = C.turqL;
     for (const [cx, cy] of held) g.fillRect((x0 + cx * k + 0.6) * s, (y0 + cy * k + 0.6) * s, (k - 1.2) * s, (k - 1.2) * s);
-    for (const [cx, cy] of sister) for (let d = 2; d < 2 * k; d += 3) {
+    for (const [cx, cy] of theirs) for (let d = 2; d < 2 * k; d += 3) {
       const bx = x0 + cx * k, by = y0 + cy * k;
       line([[bx + Math.max(0, d - k), by + Math.min(d, k)], [bx + Math.min(d, k), by + Math.max(0, d - k)]], C.coral, 1.2);
     }
@@ -586,7 +611,7 @@ function glyph(kind: Exclude<Glyph, 'coin'>, size: number): HTMLCanvasElement {
       g.fillStyle = C.turqD; g.fillRect((9 + w + 1.5) * s, (y - 1.4) * s, 2.8 * s, 2.8 * s);
     }
   } else if (kind === 'land' || kind === 'resale') {
-    // Three by three parcels; the middle column and the top-left held, one hatched for a sister claim.
+    // Three by three parcels; the middle column and the top-left held, one hatched for a neighbouring base.
     const x0 = 8, y0 = 9, k = 8;
     parcels(x0, y0, k, [[0, 0], [1, 0], [1, 1], [1, 2]], [[2, 2]]);
     line([[x0, y0], [x0 + 2 * k, y0], [x0 + 2 * k, y0 + 3 * k], [x0 + k, y0 + 3 * k], [x0 + k, y0 + k], [x0, y0 + k], [x0, y0]], C.turqD, 2.2);
@@ -596,7 +621,7 @@ function glyph(kind: Exclude<Glyph, 'coin'>, size: number): HTMLCanvasElement {
       g.beginPath(); g.moveTo(29 * s, 4 * s); g.lineTo(33 * s, 4 * s); g.lineTo(34 * s, 10 * s); g.lineTo(28 * s, 10 * s); g.closePath(); g.fill(); g.stroke();
     }
   } else if (kind === 'crossing') {
-    // The claim's column on the left, a sister claim's hatched beside it, a ribbon running through both.
+    // The claim's column on the left, a neighbouring base's hatched beside it, a ribbon running through both.
     const x0 = 8, y0 = 9, k = 8;
     parcels(x0, y0, k, [[0, 0], [0, 1], [0, 2]], [[1, 0], [1, 1], [1, 2], [2, 0], [2, 2]]);
     line([[x0, y0], [x0 + k, y0], [x0 + k, y0 + 3 * k], [x0, y0 + 3 * k], [x0, y0]], C.turqD, 2);
@@ -760,6 +785,23 @@ interface NodeView {
 /** A research lane's label and its count. */
 interface LaneHead { label: HTMLElement; count: HTMLElement }
 
+/** This viewer's zoom of the tree (D111), in this browser only. */
+const ZOOM_STORE = makeStore<{ version: number; zoom: number }>('filon.tree.zoom.v1', 1, () => ({ version: 1, zoom: 1 }));
+/** One step of the buttons and keys. */
+const ZOOM_STEP = 1.25;
+
+/** « Tout voir »: four corners round a frame. */
+function fitGlyph(): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('class', 'tr-fitglyph');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(SVG_NS, 'path');
+  path.setAttribute('d', 'M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4');
+  svg.append(path);
+  return svg;
+}
+
 export class ResearchScreen {
   readonly root: HTMLElement;
   private readonly layout = treeLayout();
@@ -773,11 +815,15 @@ export class ResearchScreen {
   /** The research lab's gate (D71): its caption and its « n/N » plans taken. */
   private gateHead: { id: string; cap: HTMLElement; count: HTMLElement } | null = null;
   private readonly view: HTMLElement;
-  /** The canvas (rebuilt with the language), whose `data-chain` fades what a hovered node's chain leaves out. */
+  /** The canvas (rebuilt with the language), whose `data-chain` fades what the focused node's chain leaves out. */
   private canvas: HTMLElement | null = null;
-  /** The node under the mouse (D107: its chain lit), and whether the last pointer was a finger (then the selection's chain). */
-  private hovered: string | null = null;
-  private touch = false;
+  /**
+   * The node the player selected (owner, 2026-10-17: « il faut que le "focus" sur une tech se fasse
+   * quand le joueur sélectionne une tech, pas au hover »): its chain lit, the rest faded, until they
+   * select another, click the empty tree or press Esc. A click, a tap or Enter on a card; the tree's
+   * own choice on opening (its first plan to take, the guide's node) shows its detail, not a focus.
+   */
+  private focused: string | null = null;
   /** The node whose chain is painted (undefined: none painted since the canvas was built). */
   private chainFor: string | null | undefined = undefined;
   // The header: plans' restart reserve and research's strip (D68–D70).
@@ -809,6 +855,25 @@ export class ResearchScreen {
   /** Dragging the canvas: where it started, and whether it moved (a drag is not a click). */
   private drag: { x: number; y: number; left: number; top: number; moved: boolean } | null = null;
   private dragged = false;
+  /**
+   * The zoom (D111; owner, 2026-10-17: « je veux pouvoir dézoomer dans le tech tree »): 1 its own
+   * size, down to the whole tree in the view (`fitZoom`), up to `ZOOM_MAX`; this viewer's last,
+   * kept in this browser (a convenience: `filon.tree.zoom.v1`).
+   */
+  private zoom = ZOOM_STORE.load().zoom;
+  private zoomSave = 0;
+  /** The fingers on the view (D96): two pinch the zoom about their middle. */
+  private readonly fingers = new Map<number, { x: number; y: number }>();
+  private pinch: { d0: number; z0: number } | null = null;
+  /** The corner's zoom bar: « − », the zoom (a click: 100 %), « + », « Tout voir ». */
+  private readonly zoomPct = el<'button'>('button.tr-zbtn.tr-zpct', { type: 'button', 'data-tree-zoom': 'reset', onclick: () => this.setZoom(1) });
+  private readonly zoomOut = el<'button'>('button.tr-zbtn', { type: 'button', 'data-tree-zoom': 'out', onclick: () => this.setZoom(this.zoom / ZOOM_STEP) }, '−');
+  private readonly zoomIn = el<'button'>('button.tr-zbtn', { type: 'button', 'data-tree-zoom': 'in', onclick: () => this.setZoom(this.zoom * ZOOM_STEP) }, '+');
+  private readonly zoomFit = el<'button'>('button.tr-zbtn.tr-zfit', { type: 'button', 'data-tree-zoom': 'fit', onclick: () => this.fit() }, [fitGlyph()]);
+  /** The tiers' and lanes' names pinned over the view while the cards are small (D111): always at reading size. */
+  private readonly pins = el('div.tr-pins', { 'aria-hidden': 'true' });
+  private pinEls: Array<{ el: HTMLElement; kind: 'tier' | 'lane'; x: number; y: number; w: number; h: number }> = [];
+  private pinFrame = 0;
 
   /** The language the canvas was built in: a switch rebuilds it (names and labels are written once). */
   private builtIn: Loc | null = null;
@@ -822,7 +887,12 @@ export class ResearchScreen {
       onpointerup: (e: PointerEvent) => this.dragEnd(e),
       onpointercancel: (e: PointerEvent) => this.dragEnd(e),
       onwheel: (e: WheelEvent) => this.wheel(e),
+      onscroll: () => this.schedulePins(),
+      // A click on the empty tree (not the end of a drag) lets the focus go.
+      onclick: (e: MouseEvent) => { if (!this.dragged && !(e.target as Element).closest('.tr-node, button')) this.unfocus(); },
     });
+    // A window resized (or the pane folded under the tree, D96): the whole tree's fit moves.
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => { if (this.root.isConnected) this.setZoom(this.zoom); }).observe(this.view);
     this.labsEl = el('span.rs-labs', {}, [buildingIcon(atlas, 'observatory', 18), this.labsText]);
     this.bill = {
       label: el('small'), used: el('span.v'), own: el('span.v'), bought: el('span.v'), cents: el('span.rs-bcost'), rental: el('span.rs-brent'),
@@ -842,7 +912,10 @@ export class ResearchScreen {
         this.dragHint,
         el('button.btn.rs-close', { onclick: () => host.close(), title: t('screen.close') }, '✕'),
       ]),
-      el('div.rs-body', {}, [this.view, this.detail]),
+      el('div.rs-body', {}, [
+        el('div.tr-stage', {}, [this.view, this.pins, el('div.tr-zoom.cartouche', {}, [this.zoomOut, this.zoomPct, this.zoomIn, this.zoomFit])]),
+        this.detail,
+      ]),
     ]);
     this.build();
   }
@@ -863,14 +936,11 @@ export class ResearchScreen {
     this.chainFor = undefined;
     setText(this.title, t('tree.title'));
     setText(this.dragHint, t('tree.drag'));
-    const canvas = el('div.tr-canvas', {
-      style: `width:${L.w}px;height:${L.h}px`,
-      // A node's chain lights under the mouse (D107); a finger has no hover: its tap selects, and the
-      // selection's chain shows instead.
-      onpointerover: (e: PointerEvent) => { if (e.pointerType !== 'touch') this.hover((e.target as Element).closest<HTMLElement>('.tr-node')?.dataset.id ?? null); },
-      onpointerleave: () => this.hover(null),
-      onpointerdown: (e: PointerEvent) => { this.touch = e.pointerType === 'touch'; },
-    });
+    setAttr(this.zoomOut, 'title', t('tree.zoom.out'));
+    setAttr(this.zoomIn, 'title', t('tree.zoom.in'));
+    setAttr(this.zoomFit, 'title', t('tree.zoom.fit'));
+    setAttr(this.zoomPct, 'title', t('tree.zoom.reset'));
+    const canvas = el('div.tr-canvas', { style: `width:${L.w}px;height:${L.h}px` });
     this.canvas = canvas;
     // Back to front: the two blocks, the tier columns, the lanes, the links, the nodes.
     for (const b of L.blocks) {
@@ -934,10 +1004,13 @@ export class ResearchScreen {
       canvas.append(cap);
       this.gateHead = { id: L.gate.id, cap, count };
     }
+    this.buildPins();
     const { scrollLeft, scrollTop } = this.view;
     this.view.replaceChildren(canvas);
+    this.applyZoom();
     this.view.scrollLeft = scrollLeft;
     this.view.scrollTop = scrollTop;
+    this.paintPins();
   }
 
   /** Research's legend, in its own marks: the kinds of data (one more each tier, D71), AI tokens, the minimum time. */
@@ -1083,20 +1156,13 @@ export class ResearchScreen {
 
   // ── interaction ──
 
-  /** The mouse over a node (or off them all): its chain lights, the rest fades. */
-  private hover(id: string | null): void {
-    if (this.drag?.moved || id === this.hovered) return;
-    this.hovered = id;
-    this.paintChain();
-  }
-
   /**
-   * A node's whole chain (D107: what it needs and what needs it, `chainOf`) lit, the rest faded:
-   * the node under the mouse, else — on a touch screen, which has no hover — the selected one.
+   * The focused node's whole chain (D107: what it needs and what needs it, `chainOf`) lit, the rest
+   * faded — the node the player selected, by mouse, finger or key alike (the mouse over a card only
+   * raises it, in the CSS). Zooming and panning keep it.
    */
   private paintChain(): void {
-    const sel = this.touch && this.selected && this.selected !== ROOT ? this.selected : null;
-    const focus = this.hovered && this.hovered !== ROOT ? this.hovered : sel;
+    const focus = this.focused && this.views.has(this.focused) ? this.focused : null;
     if (focus === this.chainFor) return;
     this.chainFor = focus;
     const chain = focus && this.views.has(focus) ? chainOf(focus) : null;
@@ -1105,20 +1171,53 @@ export class ResearchScreen {
     for (const { link, path } of this.paths) setAttr(path, 'data-chain', chain?.links.has(`${link.from}>${link.to}`) ? '' : null);
   }
 
+  /** The player selects a node: its detail, and the focus on its chain (none for the Heart: it has none). */
   private select(id: string): void {
     if (this.dragged) return; // the end of a drag, not a click
     this.selected = id;
+    this.focused = id === ROOT ? null : id;
     this.detailSig = '';
     this.refresh();
   }
 
+  /** The focus let go (a click on the empty tree, Esc): the whole tree back; the detail stays. */
+  private unfocus(): boolean {
+    if (!this.focused) return false;
+    this.focused = null;
+    this.paintChain();
+    return true;
+  }
+
+  /** Esc (D111): the focus first, then the screen closes. */
+  back(): boolean {
+    return this.unfocus();
+  }
+
   private dragStart(e: PointerEvent): void {
     this.dragged = false;
+    if (e.pointerType === 'touch') {
+      this.fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      // A second finger (D96): a pinch, no longer a drag.
+      if (this.fingers.size === 2) {
+        const [a, b] = [...this.fingers.values()] as [{ x: number; y: number }, { x: number; y: number }];
+        this.pinch = { d0: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), z0: this.zoom };
+        this.drag = null;
+        setAttr(this.view, 'data-drag', null);
+        return;
+      }
+    }
     if (e.button !== 0 || (e.target as Element).closest('button')) return;
     this.drag = { x: e.clientX, y: e.clientY, left: this.view.scrollLeft, top: this.view.scrollTop, moved: false };
   }
 
   private dragMove(e: PointerEvent): void {
+    if (this.fingers.has(e.pointerId)) this.fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (this.pinch && this.fingers.size >= 2) {
+      const [a, b] = [...this.fingers.values()] as [{ x: number; y: number }, { x: number; y: number }];
+      this.dragged = true; // the lift ends a pinch, not a tap
+      this.setZoom((this.pinch.z0 * Math.hypot(a.x - b.x, a.y - b.y)) / this.pinch.d0, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+      return;
+    }
     const d = this.drag;
     if (!d) return;
     const dx = e.clientX - d.x, dy = e.clientY - d.y;
@@ -1129,6 +1228,11 @@ export class ResearchScreen {
   }
 
   private dragEnd(e: PointerEvent): void {
+    this.fingers.delete(e.pointerId);
+    if (this.fingers.size < 2 && this.pinch) {
+      this.pinch = null;
+      setTimeout(() => { this.dragged = false; }, 0);
+    }
     if (this.drag?.moved) {
       this.dragged = true; // the click that follows this pointerup selects nothing
       if (this.view.hasPointerCapture(e.pointerId)) this.view.releasePointerCapture(e.pointerId);
@@ -1138,8 +1242,17 @@ export class ResearchScreen {
     setAttr(this.view, 'data-drag', null);
   }
 
-  /** The wheel scrolls the tree sideways when it has nothing to scroll up and down. */
+  /**
+   * The wheel scrolls the tree (sideways when it has nothing to scroll up and down); with Ctrl or ⌘
+   * — and a trackpad's pinch, which the browser sends so — it zooms about the pointer (D111).
+   */
   private wheel(e: WheelEvent): void {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      this.setZoom(this.zoom * Math.min(2, Math.max(0.5, Math.exp(-dy * 0.002))), { x: e.clientX, y: e.clientY });
+      return;
+    }
     const v = this.view;
     if (v.scrollHeight > v.clientHeight + 1 && !e.shiftKey) return;
     if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
@@ -1149,10 +1262,12 @@ export class ResearchScreen {
 
   /** On opening: the guide's node, else the selection (or the first plan to take, else the first research to start), brought into view. */
   opened(): void {
+    this.setZoom(this.zoom); // its range follows the window the tree opens in
     const sim = this.host.sim();
     const focus = this.host.focus?.() ?? null;
-    if (focus && this.views.has(focus)) { this.selected = focus; this.detailSig = ''; this.refresh(); }
+    if (focus && this.views.has(focus)) { this.selected = focus; this.focused = null; this.detailSig = ''; this.refresh(); }
     else if (!this.selected || !this.views.has(this.selected)) {
+      this.focused = null;
       this.selected = readyPlans(sim)[0]
         ?? PLAN_IDS.find((id) => planState(sim, id) === 'poor')
         ?? RESEARCH_IDS.find((id) => researchState(sim, id) === 'ready')
@@ -1161,6 +1276,122 @@ export class ResearchScreen {
       this.refresh();
     }
     this.views.get(this.selected)?.node.scrollIntoView({ block: 'nearest', inline: 'center' });
+  }
+
+  // ── zoom (D111) ──
+
+  /** The farthest out: the whole tree in the view. */
+  private minZoom(): number {
+    return fitZoom(this.view.clientWidth || this.layout.w, this.view.clientHeight || this.layout.h, this.layout);
+  }
+
+  /**
+   * Zoom to `z` (within the range), keeping the point under `at` (client coordinates; the view's
+   * middle by default) where it was: the canvas is measured before and after, and the view scrolled
+   * by the difference — in the view's own units, whatever zoom the screens stand under (D96).
+   */
+  private setZoom(z: number, at?: { x: number; y: number }): void {
+    const c = this.canvas;
+    const z1 = Math.min(ZOOM_MAX, Math.max(this.minZoom(), z));
+    if (!c || !this.root.isConnected) { this.zoom = z1; return; }
+    const v = this.view, vr = v.getBoundingClientRect();
+    const ax = at?.x ?? vr.left + vr.width / 2, ay = at?.y ?? vr.top + vr.height / 2;
+    const r0 = c.getBoundingClientRect();
+    const fx = r0.width ? (ax - r0.left) / r0.width : 0, fy = r0.height ? (ay - r0.top) / r0.height : 0;
+    const changed = Math.abs(z1 - this.zoom) > 1e-4;
+    this.zoom = z1;
+    this.applyZoom();
+    for (let k = 0; k < 2; k++) {
+      const r1 = c.getBoundingClientRect(), u = vr.width ? v.clientWidth / vr.width : 1;
+      v.scrollLeft += (r1.left + fx * r1.width - ax) * u;
+      v.scrollTop += (r1.top + fy * r1.height - ay) * u;
+    }
+    this.paintPins();
+    if (changed) {
+      window.clearTimeout(this.zoomSave);
+      this.zoomSave = window.setTimeout(() => ZOOM_STORE.save({ version: 1, zoom: this.zoom }), 300);
+    }
+  }
+
+  /** The canvas at the zoom: its CSS zoom, `--tz` for what keeps its size on screen, how much a card shows; the bar's state. */
+  private applyZoom(): void {
+    const c = this.canvas;
+    if (!c) return;
+    const z = this.zoom, lv = zoomLevel(z);
+    c.style.zoom = String(z);
+    c.style.setProperty('--tz', String(z));
+    setAttr(c, 'data-zoom', lv === 'near' ? null : lv);
+    setAttr(this.pins, 'data-on', lv === 'near' ? null : lv);
+    setText(this.zoomPct, t('tree.zoom.pct', { v: Math.round(z * 100) }));
+    const min = this.root.isConnected ? this.minZoom() : ZOOM_FLOOR;
+    setAttr(this.zoomOut, 'disabled', z <= min + 1e-3 ? '' : null);
+    setAttr(this.zoomIn, 'disabled', z >= ZOOM_MAX - 1e-3 ? '' : null);
+    setAttr(this.zoomFit, 'disabled', z <= min + 1e-3 ? '' : null);
+  }
+
+  /** « Tout voir »: the whole tree, centred. */
+  private fit(): void {
+    this.setZoom(0);
+    this.view.scrollLeft = (this.view.scrollWidth - this.view.clientWidth) / 2;
+    this.view.scrollTop = (this.view.scrollHeight - this.view.clientHeight) / 2;
+    this.paintPins();
+  }
+
+  /** The zoom keys while the tree is open (D111; app/controls.ts): - and = (or +) a step, 0 the whole tree. */
+  zoomKey(how: 'in' | 'out' | 'fit'): boolean {
+    if (!this.root.isConnected) return false;
+    if (how === 'fit') this.fit();
+    else this.setZoom(how === 'in' ? this.zoom * ZOOM_STEP : this.zoom / ZOOM_STEP);
+    return true;
+  }
+
+  /** The pinned names (D111): one per tier band, one per lane, in this language. */
+  private buildPins(): void {
+    const L = this.layout, loc = locale();
+    const pins: ResearchScreen['pinEls'] = [];
+    for (const col of L.tiers) pins.push({ el: el('span.tr-pin.lettering', { 'data-kind': 'tier', 'data-tier': String(col.tier) }, t('tree.rs.tier', { n: col.tier })), kind: 'tier', x: col.x, y: col.y, w: col.w, h: col.h });
+    for (const lane of L.lanes) {
+      const name = lane.kind === 'plan' ? t(`tree.lane.${lane.id}` as MsgKey) : lane.id === 'trunk' ? t('tree.rs.trunk') : FAMILIES[lane.id as FamilyId].name[loc];
+      pins.push({ el: el('span.tr-pin', { 'data-kind': 'lane', 'data-lane': lane.id }, name), kind: 'lane', x: lane.x, y: lane.y, w: lane.w, h: lane.h });
+    }
+    this.pinEls = pins;
+    this.pins.replaceChildren(...pins.map((p) => p.el));
+  }
+
+  private schedulePins(): void {
+    if (this.pinFrame) return;
+    this.pinFrame = requestAnimationFrame(() => { this.pinFrame = 0; this.paintPins(); });
+  }
+
+  /**
+   * The pinned names where their band is, at the zoom and the scroll: a tier's along the view's top,
+   * centred on the part of its band in view (held there while it is); a lane's along the left edge,
+   * at its band's middle, but for one that would overlap the lane above (the thin plan paths at the
+   * whole tree's size); out of view, hidden. Only while the cards are small (`zoomLevel` mid or far).
+   */
+  private paintPins(): void {
+    if (zoomLevel(this.zoom) === 'near' || !this.root.isConnected) return;
+    const v = this.view, z = this.zoom, sl = v.scrollLeft, st = v.scrollTop, W = v.clientWidth, H = v.clientHeight;
+    const ox = v.offsetLeft + v.clientLeft, oy = v.offsetTop + v.clientTop;
+    const place = (el: HTMLElement, x: number, y: number, mid: boolean): void => {
+      el.hidden = false;
+      el.style.transform = `translate(${Math.round(ox + x)}px, ${Math.round(oy + y)}px)${mid ? ' translateY(-50%)' : ''}`;
+    };
+    const lastY = new Map<number, number>(); // per column of lanes: the plans' block, research's
+    for (const p of [...this.pinEls].sort((a, b) => a.y - b.y)) {
+      p.el.hidden = false; // measured shown
+      const x0 = p.x * z - sl, x1 = (p.x + p.w) * z - sl, y0 = p.y * z - st, y1 = (p.y + p.h) * z - st;
+      if (p.kind === 'tier') {
+        const w = p.el.offsetWidth || 70, left = Math.max(x0, 0), right = Math.min(x1, W);
+        const x = Math.min(Math.max((left + right) / 2 - w / 2, left + 4), right - w - 4), y = Math.max(y0, 0) + 6;
+        if (right - left > w + 8 && y1 > 24 && y < H - 20) place(p.el, x, y, false);
+        else p.el.hidden = true;
+      } else {
+        const x = Math.max(x0, 0) + 6, y = (y0 + y1) / 2, h = p.el.offsetHeight || 20, prev = lastY.get(p.x) ?? -Infinity;
+        if (y > 10 && y < H - 10 && x < W - 40 && x1 > 0 && y - prev >= h) { place(p.el, x, y, true); lastY.set(p.x, y); }
+        else p.el.hidden = true;
+      }
+    }
   }
 
   /** The plans a gate needs (D71: every other plan), and how many are taken. */
@@ -1533,10 +1764,37 @@ export class ResearchScreen {
     kids.push(el('footer.rs-actions', {}, [
       st === 'done' ? el('span.rs-tag', {}, t('tree.unlocked'))
         : el('button.btn.primary', { 'data-unlock-detail': id, disabled: st === 'ready' ? null : '', onclick: () => this.unlock(id) }, t('tree.unlock')),
-      st !== 'done' && st !== 'ready' ? el('small.rs-why', {}, this.why(sim, id)) : null,
+      this.planWhy(st, short),
       short.length ? el('p.rs-desc', {}, this.reserveTip()) : null,
     ]));
     return kids;
+  }
+
+  /**
+   * The one line under a node's action, only for what the pane does not already show (D111; owner,
+   * 2026-10-17: « no need to say it twice, the prerequisites line is enough »): a prerequisite missing
+   * is its ✗ in the list, a material short its coral line in the cost, the gate's plans its bars —
+   * no line for them. What is left is said with its icon, tersely.
+   */
+  private whyLine(key: string, icon: Element | null, text: string): HTMLElement {
+    return el('small.rs-why', { 'data-why': key }, [icon, el('span', {}, text)]);
+  }
+
+  /** A plan: held back by CrierBelt's restart reserve (its cost is in hand, the reserve is not), or not offered yet by the tutorial. */
+  private planWhy(st: string, short: ReadonlyArray<{ item: number; mu: number }>): HTMLElement | null {
+    if (st === 'later') return this.whyLine('later', null, t('tree.later'));
+    if (st === 'poor' && short.length) return this.whyLine('reserve', inkGlyph('crier'), t('tree.reserved', { list: this.shortList(short) }));
+    return null;
+  }
+
+  /** Research: two expertises to choose, the slots full, no idle lab, the purse in the red (a missing prerequisite: none). */
+  private researchWhy(block: string): HTMLElement | null {
+    if (block === 'prereq') return null;
+    const icon = block === 'expertise' ? archiveGlyph()
+      : block === 'no_lab' ? buildingIcon(this.atlas, 'observatory', 16)
+        : block === 'slots' ? el('span.rs-whypips', {}, [el('i.rs-pip', { 'data-on': '' }), el('i.rs-pip', { 'data-on': '' })])
+          : block === 'debt' ? el('span.coin', {}, '◉') : null;
+    return this.whyLine(block, icon, t(`research.block.${block}` as MsgKey));
   }
 
   /** The gate's prerequisites (D71): every plan, counted path by path with a bar each, in the path's colour. */
@@ -1614,7 +1872,7 @@ export class ResearchScreen {
         st === 'done' ? el('span.rs-tag', {}, t('research.done'))
           : proj ? el('button.btn', { type: 'button', onclick: () => this.cancel(id) }, t('research.cancel'))
             : el('button.btn.primary', { type: 'button', disabled: block ? '' : null, onclick: () => this.start(id) }, t('research.start')),
-        st !== 'done' && !proj && block ? el('small.rs-why', {}, block === 'prereq' ? t('research.block.prereq', { list: this.missing(sim, id) }) : t(`research.block.${block}` as MsgKey)) : null,
+        st !== 'done' && !proj && block ? this.researchWhy(block) : null,
       ]),
     ];
     if (st !== 'done' && sim.mods.flags.has('researchQueue')) kids.push(this.queuePart(sim, id, L));
@@ -1720,7 +1978,7 @@ export class ResearchScreen {
     return el('section.rs-queue', {}, [
       el('h4.lettering', {}, [glyph('queue', 18), t('tree.rs.queue')]),
       el('small.rs-qnote', {}, t('tree.rs.queue.note')),
-      waits ? el('small.rs-why', {}, t('tree.rs.queue.wait', { list: this.missing(sim, id) })) : null,
+      waits ? el('small.rs-why', {}, t('tree.rs.queue.wait')) : null, // the prerequisites' list says which
       labs.length ? el('ul.rs-qlabs', {}, rows) : el('small.rs-why', {}, t('tree.rs.noLab.tip')),
     ]);
   }

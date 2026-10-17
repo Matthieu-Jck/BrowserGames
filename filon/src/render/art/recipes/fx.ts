@@ -225,7 +225,7 @@ export function planArt(id: BuildingId, rot: Rot, lv = 1): SpriteArt {
 // ── 2. night rigs: what a machine adds at night, from its kind and footprint ─────
 
 /** Machines that run hot: their lights and work lamps are amber; every other light is cold. */
-export const HOT: ReadonlySet<BuildingId> = new Set<BuildingId>(['kiln', 'kiln_compact', 'brazier', 'ceramic_oven', 'sunheart', 'fumarole_tap', 'arc_furnace', 'forge_press']);
+export const HOT: ReadonlySet<BuildingId> = new Set<BuildingId>(['kiln', 'kiln_compact', 'brazier', 'steam_boiler', 'ceramic_oven', 'sunheart', 'fumarole_tap', 'arc_furnace', 'forge_press']);
 
 export interface NightRig {
   /** A pool of work-lamp light on the ground round the footprint: radius (tiles), strength; amber when hot. */
@@ -236,7 +236,7 @@ export interface NightRig {
 
 /**
  * The night rig of a building, from its kind and size only (the art is redrawn freely): the
- * Heart floodlit with its uplink beacon, landing pads (skydock, trade post) floodlit, hot
+ * Heart floodlit with its uplink beacon, the trade post's landing pad floodlit, hot
  * machines in an amber pool, other big machines in a faint cold one; small blocks, ribbons,
  * masts and the solar bulbs (asleep at night) get none.
  */
@@ -245,8 +245,6 @@ export function nightRig(id: BuildingId, def: BuildingDef): NightRig {
   if (def.kind === 'hearth') return { pool: { r: big * 0.86, alpha: 0.34, warm: false }, beacon: { at: 1, d: 2.4, alpha: 0.95 } };
   if (HOT.has(id)) return { pool: { r: big * 0.8, alpha: 0.32, warm: true } };
   switch (def.kind) {
-    case 'dock':
-      return { pool: { r: big * 0.78, alpha: 0.3, warm: false } };
     case 'trade': // the pad, not its scorched apron (D62): the 3 × 3 in the middle of the 5 × 5
       return { pool: { r: (big - 2) * 0.78, alpha: 0.3, warm: false } };
     case 'drill': case 'excavator': case 'backfiller': case 'machine': case 'lab': case 'storage':

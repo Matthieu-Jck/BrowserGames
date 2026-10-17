@@ -18,7 +18,8 @@
 // `veil` (inside the graded world, over the buildings and items, under the wires so the
 // Électricité view's bold wires stay on top), then draw their own system untinted: flat marks in
 // tile units (`viewFlat`, in `top`, under the overlays) and badges in view world px (`viewMarks`,
-// above the drifters).
+// above `status`). `status` (view world px, graded with the world) is empty since the skydocks'
+// drifters went in D108: kept as the slot for billboards over the land.
 import { Container, Matrix } from 'pixi.js';
 import { isoToView, type Lin } from './projection';
 
@@ -40,7 +41,7 @@ export type LayerName =
   // and of the trade posts' cargo drones (world/cargo-view.ts), and the cargo drones themselves,
   // drawn over their flames and tinted by hand like `fxTop`.
   | 'fxGlow'
-  // The claim's land (D60, world/overlays-view.ts): the parcels held, leased and a sister claim's,
+  // The claim's land (D60, world/overlays-view.ts): the parcels held, leased and a neighbouring base's (D110),
   // the land mode's grid and marks — above the fog (a map of who holds what, readable on land not
   // explored yet: the price says what a parcel holds), below the ghost.
   | 'land'

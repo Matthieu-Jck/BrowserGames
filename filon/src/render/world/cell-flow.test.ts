@@ -125,10 +125,12 @@ describe('items drawn from the cells (D57)', () => {
     sim.run(300);
     const flow = new CellFlow();
     flow.setPieces(buildPieces(sim, beltPiece, 20));
-    const draw = (t: number, v: readonly [number, number, number, number]): string[] => {
-      const o: string[] = [];
-      flow.each(sim, t, v, (it) => o.push(`${it.item}:${it.x.toFixed(4)},${it.y.toFixed(4)},${it.z.toFixed(3)},${it.o},${it.d.toFixed(3)}`));
-      return o.sort();
+    // Each item's print and its exact place: the windows are judged on the exact place, not the
+    // rounded print (an item 7e-13 past a window's margin is out of it, though it prints on the edge).
+    const draw = (t: number, v: readonly [number, number, number, number]): Array<[string, number, number]> => {
+      const o: Array<[string, number, number]> = [];
+      flow.each(sim, t, v, (it) => o.push([`${it.item}:${it.x.toFixed(4)},${it.y.toFixed(4)},${it.z.toFixed(3)},${it.o},${it.d.toFixed(3)}`, it.x, it.y]));
+      return o.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
     };
     let compared = 0;
     for (let k = 0; k < 6; k++) {
@@ -139,8 +141,8 @@ describe('items drawn from the cells (D57)', () => {
       // Windows of 24 tiles across the base, as the screen's at near zoom: what they draw is the whole's, within them.
       for (let y = 440; y < 600; y += 17) for (let x = 440; x < 600; x += 19) {
         const v = [x, y, x + 24, y + 24] as const;
-        const inV = all.filter((s) => { const [px, py] = s.split(':')[1]!.split(',').map(Number) as [number, number]; return px >= v[0] - 2 && px <= v[2] + 2 && py >= v[1] - 2 && py <= v[3] + 2; });
-        expect(draw(t, v)).toEqual(inV);
+        const inV = all.filter(([, px, py]) => px >= v[0] - 2 && px <= v[2] + 2 && py >= v[1] - 2 && py <= v[3] + 2).map(([s]) => s);
+        expect(draw(t, v).map(([s]) => s)).toEqual(inV);
         compared += inV.length;
       }
     }

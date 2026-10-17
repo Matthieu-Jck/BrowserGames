@@ -1,35 +1,39 @@
 // scenario-late.ts — the late debug base's advanced works (scenarios.ts `late`; owner, 2026-10-14:
 // "qui est chargé de developper davantage la sauvegarde late game? actuellement elle n'est pas
 // tres avancée", D66). Three works, each laid where the land allows and worked out as a player would,
-// through commands, then linked by drifters (D61's lesson kept: what is big is drawn once as a
-// plan, scenario-plans.ts, and laid whole where it fits):
+// through commands, each sending its goods where a ribbon can take them (D61's lesson kept: what
+// is big is drawn once as a plan, scenario-plans.ts, and laid whole where it fits):
 //   - the potteries on the tarn's peak (map 2, D63): a pump on the tarn's edge, a conduit along
 //     the rock top into a ceramic oven, its stone climbing from excavators digging the Crown's
-//     inner foot, its ceramic down the terraces on traction ribbons into a skydock on the floor;
+//     inner foot, its ceramic down the terraces on traction ribbons into the Core, which builds with it;
 //   - the Fabrique on the guaranteed copper field past the Crown (`FABRIQUE`): a deep bore, wire,
-//     circuits, gears, servomotors in a tower workshop, Mechanics Data into a second
-//     observatory, thermal cores, round a second trade post that buys glass and plates and sells
-//     the rest; its power on a pylon line over the Crown;
-//   - the Ember Fields mine (when the land has that tier-3 site): a deep bore on embersalt into a
-//     skydock, its power on the same pylon line, out to r 180–280.
-// Drifters fly the ceramic and the embersalt to the Fabrique's skydock. Besides: when the cirque
-// keeps one coal drill, that drill made a deep bore beside where it stood (`boreInPlace`, D85), else
-// a coal pit whose coal is flown home (`coalPit`), a second copper bore whose
-// ore is flown to the cirque's wire mill (`copperHome`), a geothermal plant on a vent where the
-// land has one (`geothermal`). What the land does not allow is skipped and reported
-// (`report.skipped`), never thrown.
+//     circuits, gears, servomotors in an etcher, Mechanics Data into a second research lab, round a
+//     second trade post that buys glass and plates and sells the rest; its power on a pylon line
+//     over the Crown;
+//   - the Ember Fields mine (when the land has that tier-3 site, out at r 180–280): a deep bore on
+//     embersalt into a third trade post set beside it, which sells it where it is mined; its power
+//     on a pylon line.
+// Until D108 drifters flew the ceramic and the embersalt from skydocks to the Fabrique's, where a
+// great workshop made thermal cores of them; with the skydocks gone, no ribbon a player would lay
+// reaches from the far fields (125–350 tiles off the Fabrique on lands 1–3) and the cores went with
+// them. Besides: when the cirque keeps one coal drill, that drill made a deep bore beside where it
+// stood (`boreInPlace`, D85), else a coal pit past the Crown whose coal climbs back over it on
+// traction ribbons into the smelters' line (`coalPit`); a geothermal plant on a vent where the land
+// has one (`geothermal`). (A second copper bore's ore flown home to the cirque's wire mill went with
+// the drifters too: the far drill's climb feeds that mill, `farCopper` in scenarios.ts.) What the land
+// does not allow is skipped and reported (`report.skipped`), never thrown.
 import { BAL } from '@/content/balance';
-import { BUILDING_KIND, buildingIdx, itemIdx } from '@/content/registry';
+import { BUILDING_KIND, buildingDef, buildingIdx, itemIdx } from '@/content/registry';
 import { CENTER } from './constants';
-import { checkpoint, hearthNetwork, join, lay, layTo, powerLine, pylonLine, rollback, routeLevel, routeOver, sideGoalsOver, spotsNear, type BeltTiles } from './dev';
+import { checkpoint, hearthNetwork, lay, layTo, powerLine, pylonLine, rollback, routeLevel, routeOver, sideGoals, sideGoalsOver, spotsNear, type BeltTiles } from './dev';
 import { footprint, worldPorts, type WorldPort } from './entities';
 import type { DrillNode } from './flow/nodes';
-import { gap2 } from './power/links';
+import { gap2, linkPoint } from './power/links';
 import { layPlan, planSpots, type Laid, type PlanSpec } from './scenario-plans';
 import type { Builder } from './scenarios';
 import type { Sim } from './state';
 import { inReach } from './systems/landscape';
-import { isWater, opposite, T, type Rot } from './types';
+import { isWater, opposite, T, type Ent, type Rot } from './types';
 import { inWorld, tileIndex } from './world/grid';
 import { parcelAt } from './world/land';
 import { MapGen } from './world/mapgen';
@@ -47,12 +51,12 @@ import { MapGen } from './world/mapgen';
  *   sorter (I) sends the plates aside, down to the gear workshop (G), the glass on along a glass
  *   bus (row 2) whose routers drop it, across the copper bus on junctions, into the circuit
  *   workshops' other inputs (C, c); each mill hands its wire straight into its workshop below;
- * - circuits and gears down to a router each, dealing them to the etcher (T: servomotors,
- *   three times as fast as an electronics workshop) and to the assembly workshop (K: thermal
- *   cores); a data collector (J, D68) hands its files straight down into the research lab O;
- * - the skydock (D) receives the ceramic flown from the potteries and the embersalt flown from
- *   the Ember Fields: ceramic to K, embersalt to K, the rest down to the sell line.
- * Without an Ember Fields mine (`E` dropped) K and its lines go, junctions turned back to ribbons.
+ * - the gears and the circuits down to the etcher (T: servomotors, three times as fast as an
+ *   electronics workshop), what it leaves of them onto the sell line; a data collector (J, D68)
+ *   hands its files straight down into the research lab O.
+ * Until D108 a skydock (D) stood on its right, the potteries' ceramic and the Ember Fields'
+ * embersalt flown into it, and a great workshop (K) made thermal cores of them with the circuits:
+ * both went with the drifters, and with them the sell line's second spill row.
  * Checked on a flat world in all four turns: every port fed, no line ending nowhere.
  */
 export const FABRIQUE: PlanSpec = {
@@ -63,50 +67,29 @@ export const FABRIQUE: PlanSpec = {
     '↑PPPPP v .+R<+R<<e',
     '↑PPPPP v  vM vN',
     '↑      v  vM vN',
-    '↑     GG  CC cc  DDD',
-    '↑     GG  CC cc  DDD',
-    '↑      v   v  v  DDD',
-    '↑<<<<<<%.  v<<<  v v',
-    '↑<<<<<<+<<<+<<<<<%.v',
-    '↑      v^<<%.    v v',
-    '↑      v   v     v v',
-    '↑     .R.  v     v v',
-    '↑     v+<<<R>v   v v',
-    '↑     vv   . v . v v',
-    '↑     vv    v+<R<+<<',
-    '↑     vv    v>vvv<',
-    '↑    TTT  JJv KKK',
-    '↑    TTT  JJv KKK',
-    '↑    TTT   vv KKK',
-    '↑     v  OOOv  v',
-    '↑     v  OOOv  v',
-    '↑     v  OOOv  v',
-    '↑<<<<<<<<<<<<<<<',
-  ],
-  mask: [
-    '', '', '', '', '', '', '', '', '',
-    '                 E',
-    ' EEEEEE EEE EEEEEEE',
-    '                 E',
-    '                 E',
-    '                 E',
-    '            EE   E',
-    '             E E E',
-    '',
-    '             EEEEE',
-    '              EEE',
-    '              EEE',
-    '              EEE',
-    '               E',
-    '               E',
-    '               E',
-    '         EEEEEEE',
+    '↑     GG  CC cc',
+    '↑     GG  CC cc',
+    '↑      v   v  v',
+    '↑<<<<<<%.  v<<<',
+    '↑<<<<<<+<<<%.',
+    '↑      v   v',
+    '↑      v   v',
+    '↑     .R.  v',
+    '↑     v+<<<<',
+    '↑     vv',
+    '↑     vv',
+    '↑     vv',
+    '↑    TTT  JJ',
+    '↑    TTT  JJ',
+    '↑    TTT   v',
+    '↑     v  OOO',
+    '↑     v  OOO',
+    '↑     v  OOO',
+    '↑<<<<<<',
   ],
   swift: [[6, 2]],
-  swaps: { E: [[7, 10, 'v'], [11, 10, 'v'], [13, 16, '<'], [15, 16, '<'], [17, 16, '<']] },
   key: {
     P: { role: 'post2', def: 'trade_post', turn: 3 },
-    D: { role: 'dockW', def: 'skydock' },
     M: { role: 'mill2', def: 'wire_mill', recipe: 'copper_wire' },
     N: { role: 'mill3', def: 'wire_mill', recipe: 'copper_wire' },
     C: { role: 'circuits', def: 'workshop', recipe: 'circuit' },
@@ -115,16 +98,12 @@ export const FABRIQUE: PlanSpec = {
     T: { role: 'bells', def: 'etcher', recipe: 'pace_bell' },
     J: { role: 'data2', def: 'data_collector' },
     O: { role: 'observatory2', def: 'observatory' },
-    K: { role: 'cores', def: 'great_workshop', recipe: 'thermal_core' },
     I: { role: 'sorter2', def: 'inverted_sorter', filter: 'iron_plate' },
     R: { def: 'router' },
     '%': { def: 'overflow_gate' },
     e: { role: 'works.in', def: 'mark', dir: 3 },
   },
 };
-
-/** The Fabrique dock's outlets (the skydock's two out ports, by port index): ceramic, embersalt. */
-const DOCK_OUT = { ceramic: 2, embersalt: 3 } as const;
 
 /**
  * What the second post buys a minute: the circuit workshops' glass and the gear workshop's
@@ -143,9 +122,9 @@ export function toward(p: readonly [number, number], q: readonly [number, number
   return [p[0] + Math.round((dx * k) / d), p[1] + Math.round((dy * k) / d)];
 }
 
-/** May the claim build on a tile: its land, or a parcel no sister claim owns (CrierBelt's, to buy)? */
+/** May the claim build on a tile: its land, or a parcel no neighbouring base holds (CrierBelt's, to buy; D110)? */
 export function buyable(sim: Sim, x: number, y: number): boolean {
-  return sim.land.covers(x, y) || sim.land.sister(parcelAt(x, y)) < 0;
+  return sim.land.covers(x, y) || sim.land.neighbour(parcelAt(x, y)) < 0;
 }
 
 /** The tile nearest a point within `r` that passes `ok` (revealed), or null. */
@@ -226,14 +205,19 @@ type Tarn = { readonly x: number; readonly y: number; readonly level: number };
  * on its side toward the Heart; a pump on the tarn's edge and a conduit along the rock top into it
  * (water stays on its level: no lift for a conduit); its stone from excavators on the cirque's
  * floor digging the Crown's lower terraces nearby (never the peak's rock round the tarn), their
- * lines merging and climbing on traction ribbons; its ceramic down the terraces into a skydock
- * on the floor, whence drifters fly it to the Fabrique. Each oven spot tried whole, taken back
- * up when a part cannot be laid. Whether they stand.
+ * lines merging and climbing on traction ribbons; its ceramic down the terraces into a silo at the
+ * peak's foot, and from it on along the floor into the Core, which builds with it — a free inlet of
+ * the Core's, else the side of a line that ends there, across the lines in the way on junctions
+ * (D108: into a skydock on the floor before, whence drifters flew it to the Fabrique; the climb
+ * down finds no way through the lines round the Core, which only a floor line crosses). Each oven
+ * spot tried whole, taken back up when a part cannot be laid. Whether they stand.
  */
 export function potteries(b: Builder): boolean {
-  const sim = b.sim, tarn = sim.grid.source.tarn;
+  // The tarn's peak (maps 2–3), or the spring's on map 4 (D115: the peak kept, dry, its stream's
+  // first tiles water at its level, where the pump stands).
+  const sim = b.sim, tarn = sim.grid.source.tarn ?? sim.grid.source.spring;
   if (!tarn) { b.skip('potteries:tarn'); return false; }
-  b.affordAll(['ceramic_oven', 1], ['pump', 1], ['conduit', 24], ['skydock', 1], ['excavator', POTTERY_DIGGERS]);
+  b.affordAll(['ceramic_oven', 1], ['pump', 1], ['conduit', 24], ['silo', 1], ['excavator', POTTERY_DIGGERS]);
   const inner = toward([tarn.x, tarn.y], b.heart, 5);
   const ovens = spotsNear(sim, 'ceramic_oven', inner, { r: 6, onRock: true, toward: b.heart })
     .filter(([x, y]) => sim.grid.level(x, y) === tarn.level).slice(0, 24);
@@ -285,19 +269,24 @@ function pottery(b: Builder, x: number, y: number, rot: Rot, tarn: Tarn): boolea
   if (!ps) return false;
   const pump = sim.place('pump', ps.x, ps.y, ps.rot);
   if (!pump.ok || sim.placeBelts('conduit', ps.path) !== ps.path.length) return false;
-  // The skydock on the floor below the peak, toward the Heart; the ceramic down to it.
-  const foot = toward([tarn.x, tarn.y], b.heart, 15);
-  let dock = 0;
-  let down: OverPath | null = null;
-  for (const [dx, dy, dr] of spotsNear(sim, 'skydock', foot, { r: 7, toward: [x, y] }).slice(0, 12)) {
-    const d = sim.place('skydock', dx, dy, dr);
-    if (!d.ok) continue;
-    down = routeOver(sim, [out.fx, out.fy], inlets(sim, d.id!), 20_000);
-    if (down && layOver(b, down)) { dock = d.id!; break; }
+  // The ceramic down the terraces into a silo on the floor below the peak, its outlets toward the
+  // Core; from the silo on into the Core.
+  let silo = 0;
+  let down: OverPath | null = null, on: BeltTiles | null = null;
+  b.crossings();
+  for (const [sx, sy, sr] of siloSpots(sim, tarn, b.heart)) {
+    const s = sim.place('silo', sx, sy, sr);
+    if (!s.ok) continue;
+    down = routeOver(sim, [out.fx, out.fy], inlets(sim, s.id!), 20_000);
+    if (down && layOver(b, down)) {
+      on = layTo(sim, s.id!, intoHeart(sim), -1, 40_000);
+      if (on) { silo = s.id!; break; }
+    }
     if (down) unlay(sim, down);
-    sim.remove(dx, dy);
+    down = null;
+    sim.remove(sx, sy);
   }
-  if (!dock || !down) return false;
+  if (!silo || !down || !on) return false;
   // Stone: excavators on the floor against the Crown's foot near the peak (never digging rock of
   // the tarn's level: the peak round it), the first one's line climbing into the oven, the others'
   // into the side of a line already laid.
@@ -339,11 +328,63 @@ function pottery(b: Builder, x: number, y: number, rot: Rot, tarn: Tarn): boolea
   if (!diggers.length) return false;
   b.ids.oven = oven;
   b.ids.pump = pump.id!;
-  b.ids.dockT = dock;
+  b.ids.potSilo = silo;
   b.lines.ceramic = down.map(([lx, ly, lr]) => [lx, ly, lr]);
+  b.lines['ceramic.on'] = on;
   b.recipe('oven', 'ceramic');
-  b.wire('oven', 'pump', 'dockT', ...diggers.map((_, k) => `digger${k + 1}`));
+  b.wire('oven', 'pump', ...diggers.map((_, k) => `digger${k + 1}`));
   return true;
+}
+
+/** The potteries' silo: how many spots are tried round each foot. */
+const SILO_TRIES = 4;
+
+/**
+ * Where the potteries' silo may stand, best first: on the floor below the peak 15 tiles toward the
+ * Core, then 19 and 11, then 15 tiles off that line by 30° either way — the straight line may hold
+ * something already (D115: map 4's spring runs down to a pool on the floor's edge, a boiler on its
+ * shore). A few spots round each foot, none twice. The 30° turn in integers (cos 866‰, sin 500‰):
+ * no trigonometry in the engine.
+ */
+function siloSpots(sim: Sim, tarn: Tarn, heart: readonly [number, number]): Array<[number, number, Rot]> {
+  const from: [number, number] = [tarn.x, tarn.y];
+  const dx = heart[0] - tarn.x, dy = heart[1] - tarn.y;
+  const feet = [15, 19, 11].map((k) => toward(from, heart, k));
+  for (const s of [500, -500]) {
+    const aside: [number, number] = [tarn.x + Math.round((dx * 866 - dy * s) / 1000), tarn.y + Math.round((dx * s + dy * 866) / 1000)];
+    feet.push(toward(from, aside, 15));
+  }
+  const seen = new Set<string>();
+  const out: Array<[number, number, Rot]> = [];
+  for (const foot of feet) {
+    let n = 0;
+    for (const [x, y, r] of spotsNear(sim, 'silo', foot, { r: 5, toward: heart })) {
+      if (n >= SILO_TRIES) break;
+      const key = `${x},${y},${r}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push([x, y, r]);
+      n++;
+    }
+  }
+  return out;
+}
+
+/**
+ * The ways into the Core for a floor line: its free inlets, and the side of every line that ends in
+ * it (each free floor tile beside one, and the way from it into the line) — the Core takes whatever
+ * comes, so a line merged into one of its own is a way in when its inlets are taken.
+ */
+function intoHeart(sim: Sim): Map<number, Rot> {
+  sim.ensureCompiled();
+  const g = sim.graph;
+  const goals = inlets(sim, sim.hearthId);
+  for (const c of g.chains) {
+    if (c.fluid || !g.hearth || !c.outE.some((e) => g.nodes[g.eDst[e]!] === g.hearth)) continue;
+    const tiles: BeltTiles = Array.from(c.tiles, (t) => { const x = t % 1024, y = (t - x) / 1024; return [x, y, sim.entityAt(x, y)?.rot ?? 0] as const; });
+    for (const [t, r] of sideGoals(sim, tiles)) if (!goals.has(t)) goals.set(t, r);
+  }
+  return goals;
 }
 
 // ── the Fabrique on the copper field ─────────────────────────────────────────
@@ -355,44 +396,56 @@ function copperField(sim: Sim): [number, number] | null {
 }
 
 /**
- * Survey beacons out to a far point (each lifts the fog 40 tiles round it, D48's scouting): from the
- * Heart along the way there, one where the fog begins, until the point lies in the clear — the
- * pylons that carry the power out stand only on revealed land.
+ * A pylon line out to a far point, walking the fog back (D117: no survey beacon — a pylon lifts the
+ * fog as far as its wires reach): from the grid's pillar nearest the point, each pylon on the
+ * revealed tile within a wire's reach that comes nearest the point, wired to the last, until the
+ * point lies in the clear. `wireFar` then wires the works out there from its last pylon.
  */
 function surveyTo(b: Builder, at: readonly [number, number]): void {
   const sim = b.sim;
-  let len = 0;
-  const dx0 = at[0] - CENTER, dy0 = at[1] - CENTER;
-  while ((len + 1) * (len + 1) <= dx0 * dx0 + dy0 * dy0) len++;
-  for (let k = 0; k < 12 && !sim.revealed(at[0], at[1]); k++) {
-    // The farthest revealed tile along the way, a couple of tiles back from the fog's edge.
-    let d = 0;
-    while (d < len) { const [x, y] = toward(b.heart, at, d + 1); if (!sim.revealed(x, y)) break; d++; }
-    const p = toward(b.heart, at, Math.max(0, d - 2));
-    b.affordDef('beacon');
-    let placed = false;
-    for (let r = 0; r <= 6 && !placed; r++) {
-      for (let dy = -r; dy <= r && !placed; dy++) {
-        for (let dx = -r; dx <= r && !placed; dx++) {
-          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-          const c = sim.canPlace('beacon', p[0] + dx, p[1] + dy, 0);
-          if (c.ok && !c.replaces.length) placed = sim.place('beacon', p[0] + dx, p[1] + dy, 0).ok;
-        }
+  const pylon = buildingIdx('pylon');
+  const R = linkPoint(pylon, sim.mods)?.range ?? 0;
+  if (!R || !sim.unlocked(buildingDef(pylon).unlock)) { if (!sim.revealed(at[0], at[1])) b.skip('survey'); return; }
+  const to = (x: number, y: number): number => (x - at[0]) * (x - at[0]) + (y - at[1]) * (y - at[1]);
+  for (let k = 0; k < 16 && !sim.revealed(at[0], at[1]); k++) {
+    // The pillar of the grid nearest the point with a wire to spare.
+    let src: Ent | undefined;
+    for (const id of [...hearthNetwork(sim)].sort((p, q) => p - q)) {
+      const e = sim.ents.get(id), lp = e ? linkPoint(e.def, sim.mods) : null;
+      if (!e || !lp || sim.links.degree(e.id) >= lp.slots) continue;
+      if (!src || to(e.x, e.y) < to(src.x, src.y)) src = e;
+    }
+    if (!src) break;
+    // The tiles within its reach, nearest the point first, that bring the line nearer.
+    const near: Array<[number, number, number]> = [];
+    for (let y = src.y - R; y <= src.y + R; y += 2) {
+      for (let x = src.x - R; x <= src.x + R; x += 2) {
+        if (!inWorld(x, y) || !sim.revealed(x, y) || gap2(src, { def: pylon, x, y, rot: 0 }) > R * R) continue;
+        const d = to(x, y);
+        if (d < to(src.x, src.y)) near.push([x, y, d]);
       }
     }
-    if (!placed) { b.skip('survey'); return; }
+    near.sort((p, q) => p[2] - q[2] || p[1] - q[1] || p[0] - q[0]);
+    b.affordDef('pylon');
+    let placed = false;
+    for (const [x, y] of near.slice(0, 40)) {
+      const c = sim.canPlace('pylon', x, y, 0);
+      if (!c.ok || c.replaces.length) continue;
+      const r = sim.place('pylon', x, y, 0);
+      if (!r.ok) continue;
+      // A pylon placed in reach wires itself to the nearest pillar; else it is wired to the line's end.
+      if (sim.links.has(src.id, r.id!) || sim.link(src.id, r.id!).ok || hearthNetwork(sim).has(r.id!)) { placed = true; break; }
+      sim.remove(x, y);
+    }
+    if (!placed) break;
   }
+  if (!sim.revealed(at[0], at[1])) b.skip('survey');
 }
 
-/** Buy the parcels round a point (the fog lifts with them) and set a survey beacon there; the way there surveyed first. */
-function claimAround(b: Builder, at: readonly [number, number], r: number, role: string): void {
+/** Buy the parcels round a point (the fog lifts with them); the way there surveyed first, by a pylon line. */
+function claimAround(b: Builder, at: readonly [number, number], r: number): void {
   surveyTo(b, at);
   b.landAround(at, r);
-  b.affordDef('beacon');
-  for (const [x, y, rot] of spotsNear(b.sim, 'beacon', at, { r: 9 }).slice(0, 20)) {
-    const e = b.sim.place('beacon', x, y, rot);
-    if (e.ok) { b.ids[role] = e.id!; return; }
-  }
 }
 
 /** Take a laid plan back up (its ribbons, blocks and buildings). */
@@ -402,23 +455,22 @@ function unlayPlan(sim: Sim, l: Laid): void {
 
 /**
  * The Fabrique (`FABRIQUE`): the copper field's parcels bought, a deep bore on its copper, the
- * plan laid where it fits nearest the bore (its land bought; a sister claim's left alone), the
- * bore's line into the plan's copper entry, the post's standing orders; power by a pylon line from the base's grid, then masts. `ember`: the Ember
- * Fields mine is coming, so the thermal cores' part is laid too. Whether it stands.
+ * plan laid where it fits nearest the bore (its land bought; a neighbouring base's left alone), the
+ * bore's line into the plan's copper entry, the post's standing orders; power by a pylon line from
+ * the base's grid, then masts. Whether it stands.
  */
-export function fabrique(b: Builder, ember: boolean): boolean {
+export function fabrique(b: Builder): boolean {
   const sim = b.sim;
   const field = copperField(sim);
   if (!field) { b.skip('fabrique:copper'); return false; }
-  claimAround(b, field, 10, 'beaconCu');
+  claimAround(b, field, 10);
   const bore = b.put('boreCu', 'deep_bore', field, { item: 'copper_ore', r: 6, toward: b.heart });
   if (!bore) return false;
-  const drop = new Set(ember ? [] : ['E']);
   // Where the plan fits round a point between the bore and the Heart, its copper entry nearest the
   // bore first: a short line, not one round the plan's sell line.
   const [bx, by] = b.centre('boreCu');
   const entryOf = (cells: ReadonlyArray<readonly [number, number, string]>): readonly [number, number] => { const c = cells.find(([, , ch]) => ch === 'e'); return c ? [c[0], c[1]] : [0, 0]; };
-  const spots = planSpots(sim, FABRIQUE, toward([bx, by], b.heart, 16), 22, (x, y) => buyable(sim, x, y), drop, 12)
+  const spots = planSpots(sim, FABRIQUE, toward([bx, by], b.heart, 16), 22, (x, y) => buyable(sim, x, y), new Set(), 12)
     .map(([plan, ax, ay], k) => { const [i, j] = entryOf(plan.cells); return [plan, ax, ay, (ax + i - bx) ** 2 + (ay + j - by) ** 2, k] as const; })
     .sort((p, q) => p[3] - q[3] || p[4] - q[4]);
   let laid: Laid | null = null;
@@ -439,53 +491,9 @@ export function fabrique(b: Builder, ember: boolean): boolean {
   const post = laid.ids.post2!;
   const ask = (it: string): number => Math.floor((sim.prices.ask[itemIdx(it)]! * 3) / 2);
   for (const [item, n] of Object.entries(FABRIQUE_BUY)) if (typeof sim.addImport(post, item, n, ask(item)) !== 'number') b.skip(`import:${item}`);
-  // The skydock's outlets: the ceramic down to J and K, the embersalt to K.
-  sim.ensureCompiled();
-  if (!sim.setPortItem(laid.ids.dockW!, DOCK_OUT.ceramic, 'ceramic')) b.skip('dockW:ceramic');
-  if (ember && !sim.setPortItem(laid.ids.dockW!, DOCK_OUT.embersalt, 'embersalt')) b.skip('dockW:embersalt');
   // Power: a pylon line over the Crown to the post, then masts to the rest.
   wireFar(b, 'post2');
-  b.wire('boreCu', 'dockW', 'mill2', 'mill3', 'circuits', 'circuits2', 'gears2', 'bells', 'data2', 'observatory2', 'cores');
-  return true;
-}
-
-/**
- * Copper flown home: a second bore (or drill) on the copper field, its ore into the Fabrique's skydock,
- * drifters flying it to the potteries' skydock in the cirque, whose outlet joins the line into the
- * cirque's wire mill (the tutorial's tired vein gives it 2.5 ore a minute). Whether it stands.
- */
-export function copperHome(b: Builder): boolean {
-  const sim = b.sim, dockW = b.ids.dockW, dockT = b.ids.dockT, line = b.lines['copper'];
-  const field = copperField(sim);
-  if (!dockW || !dockT || !b.ids.mill || !line || !field) return false;
-  // A deep bore where the field still has room for one, else a drill (20 ore a minute: what the mill takes).
-  const bore = b.optional(() => b.put('boreCu2', 'deep_bore', field, { item: 'copper_ore', r: 7, toward: b.centre('dockW') }))
-    || b.put('boreCu2', 'drill', field, { item: 'copper_ore', r: 8, toward: b.centre('dockW') });
-  if (!bore) return false;
-  b.crossings();
-  const feed = layTo(sim, bore, inlets(sim, dockW), -1, 40_000);
-  if (!feed) { b.skip('line:boreCu2'); const e = sim.ents.get(bore)!; sim.remove(e.x, e.y); delete b.ids.boreCu2; return false; }
-  b.lines['boreCu2'] = feed;
-  const path = join(sim, dockT, line);
-  const port = path ? worldPorts(sim.ents.get(dockT)!).find((p) => p.io === 'out' && p.fx === path[0]![0] && p.fy === path[0]![1]) : undefined;
-  if (!path || !port) { b.skip('line:copperHome'); if (path) unlay(sim, path); return false; }
-  sim.ensureCompiled();
-  sim.setPortItem(dockT, port.idx, 'copper_ore');
-  b.lines['copperHome'] = path;
-  b.wire('boreCu2');
-  flyRoute(b, 'dockW', 'dockT', 'copper_ore', 1);
-  // The cirque's copper drills upstream of the join — the tired vein's and those the cirque's mining
-  // joined to its line (`copper.*`, D82) — stand backed up once the mill's 20 a minute come home
-  // (D85; D104's layout showed it on land 3): taken up, the joiners' own short lines with them; the
-  // vein's line stays, carrying the flown copper.
-  const belts = new Set([buildingIdx('ribbon'), buildingIdx('swift_ribbon')]);
-  for (const role of Object.keys(b.ids).filter((r) => r === 'copper' || r.startsWith('copper.')).sort()) {
-    const e = sim.ents.get(b.ids[role]!);
-    if (role !== 'copper') for (const [x, y, r] of b.lines[role] ?? []) { const o = sim.entityAt(x, y); if (o && belts.has(o.def) && o.rot === r) sim.remove(x, y); }
-    if (e) sim.remove(e.x, e.y);
-    delete b.ids[role];
-    if (role !== 'copper') delete b.lines[role];
-  }
+  b.wire('boreCu', 'mill2', 'mill3', 'circuits', 'circuits2', 'gears2', 'bells', 'data2', 'observatory2');
   return true;
 }
 
@@ -499,34 +507,37 @@ export function emberSite(sim: Sim): [number, number] | null {
 }
 
 /**
- * The Ember Fields mine (tier 3: embersalt for the thermal cores, Atlas Lore, tr6): the site's
- * parcels bought (the fog lifts with them; a beacon besides), a deep bore on the embersalt and a
- * skydock its line runs into, both on the base's grid by a pylon line from the nearest pillar
- * (the Fabrique's). Whether it stands.
+ * The Ember Fields mine (tier 3: embersalt, a unique the base sells; Atlas Lore, tr6): the site's
+ * parcels bought (the fog lifts with them), a deep bore on the embersalt and,
+ * beside it, a third trade post (The Crier House, cmK) whose entrance takes the bore's line: the
+ * embersalt is sold where it is mined, CrierBelt's lift on the spot (D108: a skydock before, whence
+ * drifters flew it to the Fabrique's thermal cores — 125 to 350 tiles from the field on lands 1–3,
+ * no line a player would lay). The post buys nothing: its exit stays bare. Both on the base's grid by
+ * a pylon line from the nearest pillar. Whether it stands.
  */
 export function emberMine(b: Builder): boolean {
   const sim = b.sim, at = emberSite(sim);
   if (!at) return false;
-  claimAround(b, at, 9, 'beaconE');
+  claimAround(b, at, 9);
   const bore = b.put('boreE', 'deep_bore', at, { item: 'embersalt', r: 5, toward: b.heart });
   if (!bore) return false;
-  b.affordDef('skydock');
-  let dock = 0;
-  for (const [x, y, rot] of spotsNear(sim, 'skydock', toward(b.centre('boreE'), b.heart, 6), { r: 6, toward: b.centre('boreE') }).slice(0, 16)) {
-    const d = sim.place('skydock', x, y, rot);
+  b.affordDef('trade_post');
+  let post = 0;
+  for (const [x, y, rot] of spotsNear(sim, 'trade_post', toward(b.centre('boreE'), b.heart, 7), { r: 7, toward: b.centre('boreE') }).slice(0, 16)) {
+    const d = sim.place('trade_post', x, y, rot);
     if (!d.ok) continue;
     const line = lay(sim, bore, d.id!);
-    if (line) { dock = d.id!; b.lines.ember = line; break; }
+    if (line) { post = d.id!; b.lines.ember = line; break; }
     sim.remove(x, y);
   }
-  if (!dock) { b.skip('dockE'); const e = sim.ents.get(bore)!; sim.remove(e.x, e.y); delete b.ids.boreE; return false; }
-  b.ids.dockE = dock;
+  if (!post) { b.skip('postE'); const e = sim.ents.get(bore)!; sim.remove(e.x, e.y); delete b.ids.boreE; return false; }
+  b.ids.postE = post;
   wireFar(b, 'boreE');
-  b.wire('dockE');
+  b.wire('postE');
   return true;
 }
 
-// ── the coal pit: coal flown home ────────────────────────────────────────────
+// ── the coal pit: coal over the Crown ────────────────────────────────────────
 
 /** Coal drills and bores on the cirque's own coal (inside the Crown's foot). */
 function cirqueCoalDrills(sim: Sim, crownOuter: number): number {
@@ -542,7 +553,7 @@ function cirqueCoalDrills(sim: Sim, crownOuter: number): number {
 /**
  * The cirque's coal drill made a deep bore beside where it stood (D85): on the deposit's free coal,
  * its ribbon into the coal line's first tile from straight behind (the drill's old outlet), more
- * coal for the smelters — where that line is too short and hemmed in for a skydock's outlet to join
+ * coal for the smelters — where that line is too short and hemmed in for a line from outside to join
  * it (a drill two tiles from the smelters' router). Its other outlet faces open ground (no coal fed
  * into another line). Whether the bore stands; else the drill stands again as it was.
  */
@@ -602,9 +613,11 @@ const COAL_PIT_R = 130;
 
 /**
  * The coal pit, for a cirque short of coal (one drill on its deposit: the tutorial's lines cut the
- * rest of it up): a deep bore on the nearest coal past the Crown into a skydock, and a skydock in
- * the cirque by the smelters' coal line, its outlet joining that line ahead of both smelters;
- * drifters between. Whether it stands.
+ * rest of it up): a deep bore on the nearest coal past the Crown, its coal back over the Crown on
+ * traction ribbons into the side of the smelters' coal line, ahead of both smelters (before the
+ * first routing block set on it: the glass smelter's branch) — D108: flown home by drifters between
+ * two skydocks before. Whether it stands; else the bore comes back up, rather than stand with
+ * nowhere to send its coal (D85).
  */
 export function coalPit(b: Builder, crownOuter: number): boolean {
   const sim = b.sim;
@@ -612,47 +625,29 @@ export function coalPit(b: Builder, crownOuter: number): boolean {
   if (!line || cirqueCoalDrills(sim, crownOuter) >= 2 || boreInPlace(b)) return false;
   const at = coalDeposit(sim, crownOuter + 4, COAL_PIT_R);
   if (!at) { b.skip('coalPit'); return false; }
-  claimAround(b, at, 8, 'beaconC');
+  claimAround(b, at, 8);
   const bore = b.put('boreC', 'deep_bore', at, { item: 'coal', r: 4, toward: b.heart });
   if (!bore) return false;
-  b.affordDef('skydock', 2);
-  let pit = 0;
-  for (const [x, y, rot] of spotsNear(sim, 'skydock', toward(b.centre('boreC'), b.heart, 6), { r: 6, toward: b.centre('boreC') }).slice(0, 16)) {
-    const d = sim.place('skydock', x, y, rot);
-    if (!d.ok) continue;
-    const l = lay(sim, bore, d.id!);
-    if (l) { pit = d.id!; b.lines['boreC'] = l; break; }
-    sim.remove(x, y);
-  }
-  if (!pit) { b.skip('dockM'); const e = sim.ents.get(bore)!; sim.remove(e.x, e.y); delete b.ids.boreC; return false; }
-  b.ids.dockM = pit;
-  // The cirque's dock: its outlet into the side of the coal line, ahead of both smelters (before
-  // the first routing block set on it: the glass smelter's branch).
   const k = line.findIndex(([x, y]) => { const e = sim.entityAt(x, y); return !!e && BUILDING_KIND[e.def] === 'fork'; });
   const upstream = k >= 1 ? line.slice(0, k + 1) : line;
-  let home = 0;
-  b.crossings();
-  for (const [x, y, rot] of spotsNear(sim, 'skydock', b.middle('coal'), { r: 14 }).slice(0, 30)) {
-    const d = sim.place('skydock', x, y, rot);
-    if (!d.ok) continue;
-    const path = join(sim, d.id!, upstream);
-    const port = path ? worldPorts(sim.ents.get(d.id!)!).find((p) => p.io === 'out' && p.fx === path[0]![0] && p.fy === path[0]![1]) : undefined;
-    if (path && port) { sim.ensureCompiled(); sim.setPortItem(d.id!, port.idx, 'coal'); home = d.id!; b.lines['coalHome'] = path; break; }
-    if (path) unlay(sim, path);
-    sim.remove(x, y);
+  const goals = sideGoalsOver(sim, upstream);
+  let home: OverPath | null = null;
+  for (const p of worldPorts(sim.ents.get(bore)!).filter((q) => q.io === 'out')) {
+    if (!goals.size) break;
+    home = routeOver(sim, [p.fx, p.fy], goals, 40_000);
+    if (home && layOver(b, home)) break;
+    if (home) unlay(sim, home);
+    home = null;
   }
   if (!home) {
-    // No home for the coal: the pit's bore and dock come back up, rather than stand on no grid with nowhere to send it (D85).
-    b.skip('dockC');
-    for (const role of ['dockM', 'boreC']) { const e = sim.ents.get(b.ids[role]!); if (e) sim.remove(e.x, e.y); delete b.ids[role]; }
-    if (b.lines['boreC']) unlay(sim, b.lines['boreC']);
-    delete b.lines['boreC'];
+    b.skip('coalPit:line');
+    const e = sim.ents.get(bore);
+    if (e) sim.remove(e.x, e.y);
+    delete b.ids.boreC;
     return false;
   }
-  b.ids.dockC = home;
+  b.lines['coalHome'] = home.map(([x, y, r]) => [x, y, r]);
   wireFar(b, 'boreC');
-  b.wire('dockM', 'dockC');
-  flyRoute(b, 'dockM', 'dockC', 'coal', 1);
   return true;
 }
 
@@ -683,18 +678,6 @@ export function geothermal(b: Builder): boolean {
     return true;
   }
   return false;
-}
-
-/** Drifters bought for a dock and a route of `ships` of them carrying `item` to another. */
-export function flyRoute(b: Builder, from: string, to: string, item: string, ships: number): void {
-  const sim = b.sim, a = b.ids[from], z = b.ids[to];
-  if (!a || !z) { b.skip(`route:${item}`); return; }
-  sim.ensureCompiled();
-  for (let i = 0; i < ships; i++) {
-    b.afford(Object.entries(BAL.drifterCost));
-    if (!sim.buyDrifter(a)) { b.skip(`drifter:${from}`); return; }
-  }
-  if (sim.addRoute(a, z, item, ships) <= 0) b.skip(`route:${item}`);
 }
 
 /** Every remote construction landed (their kites): the build runs on until the last. */

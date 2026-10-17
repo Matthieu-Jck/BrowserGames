@@ -74,7 +74,6 @@ export const TERMINALS: Readonly<Partial<Record<BuildingId, readonly Terminal[]>
   pump: [roof(0.77, 0.74, 0.62, 0.72)],
   backfiller: [roof(1.6, 0.3, 2.15, 0.22)],
   sand_collector: [roof(1.76, 0.26, 0.9)],
-  skydock: [roof(1.74, 2.02, 1.02)],
   wire_mill: [roof(0.8, 1.0, 0.55, 0.4)],
   workshop: [roof(1.72, 0.3, 1.0)], // on the electronics line's control cabinet
   press: [roof(0.3, 1.74, 1.05)],
@@ -109,6 +108,7 @@ export const TERMINALS: Readonly<Partial<Record<BuildingId, readonly Terminal[]>
   sifter: [roof(1.34, 1.07, 1.52, 0.2)],
   arc_furnace: [roof(1.76, 0.26, 1.15, 0.22)],
   electric_smelter: [roof(1.74, 0.3, 1.42, 0.22)], // on its inverter cabinet (D106), its heavy cable down into the gland beside it
+  steam_boiler: [roof(2.1, 0.55, 1.69, 0.25)], // on the dynamo's field drum (D114; recipes/buildings.ts `SB`), clear of the flywheel beyond it
   wire_mill_double: [roof(1.0, 1.72, 0.95, 0.25)],
   forge_press: [roof(2.74, 2.3, 1.05)],
   etcher: [roof(2.67, 1.2, 1.15)],
@@ -117,7 +117,6 @@ export const TERMINALS: Readonly<Partial<Record<BuildingId, readonly Terminal[]>
   giant_drill: [roof(2.55, 3.7, 1.35)],
   hp_pump: [roof(0.76, 1.76, 0.9, 0.3)],
   heavy_excavator: [roof(1.0, 2.2, 1.82)],
-  big_dock: [roof(2.32, 2.6, 1.12)],
   pitch_turbine: [roof(1.43, 1.43, 1.0, 0.22)],
   big_turbine: [roof(2.12, 2.12, 1.45, 0.22)],
   heavy_accumulator: [roof(1.0, 1.0, 1.9, 0.2)],

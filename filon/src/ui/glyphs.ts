@@ -2,7 +2,7 @@
 // "rather show than tell"): power served, no power, no wire, an empty slot; and the land's (D60):
 // a parcel, its grounds (floor, rock, water, salt flats, a vent, the dune sea, the fog; a chasm and a
 // river, D94), the buildings on
-// it, an owner's flag (the claim's, a sister claim's), CrierBelt's ringed planet, a lease's
+// it, an owner's flag (the claim's, a neighbouring base's or another claim's), CrierBelt's ringed planet, a lease's
 // hourglass; the trade post's gates (D62): its entrance and exit, « in turn », a ribbon linked to
 // nothing. Inline SVG drawn in
 // the palette through CSS classes (styles/hud.css `.glyph`), sized in em so they sit in a line of
@@ -10,7 +10,7 @@
 
 export type GlyphId =
   | 'power' | 'noPower' | 'unwired' | 'empty'
-  | 'parcel' | 'floor' | 'rock' | 'water' | 'salt' | 'vent' | 'dunes' | 'fog' | 'chasm' | 'river' | 'ore' | 'building' | 'flag' | 'flagSister' | 'crier' | 'lease'
+  | 'parcel' | 'floor' | 'rock' | 'water' | 'salt' | 'vent' | 'dunes' | 'fog' | 'chasm' | 'river' | 'ore' | 'building' | 'flag' | 'flagNeighbour' | 'crier' | 'lease'
   | 'gateIn' | 'gateOut' | 'turn' | 'noLink';
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -81,9 +81,9 @@ const SHAPES: Readonly<Record<GlyphId, ReadonlyArray<readonly [string, Record<st
   ],
   // Buildings: a small works with a saw-tooth roof.
   building: [['path', { class: 'g-works', d: 'M2 13.8V7.4l3.6 2.2V7.4l3.6 2.2V3.6h3.6v10.2z' }]],
-  // An owner's flag: the claim's (turquoise), a sister claim's (coral).
+  // An owner's flag: the claim's (turquoise), a neighbouring base's or another claim's (coral, D110).
   flag: [['path', { class: 'g-line', d: 'M4 14.6V1.8' }], ['path', { class: 'g-flag', d: 'M4.4 2.2h8.4l-2 2.6 2 2.6H4.4z' }]],
-  flagSister: [['path', { class: 'g-line', d: 'M4 14.6V1.8' }], ['path', { class: 'g-flag g-sister', d: 'M4.4 2.2h8.4l-2 2.6 2 2.6H4.4z' }]],
+  flagNeighbour: [['path', { class: 'g-line', d: 'M4 14.6V1.8' }], ['path', { class: 'g-flag g-neighbour', d: 'M4.4 2.2h8.4l-2 2.6 2 2.6H4.4z' }]],
   // CrierBelt: its ringed planet.
   crier: [
     ['circle', { class: 'g-planet', cx: '8', cy: '8', r: '4' }],

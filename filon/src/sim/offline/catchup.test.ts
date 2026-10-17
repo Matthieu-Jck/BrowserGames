@@ -180,25 +180,23 @@ describe('online ≈ offline on random bases', () => {
 });
 
 describe('offline power', () => {
-  /** A drill on the Hearth's grid that two skydocks (reservoirs, 200 kW each) push into a brownout. */
+  /** A drill on the Hearth's grid that a server (a reservoir node, 400 kW; two skydocks before D108) pushes into a brownout. */
   function brownBase(): Sim {
     const sim = testSim();
-    for (const id of ['tr1', 'tr2', 'tr3', 'tr4', 'tr6']) sim.done.add(id);
+    for (const id of ['tr1', 'tr2', 'tr3', 'an_servers']) sim.done.add(id);
     sim.rebuildDerived();
-    for (const [it, n] of [['iron_plate', 400], ['ceramic', 200], ['gear', 200], ['lens', 40]] as const) sim.grant(it, n);
+    for (const [it, n] of [['iron_plate', 400], ['ceramic', 200], ['gear', 200], ['circuit', 20], ['copper_wire', 20], ['oscillator', 4]] as const) sim.grant(it, n);
     drillToHearth(sim);
-    for (const [x, y] of [[503, 504], [516, 504]] as const) {
-      const r = sim.place('skydock', x, y, 0);
-      if (!r.ok) throw new Error(`skydock ${r.reason}`);
-      wire(sim, r.id!);
-    }
+    const r = sim.place('server', 503, 504, 0);
+    if (!r.ok) throw new Error(`server ${r.reason}`);
+    wire(sim, r.id!);
     sim.run(20);
     return sim;
   }
 
-  it('reservoir buildings (docks, observatories, excavators) draw power offline too', () => {
+  it('reservoir buildings (servers, observatories, excavators) draw power offline too', () => {
     const a = brownBase(), b = brownBase();
-    expect(a.netPower[0]!.sat).toBeLessThan(1000); // online: the docks brown the grid out
+    expect(a.netPower[0]!.sat).toBeLessThan(1000); // online: the server browns the grid out
     const ore0 = a.stock[IRON()]!;
     a.run(3 * 36_000);
     catchUp(b, 3 * 36_000, { noDirect: true });

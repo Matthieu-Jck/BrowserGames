@@ -6,14 +6,10 @@ import { T } from './types';
 import { tileIndex } from './world/grid';
 import { parcelAt } from './world/land';
 import { WORLD_EPOCH0 } from './constants';
-import { routePerMin } from './space';
-import { computeMods } from './research/modifiers';
 import { serialize, deserialize } from './serialize';
 import { catchUp } from './offline/catchup';
 import { connect } from './dev';
-import { worldPorts } from './entities';
 import { modulesOf, withModules } from './cfg';
-import { BAL } from '@/content/balance';
 
 const RUB = (): number => itemIdx('stone');
 
@@ -27,7 +23,7 @@ function spaceSim(done: string[] = ['tr1', 'tr2']): Sim {
   );
   const sim = new Sim({ worldSeed: 7, playerSeed: 11, source: src, foundingEpoch: WORLD_EPOCH0 + 24 });
   for (const id of done) sim.done.add(id);
-  learnPlans(sim); // every plan of the tree (D33): this tests digging and freight, not unlocks
+  learnPlans(sim); // every plan of the tree (D33): this tests digging and filling, not unlocks
   for (const [it, n] of [['iron_plate', 2000], ['gear', 400], ['circuit', 300], ['ceramic', 300], ['glass', 200], ['copper_wire', 200]] as const) sim.grant(it, n);
   return sim;
 }
@@ -84,7 +80,7 @@ describe('space', () => {
     const far = 512 + 35; // the first parcel past the starting square (3 × 3 parcels of 23 tiles round the Heart, D74)
     expect(sim.canPlace('kiln', far, 512, 0).reason).toBe('outside_zone');
     expect(sim.canPlace('kiln', far - 2, 512, 0).reason).not.toBe('outside_zone');
-    for (const def of ['ribbon', 'mast', 'pylon', 'beacon', 'skybridge']) {
+    for (const def of ['ribbon', 'mast', 'pylon', 'skybridge']) {
       const c = sim.canPlace(def, far, 512, 0);
       expect(c.reason === 'ok' || c.reason === 'unaffordable', `${def}: ${c.reason}`).toBe(true);
     }
@@ -93,60 +89,6 @@ describe('space', () => {
     const inside = sim.canPlace('swift_ribbon', 520, 512, 0).cost[0]!.mu;
     const outside = sim.canPlace('swift_ribbon', far, 512, 0).cost[0]!.mu;
     expect(outside).toBe(inside * 3);
-  });
-
-  it('drifter throughput is C / (2d/v + 2t) per ship', () => {
-    const m = computeMods(new Set());
-    expect(routePerMin(1, 100, m)).toBeCloseTo(37.5, 6);
-    expect(routePerMin(1, 200, m)).toBeCloseTo(200 / (400 / 60 + 2), 6);
-    // In the engine: two docks 40 tiles apart, two ships, plates flowing for 10 minutes.
-    const sim = spaceSim(['tr1', 'tr2', 'tr3', 'tr4', 'tr6']);
-    sim.grant('lens', 40); sim.grant('resin_canvas', 60);
-    const a = sim.place('skydock', 503, 504, 0), b = sim.place('skydock', 516, 504, 0);
-    expect(a.ok && b.ok, `${a.reason} ${b.reason}`).toBe(true);
-    wire(sim, [a.id!, b.id!]);
-    expect(sim.buyDrifter(a.id!)).toBe(true);
-    expect(sim.buyDrifter(a.id!)).toBe(true);
-    sim.ensureCompiled();
-    sim.stores.get(a.id!)![itemIdx('iron_plate')] = 2000 * 1000;
-    expect(sim.addRoute(a.id!, b.id!, 'iron_plate', 2)).toBeGreaterThan(0);
-    sim.run(6000);
-    const got = sim.stores.get(b.id!)![itemIdx('iron_plate')]! / 1000;
-    const d = 13; // centres (504, 505) → (517, 505)
-    const want = routePerMin(2, d, sim.mods) * 10;
-    expect(Math.abs(got - want)).toBeLessThan(1);
-  });
-
-  it('a freight route carries only what its source dock gets, offline as online', () => {
-    // A drill feeds dock A slowly; two drifters could carry far more to dock B, which hands the ore
-    // into the Hearth. Offline the route used to count at the ships' full rate even with A empty:
-    // B's line was fed freight that never came (owner's late base: 395 thermal cores for 63).
-    const make = (): Sim => {
-      const sim = spaceSim(['tr1', 'tr2', 'tr3', 'tr4', 'tr6']);
-      sim.grant('lens', 40); sim.grant('resin_canvas', 60);
-      steadyPower(sim);
-      const d = sim.place('drill', 511, 502, 1);
-      wire(sim, d.id!);
-      const a = sim.place('skydock', 517, 500, 0), b = sim.place('skydock', 502, 516, 0);
-      expect(a.ok && b.ok, `${a.reason} ${b.reason}`).toBe(true);
-      wire(sim, [a.id!, b.id!]);
-      expect(connect(sim, d.id!, a.id!)).toBeGreaterThan(0);
-      const out = worldPorts(sim.ents.get(b.id!)!).filter((p) => p.io === 'out')[0]!;
-      expect(sim.setPortItem(b.id!, out.idx, 'iron_ore')).toBe(true);
-      expect(connect(sim, b.id!, sim.hearthId, 0)).toBeGreaterThan(0);
-      for (const [it, n] of Object.entries(BAL.drifterCost)) sim.grant(it, n * 2);
-      expect(sim.buyDrifter(a.id!) && sim.buyDrifter(a.id!)).toBe(true);
-      sim.ensureCompiled();
-      expect(sim.addRoute(a.id!, b.id!, 'iron_ore', 2)).toBeGreaterThan(0);
-      sim.run(30);
-      return sim;
-    };
-    const on = make(), off = make(), I = itemIdx('iron_ore'), h0 = on.stock[I]!;
-    on.run(3 * 36_000);
-    const rep = catchUp(off, 3 * 36_000, { noDirect: true });
-    expect(on.stock[I]! - h0).toBeGreaterThan(1_000_000); // the line delivers
-    expect(Math.abs(off.stock[I]! - on.stock[I]!)).toBeLessThanOrEqual(10_000);
-    expect(rep.clampedMu[I]!).toBeLessThanOrEqual(50_000); // no freight invented at an empty dock
   });
 
   it('a backfiller fills a pond tile with 40 stone: new floor', () => {
@@ -215,22 +157,20 @@ describe('space', () => {
     expect([m1.speed, m1.kw]).toEqual([s0, kw0]);
   });
 
-  it('save → load in the middle of a dig and a freight run continues bit for bit', () => {
-    const sim = spaceSim(['tr1', 'tr2', 'tr3', 'tr4', 'tr6']);
-    sim.grant('lens', 40); sim.grant('resin_canvas', 60);
+  it('save → load in the middle of a dig in a brownout continues bit for bit', () => {
+    const sim = spaceSim(['tr1', 'tr2', 'an_servers']);
+    sim.grant('oscillator', 4);
     const ex = sim.place('excavator', 527, 507, 0);
     sim.designate([505, 506, 507].map((y) => tileIndex(530, y)));
-    const a = sim.place('skydock', 503, 504, 0), b = sim.place('skydock', 516, 504, 0);
-    wire(sim, [a.id!, b.id!]);
+    // A server (400 kW; the two skydocks of 200 kW each before D108) shares the Hearth's solar panel
+    // (240 kW at noon, none at night) with the excavator: it digs in a brownout.
+    const srv = sim.place('server', 503, 504, 0);
+    expect(srv.ok, srv.reason).toBe(true);
+    wire(sim, srv.id!);
     wireByRock(sim, ex.id!);
-    expect(sim.buyDrifter(a.id!)).toBe(true);
-    sim.ensureCompiled();
-    sim.stores.get(a.id!)![itemIdx('iron_plate')] = 500 * 1000;
-    expect(sim.addRoute(a.id!, b.id!, 'iron_plate', 1)).toBeGreaterThan(0);
-    // The docks share the Hearth's solar panel (240 kW at noon, none at night) with the excavator: it digs in a brownout.
     let n = 0;
     while (sim.grid.terrainDiff.size === 0 && n++ < 40) sim.run(500);
-    sim.run(777); // a tile dug, the next one under way, freight carrying a remainder
+    sim.run(777); // a tile dug, the next one under way
     expect(sim.grid.terrainDiff.size).toBeGreaterThan(0);
     expect(sim.jobs.length).toBe(1);
     const copy = deserialize(serialize(sim), sim.grid.source);

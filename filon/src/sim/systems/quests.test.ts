@@ -30,12 +30,16 @@ class VeinSource extends FlatSource {
   readonly quartzVein: VeinSite = { x: 467, y: 508, dx: 0, dy: 1, n: 8, look: 1, item: itemIdx('quartz') };
 }
 
-/** The test world (`testSource` with the extra coal) and its quartz wall: rock at level 1 on x 460–467, y 507–516, quartz in its east face. */
+/**
+ * The test world (`testSource` with the extra coal), its quartz wall — rock at level 1 on x 460–467,
+ * y 507–516, quartz in its east face — and a pond north-west of the Hearth, x 500–503, y 494–496 (D114:
+ * « La vapeur »'s water).
+ */
 function veinSource(): VeinSource {
   const base = testSource(EXTRA);
   return new VeinSource(
     [...base.deposits, { x: 467, y: 508, w: 1, h: 8, item: itemIdx('quartz'), rich: 750 }],
-    [...base.rocks, { x: 460, y: 507, w: 8, h: 10, t: T.Rock1, level: 1 }],
+    [...base.rocks, { x: 460, y: 507, w: 8, h: 10, t: T.Rock1, level: 1 }, { x: 500, y: 494, w: 4, h: 3, t: T.Shallow }],
   );
 }
 
@@ -209,7 +213,35 @@ function play(sim: Sim, last: QuestId = 'synth_parts'): Record<string, number> {
   until(sim, 'glassworks', 6 * EPOCH);
   if (stop('glassworks')) return ids;
 
-  // 5 — goal: the Crier both ways. The trade post (its 5×5 pad and apron, D62) east of the glass
+  // 5 — goal: steam (D114). The Steam plan; a pump on the pond's shore north-west of the Hearth, the
+  // boiler beside it, a conduit from the one to the other; its coal from a drill of its own on the
+  // west deposit, one ribbon north into its coal intake (from the side: the conduit runs behind it);
+  // the boiler and the pump wired pole by pole (the coal drill too).
+  hint('steam_power', 0);
+  expect(sim.place('pump', 504, 494, 0).reason).toBe('locked'); // not before its plan
+  unlock('wind_flower', 'brazier'); // its plan's prerequisites: the night was held by the steady tap here, not by them
+  hint('steam_power', 0);
+  unlock('steam');
+  hint('steam_power', 1);
+  expect(sim.place('pump', 506, 494, 0).reason).toBe('needs_water'); // two tiles off the water
+  place('pump', 'pump', 504, 494, 0); // on the pond's east shore (x 503): its outlet faces (504, 493)
+  hint('steam_power', 2);
+  place('boiler', 'steam_boiler', 504, 490, 0); // 504–506 × 490–491: coal in at (504, 491), water in at (506, 491), both from the south
+  hint('steam_power', 3);
+  expect(sim.placeBelts('conduit', [[504, 493, 1], [505, 493, 1], [506, 493, 0], [506, 492, 0]])).toBe(4);
+  hint('steam_power', 4);
+  place('coalB', 'drill', 498, 506, 0); // on the west deposit; its output faces (498, 505)
+  lay([...line(498, 505, 0, 13), ...line(498, 492, 1, 6), [504, 492, 0]]);
+  hint('steam_power', 5);
+  powerLine(sim, ids.boiler!);
+  hint('steam_power', 6);
+  powerLine(sim, ids.pump!);
+  powerLine(sim, ids.coalB!);
+  hint('steam_power', -1);
+  until(sim, 'steam_power', 2 * EPOCH);
+  if (stop('steam_power')) return ids;
+
+  // 6 — goal: the Crier both ways. The trade post (its 5×5 pad and apron, D62) east of the glass
   // line, glass led into its entrance by a router (it sells whatever comes in, D64); the wire mill
   // on the tired vein; CrierBelt's starter contract, its ore led from the post's exit into the side
   // of the copper drill's line (D101: bought goods used).
@@ -242,7 +274,7 @@ function play(sim: Sim, last: QuestId = 'synth_parts'): Record<string, number> {
   until(sim, 'crier_trade', 8 * EPOCH);
   if (stop('crier_trade')) return ids;
 
-  // 6 — goal: the Core's level 2 (D101), the player's own click, paid from the Hearth's stock: plates,
+  // 7 — goal: the Core's level 2 (D101), the player's own click, paid from the Hearth's stock: plates,
   // glass and copper wire are there (the colony's spare materials, « La Criée »'s wire).
   hint('core_upgrade', 3);
   expect(sim.upgradeHearth().ok).toBe(true);
@@ -251,7 +283,7 @@ function play(sim: Sim, last: QuestId = 'synth_parts'): Record<string, number> {
   until(sim, 'core_upgrade', QUEST_CHECK_TICKS);
   if (stop('core_upgrade')) return ids;
 
-  // 7 — goal: Survey Data (D71, D101). Every plan left, each as soon as the Hearth can pay for it,
+  // 8 — goal: Survey Data (D71, D101). Every plan left, each as soon as the Hearth can pay for it,
   // then the research lab's (the gate); the lab south-east of the Hearth, wired, one ribbon from the
   // Core's data outlet into it (no data collector: it comes later, with « Traitement des données »);
   // Mechanics starts (no tokens before the servers, D105).
@@ -276,7 +308,7 @@ function play(sim: Sim, last: QuestId = 'synth_parts'): Record<string, number> {
   until(sim, 'field_journal', 8 * EPOCH);
   if (stop('field_journal')) return ids;
 
-  // 8 — goal: quartz in the wall (D87), past the Crown. The vein's parcel bought, a cutter at the
+  // 9 — goal: quartz in the wall (D87), past the Crown. The vein's parcel bought, a cutter at the
   // wall's foot (no research wait, D101: its plan was taken with the others; dropped facing away, it
   // turns its back to the rock), wired pole by pole, its quartz along one ribbon into the Hearth's
   // west input.
@@ -294,7 +326,7 @@ function play(sim: Sim, last: QuestId = 'synth_parts'): Record<string, number> {
   until(sim, 'wall_quartz', 6 * EPOCH);
   if (stop('wall_quartz')) return ids;
 
-  // 9 — goal: Parts for the Synthesis (D90, after D93): the two workshops (the quartz workshop off the
+  // 10 — goal: Parts for the Synthesis (D90, after D93): the two workshops (the quartz workshop off the
   // quartz and wire lines, the electronics workshop off the wire and glass lines, each a router on
   // the line), their oscillators and circuits into the Hearth; no press (D101: its gears wait for
   // Mechanics, started in « Données d'arpentage »). The long lines are found by the layout kit.
@@ -320,12 +352,12 @@ const logged = (sim: Sim, k: Command['k']): Command[] => sim.log.filter((l) => l
 describe('quests', () => {
   it('the quest table holds together (the tutorial unlocks before it uses), and checks fall on every epoch boundary', () => {
     expect(questProblems()).toEqual([]);
-    expect(QUEST_IDS.length).toBe(10); // the claim's name, then nine quests (D101: « Le Cœur grandit » the ninth)
+    expect(QUEST_IDS.length).toBe(11); // the claim's name, then ten quests (D101: « Le Cœur grandit » the ninth; D114: « La vapeur » the tenth)
     expect(QUEST_IDS.filter((id) => (QUESTS[id] as QuestDef).steps).slice(1)).toEqual(['first_strike', 'bloom_kiln']); // guided: the first basics only
     expect(EPOCH % QUEST_CHECK_TICKS).toBe(0);
   });
 
-  it('a scripted colony completes quests 0–9 in order, each once, each paid once', () => {
+  it('a scripted colony completes quests 0–10 in order, each once, each paid once', () => {
     const sim = colony();
     const credits0 = sim.credits;
     play(sim);
@@ -336,11 +368,11 @@ describe('quests', () => {
     // One logged completion per quest, in order, none forced; one quest event each.
     expect(logged(sim, 'quest')).toEqual(QUEST_IDS.map((id) => ({ k: 'quest', id })));
     // The tree: every plan the tutorial asked for, unlocked through the logged command.
-    const first = ['kiln', 'sand_collector', 'router', 'telemetry', 'trade_post', 'wire_mill'];
+    const first = ['kiln', 'sand_collector', 'router', 'wind_flower', 'brazier', 'steam', 'telemetry', 'trade_post', 'wire_mill'];
     expect(logged(sim, 'unlockPlan').map((c) => (c as { id: string }).id)).toEqual([
       ...first, ...PLAN_IDS.filter((p) => ![...first, 'observatory'].includes(p)), 'observatory',
     ]);
-    // Ocelles: quests 5, 6, 7 and 9 pay 150 + 100 + 600 + 300 ◉ (on top of the trade — the starter
+    // Ocelles: quests 6, 7, 8 and 10 pay 150 + 100 + 600 + 300 ◉ (on top of the trade — the starter
     // contract among the purchases, D101 —, less the research's tokens if any, D68/D105, and the
     // vein's parcel, D87).
     const t = sim.trade;
@@ -370,7 +402,7 @@ describe('quests', () => {
 
   it('« La Criée »: the starter contract buys nothing until the post\'s exit leads somewhere, and the quest wants its ore in a wire mill (D101)', () => {
     const sim = colony();
-    play(sim, 'glassworks');
+    play(sim, 'steam_power');
     expect(currentQuest(sim)?.id).toBe('crier_trade');
     learnPlans(sim);
     // The post sells glass, the mill stands fed by its own drill: two of three objectives (the glass sold, ever).
@@ -485,13 +517,13 @@ describe('quests', () => {
     sim.quests.cur = idx('bloom_kiln');
     expect(['kiln', 'router', 'telemetry'].map((p) => planOffered(sim, p))).toEqual([true, false, false]);
     sim.quests.cur = idx('crier_trade');
-    expect(['kiln', 'router', 'telemetry', 'trade_post', 'beacon'].map((p) => planOffered(sim, p))).toEqual([true, true, true, true, false]);
+    expect(['kiln', 'router', 'telemetry', 'trade_post', 'silo'].map((p) => planOffered(sim, p))).toEqual([true, true, true, true, false]);
     sim.quests.cur = idx('field_journal');
     expect(PLAN_IDS.every((p) => planOffered(sim, p))).toBe(true);
     // A plan taken early (the engine takes any plan: the pacing is the tree's) always shows.
     sim.quests.cur = idx('bloom_kiln');
-    expect(sim.unlockPlan('beacon').ok).toBe(true);
-    expect(planOffered(sim, 'beacon')).toBe(true);
+    expect(sim.unlockPlan('router').ok).toBe(true);
+    expect(planOffered(sim, 'router')).toBe(true);
     sim.quests.skipped = true;
     expect(planOffered(sim, 'silo')).toBe(true);
   });
@@ -500,8 +532,9 @@ describe('quests', () => {
     const OLD = ['claim', 'first_strike', 'ribbon_lines', 'bloom_kiln', 'first_wind', 'glassworks', 'crier_calls', 'tired_vein', 'first_purchase', 'beyond_crown', 'field_journal', 'wall_quartz', 'synth_parts'];
     const NOW: Record<string, string | null> = {
       claim: 'claim', first_strike: 'first_strike', ribbon_lines: 'bloom_kiln', bloom_kiln: 'bloom_kiln', first_wind: 'first_wind', glassworks: 'glassworks',
-      // « Le Cœur grandit » (table 3) comes first for a player at « La Criée »'s end; passed by once a later quest was done.
-      crier_calls: 'crier_trade', tired_vein: 'crier_trade', first_purchase: 'crier_trade', beyond_crown: 'core_upgrade', field_journal: 'core_upgrade',
+      // « Le Cœur grandit » (table 3) comes first for a player at « La Criée »'s end, « La vapeur » (table 4, D114)
+      // for one still in it; each passed by once a later quest was done.
+      crier_calls: 'steam_power', tired_vein: 'steam_power', first_purchase: 'steam_power', beyond_crown: 'core_upgrade', field_journal: 'core_upgrade',
       wall_quartz: 'wall_quartz', synth_parts: 'synth_parts', '': null,
     };
     for (const cur of [...OLD, '']) {
@@ -530,7 +563,7 @@ describe('quests', () => {
     }
     // Today's table: a quest not done stays to do, whatever came after it.
     const t3 = testSim();
-    loadQuests(t3, { done: ['claim', 'field_journal'], doneAt: [0, 5], cur: null, base: [], win: [], named: true, titles: [], table: 3 });
+    loadQuests(t3, { done: ['claim', 'field_journal'], doneAt: [0, 5], cur: null, base: [], win: [], named: true, titles: [], table: 4 });
     expect(QUEST_IDS[t3.quests.cur]).toBe('first_strike');
     expect(t3.quests.done).not.toContain('core_upgrade');
     // Today's save keeps its own baselines (the same hash after a round trip).

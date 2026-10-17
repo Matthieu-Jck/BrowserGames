@@ -4,7 +4,7 @@
 // overlay — the same marks as on the map, one word each — and a one-line hint. With one picked it
 // shows rather than tells (owner, D53): a little map of the parcel's 16 × 16 tiles, its name on
 // the map (a compass offset from the Heart), who holds it (an owner's flag and the name: the
-// claim, a sister claim, CrierBelt) and how (a tag), what it holds as glyphs and tile counts (each
+// claim, a neighbouring base with its emblem and its trade — D110 —, CrierBelt) and how (a tag), what it holds as glyphs and tile counts (each
 // ore's icon, rock, water, salt flats, vents, the dune sea, chasms and rivers, the fog over what is
 // not explored yet, the buildings on it), its usable floor as a gauge and a share (D94: where a 2 × 2
 // machine stands; the price follows it), then the price
@@ -13,15 +13,19 @@
 // (xp_resell) is learnt, « Revendre » and what CrierBelt gives back. A button the colony would
 // refuse is disabled, with its reason in a few words under it — the sim's own `buyBlock` /
 // `leaseBlock` / `sellBlock`, the checks its deeds make. Built with `el()`; refreshed at 4 Hz with
-// change-only writes; the parcel's part is rebuilt only when its signature (parcel, holder,
+// change-only writes. A neighbouring base's parcel shows its buildings on the map (coral) and no
+// deal: it is not for sale (D110). The parcel's part is rebuilt only when its signature (parcel, holder,
 // contents, language) changes. Buying and leasing go through the Sim's commands; what they did is
 // told by the sim's `land` event (app/sim-events.ts).
 import { BAL } from '@/content/balance';
+import { COLONY_PROFILES, type ColonyProfile } from '@/content/colonies';
+import { colonyEmblem } from '@/content/emblem';
 import { ITEM_IDS, itemDef } from '@/content/registry';
 import { nodeName } from '@/content/research';
 import { el, setAttr, setText, setStyle } from '@/core/dom';
-import { duration, num, pct } from '@/i18n/format';
+import { duration, pct } from '@/i18n/format';
 import { locale, t, tr, type MsgKey } from '@/i18n/i18n';
+import { drawEmblem } from '@/render/art/emblem';
 import { C } from '@/render/art/tokens';
 import { TICK_MS } from '@/sim/constants';
 import { footprint } from '@/sim/entities';
@@ -31,7 +35,7 @@ import { parcelFloor, parcelOre } from '@/sim/world/floor';
 import { PARCEL, parcelRect } from '@/sim/world/land';
 import { glyph, type GlyphId } from './glyphs';
 import { itemMention } from './mention';
-import { buildingsOn, contentsSig, ownsForGood, parcelContents, parcelLabel, parcelState, sisterName, type ParcelState } from './land-facts';
+import { buildingsOn, contentsSig, neighbourName, ownsForGood, parcelContents, parcelLabel, parcelState, type ParcelState } from './land-facts';
 import { oc } from './trade-view';
 
 export interface LandHost {
@@ -72,7 +76,7 @@ export class LandPanel {
 
   constructor(private readonly host: LandHost) {
     const close = el('button.insp-x', { type: 'button', 'data-land-close': '', onclick: () => host.close() }, '✕');
-    this.legend = el('div.land-legend', {}, ([['held', 'land.legend.held'], ['leased', 'land.legend.leased'], ['sister', 'land.legend.sister'], ['free', 'land.legend.free']] as const)
+    this.legend = el('div.land-legend', {}, ([['held', 'land.legend.held'], ['leased', 'land.legend.leased'], ['neighbour', 'land.legend.neighbour'], ['free', 'land.legend.free']] as const)
       .map(([k, key]) => el('span.land-key', { 'data-k': k }, [el('i.land-swatch', { 'data-k': k }), el('span', { 'data-label': key })])));
     this.hint = el('p.insp-note.land-hint');
     this.root = el('aside.land.cartouche', { 'data-screen': 'land', hidden: true }, [
@@ -141,6 +145,21 @@ export class LandPanel {
         }
       }
     }
+    // A neighbouring base's buildings and ribbons on it (D110), in coral: someone else's.
+    const nb = sim.neighbours.holdingOf(p);
+    if (nb && sim.land.neighbour(p) >= 0) {
+      const L = sim.neighbours.layout(nb), { x0: px0, y0: py0, x1: px1, y1: py1 } = parcelRect(p);
+      g.fillStyle = C.coralD;
+      for (const r of L.ribbons) for (let i = 0; i < r.tiles.length; i += 3) {
+        const x = r.tiles[i]!, y = r.tiles[i + 1]!;
+        if (x >= px0 && x < px1 && y >= py0 && y < py1) g.fillRect((x - x0 + 0.3) * k, (y - y0 + 0.3) * k, 0.4 * k, 0.4 * k);
+      }
+      for (const s of sim.neighbours.structsOn(p)) {
+        const [bw, bh] = footprint(s.def, s.rot);
+        g.fillStyle = C.coral; g.fillRect((s.x - x0) * k + 1, (s.y - y0) * k + 1, bw * k - 2, bh * k - 2);
+        g.strokeStyle = C.ink; g.lineWidth = 2; g.strokeRect((s.x - x0) * k + 1, (s.y - y0) * k + 1, bw * k - 2, bh * k - 2);
+      }
+    }
     // The buildings standing on it, as ink outlines (what a lease given up would stop).
     g.strokeStyle = C.ink; g.lineWidth = 2;
     for (const id of buildingsOn(sim, p)) {
@@ -152,18 +171,30 @@ export class LandPanel {
     return cv;
   }
 
-  /** Who holds it: an owner's flag and the name (the claim, a sister claim, CrierBelt), and how (a tag). */
+  /**
+   * Who holds it: an owner's flag and the name (the claim, CrierBelt), and how (a tag); a neighbouring
+   * base (D110): its emblem, its name (the Crier's colony) and its trade.
+   */
   private holder(sim: Sim, p: number, st: ParcelState): HTMLElement {
     const ours = ownsForGood(st) || st === 'leased';
-    const sister = st === 'sister' ? sim.land.sister(p) : -1;
-    const name = ours ? sim.colonyName || t('land.owner.self') : sister >= 0 ? sisterName(sim, sister) || t('land.state.sister') : t('land.owner.crier');
-    const g: GlyphId = ours ? 'flag' : sister >= 0 ? 'flagSister' : 'crier';
+    const colony = st === 'neighbour' ? sim.land.neighbour(p) : -1;
     const tag = el('span.land-tag', { 'data-state': st }, t(`land.state.${st}` as MsgKey));
+    if (colony >= 0) {
+      const h = sim.neighbours.holdingOf(p)!;
+      const badge = el('canvas.land-emblem', { width: 44, height: 44, 'aria-hidden': 'true' }) as HTMLCanvasElement;
+      const ctx = badge.getContext('2d');
+      if (ctx) drawEmblem(ctx, colonyEmblem(sim.worldSeed, colony), 22, 22, 19, 2.2);
+      const name = neighbourName(sim, colony) || t('land.state.neighbour');
+      const trade = el('span.land-trade', { title: t('land.neighbour.trade') }, (COLONY_PROFILES[h.profile] as ColonyProfile).name[locale()]);
+      return el('div.land-who', { 'data-neighbour': '' }, [
+        el('div.land-owner', { title: t('land.owner') }, [badge, el('b', {}, name)]),
+        el('div.land-tags', {}, [tag, trade]),
+      ]);
+    }
+    const name = ours ? sim.colonyName || t('land.owner.self') : t('land.owner.crier');
+    const g: GlyphId = ours ? 'flag' : 'crier';
     const who = el('div.land-owner', { title: t('land.owner') }, [glyph(g, t('land.owner')), el('b', {}, name)]);
-    // A sister claim sets its own price: its markup on what the parcel holds, as a figure.
-    const markup = sister >= 0 ? BAL.land.sisterMarkup[sister % BAL.land.sisterMarkup.length]! / 1000 : 0;
-    const m = markup ? el('span.land-markup', { title: t('land.markup', { m: num(markup) }) }, `×${num(markup)}`) : null;
-    return el('div.land-who', {}, [who, el('div.land-tags', {}, [tag, m])]);
+    return el('div.land-who', {}, [who, el('div.land-tags', {}, [tag])]);
   }
 
   /** What it holds: each ore's icon, then the grounds, as glyphs with their tile counts; the buildings on it. */
@@ -231,6 +262,8 @@ export class LandPanel {
   private deal(sim: Sim, p: number, st: ParcelState): HTMLElement[] {
     if (st === 'bought' && sim.mods.flags.has('landResale')) return [this.resale(sim, p)];
     if (ownsForGood(st)) return [];
+    // A neighbouring base's (D110): not for sale nor lease; what treaties allow.
+    if (st === 'neighbour') return [el('p.land-why.land-note', { 'data-deal': 'neighbour' }, t('land.neighbour.note'))];
     const out: HTMLElement[] = [];
     // Buy (a leased parcel too: its lease ends).
     const price = el('span.land-price');

@@ -2,6 +2,7 @@
 // sim/save-remap.ts, D47). Saves name their content by id: renaming or removing an item, a
 // building or a recipe must leave a line here, or a player's base loses what it held — the
 // remap then drops it and tells the player.
+import type { Loc } from './types';
 
 /** Old id → today's id, per table (an id that exists today is never looked up here). */
 export const RENAMED: {
@@ -53,4 +54,52 @@ export const RETIRED_COSTS: Readonly<Record<string, ReadonlyArray<readonly [stri
   pylon_1x1: [['iron_plate', 8], ['copper_wire', 6], ['ceramic', 2]], // the 1×1 pylon before D75 (save v6: refunded, its wires dropped)
   // The 2×2 research lab before D84 (save v10): refunded, its files and its project's paid data handed to the Heart, its wires dropped.
   observatory_2x2: [['iron_plate', 30], ['glass', 20], ['copper_wire', 10]],
+  // The skydock and the Great Skydock, retired with the player's drifters and freight routes (D108,
+  // owner 2026-10-17: « retire le skydock du jeu, je n'aime pas ce bâtiment »): refunded, what they
+  // held docked handed to the Heart, their outlets' items and wires dropped. Their ids were not
+  // reused, so no save step renames them: the remap finds them gone. Their drifters are refunded by
+  // the save step (v15 `docksRetired`, persist/migrate.ts) at `RETIRED_DRIFTER`.
+  skydock: [['ceramic', 40], ['gear', 20], ['lens', 10]],
+  big_dock: [['ceramic', 60], ['gear', 30], ['lens', 15]],
+  // The survey beacon (owner, 2026-10-17: « On va supprimer le survey beacon, je n'aime pas ») and the
+  // unloader (« le "Unloader" n'est plus nécessaire »), retired by D117: refunded, an unloader's held
+  // item handed to the Heart (the remap's rule for a routing block). The fog a beacon lifted stays
+  // lifted (`explored` is the save's); their plans are dropped and refunded by save v17 (`PLANS_RETIRED`).
+  beacon: [['iron_plate', 5], ['glass', 2]],
+  unloader: [['iron_plate', 2], ['copper_wire', 1]],
 };
+
+/**
+ * What a retired building was called, for the absence report that tells the player it came down
+ * (save-remap.ts `RemapNote.removed` holds ids). One not listed shows its id.
+ */
+export const RETIRED_NAMES: Readonly<Record<string, Loc>> = {
+  skydock: { fr: 'Embarcadère', en: 'Skydock' },
+  big_dock: { fr: 'Grand embarcadère', en: 'Great Skydock' },
+  beacon: { fr: "Balise d'arpentage", en: 'Survey Beacon' },
+  unloader: { fr: 'Déchargeur', en: 'Unloader' },
+};
+
+/** What one drifter cost a skydock (`BAL.drifterCost` until D108), refunded to the Heart for every drifter a save held. */
+export const RETIRED_DRIFTER: ReadonlyArray<readonly [string, number]> = [['resin_canvas', 20], ['gear', 10], ['circuit', 5]];
+
+/**
+ * Research nodes taken out of the tree with no successor, by the save version whose step drops them
+ * (a node learnt is forgotten, a project of it cancelled with its paid data back to the Heart, its
+ * queue entry gone). Frozen per version: a later removal adds its own version. 15: the Great Skydock
+ * (`xp_bigdock`), whose one unlock, the Great Skydock, went with the skydocks (D108).
+ */
+export const RESEARCH_RETIRED: Readonly<Record<number, readonly string[]>> = { 15: ['xp_bigdock'] };
+
+/**
+ * Plans taken out of the tree, by the save version whose step drops them, with what each cost: a
+ * plan held is forgotten and its cost handed back to the Heart (nothing vanishes: it was paid in
+ * materials, D33). Frozen per version. 17: the survey beacon's and the unloader's (D117), the survey
+ * path with the first (the Face Cutter moved to Production, its id unchanged).
+ */
+export const PLANS_RETIRED: Readonly<Record<number, Readonly<Record<string, ReadonlyArray<readonly [string, number]>>>>> = {
+  17: { beacon: [['iron_plate', 8], ['glass', 2]], unloader: [['iron_plate', 6], ['copper_wire', 2]] },
+};
+
+/** The fog round the Core by its level 1..4 in saves 1–16, frozen (`BAL.coreReveal` since D117; before, the founding's 44 at every level). */
+export const CORE_REVEAL_V17: readonly number[] = [44, 56, 68, 80];

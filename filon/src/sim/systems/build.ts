@@ -1,15 +1,15 @@
 // build.ts — placing and removing structures. The placement rules, in order: unlock, world
 // edge, fog, occupancy, terrain (a chasm or a river refused by name, D94), deposit / water / vent needs, the claim's land (docs/land.md:
-// production on its parcels, nothing on a sister claim's), the step a line piece faces (D77: only
+// production on its parcels; a neighbouring base's land only with Neighbour Treaties or for the camouflaged ribbon, D109–D110; its buildings never), the step a line piece faces (D77: only
 // a traction ribbon changes level, one terrace at a time), cost. An occupied tile is no refusal
 // when what stands there may be replaced (Mindustry-style): same replace group, wholly inside the
 // new footprint, not the very same building. It comes down first, fully refunded, so its refund
 // counts towards the new cost. Off the claim's land a kite flies the materials out: the building
 // completes after a delay growing with the distance. Removal refunds everything (cost, buffers,
-// modules, drifters) to the Hearth. Ribbon drags are planned as a whole in belt-plan.ts
+// modules) to the Hearth. Ribbon drags are planned as a whole in belt-plan.ts
 // (`planBelts`, D73). Also: the Hearth's levels.
 import { BAL } from '@/content/balance';
-import { BUILDING_KIND, CRECIPES, N_ITEMS, buildingDef, buildingIdx, costOf, itemIdx, recipesFor } from '@/content/registry';
+import { BUILDING_KIND, BUILDING_REVEAL, CRECIPES, N_ITEMS, buildingDef, buildingIdx, costOf, itemIdx, recipesFor } from '@/content/registry';
 import { filterOf, recipeOf, withFilter } from '../cfg';
 import { footprint, forTiles, worldPorts } from '../entities';
 import { faceRot, faceTiles, isFaceOre } from '../face';
@@ -23,14 +23,14 @@ import type { Sim } from '../state';
 
 export type PlaceReason =
   | 'ok' | 'outside_world' | 'occupied' | 'terrain' | 'needs_deposit' | 'needs_water' | 'needs_vent'
-  | 'outside_zone' | 'sister_land' | 'locked' | 'unaffordable' | 'not_buildable' | 'fog' | 'limit' | 'reserve' | 'needs_sand' | 'uneven'
+  | 'outside_zone' | 'neighbour_land' | 'locked' | 'unaffordable' | 'not_buildable' | 'fog' | 'limit' | 'reserve' | 'needs_sand' | 'uneven'
   /** A traction step next to another one: an elevator needs one flat ribbon tile in front of it. */
   | 'lift_room'
   /** A plain ribbon facing another level (a wall, or the edge of a drop): only a traction ribbon changes level (D77). */
   | 'needs_lift'
   /** A traction ribbon facing two levels or more: its elevator climbs one terrace at a time (D77). */
   | 'steep'
-  /** A conduit facing another level: fluids keep to their level (D77). */
+  /** A conduit facing a step up, or a drop of two levels or more: water never climbs, and pours down one terrace at a time (D77, D114). */
   | 'cliff'
   /** A junction next to another junction: a ribbon must run on each side of one (D73). */
   | 'junction_chain'
@@ -63,12 +63,16 @@ function vacate(sim: Sim, e: Ent): void {
   forTiles(e, (x, y) => { if (sim.grid.occ[tileIndex(x, y)] === e.id) sim.grid.occ[tileIndex(x, y)] = 0; });
 }
 
-/** Lift the fog for good around a survey beacon. */
+/**
+ * Lift the fog for good around a building placed (D117: the survey beacon retired, the fog lifts as
+ * the claim builds): `revealOf` its def — a pylon its wires' reach, any other building
+ * `BAL.buildReveal` and its half-size, a line piece nothing. At placement, a kite's flight or not.
+ */
 function reveal(sim: Sim, e: Ent): void {
-  const b = buildingDef(e.def);
+  const r = BUILDING_REVEAL[e.def] ?? 0;
+  if (!r) return;
   const [w, h] = footprint(e.def, e.rot);
-  const cx = e.x + Math.floor(w / 2), cy = e.y + Math.floor(h / 2);
-  if (b.reveal) sim.explored.push([cx, cy, b.reveal]);
+  sim.liftFog(e.x + Math.floor(w / 2), e.y + Math.floor(h / 2), r);
 }
 
 const pay = (sim: Sim, cost: Cost): void => { for (const c of cost) sim.stock[c.item] = sim.stock[c.item]! - c.mu; };
@@ -94,7 +98,7 @@ function refundOf(sim: Sim, ids: readonly number[], item: number): number {
 /**
  * Does turning this building change anything? Its ports move, a line runs another way, a
  * directional routing block (the router among them) faces elsewhere, a long footprint swings
- * round. Distributors, unloaders, junctions and masts work (and are drawn) the same in every
+ * round. Distributors, junctions and masts work (and are drawn) the same in every
  * rotation: re-placing one turned would change nothing.
  */
 function turns(def: number): boolean {
@@ -102,7 +106,7 @@ function turns(def: number): boolean {
   if (b.ports.length > 0 || b.w !== b.h) return true;
   if (b.kind === 'belt' || b.kind === 'conduit' || b.kind === 'bridge') return true;
   const logic = b.logic ?? 'router';
-  return b.kind === 'fork' && logic !== 'distributor' && logic !== 'unloader';
+  return b.kind === 'fork' && logic !== 'distributor';
 }
 
 /**
@@ -163,14 +167,21 @@ export function canPlace(sim: Sim, defId: string, x: number, y: number, rot: Rot
   // On the mountains, the whole footprint or none of it (no building astride a cliff, D44).
   if (rock && rock !== w * h) return fail('terrain');
   // The claim's land (docs/land.md): a building that needs it stands wholly on held parcels;
-  // infrastructure may cross other land, by kite and at the remote cost — never a sister claim's.
+  // infrastructure may cross other land, by kite and at the remote cost — a neighbouring base's only
+  // with Neighbour Treaties (D110: between its buildings, never on them, above), or for the
+  // camouflaged ribbon (D109): buried, it runs there too, at its own cost anywhere.
   const inZone = sim.land.coversFootprint(def, x, y, rot);
   if (b.needsZone && !inZone) return fail('outside_zone');
-  if (!inZone && !sim.mods.flags.has('sisterCrossing') && onSisterLand(sim, def, x, y, rot)) return fail('sister_land');
+  if (!inZone && onNeighbourLand(sim, def, x, y, rot)) {
+    if (!b.camo && !sim.mods.flags.has('neighbourCrossing')) return fail('neighbour_land');
+    // Where the treaties (or the buried ribbon) let it in: between the base's buildings, never on
+    // them (D110). Asked only here, so a base is laid out only when something may go on its land.
+    if (onNeighbourBase(sim, def, x, y, rot)) return fail('occupied');
+  }
   let cost = costOf(def);
   if (isBelt && !inZone) {
-    const mult = Math.floor((BAL.remoteBeltCostMult * sim.mods.remoteBeltCost) / 1000) || 1;
-    cost = cost.map((c) => ({ item: c.item, mu: c.mu * mult }));
+    const mult = b.camo ? BAL.camoRemoteCostMult : Math.floor((BAL.remoteBeltCostMult * sim.mods.remoteBeltCost) / 1000) || 1;
+    if (mult !== 1) cost = cost.map((c) => ({ item: c.item, mu: c.mu * mult }));
   }
   if (b.kind === 'trade' && [...sim.ents.map.values()].filter((o) => BUILDING_KIND[o.def] === 'trade').length >= maxPosts(sim.mods)) return fail('limit');
   const step = stepRefusal(sim, def, x, y, rot);
@@ -195,7 +206,7 @@ export function canPlace(sim: Sim, defId: string, x: number, y: number, rot: Rot
  * to put an elevator"). A ribbon hands on only to its own level (D45; compile.ts gives it no
  * target past a step), so one facing a wall or the edge of a drop is a dead end: refused, and the
  * reason names the traction ribbon. A traction ribbon takes one terrace, never two; a conduit
- * none. Read against the tile right ahead, as the compile reads it. A skybridge is not checked:
+ * none up, and one down: water pours over a terrace's edge (D114). Read against the tile right ahead, as the compile reads it. A skybridge is not checked:
  * it leaps to the next one on its level, whatever lies between. A ribbon whose back is to a cliff
  * stays allowed: it is fed from its sides.
  */
@@ -204,9 +215,10 @@ export function stepRefusal(sim: Sim, def: number, x: number, y: number, rot: Ro
   if (b.kind !== 'belt' && b.kind !== 'conduit') return null;
   const gx = x + DX[rot]!, gy = y + DY[rot]!;
   if (!inWorld(gx, gy)) return null;
-  const dl = Math.abs(sim.grid.level(gx, gy) - sim.grid.level(x, y));
+  const down = sim.grid.level(x, y) - sim.grid.level(gx, gy), dl = Math.abs(down);
   if (dl === 0) return null;
-  if (b.kind === 'conduit') return 'cliff';
+  // Water runs down (D114): a conduit pours over the edge of one terrace into the tile below, and never climbs.
+  if (b.kind === 'conduit') return down === 1 ? null : 'cliff';
   if (!b.lift) return 'needs_lift';
   return dl > 1 ? 'steep' : null;
 }
@@ -272,12 +284,18 @@ function touchesWater(sim: Sim, x: number, y: number, w: number, h: number, leve
   return false;
 }
 
-/** Does any footprint tile lie on a sister claim's parcel (one the claim does not hold)? */
-function onSisterLand(sim: Sim, def: number, x: number, y: number, rot: Rot): boolean {
+/** Does a neighbouring base's building, ribbon or flag stand on any footprint tile (D110)? */
+function onNeighbourBase(sim: Sim, def: number, x: number, y: number, rot: Rot): boolean {
+  const [w, h] = footprint(def, rot);
+  for (let ty = y; ty < y + h; ty++) for (let tx = x; tx < x + w; tx++) if (sim.neighbours.at(tx, ty)) return true;
+  return false;
+}
+
+/** Does any footprint tile lie on a neighbouring base's parcel (D110: one the claim does not hold)? */
+function onNeighbourLand(sim: Sim, def: number, x: number, y: number, rot: Rot): boolean {
   const [w, h] = footprint(def, rot);
   for (let ty = y; ty < y + h; ty++) for (let tx = x; tx < x + w; tx++) {
-    const p = parcelAt(tx, ty);
-    if (!sim.land.holds(p) && sim.land.sister(p) >= 0) return true;
+    if (sim.land.neighbour(parcelAt(tx, ty)) >= 0) return true;
   }
   return false;
 }
@@ -304,7 +322,7 @@ function validCfg(sim: Sim, def: number, cfg: number): number {
     return cr && cr.machines.has(def) && sim.unlocked(cr.unlock) ? r : 0; // the recipe alone: no module bits (D81)
   }
   if (k === 'fork') {
-    // Sorters and unloaders: their chosen item (byte 0); routers and distributors: a filter per side.
+    // Sorters: their chosen item (byte 0); routers and distributors: a filter per side.
     const logic = buildingDef(def).logic ?? 'router';
     const sides = logic === 'router' || logic === 'distributor' ? 4 : 1;
     let out = 0;
@@ -345,7 +363,7 @@ export function placementRot(sim: Sim, defId: string, x: number, y: number, rot:
   if (b.drill?.face) return inWorld(x, y) ? faceRot(sim.grid, def, x, y, rot) : rot;
   if (turned || b.kind !== 'fork' || b.w !== 1 || b.h !== 1) return rot;
   const logic = b.logic ?? 'router';
-  if (logic === 'distributor' || logic === 'unloader') return rot;
+  if (logic === 'distributor') return rot;
   const e = sim.entityAt(x, y);
   return e && BUILDING_KIND[e.def] === 'belt' ? entryRot(sim, e) : rot;
 }
@@ -382,7 +400,7 @@ function feedsFrom(sim: Sim, x: number, y: number, r: Rot): boolean {
   if (dl !== 0) return false;
   if (k === 'fork') {
     const logic = buildingDef(o.def).logic ?? 'router';
-    return logic === 'distributor' || logic === 'unloader' || r !== opposite(o.rot);
+    return logic === 'distributor' || r !== opposite(o.rot);
   }
   return worldPorts(o).some((p) => p.io === 'out' && p.dir === r && p.x === nx && p.y === ny);
 }
@@ -420,9 +438,7 @@ export function place(sim: Sim, defId: string, x: number, y: number, rot0: Rot, 
   for (const id of chk.replaces) removeEntity(sim, id, true);
   pay(sim, chk.cost);
   const b = buildingDef(def);
-  let portItems: number[] | undefined;
-  if (b.kind === 'dock') portItems = b.ports.map(() => -1); // a trade post's exit hands out what it bought (D62)
-  const e = sim.ents.add({ def, x, y, rot, cfg, builtAt: chk.delay > 0 ? sim.tick + chk.delay : 0, portItems });
+  const e = sim.ents.add({ def, x, y, rot, cfg, builtAt: chk.delay > 0 ? sim.tick + chk.delay : 0 });
   occupy(sim, e);
   reveal(sim, e);
   if (b.kind === 'excavator' || b.kind === 'backfiller') sim.jobsDirty = true;
@@ -446,8 +462,7 @@ export function remove(sim: Sim, x: number, y: number): boolean {
 
 /**
  * Take an entity down: its research project is cancelled (paid science refunded), its job
- * dropped, its drifters scrapped back into materials and its routes closed, modules, node
- * buffers and store refunded, then its full construction cost. `silent`: no structure event
+ * dropped, modules, node buffers and store refunded, then its full construction cost. `silent`: no structure event
  * (a building being replaced: the placement pushes it).
  */
 export function removeEntity(sim: Sim, id: number, silent: boolean): void {
@@ -455,11 +470,6 @@ export function removeEntity(sim: Sim, id: number, silent: boolean): void {
   if (!e) return;
   for (const p of sim.projects.filter((q) => q.lab === id)) sim.cancelResearch(p.id);
   sim.jobs = sim.jobs.filter((j) => j.ent !== id);
-  if (sim.fleet.has(id)) {
-    for (let k = 0; k < sim.fleet.get(id)!; k++) for (const [it, n] of Object.entries(BAL.drifterCost)) sim.refund(itemIdx(it), n * 1000);
-    sim.fleet.delete(id);
-  }
-  sim.routes = sim.routes.filter((r) => r.from !== id && r.to !== id);
   // A trade post's cargo and orders go with it (goods in flight land in the Hearth).
   sim.trade.cargo.delete(id);
   sim.trade.orders = sim.trade.orders.filter((o) => o.post !== id);
@@ -495,7 +505,7 @@ export function completeConstructions(sim: Sim, now = sim.tick): number[] {
   return done;
 }
 
-/** Raise the Hearth a level (a bigger store: `BAL.hearthCap`). */
+/** Raise the Hearth a level (a bigger store: `BAL.hearthCap`; the fog lifted farther round it, `BAL.coreReveal`, D117). */
 export function upgradeHearth(sim: Sim): { ok: boolean; reason: 'max' | 'locked' | 'unaffordable' | 'reserve' | null } {
   const up = BAL.hearthUpgrades[sim.hearthLevel - 1];
   if (!up) return { ok: false, reason: 'max' };
@@ -506,6 +516,7 @@ export function upgradeHearth(sim: Sim): { ok: boolean; reason: 'max' | 'locked'
   if (sim.reserveShort(cost).length) return { ok: false, reason: 'reserve' };
   pay(sim, cost);
   sim.hearthLevel++;
+  sim.liftFog(CENTER, CENTER, BAL.coreReveal[Math.min(BAL.coreReveal.length, sim.hearthLevel) - 1]!);
   sim.log.push({ tick: sim.tick, cmd: { k: 'hearthUp' } });
   sim.dirty = true;
   sim.events.push({ k: 'structure' });

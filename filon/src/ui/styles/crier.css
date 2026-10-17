@@ -54,7 +54,7 @@
     linear-gradient(180deg, #2b2548, #1b1830);
 }
 .cr-orbit > .orbit { position: absolute; inset: 0; }
-/* Its legend: two chips in the corner — the sister colonies, those you trade with. */
+/* Its legend: two chips in the corner — the other claims, those you trade with. */
 .cr-legend { position: absolute; left: 10px; bottom: 10px; z-index: 1; display: flex; gap: 6px; pointer-events: none; }
 .cr-lchip {
   pointer-events: auto; cursor: help; display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px 2px 7px;

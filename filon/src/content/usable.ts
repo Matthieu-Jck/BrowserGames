@@ -5,7 +5,7 @@
 // work with what the base can have by then, in the order the tree imposes:
 //   · a building it unlocks can be paid for — every cost item usable, or in the Heart's starting
 //     stock (a one-off payment: the stock pays the first plans, D36) — a crafting machine has at least
-//     one recipe it can run, and a generator its fuel;
+//     one recipe it can run, and a generator its fuel (and a steam boiler its water, D114);
 //   · a recipe it unlocks has a machine the base can build and every input usable;
 //   · a Heart level it gives can be paid for;
 //   · a feature it turns on (a flag, an addition, a research slot) has what it acts on: the
@@ -38,7 +38,7 @@ export const FEATURE_NEEDS: Readonly<Record<string, readonly string[]>> = {
   // The analytics readouts (D41): they read the base.
   telemetry: [], statistics: [], power_log: [], diagnostics: [], anemometry: [],
   // The land (D60): parcels are bought and leased from the start.
-  lease: [], landResale: [], sisterCrossing: [], farClaims: [],
+  lease: [], landResale: [], neighbourCrossing: [], farClaims: [],
   // Digging deeper: the excavator's bits; filling deep water: the backfiller.
   digH3: ['excavator', 'heavy_excavator'], basaltBits: ['excavator', 'heavy_excavator'], digH4: ['excavator', 'heavy_excavator'],
   deepFill: ['backfiller'],
@@ -81,7 +81,7 @@ function extracts(b: BuildingDef): string[] {
   return [...DEPOSIT_ITEMS].filter((it) => !mapSpecific(it));
 }
 
-/** Tradable at the Crier (the market's own test: a depth, not a fluid) and supplied by a sister colony. */
+/** Tradable at the Crier (the market's own test: a depth, not a fluid) and supplied by a colony. */
 export function buyable(item: string): boolean {
   const it = items[item];
   if (!it || !(it.depth > 0) || !((it.value ?? 0) > 0) || it.kind === 'fluid') return false;
@@ -139,6 +139,7 @@ export function nodeUnusable(id: string): string[] {
     const own = recipes.filter(([, r]) => r.machines.includes(b) && has(r.unlock));
     if (def.crafts && !own.some(([, r]) => r.ins.every(([it]) => U.has(it)))) errs.push(`${name}: ${b} has no recipe it can run by then (${own.map(([rid, r]) => `${rid}: ${lacks(r.ins).join(', ') || '—'}`).join('; ') || 'none known'})`);
     if (def.gen?.fuel && !U.has(def.gen.fuel)) errs.push(`${name}: ${b} burns ${def.gen.fuel}, not to be had by then`);
+    if (def.gen?.water && !U.has('water')) errs.push(`${name}: ${b} drinks water, not to be had by then`);
   }
   for (const [rid, r] of recipes) {
     if (r.unlock !== id) continue;

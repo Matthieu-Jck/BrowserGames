@@ -86,7 +86,7 @@ export function installIntro(app: App, auto: boolean): IntroShell {
   const pending = (): boolean => auto && !played && !app.sim.quests.named && !!heart();
 
   const screen = new IntroScreen({
-    // The sister claims never change for a world: read them once.
+    // The other claims never change for a world: read them once.
     register: () => (reg ??= registerOf(app.sim)),
     sign: (name, e) => { emblem = e; land(name); },
     // The claim's own number: its seed mixed with its founding minute (every claim differs).

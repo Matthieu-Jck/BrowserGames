@@ -36,7 +36,7 @@ export interface ChunkArrays { terrain: Uint8Array; ore: Uint8Array; rich: Uint1
  * the border, so both sides of a chunk seam compute identical values. Samples sit at tile
  * centres; chunk px of sample i: (i - BORDER + 0.5) * ppt. Only cells near the chunk march.
  */
-export function march(inside: (i: number, j: number) => boolean, ppt: number, keep = false): { polys: number[][]; segs: number[][] } {
+export function march(inside: (i: number, j: number) => boolean, ppt: number, keep: boolean | ((i: number, j: number) => boolean) = false, iso = 0.5): { polys: number[][]; segs: number[][] } {
   const polys: number[][] = [];
   const segs: number[][] = [];
   const raw = new Float32Array(WIN * WIN);
@@ -48,19 +48,24 @@ export function march(inside: (i: number, j: number) => boolean, ppt: number, ke
       let s = 0;
       for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) s += raw[(j + dj) * WIN + i + di]! * (di === 0 && dj === 0 ? 4 : di === 0 || dj === 0 ? 2 : 1);
       // `keep`: a tile inside stays inside however thin its band (a chasm's tapered end, a river
-      // two tiles wide on a diagonal): what is drawn is what the rules read.
-      v[j * WIN + i] = keep && raw[j * WIN + i] ? Math.max(0.62, s / 16) : s / 16;
+      // two tiles wide on a diagonal): what is drawn is what the rules read. Given as a test, only
+      // the tiles it passes (a river's within its lakes, D94): the field stays a function of the
+      // tiles round each sample, the same on both sides of a chunk seam.
+      const kept = keep === true || (keep !== false && keep(i, j));
+      v[j * WIN + i] = kept && raw[j * WIN + i] ? Math.max(0.62, s / 16) : s / 16;
       if (s > 0) any = true;
     }
   }
   if (!any) return { polys, segs };
   const X = (i: number): number => (i - BORDER + 0.5) * ppt;
-  const lerp = (a: number, b: number): number => { const d = b - a; return d === 0 ? 0.5 : (0.5 - a) / d; };
+  // `iso`: the level the outline follows (0.5: the tiles' own edge; lower, a band further out, the
+  // feathered edges of `paintWater`).
+  const lerp = (a: number, b: number): number => { const d = b - a; return d === 0 ? 0.5 : (iso - a) / d; };
   const lo = BORDER - 2, hi = BORDER + 33;
   for (let j = lo; j < hi; j++) {
     for (let i = lo; i < hi; i++) {
       const a = v[j * WIN + i]!, b = v[j * WIN + i + 1]!, c = v[(j + 1) * WIN + i + 1]!, d = v[(j + 1) * WIN + i]!;
-      const code = (a >= 0.5 ? 8 : 0) | (b >= 0.5 ? 4 : 0) | (c >= 0.5 ? 2 : 0) | (d >= 0.5 ? 1 : 0);
+      const code = (a >= iso ? 8 : 0) | (b >= iso ? 4 : 0) | (c >= iso ? 2 : 0) | (d >= iso ? 1 : 0);
       if (code === 0) continue;
       const x0 = X(i), x1 = X(i + 1), y0 = X(j), y1 = X(j + 1);
       const T_: [number, number] = [x0 + (x1 - x0) * lerp(a, b), y0];
@@ -90,6 +95,17 @@ export function march(inside: (i: number, j: number) => boolean, ppt: number, ke
     }
   }
   return { polys, segs };
+}
+
+/** Clip to these polygons (as `fillPolys` would fill them); `ctx.save()` first, `restore()` after. */
+export function clipPolys(ctx: Ctx2, polys: number[][]): void {
+  ctx.beginPath();
+  for (const p of polys) {
+    ctx.moveTo(p[0]!, p[1]!);
+    for (let k = 2; k < p.length; k += 2) ctx.lineTo(p[k]!, p[k + 1]!);
+    ctx.closePath();
+  }
+  ctx.clip();
 }
 
 export function fillPolys(ctx: Ctx2, polys: number[][], color: string, dx = 0, dy = 0): void {

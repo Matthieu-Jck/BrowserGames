@@ -6,7 +6,7 @@
 // longer gaps are the offline catch-up's job); the DOM UI refreshes at 4 Hz.
 //
 // One frame: morph → input → sim ticks → drain events → camera → terrain & relief → ghost,
-// overlays, the view's marks, drifters, items → tip → stats sample → (4 Hz) the view's readings, HUD, bar, inspector, screen →
+// overlays, the view's marks, items → tip → stats sample → (4 Hz) the view's readings, HUD, bar, inspector, screen →
 // render → perf.
 import { reliefSun } from '@/render/world/cast-shadows';
 import { SHADOW_REACH } from '@/render/art/terrain';
@@ -25,12 +25,12 @@ import { GhostView } from '@/render/world/ghost-view';
 import { OverlaysView } from '@/render/world/overlays-view';
 import { VEIL, ViewsView } from '@/render/world/views-view';
 import { ItemsView } from '@/render/world/items-view';
-import { DriftersView } from '@/render/world/drifters-view';
 import { GleanersView } from '@/render/world/gleaners-view';
 import { CargoView } from '@/render/world/cargo-view';
 import { LandingView } from '@/render/world/landing-view';
 import { DayNight } from '@/render/daynight';
 import { CloudShadows, LightsView } from '@/render/world/lights-view';
+import { NeighboursView } from '@/render/world/neighbours-view';
 import { WindHints } from '@/render/world/wind-hints-view';
 import { RiversView } from '@/render/world/rivers-view';
 import { COS64, SIN64 } from '@/content/world';
@@ -110,7 +110,6 @@ export class App {
   /** The power wires, above the buildings in both views (D25). */
   readonly wires: WiresView;
   readonly items: ItemsView;
-  readonly drifters: DriftersView;
   /** The Gleaners at night and the glazed ribbons' glass (D103). */
   readonly gleaners: GleanersView;
   readonly cargo: CargoView;
@@ -119,6 +118,8 @@ export class App {
   /** Day / night: the grade on the world, night lights and solar panel states, cloud shadows. */
   readonly dayNight: DayNight;
   readonly lights: LightsView;
+  /** The neighbouring bases near the view (D110). */
+  private readonly neighbours: NeighboursView;
   readonly clouds: CloudShadows;
   /** The wind's rare hints on the land (D95): gust streaks, sand off the tops. */
   readonly windHints: WindHints;
@@ -190,7 +191,8 @@ export class App {
     this.input = new Input(stage.renderer.canvas, this.camera, () => ({ w: stage.width, h: stage.height }), {
       toolActive: () => this.controls.toolActive,
       onAction: (a, e) => this.controls.action(a, e),
-      onSlot: (slot, shift) => { if (!this.screens.modal) this.build.slot(slot, shift); },
+      // 0 (the tenth slot) shows the whole tech tree while it is open (D111); the build bar otherwise.
+      onSlot: (slot, shift) => { if (!this.screens.modal && !(slot === 9 && !shift && this.screens.zoomKey('fit'))) this.build.slot(slot, shift); },
       onPointerDown: (p) => this.controls.down(p),
       onPointerMove: (p) => this.controls.move(p),
       onPointerUp: (p) => this.controls.up(p),
@@ -218,13 +220,13 @@ export class App {
     this.wires = new WiresView(this.layers.get('wires'), this.layers.get('wiresPlan'));
     this.items = new ItemsView(this.layers.get('items'), atlas, this.layers.get('itemsOver'), this.layers.get('belts'), { volumes: this.layers.get('objects'), plan: this.layers.get('plan') });
     this.buildings.carHeight = (x, y) => this.items.lift.carAt(x, y); // the traction elevators' cars ride with their items
-    this.drifters = new DriftersView(this.layers.get('status'));
     this.gleaners = new GleanersView(this.layers.get('glass'), this.layers.get('items'), this.layers.get('lights'), atlas);
     this.cargo = new CargoView(this.layers.get('fxTop'), this.layers.get('fxGlow'));
     this.landing = new LandingView(this.layers.get('fxTop'), this.layers.get('fxGlow'), atlas);
     this.dayNight = new DayNight([this.layers.lit, this.layers.get('fog'), this.layers.get('status'), this.layers.get('fxTop')], stage.renderer);
     this.lights = new LightsView(this.layers.get('lights'), this.layers.get('objects'), this.layers.get('plan'), atlas);
     this.lights.work = this.buildings.work; // a production building that does not work shows no light (D83)
+    this.neighbours = new NeighboursView(this.buildings, this.lights); // the neighbouring bases near the view (D110)
     this.clouds = new CloudShadows(this.layers.get('shade'), this.lights.cloudTextures());
     this.windHints = new WindHints(this.layers.get('shade'));
     this.rivers = new RiversView(this.layers.get('decals'));
@@ -576,7 +578,6 @@ export class App {
     this.overlays.landHover = land.hover;
     this.overlays.landSel = land.selected;
     const view = this.views.current;
-    this.overlays.routesOn = !this.views.veiled;
     // Under the Logistique and Production views the wires fade with the base (Électricité draws them bold).
     const wiresA = this.views.veiled && view !== 'power' ? 0.3 : 1;
     this.layers.get('wires').alpha = wiresA;
@@ -603,11 +604,11 @@ export class App {
       return sx >= 0 && sy >= 0 && sx <= this.stage.width && sy <= this.stage.height;
     }, (x, y) => this.relief.level(x, y));
     this.rivers.update(this.sim, vt, cam.zoom, this.paused ? 0 : dt);
-    this.drifters.update(this.sim, P, te, simTicks / 10);
     this.gleaners.update(this.sim, P, te, simTicks, vt, cam.zoom); // the Gleaners at night, the glazed ribbons' glass (D103)
     this.cargo.update(P, te, this.paused ? 0 : dt, grade.night);
     this.landing.update(P, te, dt); // a cinematic: real time, even paused
     this.buildings.setPlanness(te);
+    this.neighbours.update(this.sim, vt); // the neighbouring bases coming near the view, laid (D110)
     this.buildings.cull(vt); // off-screen buildings culled by 16-tile squares, when the view's range of them changes (D92)
     this.items.update(this.sim, simTicks, P, te, cam.zoom, vt); // first: it moves the elevators' cars the buildings view draws
     this.buildings.animate(this.sim, simTicks / 10, grade); // moving parts on game time; cast shadows with the sun

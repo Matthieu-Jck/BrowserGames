@@ -15,6 +15,7 @@
 import { BAL } from './balance';
 import { BUILDINGS } from './buildings';
 import { ITEMS } from './items';
+import { NEIGHBOUR_HUB, NEIGHBOUR_KITS } from './neighbours';
 import { questProblems } from './quests';
 import { MAX_RECIPES, RECIPES } from './recipes';
 import { reserveProblems } from './reserve';
@@ -168,6 +169,13 @@ export function validateContent(): string[] {
     if (!unlocks.has(r.unlock)) errs.push(`recipe ${id}: unknown unlock ${r.unlock}`);
     const ticks = Math.round(r.seconds * 10);
     if (CYCLE_LCM % ticks !== 0) errs.push(`recipe ${id}: ${ticks} ticks do not divide ${CYCLE_LCM}`);
+  }
+
+  // The neighbouring bases' kits (D110): known buildings, and their ribbons carry known items.
+  for (const [pid, k] of Object.entries(NEIGHBOUR_KITS)) {
+    for (const b of [...NEIGHBOUR_HUB, ...k.works]) if (!(b in BUILDINGS)) errs.push(`neighbour kit ${pid}: unknown building ${b}`);
+    if (!k.carries.length) errs.push(`neighbour kit ${pid}: carries nothing`);
+    for (const it of k.carries) if (!items.has(it)) errs.push(`neighbour kit ${pid}: unknown item ${it}`);
   }
 
   // Buildings: unlocks, costs, ports on the footprint's edge.

@@ -27,6 +27,7 @@ export type Command =
   | { k: 'respec'; branch: string }
   | { k: 'designate'; tiles: number[]; on: boolean }
   | { k: 'hearthUp' }
+  /** A drifter bought, a freight route opened or closed: retired with the skydocks (D108); kept so older logs still read, they do nothing. */
   | { k: 'drifter'; dock: number }
   | { k: 'route'; from: number; to: number; item: string; ships: number }
   | { k: 'unroute'; id: number }
@@ -119,9 +120,7 @@ export function exec(sim: Sim, cmd: Command): boolean {
     case 'respec': return false; // retired (D107): no reconversion starts
     case 'designate': return sim.designate(cmd.tiles, cmd.on) > 0;
     case 'hearthUp': return sim.upgradeHearth().ok;
-    case 'drifter': return sim.buyDrifter(cmd.dock);
-    case 'route': return sim.addRoute(cmd.from, cmd.to, cmd.item, cmd.ships) > 0;
-    case 'unroute': return sim.removeRoute(cmd.id);
+    case 'drifter': case 'route': case 'unroute': return false; // retired with the skydocks (D108)
     case 'importOrder': return typeof sim.addImport(cmd.post, cmd.item, cmd.perMin, cmd.maxCents, cmd.express ?? false) === 'number';
     case 'cancelOrder': return sim.cancelImport(cmd.id);
     case 'starter': return typeof sim.takeStarter(cmd.post) === 'number';

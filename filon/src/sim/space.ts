@@ -1,18 +1,17 @@
-// space.ts — making room: digging rock, filling water, and flying freight. The rules, as
-// pure functions over integers:
+// space.ts — making room: digging rock and filling water. The rules, as pure functions over
+// integers:
 // · an excavator digs the designated rock tiles within its reach, one at a time; a tile takes
 //   its hardness's time (research speeds it up), yields stone as it goes — under the same
 //   path-independent allowance as research, so the offline catch-up matches ticking — and,
 //   once through, turns to floor (reclaimed land when it touches a zone) and sometimes gives
 //   up embedded ore (a deterministic draw per tile);
-// · a backfiller fills designated water / salt flats within its reach with stone;
-// · a drifter route carries one item between two skydocks at the average throughput of its
-//   ships: C / (2d/v + 2t) items per minute each.
+// · a backfiller fills designated water / salt flats within its reach with stone.
+// (The drifters' freight between skydocks went with the skydocks, D108: far goods go by ribbon.)
 import { BAL } from '@/content/balance';
 import { hash32 } from '@/core/hash';
-import { isqrt, mulDiv } from '@/core/fixed';
+import { mulDiv } from '@/core/fixed';
 import { itemIdx } from '@/content/registry';
-import { EPOCH, TPS } from './constants';
+import { TPS } from './constants';
 import type { Mods } from './research/modifiers';
 import { T } from './types';
 
@@ -35,16 +34,6 @@ export interface Job {
    * l'excavatrice ne consomme pas réellement la pierre »). Absent: a real dig (marked tiles).
    */
   quarry?: true;
-}
-
-export interface Route {
-  id: number;
-  from: number;
-  to: number;
-  item: number;
-  ships: number;
-  /** Sub-mu remainder of the continuous flow (online ticking). */
-  carry: number;
 }
 
 const rockClass = (t: number): number => t - T.Rock1;
@@ -114,22 +103,3 @@ export const jobDone = (j: Job): boolean => j.el >= j.dur * 1000 && j.moved >= j
 
 /** Stone flow (mu per tick) of a running job at `sat` — for the offline reservoir maths. */
 export const jobRate = (j: Job, sat: number): number => (j.el >= j.dur * 1000 ? 0 : (j.mu * sat) / (j.dur * 1000));
-
-/** Drifter route: tiles between two docks' centres (Euclid, integer). */
-export function routeDistance(ax: number, ay: number, bx: number, by: number, mods: Mods): number {
-  const d = isqrt((ax - bx) * (ax - bx) + (ay - by) * (ay - by));
-  return mulDiv(d, mods.drifterDistance, 1000);
-}
-
-/** Items per minute a route's ships carry: ships × C / (2d/v + 2t) (`capMult`: the source dock's ships' load ‰, D70). */
-export function routePerMin(ships: number, dist: number, mods: Mods, capMult = 1000): number {
-  const cap = (((BAL.drifterCap * mods.shipCap) / 1000) * capMult) / 1000;
-  const v = (BAL.drifterTilesPerMin * mods.shipSpeed) / 1000;
-  return (ships * cap) / ((2 * dist) / v + 2 * BAL.drifterLoadMin);
-}
-
-/** The same in mu per tick. */
-export const routeRate = (ships: number, dist: number, mods: Mods, capMult = 1000): number => (routePerMin(ships, dist, mods, capMult) * 1000) / EPOCH;
-
-/** Ships one dock can host: its own (the great skydock's 8, D70), plus research. */
-export const dockShips = (mods: Mods, dock?: { readonly ships: number }): number => (dock?.ships ?? BAL.dockShips) + mods.dockShips;

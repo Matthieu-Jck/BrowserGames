@@ -294,7 +294,7 @@ describe('the land a base was founded on (D63)', () => {
   it('a save from before map versions (no `mapV`) reopens on map 1 at the same hash; a base founded today saves its map', async () => {
     const old = new Sim({ worldSeed: WORLD_SEED, playerSeed: 3, source: new MapGen(WORLD_SEED, 3, 1), foundingEpoch: WORLD_EPOCH0 + 500, colonyName: 'Ancienne' });
     // A pump on the shore of map 1's lake, on the cirque's floor (map 2 has sand there).
-    old.done.add('tr3');
+    old.done.add('steam'); // the pump's plan (D114; Ceramics' before)
     old.rebuildDerived();
     old.grant('iron_plate', 50); old.grant('glass', 20);
     const px = CENTER + CIRQUE_V1.lake.dx - 4, py = CENTER + CIRQUE_V1.lake.dy;

@@ -1,6 +1,6 @@
 // item-picker.ts — choosing an item: a button that shows the chosen item (its icon and its name,
 // or the « none » choice) and opens an inked list of the items, each with its icon. It stands
-// wherever the player picks an item (a router's filters, a store's outlets, a skydock's route),
+// wherever the player picks an item (a router's filters, a sorter's item, the Crier's trades),
 // because a native <option> cannot hold an image (owner, 2026-10-13: icons next to item names).
 //
 // Keyboard: on the button ↓ ↑ Enter or Space open the list; in it ↓ ↑ Home End PageUp PageDown

@@ -50,10 +50,10 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | roche H1–H4 | rock H1–H4 | `T.Rock1`…`T.Rock4` | Diggable rock by hardness: sandstone, basalt, lilac obsidian (ex4), heartrock (ex7). |
 | évent | vent | `T.Vent` | The tile a geothermal plant must stand on. |
 | saline | salt flat | `T.Salt` | Takes ribbons, masts and salt drills; can be backfilled. |
-| brouillard | fog | `Sim.explored` | Unexplored land. Lifted at founding (r 44), round each parcel the claim comes to hold (r 32 from its centre) and by beacons. |
+| brouillard | fog | `Sim.explored`, `Sim.liftFog` | Unexplored land. It lifts as the claim grows (D117): round the Core by its level (r 44 at founding, then 56, 68, 80), round each parcel the claim comes to hold (r 32 from its centre: the parcel and a margin) and round each building it stands up (r 12 and its half-size; a pylon 40; a line piece none), so a pole line walks it back. |
 | parcelle | parcel | `PARCEL`, `parcelAt`, `sim.land` ([world/land.ts](../src/sim/world/land.ts)) | A square of land, 23 tiles a side (D74; 16 before), on a grid centred on the Heart; CrierBelt sells and leases it at a price from what it holds (ground, deposits), dearer with each parcel bought ([land.md](land.md), D60). |
 | carré de départ | starting square | `Land.inStart`, `Land.reach` | The claim's grant: the 3 × 3 parcels round the Heart, about exactly the cirque and its Crown (D74); never bought nor lost. The land panel calls it « Concession d’origine » / Original grant. |
-| vos terres | your land (the claim's land) | `Land.holds`, `covers`; refusal `outside_zone` « Hors de vos terres » | The parcels the claim holds: the starting square, those bought, granted (an older save) or leased. A production building stands wholly on them; ribbons, poles and beacons may cross other land. |
+| vos terres | your land (the claim's land) | `Land.holds`, `covers`; refusal `outside_zone` « Hors de vos terres » | The parcels the claim holds: the starting square, those bought, granted (an older save) or leased. A production building stands wholly on them; ribbons, poles and pylons may cross other land. |
 | bail · loyer | lease · rent | `rentLand`, `Lease`, `landEpoch`, `endLease` | A parcel rented by the hour once « Cadastre » / Land Registry (`tr4`) is learnt: 3 % of its price an hour, fixed for the lease's life. A rent the purse cannot pay ends it (« Bail perdu »): what stands there goes dormant until the parcel is held again. |
 | Aménager | Landscape | the `mark` tool; `designated` | The brush that marks rock to dig or water to fill. |
 | Vue · Plan | View · Plan | `ViewMode` `'iso'` / `'plan'` | The default isometric view, and the top-down board used to build. |
@@ -64,7 +64,6 @@ The story behind the names is in [lore.md](lore.md) (D29).
 |---|---|---|---|
 | Cœur | Core | `hearth` [hearth] | The base's core (code: "Hearth"; older docs say "Heart"): depot of the base's stock, pays for construction, drone bay, uplink, small solar array. Placed at founding; grows to level 4, each level mounting one piece on a corner of its slab and dressing it up (D86): level 2 its one outlet (south-east), which hands out Survey Data once Analytics' « Traitement des données » is researched (D68). |
 | Avant-poste | Waystation | `outpost` (retired, D60) | Gone with the influence zones it extended: a save that still holds one gets it refunded (`RETIRED_COSTS`), its store to the Heart, and the claim keeps the parcels it stood on. |
-| Balise d'arpentage | Survey Beacon | `beacon` [beacon] | Lifts the fog within 40 tiles; can stand off the claim's land and on rock (never on a sister claim's parcel). |
 | Foreuse · Foreuse profonde | Drill · Deep Bore | `drill`, `deep_bore` [drill] | Extract the majority ore beneath them, capped by the tiles' caps. |
 | Collecteur de sable | Sand Collector | `sand_collector` [drill, `ground`] | Scoops sand off the bare ground, 15/min, anywhere on plain sand (sand is the floor, no deposit; D38). |
 | Excavatrice | Excavator | `excavator` [excavator] | Digs marked rock within its reach, yields stone and embedded ore. |
@@ -74,7 +73,6 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Routeur | Router | `router` [fork] | Takes in at its back only and deals out in turn to its front and sides; a filter per side keeps that side for one item (D35). Dropped onto a ribbon, its back takes the way the items enter there (on a curve too), unless turned with R (D98). |
 | Trieur / Trieur inversé | Sorter / Inverted Sorter | `sorter`, `inverted_sorter` [fork] | Directional: the chosen item straight on, others to the sides (inverted: the opposite). |
 | Vanne de trop-plein / de sous-débit | Overflow / Underflow Gate | `overflow_gate`, `underflow_gate` [fork] | Directional: straight on first, then the sides (underflow: the opposite). |
-| Déchargeur | Unloader | `unloader` [fork] | Against a store: takes its chosen item out to the ribbons and machines around. |
 | Distributeur | Distributor | `distributor` [fork] | A big 2×2 router that takes from and gives to every side (eight sides), with dn5. |
 | Croisement | Junction | `crossing` [crossing] | Two ribbon lines cross without mixing. |
 | Passerelle | Bridge | `skybridge` [bridge] | Leaps up to 3 tiles (7 with dn2) to the next bridge in its direction. |
@@ -82,7 +80,6 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Passerelle | Skybridge | `skybridge` [bridge] | A ribbon that leaps 4 tiles (8 with dn2) over ribbons, rock or water. |
 | Conduit | Conduit | `conduit` [conduit] | Water pipe, 240/min; carries fluids only. |
 | Silo | Silo | `silo` [storage] | Buffers 1 000 items of a single kind. |
-| Embarcadère | Skydock | `skydock` [dock] | Hosts drifters; the end of a freight route. |
 | Fonderie (compacte) | (Compact) Smelter | `kiln`, `kiln_compact` [machine] | Smelts ore and sand by burning coal; needs no grid. |
 | Fonderie électrique · Fonderie à arc | Electric Smelter · Arc Furnace | `electric_smelter`, `arc_furnace` [machine] | Smelt ore and sand on grid power, no coal (D106): the electric smelter at the smelter's pace for 300 kW (Tier 1), the arc furnace twice as fast (Mechanics). Their recipes keep the ids `arc_plate`, `arc_glass`. |
 | Tréfileuse | Wire Mill | `wire_mill` [machine] | Copper ore → copper wire. |
@@ -96,12 +93,13 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Collecteur de données · Relais de données | Data Collector · Data Relay | `data_collector`, `data_relay` [machine, `drill.anywhere`] | Powered makers of Survey Data, set anywhere (no deposit): 2 and 6 a minute. The collector comes with « Traitement des données » (`an_data`, D101): the tutorial's first lab runs on the Core's own data. |
 | Laboratoire autonome | Autonomous Lab | `auto_lab` [lab] | A research lab that also makes 3 Survey Data a minute into its own store (Analytics · Data Mining). |
 | Serveur · Serveur refroidi · Supercalculateur | Server · Cooled Server · Supercomputer | `server`, `cooled_server`, `supercomputer` [server] | The claim's own compute: tokens a minute for its research while powered (2 000, 6 000, 20 000), billed before CrierBelt's (D70). |
-| Poteau | Pole | `mast` [pole] | A pillar: up to 8 wires, each up to 6 tiles long (edge to edge), climbing and clearing one terrace (D78). A new one wires itself to the nearest pillar or Cœur in reach. |
-| Pylône | Pylon | `pylon` [pole] | A long-reach pillar, 2×2 and about three tiles tall (D75): up to 4 wires, 40 tiles long (60 with xp4), climbing and clearing three terraces (D78). The 1×1 pylon of older saves is `pylon_1x1`, retired (refunded) |
+| Poteau | Pole | `mast` [pole] | A pillar: up to 8 wires, each up to 6 tiles long (edge to edge), climbing and clearing one terrace (D78). A new one wires itself to the nearest pillar or Cœur in reach. It lifts the fog 12 tiles round it, as any building does (D117): a pole line walks the fog back. |
+| Pylône | Pylon | `pylon` [pole] | A long-reach pillar, 2×2 and about three tiles tall (D75): up to 4 wires, 40 tiles long (60 with xp4), climbing and clearing three terraces (D78). It lifts the fog 40 tiles round it, its wires' reach (D117: the survey beacon's role). The 1×1 pylon of older saves is `pylon_1x1`, retired (refunded) |
 | fil · relier | wire · link | `sim.links` (`PowerLinks`), `link` / `unlink` commands | A power wire: an explicit, saved pair of buildings, one end a pillar or the Cœur, the other a pillar or anything that makes, uses or stores power (D25). Drawn hanging in the air. The « Relier » / Link tool (L) strings and cuts them. |
 | pilier | pillar | content `pole` (`mast`, `pylon`, and the Cœur) | A link point: a building that carries wires — its `range` (how far, edge to edge), `slots` (how many) and `climb` (how many terraces up, down and over, D78). |
 | réseau | grid | `Net` | The buildings joined by wires: one satisfaction for all; « hors réseau » = on no wire. |
 | Générateur à charbon | Coal Generator | `brazier` [generator] | +300 kW, burning 10 coal/min. |
+| Chaudière à vapeur | Steam Boiler | `steam_boiler` [generator] | +600 kW, burning 8 coal and drinking 30 water a minute at full output (D114): two and a half times the coal generator's power per coal. Its plan « Vapeur » / Steam Power (`steam`) brings the water pump and the conduit too. |
 | Éolienne | Wind Turbine | `wind_flower` [wind] | Up to 160 kW on its curve at the local wind: nothing below ×0.4, full from ×1.4, stopped from ×3.6 (D95). |
 | Panneau solaire | Solar Panel | `sun_bulb` [solar] | +150 kW in full sun. |
 | Accumulateur | Accumulator | `accumulator` [accumulator] | Stores 1 200 kW·min, delivers 300 kW. |
@@ -109,7 +107,6 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Cœur-Soleil | Sunheart | `sunheart` [generator] | +20 MW; burns a resonator every 30 min. |
 | Comptoir | Trade Post | `trade_post` [trade] | CrierBelt's cargo pad: 5×5, its flame apron kept clear, one entrance (what it sells) and one exit (what it bought, in turn) on flame-proof ribbons (D62). |
 | tablier (du comptoir) | flame apron | the trade post's outer ring | The one-tile ring round the post's pad that the drones' flames keep clear: nothing else stands on it (D62). |
-| Dérivant | Drifter | `BAL.drifterCost`, `Sim.fleet` | A freight airship bought at a skydock (not a building). Carries one item along a route. |
 | Haveuse | Face Cutter | `face_cutter` [drill, `drill.face`] | Stands on the floor at the foot of a quartz face, its back to the rock, and cuts the face tiles it touches (7.5/min each, 15 at most); never on the wall (`needs_face`); it turns its back to the wall by itself (D87, research `ex_quartz`). |
 | Atelier de quartz | Quartz Workshop | `quartz_workshop` [machine] | Cuts quartz into blades and mounts each on two copper wires: the quartz oscillator, its one recipe (D87, `ex_quartz`). |
 
@@ -157,19 +154,22 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | notes d'archive | archive notes | `Sim.notes` | Non-tradable credit (centi-◉ of science value) that pre-pays new research. |
 | Synthèse | Synthesis | `tr_synth`, `TIER1_WHOLE` | The node that closes Tier 1 (D93): it needs every other Tier 1 node, gives the Core's level 3 and opens Tier 2 (with two expertises). |
 | expertise | expertise | `EXPERTISES`, `Sim.expertise` | What the base has learnt to do well (D93): earned by a feat (`FeatKind`), ranks I–III, two held at a time; a production number or one family's research, by a percentage. |
-| les Glaneurs | the Gleaners | `systems/gleaners.ts`, `world/reach.ts`, `Chain.gleanStep`, `Sim.gleaned` | The small desert people that takes shiny things off the ribbons it reaches, at night (D103). |
+| les Glaneurs | the Gleaners | `systems/gleaners.ts`, `world/reach.ts`, `Chain.raidStep`, `Sim.gleaned` | The small desert people that takes shiny things off the ribbons it reaches, at night (D103). |
+| un raid, un poste | a raid, a post | `Chain.raidPosts`, `raidAt`, `raidHeld` | A band of three to five Gleaners at a run of a line's exposed cells, once a window; each post takes one item that rides onto its cell (D112). |
 | exposé la nuit, à l'abri | exposed at night, kept safe (guarded) | `Graph.glean.exposed`, `.guarded` | A ribbon tile beside desert floor the Gleaners reach; one under glass or beside a fenced-in pocket. |
 | grille | fence | `fence` (kind `fence`) | A 1×1 mesh cage the Gleaners do not cross, laid by dragging (D103). |
 | ruban vitré | glazed ribbon | `glazed_ribbon` (`BuildingDef.glazed`) | A ribbon under glass: the Gleaners take nothing it carries (D103). |
+| ruban camouflé, enfoui | camouflaged ribbon, buried | `camo_ribbon` (`BuildingDef.camo`) | A ribbon buried under the sand: it runs on a neighbouring base's open land and costs the same off the claim's land; slower (40/min), flat; the Gleaners walk over it unseeing (D109). |
 | exploit | feat | `featValue`, `FeatKind` | What earns an expertise: a counter of what the base did (ore extracted, ◉ of sales, the Core's grid held at 95 % in a row…), read at each minute's boundary. |
 | Archive des expertises | Expertise Archive | `HEART_CORNERS` `archive`, `heartPieceAt` | The Core's level-3 corner piece (D86): the way into the Expertise window (E). |
 | réorientation | reorientation | `reorient`, `reorientCost`, `BAL.expertise` | Replacing an expertise in place: paid, dearer each time, the new one in place 24 h later. |
 | en sommeil | dormant | `St.Dormant`, `isDormant` | A building whose unlock was reconverted away, or that needs land and stands off the claim's (a lease lapsed or given up): no flow, grey wash. |
 | ocelle ◉ | ocelli (HUD) | `Sim.credits` in **centi-ocelles** | The currency. `BAL` and the UI speak ◉, the engine ×100. |
 | la Criée | the Crier Ring | M6 | CrierBelt's orbital exchange, where every claim trades (`screen.crier`). |
-| concessions sœurs | sister claims | [colonies.ts](../src/content/colonies.ts) (code: "colonies"); `Land.sister` | The market's forty simulated actors: other CrierBelt partners' bases. They also own about one parcel in eight beyond the ring round the starting square, sold or leased at ×1.6–2.4 the price CrierBelt would ask, and closed even to ribbons until the claim holds it. |
+| concessions (les autres) | claims (the other) | [colonies.ts](../src/content/colonies.ts) (code: "colonies") | The market's forty simulated actors: other CrierBelt partners' claims, each with its name and emblem (`colonyEmblem`). « Concessions sœurs » / "sister claims" until D110. |
+| base voisine | neighbouring base | [world/neighbours.ts](../src/sim/world/neighbours.ts), [content/neighbours.ts](../src/content/neighbours.ts); `Land.neighbour`, `Sim.neighbours` | Another claim's land beside the player's, and the working base standing on it (D110): a lift pad, a silo, a mast, its flag and its trade's buildings, from the seeds, never saved. Not for sale nor lease; its land takes the claim's ribbons and poles only with Neighbour Treaties, its buildings nothing. |
 | valeur de référence · profondeur | reference value V · market depth Q | `ItemDef.value`, `ItemDef.depth` | The price anchor in ◉, and the NPC market depth in items/min. |
-| Sortie (d'un stock) | outlet | `Ent.portItems` | An unloader port of a dock, set to one item — never of the Heart, which only takes in (D34). A trade post's one exit hands out all it bought, in turn (D62). |
+| Sortie (d'un stock) | outlet | `Ent.portItems` | A store's out port handing out one item on its beat: a silo's (its one item; the unloader that pulled a chosen one is retired, D117) — never the Heart's stock, which only takes in (D34). A trade post's one exit hands out all it bought, in turn (D62). |
 
 ## B. Engine and code terms
 
@@ -199,9 +199,8 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | cell | One ribbon tile's place for one item (`Chain.cells`). | chain.ts |
 | run | A conduit chain's FIFO element `{ item, mu, from, to }`: a quantity and the tick window in which it reaches the head ("parcel" in older text and comments). | chain.ts `Run` |
 | chain tier | The building index of a chain's ribbons (ribbon, swift, express, conduit, skybridge). | chain.ts |
-| routing block | A `ForkNode`: router, sorter, gate, unloader, distributor (kind `fork`); its links come from its surroundings. Side-loading onto a ribbon is a lower-priority incoming edge. | `ForkNode` in nodes.ts; `rim`, `routingPorts`, links in compile.ts |
-| reservoir | A stock node with a capacity: the Hearth, silos, docks, trade posts, research labs, servers (power only), excavators, backfillers. Groups are cut at reservoirs. | `ReservoirNode` in nodes.ts |
-| unloader port | A reservoir out port handing out one chosen item (`portItems`): skydock outlets, and the virtual ports unloaders add to the stores they touch — never on the Heart, which has no outputs (D34). | nodes.ts, [types.ts](../src/sim/types.ts) |
+| routing block | A `ForkNode`: router, sorter, gate, distributor (kind `fork`); its links come from its surroundings. Side-loading onto a ribbon is a lower-priority incoming edge. | `ForkNode` in nodes.ts; `rim`, `routingPorts`, links in compile.ts |
+| reservoir | A stock node with a capacity: the Hearth, silos, trade posts, research labs, servers (power only), excavators, backfillers. Groups are cut at reservoirs. | `ReservoirNode` in nodes.ts |
 | virtual mode | During warm-ups a reservoir behaves by state flags (normal, empty, full) and records flows instead of changing its stock. | `V_NORMAL`/`V_EMPTY`/`V_FULL`, [steady.ts](../src/sim/offline/steady.ts) |
 | rotating allocation · water-filling | Fair splits of capacity among edges, rotating with the tick · a proportional capped split (tested; no flow-engine caller yet). | `allocRotating` in node.ts · `waterfill` in fixed.ts |
 | group | A connected component of the graph cut at reservoirs: the unit the catch-up warms up and extrapolates. | [groups.ts](../src/sim/graph/groups.ts) |
@@ -215,11 +214,10 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | allowance | A cap ⌊total × e ÷ duration⌋ on what a timed process may have paid or moved after elapsed powered time *e*. It makes research and digging path-independent, so online and offline agree. | runtime.ts `advanceProject`, [space.ts](../src/sim/space.ts) `advanceJob` |
 | designation | A tile marked for digging (rock) or filling (water, salt flat). | `Sim.designated`, [landscape.ts](../src/sim/systems/landscape.ts) |
 | job | The single dig or fill an excavator or backfiller is running. | `Job` in space.ts |
-| route · fleet | Freight of one item between two skydocks at `ships × C / (2d/v + 2t)` per minute · drifters per dock. | `Route` in space.ts, [freight.ts](../src/sim/systems/freight.ts) |
 | regime | A group's periodic behaviour under fixed conditions (reservoir flags, power, mods), cached by key. | steady.ts, [catchup.ts](../src/sim/offline/catchup.ts) |
 | warm-up | Stepping a group with the online tick code until its state hash repeats: transient *t₁* + period *p* + prefix. | `warmUp` in steady.ts |
 | segment · event | The catch-up's timeline cut at events: epoch, reservoir at a bound, accumulator full or empty, construction or research done. | catchup.ts |
-| pseudo-flow | A timed process the catch-up treats as a known, constant reservoir in-flow or out-flow: research draws, dug stone, backfills, freight. | catchup.ts, [src/sim/systems/](../src/sim/systems/) |
+| pseudo-flow | A timed process the catch-up treats as a known, constant reservoir in-flow or out-flow: research draws, dug stone, backfills. | catchup.ts, [src/sim/systems/](../src/sim/systems/) |
 | direct · exact · approx | Catch-up modes: ticked one by one · every regime periodic · some regimes averaged. | [report.ts](../src/sim/offline/report.ts) |
 | away report · incident | The "while you were away" summary (ids and numbers) · one notable event in it. | report.ts |
 | state hash | A two-lane 32-bit hash of the whole state, used for determinism checks (`FL.hash()`). | `StateHasher` in [hash.ts](../src/core/hash.ts) |
@@ -249,14 +247,14 @@ The story behind the names is in [lore.md](lore.md) (D29).
 - **tier**: an item's tier (1–4, T1–T4 in the design), or a chain's tier (the building index of its ribbons).
 - **depth**: a research node's depth (1–9), an item's market depth Q, or the iso draw order (`depthOf`, `buildingZ`).
 - **grid**: the tile grid (`Grid`), or a power grid (`Net`).
-- **port**: a building's in/out opening (`PortDef`), or an unloader outlet (`portItems`).
+- **port**: a building's in/out opening (`PortDef`), and what an outlet hands out (`portItems`).
 - **parcel**: a square of land (`PARCEL`, [world/land.ts](../src/sim/world/land.ts)), or, in older text and comments, a conduit's run (`Run`) or a ribbon's item before D57.
-- **Logistique / Énergie / Analytique / Commerce**: plan paths (D41), and also research families of the same theme (D107: a plan path leads into its family); the families are `FamilyId`s, the paths `PLAN_PATHS`. « Arpentage » is the survey path only since D107 (Logistics' Tier 1 was named so before).
+- **Logistique / Énergie / Analytique / Commerce**: plan paths (D41), and also research families of the same theme (D107: a plan path leads into its family); the families are `FamilyId`s, the paths `PLAN_PATHS`. « Arpentage » was the survey path from D107 (Logistics' Tier 1 was named so before) until D117, which retired it with the survey beacon; the word now names the Survey Data only.
 - **Heart / Core / Hearth**: one building, `hearth`: « le Cœur » in French, the Core in English (since D68; older docs say the Heart), the Hearth in code.
 - **Champs de braise**: both the `embers` archetype and the `emberfields` T3 biome.
 - **Content id vs kind vs English name**:
   - `pylon` is the Pylône / Pylon, `mast` the Poteau / Pole;
-  - `outpost` was the Waystation (retired, D60), `skydock` has kind `dock`;
+  - `outpost` was the Waystation (retired, D60), `skydock` the Skydock and `big_dock` the Great Skydock (retired with the drifters, [D108](decisions.md));
   - `observatory` is the Research Lab (kind `lab`), `hearth` the Core (« le Cœur »), `silo` kind `storage`, the ribbons kind `belt`, `skybridge` kind `bridge`;
   - `accumulator` is the Accumulator;
   - `brazier` and `sunheart` have kind `generator`.
@@ -266,7 +264,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 
 | Term | Meaning | Where |
 |---|---|---|
-| Comptoir / Trade Post (`trade_post`, kind `trade`) | The colony's dock at the Crier: a 5×5 store whose one entrance takes, and sells, every tradable item but its cargo, and whose one exit hands out its purchases in turn (D62, D64) | `sim/trade.ts`, `systems/trade.ts` |
+| Comptoir / Trade Post (`trade_post`, kind `trade`) | The base's cargo pad at the Crier: a 5×5 store whose one entrance takes, and sells, every tradable item but its cargo, and whose one exit hands out its purchases in turn (D62, D64) | `sim/trade.ts`, `systems/trade.ts` |
 | Cargaison / cargo | What a post bought and holds or awaits (on order, on its way, in its container): its exit hands it out, its entrance takes everything else, to sell (D64; export streams are gone) | `TradeState.cargo`, `cargoOf` |
 | Standing order / ordre d'import | Item, whole items/min, max price: bought each boundary while the ask is under the max (pause above, resume 3 % below) | `ImportOrder`, `orderTrades` |
 | Spot / comptant | A stock sold or bought at once along the market's depth (slippage), booked on the market | `spotTrade`, `quoteSpot`, `MarketService.book` |
@@ -274,7 +272,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | Throughput / débit | Items a post lifts per minute, imports and exports together (120 / 240 / 480 by level) | `throughputMu` |
 | Ledger / registre | The rolling record of trades (epoch, post, item, kind, mu, centi-◉) | `TradeState.ledger` |
 | Gazette | The Crier's news: world events announced 1–3 h ahead, the scripted Port-Écume shortage | `market/events.ts`, `ui/gazette.ts` |
-| Sister colony / colonie sœur | One of the 40 NPC colonies of the market (profile, band, delay, supplies / needs) | `content/colonies.ts`, `market/colonies.ts` |
+| Colony (code) / concession (UI) | One of the 40 NPC claims of the market (profile, band, delay, supplies / needs); some hold land beside the player's as neighbouring bases (D110) | `content/colonies.ts`, `market/colonies.ts` |
 | bid / ask | What the market pays / asks per item this epoch (centi-◉), before the post's fee | `sim.prices` |
 
 ## Persistence (M7)

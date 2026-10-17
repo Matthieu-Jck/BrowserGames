@@ -1,5 +1,5 @@
 // quests.ts — the tutorial (design §8 « Prise en main », decisions D28 and D101): the claim's name,
-// then nine quests, run in this order, one at a time. The fiction: the player is an investor
+// then ten quests, run in this order, one at a time. The fiction: the player is an investor
 // living in Verrière, Ysmère's glass city, in partnership with CrierBelt (the company that runs the
 // Crier Ring and its cargo lifts, and takes a cut on every trade); their base in the Bonne-Veine
 // cirque is fully automated, built by drones and steered from afar. CrierBelt is the voice that sets
@@ -51,9 +51,9 @@ export const QUEST_HINT_AFTER = 3000;
  * The quest table's shape, saved with the quest state (D101): a save from an older table has its
  * quest ids folded into today's (`QUEST_FOLDS`), the quests added since counted done when it was
  * past them (`QUEST_ADDED`), and its current quest's baselines taken afresh. 2: the D101 table;
- * 3: « Le Cœur grandit » added.
+ * 3: « Le Cœur grandit » added; 4: « La vapeur » (D114).
  */
-export const QUEST_TABLE = 3;
+export const QUEST_TABLE = 4;
 
 /**
  * What a quest asks. Counters marked *since* count from the moment the quest became current, or
@@ -151,7 +151,8 @@ export type GuideSpot =
   | { readonly entity: string }  // the first built building of a kind
   | { readonly newest: string }  // the newest built building of a kind
   | { readonly vein: true }      // the floor at the foot of the land's quartz vein (D87): where a face cutter goes
-  | { readonly windy: true };    // the Crown's windiest free spot for a turbine (D95: the wind field, read off the land)
+  | { readonly windy: true }     // the Crown's windiest free spot for a turbine (D95: the wind field, read off the land)
+  | { readonly water: true };    // the nearest spot to the Core where a pump draws water (D114: on any level; readouts/water.ts)
 
 /** What the guide's arrow points at for a step; it follows the UI (tab → slot → the world). */
 export type GuideTarget =
@@ -487,7 +488,68 @@ export const QUESTS = {
     ],
   },
 
-  // ── 5 ── goal: the Crier both ways — glass sold, copper bought and used ───────
+  // ── 5 ── goal: steam (D114: water's first use, from Tier 1) ──────────────────
+  // Owner, 2026-10-17: « Il faudrait que l'eau serve assez tôt dans le jeu, dès le Tier 1 ». The
+  // cirque's coal is short (D97: a drill pair a smelter); a boiler gets two and a half times the
+  // power of the coal generator out of it, day and night, with water from a pump by conduit. Where
+  // the water is, the guide's arrow shows (`water`: the nearest pump spot from the Core, on any
+  // level: map 4's spring pool at the floor's edge, D115; the tarn up on the Crown on maps 2–3); a
+  // conduit's water pours down the terraces one at a time (D114: never up), so a boiler may stand
+  // below the water it drinks.
+  steam_power: {
+    name: { fr: 'La vapeur', en: 'Steam Power' },
+    reveals: ['plan:steam'],
+    desc: {
+      fr: 'Votre charbon est rare, et un générateur n’en tire pas grand-chose. Une chaudière à vapeur en tire deux fois et demie plus d’électricité, de jour comme de nuit, pourvu qu’on lui donne de l’eau. Une pompe au bord de l’eau, un conduit jusqu’à la chaudière — l’eau y descend les gradins, mais ne les monte jamais —, son charbon par ruban, et le tout relié au réseau.',
+      en: 'Your coal is scarce, and a generator gets little out of it. A steam boiler gets two and a half times the power out of it, by day and by night, as long as it has water. A pump at the water’s edge, a conduit to the boiler — water comes down the terraces in it, but never climbs them —, its coal by ribbon, and all of it wired into the grid.',
+    },
+    objectives: [
+      { k: 'feeds', item: 'water', to: ['steam_boiler'], n: 1, label: { fr: 'L’eau jusqu’à la chaudière', en: 'Water to the boiler' } },
+      { k: 'feeds', item: 'coal', to: ['steam_boiler'], n: 1, label: { fr: 'Le charbon jusqu’à la chaudière', en: 'Coal to the boiler' } },
+      { k: 'linked', defs: ['steam_boiler'], n: 1, label: { fr: 'La chaudière au réseau', en: 'The boiler on the grid' } },
+    ],
+    reward: { items: [['iron_plate', 30], ['glass', 10]] },
+    hints: [
+      {
+        // After the coal generator's plan (the same coal, more power), itself after the turbine's: the arrow takes the first not taken.
+        hint: { fr: 'Le plan Vapeur est dans l’arbre (T), voie Énergie, après le Générateur à charbon : la chaudière, la pompe et le conduit.', en: 'The Steam Power plan is in the tree (T), on the Energy path, after the Coal Generator: the boiler, the pump and the conduit.' },
+        target: { k: 'unlock', ids: ['wind_flower', 'brazier', 'steam'] },
+        done: { k: 'unlocked', ids: ['steam'] },
+      },
+      {
+        hint: { fr: 'Une pompe au bord de l’eau, à son niveau : la flèche montre l’eau la plus proche du Cœur.', en: 'A pump at the water’s edge, on its level: the arrow shows the water nearest the Core.' },
+        target: { k: 'build', def: 'pump', at: { water: true } },
+        done: { k: 'build', defs: ['pump'], n: 1 },
+      },
+      {
+        hint: { fr: 'La chaudière près de l’eau, à son niveau ou plus bas (onglet Énergie) : dans un conduit, l’eau descend les gradins un à un, mais ne monte jamais.', en: 'The boiler near the water, on its level or lower (Energy tab): in a conduit, water comes down the terraces one by one, but never climbs.' },
+        target: { k: 'build', def: 'steam_boiler', at: { newest: 'pump' } },
+        done: { k: 'build', defs: ['steam_boiler'], n: 1 },
+      },
+      {
+        hint: { fr: 'Un conduit de la pompe à une entrée de la chaudière : il se trace en glissant, comme un ruban, et descend les gradins.', en: 'A conduit from the pump to an input of the boiler: lay it by dragging, like a ribbon, down the terraces.' },
+        target: { k: 'build', def: 'conduit', at: { newest: 'pump' } },
+        done: { k: 'feeds', item: 'water', to: ['steam_boiler'], n: 1 },
+      },
+      {
+        hint: { fr: 'Son charbon : une foreuse de plus sur le gisement, son ruban jusqu’à l’autre entrée.', en: 'Its coal: one more drill on the deposit, its ribbon to the other input.' },
+        target: { k: 'build', def: 'drill', at: { deposit: 'coal' } },
+        done: { k: 'feeds', item: 'coal', to: ['steam_boiler'], n: 1 },
+      },
+      {
+        hint: { fr: 'Relie la chaudière au réseau.', en: 'Wire the boiler into the grid.' },
+        target: { k: 'link' },
+        done: { k: 'linked', defs: ['steam_boiler'], n: 1 },
+      },
+      {
+        hint: { fr: 'La pompe aussi : sans courant, elle ne pompe rien.', en: 'The pump too: without power, it pumps nothing.' },
+        target: { k: 'link' },
+        done: { k: 'powered', defs: ['pump'], n: 1 },
+      },
+    ],
+  },
+
+  // ── 6 ── goal: the Crier both ways — glass sold, copper bought and used ───────
   // It folds in three quests of the first tutorial (« La Criée appelle », « Le filon fatigué »,
   // « Premier achat »): the owner, 2026-10-16: « on dit au joueur de placer une commande de cuivre
   // sur le marché, mais jamais de s'en servir. Je n'avais même pas relié mon tradepost ». The
@@ -577,7 +639,7 @@ export const QUESTS = {
     ],
   },
 
-  // ── 6 ── goal: the Core's level 2 (D101) ──────────────────────────────────────
+  // ── 7 ── goal: the Core's level 2 (D101) ──────────────────────────────────────
   // Owner, 2026-10-16: « there should be a quest in the tutorial where you upgrade it ». A player
   // action paid in what the base makes by now (BAL.hearthUpgrades[0]: plates, glass, copper wire),
   // one click on the Core's card (the logged `hearthUp`). The level grows the Core's power (its core
@@ -619,7 +681,7 @@ export const QUESTS = {
     ],
   },
 
-  // ── 7 ── goal: every plan, then the lab on the Core's Survey Data (D71, D101) ──
+  // ── 8 ── goal: every plan, then the lab on the Core's Survey Data (D71, D101) ──
   // The research lab is the gate between the plans and research (owner, 2026-10-14). The plans are
   // a goal at the player's own pace (D101: a calm count, no arrow down the tree). The first lab runs
   // on the Core's own data (owner, 2026-10-16: « The quest where you start researching could use the
@@ -675,7 +737,7 @@ export const QUESTS = {
     ],
   },
 
-  // ── 8 ── goal: quartz in the wall, past the Crown (D87) ───────────────────────
+  // ── 9 ── goal: quartz in the wall, past the Crown (D87) ───────────────────────
   // The resource the cirque lacks, a parcel away: the land's first purchase, a face cutter at the
   // foot of the nearest mountain's wall, its quartz carried home over the Crown on traction ribbons.
   // It is the tutorial's way past the Crown (D101: « Au-delà de la Couronne » folded in, its
@@ -728,7 +790,7 @@ export const QUESTS = {
     ],
   },
 
-  // ── 9 ── goal: two of the parts the Core's level 3 is paid in (D90, after D93) ─
+  // ── 10 ── goal: two of the parts the Core's level 3 is paid in (D90, after D93) ─
   // From the tutorial into the end of Tier 1 (playtest 2026-10-16: once the quartz came, nothing named
   // the next goal). Level 3 is paid in gears, circuits and quartz oscillators; the gears wait for
   // Mechanics' press (started in « Données d'arpentage », it is learnt in its own time), so the
@@ -796,7 +858,7 @@ export const QUESTS = {
 } as const satisfies Record<string, QuestDef>;
 
 export type QuestId = keyof typeof QUESTS;
-/** Quests in the order they run (their index: 0 the claim's name, then the quests 1–9). */
+/** Quests in the order they run (their index: 0 the claim's name, then the quests 1–10). */
 export const QUEST_IDS = Object.keys(QUESTS) as QuestId[];
 
 /**
@@ -815,8 +877,9 @@ export const QUEST_FOLDS: Readonly<Record<string, QuestId>> = {
  * Quests a later table added, with that table (D101): in a save from an older table, one counts as
  * done once a quest after it in run order was done (the player was past it; systems/quests.ts
  * `foldDone`). « Le Cœur grandit » came with table 3: before, « La Criée » paid level 2's materials.
+ * « La vapeur » came with table 4 (D114): a player past it plays on, one still at « La Criée » meets it first.
  */
-export const QUEST_ADDED: Readonly<Partial<Record<QuestId, number>>> = { core_upgrade: 3 };
+export const QUEST_ADDED: Readonly<Partial<Record<QuestId, number>>> = { core_upgrade: 3, steam_power: 4 };
 
 /** Titles a quest can grant: a mention of the base in the Crier's register (shown with its name). */
 export const QUEST_TITLES: Readonly<Record<string, Loc>> = {

@@ -40,7 +40,7 @@ export interface Ent {
   rot: Rot;
   /** Packed settings — machine: recipe + speed modules; fork: per-side filters (layout in cfg.ts). */
   cfg: number;
-  /** Per-port item filters for unloaders (Hearth/silo outputs, docks, trade posts): item index or -1. */
+  /** Per-port items its outlets hand out (the Heart's data outlet, a trade post's exit): item index or -1. */
   portItems?: number[];
   /** Tick at which a remote construction completes (0 = built). */
   builtAt: number;

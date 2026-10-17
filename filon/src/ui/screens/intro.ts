@@ -5,7 +5,7 @@
 // stamped « Accordé » — each caption typed out, each panel moving on by itself once read or
 // on a click. Then CrierBelt's registration form (owner, 2026-10-12: "like an actual form to
 // create a company, and have the player sign it"): the company's name to fill in (the claim
-// takes the same name), checked by `checkName` (intro-name.ts: length, sister claims, reserved
+// takes the same name), checked by `checkName` (intro-name.ts: length, the other claims, reserved
 // names; a promise, so a server can answer one day), the rest of the form already typed in by
 // CrierBelt, then the player's signature (signature-pad.ts) and the « Enregistré » stamp. Then
 // the paper lifts off the live world, framed
@@ -29,7 +29,7 @@ import { defaultEmblem, type Emblem } from '@/content/emblem';
 export type IntroStage = 'story' | 'name' | 'landing';
 
 export interface IntroHost {
-  /** The register the name is checked against (the sister claims; one day, the server). */
+  /** The register the name is checked against (the other claims; one day, the server). */
   register(): NameRegister;
   /** The player signed with a free name: the shell lands the Heart (and names the claim, gives it its emblem). */
   sign(name: string, emblem: Emblem): void;

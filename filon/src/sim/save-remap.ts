@@ -54,8 +54,8 @@ export const FIELDS: { readonly [K in keyof Required<SaveData>]: Kind } = {
   ents: 'index', portItems: 'index', stock: 'index', stores: 'index', acc: 'refs', links: 'refs',
   done: 'plain', terrainDiff: 'plain', levelDiff: 'plain', oreDiff: 'index', land: 'plain', explored: 'plain',
   nodes: 'index', chains: 'index', produced: 'index', consumed: 'index', projects: 'index', tokens: 'plain', dataAcc: 'refs', labQueue: 'refs',
-  notes: 'plain', respecs: 'plain', lastRespec: 'plain', designated: 'plain', jobs: 'refs', fleet: 'refs',
-  routes: 'index', nextRouteId: 'plain', market: 'plain', trade: 'index', quests: 'plain', value: 'plain', expertise: 'plain',
+  notes: 'plain', respecs: 'plain', lastRespec: 'plain', designated: 'plain', jobs: 'refs',
+  market: 'plain', trade: 'index', quests: 'plain', value: 'plain', expertise: 'plain',
   gleaners: 'index',
 };
 
@@ -296,8 +296,6 @@ export function remapSave(d: SaveData, to: ContentTable = contentTable(), retire
     jobs: (d.jobs ?? []).filter((j) => alive(j.ent)),
     ...(d.dataAcc ? { dataAcc: d.dataAcc.filter(([id]) => alive(id)) } : {}),
     ...(d.labQueue ? { labQueue: d.labQueue.filter(([id]) => alive(id)) } : {}),
-    fleet: (d.fleet ?? []).filter(([id]) => alive(id)),
-    routes: (d.routes ?? []).filter((r) => alive(r.from) && alive(r.to) && item(r.item) >= 0).map((r) => ({ ...r, item: item(r.item) })),
     ...(trade ? { trade } : {}),
     // The Gleaners' counts (D103): per item, re-pointed like the statistics.
     ...(d.gleaners ? { gleaners: { ...d.gleaners, gleaned: dense(d.gleaners.gleaned, false), ...(d.gleaners.dusk ? { dusk: dense(d.gleaners.dusk, false) } : {}), ...(d.gleaners.dawn ? { dawn: dense(d.gleaners.dawn, false) } : {}) } } : {}),

@@ -124,7 +124,7 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
   let keyRuns = new Map<number, Run[]>();     // reservoir key → runs it is relevant to
   let resState: Uint8Array[] = [];
   let netModes: NetMode[] = [];
-  /** Per grid: what reservoir buildings draw (observatories, excavators, docks…; they belong to no group). */
+  /** Per grid: what reservoir buildings draw (observatories, excavators, servers…; they belong to no group). */
   let resKw: number[] = [];
   /** Per grid: its load as last summed (`computeNetModes`; undefined: to sum). */
   let netLoad: Array<NetLoad | undefined> = [];
@@ -136,8 +136,8 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
   const sumNormIn = new Map<number, number>();  // Σ runs' NORMAL-state inflow per key (shares)
   const sumNormOut = new Map<number, number>();
   const throttle = new Map<number, number>();   // key → throttle total (mu/epoch)
-  const labOut = new Map<number, number>();     // pseudo outflows: research draws, backfills, freight out (mu/tick)
-  const pIn = new Map<number, number>();        // pseudo inflows: excavated rubble, freight in (mu/tick)
+  const labOut = new Map<number, number>();     // pseudo outflows: research draws, backfills (mu/tick)
+  const pIn = new Map<number, number>();        // pseudo inflows: excavated rubble, a post's deliveries, data files (mu/tick)
   const RUB = itemIdx('stone');
   /**
    * Reservoir keys whose level the epoch boundary moved outside the flows (trade: deliveries,
@@ -379,7 +379,9 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
         sat = 1000; disp = 0; accRate = E < cap ? Math.min(rate, Math.max(0, R - dAvg)) : 0;
       } else if (R + Feff >= dMax && F > 0) {
         const need = Math.max(0, dAvg - R);
-        sat = 1000; disp = Math.min(1000, Math.max(SAT_STEP, Math.ceil(((need * 1000) / F) / SAT_STEP) * SAT_STEP)); accRate = 0;
+        // The generators' share as online (solvePower: the exact ceiling), not rounded up to 25 ‰:
+        // a steam boiler (D114) half called on burnt and drank up to a tenth too much offline.
+        sat = 1000; disp = Math.min(1000, Math.max(1, Math.ceil((need * 1000) / F))); accRate = 0;
       } else if (E > 0 && rate > 0) {
         const deficit = Math.max(0, dAvg - R - Feff);
         const dis = Math.min(rate, deficit);
@@ -491,21 +493,6 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
       if (ri < 0 || r <= 0) continue;
       add(j.kind === 'dig' ? nextIn : next, ri * N_ITEMS + RUB, r);
     }
-    for (const rt of sim.routes) {
-      const ra = resIndex(rt.from), rb = resIndex(rt.to);
-      let r = sim.routeRateNow(rt, (n) => netModes[n]?.sat ?? 0);
-      if (ra < 0 || rb < 0 || r <= 0) continue;
-      const ka = ra * N_ITEMS + rt.item, kb = rb * N_ITEMS + rt.item;
-      // What the drifters really carry: an empty source dock hands on only what flows into it, a
-      // full destination takes only what flows out of it (`moveFreight` moves no more online).
-      // Counted at the ships' full rate, an empty source fed the destination's consumers through
-      // its EMPTY throttle with freight that never came: they made several times their output.
-      if (resState[ra]![rt.item] === V_EMPTY) r = Math.min(r, (curIn.get(ka) ?? 0) + (pIn.get(ka) ?? 0));
-      if (resState[rb]![rt.item] === V_FULL) r = Math.min(r, (curOut.get(kb) ?? 0) + (labOut.get(kb) ?? 0));
-      if (r <= 0) continue;
-      add(next, ka, r);
-      add(nextIn, kb, r);
-    }
     for (const [k, d] of deliveries) if (d.n > d.done) add(nextIn, k, (d.n * 1000) / EPOCH);
     // Data files out of the Heart (Analytics) and the autonomous labs: steady inflows (D68, D70).
     const data = itemIdx('journal_1');
@@ -574,9 +561,9 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
         const res = g.reservoirs[ri]!;
         res.stock[i] = res.stock[i]! + d;
         // An EMPTY key's consumers draw its throttle — its inflow, which may be a pseudo inflow
-        // (freight, a dig's rubble, a post's deliveries) credited only below: the level may dip
+        // (a dig's rubble, a post's deliveries) credited only below: the level may dip
         // under zero until then. Clamped right here, those items were lost AND credited again: the
-        // consumers made them twice (a drifter-fed workshop made half again its output offline).
+        // consumers made them twice (a workshop fed by the drifters of D66 made half again its output offline).
         if (res.stock[i]! < 0) short.push(k);
         if (res.stock[i]! > res.cap && d > 0) {
           const over = res.stock[i]! - Math.max(res.cap, res.stock[i]! - d);
@@ -605,7 +592,6 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
       const sats = new Map(sim.jobs.map((j) => [j, jobSatOff(j)] as const));
       sim.advanceJobs(dt, () => 0, (j) => sats.get(j) ?? 0);
     }
-    for (const rt of sim.routes) sim.moveFreight(rt, dt, (n) => netModes[n]?.sat ?? 0, false);
     // The deliveries, whole items at an even pace over their epoch.
     for (const [k, d] of deliveries) {
       const due = Math.min(d.n, Math.floor((d.n * (to - d.at)) / EPOCH));

@@ -40,6 +40,8 @@ export interface Screen {
   closed?(): void;
   /** While it is open the game's keys wait (Esc and the perf overlay still work): the main menu. */
   readonly modal?: boolean;
+  /** A screen with a zoom of its own (the tech tree, D111) takes the zoom keys while it is open: false when it has none. */
+  zoomKey?(how: 'in' | 'out' | 'fit'): boolean;
 }
 
 export class ScreenHost {
@@ -72,6 +74,12 @@ export class ScreenHost {
     sc.refresh();
     sc.opened?.();
     bus.emit('screen:opened', { id });
+  }
+
+  /** The zoom keys on the open screen (D111): true when it zoomed itself, so the world's camera stays. */
+  zoomKey(how: 'in' | 'out' | 'fit'): boolean {
+    const sc = this.current ? this.screens.get(this.current) : undefined;
+    return !!sc?.zoomKey?.(how);
   }
 
   /** Esc on the open screen: back a page if it has one, else close it. */

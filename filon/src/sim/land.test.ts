@@ -60,7 +60,7 @@ describe('land in parcels', () => {
     expect(parcelRect(0).x0).toBe(0);
   });
 
-  it('prices a parcel by what it holds, then the growth, the Heart and a sister claim', () => {
+  it('prices a parcel by what it holds, then the growth; a neighbouring base’s is not for sale', () => {
     const sim = landSim();
     // A deposit raises the price.
     const ore = new Sim({ worldSeed: 7, playerSeed: 11, foundingEpoch: sim.foundingEpoch, source: testSource([{ x: CENTER + 40, y: CENTER - 4, w: 8, h: 8, item: itemIdx('copper_ore'), rich: 500 }]) });
@@ -71,12 +71,14 @@ describe('land in parcels', () => {
     // Each parcel bought makes the next dearer.
     expect(sim.buyLand(EAST)).toBe(null);
     expect(sim.landPrice(WEST)).toBe(Math.floor((bare * BAL.land.growth) / 1000));
-    // A sister claim's parcel, past the ring round the starting square: dearer.
-    let sister = -1;
-    for (let p = 0; p < PARCEL_COLS * PARCEL_COLS && sister < 0; p++) if (sim.land.sister(p) >= 0) sister = p;
-    expect(sister).toBeGreaterThan(-1);
-    expect(ringOf(sister)).toBeGreaterThan(sim.land.reach + 1);
-    expect(sim.landPrice(sister)).toBeGreaterThan(landContent(sim, sister));
+    // A neighbouring base's parcel (D110), past the ring round the starting square: neither sold nor leased.
+    let nb = -1;
+    for (let p = 0; p < PARCEL_COLS * PARCEL_COLS && nb < 0; p++) if (sim.land.neighbour(p) >= 0) nb = p;
+    expect(nb).toBeGreaterThan(-1);
+    expect(ringOf(nb)).toBeGreaterThan(sim.land.reach + 1);
+    expect(sim.buyBlock(nb)).toBe('neighbour');
+    expect(sim.leaseBlock(nb)).toBe('neighbour');
+    expect(sim.landPrice(WEST)).toBeGreaterThanOrEqual(landContent(sim, WEST)); // no markup anywhere: the content price grown
   });
 
   it('buys a parcel: a kiln may stand there; a parcel held is not sold twice; the purse must pay', () => {
@@ -142,22 +144,28 @@ describe('land in parcels', () => {
     expect(off.hash()).toBe(on.hash());
   });
 
-  it('a sister claim\'s parcel takes no ribbon until the claim holds it', () => {
+  it('a neighbouring base\'s land takes no ribbon without Neighbour Treaties, its buildings none even with them (D110)', () => {
     const sim = landSim();
     let p = -1;
-    for (let q = 0; q < PARCEL_COLS * PARCEL_COLS && p < 0; q++) if (sim.land.sister(q) >= 0 && ringOf(q) < 8) p = q;
+    for (let q = 0; q < PARCEL_COLS * PARCEL_COLS && p < 0; q++) if (sim.land.neighbour(q) >= 0 && ringOf(q) < 8) p = q;
     expect(p).toBeGreaterThan(-1);
-    const { x0, y0 } = parcelRect(p);
-    sim.explored.push([x0 + 8, y0 + 8, 12]); // surveyed
-    expect(sim.canPlace('mast', x0 + 4, y0 + 4, 0).reason).toBe('sister_land');
-    // A purchase grows the claim outward (D70): a parcel apart from its land needs the Far Claim.
-    if (!sim.land.touches(p)) {
-      expect(sim.buyLand(p)).toBe('far');
-      sim.done.add('xp_far'); sim.rebuildDerived();
+    const { x0, y0, x1, y1 } = parcelRect(p);
+    sim.explored.push([x0 + 11, y0 + 11, 20]); // surveyed
+    // An open tile of its land, and one under its buildings.
+    let open: [number, number] | null = null, taken: [number, number] | null = null;
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+      if (sim.neighbours.at(x, y)) taken ??= [x, y];
+      else open ??= [x, y];
     }
-    expect(sim.buyLand(p)).toBe(null);
-    expect(sim.land.sister(p)).toBe(-1);
-    expect(sim.canPlace('mast', x0 + 4, y0 + 4, 0).reason).toBe('ok');
+    expect(open && taken).toBeTruthy();
+    expect(sim.canPlace('mast', open![0], open![1], 0).reason).toBe('neighbour_land');
+    expect(sim.canPlace('mast', taken![0], taken![1], 0).reason).toBe('neighbour_land');
+    sim.done.add('xp_treaties'); sim.rebuildDerived();
+    expect(sim.canPlace('mast', open![0], open![1], 0).reason).toBe('ok');
+    expect(sim.canPlace('mast', taken![0], taken![1], 0).reason).toBe('occupied');
+    // Never bought: the base stays.
+    expect(sim.buyLand(p)).toBe('neighbour');
+    expect(sim.land.neighbour(p)).toBeGreaterThanOrEqual(0);
   });
 
   it('buying, leasing and giving a lease up are commands: the log replays to the same land', () => {

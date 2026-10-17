@@ -22,6 +22,7 @@ import { forTiles } from './entities';
 import { contentTable, remapSave, type ContentTable } from './save-remap';
 import { tileIndex } from './world/grid';
 import { packRuns } from './flow/chain';
+import { neighboursGiveWay } from './systems/land';
 
 /**
  * 2: ribbons save their cells, one item per tile (the tile-by-tile ribbons, D57); conduits their
@@ -38,8 +39,16 @@ import { packRuns } from './flow/chain';
  * données », the Face Cutter a plan — a claim with the lab's plan holds the one, a Face Cutter under
  * way is the other taken. 14: a sensible tree (D107): the Fast Drill and « Second comptoir » are of
  * Tier 1 now, so a claim past the Synthesis (learnt or under way) holds them, its Tier 1 whole.
+ * 15: no skydocks (D108): the drifters a save held refunded to the Heart, its freight routes dropped,
+ * the Great Skydock node forgotten; the docks themselves the remap's (retired ids, refunded).
+ * 16: Steam Power (D114): the pump and the conduit move from Ceramics to the plan `steam` with the
+ * steam boiler; a claim holding the lab's plan holds it. A boiler's water is an optional field of its
+ * generator node's state (absent: none).
+ * 17: no survey beacon and no unloader (D117): their plans dropped from `done`, their cost back to
+ * the Heart; a Core above level 1 lifts the fog as far as its level does now; the buildings
+ * themselves the remap's (retired ids, refunded).
  */
-export const SAVE_VERSION = 14;
+export const SAVE_VERSION = 17;
 
 export interface SaveData {
   v: number;
@@ -80,7 +89,8 @@ export interface SaveData {
    * tail to head (0: empty), and `stage`, the part of an item being loaded at its tail. A conduit:
    * `runs` (item, milli-items, from, to — head first).
    */
-  chains: Array<{ tier: number; head: number; len: number; runs?: number[]; cells?: number[]; stage?: [number, number] }>;
+  /** `raid`: a raided line's posts that have taken their item this raid (D112, a bit a post; absent: none). */
+  chains: Array<{ tier: number; head: number; len: number; runs?: number[]; cells?: number[]; stage?: [number, number]; raid?: number }>;
   produced: number[];
   consumed: number[];
   /** Research in progress (start order), archive notes, reconversion state. */
@@ -94,12 +104,9 @@ export interface SaveData {
   notes?: number;
   respecs?: number;
   lastRespec?: number;
-  /** Space: marked tiles ([tile, 1 dig | 2 fill]), running jobs, drifters, routes. */
+  /** Space: marked tiles ([tile, 1 dig | 2 fill]), running jobs. (Drifters and routes until v14: the 14 → 15 step refunds and drops them, D108.) */
   designated?: Array<[number, number]>;
   jobs?: Array<{ ent: number; kind: 'dig' | 'fill'; tile: number; dur: number; el: number; mu: number; moved: number; quarry?: true }>;
-  fleet?: Array<[number, number]>;
-  routes?: Array<{ id: number; from: number; to: number; item: number; ships: number; carry?: number }>;
-  nextRouteId?: number;
   /** The Crier: the market's own (flow-dependent) state, and the colony's trade. */
   market?: MarketSave;
   trade?: {
@@ -152,7 +159,8 @@ export function serialize(sim: Sim): SaveData {
       for (const r of c.live()) runs.push(r.item, r.mu, r.from, r.to);
       return { ...key, runs };
     }
-    return c.stageMu > 0 ? { ...key, cells: Array.from(c.cells), stage: [c.stageItem, c.stageMu] as [number, number] } : { ...key, cells: Array.from(c.cells) };
+    const raid = c.raidHeld ? { raid: c.raidHeld } : {};
+    return c.stageMu > 0 ? { ...key, cells: Array.from(c.cells), stage: [c.stageItem, c.stageMu] as [number, number], ...raid } : { ...key, cells: Array.from(c.cells), ...raid };
   });
   return {
     v: SAVE_VERSION,
@@ -193,9 +201,6 @@ export function serialize(sim: Sim): SaveData {
     lastRespec: sim.lastRespec,
     designated: [...sim.designated].map(([t, k]) => [t, k === 'dig' ? 1 : 2] as [number, number]),
     jobs: sim.jobs.map((j) => ({ ...j })),
-    fleet: [...sim.fleet].sort((a, b) => a[0] - b[0]),
-    routes: sim.routes.map((r) => ({ id: r.id, from: r.from, to: r.to, item: r.item, ships: r.ships, carry: r.carry })),
-    nextRouteId: sim.nextRouteId,
     market: sim.market.save(),
     trade: {
       cargo: [...sim.trade.cargo].sort((a, b) => a[0] - b[0]).map(([id, items]) => [id, [...items]]),
@@ -258,6 +263,8 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
   for (const p of d.land?.granted ?? []) sim.land.granted.add(p);
   for (const [p, next, cents] of d.land?.leases ?? []) sim.land.leases.set(p, { next, cents });
   for (const [p, cents] of d.land?.paid ?? []) sim.land.paid.set(p, cents);
+  // A neighbouring base gives way to what an older save holds or built on its land (D110): granted.
+  neighboursGiveWay(sim);
   for (const e of d.explored ?? []) sim.explored.push([e[0], e[1], e[2]]);
   sim.produced.set(d.produced);
   sim.consumed.set(d.consumed);
@@ -304,9 +311,6 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
   }
   for (const [t, k] of d.designated ?? []) sim.designated.set(t, k === 1 ? 'dig' : 'fill');
   sim.jobs = (d.jobs ?? []).map((j) => ({ ...j }));
-  for (const [id, n] of d.fleet ?? []) sim.fleet.set(id, n);
-  sim.routes = (d.routes ?? []).map((r) => ({ ...r, carry: r.carry ?? 0 }));
-  sim.nextRouteId = d.nextRouteId ?? 1;
   // The Crier: a colony saved before the market existed starts it at today's equilibrium.
   const cfg = { worldSeed: d.worldSeed, foundingEpoch: d.foundingEpoch };
   sim.market = d.market ? LocalMarketService.load(d.market, cfg) : new LocalMarketService({ ...cfg, startEpoch: sim.absEpoch() });
@@ -372,6 +376,7 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
     c.content = 0;
     cells.forEach((v, i) => { if (v > 0 && v - 1 < N_ITEMS) c.place(i, v - 1); });
     if (s.stage && s.stage[1] > 0) { c.stageItem = s.stage[0]; c.stageMu = s.stage[1]; c.content += s.stage[1]; }
+    if (c.raidPosts.length) c.raidHeld = s.raid ?? 0;
   }
   // A saved line that no longer compiles the same (content changed under it): its items go to the Heart.
   for (const c of ribbons.values()) {

@@ -29,6 +29,6 @@ describe('flow arrows', () => {
 
   it('only the blocks that take in at the back get them', () => {
     for (const id of ['router', 'sorter', 'inverted_sorter', 'overflow_gate', 'underflow_gate']) expect(isDirectional(id), id).toBe(true);
-    for (const id of ['distributor', 'unloader', 'drill', 'ribbon', 'wind_flower']) expect(isDirectional(id), id).toBe(false);
+    for (const id of ['distributor', 'drill', 'ribbon', 'wind_flower']) expect(isDirectional(id), id).toBe(false);
   });
 });

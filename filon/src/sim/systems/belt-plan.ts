@@ -15,11 +15,16 @@
 //    two planned traction steps in a row (D65: the later one is refused) and a run of planned
 //    junctions (D73: junctions never chain).
 // 3. Each run of obstacles — a building, water or other ground a ribbon cannot take, a chasm or a
-//    river (D94), a sister claim's land, a chain of junctions — is leapt by a bridge pair (`skybridge`) on the plain
+//    river (D94), a neighbouring base's land (D110), a chain of junctions — is leapt by a bridge pair (`skybridge`) on the plain
 //    ribbon tiles just before and after it: when bridges are learnt, the run is straight, the
 //    start is fed from straight behind (D55), the pair is within the bridges' reach on one level
 //    and no other bridge of that direction on the line would take the leap. The tiles between
 //    are left as they are. A run no pair can leap stays refused: the drag is laid in part.
+// 3b. What is still refused for its land — a neighbouring base's parcel (`neighbour_land`) — is laid camouflaged
+//    (D109: `camo_ribbon`, buried, the one ribbon that runs there), once learnt, when the dragged
+//    piece is a flat ribbon and the camouflaged piece fits there (or only lacks materials: the ghost
+//    then shows why). After the bridges, so a run a pair can leap keeps the line's pace; a plain
+//    ribbon off the claim's free land costs nothing even at the remote rate, so it stays plain.
 // 4. One budget in path order: a long drag runs out of materials (`unaffordable`) exactly where
 //    laying it tile by tile would.
 // Conduits get 1, 2 and 4 only: no junction, lift or bridge carries fluids. Fences (D103) are laid the
@@ -27,6 +32,7 @@
 import { BUILDING_IDS, BUILDING_KIND, buildingDef, buildingIdx, costOf } from '@/content/registry';
 import { DX, DY, type Rot } from '../types';
 import { inWorld, tileIndex } from '../world/grid';
+import { parcelAt } from '../world/land';
 import type { Sim } from '../state';
 import { affordable, canPlace, place, stepAt, stepRefusal, type PlaceCheck, type PlaceReason } from './build';
 
@@ -53,9 +59,10 @@ export type BeltPath = ReadonlyArray<readonly [number, number, Rot]>;
 const JUNCTION = BUILDING_KIND.indexOf('crossing');
 const BRIDGE = BUILDING_KIND.indexOf('bridge');
 const LIFT = BUILDING_IDS.findIndex((_, i) => BUILDING_KIND[i] === 'belt' && !!buildingDef(i).lift);
+const CAMO = BUILDING_IDS.findIndex((_, i) => BUILDING_KIND[i] === 'belt' && !!buildingDef(i).camo);
 
 /** Refusals a bridge pair can leap: what stands or lies on the tile — not a step, nor the purse. */
-const LEAPABLE: ReadonlySet<PlaceReason> = new Set<PlaceReason>(['occupied', 'terrain', 'sister_land', 'junction_chain', 'chasm', 'river']);
+const LEAPABLE: ReadonlySet<PlaceReason> = new Set<PlaceReason>(['occupied', 'terrain', 'neighbour_land', 'junction_chain', 'chasm', 'river']);
 
 const learnt = (sim: Sim, def: number): boolean => def >= 0 && sim.unlocked(buildingDef(def).unlock);
 
@@ -116,6 +123,16 @@ export function planBelts(sim: Sim, defId: string, path: BeltPath): BeltStep[] {
       i = m + 1;
     }
   }
+  // 3b. Buried where the land refuses the dragged ribbon (D109).
+  if (items && !b.lift && !b.camo && learnt(sim, CAMO)) {
+    const id = BUILDING_IDS[CAMO]!;
+    for (let i = 0; i < n; i++) {
+      const st = out[i]!;
+      if (st.skip || st.ok || st.reason !== 'neighbour_land' || buildingIdx(st.def) !== def) continue;
+      const c = canPlace(sim, id, st.x, st.y, st.rot);
+      if (c.ok || c.reason === 'unaffordable' || c.reason === 'reserve') out[i] = { x: st.x, y: st.y, rot: st.rot, def: id, skip: false, ...c };
+    }
+  }
   // 4. One budget, in path order.
   const spent = new Map<number, number>(); // net mu by item, taken by the steps before
   for (const st of out) {
@@ -125,6 +142,15 @@ export function planBelts(sim: Sim, defId: string, path: BeltPath): BeltStep[] {
     for (const r of st.replaces) for (const c of costOf(sim.ents.get(r)!.def)) spent.set(c.item, (spent.get(c.item) ?? 0) - c.mu);
   }
   return out;
+}
+
+/**
+ * Why a tile is not the claim's land, for the build tool's tip over a buried piece (D109): a
+ * neighbouring base's (`neighbour_land`), anyone else's (`outside_zone`), or null on the claim's own.
+ */
+export function landReason(sim: Sim, x: number, y: number): PlaceReason | null {
+  if (!inWorld(x, y) || sim.land.covers(x, y)) return null;
+  return sim.land.neighbour(parcelAt(x, y)) >= 0 ? 'neighbour_land' : 'outside_zone';
 }
 
 const isJunction = (st: BeltStep): boolean => !st.skip && buildingIdx(st.def) === JUNCTION;

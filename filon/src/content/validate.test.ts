@@ -46,13 +46,13 @@ describe('content invariants', () => {
 
   it('the plans grow in paths of one theme (D41): each plan on one path, each path one line from one entry, no loop', () => {
     expect(pathProblems()).toEqual([]);
-    expect(PLAN_PATHS).toEqual(['production', 'logistics', 'energy', 'analytics', 'trade', 'survey']);
+    expect(PLAN_PATHS).toEqual(['production', 'logistics', 'energy', 'analytics', 'trade']); // the survey path went with the survey beacon (D117)
     // Every plan on exactly one listed path, and plans declared path by path in the tree's order;
     // the research lab's plan apart, the gate after them all (D71).
     expect(PLAN_PATHS.flatMap((p) => pathPlans(p))).toEqual(PLAN_IDS.filter((id) => id !== 'observatory'));
     expect(PLANS.observatory.lane).toBe('gate');
     expect([...PLANS.observatory.prereq].sort()).toEqual(PLAN_IDS.filter((id) => id !== 'observatory').sort());
-    expect(PLAN_PATHS.map((p) => pathEntries(p))).toEqual([['kiln'], ['router'], ['wind_flower'], ['telemetry'], ['trade_post'], ['beacon']]);
+    expect(PLAN_PATHS.map((p) => pathEntries(p))).toEqual([['kiln'], ['router'], ['wind_flower'], ['telemetry'], ['trade_post']]);
     // A path is a DAG: walking a plan's prerequisites on its own path never comes back to it,
     // and always ends at the path's entry.
     for (const lane of PLAN_PATHS) {
@@ -123,8 +123,8 @@ describe('nothing unusable (D107)', () => {
     expect(mapSpecific('iron_ore')).toBe(false);
     expect(buyable('quartz')).toBe(true);
     expect(buyable('water')).toBe(false);
-    expect(usableWith(new Set(['beacon', 'ex_quartz'])).items.has('quartz')).toBe(false);
-    expect(usableWith(new Set(['beacon', 'telemetry', 'trade_post', 'ex_quartz'])).items.has('quartz')).toBe(true);
+    expect(usableWith(new Set(['kiln', 'wire_mill', 'ex_quartz'])).items.has('quartz')).toBe(false);
+    expect(usableWith(new Set(['kiln', 'wire_mill', 'telemetry', 'trade_post', 'ex_quartz'])).items.has('quartz')).toBe(true);
     // Before the sand collector and the wire mill, a kiln makes plates but no glass, and no wire is drawn.
     const kiln = usableWith(knownAt('kiln')).items;
     expect(kiln.has('iron_plate')).toBe(true);

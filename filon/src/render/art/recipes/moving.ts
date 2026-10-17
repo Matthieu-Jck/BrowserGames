@@ -1,6 +1,6 @@
 // moving.ts — the buildings with a moving part, and the geometry their iso and plan drawings
 // share. A moving part (the wind turbines' rotors, the sand collector's bucket wheel, the face
-// cutter's drum, the deep bore's rotary table and kelly) is drawn
+// cutter's drum, the deep bore's rotary table and kelly, the steam boiler's flywheel) is drawn
 // apart from its building's body and baked at boot in `frames` phases of one period — its
 // symmetry: a 3-vane rotor looks the same every third of a turn, so 16 phases of a third of a
 // turn make a smooth spin. In the world the body is one sprite and the part another whose
@@ -24,6 +24,7 @@ export const MOVING: Partial<Record<BuildingId, MovingSpec>> = {
   pitch_turbine: { frames: 16, sym: 3 },
   big_turbine: { frames: 16, sym: 4 },
   deep_bore: { frames: 8, sym: 4 },
+  steam_boiler: { frames: 8, sym: 6 }, // the flywheel's six spokes (D114; its geometry: buildings.ts `SB`)
 };
 
 /**

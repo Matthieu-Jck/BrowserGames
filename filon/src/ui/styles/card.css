@@ -68,8 +68,6 @@ circle.bc-mark { fill: var(--c-turq-l); stroke-width: 1.6; }
 .bc-arrow[data-tone='b'] .bc-head { fill: var(--c-lilac-d); }
 .bc-arrow[data-tone='in'] line { stroke: var(--c-ink-soft); }
 .bc-arrow[data-tone='in'] .bc-head { fill: var(--c-ink-soft); }
-.bc-store rect { fill: var(--c-peach); stroke: var(--c-ink); stroke-width: 1.6; }
-.bc-store path { fill: none; stroke: var(--c-ink); stroke-width: 1.2; opacity: 0.6; }
 
 /* ── a machine's recipes: the kit's equations on one line, the recipe's name after ── */
 .bcard-none { color: var(--c-ink-soft); font-style: italic; }

@@ -18,9 +18,11 @@
 //   short of it, or still being built carries that flag instead (dashed frames for the first two).
 // - **Logistique** (`logistics`): every ribbon line as a heat (art/view-icons.ts `heatColor`) of
 //   its throughput against its tier's pace, a jammed line red with a stop badge at its head, a dead
-//   end's head marked; the skydocks and their drifter routes bold violet, arrowed. The night (D103):
+//   end's head marked (the skydocks and their drifter routes went in D108). The night (D103):
 //   each ribbon tile the Gleaners reach from the desert hatched in midnight ink with a crescent
-//   moon, each one kept from them (under glass, behind a fence) ringed in glass blue.
+//   moon, each one kept from them (under glass, behind a fence) ringed in glass blue. A buried
+//   line (D109: the camouflaged ribbon, faint on the sand in the normal view) edged on both sides
+//   with inked sand dashes, so its owner sees where it runs.
 // - **Production** (`production`): each production building washed by its state (at work
 //   turquoise, a passing stop amber, stopped coral) and, when it does not work, why as a badge;
 //   one at work on a grid under 100 % waits amber under the half-bolt (D91: `weakGrid`).
@@ -37,7 +39,7 @@
 // rebuilt only when their signature changes (the readouts come at 4 Hz), the badges' places only
 // when the view moves.
 import { CanvasSource, Container, Graphics, Sprite, Texture } from 'pixi.js';
-import { BUILDING_IDS, BUILDING_KIND } from '@/content/registry';
+import { BUILDING_IDS, buildingDef } from '@/content/registry';
 import type { BuildingId } from '@/content/buildings';
 import type { MapView } from '@/core/kinds';
 import { footprint } from '@/sim/entities';
@@ -48,7 +50,7 @@ import type { ProdMark, StopWhy } from '@/sim/readouts/production';
 import type { RibbonLook } from '@/sim/readouts/ribbons';
 import type { WindReport } from '@/sim/readouts/wind';
 import type { Sim } from '@/sim/state';
-import type { Ent } from '@/sim/types';
+import { DX, DY, type Ent } from '@/sim/types';
 import { C, num } from '../art/tokens';
 import { GRID_COLORS, POWER_GROUP_COLOR, drawViewIcon, heatColor, windColor, type ViewIcon } from '../art/view-icons';
 import { COS64, SIN64 } from '@/content/world';
@@ -285,7 +287,7 @@ export class ViewsView {
 
   private drawLogistics(sim: Sim, looks: readonly RibbonLook[], f: ViewFrame): void {
     const bucket = (l: RibbonLook): number => (l.jam ? -2 : l.util < 0 ? (l.fill > 0 ? 3 : -1) : l.util === 0 && l.fill === 0 ? -1 : Math.round(l.util / 100));
-    const sig = `l${sim.graph?.version}:${sim.routes.length}:${looks.map((l) => bucket(l)).join(',')}`;
+    const sig = `l${sim.graph?.version}:${looks.map((l) => bucket(l)).join(',')}`;
     if (sig !== this.flatSig) {
       this.flatSig = sig;
       const g = sim.graph;
@@ -302,27 +304,6 @@ export class ViewsView {
           else if (b === -2) gr.stroke({ width: 0.38, color: num(C.ledRed), alpha: 1, cap: 'round', join: 'round' });
           else gr.stroke({ width: 0.34, color: num(heatColor(b * 100)), alpha: 1, cap: 'round', join: 'round' });
         }
-        // The skydocks and their drifter routes: bold violet, an arrow halfway towards the dock it serves.
-        for (const r of sim.routes) {
-          const a = sim.ents.get(r.from), b = sim.ents.get(r.to);
-          if (!a || !b) continue;
-          const [aw, ah] = footprint(a.def, a.rot), [bw, bh] = footprint(b.def, b.rot);
-          const ax = a.x + aw / 2 - d(liftOf(a)), ay = a.y + ah / 2 - d(liftOf(a)), bx = b.x + bw / 2 - d(liftOf(b)), by = b.y + bh / 2 - d(liftOf(b));
-          const len = Math.hypot(bx - ax, by - ay);
-          if (len < 0.5) continue;
-          const ux = (bx - ax) / len, uy = (by - ay) / len;
-          for (let s = 0; s < len; s += 1.1) gr.moveTo(ax + ux * s, ay + uy * s).lineTo(ax + ux * Math.min(len, s + 0.7), ay + uy * Math.min(len, s + 0.7));
-          gr.stroke({ width: 0.24, color: num(C.violet), alpha: 0.95, cap: 'round' });
-          const mx = (ax + bx) / 2, my = (ay + by) / 2, k = 0.9;
-          gr.poly([mx + ux * k, my + uy * k, mx - ux * k * 0.6 - uy * k * 0.7, my - uy * k * 0.6 + ux * k * 0.7, mx - ux * k * 0.6 + uy * k * 0.7, my - uy * k * 0.6 - ux * k * 0.7])
-            .fill({ color: num(C.violet), alpha: 1 }).stroke({ width: 0.08, color: num(C.ink), alpha: 0.9 });
-        }
-        for (const e of sim.ents.sorted()) {
-          if (BUILDING_KIND[e.def] !== 'dock') continue;
-          const [w, h] = footprint(e.def, e.rot), o = d(liftOf(e));
-          gr.rect(e.x - o + 0.08, e.y - o + 0.08, w - 0.16, h - 0.16);
-        }
-        gr.fill({ color: num(C.violetL), alpha: 0.3 }).stroke({ width: 0.14, color: num(C.violet), alpha: 1 });
         // The Gleaners' night (D103): the tiles they reach, hatched, a crescent on each; those kept from them, ringed.
         const glean = g?.glean;
         if (glean) {
@@ -347,6 +328,26 @@ export class ViewsView {
             gr.roundRect(x - o + 0.1, y - o + 0.1, 0.8, 0.8, 0.22);
           }
           if (glean.guarded.length) gr.stroke({ width: 0.09, color: num(C.ice), alpha: 1 });
+        }
+        // The buried lines (D109): sand dashes either side of each camouflaged tile, over an ink edge.
+        const buried = sim.ents.sorted().filter((e) => buildingDef(e.def).camo);
+        if (buried.length) {
+          const dashes = (): void => {
+            for (const e of buried) {
+              const o = d(f.levelAt(e.x, e.y)), cx = e.x - o + 0.5, cy = e.y - o + 0.5;
+              const ux = DX[e.rot]!, uy = DY[e.rot]!;
+              for (const s of [-0.38, 0.38]) {
+                for (const t0 of [-0.42, -0.08, 0.26]) {
+                  const ax = cx - uy * s + ux * t0, ay = cy + ux * s + uy * t0;
+                  gr.moveTo(ax, ay).lineTo(ax + ux * 0.16, ay + uy * 0.16);
+                }
+              }
+            }
+          };
+          dashes();
+          gr.stroke({ width: 0.17, color: num(C.ink), alpha: 0.8, cap: 'round' });
+          dashes();
+          gr.stroke({ width: 0.09, color: num(C.sand), alpha: 1, cap: 'round' });
         }
       });
     }
@@ -554,13 +555,6 @@ export class ViewsView {
         const m = this.mark(n++);
         m.x = x + 0.5; m.y = y + 0.5; m.head = f.levelAt(x, y) + 0.4;
         this.badge(m, l.jam ? 'jam' : 'dead', null);
-      }
-      for (const e of sim.ents.sorted()) {
-        if (BUILDING_KIND[e.def] !== 'dock') continue;
-        const m = this.mark(n++);
-        this.anchor(m, e);
-        const fleet = sim.fleet.get(e.id) ?? 0;
-        this.badge(m, 'dock', fleet > 0 ? Math.min(1, fleet / 4) : null, C.violetL);
       }
     } else if (f.view === 'wind' && d.wind) {
       // Each turbine: the wind mark, its output against its rating (coral when it gives nothing).

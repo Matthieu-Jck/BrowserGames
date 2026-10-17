@@ -129,20 +129,26 @@ export const drillPanel: Panel = ({ node, live }) => {
 export const generatorHero = ({ node }: PanelCtx): HTMLElement | null => {
   const g = node as GeneratorNode | undefined;
   if (!g) return null;
-  const eq = equation([itemTerm(g.fuelItem, perMin(g.burnEp / 1000))], [{ icon: glyph('power'), n: kw(g.outKw) }]);
+  // A steam boiler's water beside its coal (D114).
+  const ins = [itemTerm(g.fuelItem, perMin(g.burnEp / 1000)), ...(g.drinks ? [itemTerm(g.waterItem, perMin(g.waterEp / 1000))] : [])];
+  const eq = equation(ins, [{ icon: glyph('power'), n: kw(g.outKw) }]);
   eq.title = t('insp.eq.tip');
   return el('div.insp-hero', { 'data-hero': 'generator' }, [eq]);
 };
 
-/** The fuel it holds, against its room. */
+/** The fuel it holds, against its room (and a steam boiler's water, D114). */
 export const generatorPanel: Panel = ({ node, live }) => {
   const g = node as GeneratorNode | undefined;
   if (!g) return [];
   const m = meter();
   live(() => m.set(g.fuel, g.fuelCap, g.fuel > 0 ? 'good' : 'bad', `${fmt(g.fuel / 1000, 0)}/${fmt(g.fuelCap / 1000, 0)}`));
-  return [section({ sec: 'fuel', title: t('card.fuel'), icon: itemMention(g.fuelItem, { name: false }) }, [
-    el('div.kbuf', { 'data-io': 'in', 'data-item': ITEM_IDS[g.fuelItem] }, [el('span.kbuf-icon', {}, itemMention(g.fuelItem, { name: false })), m.root]),
-  ])];
+  const rows = [el('div.kbuf', { 'data-io': 'in', 'data-item': ITEM_IDS[g.fuelItem] }, [el('span.kbuf-icon', {}, itemMention(g.fuelItem, { name: false })), m.root])];
+  if (g.drinks) {
+    const w = meter();
+    live(() => w.set(g.water, g.waterCap, g.water > 0 ? 'good' : 'bad', `${fmt(g.water / 1000, 0)}/${fmt(g.waterCap / 1000, 0)}`));
+    rows.push(el('div.kbuf', { 'data-io': 'in', 'data-item': ITEM_IDS[g.waterItem] }, [el('span.kbuf-icon', {}, itemMention(g.waterItem, { name: false })), w.root]));
+  }
+  return [section({ sec: 'fuel', title: t('card.fuel'), icon: itemMention(g.fuelItem, { name: false }) }, rows)];
 };
 
 // ── a research lab ────────────────────────────────────────────────────────────

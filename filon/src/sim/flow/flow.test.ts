@@ -41,7 +41,6 @@ describe('flow engine', () => {
   it('conserves items exactly: Δheld = produced − consumed', () => {
     const sim = testSim();
     drillToHearth(sim);
-    // A kiln making plates from ore + coal fed by the Hearth's north unloader.
     sim.ensureCompiled();
     const h0 = held(sim);
     const p0 = [...sim.produced], c0 = [...sim.consumed];

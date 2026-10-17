@@ -1,6 +1,6 @@
 // state.ts — the colony: its whole state, its public API, and the online tick. The Sim is a
 // facade: the state lives here, the rules live in the systems (src/sim/systems/*: build,
-// configure, research, landscape, land, freight, power, trade, quests, expertise), each a set of functions over the Sim.
+// configure, research, landscape, land, power, trade, quests, expertise), each a set of functions over the Sim.
 // Command methods validate, apply and log themselves (commands.ts); the shell drains `events`.
 // What the base may build is the unlock tree's (D33): `done` holds the plans unlocked and the
 // research learnt, and `unlocked(id)` answers for both.
@@ -14,15 +14,15 @@
 //      at night the Gleaners take from the exposed ribbons (systems/gleaners.ts, D103)
 //   5. research projects pay their data and advance; servers make tokens; the Heart and the
 //      autonomous labs make data files (systems/research.ts)
-//   6. landscape: dig / fill jobs advance and finish
-//   7. freight: drifter routes move goods between skydocks
-//   8. tick++; at every epoch boundary (each game minute) the trade posts trade and the Crier
+//   6. landscape: dig / fill jobs advance and finish (the drifters' freight between skydocks,
+//      which came next, went with the skydocks: D108)
+//   7. tick++; at every epoch boundary (each game minute) the trade posts trade and the Crier
 //      settles (systems/trade.ts), the leases due take their hour's rent or lapse
 //      (systems/land.ts), then research's tokens are billed (systems/research.ts `tokenEpoch`),
 //      then the expertises' feats and slots (systems/expertise.ts `expertiseEpoch`, D93), then the
 //      Gleaners' nightfall and dawn (systems/gleaners.ts `gleanEpoch`, D103) — the catch-up calls
 //      the same functions — then an 'epoch' event
-//   9. quests: rate windows at epoch boundaries, a completion check every second (systems/quests.ts)
+//   8. quests: rate windows at epoch boundaries, a completion check every second (systems/quests.ts)
 import { book, newPurseLog, type PurseLog } from './purse';
 import { isEmblem, type Emblem } from '@/content/emblem';
 import { BAL } from '@/content/balance';
@@ -41,11 +41,10 @@ import { makeCtx, runPhases } from './flow/step';
 import { compileGraph, type Graph } from './graph/compile';
 import { computeMods, type Mods } from './research/modifiers';
 import type { Project, StartBlock } from './research/runtime';
-import type { Job, JobKind, Route } from './space';
+import type { Job, JobKind } from './space';
 import * as build from './systems/build';
 import * as beltPlan from './systems/belt-plan';
 import * as configure from './systems/configure';
-import * as freight from './systems/freight';
 import * as landscape from './systems/landscape';
 import * as power from './systems/power';
 import * as research from './systems/research';
@@ -59,7 +58,8 @@ import { newTradeState, type SpotSide, type TradeRefusal, type TradeState } from
 import type { Ent, Rot } from './types';
 import { Grid, inWorld, tileIndex, type TerrainSource } from './world/grid';
 import { PowerLinks } from './power/links';
-import { Land } from './world/land';
+import { Land, PARCEL_COLS, parcelAt } from './world/land';
+import { Neighbours } from './world/neighbours';
 import * as land from './systems/land';
 import { hash32 } from '@/core/hash';
 
@@ -107,6 +107,8 @@ export class Sim {
   readonly grid: Grid;
   /** The claim's land: its parcels (world/land.ts; the rules in systems/land.ts). */
   readonly land: Land;
+  /** The neighbouring bases (D110, world/neighbours.ts): their land and what stands on it, from the seeds; never saved. */
+  readonly neighbours: Neighbours;
   /** Explored discs [cx, cy, r] (the fog lifts for good). Saved. */
   readonly explored: Array<[number, number, number]> = [];
   /** The power wires (D25): explicit pairs of entity ids; grids are their components. Saved. */
@@ -155,10 +157,6 @@ export class Sim {
   readonly designated = new Map<number, JobKind>();
   /** One running dig / fill per excavator / backfiller. Saved. */
   jobs: Job[] = [];
-  /** Drifters owned per skydock, and the freight routes between docks. Saved. */
-  readonly fleet = new Map<number, number>();
-  routes: Route[] = [];
-  nextRouteId = 1;
 
   // ── trade: the Crier Ring ─────────────────────────────────────────────────
   /** The world market (saved with the colony: its state depends on the player's flows). */
@@ -227,6 +225,8 @@ export class Sim {
     this.colonyName = opts.colonyName ?? '';
     this.grid = new Grid(opts.source);
     this.land = new Land(hash32(opts.worldSeed, opts.playerSeed));
+    this.neighbours = new Neighbours(this.land, this.grid);
+    this.land.owner = (p) => this.neighbours.holdingOf(p)?.colony ?? -1;
     this.market = opts.market ?? new LocalMarketService({ worldSeed: opts.worldSeed, foundingEpoch: opts.foundingEpoch });
     this.prices = this.market.prices();
     if (fresh) {
@@ -236,7 +236,7 @@ export class Sim {
       build.occupy(this, hearth);
       for (const [id, n] of Object.entries(BAL.startStock)) this.stock[itemIdx(id)] = n * 1000;
       this.credits = BAL.startCredits * 100;
-      this.explored.push([CENTER, CENTER, BAL.startReveal]);
+      this.explored.push([CENTER, CENTER, BAL.coreReveal[0]!]);
     }
     this.rebuildDerived();
   }
@@ -257,6 +257,21 @@ export class Sim {
 
   absEpoch(tick = this.tick): number {
     return this.foundingEpoch + Math.floor(tick / EPOCH);
+  }
+
+  /**
+   * The Gleaners keep off a neighbouring base's land (D110: its drones watch over it, as the claim's
+   * fences do): a tile test for their walk, memoised by parcel for one compile, so their flood never
+   * lays a base out.
+   */
+  private neighbourLand(): (t: number) => boolean {
+    const memo = new Int8Array(PARCEL_COLS * PARCEL_COLS);
+    return (t) => {
+      const x = t % WORLD, p = parcelAt(x, (t - x) / WORLD);
+      let v = memo[p]!;
+      if (!v) v = memo[p] = this.land.neighbour(p) >= 0 ? 1 : 2;
+      return v === 1;
+    };
   }
 
   /** After research or the expertises in place change: modifiers and a recompile. */
@@ -281,6 +296,7 @@ export class Sim {
       tradeBuys: trade.importItems(this),
       tradeCap: trade.tradeCap(this),
       dormant: (e) => this.isDormant(e),
+      blocked: this.neighbourLand(),
       busy: new Set(this.jobs.map((j) => j.ent)),
       links: this.links,
     });
@@ -317,6 +333,29 @@ export class Sim {
     }
     if (this.seenUpTo !== this.explored.length) this.paintSeen();
     return this.seen![y * WORLD + x] === 1;
+  }
+
+  /**
+   * Lift the fog for good within `r` tiles of (cx, cy) (D117: round a building placed, a parcel held,
+   * the Core at each level): a disc on `explored`, unless every tile of it in the world is seen
+   * already — a building in the clear adds nothing, so the list grows only at the fog's edge (a pole
+   * line walking out). `seen` is painted from the list alone: the same answer on every replay.
+   * Whether it added a disc.
+   */
+  liftFog(cx: number, cy: number, r: number): boolean {
+    if (r <= 0) return false;
+    if (!this.seen || this.seenUpTo !== this.explored.length) this.paintSeen();
+    const seen = this.seen!;
+    for (let y = Math.max(0, Math.ceil(cy - r)); y <= Math.min(WORLD - 1, Math.floor(cy + r)); y++) {
+      for (let x = Math.max(0, Math.ceil(cx - r)); x <= Math.min(WORLD - 1, Math.floor(cx + r)); x++) {
+        const dx = x - cx, dy = y - cy;
+        if (dx * dx + dy * dy <= r * r && !seen[y * WORLD + x]) {
+          this.explored.push([cx, cy, r]);
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   /**
@@ -468,15 +507,6 @@ export class Sim {
   advanceJobs(ticks: number, satOf: (net: number) => number, sats?: (j: Job) => number): boolean { return landscape.advanceJobs(this, ticks, satOf, sats); }
   completeJobs(): boolean { return landscape.completeJobs(this); }
 
-  // ── commands: freight (systems/freight.ts) ───────────────────────────────
-  dockNode(id: number): ReservoirNode | null { return freight.dockNode(this, id); }
-  routeRateNow(r: Route, satOf: (net: number) => number): number { return freight.routeRateNow(this, r, satOf); }
-  moveFreight(r: Route, ticks: number, satOf?: (net: number) => number, exactMu = true): number { return freight.moveFreight(this, r, ticks, satOf, exactMu); }
-  buyDrifter(dock: number): boolean { return freight.buyDrifter(this, dock); }
-  freeShips(dock: number): number { return freight.freeShips(this, dock); }
-  addRoute(from: number, to: number, item: string, ships: number): number { return freight.addRoute(this, from, to, item, ships); }
-  removeRoute(id: number): boolean { return freight.removeRoute(this, id); }
-
   // ── commands: trade (systems/trade.ts) ───────────────────────────────────
   addImport(post: number, item: string, perMin: number, maxCents: number, express = false): number | TradeRefusal { return trade.addImport(this, post, item, perMin, maxCents, express); }
   /** Price Forecast: the Crier's prices `minutes` from now, trade-free (pure; null for a remote market). */
@@ -557,7 +587,6 @@ export class Sim {
     gleaners.gleanAfter(this);
     research.researchTick(this);
     landscape.landscapeTick(this);
-    freight.freightTick(this);
     this.tick++;
     if (this.tick % EPOCH === 0) {
       this.tradeEpoch();
@@ -625,9 +654,6 @@ export class Sim {
     for (const [id, v] of [...this.dataAcc].sort((a, b) => a[0] - b[0])) h.int(id).int(v);
     for (const [t, k] of this.designated) h.int(t).int(k === 'dig' ? 1 : 2);
     for (const j of this.jobs) h.int(j.ent).int(j.tile).int(j.dur).int(j.el).int(j.mu).int(j.moved).int(j.quarry ? 1 : 0);
-    for (const [d, n] of [...this.fleet].sort((a, b) => a[0] - b[0])) h.int(d).int(n);
-    for (const r of this.routes) h.int(r.id).int(r.from).int(r.to).int(r.item).int(r.ships).int(Math.floor(r.carry * 1e6));
-    h.int(this.nextRouteId);
     // The land as changed by play: terrain / ore diffs, the parcels held, the lifted fog.
     for (const [t, v] of [...this.grid.terrainDiff].sort((a, b) => a[0] - b[0])) h.int(t).int(v);
     for (const [t, v] of [...this.grid.levelDiff].sort((a, b) => a[0] - b[0])) h.int(t).int(v);
@@ -668,7 +694,10 @@ export function addHeld(n: FNode, out: Float64Array): void {
     }
     case 'drill': if (anyN.item! >= 0) out[anyN.item!] = out[anyN.item!]! + anyN.outBuf!; return;
     case 'fork': if (anyN.item! >= 0) out[anyN.item!] = out[anyN.item!]! + anyN.mu!; return;
-    case 'generator': if (anyN.fuelItem! >= 0) out[anyN.fuelItem!] = out[anyN.fuelItem!]! + anyN.fuel!; return;
+    case 'generator':
+      if (anyN.fuelItem! >= 0) out[anyN.fuelItem!] = out[anyN.fuelItem!]! + anyN.fuel!;
+      if (anyN.waterItem! >= 0) out[anyN.waterItem!] = out[anyN.waterItem!]! + anyN.water!; // a boiler's water (D114)
+      return;
     default: return;
   }
 }
@@ -693,7 +722,7 @@ export function heldIn(n: FNode, item: number): number {
     }
     case 'drill': return (anyN.item === item ? (anyN.outBuf as number) : 0);
     case 'fork': return (anyN.item === item ? (anyN.mu as number) : 0);
-    case 'generator': return (anyN.fuelItem === item ? (anyN.fuel as number) : 0);
+    case 'generator': return (anyN.fuelItem === item ? (anyN.fuel as number) : 0) + (anyN.waterItem === item ? (anyN.water as number) : 0);
     default: return 0;
   }
 }

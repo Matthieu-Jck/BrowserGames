@@ -5,7 +5,7 @@
 // minute as a bar against the best such tile, and the deposit's known tiles and their sum; the
 // machines that work it as icons with their names, dim with a lock while still to unlock (a vein
 // under rock: the excavators first, an arrow, then the drills); and the parcel's state — the
-// claim's flag, a lease, a sister claim's, or its price. Water gets its pumps. Built from the
+// claim's flag, a lease, a neighbouring base's, or its price. Water gets its pumps. Built from the
 // panels' kit (D89: the meter), facts from deposit-facts.ts. Not while placing (D53: the tip has
 // that job); the shell asks for it only when no tool, link or land mode is in hand.
 // On a mouse it shows after a short rest on the tile; under a finger, on a tap with nothing in
@@ -148,10 +148,10 @@ export class DepositCard {
     }
     mach.push(...f.machines.map(row));
     kids.push(el('div.dcard-mach', { 'data-where': f.where, title: f.where === 'vein' ? t('deposit.dig') : null }, mach));
-    // The parcel: the claim's, a lease, a sister claim's, or its price.
+    // The parcel: the claim's, a lease, a neighbouring base's (D110), or its price.
     const land: Record<string, [Parameters<typeof glyph>[0], MsgKey]> = {
       start: ['flag', 'land.legend.held'], bought: ['flag', 'land.legend.held'], granted: ['flag', 'land.legend.held'],
-      leased: ['lease', 'land.legend.leased'], sister: ['flagSister', 'land.legend.sister'], free: ['parcel', 'land.legend.free'],
+      leased: ['lease', 'land.legend.leased'], neighbour: ['flagNeighbour', 'land.legend.neighbour'], free: ['parcel', 'land.legend.free'],
     };
     const [g, label] = land[state]!;
     kids.push(el('div.dcard-land', { 'data-state': state, 'data-poor': state === 'free' && sim.credits < cents ? '' : null }, [

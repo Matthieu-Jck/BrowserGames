@@ -90,21 +90,12 @@
 .insp-recipe[data-on] { background: var(--c-turq); color: var(--c-paper); }
 .insp-recipe .glyph, .insp-recipe .kmark { width: 1.1em; height: 1.1em; }
 .insp-recipe[disabled] { opacity: 0.55; cursor: not-allowed; }
-/* Controls for stores, docks, forks. */
+/* Controls for the routing blocks (a router's filters, a sorter's item). */
 .insp-select { font: 13px var(--f-body); padding: 2px 4px; border: 1.5px solid var(--c-ink); border-radius: 6px; background: var(--c-paper); max-width: 150px; }
 .insp-row .insp-select { margin-left: auto; }
 .insp-row .ipick { margin-left: auto; max-width: 170px; }
 .insp-cost { display: flex; gap: 10px; flex-wrap: wrap; margin: 4px 0; font-size: 13px; }
-.insp-routes { display: flex; flex-direction: column; gap: 2px; margin: 4px 0; }
-.insp-routes .insp-row span { font-size: 12px; }
-.insp-route-form { flex-wrap: wrap; }
-/* A row whose value is a glyph and a figure. */
-.insp-gv { display: inline-flex; align-items: center; gap: 5px; }
-.insp-gv[data-tone='bad'] { color: var(--c-coral-d); font-weight: 600; }
-/* A buy button that carries its price (the skydock's drifters): « + » and the cost chips on one line. */
-.insp-buy { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-.insp-buy > * { flex: none; }
-/* An item picker whose « none » choice is an empty slot (outlets): the glyph instead of a word. */
+/* An item picker whose « none » face is an empty slot (`noneFace: ''`): the glyph instead of a word. */
 .ipick-none:empty::before { content: ''; display: inline-block; width: 1.2em; height: 1.2em; vertical-align: -0.24em; border: 1.2px dashed var(--c-ink-soft); border-radius: 3px; opacity: 0.7; }
 
 /* ── the grid card (power.ts gridCard, D25, D76): a section of the kit ─── */
