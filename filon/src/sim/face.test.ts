@@ -80,7 +80,7 @@ describe('the quartz vein (map 3, D87)', () => {
       expect(spots.length).toBe(4);
       for (const [x, y, rot] of spots) {
         expect(faceTiles(sim.grid, CUTTER(), x, y, rot).length, `player ${seed} (${x},${y})`).toBe(2);
-        expect(faceRate(sim.grid, CUTTER(), x, y, rot), `player ${seed}`).toEqual({ item: itemIdx('quartz'), rateEp: 15_000 });
+        expect(faceRate(sim.grid, CUTTER(), x, y, rot), `player ${seed}`).toEqual({ item: itemIdx('quartz'), rateEp: 10_000 });
         // Asked the wrong way round, it turns its back to the wall.
         expect(faceRot(sim.grid, CUTTER(), x, y, opposite(rot)), `player ${seed}`).toBe(rot);
       }
@@ -141,7 +141,7 @@ describe('the face cutter (D87)', () => {
     expect(sim.canPlace('drill', 520, 505, 0).reason).toBe('needs_deposit');
   });
 
-  it('cuts 7.5 a minute per face tile it touches (15 on two), into a ribbon from its front; the face stays a wall', () => {
+  it('cuts 5 a minute per face tile it touches (10 on two), into a ribbon from its front; the face stays a wall', () => {
     const sim = wallSim();
     steadyPower(sim);
     sim.grant('iron_plate', 200); sim.grant('glass', 50); sim.grant('copper_wire', 50);
@@ -160,10 +160,10 @@ describe('the face cutter (D87)', () => {
     const before = sim.stock[itemIdx('quartz')]!;
     sim.run(20 * 600);
     const perMin = (sim.stock[itemIdx('quartz')]! - before) / 1000 / 20;
-    expect(perMin).toBeGreaterThan(14);
-    expect(perMin).toBeLessThanOrEqual(15);
+    expect(perMin).toBeGreaterThan(9);
+    expect(perMin).toBeLessThanOrEqual(10);
     // The other cutter, its output nowhere, touches two face tiles too (x 518, 519): 15 a minute when it can hand on.
-    expect(faceRate(sim.grid, buildingIdx('face_cutter'), 518, 502, 2).rateEp).toBe(15_000);
+    expect(faceRate(sim.grid, buildingIdx('face_cutter'), 518, 502, 2).rateEp).toBe(10_000);
     // An excavator would leave the face standing: no mark takes on a face tile.
     expect(sim.designate([501 * 1024 + 517])).toBe(0);
     expect(sim.designate([500 * 1024 + 517])).toBe(1);
@@ -190,6 +190,6 @@ describe('the face cutter (D87)', () => {
     expect(off.tick).toBe(on.tick);
     expect(Array.from(off.stock)).toEqual(Array.from(on.stock));
     expect(off.hash()).toBe(on.hash());
-    expect(on.stock[itemIdx('quartz')]! / 1000).toBeGreaterThan(800);
+    expect(on.stock[itemIdx('quartz')]! / 1000).toBeGreaterThan(530);
   });
 });

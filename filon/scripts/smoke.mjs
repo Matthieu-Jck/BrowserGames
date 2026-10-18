@@ -1532,7 +1532,7 @@ await step('quartz (D87): today\'s land has its vein a parcel away; a face cutte
     return { ok: true, id: placed.id, rot: e.rot, item: n.item, rate: n.rateEp, quartz: window.FL.itemIndex('quartz') };
   }, [v.parcel, x, y, rot]);
   assert(r.ok && r.rot === rot, `cutter: ${JSON.stringify(r)}`);
-  assert(r.item === r.quartz && r.rate === 15000, `its face: ${JSON.stringify(r)}`);
+  assert(r.item === r.quartz && r.rate === 10000, `its face: ${JSON.stringify(r)}`);
   // Off the wall it is refused, with the reason.
   const off = await FL(([x, y, rot]) => window.FL.app.sim.canPlace('face_cutter', x + 3 * [0, 1, 0, -1][rot], y + 3 * [-1, 0, 1, 0][rot], rot).reason, [x, y, rot]);
   assert(off === 'needs_face', `off the wall: ${off}`);

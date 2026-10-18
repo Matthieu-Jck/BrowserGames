@@ -25,8 +25,8 @@ export const BAL = {
   drillBufItems: 5,
   // Deposit richness off the cirque template (100 = 1 item/min per tile; mapgen's procedural
   // fields, hidden veins and unique sites — the cirque's own deposits are in content/world.ts).
-  // quartz: a face tile of the vein (D87), what a face cutter cuts out of it: two tiles make its 15/min.
-  depositRich: { iron_ore: 500, sand: 400, coal: 300, copper_ore: 500, salt: 300, quartz: 750 } as Record<string, number>,
+  // quartz: a face tile of the vein (D87), what a face cutter cuts out of it: two tiles make its 10/min (D133: was 15).
+  depositRich: { iron_ore: 500, sand: 400, coal: 300, copper_ore: 500, salt: 300, quartz: 500 } as Record<string, number>,
   uniqueRich: 100,
   forkBufItems: 2,
 

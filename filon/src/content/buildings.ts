@@ -485,9 +485,9 @@ export const BUILDINGS = {
   // paroi »): its back against the face, its cutting head in the rock, its output at its front.
   face_cutter: {
     name: { fr: 'Haveuse', en: 'Face Cutter' },
-    desc: { fr: 'Se pose au pied d’une paroi de quartz, dos contre la roche : sa tête taille le quartz des tuiles de paroi qu’elle touche, jusqu’à 15/min. La production sort à l’avant, sur un ruban.', en: 'Stands at the foot of a quartz face, its back to the rock: its head cuts the quartz out of the face tiles it touches, up to 15/min. Its output leaves at the front, onto a ribbon.' },
+    desc: { fr: 'Se pose au pied d’une paroi de quartz, dos contre la roche : sa tête taille le quartz des tuiles de paroi qu’elle touche, jusqu’à 10/min. La production sort à l’avant, sur un ruban.', en: 'Stands at the foot of a quartz face, its back to the rock: its head cuts the quartz out of the face tiles it touches, up to 10/min. Its output leaves at the front, onto a ribbon.' },
     kind: 'drill', category: 'extraction', w: 2, h: 2, needsZone: true, unlock: 'ex_quartz', kw: 90, idleKw: 9,
-    cost: [['iron_plate', 12], ['glass', 2], ['copper_wire', 4]], ports: [P(0, 0, 'N', 'out')], drill: { perMin: 15, face: true },
+    cost: [['iron_plate', 12], ['glass', 2], ['copper_wire', 4]], ports: [P(0, 0, 'N', 'out')], drill: { perMin: 10, face: true },
   },
   quartz_workshop: {
     name: { fr: 'Atelier de quartz', en: 'Quartz Workshop' },
