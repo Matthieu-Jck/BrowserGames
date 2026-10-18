@@ -39,7 +39,7 @@ const view = async (mode) => {
 };
 
 const mapV = await page.evaluate(() => { const sim = window.FL.app.sim; sim.explored.push([512, 512, 220]); return sim.grid.source.mapV; });
-if (mapV !== 4) throw new Error(`map ${mapV}: the open desert is map 4's`);
+if ((mapV ?? 1) < 4) throw new Error(`map ${mapV}: the open desert is map 4's (and 5's, D136)`);
 
 // The cirque and the rings round its starting square; then out to the sixth ring.
 for (const [name, z] of [['cirque', 0.2], ['wide', 0.12]]) {

@@ -4,15 +4,20 @@
 // internal state every tick; the first repeat gives an exact period p after a transient t1.
 // Flows over [0, t1] and over one period are recorded tick by tick, so the group's boundary
 // flows after any elapsed time e are known exactly: transient + ⌊(e−t1)/p⌋ periods + prefix.
-import { N_ITEMS } from '@/content/registry';
+import { N_ITEMS as ITEM_COUNT } from '@/content/registry';
 import { StateHasher } from '@/core/hash';
 import { PERIOD_MAX } from '../constants';
 import type { Graph } from '../graph/compile';
 import type { Group } from '../graph/groups';
 import { runPhases } from '../flow/step';
 import type { FNode, TickCtx } from '../flow/node';
-import { V_EMPTY, V_FULL, V_NORMAL, type ReservoirNode } from '../flow/nodes';
+import { V_EMPTY as EMPTY, V_FULL as FULL, V_NORMAL as NORMAL, type ReservoirNode } from '../flow/nodes';
 import { St } from '../types';
+
+// Module copies of the constants the loops below read (D137): under vitest, where the tests and
+// the bench run, an imported binding is a getter call at every read, and a week's warm-ups and
+// keys read these millions of times. (A bundle reads them directly either way.)
+const N_ITEMS = ITEM_COUNT, V_EMPTY = EMPTY, V_FULL = FULL, V_NORMAL = NORMAL;
 
 export const WARM_MAX = 2 * PERIOD_MAX;
 /** When no exact period shows up, settle this long, then average over the rest. */
@@ -30,10 +35,17 @@ export function restoreGroup(grp: Group, s: GroupSnap, tick: number): void {
   grp.nodes.forEach((n, i) => n.restore(s.states[i], shift));
 }
 
+/**
+ * A reservoir's items that are not NORMAL for a group, ascending, each with its state (V_*) and
+ * throttle rate (mu/epoch); every other item is NORMAL. Sparse (D137): a group watches an item or
+ * two of a store, and a condition is built at every new power mode of its grid.
+ */
+export interface ResCond { items: number[]; state: number[]; rate: number[] }
+
 /** Conditions a regime was computed under (part of its key). */
 export interface Cond {
-  /** Per touched reservoir index → per item state (V_*) and throttle rate (mu/epoch). */
-  res: Map<number, { state: Uint8Array; rate: Float64Array }>;
+  /** Per touched reservoir index: its items not NORMAL (`ResCond`). */
+  res: Map<number, ResCond>;
   /** Per net: satisfaction ‰ and dispatch ‰. */
   sat: Map<number, number>;
   disp: Map<number, number>;
@@ -54,7 +66,7 @@ export function condKey(grp: Group, c: Cond, modsKey: string): string {
     const rc = c.res.get(ri);
     if (!rc) continue;
     let s = `r${ri}:`;
-    for (let i = 0; i < N_ITEMS; i++) if (rc.state[i] !== V_NORMAL) s += `${i}.${rc.state[i]}.${Math.round(rc.rate[i]!)},`;
+    for (let j = 0; j < rc.items.length; j++) s += `${rc.items[j]}.${rc.state[j]}.${Math.round(rc.rate[j]!)},`;
     parts.push(s);
   }
   return parts.join('|');
@@ -136,10 +148,16 @@ class Virtualizer {
       const rc = c.res.get(ri);
       r.vState.fill(V_NORMAL);
       r.vRate.fill(0);
-      if (rc) { r.vState.set(rc.state); r.vRate.set(rc.rate); }
-      r.vPool.fill(0); r.vCarry.fill(0); r.vIn.fill(0); r.vOut.fill(0);
       r.vActive = [];
-      for (let i = 0; i < N_ITEMS; i++) if (r.vState[i] !== V_NORMAL) r.vActive.push(i);
+      if (rc) {
+        for (let j = 0; j < rc.items.length; j++) {
+          const i = rc.items[j]!;
+          r.vState[i] = rc.state[j]!;
+          r.vRate[i] = rc.rate[j]!;
+          if (rc.state[j] !== V_NORMAL) r.vActive.push(i);
+        }
+      }
+      r.vPool.fill(0); r.vCarry.fill(0); r.vIn.fill(0); r.vOut.fill(0);
       if (pools) r.restore(pools[k]);
       else {
         for (let i = 0; i < N_ITEMS; i++) {
@@ -181,6 +199,10 @@ function hashState(grp: Group, res: ReservoirNode[], now: number, L: number): nu
 
 /** Step a group `ticks` times from tick `now` under conditions `c` (state is mutated). */
 export function stepGroup(g: Graph, grp: Group, ctx: TickCtx, c: Cond, now: number, ticks: number, pools: unknown[] | null = null): void {
+  // Nothing to step, no virtual session (D137): a regime ending on its period's start — the
+  // common case, segments being whole minutes — is its snapshot alone. The virtual fields are
+  // set afresh by every session and read only inside one, so skipping it changes nothing.
+  if (ticks <= 0) return;
   const v = new Virtualizer(g, grp);
   const res = v.enter(c, pools);
   const stepNodes: FNode[] = [...grp.nodes, ...res];
@@ -200,17 +222,22 @@ export function stepGroup(g: Graph, grp: Group, ctx: TickCtx, c: Cond, now: numb
  * session for the whole walk (the catch-up looks into a cached cycle this way).
  */
 export function scanGroup(g: Graph, grp: Group, ctx: TickCtx, c: Cond, now: number, every: number, max: number, visit: (at: number) => boolean): void {
+  // The first stop is asked before any virtual session (D137): a jump that finds its point
+  // there — most do — sets none up. The same stops and steps as one loop over them.
+  if (visit(0) || every > max) return;
   const v = new Virtualizer(g, grp);
   const res = v.enter(c);
   const stepNodes: FNode[] = [...grp.nodes, ...res];
   const accNodes: FNode[] = [...res, ...grp.accOrder];
   setPower(ctx, grp, c);
-  for (let at = 0; !visit(at) && at + every <= max; at += every) {
+  for (let at = 0; ;) {
     for (let t = 0; t < every; t++) {
       ctx.now = now + at + t;
       for (const r of res) r.vTick();
       runPhases(g, stepNodes, ctx, accNodes);
     }
+    at += every;
+    if (visit(at) || at + every > max) break;
   }
   v.exit();
 }

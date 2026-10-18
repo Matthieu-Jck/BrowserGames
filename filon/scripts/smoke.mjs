@@ -1651,10 +1651,10 @@ await step('the Gleaners (D103): a ribbon out past the Crown is exposed at night
   assert((await FL(() => window.FL.gleaners().card)) === null, 'the morning report stayed');
 });
 
-await step('gaps (D94): today\'s land (map 4) has chasms and rivers past the Crown; nothing stands in them, a ribbon drag leaps one with a skybridge pair; the land panel shows a parcel\'s usable floor', async () => {
+await step('gaps (D94): today\'s land (map 4, and 5: D136) has chasms and rivers past the Crown; nothing stands in them, a ribbon drag leaps one with a skybridge pair; the land panel shows a parcel\'s usable floor', async () => {
   const r = await FL(() => {
     const sim = window.FL.app.sim, g = sim.grid, C = 512;
-    if (g.source.mapV !== 4) return { ok: false, why: `map ${g.source.mapV}` };
+    if ((g.source.mapV ?? 1) < 4) return { ok: false, why: `map ${g.source.mapV}` }; // map 4's obstacles, and map 5's (D136)
     // The nearest straight crossing of a chasm, east–west: two floor tiles, 2–3 chasm tiles, two floor tiles, level 0.
     const floor = (x, y) => [0, 1].includes(g.terrain(x, y)) && g.level(x, y) === 0;
     let at = null, best = Infinity, rivers = 0;

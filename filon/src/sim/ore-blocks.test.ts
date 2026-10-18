@@ -56,9 +56,9 @@ function oreAround(g: Grid, item: number, cx: number, cy: number, r: number): { 
 }
 
 describe('deposits in whole blocks (map 4, D104)', () => {
-  it('map 4 is today\'s map, and only it comes in blocks', () => {
-    expect(MAP_VERSION).toBe(4);
-    expect(MAPS[4]!.oreBlock).toBe(2);
+  it('map 4 and today\'s map (5: map 4 with D136\'s quartz faces) come in blocks, maps 1–3 tile by tile', () => {
+    expect(MAP_VERSION).toBe(5);
+    for (const v of [4, 5]) expect(MAPS[v]!.oreBlock).toBe(2);
     for (const v of [1, 2, 3]) expect(MAPS[v]!.oreBlock ?? 1).toBe(1);
     expect(new MapGen(WORLD_SEED, 8, 3).oreBlock).toBe(1);
   });

@@ -30,18 +30,24 @@
 // from the seeds (obstacles.ts), nothing to stand on: the rivers a drainage network down to a
 // shared sea (`drainage`), streams up on the massifs at their level, lakes in the hollows they fill;
 // and a corridor of floor from the Crown's foot to each site the land guarantees.
+//
+// Version 5 (D136) is version 4 with a few short quartz faces farther out (content `QUARTZ_FACES`):
+// in some cells of the rough ground, the longest straight wall looking east or south with floor at
+// its foot takes 2–6 tiles of face ore (`faceOf`), laid over each chunk as it was made (`fill`):
+// only ore on rock the land already had.
 import { BAL } from '@/content/balance';
 import { itemIdx } from '@/content/registry';
 import {
   ARCHETYPES, ARCHETYPE_IDS, COMMON_DEPOSITS, COS64, DEPOSIT_CHANCE, MAP_VERSION, MAPS, MOUNTAINS, RICH_MULT, RINGS, SHADE, SIN64,
-  T3_UNIQUES, T4_UNIQUES, UNIQUE_BIOMES, type ArchetypeId, type CirqueTemplate, type MapParams, type Obstacles, type QuartzVein, type UniqueBiomeId,
+  T3_UNIQUES, T4_UNIQUES, UNIQUE_BIOMES, type ArchetypeId, type CirqueTemplate, type MapParams, type Obstacles, type QuartzFaces, type QuartzVein, type UniqueBiomeId,
 } from '@/content/world';
 import { hash32 } from '@/core/hash';
 import { isqrt } from '@/core/fixed';
 import { makeNoise2, qfbm, type Noise2 } from '@/core/noise';
-import { CENTER, CHUNK } from '../constants';
+import { CENTER, CHUNK, WORLD } from '../constants';
 import { isFloor, T } from '../types';
 import { MAX_LEVEL, MOUNTAIN_LEVEL, type TerrainSource, type VeinSite } from './grid';
+import { parcelAt, ringOf } from './land';
 import { ahead, eighth, headingOf, LineKind, quarter, SegIndex, tileOf, within, type Hits, type LinePt, type Seg, type Walker } from './obstacles';
 
 export interface Site { id: UniqueBiomeId; cx: number; cy: number; r: number; item: number }
@@ -150,6 +156,10 @@ export class MapGen implements TerrainSource {
   private readonly gP: Noise2;
   /** Map 4's common deposits by chunk (a pure function of the seeds, kept once read). */
   private readonly oreCells = new Map<number, Blob[]>();
+  /** Map 5's quartz faces (D136; null on maps 1–4), each cell's wall and each wedge's face once found (null: none). */
+  private readonly F: QuartzFaces | null;
+  private readonly faceCells = new Map<number, VeinSite | null>();
+  private readonly sectorFaces = new Map<number, { cell: number; face: VeinSite } | null>();
   /** `lines.hits`' answer, reused tile after tile. */
   private readonly hitBuf: Hits = [null, null, null, null];
   /** The cirque template and the mountains' hardness of this map version. */
@@ -240,6 +250,7 @@ export class MapGen implements TerrainSource {
     // whole block or none, along the Crown (across the deposit's bearing from the Heart, to the
     // nearest eighth), never towards the Heart: its distance from it, the tutorial's, is everyone's.
     this.holdings = !!P.holdings;
+    this.F = P.faces && P.obstacles ? P.faces : null;
     const OB = (this.oreBlock = P.oreBlock ?? 1);
     C.deposits.forEach((d, i) => {
       let jx = (hash32(ps, 30 + i) % 3) - 1, jy = (hash32(ps, 40 + i) % 3) - 1;
@@ -1216,6 +1227,29 @@ export class MapGen implements TerrainSource {
   }
 
   fill(cx: number, cy: number, terrain: Uint8Array, ore: Uint8Array, rich: Uint16Array, height?: Uint8Array, biome?: Uint8Array, level?: Uint8Array): void {
+    const m = this.made(cx, cy);
+    terrain.set(m.terrain);
+    ore.set(m.ore);
+    rich.set(m.rich);
+    height?.set(m.height);
+    biome?.set(m.biome);
+    level?.set(m.level);
+    // Map 5's quartz faces (D136): found on the land as made, their ore laid over it (a face lies in one cell).
+    const F = this.F, f = F ? this.faceOf(Math.floor(cx / F.cell), Math.floor(cy / F.cell)) : null;
+    if (f) {
+      const rich0 = BAL.depositRich[F!.item] ?? BAL.depositRich.iron_ore!;
+      for (let i = 0; i < f.n; i++) {
+        const x = f.x + i * f.dx, y = f.y + i * f.dy;
+        if (x >> 5 !== cx || y >> 5 !== cy) continue;
+        const k = (y & 31) * CHUNK + (x & 31);
+        ore[k] = f.item + 1;
+        rich[k] = rich0;
+      }
+    }
+  }
+
+  /** A chunk as `make` gives it (map 5's faces not laid on it yet), kept for the land (`MADE`). */
+  private made(cx: number, cy: number): { terrain: Uint8Array; ore: Uint8Array; rich: Uint16Array; height: Uint8Array; biome: Uint8Array; level: Uint8Array } {
     const key = `${this.worldSeed}:${this.playerSeed >>> 0}:${this.mapV}:${cx}:${cy}`;
     let m = MADE.get(key);
     if (!m) {
@@ -1225,12 +1259,119 @@ export class MapGen implements TerrainSource {
       if (MADE.size >= MADE_KEPT) MADE.delete(MADE.keys().next().value!);
       MADE.set(key, m);
     }
-    terrain.set(m.terrain);
-    ore.set(m.ore);
-    rich.set(m.rich);
-    height?.set(m.height);
-    biome?.set(m.biome);
-    level?.set(m.level);
+    return m;
+  }
+
+  /**
+   * The quartz faces (map 5, D136) meeting the tile rect [x0, x1) × [y0, y1), wedge by wedge (each
+   * wedge's cells are read to find its face; none on maps 1–4).
+   */
+  facesIn(x0: number, y0: number, x1: number, y1: number): VeinSite[] {
+    const F = this.F, out: VeinSite[] = [];
+    for (let k = 0; F && k < F.sectors; k++) {
+      const f = this.sectorFace(k)?.face;
+      if (f && f.x + (f.n - 1) * f.dx >= x0 && f.x < x1 && f.y + (f.n - 1) * f.dy >= y0 && f.y < y1) out.push(f);
+    }
+    return out;
+  }
+
+  /** Cell (a, b)'s quartz face (map 5, D136): its wedge's, when the wedge took it from this cell; else null. */
+  private faceOf(a: number, b: number): VeinSite | null {
+    const k = this.sectorOf(a, b), f = k >= 0 ? this.sectorFace(k) : null;
+    return f && f.cell === b * 1024 + a ? f.face : null;
+  }
+
+  /** The wedge round the cirque (0 … `sectors` − 1, by bearing from the east, clockwise) of a cell within reach of the faces' ring; −1 out of it. */
+  private sectorOf(a: number, b: number): number {
+    const F = this.F!, S = F.cell * CHUNK, dx = a * S + (S >> 1) - CENTER, dy = b * S + (S >> 1) - CENTER;
+    const mid = isqrt(dx * dx + dy * dy), reach = isqrt(2 * (S >> 1) * (S >> 1)) + 1;
+    if (mid + reach < F.from || mid - reach > F.to) return -1;
+    return Math.floor((((headingOf(dx, dy) + Math.floor(32 / F.sectors)) & 63) * F.sectors) / 64);
+  }
+
+  /**
+   * Wedge `k`'s quartz face (map 5, D136), or null: at its `chance`, the wall (`wallIn`) of the first
+   * of its cells, in the land's order (a hash of the cell), that has one; with the cell it took it
+   * from. Its cells' chunks are made to look (a wedge holds a few dozen cells; the first with broken
+   * ground mostly has one). Kept once found.
+   */
+  private sectorFace(k: number): { cell: number; face: VeinSite } | null {
+    const kept = this.sectorFaces.get(k);
+    if (kept !== undefined) return kept;
+    const F = this.F!, S = F.cell * CHUNK, n = WORLD / S, ps = this.playerSeed >>> 0;
+    let found: { cell: number; face: VeinSite } | null = null;
+    if (hash32(ps, k, 302) % 1000 < F.chance) {
+      const cells: Array<[number, number, number]> = [];
+      for (let b = 0; b < n; b++) for (let a = 0; a < n; a++) if (this.sectorOf(a, b) === k) cells.push([hash32(ps, a, b, 300), a, b]);
+      cells.sort((p, q) => p[0] - q[0] || p[2] - q[2] || p[1] - q[1]);
+      for (const [, a, b] of cells) {
+        const face = this.wallIn(a, b);
+        if (face) { found = { cell: b * 1024 + a, face }; break; }
+      }
+    }
+    this.sectorFaces.set(k, found);
+    return found;
+  }
+
+  /**
+   * Cell (a, b)'s wall for a quartz face (map 5, D136; content `QUARTZ_FACES`), or null: where some
+   * of the cell is broken ground, the longest straight wall in it looking east or south whose every
+   * tile is rock above `apron` tiles of floor at one level (a face cutter's footprint and its outlet),
+   * past the open sand and the first rings; its `length`, the land's draw, in its middle. Read off the
+   * cell's chunks as made (`made`): a pure function of the seeds, kept once found.
+   */
+  private wallIn(a: number, b: number): VeinSite | null {
+    const F = this.F!, key = b * 1024 + a;
+    const kept = this.faceCells.get(key);
+    if (kept !== undefined) return kept;
+    const S = F.cell * CHUNK, x0 = a * S, y0 = b * S, ps = this.playerSeed >>> 0;
+    const far = (x: number, y: number): number => isqrt((x - CENTER) * (x - CENTER) + (y - CENTER) * (y - CENTER));
+    // Broken ground somewhere in it: its middle or a quarter point past the open desert's roughness.
+    const QP = [[2, 2], [1, 1], [3, 1], [1, 3], [3, 3]] as const;
+    const broken = QP.some(([i, j]) => { const x = x0 + ((i * S) >> 2), y = y0 + ((j * S) >> 2); return this.rough(x, y, far(x, y)) >= this.O!.desert.below; });
+    let face: VeinSite | null = null;
+    if (broken) {
+      const lv = (x: number, y: number): number => this.made(x >> 5, y >> 5).level[(y & 31) * CHUNK + (x & 31)]!;
+      const tr = (x: number, y: number): number => this.made(x >> 5, y >> 5).terrain[(y & 31) * CHUNK + (x & 31)]!;
+      // A wall tile looking (fx, fy): rock above `apron` tiles of floor at one level (that level), else −1.
+      const foot = (x: number, y: number, fx: number, fy: number): number => {
+        const d = far(x, y), t = tr(x, y);
+        if (d < F.from || d > F.to || t < T.Rock1 || t > T.Rock4 || ringOf(parcelAt(x, y)) < F.ring) return -1;
+        const L = lv(x + fx, y + fy);
+        if (L >= lv(x, y)) return -1;
+        for (let k = 1; k <= F.apron; k++) {
+          const u = x + k * fx, v = y + k * fy, g = tr(u, v);
+          if (!isFloor(g) || g === T.Vent || lv(u, v) !== L) return -1;
+        }
+        return L;
+      };
+      // The face and its floor within [lo, hi) of the cell: `w` across the wall (its floor at w + 1…),
+      // `s` along it; looking east the wall runs down a column, looking south along a row.
+      const lo = F.margin, hi = S - F.margin;
+      let best: { x: number; y: number; dx: number; dy: number; n: number; look: 1 | 2 } | null = null;
+      for (const look of [1, 2] as const) {
+        const fx = look === 1 ? 1 : 0, fy = 1 - fx;
+        for (let w = lo; w < hi - F.apron; w++) {
+          let start = -1, L0 = -1;
+          for (let s = lo; s <= hi; s++) {
+            // One past the end closes the last run; a run is one floor level all along.
+            const L = s < hi ? foot(x0 + (fx ? w : s), y0 + (fx ? s : w), fx, fy) : -1;
+            if (L >= 0 && start >= 0 && L === L0) continue;
+            if (start >= 0 && s - start >= F.length[0] && (!best || s - start > best.n)) {
+              best = { x: x0 + (fx ? w : start), y: y0 + (fx ? start : w), dx: fy, dy: fx, n: s - start, look };
+            }
+            start = L >= 0 ? s : -1;
+            L0 = L;
+          }
+        }
+      }
+      if (best) {
+        const n = Math.min(best.n, F.length[0] + (hash32(ps, a, b, 301) % (F.length[1] - F.length[0] + 1))), k = (best.n - n) >> 1;
+        face = { x: best.x + k * best.dx, y: best.y + k * best.dy, dx: best.dx, dy: best.dy, n, look: best.look, item: itemIdx(F.item) };
+      }
+    }
+    this.faceCells.set(key, face);
+    return face;
   }
 
   /** One chunk as the land makes it (`fill`'s, which keeps it). */

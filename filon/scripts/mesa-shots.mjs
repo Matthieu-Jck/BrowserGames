@@ -34,7 +34,7 @@ await page.evaluate(() => {
 });
 await page.addStyleTag({ content: '.qlog, .guide, .hud, .buildbar, .toasts, .view-bar, .views-card, [data-screen="quests"] { display: none !important; }' });
 const mapV = await page.evaluate(() => window.FL.app.sim.grid.source.mapV);
-if (mapV !== 4) console.log(`warning: map ${mapV}, the massifs' places are map 4's`);
+if ((mapV ?? 1) < 4) console.log(`warning: map ${mapV}, the massifs' places are map 4's (and 5's, D136)`);
 
 const settle = async (ms = 900) => {
   await page.waitForTimeout(300);

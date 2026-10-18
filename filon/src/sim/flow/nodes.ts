@@ -485,11 +485,13 @@ export class ReservoirNode extends FNode {
   }
 
   override snapshot(): unknown {
-    return { pool: [...this.vPool], carry: [...this.vCarry] };
+    // Typed copies (D137): a warm-up's snapshots are restored at every regime's end, and a
+    // typed `set` is a copy where a plain array's is a walk.
+    return { pool: this.vPool.slice(), carry: this.vCarry.slice() };
   }
 
   override restore(s: unknown): void {
-    const o = s as { pool: number[]; carry: number[] };
+    const o = s as { pool: ArrayLike<number>; carry: ArrayLike<number> };
     this.vPool.set(o.pool);
     this.vCarry.set(o.carry);
   }

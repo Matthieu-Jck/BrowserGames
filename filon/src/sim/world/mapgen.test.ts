@@ -5,7 +5,7 @@
 // lilac rock on their tops; the deposits on the floor; the unique sites, the copper field and the
 // archetypes where they belong; maps 1–3, the land of the bases founded on them, kept tile for tile;
 // and map 4's obstacles (D94): massifs and their cliffs, chasms, rivers, a floor corridor to each
-// site, the rings past the starting square cut up.
+// site, the rings past the starting square cut up; map 5's few quartz faces farther out (D136).
 import { describe, it, expect } from 'vitest';
 import { BUILDINGS } from '@/content/buildings';
 import { CIRQUE, CIRQUE_V1, COS64, MAP_VERSION, MAPS, MOUNTAINS, OBSTACLES, RINGS, SIN64, WORLD_SEED, UNIQUE_BIOMES } from '@/content/world';
@@ -19,7 +19,7 @@ import { BIOME, MapGen } from './mapgen';
 import { Grid, MAX_LEVEL, MOUNTAIN_LEVEL } from './grid';
 import { parcelFloor } from './floor';
 import { PARCEL_COLS, parcelAt, parcelRect, ringOf } from './land';
-import { isFaceOre } from '../face';
+import { faceRate, faceTiles, isFaceOre } from '../face';
 
 /** Sixteen lands, and seed 8's Closed Cirque (none of the sixteen draws one). */
 const SEEDS = [...Array.from({ length: 16 }, (_, i) => 1000 + i * 7919), 8];
@@ -937,4 +937,75 @@ describe('the spring on the Crown (map 4, D115)', () => {
     const want = key(ref.gen, ref.g);
     for (const seed of SEEDS.slice(1)) { const { gen, g } = world(seed, 4); expect(key(gen, g), `seed ${seed}`).toBe(want); }
   });
+});
+
+describe('map 5: quartz faces farther out (D136)', () => {
+  const F = MAPS[5]!.faces!, LANDS = [1, 2, 3, 4, 5, 6, 7, 8], quartz = itemIdx('quartz');
+  const DXR = [0, 1, 0, -1], DYR = [-1, 0, 1, 0];
+  const cutter = buildingIdx('face_cutter');
+
+  it('a few a land, each 2–6 tiles of quartz on a wall looking east or south, floor at its foot where a face cutter stands and cuts, past the open sand round the cirque', () => {
+    const counts: number[] = [];
+    for (const seed of LANDS) {
+      const { gen, g } = world(seed, 5);
+      const faces = gen.facesIn(0, 0, WORLD, WORLD);
+      counts.push(faces.length);
+      // At most one a quarter, in a quarter of their own.
+      expect(faces.length, `land ${seed}`).toBeLessThanOrEqual(F.sectors);
+      for (const f of faces) {
+        const at = `land ${seed} face ${f.x},${f.y}`;
+        expect(f.n, at).toBeGreaterThanOrEqual(F.length[0]);
+        expect(f.n, at).toBeLessThanOrEqual(F.length[1]);
+        expect([1, 2], at).toContain(f.look); // the walls the iso camera sees, as the vein's
+        expect(f.item).toBe(quartz);
+        const fx = DXR[f.look]!, fy = DYR[f.look]!, L = g.level(f.x + fx, f.y + fy);
+        for (let i = 0; i < f.n; i++) {
+          const x = f.x + i * f.dx, y = f.y + i * f.dy, r = isqrt(d2c(x, y));
+          // Rock above its floor, holding the face ore; never in the open sand round the cirque (D94,
+          // D115: its roughness reaches the land's own at `desert.rough`), never in the first rings.
+          expect(isRock(g.terrain(x, y)), at).toBe(true);
+          expect(g.ore(x, y), at).toBe(quartz);
+          expect(isFaceOre(g.ore(x, y))).toBe(true);
+          expect(g.level(x, y), at).toBeGreaterThan(L);
+          expect(r, at).toBeGreaterThanOrEqual(Math.max(F.from, OBSTACLES.desert.rough));
+          expect(r, at).toBeLessThanOrEqual(F.to);
+          expect(ringOf(parcelAt(x, y)), at).toBeGreaterThanOrEqual(F.ring);
+          // Floor at its foot, one level, a face cutter's two tiles and its outlet's.
+          for (let k = 1; k <= F.apron; k++) {
+            const u = x + k * fx, v = y + k * fy;
+            expect(isFloor(g.terrain(u, v)) && g.terrain(u, v) !== T.Vent, `${at}: its floor at ${u},${v}`).toBe(true);
+            expect(g.level(u, v), `${at}: its floor's level at ${u},${v}`).toBe(L);
+          }
+        }
+        // A face cutter on its floor, its back against the face's first two tiles, cuts quartz (D87, D133: 5 a tile).
+        const rot = f.look as 1 | 2, cx = f.x + fx, cy = f.y + fy;
+        expect(faceTiles(g, cutter, cx, cy, rot).length, `${at}: the cutter's back`).toBe(2);
+        expect(faceRate(g, cutter, cx, cy, rot), at).toEqual({ item: quartz, rateEp: 10_000 });
+      }
+    }
+    // Lands 1–8: 4, 4, 4, 4, 3, 3, 4, 2 (D136): a few on every land.
+    expect(counts.every((n) => n >= 2), `faces per land ${counts.join(' ')}`).toBe(true);
+    expect(counts.reduce((s, n) => s + n, 0), `faces per land ${counts.join(' ')}`).toBeGreaterThanOrEqual(3 * LANDS.length - 4);
+  }, 60_000);
+
+  it('a face is the same whichever chunk is made first, and map 4 has none: only its ore differs from map 4, on its tiles', () => {
+    for (const seed of [1, 3]) {
+      const four = world(seed, 4), five = world(seed, 5);
+      expect(four.gen.facesIn(0, 0, WORLD, WORLD)).toEqual([]);
+      const faces = five.gen.facesIn(0, 0, WORLD, WORLD);
+      expect(faces.length).toBeGreaterThan(0);
+      // A fresh land asked for a face's tile first: the same ore.
+      for (const f of faces) expect(world(seed, 5).g.ore(f.x, f.y), `land ${seed}: ${f.x},${f.y} read first`).toBe(quartz);
+      const on = new Set(faces.flatMap((f) => Array.from({ length: f.n }, (_, i) => (f.y + i * f.dy) * WORLD + f.x + i * f.dx)));
+      let diff = 0, ore = 0;
+      const R = F.to + 4;
+      for (let y = CENTER - R; y <= CENTER + R; y += 1) for (let x = CENTER - R; x <= CENTER + R; x++) {
+        if (d2c(x, y) > R * R) continue;
+        if (four.g.level(x, y) !== five.g.level(x, y) || four.g.terrain(x, y) !== five.g.terrain(x, y)) diff++;
+        if (four.g.ore(x, y) !== five.g.ore(x, y) && !on.has(y * WORLD + x)) ore++;
+      }
+      expect(diff, `land ${seed}: tiles map 5 changed`).toBe(0);
+      expect(ore, `land ${seed}: ore map 5 changed off its faces`).toBe(0);
+    }
+  }, 60_000);
 });

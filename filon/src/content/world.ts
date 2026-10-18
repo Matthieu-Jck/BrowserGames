@@ -511,7 +511,35 @@ export const OBSTACLES: Obstacles = {
   ore: { cells: 2, near: 6, far: 11, open: 15, perBroken: 32, max: 800, thin: 5, thinRadius: [10, 8], radius: [25, 21], richRough: 1250 },
 };
 
-/** What a map version reads (D63): its cirque, its Crown's foot by archetype, its mountains' hardness, its quartz vein (map 3), its obstacles (map 4). */
+/**
+ * Quartz here and there farther out (map 5, D136; owner, 2026-10-18: « il faudra mettre du quartz avec
+ * parcimonie à d'autres endroits »): beyond the vein a parcel away (D87), a few short faces in the
+ * walls of the rough ground. The land round the cirque is cut in `sectors` wedges (the four quarters,
+ * by bearing) and in cells of `cell` × `cell` chunks; each wedge holds a face `chance` ‰ of the time,
+ * in the first of its cells (in the land's own order, a hash) with broken ground in it (its middle or
+ * a quarter point at the open desert's `below` roughness or more) and a wall: the longest straight
+ * one looking east or south (the walls the iso camera sees, as the vein's) whose every tile is rock
+ * above `apron` tiles of level floor in front of it — a face cutter's two and its outlet's. It takes
+ * `length` face tiles of `item` (the land's draw between the two, in the wall's middle) at the face
+ * ore's cap. None nearer than `from` tiles (past the open sand round the Crown, D94/D115: the
+ * roughness reaches the land's own at `OBSTACLES.desert.rough`) nor in a parcel ring under `ring`,
+ * nor past `to`; its tiles and floor `margin` tiles inside its cell. Nothing but the ore changes:
+ * the walls and the floor are the land's own.
+ */
+export interface QuartzFaces {
+  readonly item: string;
+  readonly sectors: number;
+  readonly chance: number;
+  readonly cell: number;
+  readonly from: number;
+  readonly to: number;
+  readonly ring: number;
+  readonly length: readonly [number, number];
+  readonly apron: number;
+  readonly margin: number;
+}
+
+/** What a map version reads (D63): its cirque, its Crown's foot by archetype, its mountains' hardness, its quartz vein (map 3), its obstacles (map 4), its quartz faces farther out (map 5). */
 export interface MapParams {
   readonly cirque: CirqueTemplate;
   /** The Crown's foot (tiles from the centre) on these archetypes; the others take `cirque.crownOuter`. */
@@ -537,6 +565,8 @@ export interface MapParams {
    * keep the land they had: a base stands on each where one fits).
    */
   readonly holdings?: boolean;
+  /** Short quartz faces in the rough ground's walls, a few a land (map 5, D136); absent: the vein's alone (maps 1–4). */
+  readonly faces?: QuartzFaces;
 }
 
 /**
@@ -550,8 +580,13 @@ export const QUARTZ_VEIN: QuartzVein = {
   depth: 7, climb: 2, top: 3, apron: 5, apronWide: 3, corridor: 3,
 };
 
+/** Map 5's quartz faces (D136): a few a land (three in four quarters on average) past the open sand, 2–6 tiles each against the vein's 8. */
+export const QUARTZ_FACES: QuartzFaces = {
+  item: 'quartz', sectors: 4, chance: 750, cell: 2, from: 116, to: 180, ring: 3, length: [2, 6], apron: 3, margin: 3,
+};
+
 /** The map version a new base is founded on (saved as `mapV`; a save without it is on map 1). */
-export const MAP_VERSION = 4;
+export const MAP_VERSION = 5;
 
 /**
  * Every map version, kept for the bases founded on it: a land never changes under a base. A new
@@ -588,6 +623,18 @@ export const MAPS: Readonly<Record<number, MapParams>> = {
     obstacles: OBSTACLES,
     oreBlock: 2,
     holdings: true,
+  },
+  // Map 4's land with a few short quartz faces in the rough ground's walls (D136): only ore on rock
+  // the land already had; map 4's bases keep their land (D63).
+  5: {
+    cirque: CIRQUE_V4,
+    crownOuter: { closed: 31, steppe: 27 },
+    hardness: MOUNTAINS.hardness,
+    quartz: QUARTZ_VEIN,
+    obstacles: OBSTACLES,
+    oreBlock: 2,
+    holdings: true,
+    faces: QUARTZ_FACES,
   },
 };
 

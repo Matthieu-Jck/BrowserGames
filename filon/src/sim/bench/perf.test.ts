@@ -11,7 +11,9 @@ describe('performance (base20k: ~25k entities)', () => {
     sim.run(60); // settle the JIT
     const tick = timed(() => sim.run(300));
     const tickMs = tick.ms / 300;
-    sim.run(36000 - 360); // one hour online: silos start filling
+    // One hour online: every silo is full by then (they fill in about half an hour), so the week
+    // is jammed lines under the wind — each cell's grid swinging between power levels (D137).
+    sim.run(36000 - 360);
     const { value: rep, ms: tCatch, wall: wCatch } = timed(() => catchUp(sim, 7 * 24 * 36000, { noDirect: true }));
     const wire = itemIdx('copper_wire');
     let siloWire = 0;

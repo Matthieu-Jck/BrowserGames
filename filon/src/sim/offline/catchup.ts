@@ -12,21 +12,25 @@
 // with the length of the absence, nor quadratically with the base.
 import { lapsing } from '../systems/land';
 import { BAL } from '@/content/balance';
-import { BUILDING_KIND, N_ITEMS, itemIdx } from '@/content/registry';
-import { SAT_STEP, EPOCH } from '../constants';
+import { BUILDING_KIND, N_ITEMS as ITEM_COUNT, itemIdx } from '@/content/registry';
+import { SAT_STEP as SAT_STEP_, EPOCH as EPOCH_ } from '../constants';
 import { addHeld, type Sim } from '../state';
 import { buildGroups, type Group } from '../graph/groups';
 import { makeCtx } from '../flow/step';
 import type { TickCtx } from '../flow/node';
-import { DrillNode, MachineNode, ReservoirNode, V_EMPTY, V_FULL, V_NORMAL } from '../flow/nodes';
+import { DrillNode, MachineNode, ReservoirNode, V_EMPTY as EMPTY, V_FULL as FULL, V_NORMAL as NORMAL } from '../flow/nodes';
 import { projectDone } from '../research/runtime';
 import { labTick, queuedReady, serverTick, startQueued } from '../systems/research';
 import { jobDone, jobRate, type Job } from '../space';
 import { renewableKw, weatherAt, weatherKey } from '../power/network';
 import { modsKey } from '../research/modifiers';
-import { condKey, flowAt, gleanAt, materialize, restoreGroup, rotOf, scanGroup, Scratch, statAt, warmUp, type Cond, type Regime } from './steady';
+import { condKey, flowAt, gleanAt, materialize, restoreGroup, rotOf, scanGroup, Scratch, statAt, warmUp, type Cond, type GroupSnap, type Regime, type ResCond } from './steady';
 import { gleanNight, markTaken } from '../systems/gleaners';
 import { newReport, type AwayReport } from './report';
+
+// Module copies of the constants the per-segment passes read (D137, as in steady.ts): under
+// vitest, where the tests and the bench run, an imported binding is a getter call at every read.
+const N_ITEMS = ITEM_COUNT, SAT_STEP = SAT_STEP_, EPOCH = EPOCH_, V_EMPTY = EMPTY, V_FULL = FULL, V_NORMAL = NORMAL;
 
 /** Below this, simply tick the engine (exact, and cheap for short gaps). */
 export const DIRECT_TICKS = 1200;
@@ -45,6 +49,8 @@ interface Run {
   /** Items this group pulls from / pushes into each reservoir (state relevance). */
   pull: Map<number, Set<number>>;
   push: Map<number, Set<number>>;
+  /** Per reservoir: the items it pulls or pushes there, the ones whose state it reads (`indexRelevance`; read at every new condition, D137). */
+  watch: Map<number, number[]>;
   /** Gross per-tick flows per reservoir key while that key was NORMAL (throttle shares). */
   normalIn: Map<number, number>;
   normalOut: Map<number, number>;
@@ -62,9 +68,9 @@ export interface CatchUpOptions {
   noDirect?: boolean;
 }
 
-/** What a group's nodes hold, per item (milli-items): on its ribbons, in its machines' and blocks' buffers. */
-function groupHeld(grp: Group): Float64Array {
-  const out = new Float64Array(N_ITEMS);
+/** What a group's nodes hold, per item (milli-items): on its ribbons, in its machines' and blocks' buffers. Into `out` (cleared first). */
+function groupHeld(grp: Group, out: Float64Array): Float64Array {
+  out.fill(0);
   for (const n of grp.nodes) addHeld(n, out);
   return out;
 }
@@ -114,6 +120,12 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
   const margin = BAL.reservoirMargin * 1000;
   const scratch = new Scratch();
   const cache = new Map<string, Regime>();
+  /** A cached exact regime's jump form (no transient, from its period's start), made once: regimes are never changed once made. */
+  const jumps = new Map<Regime, Regime>();
+  /** What a group holds before a jump, and at a stop of its search (reused: a jump is the catch-up's commonest step, D137). */
+  const heldWant = new Float64Array(N_ITEMS), heldNow = new Float64Array(N_ITEMS);
+  /** What a group holds at a snapshot (per snapshot: a regime's start or its period's start), found once by restoring it. */
+  const heldBySnap = new Map<GroupSnap, Float64Array>();
   let now = sim.tick;
 
   // ── per-graph state (rebuilt when the graph changes) ─────────────────────
@@ -126,11 +138,37 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
   let netModes: NetMode[] = [];
   /** Per grid: what reservoir buildings draw (observatories, excavators, servers…; they belong to no group). */
   let resKw: number[] = [];
+  /** The grids with accumulators, ascending: only they charge or give (a grid without has no `accRate`; D137: two passes a segment over 1 681 grids walked these few). */
+  let accNets: number[] = [];
   /** Per grid: its load as last summed (`computeNetModes`; undefined: to sum). */
   let netLoad: Array<NetLoad | undefined> = [];
-  /** Per weather key: each grid's renewables (kW; NaN: not yet asked). Producers change only with the graph. */
+  /**
+   * Grids by their producers (D137): grids whose producers are alike (kind, rating, curve,
+   * exposures) have the same renewables in any weather, so they are asked once per weather and
+   * class (`netR`), and a class whose every grid had its peak covered at its last solve, and still
+   * has in the new weather, keeps every mode as it was (full power, no fuel called): its grids
+   * are not visited. `netClass` grid → class; `classNets` its grids, ascending; `classAccs` a grid
+   * of it has accumulators (their energy moves: never skipped); `classMaxD` the highest peak demand
+   * a grid of it has had since `setup` (a bound); `classOpen` how many of its grids were last solved
+   * short of covering their peak with renewables (`netCovered`).
+   */
+  let netClass = new Int32Array(0);
+  let classNets: number[][] = [];
+  let classAccs = new Uint8Array(0);
+  let classMaxD = new Float64Array(0);
+  let classOpen = new Int32Array(0);
+  let netCovered = new Uint8Array(0);
+  /** Per weather key: each class's renewables (kW; NaN: not yet asked). Producers change only with the graph. */
   const netR = new Map<string, Float64Array>();
+  /** Per grid: the renewables its mode was last solved with (kW). */
+  let netRLast = new Float64Array(0);
+  /**
+   * The Mods' part of the regime keys: a short name for `modsKey(sim.mods)` (six hundred
+   * characters, in every key looked up — the keys were long to build, hash and compare, D137),
+   * one per distinct Mods of the call, as the cache is.
+   */
   let mk = '';
+  const mkNames = new Map<string, string>();
   const curIn = new Map<number, number>();     // Σ current regimes' gross inflow per key (mu/tick)
   const curOut = new Map<number, number>();
   const sumNormIn = new Map<number, number>();  // Σ runs' NORMAL-state inflow per key (shares)
@@ -162,7 +200,10 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
   function setup(): void {
     g = sim.graph;
     wctx = makeCtx(g, g.nets.length, N_ITEMS);
-    mk = modsKey(sim.mods);
+    const mods = modsKey(sim.mods);
+    let name = mkNames.get(mods);
+    if (name === undefined) mkNames.set(mods, (name = `m${mkNames.size}`));
+    mk = name;
     curIn.clear(); curOut.clear(); sumNormIn.clear(); sumNormOut.clear(); throttle.clear(); labOut.clear(); pIn.clear();
     tradeRes = [];
     g.reservoirs.forEach((r, ri) => { if (r === g.hearth || BUILDING_KIND[sim.ents.get(r.ent)?.def ?? -1] === 'trade') tradeRes.push(ri); });
@@ -172,6 +213,7 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
       return s;
     });
     runs = buildGroups(g).map(newRun);
+    movingDirty = true;
     dirtyRuns.clear();
     for (const run of runs) dirtyRuns.add(run);
     throttleDirty.clear();
@@ -183,7 +225,25 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     resKw = g.nets.map(() => 0);
     for (const r of g.reservoirs) if (r.net >= 0) resKw[r.net] = resKw[r.net]! + r.demand();
     netLoad = g.nets.map(() => undefined);
+    accNets = [];
+    g.nets.forEach((net, n) => { if (net.accs.length) accNets.push(n); });
+    netRLast = new Float64Array(g.nets.length).fill(NaN);
     netR.clear();
+    const classOf = new Map<string, number>();
+    netClass = new Int32Array(g.nets.length);
+    classNets = [];
+    g.nets.forEach((net, n) => {
+      const sig = JSON.stringify(net.producers.map((p) => [p.kind, p.kw, p.local, p.curve ?? null, p.base ?? 0]));
+      let c = classOf.get(sig);
+      if (c === undefined) { classOf.set(sig, (c = classNets.length)); classNets.push([]); }
+      netClass[n] = c;
+      classNets[c]!.push(n);
+    });
+    classAccs = new Uint8Array(classNets.length);
+    for (const n of accNets) classAccs[netClass[n]!] = 1;
+    classMaxD = new Float64Array(classNets.length);
+    classOpen = Int32Array.from(classNets, (ns) => ns.length); // none solved yet
+    netCovered = new Uint8Array(g.nets.length);
     lastWeather = '';
     pendingBuilds = [...sim.ents.map.values()].filter((e) => e.builtAt > now).map((e) => e.builtAt).sort((a, b) => a - b);
   }
@@ -211,7 +271,7 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     }
     for (const ri of grp.res) push.set(ri, (grp.resIn.get(ri)?.length ?? 0) > 0 ? new Set([...made, ...pulledAny]) : new Set());
     return {
-      grp, reg: null, key: '', cond: null, start: now, warmCount: 0, pull, push,
+      grp, reg: null, key: '', cond: null, start: now, warmCount: 0, pull, push, watch: new Map(),
       normalIn: new Map(), normalOut: new Map(), statItems: [], dirty: true,
     };
   }
@@ -219,6 +279,7 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
   function indexRelevance(run: Run): void {
     for (const ri of run.grp.res) {
       const items = new Set([...(run.pull.get(ri) ?? []), ...(run.push.get(ri) ?? [])]);
+      run.watch.set(ri, [...items].sort((a, b) => a - b));
       for (const i of items) {
         const k = ri * N_ITEMS + i;
         let arr = keyRuns.get(k);
@@ -238,23 +299,22 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
 
   function condFor(run: Run): Cond {
     const grp = run.grp;
-    const res = new Map<number, { state: Uint8Array; rate: Float64Array }>();
+    const res = new Map<number, ResCond>();
     for (const ri of grp.res) {
-      const state = new Uint8Array(N_ITEMS);
-      const rate = new Float64Array(N_ITEMS);
-      const items = new Set([...(run.pull.get(ri) ?? []), ...(run.push.get(ri) ?? [])]);
-      for (const i of items) {
+      const rc: ResCond = { items: [], state: [], rate: [] };
+      for (const i of run.watch.get(ri) ?? []) { // ascending
         const st = effState(run, ri, i);
         if (st === V_NORMAL) continue;
-        state[i] = st;
         const k = ri * N_ITEMS + i;
         const total = throttle.get(k) ?? 0;
         const mine = st === V_EMPTY ? (run.normalOut.get(k) ?? 0) : (run.normalIn.get(k) ?? 0);
         const sum = st === V_EMPTY ? (sumNormOut.get(k) ?? 0) : (sumNormIn.get(k) ?? 0);
         const runsOn = keyRuns.get(k)?.length ?? 1;
-        rate[i] = Math.floor(sum > 0 ? (total * mine) / sum : total / runsOn);
+        rc.items.push(i);
+        rc.state.push(st);
+        rc.rate.push(Math.floor(sum > 0 ? (total * mine) / sum : total / runsOn));
       }
-      res.set(ri, { state, rate });
+      res.set(ri, rc);
     }
     const sat = new Map<number, number>(), disp = new Map<number, number>();
     for (const n of grp.nets) { sat.set(n, netModes[n]!.sat); disp.set(n, netModes[n]!.disp); }
@@ -268,6 +328,16 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
   /** Reservoir keys whose throttle may need recomputing (flows or state changed). */
   const throttleDirty = new Set<number>();
 
+  /**
+   * Does a regime move anything `advance` adds up — a reservoir's flow, a statistic, the Gleaners'
+   * takings? A group that holds still (a jammed line, idle ribbons: most of a full base) adds
+   * nothing, so `advance` walks only the runs that move (`moving`, in `runs`' order: the same
+   * additions in the same order, D137).
+   */
+  const moves = (reg: Regime | null): boolean => !!reg && (reg.keys.length > 0 || reg.statItems.length > 0 || reg.gleanItems.length > 0);
+  let moving: Run[] = [];
+  let movingDirty = true;
+
   function setRegime(run: Run, reg: Regime): void {
     const old = run.reg;
     if (old) old.keys.forEach((k, j) => { addTo(curIn, k, -old.inP[j]! / old.p); addTo(curOut, k, -old.outP[j]! / old.p); throttleDirty.add(k); });
@@ -275,6 +345,31 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     run.reg = reg;
     run.statItems = reg.statItems;
     for (const n of run.grp.nets) netDirty.add(n);
+    if (moves(old) !== moves(reg)) movingDirty = true;
+  }
+
+  /** What a group holds at snapshot `s` (milli-items per item); restores it into the group the first time. */
+  function heldOf(grp: Group, s: GroupSnap): Float64Array {
+    let h = heldBySnap.get(s);
+    if (!h) {
+      restoreGroup(grp, s, now);
+      heldBySnap.set(s, (h = groupHeld(grp, new Float64Array(N_ITEMS))));
+    }
+    return h;
+  }
+
+  /**
+   * What a group holds now under its regime: at the regime's start or at one of its periods'
+   * starts the state is a snapshot, whose holdings are known (`heldOf`: segments end on whole
+   * minutes, and short periods divide them, so a regime usually ends there); elsewhere the group
+   * is materialized. Its nodes are left at whatever state it took to find out.
+   */
+  function heldUnder(run: Run): Float64Array {
+    const reg = run.reg!, e = now - run.start;
+    if (e === 0) return heldOf(run.grp, reg.s0);
+    if (e > reg.t1 && (e - reg.t1) % reg.p === 0) return heldOf(run.grp, reg.s1);
+    materialize(g, run.grp, wctx, run.cond!, reg, run.start, e);
+    return groupHeld(run.grp, heldWant);
   }
 
   function ensureRegime(run: Run): void {
@@ -283,15 +378,24 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     run.dirty = false;
     dirtyRuns.delete(run);
     if (key === run.key && run.reg) return;
-    // Bring the group to its true state now, then warm up (or reuse the cache).
-    if (run.reg && run.cond) materialize(g, run.grp, wctx, run.cond, run.reg, run.start, now - run.start);
     const cached = cache.get(key);
+    const jumping = cached !== undefined && run.warmCount >= CACHE_AFTER;
+    // Bring the group to its true state now, then warm up (or reuse the cache). An exact jump
+    // reads no more of it than what the group holds, which a point that is a snapshot gives with
+    // no stepping (`heldUnder`, D137). (An averaged jump, rare, still steps its old regime to now:
+    // a virtual step may lock an empty silo for good, so skipping steps would not be the same.)
+    let want: Float64Array | null = null;
+    if (run.reg && run.cond) {
+      if (jumping && cached.exact) want = heldUnder(run);
+      else materialize(g, run.grp, wctx, run.cond, run.reg, run.start, now - run.start);
+    }
     let reg: Regime | null = null;
     let lag = 0;
-    if (cached && run.warmCount >= CACHE_AFTER) {
+    if (jumping) {
       // A known regime: no warm-up, the group jumps into its cycle (an approximation: `approx`).
       const L = rotOf(run.grp, c);
-      const jump: Regime = { ...cached, t1: 0, prefT: cached.keys.map(() => Float64Array.of(0)), s0: cached.s1 };
+      let jump = jumps.get(cached);
+      if (!jump) jumps.set(cached, (jump = { ...cached, t1: 0, prefT: cached.keys.map(() => Float64Array.of(0)), s0: cached.s1 }));
       if (!cached.exact) {
         // An averaged regime (no exact period: an approximation already) jumps to where it ended.
         reg = jump;
@@ -303,21 +407,28 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
         // at the point holding the items the group holds now, so the jump loses and makes none
         // (the items in transit vary along a cycle): from `lag` on, a phase's turn at a time, up to
         // SEARCH ticks; failing that, at the point closest to it.
-        const want = groupHeld(run.grp);
+        want ??= groupHeld(run.grp, heldWant);
         lag = L > 1 ? (((now - cached.s1.tick) % L) + L) % L : 0;
-        if (lag) materialize(g, run.grp, wctx, c, jump, now - lag, lag);
-        else restoreGroup(run.grp, cached.s1, now);
-        // The phase repeats every L ticks, so each stop of the walk is a point in phase, as if at `now`.
-        let bestGap = Infinity, bestAt = lag, last = lag;
-        scanGroup(g, run.grp, wctx, c, now, L, Math.max(0, Math.min(cached.p, SEARCH) - lag), (at) => {
-          last = lag + at;
-          const gap = heldGap(groupHeld(run.grp), want);
-          if (gap < bestGap) { bestGap = gap; bestAt = last; }
-          return gap === 0;
-        });
-        // The walk went past the closest point: go back to it (from the cycle's start, in phase).
-        if (bestAt !== last) materialize(g, run.grp, wctx, c, jump, now - bestAt, bestAt);
-        lag = bestAt;
+        if (lag === 0 && heldGap(heldOf(run.grp, cached.s1), want) === 0) {
+          // The walk's first stop, the cycle's start, holds them (the common case, D137): the group
+          // lands there. Its nodes are left as they are: under a regime they are read only through
+          // `materialize`, which restores them first (here, from that very snapshot).
+        } else {
+          if (lag) materialize(g, run.grp, wctx, c, jump, now - lag, lag);
+          else restoreGroup(run.grp, cached.s1, now);
+          // The phase repeats every L ticks, so each stop of the walk is a point in phase, as if at `now`.
+          let bestGap = Infinity, bestAt = lag, last = lag;
+          const w = want;
+          scanGroup(g, run.grp, wctx, c, now, L, Math.max(0, Math.min(cached.p, SEARCH) - lag), (at) => {
+            last = lag + at;
+            const gap = heldGap(groupHeld(run.grp, heldNow), w);
+            if (gap < bestGap) { bestGap = gap; bestAt = last; }
+            return gap === 0;
+          });
+          // The walk went past the closest point: go back to it (from the cycle's start, in phase).
+          if (bestAt !== last) materialize(g, run.grp, wctx, c, jump, now - bestAt, bestAt);
+          lag = bestAt;
+        }
         reg = jump;
         rep.mode = 'approx';
       }
@@ -341,7 +452,8 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
       if (reg.inP[j]! > 0 && !run.push.get(ri)?.has(it)) { run.push.get(ri)?.add(it); changed = true; }
       if (reg.outP[j]! > 0 && !run.pull.get(ri)?.has(it)) { run.pull.get(ri)?.add(it); changed = true; }
       if (changed) indexRelevance(run);
-      if (c.res.get(ri)?.state[it] === V_NORMAL) {
+      const rc = c.res.get(ri);
+      if (rc && !rc.items.includes(it)) { // NORMAL under these conditions
         const nin = reg.inP[j]! / reg.p, nout = reg.outP[j]! / reg.p;
         addTo(sumNormIn, k, nin - (run.normalIn.get(k) ?? 0));
         addTo(sumNormOut, k, nout - (run.normalOut.get(k) ?? 0));
@@ -353,10 +465,13 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
 
   /**
    * Per-grid power modes from current regimes and this epoch's weather. A new sun step re-solves
-   * every grid each epoch — 10 080 times 1 681 grids for a week of base20k — so the two inputs
-   * that rarely move are kept: a grid's load (demand, fuel: `netLoad`, summed again only when a
-   * regime on it changed, which marks it in `netDirty`) and its renewables per weather
-   * (`netR`, by `weatherKey`: a few dozen distinct weathers a week). Same numbers, same modes.
+   * every grid each epoch — 10 080 times 1 681 grids for a week of base20k — so the inputs that
+   * rarely move are kept: a grid's load (demand, fuel: `netLoad`, summed again only when a regime
+   * on it changed, which marks it in `netDirty`) and its renewables per weather and class of
+   * producers (`netR`, by `weatherKey`: a few hundred distinct weathers a week). And only the grids
+   * whose mode can move are solved (D137): under the same weather, the dirty ones; in a new one,
+   * the dirty ones and those of every class not still covered (`netClass`), in grid order as a
+   * pass over all of them would take them. Same numbers, same modes, same order.
    */
   function computeNetModes(force: boolean): boolean {
     // The same weather and generator functions as online (power/network.ts).
@@ -365,16 +480,49 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     const all = force || weather !== lastWeather;
     lastWeather = weather;
     let Rs = netR.get(weather);
-    if (!Rs) netR.set(weather, (Rs = new Float64Array(g.nets.length).fill(NaN)));
+    if (!Rs) netR.set(weather, (Rs = new Float64Array(classNets.length).fill(NaN)));
+    const nNets = g.nets.length;
+    const renewables = (c: number): number => {
+      let R = Rs![c]!;
+      if (Number.isNaN(R)) Rs![c] = R = renewableKw(g.nets[classNets[c]![0]!]!, w); // not yet asked under this weather
+      return R;
+    };
+    // The grids to solve, ascending (null: every one).
+    let order: number[] | null = null;
+    if (!all) order = [...netDirty].filter((n) => n < nNets).sort((a, b) => a - b);
+    else if (!force) {
+      // A class still covered: every grid of it had full power from renewables alone at its last
+      // solve (sat 1000, no fuel, no accumulators) and still has, whatever its load since (its
+      // peak at most `classMaxD`): R ≥ dMax either way, the same mode.
+      const keep = new Uint8Array(classNets.length);
+      let kept = 0;
+      for (let c = 0; c < classNets.length; c++) {
+        if (classAccs[c] || classOpen[c] || renewables(c) < classMaxD[c]!) continue;
+        keep[c] = 1;
+        kept++;
+      }
+      if (kept === classNets.length) order = [...netDirty].filter((n) => n < nNets).sort((a, b) => a - b);
+      else if (kept) {
+        order = [];
+        for (let n = 0; n < nNets; n++) if (!keep[netClass[n]!] || netDirty.has(n)) order.push(n);
+      }
+    }
     let changed = false;
-    for (let n = 0; n < g.nets.length; n++) {
-      const dirty = netDirty.has(n);
-      if (!all && !dirty) continue;
-      const net = g.nets[n]!;
-      let R = Rs[n]!;
-      if (Number.isNaN(R)) Rs[n] = R = renewableKw(net, w); // not yet asked under this weather
-      let load = netLoad[n];
-      if (!load || dirty || force) netLoad[n] = load = loadOf(n);
+    const anyDirty = netDirty.size > 0;
+    const count = order ? order.length : nNets;
+    for (let j = 0; j < count; j++) {
+      const n = order ? order[j]! : j;
+      const dirty = anyDirty && netDirty.has(n);
+      const net = g.nets[n]!, cls = netClass[n]!;
+      const R = renewables(cls);
+      const kept = netLoad[n];
+      const fresh = !kept || dirty || force;
+      const load = fresh ? (netLoad[n] = loadOf(n)) : kept;
+      if (load.dMax > classMaxD[cls]!) classMaxD[cls] = load.dMax;
+      // The same load and renewables as at its last solve, and no accumulators (whose energy
+      // moves): the same mode, kept as it is (D137).
+      if (!fresh && R === netRLast[n] && !net.accs.length) continue;
+      netRLast[n] = R;
       const { dAvg, dMax, F, Feff } = load;
       let E = 0, cap = 0, rate = 0;
       for (const a of net.accs) { E += sim.accEnergy.get(a.ent) ?? 0; cap += a.cap; rate += a.rate; }
@@ -397,6 +545,8 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
         sat = dAvg <= 0 ? 1000 : Math.min(1000, Math.floor(((1000 * served) / dAvg) / SAT_STEP) * SAT_STEP);
         disp = F > 0 ? 1000 : 0; accRate = 0;
       }
+      const covered = R >= dMax ? 1 : 0;
+      if (covered !== netCovered[n]) { classOpen[cls] = classOpen[cls]! + (covered ? -1 : 1); netCovered[n] = covered; }
       const old = netModes[n]!;
       if (old.sat !== sat || old.disp !== disp) {
         changed = true;
@@ -521,14 +671,14 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
       else if (st === V_FULL && r < 0) dt = (lvl - (cap - 2 * margin) + 1) / -r;
       if (dt < Infinity) t = Math.min(t, now + Math.max(MIN_STEP, Math.ceil(dt)));
     }
-    g.nets.forEach((net, n) => {
+    for (const n of accNets) {
       const m = netModes[n]!;
-      if (!m.accRate) return;
+      if (!m.accRate) continue;
       let E = 0, cap = 0;
-      for (const a of net.accs) { E += sim.accEnergy.get(a.ent) ?? 0; cap += a.cap; }
+      for (const a of g.nets[n]!.accs) { E += sim.accEnergy.get(a.ent) ?? 0; cap += a.cap; }
       const dt = m.accRate > 0 ? (cap - E) / m.accRate : E / -m.accRate;
       t = Math.min(t, now + Math.max(MIN_STEP, Math.ceil(dt)));
-    });
+    }
     if (pendingBuilds.length && pendingBuilds[0]! > now) t = Math.min(t, pendingBuilds[0]!);
     return Math.min(t, segEnd);
   }
@@ -538,9 +688,9 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     if (dt <= 0) return;
     /** Keys a regime drew below zero: settled once this step's pseudo inflows are in (below). */
     const short: number[] = [];
-    for (const run of runs) {
-      const reg = run.reg;
-      if (!reg) continue;
+    if (movingDirty) { moving = runs.filter((r) => moves(r.reg)); movingDirty = false; }
+    for (const run of moving) {
+      const reg = run.reg!;
       const ea = now - run.start, eb = to - run.start;
       for (let j = 0; j < reg.keys.length; j++) {
         const d = flowAt(reg, j, eb) - flowAt(reg, j, ea);
@@ -599,12 +749,12 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
       const res = g.reservoirs[Math.floor(k / N_ITEMS)]!, i = k % N_ITEMS;
       if (res.stock[i]! < 0) { rep.clampedMu[i] = rep.clampedMu[i]! - res.stock[i]!; res.stock[i] = 0; }
     }
-    g.nets.forEach((net, n) => {
+    for (const n of accNets) {
       const m = netModes[n]!;
-      if (!m.accRate) return;
+      if (!m.accRate) continue;
       let rem = m.accRate * dt;
       let E = 0, cap = 0;
-      for (const a of net.accs) {
+      for (const a of g.nets[n]!.accs) {
         const e = sim.accEnergy.get(a.ent) ?? 0;
         const d = rem === 0 ? 0 : rem > 0 ? Math.min(rem, a.cap - e) : Math.max(rem, -e);
         if (d) { sim.accEnergy.set(a.ent, e + d); rem -= d; }
@@ -612,7 +762,7 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
       }
       // Accumulators full or dry: the grid's mode changes (stop charging / no more cover).
       if ((m.accRate > 0 && E >= cap) || (m.accRate < 0 && E <= 0)) netDirty.add(n);
-    });
+    }
     now = to;
     sim.tick = now;
   }

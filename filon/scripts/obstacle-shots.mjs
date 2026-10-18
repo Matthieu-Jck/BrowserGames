@@ -69,7 +69,7 @@ const land = await page.evaluate(() => {
   return { mapV: g.source.mapV, chasm: near(13), river: near(14), cross };
 });
 console.log('land', JSON.stringify(land));
-if (land.mapV !== 4) throw new Error(`map ${land.mapV}: the obstacles are map 4's`);
+if ((land.mapV ?? 1) < 4) throw new Error(`map ${land.mapV}: the obstacles are map 4's (and 5's, D136)`);
 await hideUi();
 
 await view('iso');
