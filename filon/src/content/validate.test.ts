@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { categoryProblems, reachableItems, reachableNodes, rootPlans, startBuildings, tiredVeinPerMin, uniquesNeeded, validateContent, wirePerElectronicsWorkshop } from './validate';
+import { categoryProblems, entranceProblems, reachableItems, reachableNodes, rootPlans, startBuildings, tiredVeinPerMin, uniquesNeeded, validateContent, wirePerElectronicsWorkshop } from './validate';
 import { ITEMS } from './items';
 import { RECIPES } from './recipes';
 import { BAL } from './balance';
@@ -18,6 +18,24 @@ describe('content invariants', () => {
   it('every item can be produced from the land', () => {
     const r = reachableItems();
     for (const id of Object.keys(ITEMS)) expect(r.has(id), id).toBe(true);
+  });
+
+  it('one entrance a kind of input (D140): no machine has fewer entrances than a recipe of its takes kinds', () => {
+    expect(entranceProblems()).toEqual([]);
+    // The chip fab, short until D140: the circuit's copper plate, copper wire and glass, each on its own entrance.
+    const ins = (id: keyof typeof BUILDINGS): number => (BUILDINGS[id] as BuildingDef).ports.filter((p) => p.io === 'in').length;
+    expect(ins('chip_fab')).toBe(3);
+    for (const id of ['workshop', 'etcher', 'chip_fab'] as const) expect(ins(id), id).toBeGreaterThanOrEqual(new Set(RECIPES.circuit.ins.map(([it]) => it)).size);
+    // A machine one entrance short fails, named with the recipe that wants more; kinds count, not quantities.
+    const fab = BUILDINGS.chip_fab as BuildingDef;
+    const short: BuildingDef = { ...fab, ports: fab.ports.filter((p) => !(p.io === 'in' && p.x === 0)) };
+    expect(entranceProblems([['chip_fab', short]], [['circuit', RECIPES.circuit as RecipeDef]])).toEqual([
+      'building chip_fab: 2 entrances, but recipe circuit takes 3 kinds of input (one entrance a kind, D140)',
+    ]);
+    const twoWires: RecipeDef = { ...(RECIPES.circuit as RecipeDef), ins: [['copper_wire', 1], ['copper_wire', 1], ['glass', 1]] };
+    expect(entranceProblems([['chip_fab', short]], [['circuit', twoWires]])).toEqual([]);
+    // A building no recipe names is not a machine: no entrance asked of it.
+    expect(entranceProblems([['silo', BUILDINGS.silo as BuildingDef]], [['circuit', RECIPES.circuit as RecipeDef]])).toEqual([]);
   });
 
   it('the tired vein cannot feed a single mechanics workshop: copper must be imported', () => {

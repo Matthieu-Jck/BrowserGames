@@ -1,8 +1,10 @@
 // solve.ts — per-network power balance, identical online and offline. Merit order:
 // renewables (wind, sun, geothermal, the Hearth) → fuel generators (load-following, fuel
 // burnt ∝ dispatch) → accumulators. Satisfaction s = served / demanded, floored to 25‰ steps;
-// machines run at speed × s. Integers only: kW, kW·tick, ‰.
-import { SAT_STEP } from '../constants';
+// machines run at speed × s. The dispatch is the share of the generators' capacity the need
+// calls, rounded up to 25‰ steps (D138: whole periods the catch-up can repeat). Integers only:
+// kW, kW·tick, ‰.
+import { DISPATCH_STEP, SAT_STEP } from '../constants';
 import { floorTo } from '@/core/fixed';
 
 export interface PowerResult {
@@ -25,7 +27,7 @@ export function solvePower(D: number, R: number, F: number, accE: number, accCap
   }
   const need = D - R;
   const gen = Math.min(F, need);
-  const dispatch = F > 0 ? Math.min(1000, Math.ceil((gen * 1000) / F)) : 0;
+  const dispatch = F > 0 ? Math.min(1000, Math.ceil(Math.ceil((gen * 1000) / F) / DISPATCH_STEP) * DISPATCH_STEP) : 0;
   const rem = need - gen;
   const dis = Math.min(rem, accRate, accE);
   const unmet = rem - dis;

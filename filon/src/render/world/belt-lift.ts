@@ -14,8 +14,12 @@
 // it is drawn): it waits on the car while the car moves, and makes up the distance before and
 // after, so it keeps the line's pace overall and meets the next tile exactly where the model hands
 // it over. The car follows the item it carries; once that item is clear it goes back (down when
-// climbing, up when coming down) to wait for the next (`RETURN_TICKS` for the whole step). A step
-// down onto a building (no room for a shaft) is a slide down the ribbon's last stretch instead.
+// climbing, up when coming down) to wait for the next (`RETURN_TICKS` for the whole step at most).
+// The lift goes at its line's pace (D141): on a full line the next item reaches the car half a step
+// after the last one left it, so the car's way back takes at most `RETURN_SHARE` of a step of the
+// faster of its two tiles' lines (`returnTicks`) — it is home before the item at every tier, never
+// snapped to it. A step down onto a building (no room for a shaft) is a slide down the ribbon's last
+// stretch instead.
 //
 // Where an item sorts among the volumes (`itemZ`; owner, 2026-10-14: "the copper is above the
 // building that is in front… the traction ribbon sometimes makes items disappear"). An item above
@@ -67,11 +71,15 @@ import { PIT_Z } from './pits';
 import { beltZ, deckSquareZ, depthKey, flat, liftOf, liftZ, rampZ } from './stand';
 import { liftOfBelt, type Lift } from './traction-lifts';
 
-/** What the lift reads of a colony (a Sim): its land and occupancy, its buildings, its lines' leaps (`graph.jumps`, for the skybridges' spans). */
+/**
+ * What the lift reads of a colony (a Sim): its land and occupancy, its buildings, its lines' leaps
+ * (`graph.jumps`, for the skybridges' spans) and their paces (`graph.chainByTile`, the ticks of a
+ * step: for the cars' way back, D141).
+ */
 export interface LiftWorld {
   readonly grid: ReliefLand & { readonly occ: Int32Array };
   readonly ents: { readonly map: ReadonlyMap<number, Ent>; get(id: number): Ent | undefined };
-  readonly graph?: { readonly jumps: ReadonlyMap<number, number> } | null;
+  readonly graph?: { readonly jumps: ReadonlyMap<number, number>; readonly chainByTile?: ReadonlyMap<number, { readonly stepTicks: number }> } | null;
 }
 
 /** Where an item is drawn: tile coords (on the plane), its height (relief levels), and whether it is in an elevator's shaft. */
@@ -87,8 +95,12 @@ export interface Placed { x: number; y: number; lv: number; shaft: boolean }
  */
 export const UP = { a1: 0.5, a2: 0.85 } as const;
 export const DOWN = { a1: 0.12, a2: 0.4, free: 0.5 } as const;
-/** Ticks for an empty car to cross the whole step back. */
+/** Ticks for an empty car to cross the whole step back, at most. */
 export const RETURN_TICKS = 5;
+/** …and at most this share of a step of its line (D141): the next item reaches the car half a step after the last left it. */
+export const RETURN_SHARE = 0.4;
+/** The ticks an empty car takes back across the step, on a line whose steps take `stepTicks` (D141). */
+export const returnTicks = (stepTicks: number): number => Math.min(RETURN_TICKS, RETURN_SHARE * stepTicks);
 /** The last stretch of a traction ribbon over which an item slides down onto a building (no shaft). */
 export const SLIDE = 0.2;
 /** How far an item reaches from its centre towards the viewer, along x and along y (tiles): its glyph is about a third of a tile across. */
@@ -120,8 +132,8 @@ interface Host { top: number; z: number; open: boolean; pit: boolean }
 
 const smooth = (t: number): number => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 
-/** An elevator: its step, its car's height above the low top (levels), held by an item this frame. */
-interface Car { lift: Lift; z: number; held: boolean }
+/** An elevator: its step, its car's height above the low top (levels), held by an item this frame, the ticks its way back takes (`returnTicks`). */
+interface Car { lift: Lift; z: number; held: boolean; ret: number }
 
 export class BeltLift {
   private world: LiftWorld | null = null;
@@ -172,7 +184,11 @@ export class BeltLift {
       if (!l) continue;
       if (!l.shaft) { this.slides.set(e.y * WORLD + e.x, l); continue; }
       const k = l.lowY * WORLD + l.lowX;
-      this.cars.set(k, { lift: l, z: old.get(k)?.z ?? (l.up ? 0 : STEP_LEVELS), held: false });
+      // Its pace: the faster of its own tile's line and its low tile's (the item rides the car there), else its content's.
+      const own = e.y * WORLD + e.x, chains = world.graph?.chainByTile;
+      const steps = Math.min(chains?.get(own)?.stepTicks ?? Infinity, chains?.get(k)?.stepTicks ?? Infinity);
+      const ret = returnTicks(Number.isFinite(steps) ? steps : 600 / (buildingDef(e.def).belt?.perMin ?? 60));
+      this.cars.set(k, { lift: l, z: old.get(k)?.z ?? (l.up ? 0 : STEP_LEVELS), held: false, ret });
     }
   }
 
@@ -223,9 +239,9 @@ export class BeltLift {
   settle(now: number): void {
     const dt = Number.isFinite(this.last) ? Math.max(0, Math.min(10, now - this.last)) : 0;
     this.last = now;
-    const step = (STEP_LEVELS * dt) / RETURN_TICKS;
     for (const car of this.cars.values()) {
       if (!car.held) {
+        const step = (STEP_LEVELS * dt) / car.ret;
         const home = car.lift.up ? 0 : STEP_LEVELS;
         car.z = car.z < home ? Math.min(home, car.z + step) : Math.max(home, car.z - step);
       }

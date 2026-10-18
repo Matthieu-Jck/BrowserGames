@@ -158,10 +158,11 @@ function kindRows(def: number, b: BuildingDef, m: Readonly<Mods>): FactRow[] {
       const bt = b.belt;
       if (!bt) break;
       if (b.kind === 'conduit') add('rate', t('card.rate'), rate(bt.perMin), items(['water']));
-      else add('rate', t('card.rate'), t('card.rate.ribbon', { rate: rate(bt.perMin), density: t('card.density', { n: BAL.beltDensity }) }));
+      else add('rate', t('card.rate'), t(b.lift ? 'card.rate.lift' : 'card.rate.ribbon', { rate: rate(bt.perMin), density: t('card.density', { n: BAL.beltDensity }) }));
       // Tiles a second, to one decimal: a ribbon moves a tile a step, perMin steps a minute (D57); a conduit's water flows on.
+      // A lift's are its line's, its own the least (D141: compile.ts `linePace`).
       const v = Math.round((b.kind === 'conduit' ? TPS / bt.ticksPerTile : bt.perMin / 60) * 10) / 10;
-      add('speed', t('card.speed'), t('card.speed.tiles', { n: v, v: num(v) }));
+      add('speed', t('card.speed'), t(b.lift ? 'card.speed.lift' : 'card.speed.tiles', { n: v, v: num(v) }));
       break;
     }
     case 'fork':

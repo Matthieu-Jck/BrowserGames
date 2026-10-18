@@ -2573,11 +2573,13 @@ const R: Partial<Record<BuildingId, Recipe>> = {
   },
   chip_fab(ctx, f, s) {
     // The chip fab from above: the big white hall's roof edged in violet, its air handlers and
-    // fans, the ducts to the tall exhaust filter tower, the load locks over the intakes.
+    // fans, the ducts to the tall exhaust filter tower, the load locks over the intakes (three since
+    // D140: the third at the back-left, on seeds of its own so the first two keep their look).
     plinth(ctx, f, C.steel, 0.04, s);
-    for (const [i, x] of [1.5, 2.5].entries()) {
-      roofTop(ctx, f, x - 0.32, 3.42, x + 0.32, 3.86, 0.85, LAB, s + 1 + i);
-      shape(ctx, rr(f, x - 0.27, 3.47, x + 0.27, 3.53, 0.005), C.violet, { w: 0.8, shade: false, jitter: 0, seed: s + 3 + i });
+    for (const [i, x] of [1.5, 2.5, 0.5].entries()) {
+      const sd = i < 2 ? s + 1 + i : s + 7;
+      roofTop(ctx, f, x - 0.32, 3.42, x + 0.32, 3.86, 0.85, LAB, sd);
+      shape(ctx, rr(f, x - 0.27, 3.47, x + 0.27, 3.53, 0.005), C.violet, { w: 0.8, shade: false, jitter: 0, seed: sd + 2 });
     }
     roofTop(ctx, f, 0.2, 0.3, 3.04, 3.4, 2.05, LAB, s + 5);
     ink(ctx, rr(f, 0.25, 0.35, 2.99, 3.35, 0.03), { closed: true, w: f.l(0.05), color: C.violetL, shade: false, taper: 0, jitter: 0, seed: s + 6 });

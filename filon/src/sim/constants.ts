@@ -18,6 +18,19 @@ export const MU = 1000;
 /** Satisfaction and multipliers are permille; power satisfaction is stepped by this. */
 export const PERMILLE = 1000;
 export const SAT_STEP = 25;
+/**
+ * A fuel generator's dispatch is stepped too, rounded up (D138): at an exact share (329 ‰) a
+ * generator burns 3.29 coal a minute, whole items reach its box, and its state repeats only every
+ * hundred minutes, so the catch-up never found its cycle and the sun moved its share every minute;
+ * in 25 ‰ steps it repeats within four (and the shares recur, so the regimes are cached).
+ */
+export const DISPATCH_STEP = 25;
+/**
+ * A drill's rate in mu per epoch is a multiple of this, rounded down (D138): a quarter item a
+ * minute, so its whole items repeat within four minutes. A deposit-capped drill summed its tiles'
+ * caps (9 080 mu: 9.08 ore a minute, a pattern of 25 minutes the catch-up could not repeat).
+ */
+export const DRILL_STEP_MU = 250;
 
 /** World geometry. */
 export const WORLD = 1024;

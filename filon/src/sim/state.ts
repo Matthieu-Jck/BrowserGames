@@ -30,7 +30,7 @@ import { isEmblem, type Emblem } from '@/content/emblem';
 import { BAL } from '@/content/balance';
 import { LocalMarketService } from '@/market/service';
 import type { MarketService, PriceTable } from '@/market/types';
-import { N_ITEMS, buildingDef, buildingIdx, hasResearch, itemIdx } from '@/content/registry';
+import { N_ITEMS, buildingDef, buildingIdx, hasResearch, isWaste, itemIdx } from '@/content/registry';
 import { isPlan } from '@/content/research';
 import { StateHasher } from '@/core/hash';
 import type { Command, SimEvent } from './commands';
@@ -443,9 +443,10 @@ export class Sim {
   setPortItem(id: number, port: number, item: string | null): boolean { return configure.setPortItem(this, id, port, item); }
   setForkFilter(id: number, side: Rot, item: string | null): boolean { return configure.setForkFilter(this, id, side, item); }
 
-  /** Sandbox / rewards: items straight into the Hearth (logged). */
+  /** Sandbox / rewards: items straight into the Hearth (logged). No waste: the Core takes none in (D139). */
   grant(item: string, n: number): void {
     const i = itemIdx(item);
+    if (isWaste(i)) return;
     this.stock[i] = this.stock[i]! + n * 1000;
     this.log.push({ tick: this.tick, cmd: { k: 'grant', item, n } });
   }

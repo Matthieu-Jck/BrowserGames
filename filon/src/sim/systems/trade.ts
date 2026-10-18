@@ -24,7 +24,7 @@
 // Spot trades are booked on the market at once (`book`).
 import { book } from '../purse';
 import { BAL } from '@/content/balance';
-import { BUILDING_KIND, ITEM_IDS, N_ITEMS, itemDef } from '@/content/registry';
+import { BUILDING_KIND, ITEM_IDS, N_ITEMS, itemDef, itemIdx } from '@/content/registry';
 import { PLAN_IDS, planDef } from '@/content/research';
 import { afterFee, valueCents } from '@/market/pricing';
 import { LocalMarketService } from '@/market/service';
@@ -462,15 +462,27 @@ function starterBuys(sim: Sim, o: ImportOrder, budget: number): number {
   sim.credits -= cost;
   t.spent += cost;
   t.boughtTotal[o.item] = t.boughtTotal[o.item]! + mu;
+  const before = S.n * 1000 - o.starter!;
   o.starter = Math.max(0, o.starter! - mu);
   t.inflight.push({ post: o.post, item: o.item, mu, arrive: sim.tick + S.delayMin * EPOCH, colony: -1, cents: cost });
   line(sim, { post: o.post, item: o.item, kind: 'import', mu, cents: -cost });
+  // Its slag (D139): one free with every `every` ore, in the same lot — out by the exit with the ore,
+  // in turn (its cargo), for the tutorial's « Les scories » to sort. Counted as bought, at no cost.
+  const [wid, every] = S.waste, w = itemIdx(wid);
+  const k = Math.floor((before + mu) / (every * 1000)) - Math.floor(before / (every * 1000));
+  if (k > 0) {
+    t.boughtTotal[w] = t.boughtTotal[w]! + k * 1000;
+    t.inflight.push({ post: o.post, item: w, mu: k * 1000, arrive: sim.tick + S.delayMin * EPOCH, colony: -1, cents: 0 });
+    line(sim, { post: o.post, item: w, kind: 'import', mu: k * 1000, cents: 0 });
+    addCargo(sim, o.post, w);
+  }
   return n;
 }
 
 /** The epoch boundary's trade (see the header). Whether the cargo changed (then the graph must be recompiled, offline too). */
 export function tradeEpoch(sim: Sim): boolean {
   const t = sim.trade;
+  const cargo0 = cargoKey(sim); // a cargo grown here (D139: the starter contract's slag) recompiles too
   const ended = sim.absEpoch() - 1;
   const { bid, ask } = sim.prices;
   const level = tradeLevel(sim.mods);
@@ -581,7 +593,12 @@ export function tradeEpoch(sim: Sim): boolean {
   t.bought.fill(0);
   // 5. The Gazette.
   if (out.started.length || out.announced.length || out.ended.length) sim.events.push({ k: 'gazette', started: out.started, ended: out.ended, announced: out.announced });
-  return changed;
+  return changed || cargoKey(sim) !== cargo0;
+}
+
+/** Every post's cargo in one string (posts by id, items ascending): what the exits hand out. */
+function cargoKey(sim: Sim): string {
+  return [...sim.trade.cargo].sort((a, b) => a[0] - b[0]).map(([p, its]) => `${p}:${its.join('.')}`).join('|');
 }
 
 /** A store's content a post may not hold beyond (its node's cap). */

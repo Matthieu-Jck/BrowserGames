@@ -35,16 +35,14 @@ const OPTICS = ['optics_workshop'] as const;
 /** Resin canvas (the atlases and codices it compiled went with the data, D122). */
 const SCRIPTORIUM = ['scriptorium'] as const;
 
-/**
- * The waste of smelting metal (D125): a slag every so many crafts, through the same output as the
- * plate. Glass melts clean. Iron is the tutorial's first smelter's, so the gentlest: one slag every
- * ten plates (a minute's at the smelter's pace, D97); copper's ore is dirtier, one every five.
- * Each `every` divides the crafts a minute of the machines that run it (10 at the smelter's pace,
- * 20 in the arc furnace) and the base's beat of ten a minute (what a smelter sends down a line), so
- * a steady line still repeats within a few minutes and the catch-up stays exact (validate.ts, D125).
+/*
+ * The machines' waste (D125) is the steel line's (D139; owner, 2026-10-18: « don't make smelters and
+ * early game machines create slag or scraps. that's for later »): the steel mill's slag, the press's
+ * scrap when it rolls pipes. The smelters, coal or electric, melt clean, and so does the press on
+ * gears. Each `every` divides the crafts a minute of the machines that run it and the base's beat
+ * of ten a minute, so a steady line still repeats within a few minutes and the catch-up stays exact
+ * (validate.ts, D125).
  */
-const SLAG_IRON = ['slag', 10] as const;
-const SLAG_COPPER = ['slag', 5] as const;
 
 export const RECIPES = {
   iron_plate: {
@@ -52,8 +50,6 @@ export const RECIPES = {
     // (~10/min) give — one smelter fed by one drill pair (D97; owner, 2026-10-16: it drew too much iron).
     name: { fr: 'Plaque de fer', en: 'Iron Plate' }, machines: KILNS, seconds: 6,
     ins: [['iron_ore', 1], ['coal', 1]], outs: [['iron_plate', 1]], unlock: 'start', // as much coal as ore (owner, 2026-10-12)
-    // D125: a slag every ten plates — a minute's, gentle for the first smelter of the tutorial.
-    waste: SLAG_IRON,
   },
   glass: {
     name: { fr: 'Verre', en: 'Glass' }, machines: KILNS, seconds: 6,
@@ -65,12 +61,7 @@ export const RECIPES = {
   },
   gear: {
     name: { fr: 'Engrenage', en: 'Gear' }, machines: PRESSES, seconds: 5,
-    ins: [['iron_plate', 3]], outs: [['gear', 1]], unlock: 'tr1',
-    // D125: the offcuts of the stamping, a scrap every two gears (a scrap for six plates stamped).
-    // Two, not more: it must divide both the press's 12 a minute and the 10 a minute of the smelters
-    // that feed it (a press fed by k smelters makes 10k gears in three minutes), so the line still
-    // repeats within three minutes and the catch-up stays exact (validate.ts).
-    waste: ['scrap', 2],
+    ins: [['iron_plate', 3]], outs: [['gear', 1]], unlock: 'tr1', // clean since D139: Mechanics' press is early game
   },
   circuit: {
     // D129: a copper plate for the board, two copper wires for its traces and a glass for its
@@ -145,7 +136,6 @@ export const RECIPES = {
   arc_plate: {
     name: { fr: 'Plaque de fer (électrique)', en: 'Iron Plate (electric)' }, machines: ARC, seconds: 6,
     ins: [['iron_ore', 1]], outs: [['iron_plate', 1]], unlock: 'dn_esmelt',
-    waste: SLAG_IRON,
   },
   arc_glass: {
     name: { fr: 'Verre (électrique)', en: 'Glass (electric)' }, machines: ARC, seconds: 6,
@@ -166,12 +156,10 @@ export const RECIPES = {
   copper_plate: {
     name: { fr: 'Plaque de cuivre', en: 'Copper Plate' }, machines: KILNS, seconds: 6,
     ins: [['copper_ore', 1], ['coal', 1]], outs: [['copper_plate', 1]], unlock: 'dn_copper',
-    waste: SLAG_COPPER,
   },
   arc_copper: {
     name: { fr: 'Plaque de cuivre (électrique)', en: 'Copper Plate (electric)' }, machines: ARC, seconds: 6,
     ins: [['copper_ore', 1]], outs: [['copper_plate', 1]], unlock: 'dn_esmelt',
-    waste: SLAG_COPPER,
   },
   // Steel: two iron plates and a coal, blown in the steel mill. 12 s: 10 plates a minute in, what one
   // smelter gives — one smelter feeds one mill (as one drill pair feeds one smelter, D97).

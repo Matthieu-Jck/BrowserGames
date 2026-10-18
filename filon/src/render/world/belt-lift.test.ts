@@ -6,13 +6,13 @@
 // is a slide; among the volumes an item sorts by the tile it rides over (its front-most one, when no
 // higher and not built on), after its elevator, inside an incinerator's pit once it tips in.
 import { describe, it, expect } from 'vitest';
-import { buildingIdx } from '@/content/registry';
+import { buildingDef, buildingIdx } from '@/content/registry';
 import { Entities, footprint } from '@/sim/entities';
 import { Grid, tileIndex, type TerrainSource } from '@/sim/world/grid';
 import { CHUNK } from '@/sim/constants';
 import { T, type Ent, type Rot } from '@/sim/types';
 import { STEP_LEVELS } from '../relief';
-import { BeltLift, DOWN, ITEM_DZ, RETURN_TICKS, UP, type Placed } from './belt-lift';
+import { BeltLift, DOWN, ITEM_DZ, RETURN_SHARE, RETURN_TICKS, UP, returnTicks, type LiftWorld, type Placed } from './belt-lift';
 import { PIT_Z } from './pits';
 import { beltZ, buildingZ, liftZ, rockZ } from './stand';
 
@@ -43,6 +43,8 @@ function world(extra: (x: number, y: number) => number | undefined = () => undef
 }
 
 const at = (lift: BeltLift, x: number, y: number): Placed => lift.place(x, y, { x: 0, y: 0, lv: 0, shaft: false });
+/** An empty car's way back on a world with no lines compiled: at the lift's own pace (D141). */
+const RET = returnTicks(600 / buildingDef(buildingIdx('traction_ribbon')).belt!.perMin);
 
 describe('belt lift: where items ride', () => {
   it('at their tile’s top, on the floor and on the rock', () => {
@@ -85,9 +87,9 @@ describe('belt lift: where items ride', () => {
     P(0.95);
     lift.settle(2);
     expect(lift.carAt(500, 480)).toBe(STEP_LEVELS); // at the top until the item is off
-    lift.settle(2 + RETURN_TICKS / 2);
+    lift.settle(2 + RET / 2);
     expect(lift.carAt(500, 480)).toBeCloseTo(STEP_LEVELS / 2, 6);
-    lift.settle(2 + RETURN_TICKS);
+    lift.settle(2 + RET);
     expect(lift.carAt(500, 480)).toBe(0);
   });
 
@@ -111,8 +113,30 @@ describe('belt lift: where items ride', () => {
     P((DOWN.a2 + DOWN.free) / 2);
     lift.settle(2);
     expect(lift.carAt(500, 481)).toBe(0); // held at the foot while the item clears it
-    lift.settle(2 + RETURN_TICKS);
+    lift.settle(2 + RET);
     expect(lift.carAt(500, 481)).toBe(STEP_LEVELS);
+  });
+
+  it('the car’s way back follows its line’s pace (D141): home within half a step, at every tier', () => {
+    // At most RETURN_TICKS, and RETURN_SHARE of a step: an express line's 2.5-tick steps leave it one tick.
+    expect(returnTicks(20)).toBe(RETURN_TICKS);
+    expect(returnTicks(10)).toBe(RETURN_SHARE * 10);
+    for (const steps of [10, 5, 2.5]) expect(returnTicks(steps)).toBeLessThanOrEqual(steps / 2);
+    // A climbing lift on an express line (its chain's steps read off the graph): the car is home a tick after the item left it.
+    const w = world();
+    w.put('traction_ribbon', 500, 480, 3);
+    w.put('ribbon', 499, 480, 3);
+    const express = { stepTicks: 2.5 };
+    const lw: LiftWorld = { ...w, graph: { jumps: new Map(), chainByTile: new Map([[tileIndex(500, 480), express], [tileIndex(499, 480), express]]) } };
+    const lift = new BeltLift();
+    lift.rebuild(lw);
+    const P = (a: number): Placed => at(lift, 501 - a, 480.5);
+    lift.settle(0);
+    P(0.95);
+    lift.settle(0.5);
+    expect(lift.carAt(500, 480)).toBe(STEP_LEVELS);
+    lift.settle(0.5 + returnTicks(2.5));
+    expect(lift.carAt(500, 480)).toBe(0); // home before the next item reaches it, half a step (1.25 ticks) after
   });
 
   it('coming down onto a building: no shaft, a slide down the ribbon’s last stretch', () => {

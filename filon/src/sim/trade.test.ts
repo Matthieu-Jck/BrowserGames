@@ -20,6 +20,7 @@ import { MapGen } from './world/mapgen';
 
 const PLATE = (): number => itemIdx('iron_plate');
 const COPPER = (): number => itemIdx('copper_ore');
+const SLAG = (): number => itemIdx('slag');
 
 /** A colony with a trade post (5×5: its pad and flame apron, D62) against the Hearth's east side; its entrance (517, 514) is fed from (517, 515). */
 function postSim(): { sim: Sim; post: number } {
@@ -35,6 +36,18 @@ function postSim(): { sim: Sim; post: number } {
  */
 function exitToHearth(sim: Sim): void {
   sim.placeBelts('ribbon', [[517, 509, 3], [516, 509, 3], [515, 509, 3], [514, 509, 3], [513, 509, 3], [512, 509, 2]]);
+}
+
+/**
+ * The same, its slag sorted off (D139: the starter contract's ore comes with a slag for every five,
+ * and the Core takes none in): a sorter set to the ore on (514, 509), an incinerator on its north side.
+ */
+function exitSortedToHearth(sim: Sim): void {
+  exitToHearth(sim);
+  const s = sim.place('sorter', 514, 509, 3);
+  if (!s.ok) throw new Error(`sorter: ${s.reason}`);
+  sim.setForkFilter(s.id!, 0, 'copper_ore');
+  if (!sim.place('incinerator', 514, 508, 0).ok) throw new Error('incinerator');
 }
 
 describe('trade posts', () => {
@@ -349,7 +362,8 @@ describe('the starter contract (D101)', () => {
 
   it('is CrierBelt’s copper ore at 2 ◉, 40 in all, 10 a minute, landing a minute after each purchase; continued, capped a tenth over the ask', () => {
     // The API the tutorial is written against: these numbers are the contract.
-    expect(S).toEqual({ item: 'copper_ore', n: 40, perMin: 10, cents: 200, delayMin: 1, continueOver: 1100 });
+    // Its slag (D139): one free with every five ore, out by the exit with them — « Les scories » sorts it.
+    expect(S).toEqual({ item: 'copper_ore', n: 40, perMin: 10, cents: 200, delayMin: 1, continueOver: 1100, waste: ['slag', 5] });
   });
 
   it('signed, it is an always-active order that buys at its fixed price — only once the post’s exit leads somewhere', () => {
@@ -375,15 +389,21 @@ describe('the starter contract (D101)', () => {
     sim.run(EP);
     expect(c0 - sim.credits).toBe(10 * 200);
     expect(sim.trade.spent).toBe(2000);
-    expect(sim.trade.inflight).toEqual([{ post, item: COPPER(), mu: 10_000, arrive: sim.tick + S.delayMin * EP, colony: -1, cents: 2000 }]);
-    expect(sim.trade.ledger.at(-1)).toMatchObject({ post, item: COPPER(), kind: 'import', mu: 10_000, cents: -2000 });
+    // With its two slag, free (D139), in the same lot.
+    expect(sim.trade.inflight).toEqual([
+      { post, item: COPPER(), mu: 10_000, arrive: sim.tick + S.delayMin * EP, colony: -1, cents: 2000 },
+      { post, item: SLAG(), mu: 2000, arrive: sim.tick + S.delayMin * EP, colony: -1, cents: 0 },
+    ]);
+    expect(sim.trade.ledger.at(-2)).toMatchObject({ post, item: COPPER(), kind: 'import', mu: 10_000, cents: -2000 });
+    expect(sim.trade.ledger.at(-1)).toMatchObject({ post, item: SLAG(), kind: 'import', mu: 2000, cents: 0 });
+    expect(sim.cargoOf(post)).toEqual([COPPER(), SLAG()].sort((x, y) => x - y)); // the slag out by the exit too
     expect(o.starter).toBe(30_000);
     expect(o.active).toBe(true);
   });
 
   it('buys 10 a minute, 40 in all, then stops (fulfilled): nothing more is bought nor paid unasked; each lot lands a minute later and leaves by the exit', () => {
     const { sim, post } = postSim();
-    exitToHearth(sim);
+    exitSortedToHearth(sim);
     expect(typeof sim.takeStarter(post)).toBe('number');
     const c0 = sim.credits, cu0 = sim.stock[COPPER()]!;
     sim.ensureCompiled(); // its exit linked: it buys
@@ -405,10 +425,13 @@ describe('the starter contract (D101)', () => {
     expect(orderCentsPerMin(sim, o)).toBe(0);
     expect(c0 - sim.credits).toBe(40 * 200);
     expect(sim.trade.boughtTotal[COPPER()]).toBe(40_000);
-    expect(sim.trade.ledger.filter((l) => l.kind === 'import')).toHaveLength(4);
+    expect(sim.trade.ledger.filter((l) => l.kind === 'import' && l.item === COPPER())).toHaveLength(4);
+    expect(sim.trade.boughtTotal[SLAG()]).toBe(8000); // a slag with every five ore, free
     // All of it out by the exit, along the ribbon, into the Hearth; the order stands, stopped.
     sim.run(6 * EP);
     expect(sim.stock[COPPER()]! - cu0).toBe(40_000);
+    expect(sim.stock[SLAG()]).toBe(0); // sorted off before the Core, burnt
+    expect(sim.consumed[SLAG()]).toBe(8000);
     expect(sim.trade.inflight).toHaveLength(0);
     expect(sim.credits).toBe(c0 - 8000); // nothing more bought, at any price
     expect(sim.trade.boughtTotal[COPPER()]).toBe(40_000);
@@ -505,7 +528,7 @@ describe('the starter contract (D101)', () => {
 
   it('cancelled midway, the rest is forfeit; what is on its way still lands and leaves by the exit', () => {
     const { sim, post } = postSim();
-    exitToHearth(sim);
+    exitSortedToHearth(sim);
     const id = sim.takeStarter(post) as number;
     const cu0 = sim.stock[COPPER()]!;
     sim.run(EP);
@@ -582,10 +605,10 @@ describe('the starter contract (D101)', () => {
     expect(deserialize(before, sim.grid.source).trade.starterTaken).toBe(false);
   });
 
-  it('an absence buys, delivers and pays the same as ticking (the same tradeEpoch)', () => {
+  it('an absence buys, delivers and pays the same as ticking (the same tradeEpoch); its slag within an item', () => {
     const make = (): { sim: Sim; post: number } => {
       const r = postSim();
-      exitToHearth(r.sim);
+      exitSortedToHearth(r.sim);
       expect(typeof r.sim.takeStarter(r.post)).toBe('number');
       r.sim.run(30);
       return r;
@@ -605,6 +628,14 @@ describe('the starter contract (D101)', () => {
     // Fulfilled in both, it stands stopped in both.
     expect(b.sim.trade.orders).toEqual(a.sim.trade.orders);
     expect(orderHold(b.sim, b.sim.trade.orders[0]!)).toBe('fulfilled');
-    expect(b.sim.hash()).toBe(a.sim.hash());
+    // Its slag (D139) is a second item out of the one exit: within an item of ticking, as two
+    // purchases are (D62, above: an offline delivery is spread over its epoch, so the last slag may
+    // stand split between the container and the ribbon); none lost, none in the Core.
+    for (const s of [a.sim, b.sim]) {
+      expect(s.trade.boughtTotal[SLAG()]).toBe(8000);
+      expect(s.totalHeld(SLAG()) + s.consumed[SLAG()]!).toBe(8000);
+      expect(s.stock[SLAG()]).toBe(0);
+    }
+    expect(Math.abs(b.sim.consumed[SLAG()]! - a.sim.consumed[SLAG()]!)).toBeLessThanOrEqual(1000);
   });
 });

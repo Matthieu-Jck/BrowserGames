@@ -51,6 +51,8 @@ export interface Cond {
   disp: Map<number, number>;
   /** The Gleaners are out (D103: the dark hours) — only ever set for a group they take from (`Group.glean`). */
   night?: boolean;
+  /** Per touched silo (a single-item store): the item it is locked to, −1 free (D138); its virtual lock starts there. */
+  locks?: Map<number, number>;
 }
 
 /** Is it the Gleaners' night for this group under these conditions? */
@@ -62,6 +64,7 @@ export function condKey(grp: Group, c: Cond, modsKey: string): string {
   const parts: string[] = [grp.sig, modsKey];
   if (nightFor(grp, c)) parts.push('night');
   for (const n of grp.nets) parts.push(`n${n}:${c.sat.get(n) ?? 1000}:${c.disp.get(n) ?? 0}`);
+  if (c.locks) for (const [ri, it] of c.locks) parts.push(`L${ri}:${it}`);
   for (const ri of grp.res) {
     const rc = c.res.get(ri);
     if (!rc) continue;
@@ -158,6 +161,7 @@ class Virtualizer {
         }
       }
       r.vPool.fill(0); r.vCarry.fill(0); r.vIn.fill(0); r.vOut.fill(0);
+      r.vLocked = c.locks?.get(ri) ?? r.locked;
       if (pools) r.restore(pools[k]);
       else {
         for (let i = 0; i < N_ITEMS; i++) {
@@ -293,6 +297,12 @@ export function warmUp(g: Graph, grp: Group, ctx: TickCtx, c: Cond, now: number,
       demand[t * nNets + j] = d;
     }
     for (let j = 0; j < nGens; j++) fuel[t * nGens + j] = grp.gens[j]!.status === St.NoFuel ? 0 : 1;
+    // Hashed only in phase with the start (D138): the key holds `now % L`, so two ticks can match
+    // only a whole number of turns apart, and a state that repeats at t and t + p repeats at every
+    // later pair too — the first in phase is found, the same period, the transient at most L − 1
+    // ticks longer (the same flows: it is the same run). A night's group (L = 2 400) hashed 4 800
+    // times for two looks that could match.
+    if (L > 1 && t % L !== 0) continue;
     const h = hashState(grp, res, now + t, L);
     const prev = seen.get(h);
     if (prev !== undefined) { t1 = prev; p = t - prev; break; }

@@ -5008,10 +5008,11 @@ const R: Partial<Record<BuildingId, Recipe>> = {
     head: 5.3,
     draw(ctx, f, s) {
       // A chip fab: a big sealed white hall glowing in violet strips, its roof crowded with air
-      // handlers and ducts that run to a tall exhaust filter tower; load locks over the intakes.
+      // handlers and ducts that run to a tall exhaust filter tower; load locks over the intakes, three
+      // along the back since D140 (the third, at the back-left, last: the first two keep their seeds).
       slab(ctx, f, C.steel, 0.04, SZ, s);
       const sc = new Scene();
-      for (const [i, x] of [1.5, 2.5].entries()) sc.add(f.depth(x, 3.65), () => {
+      for (const [i, x] of [1.5, 2.5, 0.5].entries()) sc.add(f.depth(x, 3.65), () => {
         const rr = box(ctx, f, x - 0.32, 3.42, x + 0.32, 3.86, SZ, 0.85, LAB_FACES, s + 1 + i * 3, { outline: 1.6 });
         faceGlow(ctx, f, rr, 'L', 0.2, 0.8, 0.55, 0.68, C.led);
         bandIso(ctx, f, rr, 0.77, 0.85, C.violet, s + 2 + i * 3);

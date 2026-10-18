@@ -52,7 +52,8 @@ import type { WindReport } from '@/sim/readouts/wind';
 import type { Sim } from '@/sim/state';
 import { DX, DY, type Ent } from '@/sim/types';
 import { C, num } from '../art/tokens';
-import { GRID_COLORS, POWER_GROUP_COLOR, drawViewIcon, heatColor, windColor, type ViewIcon } from '../art/view-icons';
+import { GRID_COLORS, POWER_GROUP_COLOR, drawRefusal, drawViewIcon, heatColor, windColor, type ViewIcon } from '../art/view-icons';
+import { coreRefusals, doorPoint, machineRefusals } from '@/sim/readouts/core-door';
 import { COS64, SIN64 } from '@/content/world';
 import { windField } from '@/sim/world/wind';
 import { isoHead } from '../art/recipes/buildings';
@@ -90,6 +91,8 @@ const VEIL_FADE = 0.22;
 /** A badge's size on screen (CSS px) at zoom 1; it follows √zoom within these bounds. */
 const MARK_PX = 30;
 const MARK_ZOOM: readonly [number, number] = [0.55, 1.2];
+/** The doors' refusals (D139) are read every this many frames (every line walked: a machine's door too). */
+const DOOR_FRAMES = 8;
 /** Below this zoom the consumers' gauges are left out (too many, too small). */
 const GAUGE_MIN_ZOOM = 0.3;
 
@@ -133,6 +136,18 @@ function iconTexture(id: ViewIcon): Texture {
   return new Texture({ source: new CanvasSource({ resource: cv, scaleMode: 'linear' }) });
 }
 
+/** The Core's refusal of an item (D139) as a badge's texture, 64 px like the others. */
+function refusalTexture(item: number): Texture {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 72;
+  const g = cv.getContext('2d')!;
+  drawRefusal(g, item, 2, 2, 64);
+  return new Texture({ source: new CanvasSource({ resource: cv, scaleMode: 'linear' }) });
+}
+
+/** A door badge: the Core's refusal of what waits there (D139), and where it hangs. */
+interface Door { s: Sprite; x: number; y: number; head: number }
+
 export class ViewsView {
   private readonly veil = new Sprite(Texture.WHITE);
   private readonly flatPlan = new Graphics();
@@ -153,6 +168,19 @@ export class ViewsView {
   private placeSig = '';
   private markVersion = -1;
   private shown: MapView = 'normal';
+  /**
+   * The doors (D139): over each intake of the Core where something waits that it refuses — a slag
+   * at a line's head, in a routing block, in a machine's bin — and each machine's door where a line's
+   * head is an item its recipe does not take, the refusal's badge, in every view (the normal one
+   * too, unveiled): why that line stopped, shown where it stopped. Read every `DOOR_FRAMES` frames.
+   */
+  private readonly doors = new Container({ label: 'views:doors' });
+  private doorFrame = 0;
+  private readonly doorPool: Door[] = [];
+  private doorUsed = 0;
+  private doorSig = '';
+  private doorPlace = '';
+  private readonly doorTex = new Map<number, Texture>();
 
   constructor(veilLayer: Container, flatLayer: Container, markLayer: Container) {
     this.veil.tint = num(C.paper);
@@ -160,11 +188,14 @@ export class ViewsView {
     this.veil.visible = false;
     veilLayer.addChild(this.veil);
     flatLayer.addChild(this.heatIso, this.heatPlan, this.flatIso, this.flatPlan, this.ringIso, this.ringPlan);
-    markLayer.addChild(this.marks);
+    markLayer.addChild(this.marks, this.doors);
   }
 
   /** How many badges are up (perf, the smoke test). */
   get count(): number { return this.used; }
+
+  /** How many door badges are up (D139: something the Core refuses waits at an intake). */
+  get doorCount(): number { return this.doorUsed; }
 
   private icon(id: ViewIcon): Texture {
     let t = this.tex.get(id);
@@ -174,6 +205,7 @@ export class ViewsView {
 
   /** Per frame. */
   update(sim: Sim, f: ViewFrame, d: ViewData): void {
+    this.updateDoors(sim, f);
     const on = f.view === 'power' || f.view === 'logistics' || f.view === 'production' || f.view === 'wind';
     // The veil: over the visible tiles (their projection covers the screen), easing to the view's strength.
     const target = VEIL[f.view] ?? 0;
@@ -578,6 +610,55 @@ export class ViewsView {
       }
     }
     this.hideMarks(n);
+  }
+
+  /**
+   * The door badges (D139), read every frame (a few edges: sim/readouts/core-door.ts): laid again
+   * when what waits refused changes, placed again when the view moves. Each hangs at the door —
+   * half a tile on from the line's head toward the Core — a little over the item, in plan on it.
+   */
+  private updateDoors(sim: Sim, f: ViewFrame): void {
+    if (this.doorFrame++ % DOOR_FRAMES === 0) this.readDoors(sim, f);
+    this.doors.visible = this.doorUsed > 0;
+    if (!this.doorUsed) return;
+    const place = `${f.P.a},${f.P.b},${f.P.c},${f.P.d}:${f.zoom}:${f.te}`;
+    if (place === this.doorPlace) return;
+    this.doorPlace = place;
+    const px = MARK_PX * Math.max(MARK_ZOOM[0], Math.min(MARK_ZOOM[1], Math.sqrt(f.zoom)));
+    const k = px / f.zoom / 64, up = LH * (1 - f.te);
+    for (let i = 0; i < this.doorUsed; i++) {
+      const d = this.doorPool[i]!;
+      const [X, Y] = apply(f.P, d.x, d.y);
+      d.s.position.set(X, Y - d.head * up);
+      d.s.scale.set(k); // its 72 px texture at the badges' size (theirs: 72 px in a container scaled by k)
+    }
+  }
+
+  /** What waits refused at a door now (the Core's, then the machines'): the badges laid again when it changed. */
+  private readDoors(sim: Sim, f: ViewFrame): void {
+    const rs = sim.graph ? [...coreRefusals(sim), ...machineRefusals(sim)] : [];
+    const sig = rs.map((r) => `${r.tile}:${r.item}:${r.dir}`).join(',');
+    if (sig !== this.doorSig) {
+      this.doorSig = sig;
+      this.doorPlace = '';
+      rs.forEach((r, i) => {
+        let d = this.doorPool[i];
+        if (!d) {
+          const s = new Sprite(Texture.WHITE);
+          s.anchor.set(0.5, 0.5);
+          this.doors.addChild(s);
+          this.doorPool.push((d = { s, x: 0, y: 0, head: 0 }));
+        }
+        let t = this.doorTex.get(r.item);
+        if (!t) this.doorTex.set(r.item, (t = refusalTexture(r.item)));
+        d.s.texture = t;
+        d.s.visible = true;
+        [d.x, d.y] = doorPoint(r);
+        d.head = f.levelAt(Math.floor(d.x), Math.floor(d.y)) + 0.9;
+      });
+      for (let i = rs.length; i < this.doorPool.length; i++) this.doorPool[i]!.s.visible = false;
+      this.doorUsed = rs.length;
+    }
   }
 
   /** Each badge over its building's head (iso) or footprint (plan), sized for the screen. */

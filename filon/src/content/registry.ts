@@ -50,6 +50,15 @@ export const buildingDef = (i: number): BuildingDef => BUILDINGS[BUILDING_IDS[i]
 export const recipeDef = (i: number): RecipeDef => RECIPES[RECIPE_IDS[i]!] as RecipeDef;
 export const researchDef = (i: number): ResearchDef => RESEARCH[RESEARCH_IDS[i]!] as ResearchDef;
 
+/** Is item i a machine's waste (kind `waste`, D125: slag, scrap)? The Core takes none in (D139). */
+export const isWaste = (i: number): boolean => i >= 0 && i < N_ITEMS && itemDef(i).kind === 'waste';
+/**
+ * What the Core takes in from its intakes (D139): every item but the waste, by kind — a waste
+ * item added later is refused with no list to keep. (Fluids never reach it: a reservoir refuses
+ * them all, flow/nodes.ts.)
+ */
+export const CORE_TAKES: ReadonlySet<number> = new Set(ITEM_IDS.map((_, i) => i).filter((i) => !isWaste(i)));
+
 /** Items → milli-items (exact for content quantities with ≤ 3 decimals). */
 export const toMu = (items: number): number => Math.round(items * 1000);
 

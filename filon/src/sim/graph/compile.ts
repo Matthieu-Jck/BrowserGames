@@ -11,17 +11,17 @@
 import { BAL } from '@/content/balance';
 import { WORLD_SEED } from '@/content/world';
 import {
-  BUILDING_KIND, CRECIPES, N_ITEMS, buildingDef, itemIdx,
+  BUILDING_KIND, CORE_TAKES, CRECIPES, N_ITEMS, buildingDef, itemIdx,
 } from '@/content/registry';
 import { filterOf, recipeOf } from '../cfg';
-import { MU, WORLD } from '../constants';
+import { DRILL_STEP_MU, MU, WORLD } from '../constants';
 import { footprint, worldPorts, forTiles, type Entities, type WorldPort } from '../entities';
 import { faceRate, isFaceOre } from '../face';
 import { DX, DY, T, isWater, opposite, type Ent, type Rot } from '../types';
 import type { RouterLogic } from '@/content/types';
 import type { Grid } from '../world/grid';
 import { tileIndex } from '../world/grid';
-import { Chain, VIA_NONE, planRaid, spanTile } from '../flow/chain';
+import { Chain, VIA_NONE, isSpanTile, planRaid, spanTile } from '../flow/chain';
 import type { FNode } from '../flow/node';
 import { DrillNode, ForkNode, GeneratorNode, MachineNode, ReservoirNode, SinkNode } from '../flow/nodes';
 import type { Mods } from '../research/modifiers';
@@ -171,6 +171,9 @@ export function compileGraph(inp: CompileInput): Graph {
           (o) => o.kind === 'reservoir');
         const r = node as ReservoirNode;
         r.cap = inp.hearthCap; r.caps = inp.hearthCaps ?? null; r.portItems = items; r.stock = inp.hearthStock; r.hearth = true;
+        // No waste in (D139): slag and scrap stop at its intake like any refused item — a ribbon,
+        // a routing block's side or a machine's outlet alike — and its line backs up behind them.
+        r.accepts = CORE_TAKES;
         hearth = r;
         break;
       }
@@ -457,6 +460,33 @@ export function compileGraph(inp: CompileInput): Graph {
     paceMemo.set(t, def);
     return def;
   };
+  // A traction ribbon is never the slowest piece of its line (D141; owner, 2026-10-18: « la partie
+  // jaune des tapis ascenseur sont très lents et causent des bouchons »): its chain goes at the pace
+  // of the fastest ribbon it meets on its line — one feeding it, the one it hands on to, looked for
+  // through bridges and other traction ribbons — and never under its own, a plain ribbon's. It keeps
+  // its own tier, so its chain stays its own (a saved line's chains and items load as they were);
+  // only its pace is its line's. Every ribbon pace divides the next (60 | 120 | 240) and steps on
+  // the world's clock, so the lift steps whenever its line does: a full line moves through it as one
+  // block, across the joins (flow/chain.ts `willShift`). The fastest wins with a total order (pace,
+  // then building index): the visit's order never shows.
+  const linePace = (from: readonly number[], own: number): number => {
+    const perMin = (d: number): number => buildingDef(d).belt!.perMin;
+    let best = own;
+    const seen = new Set<number>(from), todo = [...from];
+    while (todo.length) {
+      const t = todo.pop()!;
+      const tg = target.get(t);
+      const near = tg && 'belt' in tg ? [...(beltFeederOf.get(t) ?? []), tg.belt] : (beltFeederOf.get(t) ?? []);
+      for (const n of near) {
+        if (seen.has(n)) continue;
+        seen.add(n);
+        const d = paceAt(n);
+        if (buildingDef(d).lift) todo.push(n);
+        else if (perMin(d) > perMin(best) || (perMin(d) === perMin(best) && d < best)) best = d;
+      }
+    }
+    return best;
+  };
 
   // continues(F → G): G is F's ribbon target, same tier, and F is G's only feeder.
   const next = new Map<number, number>();
@@ -526,7 +556,8 @@ export function compileGraph(inp: CompileInput): Graph {
     // re-laid chain can share it while its other tiles' items get refunded — duplicates).
     const cand = oldByKey.get(key);
     const same = cand && sameTiles(cand.tiles, tiles) && cand.fluid === fluid ? cand : undefined;
-    const c = new Chain(tiles, tier, bdef.belt!.perMin, bdef.belt!.ticksPerTile, fluid);
+    const pace = bdef.lift ? buildingDef(linePace(list.filter((t) => !isSpanTile(t)), tier)).belt! : bdef.belt!; // D141: a lift at its line's pace
+    const c = new Chain(tiles, tier, pace.perMin, pace.ticksPerTile, fluid);
     if (same) {
       c.restore(same.snapshot(), 0);
       // Keep the stream's running total: the views read flows from it.
@@ -600,10 +631,20 @@ export function compileGraph(inp: CompileInput): Graph {
     if (usedTiles.has(t) && chainByTile.get(t)?.fluid) continue;
     for (const p of ps) inp.refund(p.item, p.mu);
   }
+  // A routing block laid over a ribbon tile keeps the item that stood there and deals it on like any
+  // it takes (D139): a sorter set down where a slag waits at the Core's door sends it aside, instead
+  // of its going back into the Core, which takes no waste in. Each item stays on its tile, as a line
+  // re-laid keeps its items (owner, 2026-10-13); one the block cannot hold goes home as before.
+  const intoFork = (t: number, item: number): boolean => {
+    const f = t >= 0 && t < grid.occ.length ? nodeByEnt.get(grid.occ[t]!) : undefined;
+    if (!(f instanceof ForkNode) || (f.mu > 0 && f.item !== item) || f.cap - f.mu < MU) return false;
+    f.item = item; f.mu += MU;
+    return true;
+  };
   for (const [t, o] of oldCells) {
     const c = chainByTile.get(t);
     if (usedTiles.has(t) && c && !c.fluid) continue;
-    if (o.item >= 0) inp.refund(o.item, MU);
+    if (o.item >= 0 && !intoFork(t, o.item)) inp.refund(o.item, MU);
     if (o.stageMu > 0) inp.refund(o.stageItem, o.stageMu);
   }
 
@@ -753,9 +794,12 @@ function onDugFloor(grid: Grid, e: Ent): boolean {
 /** Majority ore under a drill and its rate cap (mu per epoch); a face cutter's, the face behind it (D87). */
 export function drillRate(grid: Grid, e: Ent, mods: Mods): { item: number; rateEp: number } {
   const b = buildingDef(e.def);
-  // Ore Cutting (an expertise, D93): every extractor's rate and its deposit's cap × `drillRate`.
-  const by = (r: { item: number; rateEp: number }, permille: number): { item: number; rateEp: number } =>
-    (permille === 1000 ? r : { item: r.item, rateEp: Math.floor((r.rateEp * permille) / 1000) });
+  // Ore Cutting (an expertise, D93): every extractor's rate and its deposit's cap × `drillRate`;
+  // then down to a quarter item a minute (D138, `DRILL_STEP_MU`: whole items in a short cycle).
+  const by = (r: { item: number; rateEp: number }, permille: number): { item: number; rateEp: number } => {
+    const ep = permille === 1000 ? r.rateEp : Math.floor((r.rateEp * permille) / 1000);
+    return { item: r.item, rateEp: Math.floor(ep / DRILL_STEP_MU) * DRILL_STEP_MU };
+  };
   // A face cutter (D87): the face ore of the wall its back is against, not what lies under it.
   if (b.drill?.face) return by(faceRate(grid, e.def, e.x, e.y, e.rot), mods.drillRate);
   // A ground collector: a steady rate off the bare ground (its placement checked the sand).

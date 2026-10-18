@@ -151,7 +151,8 @@ export type GuideSpot =
   | { readonly newest: string }  // the newest built building of a kind
   | { readonly vein: true }      // the floor at the foot of the land's quartz vein (D87): where a face cutter goes
   | { readonly windy: true }     // the Crown's windiest free spot for a turbine (D95: the wind field, read off the land)
-  | { readonly water: true };    // the nearest spot to the Core where a pump draws water (D114: on any level; readouts/water.ts)
+  | { readonly water: true }     // the nearest spot to the Core where a pump draws water (D114: on any level; readouts/water.ts)
+  | { readonly refused: true };  // a door where something waits refused (D139): the Core's, else a machine's (a slag at a line's head); none, the newest wire mill
 
 /** What the guide's arrow points at for a step; it follows the UI (tab → slot → the world). */
 export type GuideTarget =
@@ -636,18 +637,22 @@ export const QUESTS = {
     ],
   },
 
-  // ── 7 ── goal: the slag (D125) ────────────────────────────────────────────────
+  // ── 7 ── goal: the slag (D125, D139) ─────────────────────────────────────────
   // Owner, 2026-10-18: « il faudrait que certaines machines produisent des déchets en alternance avec
-  // leur vraie production, qu'il faille traiter ». The first smelter's slag has gone into the Core
-  // since « La fonderie » (one every ten plates: harmless there, it only fills its room); here, once
-  // copper wire is to hand for the sorter, CrierBelt says what it is and how it is dealt with before a
-  // line into a machine (the press, the steel mill) jams on it: sorted off and burnt, or sold.
+  // leur vraie production, qu'il faille traiter », then « don't make smelters and early game machines
+  // create slag or scraps. that's for later, but the tutorial should still show how to sort them with
+  // the sorter » (D139). No machine of the tutorial leaves any: the slag comes with CrierBelt's starter
+  // contract (« La Criée »: a slag with every five ore, `BAL.starter.waste`), out by the post's exit
+  // with the ore, and the wire mill refuses it — its line stops at the mill's door. CrierBelt says
+  // what it is, that the Core takes none either, and how it is dealt with: a sorter set to the ore on
+  // that line (laid over its last tile, it takes the slag waiting there, D139), an incinerator on its
+  // side — or the slag led into the post's entrance and sold.
   slag: {
     name: { fr: 'Les scories', en: 'The Slag' },
     reveals: ['plan:sorter', 'plan:incinerator', 'stock:slag'],
     desc: {
-      fr: 'Vos fonderies laissent des scories : une toutes les dix plaques, par la même sortie. Le Cœur les prend mais n’en fait rien, elles occupent sa réserve ; une machine, elle, les refuse, et toute sa ligne se bouche derrière. Triez-les : un trieur réglé sur les plaques les laisse filer et pousse le reste sur ses côtés, un incinérateur brûle ce qui y tombe. Ou vendez-les à la Criée, pour presque rien.',
-      en: 'Your smelters leave slag: one every ten plates, through the same output. The Core takes it but has no use for it, it only fills its room; a machine refuses it, and its whole line jams behind it. Sort it: a sorter set to the plates lets them through and pushes the rest out of its sides, an incinerator burns whatever falls in. Or sell it at the Crier, for next to nothing.',
+      fr: 'Le minerai de notre contrat sort d’une fonderie de l’Anneau : il arrive avec ses scories, une pour cinq minerais, par la sortie du comptoir. Votre tréfileuse les refuse, et toute sa ligne se bouche derrière la première. Le Cœur n’en prend pas non plus. Plus tard, l’aciérie et la presse en laisseront aussi. Triez-les : un trieur réglé sur le minerai le laisse filer tout droit et pousse le reste sur ses côtés, un incinérateur brûle ce qui y tombe. Ou menez-les à l’entrée du comptoir, qui les vend pour presque rien.',
+      en: 'The ore of our contract comes out of a foundry of the Ring: it arrives with its slag, one for five ore, by the post’s exit. Your wire mill refuses it, and its whole line jams behind the first. The Core takes none either. Later on, the steel mill and the press will leave some too. Sort it: a sorter set to the ore lets it run straight on and pushes the rest out of its sides, an incinerator burns whatever falls in. Or lead it to the post’s entrance, which sells it for next to nothing.',
     },
     objectives: [
       { k: 'feeds', item: 'slag', to: ['incinerator'], n: 1, label: { fr: 'Les scories triées vers un incinérateur', en: 'The slag sorted to an incinerator' } },
@@ -662,12 +667,14 @@ export const QUESTS = {
         done: { k: 'unlocked', ids: ['sorter', 'incinerator'] },
       },
       {
-        hint: { fr: 'Pose un trieur sur la ligne des plaques, tout droit, près de la fonderie ; clique-le et choisis la plaque de fer.', en: 'Place a sorter on the plates’ line, on a straight stretch, near the smelter; click it and pick the iron plate.' },
-        target: { k: 'build', def: 'sorter', at: { newest: 'kiln' } },
+        // Laid over the line's last tile, it takes the slag that waits there (D139: compile.ts keeps a
+        // ribbon tile's item in the routing block laid on it).
+        hint: { fr: 'La scorie attend devant la tréfileuse : pose un trieur sur ce dernier ruban, clique-le et choisis le minerai de cuivre.', en: 'The slag waits at the wire mill’s input: place a sorter on that last ribbon tile, click it and pick the copper ore.' },
+        target: { k: 'build', def: 'sorter', at: { refused: true } },
         done: { k: 'build', defs: ['sorter', 'inverted_sorter'], n: 1 },
       },
       {
-        hint: { fr: 'Un incinérateur contre un côté du trieur : les scories y tombent, les plaques filent tout droit.', en: 'An incinerator against one side of the sorter: the slag falls in, the plates run straight on.' },
+        hint: { fr: 'Un incinérateur contre un côté libre du trieur : les scories y tombent, le minerai file à la tréfileuse.', en: 'An incinerator against a free side of the sorter: the slag falls in, the ore runs on to the wire mill.' },
         target: { k: 'build', def: 'incinerator', at: { newest: 'sorter' } },
         done: { k: 'feeds', item: 'slag', to: ['incinerator'], n: 1 },
       },
@@ -885,8 +892,7 @@ export const QUESTS = {
         done: { k: 'feeds', item: 'copper_wire', to: ['assembly_bench'], n: 1 },
       },
       {
-        // The plates' line carries the smelter's slag (D125): branched past its sorter, or a slag jams the bench.
-        hint: { fr: 'Et des plaques de fer : un routeur sur la ligne des plaques, après le trieur des scories (une scorie bloquerait l’établi), un ruban jusqu’à son autre entrée.', en: 'And iron plates: a router on the plates’ line, past the slag sorter (a slag would jam the bench), a ribbon to its other input.' },
+        hint: { fr: 'Et des plaques de fer : un routeur sur la ligne des plaques, un ruban jusqu’à son autre entrée.', en: 'And iron plates: a router on the plates’ line, a ribbon to its other input.' },
         target: { k: 'branch', item: 'iron_plate', to: ['assembly_bench'] },
         done: { k: 'feeds', item: 'iron_plate', to: ['assembly_bench'], n: 1 },
       },
@@ -1043,6 +1049,7 @@ export function questProblems(): string[] {
     const r = q.reward;
     for (const [it, n] of r.items ?? []) {
       if (!has(ITEMS, it)) out.push(`quest ${id}: unknown reward item ${it}`);
+      else if ((ITEMS as Record<string, { kind: string }>)[it]!.kind === 'waste') out.push(`quest ${id}: reward ${it} is waste: the Core takes none in (D139)`);
       if (!(n > 0)) out.push(`quest ${id}: reward ${it} must be positive`);
     }
     if (r.kit !== undefined && !has(BUILDINGS, r.kit)) out.push(`quest ${id}: unknown kit ${r.kit}`);

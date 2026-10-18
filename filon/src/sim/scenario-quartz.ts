@@ -2,8 +2,9 @@
 // plays « Le quartz de la paroi » as a player does: the vein's parcel bought (the Face Cutter's plan
 // taken with every plan at the Survey Data quest, D101: no research wait), two face cutters at the wall's foot, their
 // poles over the Crown, one line home — up and down the Crown on traction ribbons (`routeOver`),
-// into the Heart, the second cutter joining it from the side. Two, because a traction ribbon carries
-// 30 a minute: what two cutters cut (15 each), so neither stands backed up (D85). Then, once the
+// into the Heart, the second cutter joining it from the side. Two, which a traction ribbon carried at
+// 30 a minute (D85); its lifts now keep the line's 60 (D141), and two cutters cut 20 (10 each, D133),
+// so neither stands backed up. Then, once the
 // tutorial's trade lines are laid, the quartz workshop the quest pays for — its own research node
 // since D128, learnt in the lab first, a few minutes of the Core's compute — turns that quartz into
 // oscillators: fed by a router on the quartz line and one on the wire line, its oscillators into the
@@ -21,7 +22,7 @@ import type { Sim } from './state';
 import { opposite, type Rot } from './types';
 import { inWorld, tileIndex } from './world/grid';
 
-/** Face cutters the levels set along the vein: what one traction line carries home (30 a minute). */
+/** Face cutters the levels set along the vein: two, well within what one line carries home over its lifts (60 a minute, D141). */
 const VEIN_CUTTERS = 2;
 /** A quartz line longer than this many times its straight way home (across and down) has gone round the floor: it crosses a line instead. */
 const LONG_WAY = 2;

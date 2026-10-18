@@ -18,7 +18,8 @@ import type { Chain } from '@/sim/flow/chain';
 import type { ReservoirNode } from '@/sim/flow/nodes';
 import type { Rot } from '@/sim/types';
 import { glyph } from '../glyphs';
-import { viewIconCanvas } from '@/render/art/view-icons';
+import { refusalCanvas, viewIconCanvas } from '@/render/art/view-icons';
+import { refusedAt } from '@/sim/readouts/core-door';
 import { tileIndex } from '@/sim/world/grid';
 import { itemMention } from '../mention';
 import { fmt, heldList, itemSelect, mark, meter, note, row, section, type Panel, type PanelCtx } from './kit';
@@ -30,8 +31,31 @@ export const ribbonPanel: Panel = ({ sim, e, live }) => {
     for (const r of c?.contents() ?? []) sums.set(r.item, (sums.get(r.item) ?? 0) + r.mu);
     return [...sums].map(([i, mu]) => [i, mu / 1000] as const);
   }, glyph('empty', t('insp.ribbon.empty')), { named: true });
-  return [section({ sec: 'ribbon', title: t('insp.onRibbon'), icon: mark('cargo'), group: 'logistics' }, [list]), nightSection(sim, e, live)];
+  return [section({ sec: 'ribbon', title: t('insp.onRibbon'), icon: mark('cargo'), group: 'logistics' }, [list, doorRow(sim, e, live)]), nightSection(sim, e, live)];
 };
+
+/**
+ * Its line stopped at a door (D139): the head an item the Core refuses — any waste — or the machine
+ * it feeds does not take. The refusal's badge (the world hangs the same over the door) and a short
+ * line; how to sort it on hover. Hidden while the line runs.
+ */
+function doorRow(sim: PanelCtx['sim'], e: PanelCtx['e'], live: PanelCtx['live']): HTMLElement {
+  const icon = el('span.insp-refused-icon'), say = el('span.insp-label');
+  const r = el('div.insp-row.insp-refused', { 'data-refused': '', hidden: '', title: t('insp.refused.tip') }, [icon, say]);
+  let sig = '';
+  live(() => {
+    const at = refusedAt(sim, sim.chainAt(e.x, e.y));
+    const now = at ? `${at.item}:${at.by}` : '';
+    if (now === sig) return;
+    sig = now;
+    setAttr(r, 'hidden', at ? null : '');
+    setAttr(r, 'data-item', at ? ITEM_IDS[at.item] ?? null : null);
+    if (!at) return;
+    icon.replaceChildren(refusalCanvas(at.item, 22));
+    setText(say, at.by === 'core' ? t('insp.refused.core') : t('insp.refused.machine'));
+  });
+  return r;
+}
 
 /** Is tile t in a sorted list of tiles? */
 const listed = (arr: Int32Array, t: number): boolean => {

@@ -121,7 +121,7 @@ function signature(g: Graph, grp: Group): string {
     const any = node as unknown as Record<string, unknown>;
     if (node.kind === 'chain') {
       const c = node as Chain;
-      h.int(c.tier).ints(c.tiles);
+      h.int(c.tier).int(c.perMin).ints(c.tiles); // its pace too: a lift's is its line's (D141), not its tier's
       if (c.raidPosts.length) h.int(c.raidAt).int(c.gleanSeed).ints(c.raidPosts);
     }
     if (typeof any.speed === 'number') h.int(any.speed);

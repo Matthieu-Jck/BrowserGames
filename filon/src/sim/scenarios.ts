@@ -70,6 +70,7 @@ import { footprint, worldPorts, type WorldPort } from './entities';
 import { isFaceOre } from './face';
 import { Sim } from './state';
 import { Chain } from './flow/chain';
+import { ForkNode } from './flow/nodes';
 import type { FNode } from './flow/node';
 import { inReach } from './systems/landscape';
 import { DX, DY, isFloor, isRock, opposite, T, type Ent, type Rot } from './types';
@@ -145,7 +146,7 @@ export function buildScenario(sim: Sim, id: ScenarioId, name: string): ScenarioR
   if (upTo >= 2) { bloomKiln(b); firstWind(b); glassworks(b); steamPower(b); }
   // The quartz works before the iron's overflow into the Heart (D115: on land 2 that line ran past
   // the wire line's last tiles, where the works branch their wire from).
-  if (upTo >= 3) { crierTrade(b); slagSort(b); coreUpgrade(b); fieldJournal(b); morePower(b); wallQuartz(b, () => powerUp(b, 12, 1000, 'veinPower')); postLine(b); tradeLine(b); quartzWorks(b); ironSurplus(b); }
+  if (upTo >= 3) { crierTrade(b); coreUpgrade(b); fieldJournal(b); morePower(b); wallQuartz(b, () => powerUp(b, 12, 1000, 'veinPower')); postLine(b); tradeLine(b); quartzWorks(b); ironSurplus(b); }
   if (upTo >= 4) grown(b);
   if (upTo >= 5) late(b);
   // The rest of the cirque's floor (D82), last: the late base's works take their places first.
@@ -737,20 +738,6 @@ function glassworks(b: Builder): void {
 }
 
 /**
- * 6 · « Les scories » (D125): the iron smelter's slag sorted off its plates' line into an incinerator
- * (`sortWaste`: a sorter set to the plates on the line's first straight tile with a free side, the
- * pit there), the plates on into the Core — the plans taken from the Heart as a player would.
- */
-function slagSort(b: Builder): void {
-  b.plan('sorter', 'incinerator');
-  const plates = b.laid('plates');
-  b.affordAll(['sorter', 1], ['incinerator', 1], b.spare);
-  const s = plates.map((l) => sortWaste(b.sim, l, 'iron_plate')).find((r) => !!r);
-  if (s) { b.ids.slagSorter = s.sorter; b.ids.slagPit = s.pit; } else b.skip('slag');
-  b.until('slag', 3);
-}
-
-/**
  * 7 · « Le Cœur grandit » (D101): the Core to level 2 by the player's own command (`hearthUp`), its
  * plates, glass and copper wire from the Heart (logged grants where short): it mounts the compute
  * bay whose tokens the lab runs on (D122), and grows the Core's power.
@@ -822,6 +809,8 @@ function crierTrade(b: Builder): void {
   tiredVein(b);
   starterLine(b);
   b.until('crier_trade', 10); // the router shares the glass three ways and the post may stand far off: a slow first lift
+  // 7 · « Les scories » (D125, D139): the contract's slag sorted off its line (`starterLine`).
+  b.until('slag', 3);
   starterDone(b);
 }
 
@@ -858,7 +847,14 @@ function starterLine(b: Builder): void {
   b.crossings();
   let path = join(b.sim, post, copper);
   if (!path && b.junctions()) { b.crossings(); path = join(b.sim, post, copper); }
-  if (path) b.lines['post.starter'] = path; else b.skip('line:post.starter');
+  if (path) b.lines['post.starter'] = path; else { b.skip('line:post.starter'); return; }
+  // Its ore comes with its slag (D139: one with every five, `BAL.starter.waste`), which the wire mill
+  // refuses: sorted off on the exit's own line before the first lot lands — a sorter set to the ore,
+  // an incinerator on its side (`sortWaste`) — the plans taken from the Heart as a player would.
+  b.plan('sorter', 'incinerator');
+  b.affordAll(['sorter', 1], ['incinerator', 1], b.spare);
+  const s = sortWaste(b.sim, path, BAL.starter.item);
+  if (s) { b.ids.slagSorter = s.sorter; b.ids.slagPit = s.pit; } else b.skip('slag');
 }
 
 /**
@@ -869,9 +865,14 @@ function starterLine(b: Builder): void {
 function starterDone(b: Builder): void {
   const sim = b.sim, post = b.ids.post, line = b.lines['post.starter'];
   if (!post || !line) return;
-  const ore = itemIdx(BAL.starter.item);
+  const ore = itemIdx(BAL.starter.item), slag = itemIdx(BAL.starter.waste[0]);
+  // Its slag too (D139): out of the container and through the sorter, so none is left to go out by
+  // the exit's next line (`tradeLine`) nor back into the Core with the ribbons taken up.
   const pending = (): boolean => sim.trade.orders.some((o) => (o.starter ?? 0) > 0)
-    || sim.trade.inflight.some((s) => s.post === post && s.item === ore) || (sim.stores.get(post)?.[ore] ?? 0) >= 1000;
+    || sim.trade.inflight.some((s) => s.post === post && (s.item === ore || s.item === slag))
+    || (sim.stores.get(post)?.[ore] ?? 0) >= 1000 || (sim.stores.get(post)?.[slag] ?? 0) > 0
+    || line.some(([x, y]) => sim.chainAt(x, y)?.contents().some((c) => c.item === slag) ?? false)
+    || (() => { const f = sim.graph.nodeByEnt.get(b.ids.slagSorter ?? 0); return f instanceof ForkNode && f.mu > 0 && f.item === slag; })();
   for (let t = 0; t < 12 * EPOCH && pending(); t += 60) b.run(60);
   // Fulfilled, the contract stands stopped and asks (D101): « Arrêter », the notice's default.
   const done = sim.trade.orders.find((o) => o.starter !== undefined);
@@ -885,6 +886,12 @@ function starterDone(b: Builder): void {
     const rot = other?.[1].find(([lx, ly]) => lx === x && ly === y)?.[2];
     sim.remove(x, y);
     if (rot !== undefined) sim.placeBelts('ribbon', [[x, y, rot]]);
+  }
+  // The sorter and its pit go with them (« Les scories » was met there).
+  for (const role of ['slagSorter', 'slagPit']) {
+    const e = b.ids[role] ? sim.ents.get(b.ids[role]!) : undefined;
+    if (e) sim.remove(e.x, e.y);
+    delete b.ids[role];
   }
   delete b.lines['post.starter'];
   b.run(EPOCH); // the cargo leaves the post at the next boundary: its entrance takes the ore again
@@ -1545,6 +1552,8 @@ function swiftPlates(b: Builder): void {
     const nx = x + DX[d]!, ny = y + DY[d]!, o = sim.entityAt(nx, ny);
     if (!o) return false;
     if (BUILDING_KIND[o.def] === 'belt') return o.rot === opposite(d as Rot);
+    // A routing block deals round it (no fixed ports): D139's sorter on a pipe line's last tile.
+    if (BUILDING_KIND[o.def] === 'fork') return true;
     return worldPorts(o).some((p) => p.io === 'out' && p.fx === x && p.fy === y);
   });
   const straight = (x: number, y: number, r: Rot): boolean => (sim.graph.feedDirs.get(tileIndex(x, y)) ?? 0) === 1 << opposite(r) && !sideFed(x, y, r);

@@ -3,7 +3,8 @@
 // joueur clique sur un bouton Stock pour le voir »), pure (no DOM):
 //   · `STOCK_GROUPS` / `groupOf`: the items by kind, the panel's sections — raw (ores, coal, water,
 //     stone), materials, parts, the rare finds (D122: research's data items are gone), the waste
-//     (D125: slag and scrap, of no use in the Core — the section says where they go instead);
+//     (D125: slag and scrap; the Core takes none in since D139 — what it held before stays,
+//     sellable, and the section says where they go instead);
 //   · `shortages`: which of the Heart's items the base lacks for what the Heart pays for (D33, D34:
 //     the Heart pays for buildings — refunded when they come down — and for plans, for good), the
 //     button's badge and the panel's marks. An item **ran out** when the Heart holds less than one

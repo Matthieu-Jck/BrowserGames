@@ -69,9 +69,12 @@ export const BUILDINGS = {
   },
   traction_ribbon: {
     name: { fr: 'Ruban à traction', en: 'Traction Ribbon' },
-    desc: { fr: 'Monte ou descend les objets d’un gradin, vers la case qu’il regarde : le seul passage d’un niveau à l’autre, plus lent qu’un ruban (30/min). Il se pose aussi sur la roche.', en: 'Lifts items one terrace up or down, to the tile it faces: the only way from one level to another, slower than a ribbon (30/min). It stands on rock too.' },
+    desc: { fr: 'Monte ou descend les objets d’un gradin, vers la case qu’il regarde : le seul passage d’un niveau à l’autre, et il se pose aussi sur la roche. Il va à l’allure de sa ligne, vif sur un ruban vif, express sur un ruban express, et jamais moins vite qu’un ruban (60/min).', en: 'Lifts items one terrace up or down, to the tile it faces: the only way from one level to another, and it stands on rock too. It goes at its line’s pace, swift on a swift ribbon, express on an express one, and never slower than a ribbon (60/min).' },
     kind: 'belt', lift: true, replaceGroup: 'transport', category: 'logistics', w: 1, h: 1, needsZone: false, onRock: true, unlock: 'traction',
-    cost: [['iron_plate', 2], ['copper_wire', 1]], ports: [], belt: { ticksPerTile: 12, perMin: 30 },
+    // Its own pace is a plain ribbon's, the floor under its line's: the compile gives it the fastest
+    // ribbon it meets on its line (D141, graph/compile.ts `linePace`). It was 30/min until then, and
+    // halved every line at every terrace.
+    cost: [['iron_plate', 2], ['copper_wire', 1]], ports: [], belt: { ticksPerTile: 6, perMin: 60 },
   },
   swift_ribbon: {
     name: { fr: 'Ruban vif', en: 'Swift Ribbon' },
@@ -152,7 +155,7 @@ export const BUILDINGS = {
   // ── production ────────────────────────────────────────────────────────────
   kiln: {
     name: { fr: 'Fonderie', en: 'Smelter' },
-    desc: { fr: 'Fond le minerai de fer en plaques et le sable en verre, en brûlant du charbon : pas besoin d’électricité. Minerai et charbon à ses deux entrées, à l’arrière ; le métal laisse des scories par la même sortie que les plaques.', en: 'Smelts iron ore into plates and sand into glass by burning coal: no power needed. Ore and coal to its two inputs at the back; metal leaves slag through the plates’ own output.' },
+    desc: { fr: 'Fond le minerai de fer en plaques et le sable en verre, en brûlant du charbon : pas besoin d’électricité. Minerai et charbon à ses deux entrées, à l’arrière.', en: 'Smelts iron ore into plates and sand into glass by burning coal: no power needed. Ore and coal to its two inputs at the back.' },
     kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'kiln', crafts: true,
     cost: [['iron_plate', 15]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
   },
@@ -168,7 +171,7 @@ export const BUILDINGS = {
   // two recipes (plates or glass: it waits for the player's choice, D83). Built of Tier 1 materials.
   electric_smelter: {
     name: { fr: 'Fonderie électrique', en: 'Electric Smelter' },
-    desc: { fr: 'Fond le minerai de fer en plaques et le sable en verre à l’électricité, sans charbon, au rythme de la fonderie, le métal avec ses scories par la même sortie. Elle tire beaucoup sur le réseau : prévois l’énergie avant de l’allumer.', en: 'Smelts iron ore into plates and sand into glass with power, no coal, at the smelter’s pace, metal with its slag through the same output. It draws heavily on the grid: plan the power before you switch it on.' },
+    desc: { fr: 'Fond le minerai de fer en plaques et le sable en verre à l’électricité, sans charbon, au rythme de la fonderie. Elle tire beaucoup sur le réseau : prévois l’énergie avant de l’allumer.', en: 'Smelts iron ore into plates and sand into glass with power, no coal, at the smelter’s pace. It draws heavily on the grid: plan the power before you switch it on.' },
     kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'dn_esmelt', crafts: true, kw: 300, idleKw: 15,
     cost: [['iron_plate', 15], ['copper_plate', 10], ['brick', 10], ['copper_coil', 6]], ports: [P(0, 1, 'S', 'in'), P(0, 0, 'N', 'out')], // D129: its induction coils
   },
@@ -342,7 +345,7 @@ export const BUILDINGS = {
   },
   press: {
     name: { fr: 'Presse', en: 'Press' },
-    desc: { fr: 'Frappe les engrenages, trois plaques de fer pour un, et laisse des chutes par la même sortie : une tous les deux engrenages.', en: 'Stamps gears, three iron plates each, and leaves scrap through the same output: one every two gears.' },
+    desc: { fr: 'Frappe les engrenages, trois plaques de fer pour un, et roule l’acier en tuyaux, qui laissent des chutes par la même sortie : une tous les dix tuyaux.', en: 'Stamps gears, three iron plates each, and rolls steel into pipes, which leave scrap through the same output: one every ten pipes.' },
     kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'tr1', crafts: true, kw: 60, idleKw: 6,
     cost: [['iron_plate', 20]], ports: [P(0, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
   },
@@ -443,7 +446,10 @@ export const BUILDINGS = {
     name: { fr: 'Usine de puces', en: 'Chip Fab' },
     desc: { fr: 'Les recettes de l’atelier d’électronique, six fois plus vite, pour 1 500 kW. Construite avec des bras robotisés.', en: 'The electronics workshop’s recipes, six times as fast, for 1,500 kW. Built with robot arms.' },
     kind: 'machine', category: 'production', w: 4, h: 4, needsZone: true, unlock: 'dn_chipfab', crafts: true, kw: 1500, idleKw: 150, speed: 6000,
-    cost: [['circuit', 60], ['robot_arm', 6], ['lens', 10], ['thermal_core', 10]], ports: [P(1, 3, 'S', 'in'), P(2, 3, 'S', 'in'), P(1, 0, 'N', 'out')],
+    cost: [['circuit', 60], ['robot_arm', 6], ['lens', 10], ['thermal_core', 10]],
+    // D140: a third entrance for the circuit's three inputs, at the back like the etcher's (its 4×4
+    // has the room the 2×2 workshop's back lacked); listed last so the ports before it keep their index.
+    ports: [P(1, 3, 'S', 'in'), P(2, 3, 'S', 'in'), P(1, 0, 'N', 'out'), P(0, 3, 'S', 'in')],
   },
   forge_press: {
     name: { fr: 'Presse à forger', en: 'Forging Press' },

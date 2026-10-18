@@ -10,7 +10,8 @@
 //    bridge end of the ribbon's replace group, in a drag of two tiles or more (kept: lines are
 //    routinely dragged through routers; a one-tile drag replaces it); a junction where the drag
 //    runs straight across a ribbon line (Mindustry's auto-junction, D24); a traction ribbon where
-//    a plain ribbon would face a step (D77), once traction is learnt; the dragged ribbon otherwise.
+//    a plain ribbon would face a step (D77), once traction is learnt — one already there is kept,
+//    as it takes its line's pace whatever the tier dragged (D141); the dragged ribbon otherwise.
 // 2. Each wish checked (`canPlace`), and what the grid cannot see yet because nothing is laid:
 //    two planned traction steps in a row (D65: the later one is refused) and a run of planned
 //    junctions (D73: junctions never chain).
@@ -94,8 +95,13 @@ export function planBelts(sim: Sim, defId: string, path: BeltPath): BeltStep[] {
       if (keep) return kept(x, y, rot, BUILDING_IDS[o.def]!);
       if (items && k === 'belt' && ((o.rot - rot) & 1) === 1 && learnt(sim, JUNCTION) && throughAt(path, i)) what = JUNCTION;
     }
-    // A step (D77): the traction ribbon takes it, once learnt.
-    if (what === def && items && !b.lift && learnt(sim, LIFT) && stepRefusal(sim, def, x, y, rot) === 'needs_lift') what = LIFT;
+    // A step (D77): the traction ribbon takes it, once learnt. One already there, the same way, is
+    // kept: it takes the line's pace by itself (D141), so a faster ribbon dragged over a line leaves
+    // its lifts as they stand (it was refused as `occupied`, a tile left out at each step).
+    if (what === def && items && !b.lift && learnt(sim, LIFT) && stepRefusal(sim, def, x, y, rot) === 'needs_lift') {
+      if (o && o.def === LIFT && o.rot === rot) return kept(x, y, rot, BUILDING_IDS[LIFT]!);
+      what = LIFT;
+    }
     const id = BUILDING_IDS[what]!;
     return { x, y, rot, def: id, skip: false, ...canPlace(sim, id, x, y, rot) };
   });

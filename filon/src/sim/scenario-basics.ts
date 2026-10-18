@@ -9,8 +9,8 @@
 //     where an iron line and a coal line pass closest, an electric smelter on a branch of the iron
 //     (plates on power, no coal) and the steel mill on a branch of the coal (the steam boiler's line
 //     first: that boiler burns only what the grid asks, its coal backs up most of the day), its steel
-//     into the Core, a press rolling pipes off it; a sorter on the plates' line sends the smelter's
-//     slag (D125) aside into an incinerator, so the mill sees only plates.
+//     into the Core, a press rolling pipes off it. Their waste (D125: the mill's slag, the press's
+//     scrap) is sorted off before the Core, which takes none in (D139); the smelter melts clean.
 // What goes into the Core goes straight in where an intake can be reached, else joins a line that
 // runs into it with nothing on the way to turn it aside, else a trade post's line (the Crier buys it),
 // else a silo of its own (`intoCore`). A work that cannot be laid is taken back up (`rollback`) and
@@ -119,11 +119,6 @@ function steelOn(b: Builder): boolean {
   b.recipe('steelPlates', 'arc_plate');
   // Two recipes at the mill since D125 (recycled steel): it waits for a choice (D83).
   b.recipe('steel', 'steel');
-  // The smelter's slag (D125) must not reach the mill, which takes plates: a sorter on their line
-  // keeps the plates on, an incinerator beside it takes the slag.
-  const plates = b.lines['steelPlates.out'] ?? b.lines['steel.in0'];
-  b.affordAll(['sorter', 1], ['incinerator', 1]);
-  if (!plates || !sortWaste(sim, plates, 'iron_plate')) return false;
   const out = intoCore(b, b.ids.steel!) ?? (b.fed('steelSilo', 'silo', b.centre('steel'), [b.ids.steel!], null) ? b.lines['steelSilo.in0'] ?? null : null);
   if (!out) return false;
   b.lines['steel.out'] = out;
@@ -138,6 +133,19 @@ function steelOn(b: Builder): boolean {
     ?? (b.fed('pipesSilo', 'silo', b.centre('pipes'), [b.ids.pipes!], null) ? b.lines['pipesSilo.in0'] ?? null : null);
   if (!pipes) return false;
   b.lines['pipes.out'] = pipes;
+  // The Core takes no waste in (D139): on the steel's line there the mill's slag is sorted off before
+  // the pipes join it (a sorter set to the steel past that point would send the pipes aside too),
+  // and the press's scrap off the pipes' own line.
+  if (!b.ids.steelSilo) {
+    const [jx, jy, jr] = pipes[pipes.length - 1]!;
+    const j = out.findIndex(([x, y]) => x === jx + DX[jr]! && y === jy + DY[jr]!);
+    b.affordAll(['sorter', 1], ['incinerator', 1]);
+    if (!sortWaste(sim, j > 0 ? out.slice(0, j) : out, 'steel')) return false;
+  }
+  if (!b.ids.pipesSilo) {
+    b.affordAll(['sorter', 1], ['incinerator', 1]);
+    if (!sortWaste(sim, pipes, 'pipe')) return false;
+  }
   // A silo holds one kind: the mill's slag or the press's scrap would stop at its door (D125).
   for (const [silo, keep] of [['steelSilo', 'steel'], ['pipesSilo', 'pipe']] as const) {
     const l = b.ids[silo] ? b.lines[`${silo}.in0`] : undefined;

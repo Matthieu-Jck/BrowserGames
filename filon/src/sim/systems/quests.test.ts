@@ -16,6 +16,8 @@ import { parcelAt } from '../world/land';
 import { WORLD_EPOCH0 } from '../constants';
 import { cleanName, currentQuest, loadQuests, objectiveProgress, planOffered, questProgress, rewardItems, stepApplies } from './quests';
 import { nightCover } from '../readouts/night';
+import { machineRefusals } from '../readouts/core-door';
+import { ForkNode } from '../flow/nodes';
 
 const idx = (id: QuestId): number => QUEST_IDS.indexOf(id);
 
@@ -267,6 +269,8 @@ function play(sim: Sim, last: QuestId = 'synth_parts'): Record<string, number> {
   expect(objectiveProgress(sim, { k: 'starter' }).met).toBe(true);
   sim.run(2 * EPOCH);
   expect(sim.trade.boughtTotal[itemIdx('copper_ore')]).toBe(0);
+  // It joins the copper line's first tile (516, 522) from the side: the last, at the mill's door, stays
+  // fed from behind only — where « Les scories »' sorter goes (D139: a routing block takes from its back).
   const exitLine = join(sim, ids.post!, copperLine);
   expect(exitLine, 'a ribbon from the post\'s exit into the copper line').toBeTruthy();
   sim.ensureCompiled();
@@ -274,24 +278,41 @@ function play(sim: Sim, last: QuestId = 'synth_parts'): Record<string, number> {
   until(sim, 'crier_trade', 8 * EPOCH);
   if (stop('crier_trade')) return ids;
 
-  // 7 — goal: the slag (D125). The plans; a sorter on the plates' line below the smelter (a straight
-  // stretch), set to the plates; an incinerator against its east side: the slag falls in, the plates
-  // run on into the Hearth.
+  // 7 — goal: the slag (D125, D139). No machine of the tutorial leaves any: the starter contract's ore
+  // came with its slag (a slag with every five ore), out by the post's exit with the ore, and the
+  // first one stopped at the wire mill's door, the copper line backed up behind it. The plans; a
+  // sorter laid over that last tile takes it in (D139), set to the ore; an incinerator against its
+  // free side: the slag falls in, the ore runs on into the mill.
+  sim.run(2 * EPOCH);
+  const atMill = machineRefusals(sim);
+  expect(atMill.map((r) => [r.tile % 1024, r.tile >> 10, ITEM_IDS[r.item], r.by]), 'the slag at the mill\'s door').toEqual([[516, 521, 'slag', ids.mill]]);
+  const wire0 = sim.produced[itemIdx('copper_wire')]!;
+  sim.run(EPOCH);
+  expect(sim.produced[itemIdx('copper_wire')], 'no wire past the slag').toBe(wire0);
   hint('slag', 0);
   unlock('sorter', 'incinerator');
   hint('slag', 1);
-  place('slagSorter', 'sorter', 517, 508, 2);
-  expect(sim.setForkFilter(ids.slagSorter!, 0, 'iron_plate')).toBe(true);
+  place('slagSorter', 'sorter', 516, 521, 0);
+  expect(sim.setForkFilter(ids.slagSorter!, 0, 'copper_ore')).toBe(true);
+  sim.ensureCompiled();
+  const so = sim.graph.nodeByEnt.get(ids.slagSorter!) as ForkNode;
+  expect([ITEM_IDS[so.item], so.mu], 'the slag in the sorter').toEqual(['slag', 1000]);
   hint('slag', 2);
-  place('slagPit', 'incinerator', 518, 508);
+  place('slagPit', 'incinerator', 515, 521);
   hint('slag', -1);
   until(sim, 'slag', QUEST_CHECK_TICKS);
   if (stop('slag')) return ids;
-  // The slag that comes now burns in the pit; the plates still reach the Hearth.
-  const burnt0 = sim.consumed[itemIdx('slag')]!, plates0 = sim.stock[itemIdx('iron_plate')]!;
-  sim.run(2 * EPOCH);
-  expect(sim.consumed[itemIdx('slag')]!).toBeGreaterThan(burnt0);
-  expect(sim.stock[itemIdx('iron_plate')]!).toBeGreaterThan(plates0);
+  // The ore reaches the mill again; the rest of the contract's slag waits on the exit's line behind
+  // its ore (the copper drill alone keeps the mill busy), for the sorter. None of it in the Core, none
+  // lost: what CrierBelt sent is what the lines hold and the pit burnt.
+  const SLAG = itemIdx('slag');
+  sim.run(3 * EPOCH);
+  expect(sim.produced[itemIdx('copper_wire')]!).toBeGreaterThan(wire0);
+  expect(sim.stock[SLAG]).toBe(0);
+  expect(sim.consumed[SLAG]).toBe(1000);
+  expect(sim.totalHeld(SLAG) + sim.consumed[SLAG]!).toBe(sim.trade.boughtTotal[SLAG]);
+  expect(sim.trade.boughtTotal[SLAG]).toBe(8000); // one with every five of the contract's 40 ore
+  expect(machineRefusals(sim)).toEqual([]);
 
   // 8 — goal: the Core's level 2 (D101), the player's own click, paid from the Hearth's stock: plates,
   // glass and copper wire are there (the colony's spare materials, « La Criée »'s wire).
@@ -363,7 +384,7 @@ function play(sim: Sim, last: QuestId = 'synth_parts'): Record<string, number> {
     return (ids[name] = r.id);
   };
   fed('quartzW', 'quartz_workshop', [490, 516], [{ lines: [quartzLine] }, { lines: [wireLine] }], sim.hearthId);
-  // The plates past the slag sorter (517, 508): a slag on the branch would jam the bench (D125).
+  // The plates off their line by a router (D139: the smelters leave no slag).
   fed('bench', 'assembly_bench', [500, 522], [{ lines: [wireLine] }, { lines: [plateLine.slice(2)] }], sim.hearthId);
   // Mechanics is learnt: two recipes, the bench waits for its choice (D83).
   hint('synth_parts', 3);

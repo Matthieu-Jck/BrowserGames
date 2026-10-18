@@ -13,7 +13,7 @@
 import { lapsing } from '../systems/land';
 import { BAL } from '@/content/balance';
 import { BUILDING_KIND, N_ITEMS as ITEM_COUNT, itemIdx } from '@/content/registry';
-import { SAT_STEP as SAT_STEP_, EPOCH as EPOCH_ } from '../constants';
+import { SAT_STEP as SAT_STEP_, EPOCH as EPOCH_, DISPATCH_STEP as DISPATCH_STEP_ } from '../constants';
 import { addHeld, type Sim } from '../state';
 import { buildGroups, type Group } from '../graph/groups';
 import { makeCtx } from '../flow/step';
@@ -30,7 +30,7 @@ import { newReport, type AwayReport } from './report';
 
 // Module copies of the constants the per-segment passes read (D137, as in steady.ts): under
 // vitest, where the tests and the bench run, an imported binding is a getter call at every read.
-const N_ITEMS = ITEM_COUNT, SAT_STEP = SAT_STEP_, EPOCH = EPOCH_, V_EMPTY = EMPTY, V_FULL = FULL, V_NORMAL = NORMAL;
+const N_ITEMS = ITEM_COUNT, SAT_STEP = SAT_STEP_, DISPATCH_STEP = DISPATCH_STEP_, EPOCH = EPOCH_, V_EMPTY = EMPTY, V_FULL = FULL, V_NORMAL = NORMAL;
 
 /** Below this, simply tick the engine (exact, and cheap for short gaps). */
 export const DIRECT_TICKS = 1200;
@@ -185,6 +185,9 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
   const moved = new Set<number>();
   /** The reservoirs a boundary's trade can move (the Hearth, the trade posts' stores), by index in `g.reservoirs`. */
   let tradeRes: number[] = [];
+  /** The silos (single-item stores), by index in `g.reservoirs`, and per reservoir the runs that touch it (D138: `relock`). */
+  let singles: number[] = [];
+  let resRuns: Run[][] = [];
   /**
    * A post's deliveries, spread over the epoch after they land (key → whole items, the tick they
    * landed, how many are in so far). Online they land in a lump at the boundary and its exit hands
@@ -213,6 +216,10 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
       return s;
     });
     runs = buildGroups(g).map(newRun);
+    singles = [];
+    g.reservoirs.forEach((r, ri) => { if (r.single) singles.push(ri); });
+    resRuns = g.reservoirs.map(() => []);
+    for (const run of runs) for (const ri of run.grp.res) resRuns[ri]!.push(run);
     movingDirty = true;
     dirtyRuns.clear();
     for (const run of runs) dirtyRuns.add(run);
@@ -318,8 +325,11 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     }
     const sat = new Map<number, number>(), disp = new Map<number, number>();
     for (const n of grp.nets) { sat.set(n, netModes[n]!.sat); disp.set(n, netModes[n]!.disp); }
+    // A silo's lock (D138): what it takes in and hands out, as it stands now (`relock`).
+    let locks: Map<number, number> | undefined;
+    for (const ri of grp.res) { const r = g.reservoirs[ri]!; if (r.single) (locks ??= new Map()).set(ri, r.locked); }
     // The Gleaners (D103): out in the dark hours, a world-clock input of the segment's minute.
-    return { res, sat, disp, night: grp.glean && gleanNight(sim.absEpoch(now)) };
+    return { res, sat, disp, night: grp.glean && gleanNight(sim.absEpoch(now)), locks };
   }
 
   const netDirty = new Set<number>();
@@ -382,12 +392,13 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     const jumping = cached !== undefined && run.warmCount >= CACHE_AFTER;
     // Bring the group to its true state now, then warm up (or reuse the cache). An exact jump
     // reads no more of it than what the group holds, which a point that is a snapshot gives with
-    // no stepping (`heldUnder`, D137). (An averaged jump, rare, still steps its old regime to now:
-    // a virtual step may lock an empty silo for good, so skipping steps would not be the same.)
+    // no stepping (`heldUnder`, D137); an averaged jump restores its regime's end and reads nothing
+    // of now (D138: since a virtual step no longer locks a real silo, the old regime's steps changed
+    // nothing that lasts).
     let want: Float64Array | null = null;
     if (run.reg && run.cond) {
-      if (jumping && cached.exact) want = heldUnder(run);
-      else materialize(g, run.grp, wctx, run.cond, run.reg, run.start, now - run.start);
+      if (!jumping) materialize(g, run.grp, wctx, run.cond, run.reg, run.start, now - run.start);
+      else if (cached.exact) want = heldUnder(run);
     }
     let reg: Regime | null = null;
     let lag = 0;
@@ -531,9 +542,9 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
         sat = 1000; disp = 0; accRate = E < cap ? Math.min(rate, Math.max(0, R - dAvg)) : 0;
       } else if (R + Feff >= dMax && F > 0) {
         const need = Math.max(0, dAvg - R);
-        // The generators' share as online (solvePower: the exact ceiling), not rounded up to 25 ‰:
-        // a steam boiler (D114) half called on burnt and drank up to a tenth too much offline.
-        sat = 1000; disp = Math.min(1000, Math.max(1, Math.ceil((need * 1000) / F))); accRate = 0;
+        // The generators' share as online (solvePower: the ceiling, in DISPATCH_STEP steps since
+        // D138), of the average need: a steam boiler (D114) half called on burns and drinks as online.
+        sat = 1000; disp = Math.min(1000, Math.max(DISPATCH_STEP, Math.ceil(Math.ceil((need * 1000) / F) / DISPATCH_STEP) * DISPATCH_STEP)); accRate = 0;
       } else if (E > 0 && rate > 0) {
         const deficit = Math.max(0, dAvg - R - Feff);
         const dis = Math.min(rate, deficit);
@@ -793,6 +804,32 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     }
   }
 
+  /**
+   * The silos' locks as online keeps them (D138), from the real levels: a silo whose item ran out,
+   * with none of it on its way in, is free again (online `update` frees it the tick it empties); a
+   * free one holding an item is locked to it (online `give` locks it at the first). The warm-ups
+   * lock only their own virtual copy (`ReservoirNode.vLocked`), so this is the one place the real
+   * lock moves. A change re-warms the groups at the silo: it decides what they may push and pull
+   * (a lock is in the regimes' key, `Cond.locks`), and an outlet's item joins its puller's watch.
+   */
+  function relock(): void {
+    for (const ri of singles) {
+      const r = g.reservoirs[ri]!;
+      let nu = r.locked;
+      if (nu >= 0 && r.stock[nu]! <= 0 && !(rateOf(ri * N_ITEMS + nu) > 0)) nu = -1;
+      if (nu < 0) for (let i = 0; i < N_ITEMS; i++) if (r.stock[i]! > 0) { nu = i; break; }
+      if (nu === r.locked) continue;
+      r.locked = nu;
+      for (const run of resRuns[ri]!) {
+        if (nu >= 0 && (run.grp.resOut.get(ri)?.length ?? 0) > 0 && !run.pull.get(ri)?.has(nu)) {
+          run.pull.get(ri)?.add(nu);
+          indexRelevance(run);
+        }
+        markDirty(run);
+      }
+    }
+  }
+
   function materializeAll(): void {
     flushDeliveries(); // the keys go with this graph
     for (const run of runs) if (run.reg && run.cond) materialize(g, run.grp, wctx, run.cond, run.reg, run.start, now - run.start);
@@ -842,6 +879,7 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
       sim.ensureCompiled();
       setup();
     }
+    relock();
     classify();
     settle();
     labFlows();

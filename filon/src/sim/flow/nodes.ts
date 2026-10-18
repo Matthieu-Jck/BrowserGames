@@ -322,6 +322,14 @@ export class ReservoirNode extends FNode {
   /** Silo: only one item kind (locked item, -1 = free). */
   single: boolean;
   locked = -1;
+  /**
+   * A warm-up's lock (D138): the catch-up's virtual sessions lock and read this one, never
+   * `locked` — a group stepped into an empty silo locked the real one for good, since nothing
+   * unlocks a store offline (its level moves by the catch-up's sums, not by `take`). It starts
+   * from the condition's lock (`Cond.locks`) or a snapshot's; the catch-up keeps `locked` in step
+   * with the real levels between segments (`relock`).
+   */
+  vLocked = -1;
   /** Observatory: only these items are taken in (null = anything). */
   accepts: ReadonlySet<number> | null = null;
   /**
@@ -365,7 +373,7 @@ export class ReservoirNode extends FNode {
    * every port; the catch-up reads the same rule to know what a group pulls.
    */
   portItem(port: number): number {
-    if (this.single) return this.locked;
+    if (this.single) return this.virtual ? this.vLocked : this.locked;
     return this.portItems[port] ?? -1;
   }
 
@@ -404,10 +412,11 @@ export class ReservoirNode extends FNode {
     const n = this.inE.length;
     this.free.fill(-1);
     const rot = n > 1 ? ctx.now % n : 0;
+    const lock = this.virtual ? this.vLocked : this.locked;
     for (let k = 0; k < n; k++) {
       const e = this.inE[(k + rot) % n]!;
       const it = ctx.offItem[e]!;
-      if (it < 0 || ctx.offMu[e]! <= 0 || isFluidItem(it) || (this.single && this.locked >= 0 && it !== this.locked) || (this.accepts && !this.accepts.has(it))) {
+      if (it < 0 || ctx.offMu[e]! <= 0 || isFluidItem(it) || (this.single && lock >= 0 && it !== lock) || (this.accepts && !this.accepts.has(it))) {
         ctx.acc[e] = 0;
         continue;
       }
@@ -448,7 +457,10 @@ export class ReservoirNode extends FNode {
   }
 
   override give(_port: number, item: number, mu: number, ctx: TickCtx): void {
-    if (this.single && this.locked < 0) this.locked = item;
+    if (this.single) {
+      if (!this.virtual) { if (this.locked < 0) this.locked = item; }
+      else if (this.vLocked < 0) this.vLocked = item;
+    }
     if (!this.virtual) {
       this.stock[item] = this.stock[item]! + mu;
       if (this.hearth) ctx.hearthIn[item] = ctx.hearthIn[item]! + mu;
@@ -482,18 +494,20 @@ export class ReservoirNode extends FNode {
     // Reservoir levels are boundary state, not internal state; only virtual pools count.
     if (!this.virtual) return;
     for (const it of this.vActive) h.int(it).int(this.vPool[it]!).int(this.vCarry[it]!);
+    if (this.single) h.int(this.vLocked);
   }
 
   override snapshot(): unknown {
     // Typed copies (D137): a warm-up's snapshots are restored at every regime's end, and a
     // typed `set` is a copy where a plain array's is a walk.
-    return { pool: this.vPool.slice(), carry: this.vCarry.slice() };
+    return { pool: this.vPool.slice(), carry: this.vCarry.slice(), lock: this.vLocked };
   }
 
   override restore(s: unknown): void {
-    const o = s as { pool: ArrayLike<number>; carry: ArrayLike<number> };
+    const o = s as { pool: ArrayLike<number>; carry: ArrayLike<number>; lock: number };
     this.vPool.set(o.pool);
     this.vCarry.set(o.carry);
+    this.vLocked = o.lock;
   }
 }
 

@@ -9,6 +9,7 @@ import { BUILDING_IDS, itemIdx, recipeIdx } from '@/content/registry';
 import { filterOf, recipeOf } from './cfg';
 import { replay } from './commands';
 import { grantCost, testSim, drillToHearth, line, stockedSilo, wire, IRON, SAND } from './testkit';
+import { ForkNode } from './flow/nodes';
 import type { Sim } from './state';
 import type { Rot } from './types';
 
@@ -69,11 +70,14 @@ describe('replacement', () => {
     const ore0 = sim.stock[IRON()]!;
     expect(sim.place('router', 512, 501, 0).ok).toBe(true); // over (512,501): 6 squares behind it, 5 ahead
     sim.ensureCompiled();
-    // Behind the router, the six squares keep their six items; ahead, five; the square it took
-    // goes back to the Heart. Nothing over a ribbon's room, nothing vanishes.
+    // Behind the router, the six squares keep their six items; ahead, five; the router keeps the one
+    // on the square it took (D139: a routing block laid on a ribbon tile takes its item, the Heart
+    // gets nothing). Nothing over a ribbon's room, nothing vanishes.
     expect(items(512, 504)).toBe(6);
     expect(items(512, 498)).toBe(5);
-    expect(sim.stock[IRON()]! - ore0).toBe(1000);
+    expect(sim.stock[IRON()]! - ore0).toBe(0);
+    const r = sim.graph.nodeByEnt.get(sim.entityAt(512, 501)!.id) as ForkNode;
+    expect([r.item, r.mu]).toEqual([IRON(), 1000]);
     for (const c of sim.graph.chains) expect(c.content).toBeLessThanOrEqual(c.capMu);
   });
 

@@ -9,6 +9,8 @@
 // the canvas `viewIconCanvas` creates), so the UI may use it (it is part of the art kit).
 import { C, mix } from './tokens';
 import { ellipsePts, ink, roundRectPts, shape, type Ctx, type Pt } from './ink';
+import { drawItem, GLYPH } from './recipes/items';
+import { ITEM_IDS } from '@/content/registry';
 import type { PowerGroup, Source } from '@/sim/readouts/power';
 
 /** Every mark the views draw. */
@@ -262,3 +264,46 @@ export function heatColor(util: number): string {
   return HEAT[HEAT.length - 1]![1];
 }
 
+/**
+ * The Core's refusal (D139): an item it takes no waste of — slag, scrap — as a « no entry » sign: a
+ * paper disc ringed in coral, the item in its middle, struck through. One mark for the world (over
+ * the door where it waits: render/world/views-view.ts) and the DOM (the line's and the Core's
+ * inspector, the Stock panel: `refusalCanvas`). The 64 board, centred in `size` px at (x, y).
+ */
+export function drawRefusal(g: Ctx, item: number, x: number, y: number, size: number): void {
+  const id = ITEM_IDS[item];
+  g.save();
+  g.translate(x, y);
+  g.scale(size / 64, size / 64);
+  g.fillStyle = C.ink;
+  g.globalAlpha = 0.85;
+  g.beginPath(); g.arc(34.5, 35.5, R + 2, 0, Math.PI * 2); g.fill();
+  g.globalAlpha = 1;
+  shape(g, ellipsePts(32, 32, R + 2, R + 2, 7, 0.02, 40), C.coral, { w: 3, seed: 11 });
+  shape(g, ellipsePts(32, 32, R - 4, R - 4, 5, 0.02, 36), C.paper, { w: 1.6, seed: 5 });
+  if (id) {
+    const k = 30 / GLYPH;
+    g.save();
+    g.translate(32 - 15, 32 - 15);
+    g.scale(k, k);
+    drawItem(g, id);
+    g.restore();
+  }
+  // The bar, from the ring's top-left to its bottom-right: inked edges, coral inside.
+  ink(g, [[15, 15], [49, 49]], { w: 7.4, color: C.ink, taper: 0, shade: false });
+  ink(g, [[15.6, 15.6], [48.4, 48.4]], { w: 4.6, color: C.coral, taper: 0, shade: false });
+  g.restore();
+}
+
+/** The refusal on its own small canvas (CSS px `px`, drawn at twice that). */
+export function refusalCanvas(item: number, px = 22): HTMLCanvasElement {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = px * 2;
+  cv.style.width = cv.style.height = `${px}px`;
+  cv.className = 'vicon';
+  cv.dataset.icon = 'refuse';
+  cv.dataset.item = ITEM_IDS[item] ?? '';
+  const g = cv.getContext('2d');
+  if (g) drawRefusal(g, item, 0, 0, px * 2);
+  return cv;
+}

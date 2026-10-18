@@ -1,7 +1,9 @@
 // validate.ts — content invariants, checked at startup (dev) and in tests. Content mistakes
 // must fail loudly: an unreachable item, a research loop, a recipe whose cycle does not
-// divide the engine's 1 200-tick period (the offline catch-up needs it), a port off its
-// building's edge. It also pins the design's intentional scarcities: the cirque's « tired
+// divide the engine's 1 200-tick period (the offline catch-up needs it) nor a ribbon's steps,
+// a lift slower than a plain ribbon (D141), a port off its
+// building's edge, a machine with fewer entrances than the kinds of input a recipe of its takes
+// (D140, `entranceProblems`). It also pins the design's intentional scarcities: the cirque's « tired
 // vein » cannot feed one electronics workshop, a resonator needs two different unique resources and
 // a nacre lattice two more — so every colony must trade. Machines are specialised: none offers more than
 // `MAX_RECIPES` recipes (D70); every research node unlocks a building, a recipe or a feature,
@@ -26,6 +28,7 @@ import { CIRQUE, UNIQUE_BIOMES } from './world';
 import type { BuildingDef, CategoryDef, ItemDef, PlanDef, RecipeDef, ResearchDef, ResearchTier } from './types';
 
 const CYCLE_LCM = 1200;
+const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
 /** A smelter's crafts a minute (D97), the beat most lines run at: every waste count divides it (D125). */
 export const WASTE_BEAT = 10;
 
@@ -42,6 +45,30 @@ const plans = Object.entries(PLANS) as Array<[string, PlanDef]>;
 const treeIds: readonly string[] = [...plans.map(([id]) => id), ...research.map(([id]) => id)];
 const buildings = Object.entries(BUILDINGS) as Array<[string, BuildingDef]>;
 const isUnique = (id: string): boolean => (ITEMS as Record<string, ItemDef>)[id]?.kind === 'unique';
+
+/**
+ * One entrance a kind (D140; owner, 2026-10-18: « if a machine require 3 ressources, you need to put
+ * 3 entrances to it »): a building has at least as many `in` ports as the most kinds of input any
+ * recipe it runs takes, so each input can come in on a line of its own. Kinds, not quantities: two
+ * copper wires a circuit ride one line. A fluid counts (its conduit takes an entrance too). The
+ * tables are arguments so a test can hand it a machine short of one.
+ */
+export function entranceProblems(
+  bs: ReadonlyArray<readonly [string, BuildingDef]> = buildings,
+  rs: ReadonlyArray<readonly [string, RecipeDef]> = recipes,
+): string[] {
+  const errs: string[] = [];
+  for (const [id, b] of bs) {
+    let most = 0, which = '';
+    for (const [rid, r] of rs) {
+      const kinds = new Set(r.ins.map(([it]) => it)).size;
+      if (r.machines.includes(id) && kinds > most) { most = kinds; which = rid; }
+    }
+    const n = b.ports.filter((p) => p.io === 'in').length;
+    if (n < most) errs.push(`building ${id}: ${n} entrance${n === 1 ? '' : 's'}, but recipe ${which} takes ${most} kinds of input (one entrance a kind, D140)`);
+  }
+  return errs;
+}
 
 /**
  * The categories' invariants (D128; run by validateContent): each of a tier and a known theme,
@@ -248,7 +275,19 @@ export function validateContent(): string[] {
       const onEdge = (p.side === 'N' && p.y === 0) || (p.side === 'S' && p.y === b.h - 1) || (p.side === 'W' && p.x === 0) || (p.side === 'E' && p.x === b.w - 1);
       if (p.x < 0 || p.y < 0 || p.x >= b.w || p.y >= b.h || !onEdge) errs.push(`building ${id}: port ${p.x},${p.y},${p.side} is off its edge`);
     }
+    // A line's pace (D57, D141): a ribbon steps perMin times a minute on the world's clock, a pattern
+    // that repeats every 600 / gcd(600, perMin) ticks — which must divide the engine period, so a line's
+    // group still repeats offline (graph/groups.ts `rotL`); a conduit's water takes `ticksPerTile` a tile
+    // (ribbons ignore it). A lift is never slower than a plain ribbon: its pace is the floor of its line's.
+    if (b.belt) {
+      const { perMin, ticksPerTile } = b.belt;
+      if (b.kind === 'conduit') { if (!(Number.isInteger(ticksPerTile) && ticksPerTile > 0 && CYCLE_LCM % ticksPerTile === 0)) errs.push(`building ${id}: ${ticksPerTile} ticks a tile do not divide ${CYCLE_LCM}`); }
+      else if (!(Number.isInteger(perMin) && perMin > 0 && perMin <= 600) || CYCLE_LCM % (600 / gcd(600, perMin)) !== 0) errs.push(`building ${id}: a ribbon of ${perMin}/min steps on no period dividing ${CYCLE_LCM}`);
+      if (b.lift && perMin < (BUILDINGS.ribbon.belt?.perMin ?? 0)) errs.push(`building ${id}: a lift slower than a ribbon (${perMin}/min, D141)`);
+    }
   }
+  // …and an entrance for each kind of input its recipes take (D140).
+  errs.push(...entranceProblems());
 
   // The unlock tree (D33): plans and research form one DAG — known prerequisites and costs, no
   // loop, every node reachable from the roots; plan ids never shadow research ids; every plan

@@ -44,6 +44,7 @@ import { looksAtWork } from '@/sim/systems/work';
 import { stopWhy } from '@/sim/readouts/production';
 import { windiest } from '@/sim/readouts/wind';
 import { nearestWater } from '@/sim/readouts/water';
+import { coreRefusals, machineRefusals } from '@/sim/readouts/core-door';
 import { PARCEL, parcelAt, parcelCentre } from '@/sim/world/land';
 import { itemRef } from './mention';
 import { hintText } from './quest-log';
@@ -354,6 +355,15 @@ export function spotOf(sim: Sim, at: GuideSpot): [number, number, number] | null
   }
   if ('hearth' in at) return centreOf(sim, sim.hearthId);
   if ('intake' in at) return intakeOf(sim);
+  if ('refused' in at) {
+    // A door where something waits refused (D139): the Core's first, then a machine's (the slag at the
+    // wire mill, « Les scories »): the line's last tile, where a sorter laid takes it in. None: the
+    // newest wire mill, where the contract's slag goes.
+    const r = coreRefusals(sim)[0] ?? machineRefusals(sim)[0];
+    if (r) return [r.tile % 1024, Math.floor(r.tile / 1024), 0.75];
+    const k = builtOf(sim, ['wire_mill']);
+    return k.length ? centreOf(sim, k[k.length - 1]!.id) : null;
+  }
   if ('beyond' in at) {
     // Past the Crown, due east (the cirque is closed, D45: no pass to point at).
     return [CENTER + CIRQUE.crownOuter + 4, CENTER, 3];

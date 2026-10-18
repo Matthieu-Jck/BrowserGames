@@ -7,9 +7,9 @@
 // the landscapers (an excavator's / backfiller's job and its time left, or the marks in reach; the
 // stone it holds).
 import { BAL } from '@/content/balance';
-import { itemIdx } from '@/content/registry';
+import { ITEM_IDS, itemIdx } from '@/content/registry';
 import { nodeName } from '@/content/research';
-import { el, setText } from '@/core/dom';
+import { el, setAttr, setText } from '@/core/dom';
 import { duration, num } from '@/i18n/format';
 import { locale, t, tr } from '@/i18n/i18n';
 import { footprint } from '@/sim/entities';
@@ -17,6 +17,8 @@ import type { Sim } from '@/sim/state';
 import { expertiseDef } from '@/content/expertises';
 import { archiveOpen, rankOf } from '@/sim/systems/expertise';
 import { archiveGlyph, effectFigure, effectLabel, expertiseIcon, romanRank } from '../screens/expertise';
+import { refusalCanvas } from '@/render/art/view-icons';
+import { coreRefusals } from '@/sim/readouts/core-door';
 import { costChips, fmt, heldList, itemRow, mark, progressBar, section, type Panel, type PanelCtx } from './kit';
 
 /** The level that mounts the Core's compute bay (D122: the first with a compute of its own, `BAL.coreCompute`). */
@@ -54,7 +56,7 @@ export const hearthPanel: Panel = ({ sim, host, live, action, atlas }) => {
     .map((i) => [i, Math.floor(sim.stock[i]! / 1000)] as const), t('insp.empty'));
   const lv = sim.hearthLevel;
   const up = BAL.hearthUpgrades[lv - 1];
-  const out: Array<HTMLElement | null> = [section({ sec: 'stock', title: t('insp.stock'), icon: mark('store') }, [list])];
+  const out: Array<HTMLElement | null> = [refusedSection(sim, live), section({ sec: 'stock', title: t('insp.stock'), icon: mark('store') }, [list])];
   // The Archive (D93): the expertises in place, their rank and effect; the window in the foot.
   if (archiveOpen(sim)) {
     const rows = sim.expertise.slots.map((s, i) => {
@@ -91,6 +93,28 @@ export const hearthPanel: Panel = ({ sim, host, live, action, atlas }) => {
   }, t('insp.hearth.up', { n: lv + 1 })));
   return out;
 };
+
+/**
+ * What waits refused at its inputs (D139: no waste in): each item's refusal badge, as many as wait,
+ * at the top while any does — the lines stopped at its door; why and what to do on hover.
+ */
+function refusedSection(sim: Sim, live: PanelCtx['live']): HTMLElement {
+  const badges = el('div.insp-refused-list');
+  const sec = section({ sec: 'refused', title: t('insp.hearth.refused'), icon: mark('full'), tip: t('insp.hearth.refused.tip') }, [
+    el('div.insp-row.insp-refused', {}, [badges, el('span.insp-label', {}, t('insp.refused.core'))]),
+  ]);
+  setAttr(sec, 'hidden', '');
+  let sig = '';
+  live(() => {
+    const items = coreRefusals(sim).map((r) => r.item);
+    const now = items.join(',');
+    if (now === sig) return;
+    sig = now;
+    setAttr(sec, 'hidden', items.length ? null : '');
+    badges.replaceChildren(...items.map((i) => el('span.insp-refused-icon', { 'data-item': ITEM_IDS[i] }, refusalCanvas(i, 26))));
+  });
+  return sec;
+}
 
 /** Excavator / backfiller at the top: the running job (its progress, time left), or the marks in its reach. */
 export const landscapeHero = ({ sim, e, kind, node, live }: PanelCtx): HTMLElement => {

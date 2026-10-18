@@ -204,8 +204,10 @@ export const BAL = {
   // in the post's container `delayMin` game minutes later, and leaves only by its exit.
   // Fulfilled, it stops (D101: the owner's base bought on for hours, unseen): continued, it is an
   // ordinary order, capped at the ask × continueOver ‰. Its lots land a minute after each purchase:
-  // the tutorial waits on no slow delivery.
-  starter: { item: 'copper_ore', n: 40, perMin: 10, cents: 200, delayMin: 1, continueOver: 1100 },
+  // the tutorial waits on no slow delivery. `waste`: its ore comes out of a foundry of the Ring with
+  // its slag, one free with every five ore (D139: the tutorial's « Les scories » sorts it — no machine
+  // of the early game leaves any), out by the exit with the ore.
+  starter: { item: 'copper_ore', n: 40, perMin: 10, cents: 200, delayMin: 1, continueOver: 1100, waste: ['slag', 5] as const },
   /**
    * The Crier Ring's NPC market (src/market, design §6). It computes in floats, being
    * authoritative where it runs; only its outputs reach the sim, as integers. Times are minutes

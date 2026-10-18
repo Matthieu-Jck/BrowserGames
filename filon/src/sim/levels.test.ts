@@ -51,7 +51,7 @@ describe('the land’s levels (D45)', () => {
     const over = overTheRidge(true);
     const c0 = over.stock[COPPER]!;
     over.run(1800);
-    expect(over.stock[COPPER]! - c0).toBeGreaterThan(5000); // 30/min at the traction ribbons: some arrive
+    expect(over.stock[COPPER]! - c0).toBeGreaterThan(5000); // the line's pace through the traction ribbons (D141): plenty arrive
 
     const stuck = overTheRidge(false);
     const s0 = stuck.stock[COPPER]!;
@@ -123,7 +123,7 @@ describe('the land’s levels (D45)', () => {
     early.done.delete('traction');
     early.rebuildDerived();
     expect(early.planBelts('ribbon', path).map((s) => (s.ok ? 'ok' : s.reason))).toEqual(['ok', 'ok', 'needs_lift', 'ok', 'needs_lift', 'ok', 'ok', 'ok']);
-    // Dragged over the ridge, the traction ribbon fits every tile: on the flat it is a slow ribbon.
+    // Dragged over the ridge, the traction ribbon fits every tile: on the flat it is a ribbon at its line's pace (D141).
     expect(sim.planBelts('traction_ribbon', line(513, 500, 2, 8)).every((s) => s.ok)).toBe(true);
   });
 

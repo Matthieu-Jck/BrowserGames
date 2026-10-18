@@ -22,7 +22,10 @@ function gourdSim(): { sim: Sim; gourd: number } {
 describe('power', () => {
   it('the merit order: renewables, then fuel (load-following), then accumulators; satisfaction in 25‰ steps', () => {
     expect(solvePower(100, 300, 0, 0, 1000, 50)).toEqual({ sat: 1000, dispatch: 0, accDelta: 50, served: 100 });
-    expect(solvePower(400, 300, 300, 0, 1000, 50).dispatch).toBe(334);
+    // A third of the generators' capacity called (333.3 ‰) is dispatched in 25 ‰ steps, rounded up (D138).
+    expect(solvePower(400, 300, 300, 0, 1000, 50).dispatch).toBe(350);
+    expect(solvePower(400, 300, 400, 0, 1000, 50).dispatch).toBe(250);
+    expect(solvePower(301, 300, 1000, 0, 1000, 50).dispatch).toBe(25);
     const r = solvePower(500, 300, 0, 10, 1000, 50);
     expect(r.accDelta).toBe(-10);
     expect(r.sat % 25).toBe(0);

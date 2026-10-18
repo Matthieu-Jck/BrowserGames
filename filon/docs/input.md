@@ -211,7 +211,8 @@ Space (pan modifier) is hard-coded in `input.ts`, not in the table.
     (`crossing`) is laid instead, so both lines keep flowing. Junctions never chain (D73,
     `junction_chain`): a ribbon runs between two of them;
   - **a step** a plain ribbon would face takes a **traction ribbon** by itself once `traction` is
-    learnt (D73); never two steps in a row (`lift_room`, D65);
+    learnt (D73), whatever the tier dragged: it goes at its line's pace (D141), so one already on
+    the step is kept; never two steps in a row (`lift_room`, D65);
   - **a neighbouring base's open land** a flat ribbon may not cross is laid with **camouflaged
     ribbons** by itself once `xp_camo` is learnt (D109), after the bridges (a short run a pair can
     leap keeps the line's pace); a plain ribbon on free land stays plain;
