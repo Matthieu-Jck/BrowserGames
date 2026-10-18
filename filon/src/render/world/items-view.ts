@@ -58,8 +58,8 @@ import { JunctionsView } from './junctions-view';
 import { PLAN_Z } from './stand';
 import { ISO_LIN, TOP, invert, isoToView, type Lin } from '../projection';
 
-/** Item frame size (world px): iso and plan (0.5 of a 32 px plan tile; the owner found 0.7, then 0.6 a bit big). */
-const ISO_PX = 21;
+/** Item frame size (world px): iso and plan (0.5 of a 32 px plan tile; the owner found 0.7, then 0.6 a bit big). Iso 21 → 18 (owner, 2026-10-18: « réduis un tout petit peu la taille des items sur les ribbons en vue isométrique »). */
+const ISO_PX = 18;
 const PLAN_PX = 0.5 * TOP;
 /** An item's size on screen (world px) at plan-ness `t` and `zoom`: a little bigger zoomed out, to stay legible (the Gleaners hold theirs at the same size). */
 export const itemPx = (t: number, zoom: number): number => (ISO_PX + (PLAN_PX - ISO_PX) * t) / Math.max(0.75, Math.min(1, zoom));
