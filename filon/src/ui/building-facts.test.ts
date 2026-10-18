@@ -107,7 +107,8 @@ describe('building facts', () => {
     const plate = kiln.find((r) => r.name === 'Iron Plate')!;
     // 6 s a plate (D97): 10 ore and 10 coal a minute.
     expect(plate.ins).toEqual([{ item: itemIdx('iron_ore'), perMin: 10 }, { item: itemIdx('coal'), perMin: 10 }]);
-    expect(plate.outs).toEqual([{ item: itemIdx('iron_plate'), perMin: 10 }]);
+    // Its slag beside its plates (D125): one every ten.
+    expect(plate.outs).toEqual([{ item: itemIdx('iron_plate'), perMin: 10 }, { item: itemIdx('slag'), perMin: 1 }]);
     // Servomotors need their research (dn4, D81): not on a new colony's electronics workshop, there once researched.
     expect(buildingFacts('workshop', fresh).recipes!.map((r) => r.name)).not.toContain('Servomotor');
     expect(buildingFacts('workshop', all).recipes!.map((r) => r.name)).toContain('Servomotor');

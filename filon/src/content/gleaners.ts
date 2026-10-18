@@ -23,6 +23,7 @@ export const GLEANER_TASTE: Partial<Record<ItemId, number>> = {
   resonator: 1000,
   nacre_lattice: 1000,
   copper_plate: 1000, // D123: bright copper
+  copper_coil: 1000, // D129: its bright windings
   // Made things, a little duller (D123: steel, pipes, cables; bricks they leave, heavy and dull).
   iron_plate: 600,
   gear: 700,
@@ -35,6 +36,7 @@ export const GLEANER_TASTE: Partial<Record<ItemId, number>> = {
   steel: 500,
   pipe: 600,
   cable: 700,
+  motor: 600, // D129: heavy, but it hums
   // The far tiers' strange goods.
   sporeglass: 900,
   fossil_nacre: 900,

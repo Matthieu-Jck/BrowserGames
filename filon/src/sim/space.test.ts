@@ -140,7 +140,8 @@ describe('space', () => {
   });
 
   it('speed modules are gone (D81): those an old save fitted come back to the Heart as servomotors, and the machine runs at its own pace', () => {
-    const sim = spaceSim(['tr1', 'xp_swift', 'xp_bridges', 'dn3', 'dn4']);
+    const sim = spaceSim(['tr1', 'xp_swift', 'xp_bridges', 'dn3', 'workshop', 'dn4']); // D129: the workshop a Tier 2 node
+    grantCost(sim, 'workshop');
     const k = sim.place('workshop', 516, 504, 0);
     expect(k.ok).toBe(true);
     sim.setRecipe(k.id!, 'circuit');
@@ -183,7 +184,7 @@ describe('space', () => {
 
   it('a dig that research unlocks during an absence starts offline as online', () => {
     const make = (): Sim => {
-      const sim = spaceSim(['tr1', 'tr_synth', 'tr2', 'tr3', 'ex_sifter', 'ex3']); // Tier 2 hangs from the Synthesis (D93)
+      const sim = spaceSim(['tr1', 'tr_synth', 'ex_fastdrill', 'ex_brick', 'tr2', 'tr3', 'ex_sifter', 'ex3']); // Tier 2 hangs from the Synthesis (D93), the Quarry from Extraction (D128)
       sim.grantCredits(10_000_000); // the research's tokens, a flow bought by the minute (D68, D118)
       const lab = sim.place('observatory', 503, 512, 0);
       expect(lab.ok, lab.reason).toBe(true);

@@ -75,7 +75,7 @@ export const TERMINALS: Readonly<Partial<Record<BuildingId, readonly Terminal[]>
   backfiller: [roof(1.6, 0.3, 2.15, 0.22)],
   sand_collector: [roof(1.76, 0.26, 0.9)],
   wire_mill: [roof(0.8, 1.0, 0.55, 0.4)],
-  workshop: [roof(1.72, 0.3, 1.0)], // on the electronics line's control cabinet
+  workshop: [roof(1.7, 0.3, 1.42, 0.22)], // on the electronics works' control cabinet (D129; recipes/buildings.ts `EWK.cab`), clear of its signal tower
   press: [roof(0.3, 1.74, 1.05)],
   great_workshop: [roof(2.72, 1.25, 1.31, 0.3)],
   great_workshop_compact: [roof(1.75, 0.92, 1.18, 0.3)],
@@ -125,6 +125,8 @@ export const TERMINALS: Readonly<Partial<Record<BuildingId, readonly Terminal[]>
   // Quartz (D87): on the face cutter's power house, on the workshop's control cabinet.
   face_cutter: [roof(1.44, 0.44, 1.1, 0.22)],
   quartz_workshop: [roof(1.78, 0.4, 1.2, 0.22)],
+  // D129: on the assembly bench's starter box (recipes/buildings.ts `ABK.starter`), behind its worktop.
+  assembly_bench: [roof(1.73, 0.31, 1.05, 0.25)],
 };
 
 /** The fallback art's terminal (a powered building with none of its own): a mast on its roof hatch. */

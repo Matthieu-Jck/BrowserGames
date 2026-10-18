@@ -14,7 +14,7 @@ import type { Sim } from '@/sim/state';
 import { PurseHistory, purseSummary } from './purse-facts';
 
 /** A minute of a rigged base: the purse changed by `cents` of `kind`, booked as the engine does. */
-function minute(sim: Sim, h: PurseHistory, flows: Array<[kind: 'sales' | 'orders' | 'tokens' | 'rent' | 'grant' | 'spotSell', cents: number, item?: number]>): void {
+function minute(sim: Sim, h: PurseHistory, flows: Array<[kind: 'sales' | 'orders' | 'tokens' | 'rent' | 'grant' | 'spotSell' | 'autoSell', cents: number, item?: number]>): void {
   sim.tick += EPOCH;
   for (const [kind, cents, item] of flows) {
     sim.credits += cents;
@@ -22,6 +22,7 @@ function minute(sim: Sim, h: PurseHistory, flows: Array<[kind: 'sales' | 'orders
     if (kind === 'sales' || kind === 'orders' || kind === 'spotSell') {
       sim.trade.ledger.push({ epoch: sim.absEpoch(), post: 9, item: item ?? 0, kind: kind === 'sales' ? 'export' : kind === 'orders' ? 'import' : 'spotSell', mu: 3000, cents });
     }
+    if (kind === 'autoSell') sim.trade.ledger.push({ epoch: sim.absEpoch(), post: sim.hearthId, item: item ?? 0, kind: 'autoSell', mu: 2000, cents });
     if (kind === 'tokens') { sim.tokenStats.totalUsed += 1600; sim.tokenStats.totalBought += 1200; }
   }
   h.sample(sim);
@@ -81,6 +82,25 @@ describe('the purse\'s figure', () => {
     expect(s.lines.find((l) => l.kind === 'trade')!.perHour).toBe(4000 * 6);
     expect(lineSum(s)).toBe(s.total);
     expect(s.total).toBe(1000 * 60);
+  });
+
+  it('the Core\'s auto-sales (D127) are lines of their own, by item, the most first, in the sum; their journal\'s rest goes to « other trade »', () => {
+    const sim = testSim(), h = new PurseHistory();
+    const plate = itemIdx('iron_plate'), ore = itemIdx('iron_ore');
+    h.sample(sim);
+    for (let m = 1; m <= 20; m++) minute(sim, h, [['sales', 1000, plate], ['autoSell', 300, ore], ['autoSell', m % 2 ? 900 : 0, plate]]);
+    const s = purseSummary(sim, h);
+    const auto = s.lines.filter((l) => l.kind === 'auto');
+    expect(auto.map((l) => l.item)).toEqual([plate, ore]);
+    expect(auto.map((l) => l.perHour)).toEqual([900 * 10 * 3, 300 * 60]);
+    expect(auto[1]!.perMin).toBe(2);
+    expect(auto.every((l) => l.post === undefined)).toBe(true); // not a post's: a section of its own
+    expect(lineSum(s)).toBe(s.total);
+    expect(s.total).toBe((1000 + 300) * 60 + 900 * 30);
+    sim.trade.ledger.splice(0, sim.trade.ledger.findIndex((l) => l.kind === 'autoSell' && l.item === ore) + 1); // the first minute's lines gone
+    const t = purseSummary(sim, h);
+    expect(lineSum(t)).toBe(t.total);
+    expect(t.lines.find((l) => l.kind === 'trade')!.perHour).toBeGreaterThan(0);
   });
 
   it('on the late debug base, over a real hour of play, the headline is the purse\'s change', () => {

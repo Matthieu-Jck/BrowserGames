@@ -22,6 +22,9 @@ export const BAL = {
   // ── machines ─────────────────────────────────────────────────────────────
   inBufCrafts: 2, // input buffers hold this many crafts' worth
   outBufCrafts: 3,
+  // A machine's waste bin (D125): the slag or scrap waiting to go out through its output, whole
+  // items. Full, the machine stops on its next waste craft (Blocked) — the waste must be led away.
+  wasteBufItems: 2,
   drillBufItems: 5,
   // Deposit richness off the cirque template (100 = 1 item/min per tile; mapgen's procedural
   // fields, hidden veins and unique sites — the cirque's own deposits are in content/world.ts).
@@ -74,6 +77,9 @@ export const BAL = {
     funnel: 300, // …‰ more
     min: 60,
     max: 2600,
+    // ── the turbines' room (D132; owner, 2026-10-18: « on ne devrait pas pouvoir placer autant
+    // d'éoliennes aussi proches les unes des autres ») ──
+    spacing: 6, // tiles between two turbines' middles at the least: a turbine stands in its own wind
   },
 
   // ── climate: the cirque desert's air (sim/world/climate.ts) ──────────────
@@ -139,9 +145,11 @@ export const BAL = {
      * the sister claims' scattered parcels (`scatter` ‰ past `minRing`, the same draw as before D110:
      * fewer, never others) where a base fits. Was 420 ‰ and 125 ‰ from ring 3 (D110's first cut).
      * A base has sand to collect when its floor holds `sand` places of 2 × 2 bare sand (a collector's);
-     * its Core leaves its hub's middle when fewer than `pocket` tiles of floor join it there.
+     * its Core leaves its hub's middle when fewer than `pocket` tiles of floor join it there. A square
+     * with a deposit on its floor holds a base `chanceOre` ‰ of the time (D134: a base mines what it
+     * makes), bare ground `chance` ‰.
      */
-    neighbours: { minRing: 4, scatter: 40, block: 3, chance: 120, size: [2, 3] as readonly number[], floor: 450, samples: 5, sand: 12, pocket: 400 },
+    neighbours: { minRing: 4, scatter: 40, block: 3, chance: 30, size: [2, 3] as readonly number[], floor: 450, samples: 5, sand: 12, pocket: 400, chanceOre: 350 },
     farRadius: 320, // tiles: land beyond is cheaper with Far Claims (xp8)
   },
 
@@ -180,6 +188,12 @@ export const BAL = {
   // to the post by ribbon (D126; owner, 2026-10-18: « le tradepost a une taxe de 20 %, mais la vente directe
   // d'objets depuis le cœur 40 %, pour encourager l'acheminement vers le tradepost »).
   coreSellFee: 400,
+  // Auto-sell (cm_autosell, D127; owner, 2026-10-18: « une amélioration de l'arbre permette de faire de
+  // la vente automatique des items qui arrivent en surplus dans le cœur (+10 000) »): what the Core
+  // holds of a switched-on item beyond its threshold is sold at each minute's end, at the bid less
+  // `coreSellFee`. `at`: the threshold an item starts with (whole items, at most the Core's cap);
+  // `min`: the lowest a player may set (the Core keeps a working stock).
+  autoSell: { at: 10_000, min: 100 },
   tradeThroughput: [120, 240, 480], // items/min
   liftDelayMin: [3, 2, 1], // minutes from a purchase to the lift-off, by trade-post level (D113: was 10, 6, 3)
   tradeOrders: 2,           // standing import orders (Standing Orders: +4)
@@ -280,8 +294,10 @@ export const BAL = {
     { unlock: 'start', cost: [['iron_plate', 120], ['glass', 40], ['copper_wire', 40]] },
     // Level 3 closes Tier 1 (D93): the Synthesis, paid in Tier 1's own parts; it mounts the Archive of
     // the expertises. D123: its walls are Tier 1's new materials too — bricks, steel, copper plates
-    // (gears 150 → 100), so the steel mill and the brickworks have the Core to build towards.
-    { unlock: 'tr_synth', cost: [['gear', 100], ['circuit', 60], ['oscillator', 30], ['brick', 120], ['steel', 40], ['copper_plate', 30]] },
+    // (gears 150 → 100), so the steel mill and the brickworks have the Core to build towards. D129:
+    // motors for its 60 circuits (the electronics workshop is Tier 2's now), gears 100 → 60 (each
+    // motor holds one).
+    { unlock: 'tr_synth', cost: [['gear', 60], ['motor', 30], ['oscillator', 30], ['brick', 120], ['steel', 40], ['copper_plate', 30]] },
     // Level 4 closes Tier 2 (D118), in Tier 2's parts and, since D123, the steel, bricks, pipes and
     // cables a base of that size makes in bulk (circuits 200 → 150).
     { unlock: 'tr6', cost: [['circuit', 150], ['thermal_core', 20], ['steel', 150], ['brick', 300], ['pipe', 60], ['cable', 60]] },
@@ -326,12 +342,27 @@ export const BAL = {
      * night. At most `PERIOD_MAX` (2 400): a night group's period folds it in (graph/groups.ts `rotNight`).
      */
     window: 2400,
-    /** How long a raid's group may take (ticks): from the first of them taking up its post to the raid's end. */
-    raid: 600,
-    /** The posts open one after the other, this many ticks apart: they gather, then reach out one by one. */
-    stagger: 70,
-    /** The group: `min` to `max` of them, one more for every `per` exposed tiles past `min` (a shorter exposure, one a tile). Each takes one item a raid. */
+    /**
+     * A raid is called at its slot (D112; owner, 2026-10-18: « il faut qu'ils aillent nécessairement vers
+     * un tapis où il y a des items, et si possible en priorité les items qui valent cher, et ensuite il
+     * faut qu'ils attrapent les items plus rapidement »): on the line's first step within `callBy` ticks
+     * of it, only if something to their taste rides it up to its posts. Then the band crawls in for
+     * `arrive` ticks and takes for at most `take` (twelve seconds): the raid is over `arrive + take` after
+     * its slot, or as soon as each has taken.
+     */
+    callBy: 40,
+    arrive: 100,
+    take: 120,
+    /** The posts open one after the other, this many ticks apart. */
+    stagger: 8,
+    /** The posts laid out on a line: `min` to `max`, one more for every `per` exposed tiles past `min` (a shorter exposure, one a tile). Each takes one item a raid. */
     group: { min: 3, max: 5, per: 8 },
+    /**
+     * How many come when called: `base`, one more for each of `more` (◉, items' reference value) the
+     * most valuable thing to their taste on the line reaches (up to its posts) — the shinier the line,
+     * the bigger the band. 2 for glass or plates, 3 for gears, 4 for circuits, 5 for lenses and up.
+     */
+    band: { base: 2, more: [5, 12, 40] },
     /** A pocket of desert floor this small (tiles), closed by rock, water, buildings or fences, is out of their reach. */
     pocket: 1500,
     /** The sun (‰, `SOLAR`) at or under which they are out: the dark hours. */

@@ -50,7 +50,9 @@ export const machineHero = (ctx: PanelCtx): HTMLElement | null => {
   const r = machineRates(ctx);
   if (!r) return null;
   const { m, cur, per } = r;
-  const eq = equation(cur.ins.map((s) => itemTerm(s.item, num(per(s.mu)))), cur.outs.map((s) => itemTerm(s.item, num(per(s.mu)))), t('insp.unit.perMin'));
+  // Its waste beside its product (D125), at its share of the crafts.
+  const outs = [...cur.outs.map((s) => itemTerm(s.item, num(per(s.mu)))), ...(cur.waste ? [itemTerm(cur.waste.item, num(per(1000 / cur.waste.every)))] : [])];
+  const eq = equation(cur.ins.map((s) => itemTerm(s.item, num(per(s.mu)))), outs, t('insp.unit.perMin'));
   eq.title = t('insp.eq.tip');
   // The craft: fills once per craft (a few seconds), smoothly between ticks; full and tinted while
   // its output is full, empty while it waits for its inputs.
@@ -94,9 +96,17 @@ export const machinePanel: Panel = (ctx) => {
       });
       return el('div.kbuf', { 'data-io': io, 'data-item': ITEM_IDS[s.item] }, [el('span.kbuf-icon', {}, itemMention(s.item, { name: false })), g.root]);
     });
+    // Its waste bin (D125): what waits to go out first, against its room — coral when the next waste would not fit.
+    const bin = (): HTMLElement | null => {
+      const w = rc.waste;
+      if (!w) return null;
+      const g = meter();
+      live(() => g.set(m.wBuf, m.wCap, m.wasteFull() ? 'bad' : m.wBuf > 0 ? 'warn' : 'good', `${fmt(m.wBuf / 1000, 0)}/${fmt(m.wCap / 1000, 0)}`));
+      return el('div.kbuf', { 'data-io': 'waste', 'data-item': ITEM_IDS[w.item], title: t('insp.waste.tip', { n: w.every }) }, [el('span.kbuf-icon', {}, itemMention(w.item, { name: false })), g.root]);
+    };
     out.push(section({ sec: 'buffers', title: t('insp.sec.buffers'), icon: mark('store'), tip: t('insp.io.tip') }, [
       el('small.kbuf-cap', {}, t('insp.inputs')), ...rows(rc.ins, m.inBuf, m.inCap, 'in'),
-      el('small.kbuf-cap', {}, t('insp.outputs')), ...rows(rc.outs, m.outBuf, m.outCap, 'out'),
+      el('small.kbuf-cap', {}, t('insp.outputs')), ...rows(rc.outs, m.outBuf, m.outCap, 'out'), bin(),
     ]));
   }
   return out;

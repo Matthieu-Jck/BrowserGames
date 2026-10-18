@@ -32,6 +32,7 @@ export function claimValue(sim: Sim): { total: number; credits: number; stock: n
   let stock = 0;
   for (let i = 0; i < N_ITEMS; i++) stock += at(sim.stock[i]!, bid[i] ?? 0);
   for (const st of sim.stores.values()) for (let i = 0; i < Math.min(st.length, N_ITEMS); i++) stock += at(st[i]!, bid[i] ?? 0);
+  for (const st of sim.selling.values()) for (let i = 0; i < Math.min(st.length, N_ITEMS); i++) stock += at(st[i]!, bid[i] ?? 0); // a post's entrance (D131)
   // Per building def, times how many stand: the same integer sum as building by building, without
   // walking a 25 k-entity base at every sample (the offline catch-up samples a week of them).
   let plant = 0;

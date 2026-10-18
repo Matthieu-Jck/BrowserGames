@@ -5,7 +5,8 @@
 //   as pips, its effect as a figure (« +15 % » beside what it improves) and « En place », or the
 //   24 h of a réorientation as a bar running down to « En place dans 18 h » —, an empty slot
 //   dashed; beside them, whether Tier 2 is open (two chosen open it);
-// · below, the twelve EXPERTISES by family, two each (production, research): a card each with its
+// · below, the twelve EXPERTISES by theme (D128: the tree's families until then; the theme's header
+//   names, on hover, the categories of the tree it improves), two each (production, research): a card each with its
 //   picture, its rank pips, its effect at the rank it holds (or at rank I, faded, before), its feat
 //   as a meter towards the next rank with the figures (« 8 245 / 10 000 »), and its action —
 //   « Choisir » into a free slot, « Réorienter » (its price, 24 h) once both are taken, which arms
@@ -17,9 +18,9 @@
 import '../styles/expertise.css';
 import { BAL } from '@/content/balance';
 import { EXPERTISES, EXPERTISE_IDS, effectAt, type ExpertiseDef, type ExpertiseId, type FeatKind } from '@/content/expertises';
-import { FAMILIES, FAMILY_IDS } from '@/content/research';
+import { CATEGORIES, CATEGORY_IDS, THEMES, THEME_IDS } from '@/content/research';
 import { itemIdx } from '@/content/registry';
-import type { FamilyId } from '@/content/types';
+import type { ThemeId } from '@/content/types';
 import { el, setAttr, setText } from '@/core/dom';
 import { duration, num } from '@/i18n/format';
 import { locale, t, tr, type MsgKey } from '@/i18n/i18n';
@@ -95,7 +96,7 @@ function effectIcon(atlas: Atlas, d: ExpertiseDef): HTMLElement {
 
 /** What an expertise improves, in words: « Cadence des foreuses », « Recherche Extraction · temps de recherche ». */
 export function effectLabel(d: ExpertiseDef): string {
-  if (d.effect.k === 'research') return `${t('exp.fx.family', { family: FAMILIES[d.family].name[locale()] })} · ${t(`exp.fx.${d.effect.aspect}` as MsgKey)}`;
+  if (d.effect.k === 'research') return `${t('exp.fx.family', { family: THEMES[d.family].name[locale()] })} · ${t(`exp.fx.${d.effect.aspect}` as MsgKey)}`;
   return t(`exp.fx.${d.effect.targets[0]}` as MsgKey);
 }
 
@@ -202,10 +203,10 @@ export class ExpertiseScreen {
       this.banner,
       el('div.ex-slotrow', {}, this.slots.map((s) => s.root)),
     ]);
-    // ── the expertises, by family ──
+    // ── the expertises, by theme ──
     this.cards = [];
     this.count = el('span.ksec-aside');
-    const fams = FAMILY_IDS.map((f) => this.family(f));
+    const fams = THEME_IDS.map((f) => this.family(f));
     const listSec = el('section.ksec.ex-list', { 'data-sec': 'list' }, [
       el('header.ksec-head', { title: t('exp.list.tip') }, [el('span.ksec-icon', {}, mark('level')), el('h4.ksec-title.lettering', {}, t('exp.list')), this.count]),
       el('div.ex-grid', {}, fams),
@@ -230,10 +231,13 @@ export class ExpertiseScreen {
     return { root, icon, name, pips: p, fx, fxIcon, fxLabel, state, gap, replace, sig: '-' }; // '-': never a slot's, so the first refresh writes it
   }
 
-  private family(f: FamilyId): HTMLElement {
+  /** A theme's pair (D128): its header names, on hover, the tree's categories its research expertise lowers. */
+  private family(f: ThemeId): HTMLElement {
     const cards = EXPERTISE_IDS.filter((id) => EXPERTISES[id].family === f).map((id) => this.card(id));
+    const L = locale();
+    const cats = CATEGORY_IDS.filter((c) => CATEGORIES[c].theme === f).map((c) => CATEGORIES[c].name[L]).join(' · ');
     return el('div.ex-fam', { 'data-fam': f }, [
-      el('header.ex-famhead', {}, [el('span.ex-famname.lettering', {}, FAMILIES[f].name[locale()])]),
+      el('header.ex-famhead', { title: t('exp.theme.tip', { theme: THEMES[f].name[L], cats }) }, [el('span.ex-famname.lettering', {}, THEMES[f].name[L])]),
       el('div.ex-fampair', {}, cards.map((c) => c.root)),
     ]);
   }

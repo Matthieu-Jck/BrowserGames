@@ -13,7 +13,8 @@
 // (the HUD's refresh), and `purseSummary` reads the last hour from it (less, until an hour has
 // been seen): every recurring flow's actual cents over those minutes, an hour. The lines break it
 // down — each trade post's sales by item and its standing orders (from the trade ledger, over the
-// same minutes; any cents the ledger no longer holds go to a last « other trade » line), the AI
+// same minutes; any cents the ledger no longer holds go to a last « other trade » line), the Core's
+// auto-sales by item (D127: its `autoSell` lines), the AI
 // tokens bought with their rate and the share research got free (D122: the Core's compute, the
 // servers, the bank), the Compute Plan's fee, the servers' rental, the leases' rent — and they add
 // up to the headline exactly. One-offs (a spot
@@ -53,7 +54,8 @@ export class PurseHistory {
   }
 }
 
-export type FlowKind = 'sale' | 'order' | 'trade' | 'tokens' | 'fee' | 'rental' | 'rent';
+/** `auto`: an item the Core sold of its surplus at the minutes' ends (D127). */
+export type FlowKind = 'sale' | 'order' | 'trade' | 'auto' | 'tokens' | 'fee' | 'rental' | 'rent';
 
 /** One line of the breakdown: centi-◉ an hour (+ in, − out) and what it is about. */
 export interface FlowLine {
@@ -61,11 +63,11 @@ export interface FlowLine {
   readonly perHour: number;
   /** The trade post (a sale, an order). */
   readonly post?: number;
-  /** The item sold or ordered. */
+  /** The item sold, ordered or auto-sold. */
   readonly item?: number;
   /** The standing order (0: gone since). */
   readonly order?: number;
-  /** Items a minute (a sale, an order), tokens a minute (tokens). */
+  /** Items a minute (a sale, an order, an auto-sale), tokens a minute (tokens). */
   readonly perMin?: number;
   /** A standing order's cost a minute at today's price, if it buys its full rate (centi-◉). */
   readonly liveCost?: number;
@@ -107,11 +109,12 @@ export function purseSummary(sim: Sim, h: PurseHistory): PurseSummary {
   // Trade, from the ledger over the same minutes: each post's sales by item, each standing order.
   const sales = new Map<string, { post: number; item: number; cents: number; mu: number }>();
   const buys = new Map<string, { post: number; item: number; cents: number; mu: number }>();
+  const autos = new Map<string, { post: number; item: number; cents: number; mu: number }>();
   for (let i = sim.trade.ledger.length - 1; i >= 0; i--) {
     const l = sim.trade.ledger[i]!;
     if (l.epoch <= from.epoch) break;
-    if (l.epoch > now.epoch || (l.kind !== 'export' && l.kind !== 'import')) continue;
-    const m = l.kind === 'export' ? sales : buys, key = `${l.post}:${l.item}`;
+    if (l.epoch > now.epoch || (l.kind !== 'export' && l.kind !== 'import' && l.kind !== 'autoSell')) continue;
+    const m = l.kind === 'export' ? sales : l.kind === 'autoSell' ? autos : buys, key = `${l.post}:${l.item}`;
     const v = m.get(key) ?? { post: l.post, item: l.item, cents: 0, mu: 0 };
     v.cents += l.cents; v.mu += l.mu;
     m.set(key, v);
@@ -129,8 +132,13 @@ export function purseSummary(sim: Sim, h: PurseHistory): PurseSummary {
     lines.push({ kind: 'order', perHour: hourly(v.cents), post: v.post, item: v.item, order: o?.id ?? 0, perMin: v.mu / 1000 / minutes, liveCost: live });
     traded += v.cents;
   }
+  // The Core's surplus sold at the minutes' ends (D127), by item, the most first.
+  for (const v of [...autos.values()].sort((a, b) => b.cents - a.cents || a.item - b.item)) {
+    lines.push({ kind: 'auto', perHour: hourly(v.cents), item: v.item, perMin: v.mu / 1000 / minutes });
+    traded += v.cents;
+  }
   // What the journal booked for trade but the ledger no longer holds (it keeps its last lines only).
-  const rest = d('sales') + d('orders') - traded;
+  const rest = d('sales') + d('orders') + d('autoSell') - traded;
   if (rest) lines.push({ kind: 'trade', perHour: hourly(rest) });
   // The token flow bought for research (D118): its tokens a minute, and the share of all research's
   // tokens that came free meanwhile — the Core's compute, the servers, the bank (D122; its chip).

@@ -40,3 +40,23 @@ export const COSTS_BEFORE_D123: Readonly<Partial<Record<BuildingId, ReadonlyArra
   scriptorium: [['iron_plate', 40], ['circuit', 10], ['gear', 10]],
   giant_drill: [['thermal_core', 8], ['gear', 30], ['ceramic', 40]],
 };
+
+/**
+ * The costs D129 changed (owner, 2026-10-18: the electronics workshop moved to Tier 2 and built like
+ * an electronics works, the early buildings' circuits turned into Tier 1's coils and motors), as they
+ * were between D123 and D129. A building standing from before D129 (its entity id under the colony's
+ * `costFloorD129`) refunds these; one from before D123 whose price D123 changed too refunds the older
+ * table above (sim/refund.ts reads them oldest first).
+ */
+export const COSTS_BEFORE_D129: Readonly<Partial<Record<BuildingId, ReadonlyArray<readonly [string, number]>>>> = {
+  workshop: [['iron_plate', 20], ['glass', 4], ['copper_wire', 6]],
+  excavator: [['steel', 12], ['iron_plate', 10], ['gear', 10], ['circuit', 4]],
+  fast_drill: [['iron_plate', 20], ['gear', 6], ['circuit', 2]],
+  pitch_turbine: [['iron_plate', 15], ['glass', 6], ['copper_wire', 8], ['gear', 4]],
+  electric_smelter: [['iron_plate', 15], ['copper_plate', 10], ['brick', 10], ['glass', 4]],
+  wire_mill_double: [['steel', 6], ['copper_plate', 6], ['glass', 4]],
+  great_workshop: [['steel', 20], ['brick', 20], ['gear', 10], ['circuit', 10]],
+  accumulator: [['ceramic', 10], ['empty_cell', 4], ['circuit', 4], ['cable', 4]],
+  heavy_accumulator: [['ceramic', 20], ['empty_cell', 10], ['circuit', 8], ['cable', 10]],
+  cell_charger: [['ceramic', 10], ['circuit', 6], ['copper_plate', 8]],
+};

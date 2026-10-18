@@ -1,6 +1,7 @@
 /* research.css — the research half of the tech tree (D68–D70; ui/screens/research.ts, which
-   imports it): the research lab's gate between the two blocks (D71), the tier bands and their heads, the trunk and the family lanes (their names per
-   tier, the specialities' divider), the links (their kinds; a hovered node's chain lit, the rest
+   imports it): the research lab's gate between the two blocks (D71), the tier bands and their heads, each
+   tier's categories (D128: a block each in its theme's colour, its header — name, count, the pills of
+   its gates —, the gates' dashed lines across the gutters), the links (their kinds; a hovered node's chain lit, the rest
    faded, D107), the research nodes (what they unlock, their resources and tokens — D122 —, the
    queue's tag), the header's research strip (slots, labs, the token bill, the purse-in-the-red
    warning, the Compute Plan, the queue), the detail pane's research parts (the running project's
@@ -9,8 +10,7 @@
    below it, and a strong ink rule parts Tier 1 from Tier 2. The plans' half and the shared tree
    rules stay in screens.css. */
 
-/* Research lanes' colours (--path): the trunk a plum ink, each family its own. */
-[data-lane='trunk'] { --path: #6a5a86; }
+/* The research themes' colours (--path, D128: the families' until then): each category takes its theme's. */
 [data-lane='en'] { --path: #d9a21c; }
 [data-lane='ex'] { --path: #a8604a; }
 [data-lane='dn'] { --path: var(--c-lilac-d); }
@@ -128,26 +128,51 @@
 .tr-tierrule[data-locked] .tr-rulecap .tr-mark { display: block; }
 .tr-canvas[data-zoom] .tr-rulecap { display: none; }
 
-/* ── lanes: the trunk and the families ── */
-.tree .tr-lane[data-kind='research'] { gap: 2px; }
-.tree .tr-lane[data-kind='research'] .tr-lanename { font-size: 19px; }
-.tr-lane[data-kind='research'] .tr-paththeme { font-size: 10.5px; }
-/* A family's name over each tier column (its speciality's from Tier 3), on the band's edge. */
-.tr-ttag {
-  position: absolute; z-index: 2; transform: translateY(-50%); pointer-events: none; white-space: nowrap;
-  padding: 0 8px; border-radius: 999px; font: 700 11px/15px var(--f-body); color: var(--c-ink);
-  background: color-mix(in srgb, var(--path) 20%, var(--c-paper));
-  border: 1.5px solid color-mix(in srgb, var(--path) 60%, transparent);
+/* ── the categories (D128): a block each, in its theme's colour, its header on top ── */
+.tr-cat {
+  position: absolute; border: 1.5px solid color-mix(in srgb, var(--path) 42%, transparent); border-radius: 12px;
+  background: color-mix(in srgb, var(--path) 7%, rgba(255, 252, 246, 0.5));
 }
-.tr-ttag[data-spec] { pointer-events: auto; cursor: help; border-style: dashed; font-style: italic; }
-.tr-ttag[data-spec]::before { content: '⑂ '; font-style: normal; color: color-mix(in srgb, var(--path) 85%, var(--c-ink)); }
-/* The divider between a family's two specialities. */
-.tr-split { position: absolute; height: 0; border-top: 2px dashed color-mix(in srgb, var(--path) 45%, transparent); }
+/* A gate not finished: the block hatched, its edge dashed — what it holds waits. */
+.tr-cat[data-locked] {
+  border-style: dashed;
+  background-image: repeating-linear-gradient(135deg, rgba(30, 27, 46, 0.05) 0 2px, transparent 2px 10px);
+}
+.tr-cathead {
+  position: absolute; z-index: 2; display: flex; flex-direction: column; gap: 2px; padding: 3px 10px 0;
+  pointer-events: none; box-sizing: border-box;
+}
+.tr-catline { display: flex; align-items: baseline; gap: 8px; min-width: 0; white-space: nowrap; }
+.tr-catname {
+  font-size: 18px; line-height: 21px; padding: 0 6px; border-radius: 6px; cursor: help; pointer-events: auto;
+  color: color-mix(in srgb, var(--path) 55%, var(--c-ink)); background: color-mix(in srgb, var(--path) 10%, var(--c-paper));
+}
+.tr-catcount { font: 700 11.5px/1 var(--f-body); color: var(--c-ink-soft); font-variant-numeric: tabular-nums; }
+.tr-cathead[data-full] .tr-catcount { color: var(--c-turq-d); }
+.tr-cathead[data-full] .tr-catcount::after { content: ' ✓'; }
+.tr-cathead[data-on] .tr-catname { text-decoration: underline 3px var(--c-turq); text-underline-offset: 3px; }
+/* Its gates: « après » and a pill each — padlocked, coral, with how far the gate is; ✓ once finished. */
+.tr-catgates { display: flex; align-items: center; gap: 5px; min-width: 0; white-space: nowrap; overflow: hidden; }
+.tr-catopens { font-size: 11px; color: var(--c-ink-soft); }
+.tr-catgate {
+  display: inline-flex; align-items: center; gap: 3px; height: 18px; padding: 0 7px 0 4px; cursor: pointer; pointer-events: auto;
+  font: 600 11.5px/16px var(--f-body); color: var(--c-coral-d);
+  border: 1.5px dashed var(--c-coral-d); border-radius: 999px; background: var(--c-paper);
+}
+.tr-catgate .tr-mark { width: 13px; height: 13px; }
+.tr-catgate small { font-weight: 700; color: var(--c-ink-soft); font-variant-numeric: tabular-nums; }
+.tr-catgate:hover { background: var(--c-peach-l); }
+.tr-catgate[data-met] {
+  color: var(--c-ink); border-style: solid; border-color: color-mix(in srgb, var(--path) 70%, var(--c-ink));
+  background: color-mix(in srgb, var(--path) 14%, var(--c-paper));
+}
+.tr-catgate[data-met] .tr-mark { display: none; }
+.tr-catgate[data-met] .tr-gatecheck { display: inline; }
+/* The gates across the gutters: dashed in coral while the gate is not finished, inked once it is. */
+.tree .tr-gatelink { fill: none; stroke: var(--c-coral-d); stroke-width: 1.6; stroke-dasharray: 5 5; opacity: 0.75; }
+.tree .tr-gatelink[data-state='done'] { stroke: var(--c-ink-soft); stroke-dasharray: none; opacity: 0.55; }
 
-/* Links: a trunk gate shows only while its node is hovered or selected (the tier heads say what opens a tier). */
-.tree .tr-link[data-gate] { display: none; }
-.tree .tr-link[data-gate][data-hot], .tree .tr-link[data-gate][data-chain] { display: inline; stroke: var(--c-lilac-d); stroke-width: 1.8; opacity: 0.7; stroke-dasharray: 3 6; }
-/* From another lane (the Synthesis's bus, the Compute Plan's Server Room…): the same states, a finer line. */
+/* Links from another category of the tier (the Steelworks' press and bricks, the Compute Plan's Server Room…): a finer line. */
 .tree .tr-link[data-kind='cross'] { stroke-width: 1.6; }
 
 /* A node's chain (D107): the node the player selected — what it needs and what needs it stay, the
@@ -163,7 +188,9 @@
 .tr-canvas[data-chain] .tr-link[data-chain][data-state='locked'] { stroke: var(--c-coral-d); stroke-dasharray: 4 5; }
 .tr-canvas[data-chain] .tr-link[data-chain][data-state='open'] { stroke-dasharray: 8 4; }
 .tr-canvas[data-chain] .tr-node[data-chain='self'] { box-shadow: 3px 3px 0 var(--c-ink), 0 0 0 4px color-mix(in srgb, var(--c-turq) 55%, transparent); }
-.tr-canvas[data-chain] .tr-ttag, .tr-canvas[data-chain] .tr-band { opacity: 0.55; }
+.tr-canvas[data-chain] .tr-band, .tr-canvas[data-chain] .tr-cat:not([data-chain]), .tr-canvas[data-chain] .tr-cathead:not([data-chain]) { opacity: 0.45; }
+.tr-canvas[data-chain] .tr-gatelink:not([data-chain]) { opacity: 0.1; }
+.tr-canvas[data-chain] .tr-gatelink[data-chain] { opacity: 1; stroke-width: 2.6; }
 
 /* ── research nodes: a lilac pill, its spine in its lane's colour ── */
 .tree .tr-node[data-kind='research'] { background: #f4effb; border-radius: 18px; padding: 3px 9px 3px 13px; gap: 7px; }
@@ -184,8 +211,6 @@
 .tr-rcost { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; font-size: 11.5px; line-height: 16px; white-space: nowrap; }
 .tr-rcost .tr-chip { gap: 1px; }
 .tr-rcost .tr-chip canvas, .tr-rcost .tr-mark { width: 13px; height: 13px; }
-.tr-oc { color: var(--c-ink-soft); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; }
-.tr-oc .coin { width: 1em; height: 1em; }
 /* Its resources on one line, its tokens and their price on the next, at every tier (D122; D118: no time). */
 .tr-rline { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 11.5px; line-height: 16px; white-space: nowrap; }
 .tr-rline .tr-mark { width: 13px; height: 13px; }
@@ -277,11 +302,11 @@
 .rs-feat > span { display: flex; flex-direction: column; gap: 1px; }
 .rs-feat small { color: var(--c-ink-soft); font-size: 12px; line-height: 1.3; }
 .rs-costhead { display: flex; align-items: center; gap: 8px; }
-.rs-rcosts li { flex-wrap: wrap; }
-.rs-rcosts b { min-width: 3.4em; white-space: nowrap; }
-.rs-rcosts .tr-mark { width: 18px; height: 18px; }
-.rs-cl { display: inline-flex; align-items: center; gap: 5px; }
-.rs-rcosts .rs-price { flex-basis: 100%; padding-left: calc(3.4em + 6px); color: var(--c-ink); font-weight: 600; margin: -2px 0 2px; }
+/* Its AI tokens, under its resources: the token mark, how many, « tokens d'IA » (D128: no price in ◉). */
+.rs-tokline { display: flex; align-items: center; gap: 5px; margin-top: 6px; font-size: 15px; cursor: help; }
+.rs-tokline .tr-mark { width: 18px; height: 18px; }
+.rs-tokline b { font-variant-numeric: tabular-nums; }
+.rs-tokline small { color: var(--c-ink-soft); font-size: 12.5px; }
 /* A running project: its tokens in, a bar (D118: no time; D122: no data). */
 .rs-prog { margin-top: 4px; }
 .rs-prow { display: grid; grid-template-columns: 118px 1fr auto; align-items: center; gap: 6px; font-size: 12.5px; margin: 3px 0; }
@@ -354,8 +379,16 @@
 .tr-pin[hidden] { display: none; }
 /* At the whole tree's size the lanes are thin: smaller lane names, so neighbours both fit. */
 .tr-pins[data-on='far'] .tr-pin[data-kind='lane'] { padding: 0 7px; font-size: 11px; line-height: 15px; }
+/* A category's pin (D128): its name in its theme's colour, padlocked while a gate is unfinished. */
+.tr-pin[data-kind='cat'] {
+  display: inline-flex; align-items: center; gap: 3px; padding: 0 7px; font: 700 12px/17px var(--f-body); border-radius: 7px;
+  border-color: color-mix(in srgb, var(--path) 60%, var(--c-ink)); background: color-mix(in srgb, var(--path) 16%, var(--c-paper));
+}
+.tr-pin[data-kind='cat'] .tr-mark { display: none; width: 12px; height: 12px; }
+.tr-pin[data-kind='cat'][data-locked] .tr-mark { display: inline-block; }
+.tr-pins[data-on='far'] .tr-pin[data-kind='cat'] { font-size: 10.5px; line-height: 14px; padding: 0 5px; }
 /* Zoomed out: what the pins say is not drawn small on the canvas too. */
-.tr-canvas[data-zoom] .tr-lane > *, .tr-canvas[data-zoom] .tr-tierhead > *, .tr-canvas[data-zoom] .tr-ttag,
+.tr-canvas[data-zoom] .tr-lane > *, .tr-canvas[data-zoom] .tr-tierhead > *, .tr-canvas[data-zoom] .tr-cathead,
 .tr-canvas[data-zoom] .tr-blockhead, .tr-canvas[data-zoom] .tr-gatecap { visibility: hidden; }
 /* Mid: a card is its icon and its name, larger, on two lines; far: its icon alone (`zoomLevel`). */
 .tr-canvas[data-zoom] .tr-main > :not(.tr-name), .tr-canvas[data-zoom] .tr-unlock, .tr-canvas[data-zoom] .tr-qtag { display: none; }
@@ -375,7 +408,8 @@
 .tr-canvas[data-zoom] .tr-link { stroke-width: calc(1.7px / var(--tz)); }
 .tr-canvas[data-zoom] .tr-link[data-state='open'] { stroke-dasharray: calc(7px / var(--tz)) calc(5px / var(--tz)); }
 .tr-canvas[data-zoom] .tr-link[data-state='locked'] { stroke-dasharray: calc(2px / var(--tz)) calc(6px / var(--tz)); }
-.tr-canvas[data-zoom] .tr-link[data-gate] { stroke-dasharray: calc(3px / var(--tz)) calc(6px / var(--tz)); }
+.tr-canvas[data-zoom] .tr-gatelink { stroke-width: calc(1.6px / var(--tz)); stroke-dasharray: calc(5px / var(--tz)) calc(5px / var(--tz)); }
+.tr-canvas[data-zoom] .tr-gatelink[data-state='done'] { stroke-dasharray: none; }
 .tr-canvas[data-zoom] .tr-link[data-hot], .tr-canvas[data-zoom][data-chain] .tr-link[data-chain] { stroke-width: calc(3px / var(--tz)); }
 
 /* ── the launch dialog (D118, ../launch-dialog.ts): over the tree, how many tokens a minute to buy ── */
@@ -405,16 +439,38 @@
 .ld-name { margin: 1px 0 1px; font-size: 25px; font-weight: 400; line-height: 1.05; }
 .ld-kind { font-size: 12px; color: var(--c-ink-soft); }
 .ld-sec { display: flex; flex-direction: column; gap: 5px; padding-top: 9px; border-top: 1.5px dashed rgba(30, 27, 46, 0.25); }
-.ld-row { display: flex; align-items: center; gap: 7px; font-size: 13px; cursor: help; }
-.ld-row > b { font-size: 17px; font-variant-numeric: tabular-nums; }
-.ld-row small { color: var(--c-ink-soft); }
-.ld-row .kmark { width: 22px; height: 22px; }
-.ld-row canvas { width: 22px; height: 22px; display: block; flex: none; }
-.ld-row[data-none] { opacity: 0.55; }
-.ld-mine { margin-left: auto; padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--c-turq-l) 55%, var(--c-paper)); color: var(--c-ink) !important; font-weight: 600; white-space: nowrap; }
-.ld-mine[data-short] { background: color-mix(in srgb, var(--c-coral) 22%, var(--c-paper)); color: var(--c-coral-d) !important; }
-.ld-note { font-size: 12px; line-height: 1.3; color: var(--c-ink-soft); padding-left: 29px; }
-.ld-note[hidden] { display: none; }
+/* The tokens it needs (D128), big; then where they will come from: a stacked bar — the reserve, the
+   free compute, the flow bought, what none reaches (hatched) —, each part's icon and figure under it,
+   and one plain sentence. */
+.ld-need { display: flex; align-items: center; gap: 8px; cursor: help; }
+.ld-need .kmark, .ld-need .tr-mark { width: 26px; height: 26px; }
+.ld-need > b { font: 400 26px/1 var(--f-title); font-variant-numeric: tabular-nums; }
+.ld-need small { color: var(--c-ink-soft); font-size: 13px; }
+.ld-bar {
+  display: flex; height: 14px; overflow: hidden; border: 1.5px solid var(--c-ink); border-radius: 999px;
+  background: repeating-linear-gradient(135deg, rgba(30, 27, 46, 0.08) 0 2px, transparent 2px 7px), var(--c-paper);
+}
+.ld-seg { height: 100%; transition: width 0.15s ease; }
+.ld-seg + .ld-seg:not([hidden]) { border-left: 1.5px solid var(--c-ink); }
+.ld-seg[hidden] { display: none; }
+.ld-seg[data-k='bank'], .ld-src[data-k='bank'] { --src: var(--c-lilac-l); }
+.ld-seg[data-k='free'], .ld-src[data-k='free'] { --src: var(--c-turq-l); }
+.ld-seg[data-k='bought'], .ld-src[data-k='bought'] { --src: var(--c-peach-l); }
+.ld-seg { background: var(--src); }
+.ld-seg[data-k='short'] { background: repeating-linear-gradient(135deg, var(--c-coral) 0 3px, transparent 3px 7px); }
+.ld-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.ld-src { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: help; font-size: 12px; }
+.ld-src::before { content: ''; width: 10px; height: 10px; border-radius: 3px; border: 1.2px solid var(--c-ink); background: var(--src, transparent); }
+.ld-src[data-k='short']::before { background: repeating-linear-gradient(135deg, var(--c-coral) 0 2px, transparent 2px 4px); }
+.ld-src[hidden] { display: none; }
+.ld-src > b { font-size: 14px; font-variant-numeric: tabular-nums; }
+.ld-src small { color: var(--c-ink-soft); }
+.ld-src canvas, .ld-src .glyph { width: 18px; height: 18px; display: block; flex: none; }
+.ld-src .kmark, .ld-src .tr-mark { width: 16px; height: 16px; }
+.ld-src[data-k='short'] b, .ld-src[data-k='short'] small { color: var(--c-coral-d); }
+.ld-hatch { display: none; }
+.ld-say { font-size: 12.5px; line-height: 1.3; color: var(--c-ink); }
+.ld-say[hidden] { display: none; }
 .ld-buyhead { display: flex; align-items: center; gap: 6px; font: 600 13px var(--f-body); cursor: help; }
 .ld-buyhead .glyph { width: 18px; height: 18px; }
 .ld-slide { display: flex; align-items: center; gap: 6px; }
@@ -437,17 +493,15 @@
 .ld-eta { font: 400 22px/1.1 var(--f-title); cursor: help; }
 .ld-eta[data-never] { color: var(--c-coral-d); }
 /* The resources it takes from the Core at launch (D122): icon, how many, what the Core holds — coral when short. */
-.ld-res { display: flex; flex-wrap: wrap; gap: 6px 14px; padding-left: 26px; }
+.ld-res { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 2px; }
+.ld-res[hidden] { display: none; }
 .ld-reschip { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: help; }
 .ld-reschip canvas { width: 22px; height: 22px; display: block; }
 .ld-reschip b { font-size: 16px; font-variant-numeric: tabular-nums; }
-.ld-have { font-size: 11.5px; color: var(--c-ink-soft); }
+.ld-have { margin-left: 1px; font-size: 11.5px; font-weight: 600; color: var(--c-ink-soft); }
 .ld-reschip[data-poor] b, .ld-reschip[data-poor] .ld-have { color: var(--c-coral-d); font-weight: 700; }
 .ld-buyhead canvas { width: 20px; height: 20px; display: block; }
 /* The free flows (D122): the Core's compute under its look, the servers' beside it. */
-.ld-chip { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-.ld-chip > b { font-size: 15px; font-variant-numeric: tabular-nums; }
-.ld-chip[data-none] { opacity: 0.5; }
 .ld-coreicon { display: inline-flex; }
 .ld-bad { color: var(--c-coral-d); font-weight: 600; }
 .ld-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 2px; }

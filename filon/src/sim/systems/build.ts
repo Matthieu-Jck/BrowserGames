@@ -40,7 +40,9 @@ export type PlaceReason =
   /** A chasm or a river under the footprint (D94): nothing stands there nor fills it; a skybridge pair leaps it (a ribbon drag plans one). */
   | 'chasm' | 'river'
   /** A skybridge's span would cross a tall building, or a tall building would stand under a bridge's span: the bridge is low, so in the isometric view it cuts through it (D124). */
-  | 'bridge_over_tall';
+  | 'bridge_over_tall'
+  /** A wind turbine closer to another than `BAL.wind.spacing` tiles, middle to middle: each stands in its own wind (D132). */
+  | 'wind_spacing';
 
 export type Cost = Array<{ item: number; mu: number }>;
 
@@ -93,7 +95,7 @@ function refundOf(sim: Sim, ids: readonly number[], item: number): number {
   let mu = 0;
   for (const id of ids) {
     const o = sim.ents.get(id);
-    if (o) for (const c of refundCost(sim.costFloor, o)) if (c.item === item) mu += c.mu;
+    if (o) for (const c of refundCost(sim, o)) if (c.item === item) mu += c.mu;
   }
   return mu;
 }
@@ -191,6 +193,7 @@ export function canPlace(sim: Sim, defId: string, x: number, y: number, rot: Rot
   if (step) return fail(step);
   if (b.lift && liftCrowded(sim, def, x, y, rot)) return fail('lift_room');
   if (b.kind === 'crossing' && junctionNear(sim, x, y)) return fail('junction_chain');
+  if (b.kind === 'wind' && windNear(sim, x, y, w, h, replaces)) return fail('wind_spacing');
   if (bridgeOverTall(sim, def, x, y, rot, w, h)) return fail('bridge_over_tall');
   replaces.sort((a, c) => a - c);
   // What it replaces is refunded before the new building is paid: it counts towards the cost.
@@ -331,6 +334,31 @@ function bridgeOverTall(sim: Sim, def: number, x: number, y: number, rot: Rot, w
  * côté du pont »): a ribbon runs between two of them, or a bridge leaps both lines. Old chains
  * laid before the rule stay as they are.
  */
+/**
+ * Does another wind turbine stand closer than `BAL.wind.spacing` tiles, middle to middle, to a
+ * turbine's footprint at (x, y) (D132; owner, 2026-10-18: « on ne devrait pas pouvoir placer autant
+ * d'éoliennes aussi proches les unes des autres »)? Those it replaces (a pitch-control turbine laid
+ * over a wind turbine) do not count. Read off the occupancy round it (no scan of every building);
+ * doubled coordinates keep the middles of even footprints whole.
+ */
+function windNear(sim: Sim, x: number, y: number, w: number, h: number, replaces: readonly number[]): boolean {
+  const S = BAL.wind.spacing, cx = 2 * x + w, cy = 2 * y + h;
+  const seen = new Set<number>();
+  for (let ty = y - S; ty < y + h + S; ty++) {
+    for (let tx = x - S; tx < x + w + S; tx++) {
+      if (!inWorld(tx, ty)) continue;
+      const id = sim.grid.occ[tileIndex(tx, ty)]!;
+      if (!id || seen.has(id) || replaces.includes(id)) continue;
+      seen.add(id);
+      const o = sim.ents.get(id);
+      if (!o || buildingDef(o.def).kind !== 'wind') continue;
+      const [ow, oh] = footprint(o.def, o.rot), dx = 2 * o.x + ow - cx, dy = 2 * o.y + oh - cy;
+      if (dx * dx + dy * dy < 4 * S * S) return true;
+    }
+  }
+  return false;
+}
+
 function junctionNear(sim: Sim, x: number, y: number): boolean {
   for (let d = 0; d < 4; d++) {
     const nx = x + DX[d]!, ny = y + DY[d]!;
@@ -548,9 +576,12 @@ export function removeEntity(sim: Sim, id: number, silent: boolean): void {
   if (node) refundNode(node, (item, mu) => sim.refund(item, mu));
   const st = sim.stores.get(id);
   if (st) { for (let i = 0; i < N_ITEMS; i++) if (st[i]! > 0) sim.refund(i, st[i]!); sim.stores.delete(id); }
+  // A trade post's entrance, what it brought to sell (D131): to the Heart too.
+  const sell = sim.selling.get(id);
+  if (sell) { for (let i = 0; i < N_ITEMS; i++) if (sell[i]! > 0) sim.refund(i, sell[i]!); sim.selling.delete(id); }
   sim.accEnergy.delete(id);
   // Full refund of the construction cost: what it was paid (its price before D123 if it stood then).
-  for (const c of refundCost(sim.costFloor, e)) sim.refund(c.item, c.mu);
+  for (const c of refundCost(sim, e)) sim.refund(c.item, c.mu);
   vacate(sim, e);
   sim.ents.remove(id);
   sim.dirty = true;

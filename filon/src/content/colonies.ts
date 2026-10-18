@@ -34,12 +34,12 @@ export const COLONY_PROFILES = {
   mining: {
     name: { fr: 'Camp minier', en: 'Mining Camp' }, count: 7, bands: ['near'], growth: 0.01,
     supplies: [['iron_ore', 3], ['copper_ore', 3], ['stone', 3], ['quartz', 1], ['brick', 1]], // quartz (D87): what a land without its vein buys (Survey Data went with the data, D122)
-    needs: [['coal', 3], ['circuit', 3], ['charged_cell', 3], ['steel', 3], ['gear', 1], ['pipe', 1], ['thermal_core', 1], ['robot_arm', 1]], // D123: steel for rails and props, pipes for the shafts' pumps
+    needs: [['coal', 3], ['circuit', 3], ['charged_cell', 3], ['steel', 3], ['gear', 1], ['pipe', 1], ['thermal_core', 1], ['robot_arm', 1], ['slag', 1], ['motor', 1]], // D123: steel for rails and props, pipes for the shafts' pumps; D125: slag to backfill the old shafts; D129: motors for the winches
     uniques: [],
   },
   foundry: {
     name: { fr: 'Fonderie', en: 'Foundry' }, count: 6, bands: ['near', 'medium'], growth: 0.015,
-    supplies: [['iron_plate', 3], ['gear', 3], ['glass', 1], ['copper_wire', 1], ['oscillator', 1], ['copper_plate', 1], ['steel', 1], ['pipe', 1], ['cable', 1]], // D123: a foundry sells a little of everything metal
+    supplies: [['iron_plate', 3], ['gear', 3], ['glass', 1], ['copper_wire', 1], ['oscillator', 1], ['copper_plate', 1], ['steel', 1], ['pipe', 1], ['cable', 1], ['slag', 1], ['scrap', 1], ['copper_coil', 1], ['motor', 1]], // D123: a foundry sells a little of everything metal; D125: and its slag and offcuts, cheap; D129: coils and motors
     needs: [['iron_ore', 3], ['sand', 3], ['copper_ore', 3], ['coal', 3], ['ceramic', 3], ['brick', 1], ['embersalt', 1], ['pace_bell', 1]],
     uniques: [],
   },
@@ -52,20 +52,20 @@ export const COLONY_PROFILES = {
   wind: {
     name: { fr: 'Citadelle du vent', en: 'Wind Citadel' }, count: 5, bands: ['medium'], growth: 0.015,
     supplies: [['charged_cell', 3], ['empty_cell', 3]],
-    needs: [['circuit', 3], ['ceramic', 3], ['salt', 3], ['cable', 3], ['copper_plate', 3], ['copper_wire', 1], ['resin_canvas', 1], ['thermal_core', 1], ['singing_quartz', 1], ['resonator', 1], ['oscillator', 1]], // D123: their turbines' cable and windings
+    needs: [['circuit', 3], ['ceramic', 3], ['salt', 3], ['cable', 3], ['copper_plate', 3], ['copper_wire', 1], ['resin_canvas', 1], ['thermal_core', 1], ['singing_quartz', 1], ['resonator', 1], ['oscillator', 1], ['copper_coil', 3]], // D123: their turbines' cable and windings; D129: the windings' coils
     uniques: ['sky_resin'],
   },
   saltport: {
     name: { fr: 'Port du sel', en: 'Salt Port' }, count: 5, bands: ['medium', 'far'], growth: 0.01,
     supplies: [['salt', 3], ['nacre_lattice', 1]],
     // Lighthouse bulbs: why Port-Écume can run short of glass (the scripted first trade).
-    needs: [['stone', 3], ['iron_plate', 3], ['gear', 3], ['brick', 3], ['glass', 1], ['steel', 1], ['sky_resin', 1], ['resin_canvas', 1]], // D123: harbour walls in brick
+    needs: [['stone', 3], ['iron_plate', 3], ['gear', 3], ['brick', 3], ['glass', 1], ['steel', 1], ['sky_resin', 1], ['resin_canvas', 1], ['slag', 1]], // D123: harbour walls in brick; D125: slag for the breakwaters' fill
     uniques: ['fossil_nacre'],
   },
   ember: {
     name: { fr: 'Forge de braise', en: 'Ember Forge' }, count: 5, bands: ['far'], growth: 0.02,
     supplies: [['thermal_core', 3], ['steel', 3], ['ceramic', 1], ['pipe', 1], ['pace_bell', 1], ['robot_arm', 1]], // D123: the Ember Forges' steel
-    needs: [['circuit', 3], ['glass', 3], ['oscillator', 1], ['fossil_nacre', 1]], // oscillators where Mechanics Data was (D122)
+    needs: [['circuit', 3], ['glass', 3], ['oscillator', 1], ['fossil_nacre', 1], ['scrap', 1]], // oscillators where Mechanics Data was (D122); D125: scrap for their remelt
     uniques: ['embersalt'],
   },
   scholar: {

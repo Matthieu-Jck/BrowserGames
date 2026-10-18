@@ -57,8 +57,14 @@ import { neighboursGiveWay } from './systems/land';
  * resources; the Data Relay node forgotten; the data makers' fractions (`dataAcc`) dropped; the data
  * items a save holds anywhere turned into banked tokens by the remap (`tokens.bank`); a project
  * carries its lab's power over the minute (`lit`, optional).
+ * 20: the tree in categories (D128): the quartz workshop is its own research node (`dn_quartzshop`),
+ * which a claim holding the Face Cutter's plan (it came with it) holds too.
+ * 21: the electronics workshop a Tier 2 research node of its plan's id, the assembly bench a plan of
+ * the Production path (D129): a claim holding the research lab's plan holds the bench's too; the
+ * workshop's plan, held, is the node now; a second price floor (`costFloorD129`, optional) for the
+ * buildings whose price D129 changed.
  */
-export const SAVE_VERSION = 19;
+export const SAVE_VERSION = 21;
 
 export interface SaveData {
   v: number;
@@ -80,6 +86,8 @@ export interface SaveData {
    * from before D123, every entity of which paid the old prices — its floor is its `nextId`.
    */
   costFloor?: number;
+  /** The same for D129's prices (content/past-costs.ts `COSTS_BEFORE_D129`). Absent: a save from before D129 — its `nextId`. */
+  costFloorD129?: number;
   /** The content table the indices below refer to (D47; absent: written by this very content). */
   content?: ContentTable;
   /** Packed: id, def, x, y, rot, cfg, builtAt per entity. */
@@ -87,6 +95,12 @@ export interface SaveData {
   portItems: Array<[number, number[]]>;
   stock: number[];
   stores: Array<[number, number[]]>;
+  /**
+   * Each trade post's entrance, what it brought to sell (D131), by post; its container stays in
+   * `stores`. Absent (a save from before): a post's store is split at load — its cargo's items stay
+   * in the container, the rest is what its entrance brought, as it was then.
+   */
+  selling?: Array<[number, number[]]>;
   acc: Array<[number, number]>;
   /** Power wires (D25), flat: [a, b, a, b…] with a < b, ascending. Absent: no wires. */
   links?: number[];
@@ -147,6 +161,8 @@ export interface SaveData {
     boughtTotal?: number[];
     /** Floor Prices: [item, centi-◉ an item]. */
     floors?: Array<[number, number]>;
+    /** Auto-sell (D127): [item, threshold in whole items] for each item switched on (absent: none). */
+    autoSell?: Array<[number, number]>;
     /** The starter contract was signed (D101; absent: not yet). Its order, while it runs, is in `orders` with its `starter` left. */
     starterTaken?: boolean;
   };
@@ -189,11 +205,12 @@ export function serialize(sim: Sim): SaveData {
     worldSeed: sim.worldSeed, playerSeed: sim.playerSeed, foundingEpoch: sim.foundingEpoch, colonyName: sim.colonyName,
     ...(sim.grid.source.mapV !== undefined ? { mapV: sim.grid.source.mapV } : {}),
     ...(sim.emblem ? { emblem: { ...sim.emblem } } : {}),
-    tick: sim.tick, credits: sim.credits, hearthLevel: sim.hearthLevel, hearthId: sim.hearthId, nextId: sim.ents.nextId, costFloor: sim.costFloor,
+    tick: sim.tick, credits: sim.credits, hearthLevel: sim.hearthLevel, hearthId: sim.hearthId, nextId: sim.ents.nextId, costFloor: sim.costFloor, costFloorD129: sim.costFloorD129,
     content: contentTable(),
     ents, portItems,
     stock: Array.from(sim.stock),
     stores: [...sim.stores].sort((a, b) => a[0] - b[0]).map(([id, st]) => [id, Array.from(st)]),
+    selling: [...sim.selling].sort((a, b) => a[0] - b[0]).map(([id, st]) => [id, Array.from(st)]),
     acc: [...sim.accEnergy].sort((a, b) => a[0] - b[0]),
     links: sim.links.pairs().flat(),
     done: [...sim.done].sort(),
@@ -238,6 +255,7 @@ export function serialize(sim: Sim): SaveData {
       soldTotal: Array.from(sim.trade.soldTotal),
       boughtTotal: Array.from(sim.trade.boughtTotal),
       floors: [...sim.trade.floors].sort((a, b) => a[0] - b[0]),
+      ...(sim.trade.autoSell.size ? { autoSell: [...sim.trade.autoSell].sort((a, b) => a[0] - b[0]) } : {}),
       starterTaken: sim.trade.starterTaken,
     },
     quests: saveQuests(sim.quests),
@@ -273,8 +291,10 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
   }
   sim.ents.nextId = Math.max(sim.ents.nextId, d.nextId);
   sim.costFloor = d.costFloor ?? d.nextId; // D123: a save from before refunds every building it holds at its old price
+  sim.costFloorD129 = d.costFloorD129 ?? d.nextId; // D129: likewise
   sim.stock.set(d.stock.slice(0, N_ITEMS));
   for (const [id, st] of d.stores) sim.stores.set(id, Float64Array.from(st));
+  for (const [id, st] of d.selling ?? []) sim.selling.set(id, Float64Array.from(st));
   for (const [id, v] of d.acc) sim.accEnergy.set(id, v);
   const wires = d.links ?? [];
   for (let i = 0; i + 1 < wires.length; i += 2) sim.links.add(wires[i]!, wires[i + 1]!);
@@ -363,7 +383,21 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
     if (d.trade.soldTotal) t.soldTotal.set(d.trade.soldTotal.slice(0, N_ITEMS));
     if (d.trade.boughtTotal) t.boughtTotal.set(d.trade.boughtTotal.slice(0, N_ITEMS));
     for (const [it, cents] of d.trade.floors ?? []) t.floors.set(it, cents);
+    for (const [it, at] of d.trade.autoSell ?? []) t.autoSell.set(it, at);
     t.starterTaken = d.trade.starterTaken ?? false;
+  }
+  // A save from before D131: a post's one store held both its cargo and what its entrance brought
+  // (which never took its cargo). Split as it was: its cargo's items stay in the container, the rest
+  // goes to its entrance's store, sold at the next minute's end.
+  if (!d.selling) {
+    for (const [id, st] of sim.stores) {
+      const e = sim.ents.get(id);
+      if (!e || BUILDING_KIND[e.def] !== 'trade') continue;
+      const cargo = sim.trade.cargo.get(id) ?? [];
+      const sell = sim.selling.get(id) ?? new Float64Array(N_ITEMS);
+      for (let it = 0; it < N_ITEMS; it++) if (st[it]! > 0 && !cargo.includes(it)) { sell[it] = sell[it]! + st[it]!; st[it] = 0; }
+      sim.selling.set(id, sell);
+    }
   }
   // The tutorial (a colony saved before quests existed starts them at quest 0).
   if (d.quests) loadQuests(sim, d.quests);

@@ -22,13 +22,18 @@
 // the window of ticks in which it reaches the head), only the head run leaving, up to `thrMu` a tick.
 //
 // The Gleaners (D103, D112: they come in groups): a ribbon's exposed cells (`gleanCells`: its tiles
-// beside open desert floor, sim/world/reach.ts) are raided once every `GLEAN_WINDOW` ticks on the
-// world's clock. A raid (`raidAt`, from the chain's own draw) puts a group of three to five on posts
-// beside a run of its exposed cells (`raidPosts`); from their turn on (`stagger` apart) each waits for
-// the first thing to its taste that comes onto its cell, takes it — the whole item leaves the line,
-// before the step moves it on — and takes no more that raid (`raidHeld`, a bit a post, hashed, saved:
-// cleared once the raid is over). At night only (`ctx.glean`). So what the views show is what the sim
-// does: a group waiting by the line, an item that rides up to one of them and is gone into its hands.
+// beside open desert floor, sim/world/reach.ts) may be raided once every `GLEAN_WINDOW` ticks on the
+// world's clock, at the chain's own slot (`raidAt`, from its draw), by a band at posts beside a run of
+// its exposed cells (`raidPosts`). The raid is called on the line's first step of the slot (within
+// `callBy`): only if something to their taste rides it up to its last post, and the band is the bigger
+// the more that thing is worth (`raidBand`: `band`, by the items' reference value) — a line with
+// nothing for them is never raided. The band crawls in for `arrive` ticks; then for at most `take`
+// ticks each of them (posts open `stagger` apart) takes the first thing to its taste that comes onto
+// its cell — the whole item leaves the line, before the step moves it on — and takes no more that raid
+// (`raidHeld`: a bit a post, the call and the band's size; hashed, saved; cleared once the raid is
+// over). At night only (`ctx.glean`). So what the views show is what the sim does: a band coming to a
+// line that carries something, an item that rides up to one of them and is gone into its hands, and
+// the band gone within seconds.
 // The pattern repeats with the window: the catch-up folds it into a night group's period
 // (graph/groups.ts `rotNight`) and the warm-ups count what is taken (`ctx.gleaned`), exactly as
 // online. Whole items, counted: nothing vanishes unseen.
@@ -58,9 +63,17 @@ const TPM = 600;
  * a night group keeps an exact period offline (at most `PERIOD_MAX`).
  */
 export const GLEAN_WINDOW = BAL.gleaners.window;
-/** How long a raid's group may take (ticks), and how far apart their posts open. */
-export const RAID_TICKS = BAL.gleaners.raid;
+/** A raid's call (within `RAID_CALL_BY` ticks of its slot), the band's crawl in (`RAID_ARRIVE`), how long it takes (`RAID_TAKE`), how far apart its posts open; `RAID_TICKS`: the whole raid, slot to end. */
+export const RAID_CALL_BY = BAL.gleaners.callBy;
+export const RAID_ARRIVE = BAL.gleaners.arrive;
+export const RAID_TAKE = BAL.gleaners.take;
 export const RAID_STAGGER = BAL.gleaners.stagger;
+export const RAID_TICKS = RAID_ARRIVE + RAID_TAKE;
+/** `raidHeld`: bits 0–7 the posts that have taken; then the call made this raid, and how many were called (3 bits). */
+const R_CALLED = 1 << 8, R_BAND = 9;
+/** Whether a raid's call has been made (`raidHeld`), and how many were called (0: the line had nothing for them). */
+export const raidCalled = (held: number): boolean => (held & R_CALLED) !== 0;
+export const raidBandOf = (held: number): number => (held >> R_BAND) & 7;
 
 /** How many come to raid a chain with `n` exposed cells: `group.min` to `group.max` (fewer cells: one a cell). */
 export function raidSize(n: number): number {
@@ -83,14 +96,34 @@ export function planRaid(cells: readonly number[], seed: number): { posts: Int32
 const NO_POSTS = new Int32Array(0);
 
 /**
- * Does post `p` of a raid drawn `seed` take `item` at `k` ticks into its raid (D112)? Its turn come
- * (`p × RAID_STAGGER`), the raid not over, the item to their taste (a roll under its taste ‰ below
- * 1 000). The one rule `raidStep` runs and the views read ahead (`Chain.raidWillTake`).
+ * Does post `p` of a raid drawn `seed` take `item` at `k` ticks into its raid (D112)? The band arrived
+ * and its turn come (`RAID_ARRIVE + p × RAID_STAGGER`), the raid not over, the item to their taste (a
+ * roll under its taste ‰ below 1 000). The one rule `raidStep` runs and the views read ahead
+ * (`Chain.raidWillTake`).
  */
 export function raidTakes(seed: number, p: number, k: number, item: number): boolean {
-  if (k < p * RAID_STAGGER || k >= RAID_TICKS) return false;
+  if (k < RAID_ARRIVE + p * RAID_STAGGER || k >= RAID_TICKS) return false;
   const taste = gleanTaste(item);
   return taste >= 1000 || (taste > 0 && hash32(seed, k, p) % 1000 < taste);
+}
+
+let VALUE: Int32Array | null = null;
+/** An item's reference value (centi-◉, `ItemDef.value`): what makes a line worth a bigger band. */
+export function gleanValue(item: number): number {
+  if (!VALUE) {
+    VALUE = new Int32Array(N_ITEMS);
+    for (let i = 0; i < N_ITEMS; i++) VALUE[i] = Math.round((itemDef(i).value ?? 0) * 100);
+  }
+  return VALUE[item] ?? 0;
+}
+
+/** How many come for a line whose most valuable thing to their taste is worth `value` (centi-◉): `band.base`, one more each `band.more` reached; 0 for nothing. */
+export function raidBandFor(value: number): number {
+  if (value <= 0) return 0;
+  const b = BAL.gleaners.band;
+  let n = b.base;
+  for (const v of b.more) if (value >= v * 100) n++;
+  return n;
 }
 
 let TASTE: Int16Array | null = null;
@@ -379,18 +412,24 @@ export class Chain extends FNode {
   }
 
   /**
-   * A step on a raided chain (D112). Outside its raid the posts are empty (`raidHeld` cleared); in it,
-   * at night, each post whose turn has come and that holds nothing yet takes the item on its cell if
-   * it is to their taste (a roll against the taste ‰ when below 1 000): the whole item leaves the line,
-   * counted in `ctx.gleaned` (and logged online for the views), and that post takes no more this raid.
+   * A step on a raided chain (D112). Outside its raid nothing is held (`raidHeld` cleared). At night, on
+   * its first step within `RAID_CALL_BY` of the slot, the raid is called (`raidBandNow`: how many come,
+   * none for a line with nothing for them); then each called post whose turn has come and that holds
+   * nothing yet takes the item on its cell if it is to their taste (a roll against the taste ‰ below
+   * 1 000): the whole item leaves the line, counted in `ctx.gleaned` (and logged online for the views),
+   * and that post takes no more this raid.
    */
   private raidStep(ctx: TickCtx): void {
     const now = ctx.now;
     const k = (((now % GLEAN_WINDOW) + GLEAN_WINDOW) % GLEAN_WINDOW) - this.raidAt;
     if (k < 0 || k >= RAID_TICKS) { this.raidHeld = 0; return; }
     if (!ctx.glean) return;
-    const posts = this.raidPosts;
-    for (let p = 0; p < posts.length; p++) {
+    if (!(this.raidHeld & R_CALLED)) {
+      if (k < RAID_CALL_BY) this.raidHeld = R_CALLED | (this.raidBandNow() << R_BAND);
+      return;
+    }
+    const posts = this.raidPosts, band = (this.raidHeld >> R_BAND) & 7;
+    for (let p = 0; p < band; p++) {
       const bit = 1 << p;
       if (this.raidHeld & bit || k < p * RAID_STAGGER) continue;
       const i = posts[p]!, v = this.cells[i]!;
@@ -405,6 +444,21 @@ export class Chain extends FNode {
   }
 
   /**
+   * How many come if the raid is called now: by the most valuable thing to their taste on the line up
+   * to its last post (what will still ride past them), `raidBandFor`, no more than its posts; 0 when it
+   * carries nothing for them.
+   */
+  private raidBandNow(): number {
+    const last = this.raidPosts[this.raidPosts.length - 1]!;
+    let best = 0;
+    for (let i = 0; i <= last; i++) {
+      const v = this.cells[i]!;
+      if (v && gleanTaste(v - 1) && gleanValue(v - 1) > best) best = gleanValue(v - 1);
+    }
+    return Math.min(this.raidPosts.length, raidBandFor(best));
+  }
+
+  /**
    * What post `p` takes on tick `now` (D112), or −1, read before that tick runs: the item on its cell
    * if `now` is a step of this line, `night` (the Gleaners out on that tick), the raid on and the post
    * empty-handed, and `raidTakes` says so — exactly what `raidStep` will do then, read on the line as it
@@ -413,7 +467,7 @@ export class Chain extends FNode {
    * reach for it ahead; a test holds the sim to it.
    */
   raidWillTake(p: number, now: number, night: boolean): number {
-    if (!night || p >= this.raidPosts.length || this.raidHeld & (1 << p) || !stepAt(this.perMin, now)) return -1;
+    if (!night || p >= raidBandOf(this.raidHeld) || this.raidHeld & (1 << p) || !stepAt(this.perMin, now)) return -1;
     const k = (((now % GLEAN_WINDOW) + GLEAN_WINDOW) % GLEAN_WINDOW) - this.raidAt;
     const v = this.cells[this.raidPosts[p]!]!;
     return v && raidTakes(this.gleanSeed, p, k, v - 1) ? v - 1 : -1;

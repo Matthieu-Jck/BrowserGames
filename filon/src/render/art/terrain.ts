@@ -26,8 +26,9 @@ import { isFaceOre } from '@/sim/face';
 import { T } from '@/sim/types';
 import { C, mix, rgba } from './tokens';
 import { BORDER, WIN, fillPolys, march, strokeSegs, type ChunkArrays, type Ctx2, type PaintData } from './paint-kit';
-import { paintChasms, paintWater, RIVER_BIOME } from './gaps';
+import { exitOf, FLOW_DX, FLOW_DY, paintChasms, paintWater, wayOf, wayTo } from './gaps';
 import { paintDeposits } from './ore';
+import { reaches } from './water-top';
 import { columnSeed, columnShadow, columnVariant, crystal, drawColumn, QZ, ROCK, SAND_POCKET, topColor, type Foot, type Proj, type TopLook } from './rock';
 import { isRiverT, isRockT, isWaterT, levelOf, maskAt, masksAt, MAX_TERRACE, SHIFT, slabOutline, SMOOTH, STEP_LEVELS, type OutlinePt } from '../relief';
 
@@ -169,15 +170,19 @@ export function paintChunk(ctx: Ctx2, d: PaintData, ppt: number, scratch: (w: nu
     strokeSegs(ctx, pan.segs, C.ink, 1 * k, 0.35);
   }
 
-  // ── 3. water, still and running, and the chasms (D94): gaps.ts ──
-  paintWater(ctx, d, ppt);
+  // ── 3. water, still and running, on the floor, and the chasms (D94): gaps.ts — with the streams
+  //    falling into it from up on the rock, so it reaches the foot of their falls (D135: the water
+  //    they land in; their columns cover the rest of them) ──
+  paintWater(ctx, d, ppt, (i, j) => !raised(d, i, j) || fallsToFloor(d, i, j));
   paintChasms(ctx, d, ppt);
 
   // ── 4. rock, as a map of its LEVELS (owner, 2026-10-14: « les montagnes sont différentes en 2d
   //    et en 2d isométriques… difficile de construire dessus correctement »): the very terraces the
   //    iso columns stand on, drawn as a relief map (owner, 2026-10-16: the mountains must read in
-  //    plan too): `paintRockMap`. ──────────────────────────────────────────────────────────────
+  //    plan too): `paintRockMap`. The water up on the rock stands in it at its level (D135: its banks
+  //    flush beside it, as in iso, not a canyon down to the floor), its own water over it after. ──
   paintRockMap(ctx, d, ppt);
+  paintWater(ctx, d, ppt, (i, j) => raised(d, i, j));
 
   // ── 5. deposits (ore.ts, D99: each ore its own material, denser where richer), then vents,
   //    face seams and biome decor ─────────────────────────────────────────────
@@ -203,6 +208,20 @@ export function paintChunk(ctx: Ctx2, d: PaintData, ppt: number, scratch: (w: nu
     }
   }
 }
+
+/** Water, a stream or reclaimed ground up on the rock (relief.ts `levelOf`: it stands at its level, a column like the rock round it). */
+const raised = (d: PaintData, i: number, j: number): boolean => {
+  const o = j * WIN + i, t = d.terrain[o]!;
+  return (isWaterT(t) || isRiverT(t) || t === T.Filled) && d.level[o]! > 0;
+};
+
+/** A stream up on the rock that runs on into the floor's water (gaps.ts `exitOf`): it falls into it. */
+const fallsToFloor = (d: PaintData, i: number, j: number): boolean => {
+  const o = j * WIN + i;
+  if (d.terrain[o] !== T.River || !d.level[o]) return false;
+  const e = exitOf(d, o), t = d.terrain[e]!;
+  return (isWaterT(t) || isRiverT(t)) && d.level[e] === 0;
+};
 
 /** Light in plan: from the top-left of the screen (−x −y), as everywhere (ink.ts `LIGHT`). */
 const PLAN_LIGHT = [-Math.SQRT1_2, -Math.SQRT1_2] as const;
@@ -268,9 +287,11 @@ function insetChain(c: { pts: readonly OutlinePt[]; closed: boolean }, d: number
 function paintRockMap(ctx: Ctx2, d: PaintData, ppt: number): void {
   const B = BORDER, k = ppt / 32;
   const tt = (i: number, j: number): number => d.terrain[j * WIN + i]!;
-  // The relief level of a window tile as the iso columns read it (rock only; 0 off the window).
-  const rl = (i: number, j: number): number => (i < 0 || j < 0 || i >= WIN || j >= WIN || !isRockT(tt(i, j)) ? 0 : levelOf(tt(i, j), d.level[j * WIN + i]!));
-  const rock = march((i, j) => isRockT(tt(i, j)), ppt);
+  // A column: rock, or water (or reclaimed ground) up on the rock, at its level as in iso (D135).
+  const col = (i: number, j: number): boolean => isRockT(tt(i, j)) || raised(d, i, j);
+  // The relief level of a window tile as the iso columns read it (0 off them and off the window).
+  const rl = (i: number, j: number): number => (i < 0 || j < 0 || i >= WIN || j >= WIN || !col(i, j) ? 0 : levelOf(tt(i, j), d.level[j * WIN + i]!));
+  const rock = march(col, ppt);
   if (!rock.polys.length) return;
   // The rock's own shadow on the floor (soft, under everything).
   ctx.save();
@@ -281,8 +302,11 @@ function paintRockMap(ctx: Ctx2, d: PaintData, ppt: number): void {
   const rockAt = (i: number, j: number): number => (i < 0 || j < 0 || i >= WIN || j >= WIN || !isRockT(tt(i, j)) ? -1 : tt(i, j) - T.Rock1);
   let steps = 0;
   for (let j = B - 1; j <= B + 32; j++) for (let i = B - 1; i <= B + 32; i++) {
-    if (!isRockT(tt(i, j))) continue;
-    const masks = masksAt(rl, i, j), cls = tt(i, j) - T.Rock1;
+    if (!col(i, j)) continue;
+    // Water's column: the hardest rock round it (`columnLook`), its top drawn over by its water.
+    let cls = isRockT(tt(i, j)) ? tt(i, j) - T.Rock1 : 0;
+    if (!isRockT(tt(i, j))) for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const u = tt(i + di, j + dj); if (isRockT(u) && u - T.Rock1 > cls) cls = u - T.Rock1; }
+    const masks = masksAt(rl, i, j);
     if (masks.length > steps) steps = masks.length;
     // Each step in the rock of its height (`layersOf`), as the iso columns draw it.
     tiles.push({ i, j, cls, layers: layersOf(rockAt, rl, i, j, cls, masks.length), masks, outs: masks.map((_, s) => slabOutline(masks, s)), wx: d.cx * 32 - B + i, wy: d.cy * 32 - B + j });
@@ -616,51 +640,102 @@ export function windowLevels(d: PaintData): { lv: Uint8Array; masks: Uint8Array[
 /**
  * How a raised window tile is drawn: its rock class (for a column of water or reclaimed ground up
  * on the rock, D63: the hardest rock round it, its basin) and its top when it is not plain rock —
- * water or reclaimed ground, or rock in whose corner three tiles of water at its height meet —
- * with which of its 3×3 hold water and deep water at its height (art/rock.ts `TopLook`); `vein`:
- * its rock holds a face ore (D87), worn as a crystal seam on its walls. A stream up on a massif
- * (D94) is water that runs: its top a `river` with the way it flows (the chunk's biome code,
- * `RIVER_BIOME` + the eighth of a turn) and how far it falls to the next tile along it (`fall`,
- * relief levels: the waterfall down its wall).
+ * water or reclaimed ground, or rock the water at its height reaches (water-top.ts `reaches`) —
+ * with what the 7 × 7 round it hold at its height (`waterCells`, art/rock.ts `TopLook`: the body
+ * of water its part is cut from, D135); `vein`: its rock holds a face ore (D87), worn as a crystal
+ * seam on its walls. A stream up on a massif (D94) is water that runs: its top a `river` with the
+ * way it runs on (`flow`: towards the tile it runs into, gaps.ts `exitOf` — the chunk's biome code,
+ * `RIVER_BIOME` + the eighth of a turn, unless the river turns there), how far it falls to that tile
+ * (`fall`, relief levels: the waterfall down its wall, landing in the water it runs on into, D135)
+ * and the streams pouring into it from higher up (`from`, D115: their falls land on it). A stream's
+ * or a lake's `mark` is hashed from the world tile (`waterMark`).
  */
 export function columnLook(d: PaintData, lv: Uint8Array, o: number): { cls: number; top: TopLook | null; vein: boolean } {
   const t = d.terrain[o]!, L = lv[o]!;
-  let wet = 0, deep = 0, run = false, cls = isRockT(t) ? t - T.Rock1 : 0;
-  for (let j = -1; j <= 1; j++) {
-    for (let i = -1; i <= 1; i++) {
-      const n = o + j * WIN + i, u = d.terrain[n] ?? T.Sand, bit = 1 << (3 * (j + 1) + i + 1);
-      if ((isWaterT(u) || isRiverT(u)) && lv[n] === L) { wet |= bit; if (u === T.Deep) deep |= bit; if (isRiverT(u)) run = true; }
-      if (!isRockT(t) && isRockT(u) && u - T.Rock1 > cls) cls = u - T.Rock1;
+  let cls = isRockT(t) ? t - T.Rock1 : 0;
+  if (!isRockT(t)) {
+    for (let j = -1; j <= 1; j++) {
+      for (let i = -1; i <= 1; i++) {
+        const u = d.terrain[o + j * WIN + i] ?? T.Sand;
+        if (isRockT(u) && u - T.Rock1 > cls) cls = u - T.Rock1;
+      }
     }
   }
+  const cells = waterCells(d, lv, o);
+  const i0 = o % WIN, j0 = (o - i0) / WIN, wx = d.cx * 32 - BORDER + i0, wy = d.cy * 32 - BORDER + j0;
   if (isRiverT(t)) {
-    const code = d.biome[o]! - RIVER_BIOME, flow = code >= 0 && code < 8 ? code : 0;
-    const next = o + FLOW_DY[flow]! * WIN + FLOW_DX[flow]!, fall = Math.max(0, L - (lv[next] ?? 0));
-    // The streams pouring into it from higher up (D115): their falls land on it, its side there no bank.
+    // Where it runs on (where its river turns, the tile beside its way that holds the water: a fall
+    // lands in it, D135), and how far down.
+    const exit = exitOf(d, o), flow = wayTo(o, exit), fall = Math.max(0, L - (lv[exit] ?? 0));
+    // The streams pouring into it from higher up (D115): their falls land on it.
     let from = 0;
     for (let j = -1; j <= 1; j++) {
       for (let i = -1; i <= 1; i++) {
-        const n = o + j * WIN + i, c = (d.biome[n] ?? 0) - RIVER_BIOME;
-        if ((i || j) && isRiverT(d.terrain[n] ?? T.Sand) && (lv[n] ?? 0) > L && c >= 0 && c < 8 && FLOW_DX[c] === -i && FLOW_DY[c] === -j) from |= 1 << (3 * (j + 1) + i + 1);
+        const n = o + j * WIN + i;
+        if ((i || j) && isRiverT(d.terrain[n] ?? T.Sand) && (lv[n] ?? 0) > L && exitOf(d, n) === o) from |= 1 << (3 * (j + 1) + i + 1);
       }
     }
-    return { cls, top: { kind: 'river', wet, deep: 0, flow, fall, ...(from ? { from } : {}) }, vein: false };
+    const mark = fall || from ? 0 : waterMark(wx, wy, flow);
+    return { cls, top: { kind: 'river', cells, flow, fall, ...(from ? { from } : {}), ...(mark ? { mark } : {}) }, vein: false };
   }
-  if (isWaterT(t)) return { cls, top: { kind: 'water', wet, deep, run }, vein: false };
-  if (!isRockT(t)) return { cls, top: { kind: 'ground', wet, deep }, vein: false };
-  // Rock: a top of its own only where a corner of it is under water (its three other tiles wet);
-  // a crystal seam on its walls where it holds a face ore (D87).
-  const corner = (a: number, b: number, c: number): boolean => (wet & (1 << a)) !== 0 && (wet & (1 << b)) !== 0 && (wet & (1 << c)) !== 0;
-  // Where a stream steps diagonally past it (its two neighbours meeting at a corner hold the
-  // stream, the third tile there does not), a wedge of the stream crosses its corner (rock.ts).
-  const has = (b: number): boolean => (wet & (1 << b)) !== 0;
-  const wedge = run && ((has(1) && has(3) && !has(0)) || (has(1) && has(5) && !has(2)) || (has(5) && has(7) && !has(8)) || (has(7) && has(3) && !has(6)));
+  if (isWaterT(t)) { const mark = waterMark(wx, wy, -1); return { cls, top: { kind: 'water', cells, ...(mark ? { mark } : {}) }, vein: false }; }
+  if (!isRockT(t)) return { cls, top: { kind: 'ground', cells }, vein: false };
+  // Rock: a top of its own only where the water at its height reaches it (a wedge of a stream
+  // stepping past its corner, a lake's rounded shore, a bank's ink on its edge); a crystal seam on
+  // its walls where it holds a face ore (D87).
   const vein = isFaceOre(d.ore[o]! - 1);
-  return { cls, top: corner(0, 1, 3) || corner(1, 2, 5) || corner(5, 7, 8) || corner(3, 6, 7) || wedge ? { kind: 'rock', wet, deep, run } : null, vein };
+  return { cls, top: reaches(cells) ? { kind: 'rock', cells } : null, vein };
 }
 
-/** A river's way (the eighth of a turn its biome code holds, 0 = +x, 2 = +y): the next tile along it. */
-const FLOW_DX = [1, 1, 0, -1, -1, -1, 0, 1], FLOW_DY = [0, 1, 1, 1, 0, -1, -1, -1];
+
+/**
+ * What the 7 × 7 round a raised window tile hold at its height (water-top.ts `CELL`, D135): still
+ * water (`w`, deep `d`), a stream (its way, `0`…`7`), a tile at another height a fall joins to
+ * the water at its height (`x`: the foot of a stream's fall, the next tile along it below, or a
+ * stream pouring into it from above), or nothing (`.`). Every tile of a body reads the same world, so their parts of it meet.
+ */
+export function waterCells(d: PaintData, lv: Uint8Array, o: number): string {
+  const L = lv[o]!, i0 = o % WIN, j0 = (o - i0) / WIN;
+  const wetT = (u: number): boolean => isWaterT(u) || isRiverT(u);
+  const inWin = (i: number, j: number): boolean => i >= SMOOTH && j >= SMOOTH && i < WIN - SMOOTH && j < WIN - SMOOTH;
+  let s = '';
+  for (let j = j0 - 3; j <= j0 + 3; j++) {
+    for (let i = i0 - 3; i <= i0 + 3; i++) {
+      const n = j * WIN + i, u = d.terrain[n] ?? T.Sand;
+      if (!inWin(i, j)) { s += '.'; continue; }
+      if (lv[n] === L && wetT(u)) { s += isRiverT(u) ? String(wayOf(d, n)) : u === T.Deep ? 'd' : 'w'; continue; }
+      // A fall joins it on: a stream at L beside it runs on into it, lower (the foot of its fall,
+      // gaps.ts `exitOf`: the water it lands in, or where it runs out: the channel runs straight to
+      // its lip), or it, a stream, runs on into water at L from higher up (the channel runs on from
+      // where it lands).
+      let joined = false;
+      for (let dj = -1; dj <= 1 && !joined; dj++) {
+        for (let di = -1; di <= 1 && !joined; di++) {
+          if ((!di && !dj) || !inWin(i + di, j + dj)) continue;
+          const m = n + dj * WIN + di, um = d.terrain[m]!;
+          if (lv[m] !== L || !wetT(um)) continue;
+          if (isRiverT(um) && lv[n]! < L && exitOf(d, m) === n) joined = true;
+          else if (isRiverT(u) && lv[n]! > L && exitOf(d, n) === m) joined = true;
+        }
+      }
+      s += joined ? 'x' : '.';
+    }
+  }
+  return s;
+}
+
+/**
+ * The mark on a tile of water (water-top.ts `marks`; 0 none, 1 … 3 its look), hashed from the world
+ * tile (D135: not one mark on every tile): a stream's (`flow` its way) every third tile along it,
+ * its lanes out of step with each other; still water's (`flow` −1) a ripple on a tile in three.
+ */
+export function waterMark(wx: number, wy: number, flow: number): number {
+  if (flow < 0) return hashUnit(wx, wy, 0x3a9) < 0.33 ? 1 + (hash32(wx, wy, 0x3aa) % 3) : 0;
+  const fx = FLOW_DX[flow]!, fy = FLOW_DY[flow]!;
+  const along = Math.floor((wx * fx + wy * fy) / (fx && fy ? 2 : 1)), across = wx * -fy + wy * fx;
+  if ((((along + (hash32(across, flow, 0x3a7) % 3)) % 3) + 3) % 3 !== 0) return 0;
+  return 1 + (hash32(wx, wy, 0x3a8) % 3);
+}
 
 /** The tiles round a tile, nearest first (5 × 5 less itself). */
 const ROUND5: ReadonlyArray<readonly [number, number]> = [-2, -1, 0, 1, 2]
@@ -759,7 +834,7 @@ export function paintRelief(ctx: Ctx2, d: PaintData, ppt: number, scratch: (w: n
     // The sprite's own seed (its look's): the paint draws the very rim the sprite does, so nothing
     // of it shows round a sprite's bitten edge where both are drawn.
     const ms = tileMasks(lv, masks, o);
-    const layers = top ? null : windowLayers(d, lv, o, cls, ms.length);
+    const layers = top && top.kind !== 'rock' ? null : windowLayers(d, lv, o, cls, ms.length);
     drawColumn(ctx, proj(i, j), cls, ms, { detail, seed: columnSeed(cls, ms, columnVariant(wx, wy)), k, top, vein, layers });
   }
   return true;

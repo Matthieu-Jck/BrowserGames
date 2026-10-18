@@ -14,7 +14,7 @@ import { catchUp } from './offline/catchup';
 import { deserialize, serialize } from './serialize';
 import { replay } from './commands';
 import { gleanNight } from './systems/gleaners';
-import { GLEAN_WINDOW, raidSize } from './flow/chain';
+import { GLEAN_WINDOW, RAID_ARRIVE, RAID_TICKS, raidBandFor, raidBandOf, raidCalled, raidSize } from './flow/chain';
 
 /**
  * A desert land with a Crown: a square ring of rock (level 1) round the centre, |dx| or |dy| from
@@ -95,7 +95,7 @@ describe('the Gleaners (D103)', () => {
     expect(c.raidPosts.length).toBe(raidSize(20));
     expect(raidSize(20)).toBe(BAL.gleaners.group.max);
     for (let p = 1; p < c.raidPosts.length; p++) expect(c.raidPosts[p]! - c.raidPosts[p - 1]!).toBe(1);
-    expect(c.raidAt + BAL.gleaners.raid).toBeLessThanOrEqual(GLEAN_WINDOW);
+    expect(c.raidAt + RAID_TICKS).toBeLessThanOrEqual(GLEAN_WINDOW);
     // A short dash across a corner: fewer of them (one a tile).
     expect([raidSize(1), raidSize(2), raidSize(3), raidSize(11), raidSize(40)]).toEqual([1, 2, 3, 4, 5]);
     // A world with no Crown (the tests' flat world): no Gleaners.
@@ -130,12 +130,12 @@ describe('the Gleaners (D103)', () => {
     const { from, to } = desertLine(sim);
     const glass = itemIdx('glass');
     const total0 = sim.totalHeld(glass);
-    sim.run(EPOCH * 12); // the whole night: three raids of a group of five, one item each
+    sim.run(EPOCH * 12); // the whole night: three raids, a band of two for glass, one item each
     const taken = takenOf(sim, 'glass');
     const arrived = held(sim, to, 'glass');
-    expect(taken).toBeGreaterThanOrEqual(10);
-    expect(taken).toBeLessThanOrEqual(15);
-    expect(taken / (taken + arrived)).toBeLessThan(0.03);
+    expect(taken).toBeGreaterThanOrEqual(4);
+    expect(taken).toBeLessThanOrEqual(8);
+    expect(taken / (taken + arrived)).toBeLessThan(0.02);
     // Conservation: what is held anywhere is what was there, less what they took.
     expect(sim.totalHeld(glass)).toBe(total0 - sim.gleaned[glass]!);
     expect(held(sim, from, 'glass')).toBeGreaterThan(0);
@@ -167,8 +167,9 @@ describe('the Gleaners (D103)', () => {
         const tile = r[i]!, tick = r[i + 2]!, w = Math.floor(tick / GLEAN_WINDOW), at = tick % GLEAN_WINDOW;
         const p = posts.indexOf(tile);
         expect(p, `theft on ${tile}: one of the posts`).toBeGreaterThanOrEqual(0);
-        expect(at - c.raidAt, 'in the raid, its post open').toBeGreaterThanOrEqual(p * BAL.gleaners.stagger);
-        expect(at - c.raidAt).toBeLessThan(BAL.gleaners.raid);
+        expect(at - c.raidAt, 'in the raid, the band arrived and its post open').toBeGreaterThanOrEqual(RAID_ARRIVE + p * BAL.gleaners.stagger);
+        expect(at - c.raidAt).toBeLessThan(RAID_TICKS);
+        expect(p, 'one of the band called').toBeLessThan(raidBandFor(410));
         const took = perRaid.get(w) ?? new Set<number>();
         expect(took.has(p), `post ${p} took twice in raid ${w}`).toBe(false);
         took.add(p);
@@ -177,7 +178,7 @@ describe('the Gleaners (D103)', () => {
       }
       r.length = 0;
     }
-    expect(seen).toBeGreaterThanOrEqual(10);
+    expect(seen).toBeGreaterThanOrEqual(4);
     // Between raids nobody stands at the posts.
     expect(perRaid.size).toBeGreaterThanOrEqual(2);
   });
@@ -208,7 +209,71 @@ describe('the Gleaners (D103)', () => {
       for (const tile of got.keys()) expect(c.moved[c.tiles.indexOf(tile)] === now ? 'refilled' : c.cells[c.tiles.indexOf(tile)]).not.toBe(got.get(tile)! + 1);
       takes += got.size;
     }
-    expect(takes).toBeGreaterThanOrEqual(5);
+    expect(takes).toBeGreaterThanOrEqual(3);
+  });
+
+  it('a raid goes only to a line carrying something for them, a bigger band for shinier things (D112)', () => {
+    // At each raid's slot: what the line had called (band size), over a night.
+    const night = (item: string | null): { bands: number[]; taken: number } => {
+      const sim = desertSim();
+      desertLine(sim, item ?? 'glass', item ? 4000 : 0);
+      sim.ensureCompiled();
+      const c = sim.chainAt(530, 510)!, bands: number[] = [];
+      let was = false;
+      for (let t = 0; t < EPOCH * 12; t++) {
+        sim.step();
+        const on = raidCalled(c.raidHeld);
+        if (on && !was) bands.push(raidBandOf(c.raidHeld));
+        was = on;
+      }
+      return { bands, taken: Array.from(sim.gleaned).reduce((a, b) => a + b, 0) / 1000 };
+    };
+    // An empty line: called at each slot, but nobody comes, nothing is taken.
+    const empty = night(null);
+    expect(empty.bands.length).toBeGreaterThanOrEqual(2);
+    expect(empty.bands.every((n) => n === 0)).toBe(true);
+    expect(empty.taken).toBe(0);
+    // A line of iron ore (not to their taste): the same.
+    const ore = night('iron_ore');
+    expect(ore.bands.every((n) => n === 0)).toBe(true);
+    expect(ore.taken).toBe(0);
+    // Glass (4.1 ◉): two come; circuits (17 ◉): four.
+    const glass = night('glass'), circuit = night('circuit');
+    expect(glass.bands.length).toBeGreaterThanOrEqual(2);
+    expect(glass.bands.every((n) => n === 2)).toBe(true);
+    expect(circuit.bands.every((n) => n === 4)).toBe(true);
+    expect(circuit.taken).toBeGreaterThan(glass.taken);
+    expect([raidBandFor(0), raidBandFor(170), raidBandFor(410), raidBandFor(600), raidBandFor(1700), raidBandFor(4700)]).toEqual([0, 2, 2, 3, 4, 5]);
+  });
+
+  it('a band takes within seconds of arriving and is gone within its short raid (D112)', () => {
+    const sim = desertSim();
+    desertLine(sim, 'circuit', 4000);
+    sim.ensureCompiled();
+    const c = sim.chainAt(530, 510)!;
+    const firsts: number[] = [];
+    let raids = 0;
+    for (let t = 0; t < EPOCH * 12; t++) {
+      const now = sim.tick, k = (((now % GLEAN_WINDOW) + GLEAN_WINDOW) % GLEAN_WINDOW) - c.raidAt;
+      sim.gleaners.recent.length = 0;
+      sim.step();
+      const r = sim.gleaners.recent;
+      for (let i = 0; i + 2 < r.length; i += 3) {
+        // Every take inside the raid's short window: after the band has crawled in, before its end.
+        expect(k, `take at ${now}`).toBeGreaterThanOrEqual(RAID_ARRIVE);
+        expect(k).toBeLessThan(RAID_TICKS);
+        if (!firsts.length || firsts.length === raids) firsts.push(k - RAID_ARRIVE);
+      }
+      // A new raid starts its count at its call.
+      if (k === 0) raids = firsts.length;
+      // Out of its raid (from the line's first step after its end), nothing is held: the band is gone.
+      if (k >= RAID_TICKS + c.stepTicks || k < 0) expect(c.raidHeld, `held at ${k} into the window's slot`).toBe(0);
+    }
+    expect(firsts.length).toBeGreaterThanOrEqual(2);
+    // Arrived, the first take comes within four seconds (a full line of circuits riding past).
+    for (const f of firsts) expect(f).toBeLessThanOrEqual(40);
+    // The longest a band stays at the line: its take window, twelve seconds.
+    expect(RAID_TICKS - RAID_ARRIVE).toBeLessThanOrEqual(200);
   });
 
   it('a glazed ribbon keeps what it carries', () => {
@@ -305,7 +370,7 @@ describe('the Gleaners (D103)', () => {
     const rep = catchUp(off, N, { noDirect: true });
     const glass = itemIdx('glass');
     expect(off.tick).toBe(on.tick);
-    expect(on.gleaned[glass]).toBeGreaterThanOrEqual(20_000);
+    expect(on.gleaned[glass]).toBeGreaterThanOrEqual(8_000);
     expect(off.gleaned[glass]).toBe(on.gleaned[glass]);
     expect(rep.gleaned[glass]).toBe(on.gleaned[glass]);
     expect(Array.from(off.stock)).toEqual(Array.from(on.stock));

@@ -10,7 +10,7 @@ import { QUEST_IDS } from '@/content/quests';
 import { planCost } from '@/sim/systems/research';
 import { effectiveCost } from '@/sim/research/runtime';
 import { testSim, wire } from '@/sim/testkit';
-import { treePrereq } from '@/content/research';
+import { categoryNodes, treePrereq } from '@/content/research';
 import type { Sim } from '@/sim/state';
 import { planState, projectTiming, readyPlans, researchState } from './tree-state';
 
@@ -89,6 +89,11 @@ describe('the tech tree’s state, one derivation for the HUD and the tree', () 
     sim.netPower[net]!.sat = sat;
     // Tier 2 behind the Core's level 3 (D118): locked, like a missing prerequisite.
     for (const id of [...treePrereq('tr_synth'), 'tr_synth']) sim.done.add(id);
+    sim.rebuildDerived();
+    // …and the Quarry for Extraction finished (D128): locked too.
+    expect(sim.researchBlock('tr2')).toBe('gate');
+    expect(researchState(sim, 'tr2')).toBe('locked');
+    for (const id of categoryNodes('t1_extraction')) sim.done.add(id);
     sim.rebuildDerived();
     expect(sim.researchBlock('tr2')).toBe('core');
     expect(researchState(sim, 'tr2')).toBe('locked');

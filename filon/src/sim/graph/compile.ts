@@ -41,6 +41,8 @@ export interface Graph {
   eSrcPort: Int32Array;
   eDstPort: Int32Array;
   nodeByEnt: Map<number, FNode>;
+  /** Each trade post's entrance (D131): a reservoir of its own beside the post's node (its container, in `nodeByEnt`). */
+  postIn: Map<number, ReservoirNode>;
   chainByTile: Map<number, Chain>;
   nets: Net[];
   netOfEnt: Map<number, number>;
@@ -74,12 +76,16 @@ export interface CompileInput {
   worldSeed?: number;
   hearthStock: Float64Array;
   hearthCap: number;
+  /** The Core's own cap per item where one differs (D127: an auto-sold item's lifted); null or absent: `hearthCap` for all. */
+  hearthCaps?: Float64Array | null;
   /** The Heart's level (its power grows with it, D101; default 1). */
   hearthLevel?: number;
   /** Tiles the Gleaners keep off beyond the claim's own — a neighbouring base's land (D110, world/neighbours.ts). */
   blocked?: (t: number) => boolean;
   /** Per-entity stocks of silos, trade posts and the other stores (persisted by the state). */
   stores: Map<number, Float64Array>;
+  /** Per trade post, what its entrance brought, to sell (D131; persisted by the state). Absent: one is made on the spot. */
+  selling?: Map<number, Float64Array>;
   old: Graph | null;
   /** Return orphaned items to the Hearth. */
   refund(item: number, mu: number): void;
@@ -134,6 +140,7 @@ export function compileGraph(inp: CompileInput): Graph {
   // ── 2. building nodes (reused across compiles when unchanged) ───────────
   const nodes: FNode[] = [];
   const nodeByEnt = new Map<number, FNode>();
+  const postIn = new Map<number, ReservoirNode>();
   const reservoirs: ReservoirNode[] = [];
   let hearth: ReservoirNode | null = null;
   const inPortAt = new Map<number, PortRef>();  // key: tile*4 + side
@@ -163,7 +170,7 @@ export function compileGraph(inp: CompileInput): Graph {
         node = reuse(e, () => new ReservoirNode(e.id, inp.hearthStock, inp.hearthCap, items, mpt(BAL.hearthPortPerMin), false),
           (o) => o.kind === 'reservoir');
         const r = node as ReservoirNode;
-        r.cap = inp.hearthCap; r.caps = null; r.portItems = items; r.stock = inp.hearthStock; r.hearth = true;
+        r.cap = inp.hearthCap; r.caps = inp.hearthCaps ?? null; r.portItems = items; r.stock = inp.hearthStock; r.hearth = true;
         hearth = r;
         break;
       }
@@ -268,9 +275,11 @@ export function compileGraph(inp: CompileInput): Graph {
         break;
       }
       case 'trade': {
-        // A store between the ribbons and the Crier: its entrance takes its export streams (sold
-        // at each epoch boundary), its exit hands out the delivered imports in turn (D62,
-        // systems/trade.ts).
+        // Two stores between the ribbons and the Crier (D131), each its own reservoir — so the
+        // catch-up keys them apart: the post's node (its container: what it bought, its cargo, which
+        // its exit hands out in turn, D62) and its entrance's (`postIn`: what the entrance brings, any
+        // tradable item, its cargo's too, sold at each epoch boundary; systems/trade.ts). Its in-ports
+        // go to the entrance, its out-port to the container; its power to the post's node.
         let st = inp.stores.get(e.id);
         if (!st) inp.stores.set(e.id, (st = new Float64Array(N_ITEMS)));
         const items = (e.portItems ?? []).slice();
@@ -279,9 +288,20 @@ export function compileGraph(inp: CompileInput): Graph {
         const r = node as ReservoirNode;
         r.cap = cap;
         r.portItems = items;
-        r.accepts = inp.tradeAccepts?.get(e.id) ?? NOTHING;
+        r.accepts = NOTHING;
         const buys = inp.tradeBuys?.get(e.id);
         r.cycle = buys && buys.length ? buys : null;
+        let sell = inp.selling?.get(e.id);
+        if (!sell) { sell = new Float64Array(N_ITEMS); inp.selling?.set(e.id, sell); }
+        const oldIn = inp.old?.postIn.get(e.id);
+        const entry = oldIn ?? new ReservoirNode(e.id, sell, cap, [], mpt(BAL.hearthPortPerMin), false, 0);
+        if (oldIn) { oldIn.inE = []; oldIn.outE = []; oldIn.net = -1; oldIn.group = -1; oldIn.idx = -1; }
+        entry.stock = sell; entry.cap = cap; entry.portItems = [];
+        entry.accepts = inp.tradeAccepts?.get(e.id) ?? NOTHING;
+        entry.idx = nodes.length;
+        nodes.push(entry);
+        reservoirs.push(entry);
+        postIn.set(e.id, entry);
         break;
       }
       case 'sink': {
@@ -300,8 +320,9 @@ export function compileGraph(inp: CompileInput): Graph {
 
     // Ports: routing blocks get theirs from the ribbons around them; others from their definition.
     const ports: WorldPort[] = kind === 'fork' ? routingPorts(e, b.logic ?? 'router', beltAt, across, lvAt, isLift) : worldPorts(e);
+    const entry = kind === 'trade' ? postIn.get(e.id) : undefined; // a post's entrance takes its in-ports (D131)
     for (const p of ports) {
-      const ref: PortRef = { node, port: p.idx, dir: p.dir };
+      const ref: PortRef = { node: p.io === 'in' && entry ? entry : node, port: p.idx, dir: p.dir };
       if (p.io === 'in') inPortAt.set(tileIndex(p.x, p.y) * 4 + p.dir, ref);
       else {
         // An outlet faces what is past any junctions in front of it, on its own level only.
@@ -706,7 +727,7 @@ export function compileGraph(inp: CompileInput): Graph {
     version: (inp.old?.version ?? 0) + 1,
     nodes, chains, nE,
     eSrc: Int32Array.from(src), eDst: Int32Array.from(dst), eSrcPort: Int32Array.from(sp), eDstPort: Int32Array.from(dp),
-    nodeByEnt, chainByTile, nets, netOfEnt, reservoirs, hearth, servers, feedDirs, jumps, accOrder, glean,
+    nodeByEnt, postIn, chainByTile, nets, netOfEnt, reservoirs, hearth, servers, feedDirs, jumps, accOrder, glean,
   };
 }
 
@@ -882,7 +903,9 @@ function chainKey(tier: number, tiles: Int32Array): string {
 
 /** Refund a discarded node's buffered items to the Hearth. */
 export function refundNode(n: FNode, refund: (item: number, mu: number) => void): void {
-  if (n instanceof MachineNode && n.recipe) {
+  if (n instanceof MachineNode) {
+    if (n.wBuf > 0 && n.wItem >= 0) refund(n.wItem, n.wBuf); // its waste bin (D125)
+    if (!n.recipe) return;
     n.recipe.ins.forEach((s, j) => { if (n.inBuf[j]! > 0) refund(s.item, n.inBuf[j]!); });
     n.recipe.outs.forEach((s, j) => { if (n.outBuf[j]! > 0) refund(s.item, n.outBuf[j]!); });
     if (n.crafting) for (const s of n.recipe.ins) refund(s.item, s.mu);

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { itemIdx } from '@/content/registry';
 import { BAL } from '@/content/balance';
 import { DEPTH_COST, PLAN_IDS, PLANS, RESEARCH, treePrereq, type ResearchId } from '@/content/research';
-import { flowStepAtLeast, serverRate, tokenFlowSteps } from '../systems/research';
+import { flowStepAtLeast, launchSources, serverRate, tokenFlowSteps } from '../systems/research';
 import { BUILDINGS } from '@/content/buildings';
 import { testSim, steadyPower, wire } from '../testkit';
 import { effectiveCost } from './runtime';
@@ -36,13 +36,13 @@ function stockFor(sim: Sim, ...ids: string[]): void {
 }
 
 /**
- * Tier 2 open: Tier 1 whole — the Synthesis and every node it needs (D93) —, the Core at level 3
- * (D118, outside commands like `learn`; its compute 2 000 tokens a minute with Overclocking, D122) and two expertises
- * chosen. Its first trunk node, Earthworks (`tr2`), takes 40 gears and 60 plates at launch and 15 000
- * tokens, at a pace of 8 minutes.
+ * Tier 2 open: Tier 1 whole — the Synthesis and every category of Tier 1, so each of Tier 2 is open
+ * (D128) —, the Core at level 3 (D118, outside commands like `learn`; its compute 2 000 tokens a
+ * minute with Overclocking, D122) and two expertises chosen. The Quarry's first node, Earthworks
+ * (`tr2`), takes 40 gears and 60 plates at launch and 15 000 tokens, at a pace of 8 minutes.
  */
 function tierTwo(sim: Sim): void {
-  learn(sim, ...treePrereq('tr_synth'), 'tr_synth');
+  learn(sim, ...(Object.keys(RESEARCH) as ResearchId[]).filter((id) => RESEARCH[id].tier === 1));
   sim.hearthLevel = 3;
   sim.expertise.slots = [{ id: 'estate', at: 0, on: false }, { id: 'haulage', at: 0, on: false }];
 }
@@ -133,6 +133,8 @@ describe('research (D68, D69, D118, D122): AI tokens as a flow and resources at 
     learn(sim, 'tr1');
     expect(sim.researchBlock('tr2')).toBe('prereq'); // the Synthesis closes Tier 1 first (D93)
     learn(sim, 'tr_synth');
+    expect(sim.researchBlock('tr2')).toBe('gate'); // the Quarry waits for Extraction finished (D128)
+    learn(sim, 'ex_fastdrill', 'ex_brick');
     expect(sim.researchBlock('tr2')).toBe('core'); // the Core at level 1: Tier 2 waits for level 3 (D118)
     sim.hearthLevel = 2;
     expect(sim.researchBlock('tr2')).toBe('core');
@@ -160,6 +162,7 @@ describe('research (D68, D69, D118, D122): AI tokens as a flow and resources at 
     const { sim } = labSim();
     tierTwo(sim);
     learn(sim, 'tr2', 'tr3', 'tr4', 'tr6');
+    learn(sim, 'an_servers', 'an_queue', 'tr5'); // the Servers finished: Computing, the Third Desk's, opens (D128)
     stockFor(sim, 'tr7');
     expect(sim.tierCoreOpen(2)).toBe(true);
     expect(sim.tierCoreOpen(3)).toBe(false);
@@ -233,7 +236,7 @@ describe('research (D68, D69, D118, D122): AI tokens as a flow and resources at 
     steadyPower(sim);
     server(sim);
     tierTwo(sim);
-    learn(sim, 'tr3', 'tr4', 'tr5'); // a second slot
+    learn(sim, 'tr3', 'tr4', 'tr5', 'workshop'); // a second slot; Optics' electronics workshop (D129)
     expect(sim.place('observatory', 503, 515, 0).ok).toBe(true);
     sim.ensureCompiled();
     toBoundary(sim);
@@ -303,8 +306,29 @@ describe('research (D68, D69, D118, D122): AI tokens as a flow and resources at 
     stockFor(sim, 'tr2');
     sim.startResearch('tr2');
     expect(sim.tokenBuyDefault('tr3')).toBe(7500); // the free flows taken by Earthworks: all of it bought
+    // The bank (D122) pays at the first boundary, the oldest first: Earthworks' 11 000 left after the
+    // free 4 000, then 29 000 of Ceramics' — the rest, 31 000, in the 7 minutes left at the free 4 000
+    // and a flow of 500 (D128: a reserve is spent before anything is bought; the old default, blind to
+    // the bank while a project ran, bought 7 500 a minute).
     sim.tokenBank = 40_000;
-    expect(sim.tokenBuyDefault('tr3')).toBe(7500); // the bank too goes to the oldest first
+    expect(sim.tokenBuyDefault('tr3')).toBe(500);
+    sim.tokenBank = 1_000_000;
+    expect(sim.tokenBuyDefault('tr3')).toBe(0); // the reserve covers it all
+  });
+
+  it('where a new project\'s tokens would come from (D128): the free flows after the projects before it, the bank at the first boundary, its bought flow', () => {
+    // Nothing running, no bank: the free flows alone, 2 500 a minute — 15 000 in 6 minutes.
+    expect(launchSources(2500, [], 0, { tokens: 15_000, buy: 0 })).toEqual({ bank: 0, free: 15_000, bought: 0, short: 0, minutes: 6 });
+    // The reserve covers it all: in at the first boundary, the free flows untouched beyond that minute.
+    expect(launchSources(2500, [], 1_000_000, { tokens: 15_000, buy: 1000 })).toEqual({ bank: 12_500, free: 2500, bought: 0, short: 0, minutes: 1 });
+    // A project before it takes the free flows first (12 500 left of it: 5 minutes, its own flow
+    // meanwhile), then they pass on: 2 500 + 1 000 a minute for the last 10 000.
+    const busy = launchSources(2500, [{ need: 12_500, buy: 0 }], 0, { tokens: 15_000, buy: 1000 });
+    expect(busy).toEqual({ bank: 0, free: 7500, bought: 7500, short: 0, minutes: 5 + 3 });
+    // The bank pays the oldest first: 2 500 left for the new one.
+    expect(launchSources(2500, [{ need: 12_500, buy: 0 }], 12_500, { tokens: 15_000, buy: 0 }).bank).toBe(2500);
+    // No flow at all: never.
+    expect(launchSources(0, [], 0, { tokens: 100, buy: 0 })).toEqual({ bank: 0, free: 0, bought: 0, short: 100, minutes: Infinity });
   });
 
   it('the Core\'s compute (D122): none at level 1, its level\'s from 2, the Analytics research and Archiving on top; no power, no ribbon, lost when nobody needs it', () => {
@@ -345,6 +369,7 @@ describe('research (D68, D69, D118, D122): AI tokens as a flow and resources at 
     const { sim, lab } = labSim();
     sim.hearthLevel = 2;
     learn(sim, 'an_queue', 'tr_synth'); // a Tier 2 node learnt: Tier 2 is open (D93, D118: a claim from before)
+    learn(sim, 'ex_fastdrill', 'ex_brick'); // Extraction finished: the Quarry, Earthworks', open (D128)
     expect(sim.queueResearch(lab, 'nope')).toBe(false); // a known node, not learnt yet
     stockFor(sim, 'tr1');
     sim.startResearch('tr1');

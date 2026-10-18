@@ -10,16 +10,16 @@
 // its table says, whatever else the claim owns (D72); an expertise in place takes its share off (D93).
 // A save's reconversion under way (`respec:<family>`, D107) still runs out its time (`dur`, `el`).
 // Integer maths throughout.
-import { FAMILY_IDS, RESEARCH, researchNode, type ResearchId } from '@/content/research';
+import { RESEARCH, THEME_IDS, TIER_GATE, unmetGates, type ResearchId } from '@/content/research';
 import { BAL } from '@/content/balance';
 import { itemIdx } from '@/content/registry';
-import type { FamilyId, ResearchDef } from '@/content/types';
+import type { ResearchDef, ThemeId } from '@/content/types';
 import { TPS } from '../constants';
 import type { Mods } from './modifiers';
 
-/** A research family (D69); `BranchId` is its old name, kept for the reconversion's logged command (a no-op since D107). */
-export type BranchId = FamilyId;
-export const BRANCHES: readonly BranchId[] = FAMILY_IDS;
+/** A research theme (D128; a family of D69 until then); `BranchId` is its old name, kept for the reconversion's logged command (a no-op since D107). */
+export type BranchId = ThemeId;
+export const BRANCHES: readonly BranchId[] = THEME_IDS;
 
 export interface Project {
   /** Research id, or `respec:<family>` for a reconversion in progress (a save's from before D107: none starts now). */
@@ -50,20 +50,10 @@ export interface Project {
 
 export const def = (id: string): ResearchDef => RESEARCH[id as ResearchId] as ResearchDef;
 
-/** Nodes owned per family (trunk excluded). */
-export function branchCounts(done: ReadonlySet<string>): Record<BranchId, number> {
-  const c: Record<BranchId, number> = { en: 0, ex: 0, dn: 0, cm: 0, an: 0, xp: 0 };
-  for (const id of done) {
-    const r = researchNode(id);
-    if (r && r.branch !== 'trunk') c[r.branch] += 1;
-  }
-  return c;
-}
-
 /**
  * A node's resources (milli-items, whole items), AI tokens and the pace the launch dialog aims at
  * (`aim`, ticks: D118, not a minimum): its table's, whatever else the claim owns (D72) — less what
- * an expertise in place takes off its family's research (D93: `mods.fam`, ‰ of each; whole items, at
+ * an expertise in place takes off its theme's research (D93, D128: `mods.fam`, ‰ of each; whole items, at
  * least one of each kind). Research has no time since D118, so an expertise of research time takes
  * its share off what the time now follows: the tokens. Without `mods`, the table's alone (a save's
  * rebase). A project keeps what it started at.
@@ -71,7 +61,7 @@ export function branchCounts(done: ReadonlySet<string>): Record<BranchId, number
 export function effectiveCost(id: string, mods?: Pick<Mods, 'fam'>): { cost: Array<{ item: number; mu: number }>; tokens: number; aim: number } {
   const r = def(id);
   const aim = r.minutes * 60 * TPS;
-  const f = mods && r.branch !== 'trunk' ? mods.fam[r.branch] : null;
+  const f = mods ? mods.fam[r.theme] : null;
   if (!f) return { cost: r.cost.map(([it, q]) => ({ item: itemIdx(it), mu: q * 1000 })), tokens: r.tokens, aim };
   const tokens = Math.floor((f.tokens * f.time) / 1000);
   return {
@@ -85,15 +75,23 @@ export function effectiveCost(id: string, mods?: Pick<Mods, 'fam'>): { cost: Arr
 export const tokensLeft = (p: Project): number => Math.max(0, (p.tokens ?? 0) - (p.tokIn ?? 0));
 
 /**
- * Why a node cannot start right now (null = it can): `core`, the Core's level short of its tier's
- * (D118); `unaffordable`, the Core short of its resources, `reserve`, they would eat into CrierBelt's
+ * Why a node cannot start right now (null = it can): `gate`, a category its own waits for not
+ * finished (D128); `core`, the Core's level short of its tier's (D118); `unaffordable`, the Core short of its resources, `reserve`, they would eat into CrierBelt's
  * restart reserve (D122, as a plan: D36); `debt`, a bought flow asked for from a purse in the red.
  */
-export type StartBlock = 'done' | 'active' | 'prereq' | 'core' | 'expertise' | 'slots' | 'no_lab' | 'unaffordable' | 'reserve' | 'unknown' | 'debt';
+export type StartBlock = 'done' | 'active' | 'prereq' | 'gate' | 'core' | 'expertise' | 'slots' | 'no_lab' | 'unaffordable' | 'reserve' | 'unknown' | 'debt';
 
+/**
+ * Its own prerequisites in hand (as the tree draws them), and its tier's gate (`TIER_GATE`: the node
+ * behind the Core's level the tier waits for). Its category's gates are apart (`gatesMet`, D128).
+ */
 export function prereqsMet(id: string, done: ReadonlySet<string>): boolean {
-  return def(id).prereq.every((p) => done.has(p));
+  const r = def(id), g = TIER_GATE[r.tier];
+  return r.prereq.every((p) => done.has(p)) && (!g || g === id || done.has(g));
 }
+
+/** Its category open (D128): every category its gates name — of the tier before — finished. */
+export const gatesMet = (id: string, done: ReadonlySet<string>): boolean => unmetGates(id, done).length === 0;
 
 /**
  * Apply archive notes (a save's old reconversion, D107) to a fresh project: they pay its tokens at

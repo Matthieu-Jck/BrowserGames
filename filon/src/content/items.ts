@@ -23,7 +23,9 @@ export const ITEMS = {
 
   // ── tier 2 ────────────────────────────────────────────────────────────────
   gear: { name: { fr: 'Engrenage', en: 'Gear' }, tier: 2, kind: 'part', value: 10, depth: 150, glyph: 'gear', color: '#8d97a8' },
-  circuit: { name: { fr: 'Circuit imprimé', en: 'Circuit Board' }, tier: 2, kind: 'part', value: 13, depth: 120, glyph: 'chip', color: '#3fb8af' },
+  // A copper plate etched with copper wire and glass at Tier 2's electronics works (D129: 13 ◉ when it
+  // was three wires and a glass, a plan's machine).
+  circuit: { name: { fr: 'Circuit imprimé', en: 'Circuit Board' }, tier: 2, kind: 'part', value: 17, depth: 120, glyph: 'chip', color: '#3fb8af' },
   ceramic: { name: { fr: 'Céramique', en: 'Ceramic' }, tier: 2, kind: 'material', value: 1.7, depth: 300, glyph: 'tile', color: '#f8dfc6' },
   empty_cell: { name: { fr: 'Batterie vide', en: 'Empty Battery' }, tier: 2, kind: 'part', value: 12, depth: 60, glyph: 'cell', color: '#c9bee6' },
   charged_cell: { name: { fr: 'Batterie chargée', en: 'Charged Battery' }, tier: 2, kind: 'energy', value: 29, depth: 60, glyph: 'cellCharged', color: '#6ff2e4' },
@@ -73,6 +75,27 @@ export const ITEMS = {
   brick: { name: { fr: 'Brique', en: 'Brick' }, tier: 1, kind: 'material', value: 1.6, depth: 400, glyph: 'brick', color: '#b9583c' },
   pipe: { name: { fr: 'Tuyau', en: 'Pipe' }, tier: 2, kind: 'part', value: 5.0, depth: 150, glyph: 'pipe', color: '#93a0b2' },
   cable: { name: { fr: 'Câble', en: 'Cable' }, tier: 2, kind: 'part', value: 8.0, depth: 120, glyph: 'cable', color: '#3d3852' },
+
+  // ── appended (D125): the machines' waste ─────────────────────────────────
+  // (owner, 2026-10-18: « il faudrait que certaines machines produisent des déchets en alternance
+  // avec leur vraie production, qu'il faille traiter »). A smelter's metal recipes, the steel mill's
+  // put out a slag every few crafts, the press a scrap, through the same output as their product
+  // (`RecipeDef.waste`): the line carries both and the player sorts them. Worth little at the Crier
+  // (sold cheap is one way out); burnt in an incinerator, or recycled — slag into bricks at the
+  // brickworks, scrap back into steel at the steel mill.
+  slag: { name: { fr: 'Scories', en: 'Slag' }, tier: 1, kind: 'waste', value: 0.2, depth: 300, glyph: 'slag', color: '#6b5a4e' },
+  scrap: { name: { fr: 'Chutes', en: 'Scrap' }, tier: 1, kind: 'waste', value: 0.6, depth: 200, glyph: 'scrap', color: '#8a8f98' },
+
+  // ── appended (D129): the assembly bench's parts ───────────────────────────
+  // (owner, 2026-10-18: « le electronics workshop devrait probablement avoir un style plus avancé…
+  // faire autre chose de plus basique au Tier 1 »). Circuits wait for Tier 2's electronics works; the
+  // early base winds coils and builds motors on a plain bench instead:
+  //   copper coil — two copper wires wound on an iron plate's core: what turns power into motion
+  //                 (turbines' windings, the electric smelter's induction, the Core's level 3);
+  //   motor       — two coils and a gear in a housing: what drives the drills, the twin mills, the
+  //                 excavators, and the servomotor of Tier 2 (a motor and two circuits).
+  copper_coil: { name: { fr: 'Bobine de cuivre', en: 'Copper Coil' }, tier: 1, kind: 'part', value: 8.0, depth: 150, glyph: 'bobbin', color: '#c46a34' },
+  motor: { name: { fr: 'Moteur électrique', en: 'Electric Motor' }, tier: 1, kind: 'part', value: 30, depth: 60, glyph: 'motor', color: '#5d7286' },
 } as const satisfies Record<string, ItemDef>;
 
 export type ItemId = keyof typeof ITEMS;

@@ -19,10 +19,11 @@
 //   grooves, fallen-block scars and hatching in the shade vary the face along a wall.
 // · Tops carry slabs, cracks, sand pockets, pebbles and boulders, paler and cooler higher up
 //   (aerial perspective); a top at the foot of a higher neighbour's wall gets its talus.
-// A column of water up on the rock (the Crown's tarn, D63) is the rock round it with the water for
-// its top (`ColumnOpts.top`): each tile draws its part of the pool, cut by marching squares over its
-// corners so the shore runs on from tile to tile, inked like the floor's water, deep at its heart;
-// reclaimed ground is fill. A column whose rock holds a face ore (D87: quartz set in the cliff,
+// A column of water up on the rock (the Crown's tarn, D63; a stream up on a massif, D94) is the
+// rock round it with the water for its top (`ColumnOpts.top`): each tile draws its part of one body
+// of water, read from the world round it (water-top.ts, D135), so the shores, the depth, the banks
+// and a stream's channel run on from tile to tile in any direction; a stream's fall pours down the
+// wall it runs off as wide as its water; reclaimed ground is fill. A column whose rock holds a face ore (D87: quartz set in the cliff,
 // `ColumnOpts.vein`) wears it: a milky seam across its camera-facing walls with clusters of rock
 // crystal erupting from it, and a few points poking up along the lip of its top (`crystal`, the
 // one crystal drawing the plan's seam and the machines share).
@@ -31,6 +32,7 @@ import { hash32, hashUnit } from '@/core/hash';
 import { facesCamera, MAX_LEVEL, MOUNTAIN_TERRACE, slabOutline, shadeOf, STEP_LEVELS, type OutlinePt } from '../relief';
 import { C, mix, rgba } from './tokens';
 import { ink, type Ctx, type Pt } from './ink';
+import { lipSpan, paintWaterTop, type UV, type WaterLook } from './water-top';
 
 /** Projection of a column-local point (u, v ∈ [0, 1], z in levels) to canvas px. */
 export type Proj = (u: number, v: number, z: number) => Pt;
@@ -170,27 +172,20 @@ export const columnSeed = (cls: number, masks: readonly number[], variant: numbe
   hash32(cls, masks.length * STEP_LEVELS, masks[masks.length - 1] ?? 0, variant + 0x51);
 
 /**
- * The top of a column up on the rock that is water, a stream, reclaimed ground, or rock beside
- * water at its height (D63: the Crown's tarn; D94: a stream up on a massif): `kind`, what the tile
- * itself is; `wet` and `deep`, which tiles of its 3×3 (bit 3·(dy + 1) + dx + 1, the tile itself
- * bit 4) hold water / deep water at its height; `run`, some of that water runs (a stream's colour);
- * a stream's `flow` (the eighth of a turn it runs to, 0 = +x, 2 = +y), `fall` (relief levels
- * down to the next tile along it: its waterfall) and `from` (which tiles of its 3×3 pour into it
- * from higher up: the falls it takes, whose water lands on it — its side there is no bank).
+ * The top of a column up on the rock that is water, a stream, reclaimed ground, or rock the water
+ * at its height reaches (D63: the Crown's tarn; D94: a stream up on a massif; D135): `kind`, what
+ * the tile itself is; `cells`, what the 7 × 7 round it hold at its height (water-top.ts `CELL`: the
+ * body of water its part is cut from, the same seen from any tile of it); a stream's `flow` (the
+ * eighth of a turn it runs to, 0 = +x, 2 = +y), `fall` (relief levels down to the next tile along
+ * it: its waterfall) and `from` (which tiles of its 3×3, bit 3·(dy + 1) + dx + 1, pour into it from
+ * higher up: the falls landing on it); `mark`, the mark on its water (a current's strokes, a
+ * ripple; 0 none), hashed from the world tile (terrain.ts `columnLook`).
  */
-export interface TopLook {
-  readonly kind: 'water' | 'ground' | 'rock' | 'river';
-  readonly wet: number;
-  readonly deep: number;
-  readonly run?: boolean;
-  readonly flow?: number;
-  readonly fall?: number;
-  readonly from?: number;
-}
+export type TopLook = WaterLook;
 
 /** A top look's key, for the sprite atlas. */
 export const topKey = (t: TopLook | null | undefined): string =>
-  (t ? `${t.kind[0]}${t.wet}.${t.deep}${t.run ? 'r' : ''}${t.kind === 'river' ? `.${t.flow ?? 0}.${t.fall ?? 0}.${t.from ?? 0}` : ''}` : '');
+  (t ? `${t.kind[0]}${t.cells}.${t.mark ?? 0}${t.kind === 'river' ? `.${t.flow ?? 0}.${t.fall ?? 0}.${t.from ?? 0}` : ''}` : '');
 
 export interface ColumnOpts {
   /** 0 = flat (far terrain), 1 = light (terrain worker), 2 = full (sprites). */
@@ -475,8 +470,9 @@ function drawSlab(ctx: Ctx, P: Proj, cls: number, pts: readonly OutlinePt[], bel
   const k = o.k;
   const rnd = (n: number): number => hashUnit(o.seed, n, 0x6f + t * 977);
   const pool = z1 === L ? o.top : null;
-  // A pool's top keeps its straight outline (its shore runs on into the next tile's).
-  const jitter = !pool;
+  // A pool's top keeps its straight outline (its shore runs on into the next tile's); rock the
+  // water only reaches keeps its rim.
+  const jitter = !pool || pool.kind === 'rock';
   const sides = sidesOf(pts, below, above, rnd, o.detail >= 2 ? 0.06 : o.detail === 1 ? 0.12 : 0.25, jitter);
   const runs = runsOf(sides);
   const at = (st: Station, z: number): Pt => {
@@ -497,19 +493,20 @@ function drawSlab(ctx: Ctx, P: Proj, cls: number, pts: readonly OutlinePt[], bel
   ctx.lineWidth = 1.6;
   ctx.lineJoin = 'round';
   poly(ctx, topPts);
-  // Bleed 0.8 px so neighbouring tops join without a hairline (water bleeds its own colour instead).
-  if (pool?.kind !== 'water' && pool?.kind !== 'river') ctx.stroke();
+  // Bleed 0.8 px so neighbouring tops join without a hairline (the water bleeds its own colour over it).
+  ctx.stroke();
   ctx.fill();
-  if (pool && pool.kind !== 'rock') drawTop(ctx, P, topPts, z1, pool, o, rnd, cls);
-  else if (o.detail >= 1 && z1 === L) {
+  // The rock's grain (a stream's channel leaves rock either side of it on its tile; under a lake
+  // the water covers it).
+  if (o.detail >= 1 && z1 === L && pool?.kind !== 'water' && pool?.kind !== 'ground') {
     ctx.save();
     poly(ctx, topPts);
     ctx.clip();
     topMarks(ctx, P, cls, z1, o, rnd);
     ctx.restore();
   }
-  // Rock beside water at its height: the pool's corner over its grain.
-  if (pool?.kind === 'rock') drawTop(ctx, P, topPts, z1, pool, o, rnd, cls);
+  // Water, reclaimed ground, or the water round it reaching this rock: its part of the body.
+  if (pool) drawTop(ctx, P, topPts, pts, z1, pool, o, rnd, cls);
 
   // ── ink ──
   // The lit lip along the lit walls' rims.
@@ -576,7 +573,7 @@ function drawSlab(ctx: Ctx, P: Proj, cls: number, pts: readonly OutlinePt[], bel
   // Talus at the foot of the walls on this slab's top, where the slab above stands back from its
   // edge (a ledge in front of a chamfered wall: drawn with the ledge, so it takes the ledge's
   // shade, world/relief-view.ts). A higher neighbour's wall rising from its top: `drawFoot`.
-  if (o.detail >= 2 && !pool) {
+  if (o.detail >= 2 && (!pool || pool.kind === 'rock')) {
     if (above) {
       ctx.save();
       poly(ctx, topPts);
@@ -717,70 +714,63 @@ function wall(ctx: Ctx, P: Proj, at: (st: Station, z: number) => Pt, cls: number
     if (o.detail >= 1) gullies(ctx, P, at, cls, sides, run, z0, z1, o, rnd);
   }
   if (o.vein) veinSeam(ctx, P, veinRun(sides, run), z0, z1, o, rnd);
-  if (o.top?.kind === 'river' && o.top.fall) for (const sp of run.spans) if (fallsDown(sides[sp.s]!, o.top)) waterfall(ctx, at, sides, sp.s, z0, z1, o, rnd);
   ctx.restore();
+  // A fall's sheet over the wall, run a hair down over the slab below where the wall carries on
+  // (that slab's sheet, drawn first: no seam across a tall fall where its slabs meet).
+  if (o.top?.kind === 'river' && o.top.fall) {
+    const down = z0 > 0 ? 0.06 : 0;
+    ctx.save();
+    poly(ctx, band(0, sts.length - 1, () => z0 - down, () => z1));
+    ctx.clip();
+    for (const sp of run.spans) if (fallsDown(sides[sp.s]!, o.top)) waterfall(ctx, at, sides, sp.s, z0, z1, o, rnd, down);
+    ctx.restore();
+  }
 }
 
 /** A stream's way as a tile-local unit vector. */
 const flowVec = (top: TopLook): [number, number] => { const a = ((top.flow ?? 0) * Math.PI) / 4; return [Math.cos(a), Math.sin(a)]; };
 
-/** Does a stream fall down this side's wall (it faces the way the stream runs)? */
+/**
+ * Where a fall's sheet hangs on a wall (D135): the stretch of the side its water reaches at the
+ * lip (water-top.ts `lipSpan`: as wide as the channel there, the very stretch its lip's foam
+ * crosses); `openA` / `openB`: the water runs on past that end of the side into the next tile's
+ * fall, so the sheet does too (two tiles falling side by side make one sheet).
+ */
+const sheetOf = (sd: Side, top: TopLook): ReturnType<typeof lipSpan> => lipSpan(top.cells, [sd.p.u, sd.p.v] as UV, [sd.q.u, sd.q.v] as UV);
+
+/** Does a stream fall down this side's wall (it faces the way the stream runs, water-top.ts `fallSides`, and its water reaches it)? */
 const fallsDown = (sd: Side, top: TopLook): boolean => {
   const [fx, fy] = flowVec(top);
-  return Math.cos(sd.a) * fx + Math.sin(sd.a) * fy > 0.55;
+  return Math.cos(sd.a) * fx + Math.sin(sd.a) * fy > 0.55 && sheetOf(sd, top) !== null;
 };
 
 /**
- * A stream's surface (D94): a stroke or two along the way it runs, paper-white hooked like a
- * ripple and a darker one, as the floor's rivers (gaps.ts); where it falls, a band of foam across
- * it at the lip.
- */
-function streamMarks(ctx: Ctx, P: Proj, z: number, top: TopLook, o: ColumnOpts, rnd: (n: number) => number): void {
-  const k = o.k, [fx, fy] = flowVec(top);
-  for (let q = 0; q < 2; q++) {
-    if (rnd(470 + q) > 0.7) continue;
-    const cu = 0.25 + rnd(480 + q) * 0.5, cv = 0.25 + rnd(490 + q) * 0.5, L = 0.15 + rnd(500 + q) * 0.12, b = 0.08;
-    const pts: Pt[] = [];
-    for (let e = 0; e <= 6; e++) {
-      const s = e / 6 - 0.5, bend = Math.sin((e / 6) * Math.PI) * b;
-      pts.push(P(cu + fx * L * 2 * s - fy * bend, cv + fy * L * 2 * s + fx * bend, z));
-    }
-    line(ctx, pts, q ? rgba(C.riverD, 0.6) : 'rgba(255,255,255,0.8)', (q ? 1 : 1.3) * k);
-  }
-  if (top.fall) {
-    // Foam at the lip, across the stream where it pours over.
-    const eu = 0.5 + fx * 0.42, ev = 0.5 + fy * 0.42;
-    line(ctx, [P(eu - fy * 0.42, ev + fx * 0.42, z), P(eu + fy * 0.42, ev - fx * 0.42, z)], 'rgba(255,255,255,0.9)', 2.4 * k);
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    for (let q = 0; q < 4; q++) {
-      const s = (rnd(510 + q) - 0.5) * 0.7, back = 0.05 + rnd(520 + q) * 0.12;
-      const [x, y] = P(eu - fy * s - fx * back, ev + fx * s - fy * back, z);
-      ctx.beginPath(); ctx.ellipse(x, y, (1.2 + rnd(530 + q) * 1.4) * k, (0.8 + rnd(540 + q)) * k, 0, 0, Math.PI * 2); ctx.fill();
-    }
-  }
-}
-
-/**
  * A stream's waterfall down a wall it pours over (D94), inside the wall: a sheet of running water
- * across most of the face, white and pale-blue streaks falling down it — long on a tall fall,
- * broken into rapids on a fall of one level —, the lip's curl at the top of the column.
+ * as wide as its water at the lip (D135, `sheetOf`), white and pale-blue streaks falling down it —
+ * long on a tall fall, broken into rapids on a fall of one level —, the lip's curl at the top of
+ * the column. Its edges a thinner veil, wavering down, where the water ends; where the next tile's
+ * sheet carries it on, it runs a hair past the side's end, straight; `down`: a hair below the
+ * slab too, over the slab below's sheet where the wall carries on down (no seam across a tall fall).
  */
-function waterfall(ctx: Ctx, at: (st: Station, z: number) => Pt, sides: readonly Side[], s: number, z0: number, z1: number, o: ColumnOpts, rnd: (n: number) => number): void {
+function waterfall(ctx: Ctx, at: (st: Station, z: number) => Pt, sides: readonly Side[], s: number, z0: number, z1: number, o: ColumnOpts, rnd: (n: number) => number, down = 0): void {
   const k = o.k, sd = sides[s]!, tall = (o.top?.fall ?? 0) > STEP_LEVELS;
-  // As wide as the channel it leaves (D115), its edges a thinner veil, its sides wavering down.
-  const fa = 0.06, fb = 0.94, n = 8;
-  for (const [ea, eb, alpha] of [[0.015, 0.985, 0.5], [fa, fb, 0.94]] as const) {
+  const sheet = o.top ? sheetOf(sd, o.top) : null;
+  if (!sheet) return;
+  const { fa, fb } = sheet, n = 8;
+  const edge = (f: number, open: boolean, sgn: number, out: number, q: number): number =>
+    open ? f + sgn * OVERRUN : Math.max(0.005, Math.min(0.995, f + sgn * (out + 0.025 * (q / n)) + (rnd(7900 + s * 17 + q + (sgn > 0 ? 40 : 0)) - 0.5) * 0.03 * (q / n)));
+  for (const [out, alpha] of [[0.035, 0.5], [-0.01, 0.94]] as const) {
     const left: Pt[] = [], right: Pt[] = [];
     for (let q = 0; q <= n; q++) {
-      const z = z1 - ((z1 - z0) * q) / n, spread = 0.025 * (q / n), wob = (rnd(7900 + s * 17 + q) - 0.5) * 0.03 * (q / n);
-      left.push(at(stationAt(sides, s, Math.max(0.01, ea - spread + wob)), z));
-      right.push(at(stationAt(sides, s, Math.min(0.99, eb + spread + wob)), z));
+      const z = z1 - ((z1 - z0 + down) * q) / n;
+      left.push(at(stationAt(sides, s, edge(fa, sheet.openA, -1, out, q)), z));
+      right.push(at(stationAt(sides, s, edge(fb, sheet.openB, 1, out, q)), z));
     }
     fillPoly(ctx, [...left, ...right.reverse()], rgba(C.river, alpha));
   }
-  const streaks = Math.round(sd.len * (o.detail >= 2 ? 16 : o.detail === 1 ? 7 : 3));
+  const streaks = Math.round(sd.len * (fb - fa) * (o.detail >= 2 ? 16 : o.detail === 1 ? 7 : 3));
   for (let q = 0; q < streaks; q++) {
-    const f = fa + 0.03 + rnd(8000 + s * 131 + q) * (fb - fa - 0.06), st = stationAt(sides, s, f);
+    const f = fa + 0.02 + rnd(8000 + s * 131 + q) * Math.max(0, fb - fa - 0.04), st = stationAt(sides, s, f);
     const white = rnd(8100 + s * 131 + q) < 0.55, dark = !white && rnd(8200 + s * 131 + q) < 0.35;
     const color = white ? 'rgba(255,255,255,0.85)' : dark ? rgba(C.riverD, 0.5) : rgba('#d4f1fb', 0.8);
     const w = (white ? 1.1 : 0.8) * k;
@@ -796,28 +786,33 @@ function waterfall(ctx: Ctx, at: (st: Station, z: number) => Pt, sides: readonly
     }
   }
   // The lip's curl where the sheet leaves the top (a lip: the walls below carry the sheet on).
-  if (o.detail >= 1 && sd.lips.length) line(ctx, [at(stationAt(sides, s, fa), z1 - 0.06), at(stationAt(sides, s, (fa + fb) / 2), z1 - 0.1), at(stationAt(sides, s, fb), z1 - 0.06)], 'rgba(255,255,255,0.9)', 1.8 * k);
+  if (o.detail >= 1 && sd.lips.length) {
+    const ca = sheet.openA ? 0 : fa, cb = sheet.openB ? 1 : fb, sag = sheet.openA && sheet.openB ? 0.08 : 0.1;
+    line(ctx, [at(stationAt(sides, s, ca), z1 - (sheet.openA ? 0.08 : 0.06)), at(stationAt(sides, s, (ca + cb) / 2), z1 - sag), at(stationAt(sides, s, cb), z1 - (sheet.openB ? 0.08 : 0.06))], 'rgba(255,255,255,0.9)', 1.8 * k);
+  }
 }
 
-/** Foam and spray at the foot of a waterfall (D94), over the wall's foot: the water boiling where it lands. */
+/** Foam and spray at the foot of a waterfall (D94), over the wall's foot under its sheet: the water boiling where it lands. */
 function splash(ctx: Ctx, P: Proj, sides: readonly Side[], s: number, z0: number, o: ColumnOpts, rnd: (n: number) => number): void {
-  const k = o.k, sd = sides[s]!;
+  const k = o.k, sd = sides[s]!, sheet = o.top ? sheetOf(sd, o.top) : null;
+  if (!sheet) return;
+  const { fa, fb } = sheet, w = fb - fa;
   const at = (f: number, d: number, z: number): Pt => P(sd.p.u + (sd.q.u - sd.p.u) * f - sd.iu * d, sd.p.v + (sd.q.v - sd.p.v) * f - sd.iv * d, z);
   ctx.save();
   ctx.fillStyle = 'rgba(255,255,255,0.35)';
   for (let q = 0; q < 3; q++) {
-    const [x, y] = at(0.2 + q * 0.3, 0, z0 + 0.3);
-    ctx.beginPath(); ctx.ellipse(x, y, (9 + rnd(9000 + q) * 5) * k, (5 + rnd(9010 + q) * 3) * k, 0, 0, Math.PI * 2); ctx.fill();
+    const [x, y] = at(fa + w * (0.2 + q * 0.3), 0, z0 + 0.3);
+    ctx.beginPath(); ctx.ellipse(x, y, (9 + rnd(9000 + q) * 5) * k * Math.min(1, w * 1.2), (5 + rnd(9010 + q) * 3) * k, 0, 0, Math.PI * 2); ctx.fill();
   }
   ctx.fillStyle = 'rgba(255,255,255,0.92)';
-  const n = Math.round(sd.len * 9);
+  const n = Math.round(sd.len * w * 9);
   for (let q = 0; q < n; q++) {
-    const [x, y] = at(0.1 + rnd(9020 + q) * 0.8, 0, z0 + 0.05 + rnd(9030 + q) * 0.25);
+    const [x, y] = at(fa + w * (0.1 + rnd(9020 + q) * 0.8), 0, z0 + 0.05 + rnd(9030 + q) * 0.25);
     ctx.beginPath(); ctx.ellipse(x, y, (2 + rnd(9040 + q) * 2.6) * k, (1.4 + rnd(9050 + q) * 1.4) * k, 0, 0, Math.PI * 2); ctx.fill();
   }
   ctx.fillStyle = 'rgba(212,241,251,0.9)';
   for (let q = 0; q < 6; q++) {
-    const [x, y] = at(0.12 + rnd(9060 + q) * 0.76, 0, z0 + 0.4 + rnd(9070 + q) * 0.5);
+    const [x, y] = at(fa + w * (0.12 + rnd(9060 + q) * 0.76), 0, z0 + 0.4 + rnd(9070 + q) * 0.5);
     ctx.beginPath(); ctx.arc(x, y, (0.8 + rnd(9080 + q) * 0.8) * k, 0, Math.PI * 2); ctx.fill();
   }
   ctx.restore();
@@ -1168,212 +1163,21 @@ function talus(ctx: Ctx, P: Proj, z: number, a: readonly [number, number], b: re
   }
 }
 
-/** A tile's corners clockwise from the back (NW, NE, SE, SW), and the 3×3 bits (`TopLook.wet`) of the four tiles meeting at each. */
-const CORNERS: ReadonlyArray<readonly [number, number, readonly number[]]> = [
-  [0, 0, [0, 1, 3, 4]], [1, 0, [1, 2, 4, 5]], [1, 1, [4, 5, 7, 8]], [0, 1, [3, 4, 6, 7]],
-];
-/** The neighbour across each side (N, E, S, W: the side leaving each corner above), as a 3×3 bit. */
-const ACROSS = [1, 5, 7, 3] as const;
-
 /**
- * The part of a tile inside a pool (`mask`: which tiles of its 3×3 hold it), in tile-local coords
- * clockwise from the back: marching squares over the tile's corners, each worth the share of the
- * four tiles meeting there that hold it, cut at a half. Every tile reads its corners from the same
- * neighbours, so the outline runs on across tiles — straight along a shore, cut on the diagonal at
- * a corner, out of the pool and into the rock where three tiles of water meet it. `shore`: does
- * the segment leaving the point bound the pool (not a side shared with more of it)? `across`: the
- * 3×3 bit of the tile beyond the side the segment runs along (−1: inside the tile).
+ * The top of a column up on the rock that holds water, reclaimed ground, or rock the water round it
+ * reaches (D63, D94, D135), over the top just drawn: reclaimed ground as fill, then its part of the
+ * body of water round it (water-top.ts `paintWaterTop`: one outline, depth, banks, marks and falls,
+ * the same from any tile of it). A whole tile's top lets its water run a hair past its edge, under
+ * the next tile's of the same colour (no hairline at a seam); a top cut back by a drop beside it
+ * keeps it inside (rock dug away round the pool).
  */
-function poolPart(mask: number): Array<{ u: number; v: number; shore: boolean; across: number }> {
-  const val = CORNERS.map(([, , q]) => q.filter((b) => mask & (1 << b)).length / 4);
-  const pts: Array<{ u: number; v: number; edge: boolean; side: number }> = [];
-  for (let k = 0; k < 4; k++) {
-    const [u0, v0] = CORNERS[k]!, [u1, v1] = CORNERS[(k + 1) % 4]!;
-    const a = val[k]!, b = val[(k + 1) % 4]!;
-    if (a >= 0.5) pts.push({ u: u0, v: v0, edge: a === 0.5, side: k });
-    if (a !== 0.5 && b !== 0.5 && a < 0.5 !== b < 0.5) {
-      const t = (0.5 - a) / (b - a);
-      pts.push({ u: u0 + (u1 - u0) * t, v: v0 + (v1 - v0) * t, edge: true, side: k });
-    }
-  }
-  if (pts.length < 3) return [];
-  // A point on side k (leaving corner k) also lies on side k − 1 when it is corner k itself.
-  const onSide = (p: { u: number; v: number }, k: number): boolean => (k === 0 ? p.v === 0 : k === 1 ? p.u === 1 : k === 2 ? p.v === 1 : p.u === 0);
-  return pts.map((p, i) => {
-    const q = pts[(i + 1) % pts.length]!;
-    let shore = p.edge && q.edge, across = -1;
-    for (let k = 0; k < 4; k++) if (onSide(p, k) && onSide(q, k)) across = ACROSS[k]!;
-    if (across >= 0 && mask & (1 << across)) shore = false;
-    return { u: p.u, v: p.v, shore, across };
-  });
-}
-
-/** A tile's corners (NW, NE, SE, SW): the diagonal neighbour's 3×3 bit and the two orthogonal ones'. */
-const DIAG = [[0, 1, 3], [2, 1, 5], [8, 5, 7], [6, 7, 3]] as const;
-/**
- * How far a stream's bank cuts across a corner (tiles along each side): a stream tile's corner that
- * touches no water, and the wedge a rock tile takes where a stream steps on diagonally past it —
- * half a tile, the line the rock tiles' corners of water already follow where three tiles of it
- * meet (`poolPart`), so a stream that steps runs on as one straight channel.
- */
-const WEDGE = 0.5;
-/** The corners a stream leaves its tile by (its way, the eighth of a turn: 0 = +x … 7): kept whole for the lip of its fall. */
-const EXIT: ReadonlyArray<readonly number[]> = [[1, 2], [1, 2, 3], [2, 3], [2, 3, 0], [3, 0], [3, 0, 1], [0, 1], [0, 1, 2]];
-
-/** The share of a stream tile its far banks' inner walls take: the channel's sides seen dropping to the water (D115). */
-const BANK = 0.11;
-/** The stream's middle, deeper: half widths (tiles) of its bands from the edge in, and their colours. */
-const MIDDLE: ReadonlyArray<readonly [number, string]> = [[0.3, mix(C.river, C.riverD, 0.22)], [0.2, mix(C.river, C.riverD, 0.42)], [0.11, mix(C.river, C.riverD, 0.6)]];
-
-/**
- * A stream's top (D94; D115: owner, 2026-10-17, of a stream up on the rock: « the visuals are still
- * a little bit broken »): running water in a channel cut a little into the rock, a tile wide. Its
- * corners that touch no water are cut (`WEDGE`) — but at the lip of its fall and where a fall lands
- * on it (`from`) —, and where it steps on diagonally across a corner the rock tiles beside take a
- * wedge of it (`streamWedges`): a stream that steps, orthogonally or diagonally, is one straight
- * channel, not a saw or a string of beads. Its middle deeper along the way it runs (`MIDDLE`); the
- * far banks (north and west, the ones whose inner walls face the camera) show their wall dropping
- * to the water (`BANK`), lit at the lip, wet at the foot; the near banks, the rock's inked lip; the
- * current's strokes; where a fall lands, the water churned white and ringed.
- */
-function streamTop(ctx: Ctx, P: Proj, z: number, top: TopLook, o: ColumnOpts, rnd: (n: number) => number, cls: number): void {
-  const k = o.k, wet = top.wet | (top.from ?? 0);
-  const has = (b: number): boolean => (wet & (1 << b)) !== 0;
-  const exit = top.fall ? EXIT[top.flow ?? 0]! : [];
-  const cut = [0, 1, 2, 3].map((c) => { const [dg, a, b] = DIAG[c]!; return !has(dg) && !has(a) && !has(b) && !exit.includes(c); });
-  // The water's outline, clockwise from the back: each corner, or its cut's two ends.
-  const C2 = 1 - WEDGE;
-  const outline: Array<{ u: number; v: number; bank: boolean }> = [];
-  for (let c = 0; c < 4; c++) {
-    const [cu, cv] = CORNERS[c]!, [pu, pv] = CORNERS[(c + 3) % 4]!, [nu, nv] = CORNERS[(c + 1) % 4]!;
-    const bankOut = !has(ACROSS[c]!);
-    if (cut[c]) {
-      outline.push({ u: cu + (pu - cu) * C2, v: cv + (pv - cv) * C2, bank: true });
-      outline.push({ u: cu + (nu - cu) * C2, v: cv + (nv - cv) * C2, bank: bankOut });
-    } else outline.push({ u: cu, v: cv, bank: bankOut });
-  }
-  const pts = outline.map((p) => P(p.u, p.v, z));
-  ctx.save();
-  ctx.fillStyle = ctx.strokeStyle = C.river;
-  ctx.lineWidth = 1.6;
-  poly(ctx, pts);
-  ctx.stroke();
-  ctx.fill();
-  // Clipped a hair past the tile, so the next tile's water runs on over the seam with no hairline.
-  poly(ctx, outline.map((p) => P(0.5 + (p.u - 0.5) * 1.04, 0.5 + (p.v - 0.5) * 1.04, z)));
-  ctx.clip();
-  // The far banks' walls (north and west: their inner faces turned to the camera) take the
-  // water's edge there; the middle runs between them.
-  const farN = !has(1) ? 1 : 0, farW = !has(3) ? 1 : 0;
-  const [fx, fy] = flowVec(top);
-  if (o.detail >= 1) {
-    const mu = 0.5 + (farW * BANK) / 2, mv = 0.5 + (farN * BANK) / 2;
-    for (const [hw, color] of MIDDLE) {
-      // A band along the way it runs, through the water's middle, long enough to leave the tile.
-      fillPoly(ctx, [P(mu - fx * 0.9 - fy * hw, mv - fy * 0.9 + fx * hw, z), P(mu + fx * 0.9 - fy * hw, mv + fy * 0.9 + fx * hw, z), P(mu + fx * 0.9 + fy * hw, mv + fy * 0.9 - fx * hw, z), P(mu - fx * 0.9 + fy * hw, mv - fy * 0.9 - fx * hw, z)], color);
-    }
-  }
-  if (o.detail >= 1) streamMarks(ctx, P, z, top, o, rnd);
-  if (o.detail >= 1 && top.from) landing(ctx, P, z, top, o, rnd);
-  // The far banks' inner walls: a strip of the rock from the lip down to the water, lit at its lip,
-  // dark and wet at its foot.
-  const wallC = mix(wallColor(cls, 0.45, z), C.riverD, 0.18), footC = mix(C.ink, C.riverD, 0.45);
-  for (let i = 0; i < outline.length; i++) {
-    const a = outline[i]!, b = outline[(i + 1) % outline.length]!;
-    if (!a.bank) continue;
-    const du = b.u - a.u, dv = b.v - a.v, len = Math.hypot(du, dv) || 1;
-    // Inward (towards the water): the outline runs clockwise, so the inside is on the right of a→b.
-    const iu = -dv / len, iv = du / len;
-    // A far bank's wall faces the camera (+u, +v) from the rock into the water.
-    if (iu + iv < 0.5) continue;
-    const a2 = { u: a.u + iu * BANK, v: a.v + iv * BANK }, b2 = { u: b.u + iu * BANK, v: b.v + iv * BANK };
-    fillPoly(ctx, [P(a.u, a.v, z), P(b.u, b.v, z), P(b2.u, b2.v, z), P(a2.u, a2.v, z)], wallC);
-    if (o.detail >= 1) {
-      line(ctx, [P(a2.u, a2.v, z), P(b2.u, b2.v, z)], rgba(footC, 0.7), 1.6 * k);
-      line(ctx, [P(a2.u + iu * 0.04, a2.v + iv * 0.04, z), P(b2.u + iu * 0.04, b2.v + iv * 0.04, z)], 'rgba(255,255,255,0.45)', 0.9 * k);
-    }
-  }
-  ctx.restore();
-  // The banks' lip: the rock's edge inked over a paper glow.
-  for (let i = 0; i < outline.length; i++) {
-    const a = outline[i]!, b = outline[(i + 1) % outline.length]!;
-    if (!a.bank) continue;
-    const near = (p: { u: number; v: number }): number => CORNERS.findIndex(([cu, cv]) => Math.abs(cu - p.u) < 1e-6 && Math.abs(cv - p.v) < 1e-6);
-    const ca = near(a), cb = near(b);
-    const len = Math.hypot(b.u - a.u, b.v - a.v) || 1;
-    // Short of a corner whose diagonal tile holds water: the tile across carries the stream past it (a wedge).
-    const ta = ca >= 0 && has(DIAG[ca]![0]) ? WEDGE / len : 0, tb = cb >= 0 && has(DIAG[cb]![0]) ? WEDGE / len : 0;
-    if (ta + tb >= 1 - 1e-6) continue;
-    const seg = [P(a.u + (b.u - a.u) * ta, a.v + (b.v - a.v) * ta, z), P(b.u + (a.u - b.u) * tb, b.v + (a.v - b.v) * tb, z)];
-    line(ctx, seg, C.paper, 3 * k, 0.7);
-    line(ctx, seg, C.ink, (o.detail >= 2 ? 1.8 : 1.3) * k, 0.95);
-  }
-}
-
-/**
- * Where a fall lands on a stream (D115: « the falls flowing into the next segment »): along the side
- * it comes over, the water churned white — a band of foam, bubbles — and rings spreading downstream.
- */
-function landing(ctx: Ctx, P: Proj, z: number, top: TopLook, o: ColumnOpts, rnd: (n: number) => number): void {
-  const k = o.k, from = top.from ?? 0;
-  for (let side = 0; side < 4; side++) {
-    if (!(from & (1 << ACROSS[side]!))) continue;
-    // The side's two corners and the way in, across it.
-    const [au, av] = CORNERS[side]!, [bu, bv] = CORNERS[(side + 1) % 4]!;
-    const nu = side === 1 ? -1 : side === 3 ? 1 : 0, nv = side === 0 ? 1 : side === 2 ? -1 : 0;
-    const at = (f: number, d: number): Pt => P(au + (bu - au) * f + nu * d, av + (bv - av) * f + nv * d, z);
-    fillPoly(ctx, [at(0, 0), at(1, 0), at(1, 0.16), at(0.75, 0.24), at(0.5, 0.2), at(0.25, 0.26), at(0, 0.18)], 'rgba(235,248,252,0.62)');
-    ctx.fillStyle = 'rgba(255,255,255,0.92)';
-    for (let q = 0; q < 9; q++) {
-      const [x, y] = at(0.08 + rnd(9500 + side * 31 + q) * 0.84, 0.02 + rnd(9520 + side * 31 + q) * 0.2);
-      ctx.beginPath(); ctx.ellipse(x, y, (1.6 + rnd(9540 + side * 31 + q) * 2.2) * k, (1 + rnd(9560 + side * 31 + q) * 1.2) * k, 0, 0, Math.PI * 2); ctx.fill();
-    }
-    // Rings: the landing's swell spreading downstream.
-    for (let q = 0; q < 2; q++) {
-      const d = 0.34 + q * 0.2, pts: Pt[] = [];
-      for (let e = 0; e <= 8; e++) pts.push(at(0.2 + (e / 8) * 0.6, d + Math.sin((e / 8) * Math.PI) * 0.06));
-      line(ctx, pts, `rgba(255,255,255,${0.55 - q * 0.2})`, (1.2 - q * 0.3) * k);
-    }
-  }
-}
-
-/** The wedges of a stream stepping diagonally past a rock tile's corners at its height (its two neighbours there hold it, the third tile does not): water, its bank inked. */
-function streamWedges(ctx: Ctx, P: Proj, z: number, top: TopLook, o: ColumnOpts): void {
-  const k = o.k, has = (b: number): boolean => (top.wet & (1 << b)) !== 0;
-  for (let c = 0; c < 4; c++) {
-    const [dg, a, b] = DIAG[c]!;
-    if (!has(a) || !has(b) || has(dg)) continue;
-    const [cu, cv] = CORNERS[c]!, du = cu ? -WEDGE : WEDGE, dv = cv ? -WEDGE : WEDGE;
-    const p = P(cu + du, cv, z), q = P(cu, cv + dv, z);
-    fillPoly(ctx, [P(cu, cv, z), p, q], C.river);
-    line(ctx, [p, q], C.paper, 3 * k, 0.7);
-    line(ctx, [p, q], C.ink, (o.detail >= 2 ? 1.8 : 1.3) * k, 0.95);
-  }
-}
-
-/** Ink a pool part's shore: a paper glow under the ink, as on the floor's water (terrain.ts). */
-function inkShore(ctx: Ctx, part: ReadonlyArray<{ shore: boolean }>, pp: readonly Pt[], color: string, w: number, glow: number): void {
-  for (const [c, width, a] of [[C.paper, glow, 0.7], [color, w, 0.95]] as const) {
-    if (!width) continue;
-    for (let i = 0; i < part.length; i++) if (part[i]!.shore) line(ctx, [pp[i]!, pp[(i + 1) % part.length]!], c, width, a);
-  }
-}
-
-/**
- * The top of a column up on the rock that holds water or borders it (D63), over the top just
- * drawn and inside `topPts`: its part of the pool (shallow, the deep within it), ripples, the
- * shore; reclaimed ground first, as fill.
- */
-function drawTop(ctx: Ctx, P: Proj, topPts: readonly Pt[], z: number, top: TopLook, o: ColumnOpts, rnd: (n: number) => number, cls = 0): void {
+function drawTop(ctx: Ctx, P: Proj, topPts: readonly Pt[], pts: readonly OutlinePt[], z: number, top: TopLook, o: ColumnOpts, rnd: (n: number) => number, cls = 0): void {
   const k = o.k;
-  ctx.save();
-  // Kept inside a top cut back by a drop beside it (rock dug away round the pool); a whole tile's
-  // top is not clipped, so the bleed and the shore's ink run on into the next tile's.
-  if (topPts.length !== 4) {
+  const whole = pts.length === 4 && pts.every((p) => (p.u === 0 || p.u === 1) && (p.v === 0 || p.v === 1));
+  if (top.kind === 'ground') {
+    ctx.save();
     poly(ctx, topPts);
     ctx.clip();
-  }
-  if (top.kind === 'ground') {
     ctx.fillStyle = C.filled;
     poly(ctx, topPts);
     ctx.fill();
@@ -1384,43 +1188,15 @@ function drawTop(ctx: Ctx, P: Proj, topPts: readonly Pt[], z: number, top: TopLo
         ctx.beginPath(); ctx.arc(x, y, (0.6 + rnd(440 + i) * 0.7) * k, 0, Math.PI * 2); ctx.fill();
       }
     }
+    ctx.restore();
   }
-  if (top.kind === 'river') { streamTop(ctx, P, z, top, o, rnd, cls); ctx.restore(); return; }
-  const wet = poolPart(top.wet), pw = wet.map((p) => P(p.u, p.v, z));
-  if (top.run) streamWedges(ctx, P, z, top, o);
-  if (wet.length) {
-    // Each part bleeds into the next (no seam between two tiles of water) — not over a
-    // neighbour's deep water, drawn before it.
-    const running = !!top.run;
-    ctx.fillStyle = ctx.strokeStyle = running ? C.river : C.shallow;
-    ctx.lineWidth = 1.6;
-    ctx.lineCap = 'round';
-    for (let i = 0; i < wet.length; i++) {
-      const a = wet[i]!.across;
-      if (a >= 0 && top.deep & (1 << a)) continue;
-      ctx.beginPath(); ctx.moveTo(pw[i]![0], pw[i]![1]); ctx.lineTo(pw[(i + 1) % wet.length]![0], pw[(i + 1) % wet.length]![1]); ctx.stroke();
-    }
-    poly(ctx, pw);
-    ctx.fill();
-    const deep = poolPart(top.deep), pd = deep.map((p) => P(p.u, p.v, z));
-    if (deep.length) {
-      ctx.fillStyle = ctx.strokeStyle = C.deep;
-      poly(ctx, pd);
-      ctx.stroke();
-      ctx.fill();
-      if (o.detail >= 1) inkShore(ctx, deep, pd, C.turqL, 1.2 * k, 0);
-    }
-    if (o.detail >= 1 && top.wet & 16) {
-      // A ripple now and then on the tiles of water.
-      if (rnd(460) < 0.5) {
-        const u = 0.2 + rnd(470) * 0.45, v = 0.25 + rnd(480) * 0.5;
-        line(ctx, [P(u, v, z), P(u + 0.12, v - 0.05, z), P(u + 0.24, v, z)], 'rgba(255,255,255,0.75)', 1.1 * k);
-      }
-    }
-    inkShore(ctx, wet, pw, C.ink, (o.detail >= 2 ? 1.8 : 1.3) * k, 3 * k);
-  }
-  ctx.restore();
+  // The sides that drop (the outline's silhouette; a chamfer drops both sides it cuts): a fall's lip only there.
+  let drops = 0;
+  const sideOf = (p: OutlinePt): number => (p.v === 0 ? 1 : 0) | (p.u === 1 ? 2 : 0) | (p.v === 1 ? 4 : 0) | (p.u === 0 ? 8 : 0);
+  for (let i = 0; i < pts.length; i++) if (pts[i]!.sil) drops |= sideOf(pts[i]!) | sideOf(pts[(i + 1) % pts.length]!);
+  paintWaterTop(ctx, P, z, top, o, rnd, { wall: wallColor(cls, 0.45, z), drops }, whole ? null : topPts);
 }
+
 
 /** Strata, joints, facets or veins by hardness, then pen hatching on the shaded faces. */
 // ── the face ore's vein (D87: quartz set in the cliff) ─────────────────────────────────────────

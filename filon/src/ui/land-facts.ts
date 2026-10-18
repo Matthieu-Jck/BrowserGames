@@ -12,6 +12,35 @@ import { isRock, T } from '@/sim/types';
 import { PARCEL_COLS, parcelAt, parcelRect } from '@/sim/world/land';
 import { footprint } from '@/sim/entities';
 import { locale, t } from '@/i18n/i18n';
+import { COLONY_PROFILES, type ColonyProfile } from '@/content/colonies';
+import { ITEMS } from '@/content/items';
+import { NEIGHBOUR_TRADES, NEIGHBOUR_TRADE_OTHER } from '@/content/neighbours';
+import { ITEM_IDS } from '@/content/registry';
+import type { Holding } from '@/sim/world/neighbours';
+
+/**
+ * What a neighbouring base does, in words (D110, D134; owner, 2026-10-18: « je ne comprends pas bien
+ * ce que fait cette base de PNJ »): its trade's word from the good its main line ends in (content
+ * `NEIGHBOUR_TRADES`: « Fonderie », « Verrerie »…), and a line per good it sells, raw good first, as
+ * its ribbons carry it (sim `NLayout.lines`), as item indices (the card draws their glyphs) and names.
+ * A base whose land gives it nothing to work: no line, its colony's trade for a word. Null: no base.
+ */
+export function neighbourTrade(sim: Sim, hub: number): { label: string; lines: ReadonlyArray<{ readonly items: readonly number[]; readonly names: readonly string[] }> } | null {
+  const h = sim.neighbours.holdingOf(hub);
+  if (!h) return null;
+  const L = sim.neighbours.layout(h), last = L.story[L.story.length - 1];
+  const word = last === undefined ? (COLONY_PROFILES[h.profile] as ColonyProfile).name : NEIGHBOUR_TRADES[ITEM_IDS[last]!] ?? NEIGHBOUR_TRADE_OTHER;
+  const name = (i: number): string => (ITEMS as Record<string, { name: { fr: string; en: string } }>)[ITEM_IDS[i]!]!.name[locale()];
+  return { label: word[locale()], lines: L.lines.map((items) => ({ items, names: items.map(name) })) };
+}
+
+/** The band over a neighbouring base: its name and its trade's word (« Seven Horns · Fonderie »): what it does, read from afar. */
+export function neighbourBanner(sim: Sim, h: Holding): string {
+  const name = neighbourName(sim, h.colony);
+  if (!name) return '';
+  const does = neighbourTrade(sim, h.hub);
+  return does ? `${name} · ${does.label}` : name;
+}
 
 /** The Heart's parcel: the compass names every other one from it. */
 const HOME = parcelAt(CENTER, CENTER);

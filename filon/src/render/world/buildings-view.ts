@@ -31,6 +31,10 @@
 // building and rotation show up (a DynAtlas), then only stretched, swung and faded with the time
 // of day (world/cast-shadows.ts) — one matrix per sprite when the sun has moved enough, one alpha
 // (their container is a render group: its alpha is a uniform, set when its 8-bit value changes).
+// The items sorted among the volumes in front of a building (D130) are over that layer: they take
+// its shade as a tint, which `shadowAt` reads back from the masks where they stand (each mask's
+// alpha read once from its sheet; the floor's shadows indexed by the 128-px cells they may cover
+// at any hour).
 //
 // Standing on the mountains (D44; world/stand.ts, worked out once per rebuild): a building on rock
 // is lifted to the top of the column under it — its sprite, its moving part, its shadow, its chosen
@@ -42,7 +46,9 @@
 // The incinerator (D51) is a pit (world/pits.ts): in iso its back and its near rim as two sprites
 // with its flame between them (an item tipping in sinks between them too: the items view), the
 // flame stepped per frame from the pit's fire (`animate`); in plan its sprite and, over it, the
-// flame seen from above, faded in with the fire.
+// flame seen from above, faded in with the fire. Each item burnt throws up a burst (D125,
+// world/pit-burst.ts): sparks and a puff from sprites the pit lays once per slot in both views,
+// moved per frame while one shows, hidden otherwise.
 //
 // The plan layer is sorted like the volumes (world/stand.ts `PLAN_Z`): the plan copies of the
 // ribbons on rock and the elevators' marks under the items riding them, the buildings over all.
@@ -77,23 +83,23 @@ import { SKY, artLevelOf, drawBuildingShadow, isoHead, shadowFrameOf, type SkyPi
 import { MOVING } from '../art/recipes/moving';
 import { drawOff } from '../art/recipes/off';
 import { silhouette } from '../art/silhouette';
-import { C, mix, num } from '../art/tokens';
 import type { Grade } from '../daynight';
 import { LH, TH, TW, tileToIso } from '../iso';
 import { tileTop } from '../relief';
-import { SHADOW_DX, SHADOW_DY, seamClip, shadowLook, shadowMap } from './cast-shadows';
+import { SHADOW_DX, SHADOW_DY, SHADOW_TINT, maskCover, maskReach, seamClip, shadowLook, shadowMap, type MaskAlpha, type ShadowMat } from './cast-shadows';
 import { spinSeed, windTurns, workTurns } from './moving-parts';
 import { OFF_TINT, WorkLook, looksAtWork } from './work-look';
-import { ISO_K, PLAN_K, skyFrames } from './sky-decks';
-import { PLAN_Z, SPAN_DZ, beltZ, buildingZ, computeStands, deckSquareZ, liftOf, liftZ, rampZ, riseOffset, standOf, type Stand } from './stand';
-import { PIT_ISO_K, PIT_PLAN_K, PIT_Z, flameFrames, flameLevel, flicker, pitFire, pitFrames, planFlameFrame } from './pits';
+import { ISO_K, PLAN_K, junctionFrames, skyFrames } from './sky-decks';
+import { FRONT_DZ, PLAN_Z, SPAN_DZ, beltZ, buildingZ, computeStands, deckSquareZ, liftOf, liftZ, rampZ, riseOffset, standOf, type Stand } from './stand';
+import { PIT_ISO_K, PIT_PLAN_K, PIT_Z, burstFrames, flameFrames, flameLevel, flicker, pitFire, pitFrames, planFlameFrame } from './pits';
+import { BURST, BURST_LIFE, FLAME_TINT_TICKS, PLAN_LIFT, burstTints, puffAt, sparkAt, towards, type PuffAt, type SparkAt } from './pit-burst';
 import { LIFT_ISO_K, LIFT_PLAN_K, fallFrames, fallOfConduit, liftFrames, liftOfBelt, type Fall, type Lift } from './traction-lifts';
 import { FLAG, FLAG_K, flagFrames, type FlagFrames } from './heart-flag';
 import { defaultEmblem, emblemKey, type Emblem } from '@/content/emblem';
 import { ribbonRuns } from './neighbour-goods';
 
-/** The shadows' colour: ink with a little lilac (Moebius shadows are cool on the warm sand); also the plan's hint of height. */
-export const SHADOW_TINT = num(mix(C.ink, C.lilacD, 0.3));
+/** The shadows' colour (world/cast-shadows.ts): also the plan's hint of height. */
+export { SHADOW_TINT };
 
 /** A skybridge deck's height above its ends' ground (iso world px): the art's running surface (`SKY.deck`), which items ride. */
 export const DECK_Z = SKY.deck * LH;
@@ -118,6 +124,25 @@ const FOREIGN_TURNS = 0.5;
 
 /** Dormant (its unlock given up, its land lost): a grey wash, like an unpainted model. */
 const DORMANT_TINT = 0x9b97a8;
+
+/** A pit's burst (D125): the hot sparks' tint (the cinders take the item's), the plan's sizes of a spark and a puff (tiles per texture px). */
+const HOT_SPARK = 0xffd98a;
+const PLAN_SPARK_K = 0.9 / 64, PLAN_PUFF_K = 0.85 / 64;
+
+/** A burst's sprite on the pits' sheet, anchored at its frame's anchor (it turns and scales about it), hidden. */
+function burstSprite(fr: DynFrame): Sprite {
+  const s = new Sprite(fr.tex);
+  s.anchor.set(fr.ox / fr.w, fr.oy / fr.h);
+  s.visible = false;
+  return s;
+}
+
+/** One burst's sprites hidden (in a view: none laid in plan yet is nothing to hide). */
+function hideBurst(b: BurstSprites | undefined): void {
+  if (!b) return;
+  b.puff.visible = false;
+  for (const s of b.sparks) s.visible = false;
+}
 /** Baking time (ms) a frame may spend on unlit pictures; the rest wait for the next frame. */
 const OFF_BAKE_MS = 6;
 
@@ -145,6 +170,31 @@ const CULL_MARGIN = 12;
 
 /** Over this many sprites leaving one layer at once, the layer is emptied and refilled (one pass) instead of removing each (a search through the layer each). */
 const BULK = 48;
+
+/** The cells (iso world px) of the index of the floor's cast shadows (`shadowAt`, D130). */
+const SHADE_CELL = 128;
+const shadeKey = (i: number, j: number): number => (j + 4096) * 8192 + i + 4096;
+
+/** Each shadow mask's alpha, read back once from its sheet when an item first stands in it (D130). */
+const MASKS = new WeakMap<Texture, MaskAlpha>();
+function maskOf(tex: Texture): MaskAlpha {
+  let m = MASKS.get(tex);
+  if (m) return m;
+  const fr = tex.frame, w = Math.round(fr.width), h = Math.round(fr.height);
+  const a = new Uint8Array(w * h);
+  // Through a canvas of its own: one read-back each (Chrome warns of repeated ones on one canvas).
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, w); c.height = Math.max(1, h);
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  if (ctx) {
+    ctx.drawImage(tex.source.resource as CanvasImageSource, Math.round(fr.x), Math.round(fr.y), w, h, 0, 0, w, h);
+    const px = ctx.getImageData(0, 0, w, h).data;
+    for (let i = 0; i < w * h; i++) a[i] = px[i * 4 + 3]!;
+  }
+  m = { w, h, a };
+  MASKS.set(tex, m);
+  return m;
+}
 
 /** A building whose look says whether it works (D83): its sprites, what they show lit, the look applied. */
 interface Look {
@@ -232,11 +282,22 @@ interface Spinner {
 }
 
 /** A cast shadow: its sprite, where it was laid (iso world px) and its building's foot, the stretch's centre. */
-interface Shade { s: Sprite; x: number; y: number; cx: number; cy: number }
+interface Shade { s: Sprite; x: number; y: number; cx: number; cy: number; m?: MaskAlpha }
 /** A shadow on a rock top, among the volumes: its own alpha (its base, × the day's look). */
 interface LiftShade { s: Sprite; a: number; ent: number }
-/** An incinerator's pit: its flame (iso, among the volumes) and its plan glow, the heat shown. */
-interface Pit { ent: number; flame: Sprite; glow: Sprite | null; heat: number }
+/** One burst's sprites in a view (D125, pit-burst.ts): its sparks and its puff. */
+interface BurstSprites { sparks: Sprite[]; puff: Sprite }
+/**
+ * An incinerator's pit: its flame (iso, among the volumes) and its plan glow, the heat shown, the
+ * flame's tint; its burst slots (`BURST.slots` in each view, hidden until something burns, `on`
+ * while one shows) and where they are drawn from — the throat's centre on the ground (iso world px)
+ * and in plan (tiles).
+ */
+interface Pit {
+  ent: number; flame: Sprite; glow: Sprite | null; heat: number; tint: number;
+  iso: BurstSprites[]; plan: BurstSprites[]; on: boolean[];
+  cx: number; cy: number; px: number; py: number;
+}
 /** A traction elevator's car (iso): its sprite, its y at the foot of its shaft, its low tile. */
 interface Car { s: Sprite; y0: number; x: number; y: number }
 
@@ -299,6 +360,11 @@ export class BuildingsView {
   private lookL = -1;
   private lookA = 0;
   private readonly mat = new Matrix();
+  /** The day's map last applied to the shadows (`shadowMap`), and the floor's shadows by the cells they may cover (`shadowAt`). */
+  private lookMat: ShadowMat = [1, 0, 0, 1];
+  private readonly shadeCells = new Map<number, Shade[]>();
+  /** `shadowAt`'s answers by 4-px cell, for the look and the shadows of the moment (items ride the same lines again and again). */
+  private readonly shadeMemo = new Map<number, number>();
   /**
    * The ribbons on the floor: their own sorted container on the ground layer (laid in rank order,
    * under the junctions' passages). It and the shadows' container are render groups (D92): the
@@ -461,7 +527,7 @@ export class BuildingsView {
 
   /** A record just laid: its parts registered, its bucket joined (culled at once if off screen). */
   private adopt(r: Rec): void {
-    for (const sh of r.shadows) { this.shadows.add(sh); this.fresh.push(sh); }
+    for (const sh of r.shadows) { this.shadows.add(sh); this.fresh.push(sh); this.indexShade(sh, true); }
     for (const l of r.liftShadows) this.liftShadows.add(l);
     if (r.spinner) this.spinners.add(r.spinner);
     if (r.look) this.looks.set(r.ent, r.look);
@@ -497,7 +563,7 @@ export class BuildingsView {
         set.add(s);
         n++;
       }
-      for (const sh of r.shadows) this.shadows.delete(sh);
+      for (const sh of r.shadows) { this.shadows.delete(sh); this.indexShade(sh, false); }
       for (const l of r.liftShadows) this.liftShadows.delete(l);
       if (r.spinner) { this.spinners.delete(r.spinner); this.kept.set(r.ent, r.spinner); }
       if (r.look) { r.look.dead = true; if (this.looks.get(r.ent) === r.look) this.looks.delete(r.ent); }
@@ -687,14 +753,18 @@ export class BuildingsView {
 
   /**
    * Per frame, at render tick `t`: each pit's flame from its fire (world/pits.ts) — its height and
-   * flicker in iso (a texture swap on the pits' own sheet when it changes), its plan glow's alpha.
+   * flicker in iso (a texture swap on the pits' own sheet when it changes), its tip tinted by the
+   * item just burnt, its plan glow's alpha — and its bursts (D125, pit-burst.ts): each slot's sparks
+   * and puff moved, turned, scaled and faded in both views while it shows, hidden once it is over.
+   * A pit off screen (culled) or hidden only keeps its flame's state.
    */
   private burn(sim: Sim, t: number): void {
     const fire = pitFire(sim);
     fire.update(sim, t);
     const frames = flameFrames(), v = flicker(fire.tick);
     for (const p of this.pits) {
-      const h = this.hidden.has(p.ent) ? 0 : Math.round(fire.heat(p.ent) * 40) / 40;
+      const hidden = this.hidden.has(p.ent);
+      const h = hidden ? 0 : Math.round(fire.heat(p.ent) * 40) / 40;
       const lv = flameLevel(h);
       if (lv < 0) { if (p.flame.visible) p.flame.visible = false; }
       else {
@@ -704,12 +774,69 @@ export class BuildingsView {
       }
       if (p.glow && h !== p.heat) { p.glow.alpha = 0.95 * h; p.glow.visible = h > 0.02; }
       p.heat = h;
+      if (p.flame.culled) continue;
+      const bs = hidden ? undefined : fire.bursts(p.ent);
+      // The flame's tip: the newest burst's item, fading back to the fire's own colours.
+      let tint = 0xffffff;
+      if (bs && bs.n > 0) {
+        const k = (bs.n - 1) % BURST.slots, age = fire.tick - bs.at[k]!;
+        if (age >= 0 && age < FLAME_TINT_TICKS) tint = towards(burstTints(bs.item[k]!).flame, 1 - Math.round((age / FLAME_TINT_TICKS) * 8) / 8);
+      }
+      if (tint !== p.tint) { p.tint = tint; p.flame.tint = tint; }
+      for (let i = 0; i < BURST.slots; i++) {
+        const age = bs ? fire.tick - bs.at[i]! : -1;
+        if (!(age >= 0 && age < BURST_LIFE)) {
+          if (p.on[i] || p.iso[i]!.puff.visible) { p.on[i] = false; hideBurst(p.iso[i]); hideBurst(p.plan[i]); }
+          continue;
+        }
+        p.on[i] = true;
+        this.drawBurst(p, i, bs!.seed[i]!, bs!.item[i]!, age);
+      }
     }
+  }
+
+  /** Scratch records for the burst's geometry (no allocation per frame). */
+  private readonly spark: SparkAt = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, a: 0, s: 1 };
+  private readonly puff: PuffAt = { x: 0, y: 0, z: 0, s: 1, a: 0 };
+
+  /** Burst slot `i` of pit `p` at `age` ticks: its sparks and puff placed in iso (projected) and in plan (flat, lifted a little up the map). */
+  private drawBurst(p: Pit, i: number, seed: number, item: number, age: number): void {
+    const tints = burstTints(item), I = p.iso[i]!, Pl = p.plan[i]!, o = this.spark; // addPitGlow lays the plan slots right after addPit
+    for (let k = 0; k < BURST.sparks; k++) {
+      sparkAt(seed, k, age, o);
+      const si = I.sparks[k]!, sp = Pl.sparks[k]!;
+      if (o.a <= 0.01) { if (si.visible) si.visible = sp.visible = false; continue; }
+      const tint = k < BURST.hot ? HOT_SPARK : tints.cinder;
+      si.position.set(p.cx + (o.x - o.y) * (TW / 2), p.cy + (o.x + o.y) * (TH / 2) - o.z * LH);
+      si.rotation = Math.atan2((o.vx + o.vy) * (TH / 2) - o.vz * LH, (o.vx - o.vy) * (TW / 2)) + Math.PI / 2;
+      si.scale.set(PIT_ISO_K * o.s);
+      si.alpha = o.a;
+      si.tint = tint;
+      sp.position.set(p.px + o.x, p.py + o.y - o.z * PLAN_LIFT);
+      sp.rotation = Math.atan2(o.vy - o.vz * PLAN_LIFT, o.vx) + Math.PI / 2;
+      sp.scale.set(PLAN_SPARK_K * o.s * (1 + 0.12 * o.z));
+      sp.alpha = o.a;
+      sp.tint = tint;
+      if (!si.visible) si.visible = sp.visible = true;
+    }
+    const q = puffAt(seed, age, this.puff);
+    if (q.a <= 0.01) { if (I.puff.visible) I.puff.visible = Pl.puff.visible = false; return; }
+    const flip = seed & 1 ? -1 : 1;
+    I.puff.position.set(p.cx + (q.x - q.y) * (TW / 2), p.cy + (q.x + q.y) * (TH / 2) - q.z * LH);
+    I.puff.scale.set(PIT_ISO_K * q.s * flip, PIT_ISO_K * q.s);
+    I.puff.alpha = q.a;
+    I.puff.tint = tints.smoke;
+    Pl.puff.position.set(p.px + q.x, p.py + q.y - q.z * PLAN_LIFT);
+    Pl.puff.scale.set(PLAN_PUFF_K * q.s * flip, PLAN_PUFF_K * q.s);
+    Pl.puff.alpha = q.a;
+    Pl.puff.tint = tints.smoke;
+    if (!I.puff.visible) I.puff.visible = Pl.puff.visible = true;
   }
 
   /**
    * An incinerator's pit (iso, world/pits.ts): its back at its key, its flame over it (hidden
-   * until something burns), its near rim over that — an item tipping in is drawn between them.
+   * until something burns), its bursts' puffs over the flame, its near rim over that — an item
+   * tipping in is drawn between them — and the bursts' sparks over the rim (they leap out of it).
    */
   private addPit(e: Ent, rot: Rot, wx: number, wy: number, alpha: number, tint: number, z: number): void {
     const fr = pitFrames(rot);
@@ -726,11 +853,32 @@ export class BuildingsView {
     const flame = lay(f0.tex, f0.ox, f0.oy, PIT_Z.flame);
     flame.visible = false;
     flame.tint = 0xffffff;
+    const bf = burstFrames();
+    const puffs = Array.from({ length: BURST.slots }, (_, i) => this.lay(burstSprite(bf.puffs[i & 1]!), this.objectLayer, z + PIT_Z.puff));
     lay(fr.front.tex, fr.front.ox, fr.front.oy, PIT_Z.front);
-    this.cur!.pit = { ent: e.id, flame, glow: null, heat: -1 };
+    const iso = puffs.map((puff) => ({ puff, sparks: Array.from({ length: BURST.sparks }, () => this.lay(burstSprite(bf.spark), this.objectLayer, z + PIT_Z.spark)) }));
+    this.cur!.pit = { ent: e.id, flame, glow: null, heat: -1, tint: 0xffffff, iso, plan: [], on: iso.map(() => false), cx: wx, cy: wy + TH / 2, px: e.x + 0.5, py: e.y + 0.5 };
   }
 
-  /** The plan view's flame over a pit's plan sprite (faded in with its fire by `burn`). */
+  /**
+   * A junction in iso (D130): its back at its key — the far parapet, the deck, the west posts —
+   * and its front just after (`FRONT_DZ`) — the near wall with the tunnel's mouth, the near
+   * parapet, the east posts —, the items riding its deck between the two and those in its tunnel
+   * under both (belt-lift.ts `junctionZ`, `itemZ`).
+   */
+  private addJunction(wx: number, wy: number, alpha: number, tint: number, z: number): void {
+    const fr = junctionFrames();
+    for (const [f, dz] of [[fr.back, 0], [fr.front, FRONT_DZ]] as const) {
+      const s = new Sprite(f.tex);
+      s.scale.set(ISO_K);
+      s.position.set(wx - f.ox * ISO_K, wy - f.oy * ISO_K);
+      s.alpha = alpha;
+      s.tint = tint;
+      this.lay(s, this.objectLayer, z + dz);
+    }
+  }
+
+  /** The plan view's flame over a pit's plan sprite (faded in with its fire by `burn`), its bursts over it. */
   private addPitGlow(e: Ent): void {
     const fr = planFlameFrame();
     const s = new Sprite(fr.tex);
@@ -740,7 +888,10 @@ export class BuildingsView {
     s.visible = false;
     this.lay(s, this.planLayer, 0);
     const p = this.cur!.pit;
-    if (p && p.ent === e.id) p.glow = s;
+    if (!p || p.ent !== e.id) return;
+    p.glow = s;
+    const bf = burstFrames();
+    p.plan = p.iso.map((_, i) => ({ puff: this.lay(burstSprite(bf.puffs[i & 1]!), this.planLayer, 0), sparks: Array.from({ length: BURST.sparks }, () => this.lay(burstSprite(bf.spark), this.planLayer, 0)) }));
   }
 
   /**
@@ -763,18 +914,67 @@ export class BuildingsView {
     // The container is a render group: its alpha is one uniform. Set as the batcher packed it when it
     // was a plain container (⌊α·255⌋ / 255), and only when that value moves (D92).
     const qa = Math.floor(look.alpha * 255);
-    if (qa !== this.rootAlpha) { this.rootAlpha = qa; this.shadowRoot.alpha = qa / 255; }
+    if (qa !== this.rootAlpha) { this.rootAlpha = qa; this.shadowRoot.alpha = qa / 255; this.shadeMemo.clear(); }
     const L = Math.round(look.length * 80), A = Math.round(look.angle * 160);
     const all = L !== this.lookL || A !== this.lookA;
+    if (all) this.shadeMemo.clear();
     if (!all && !this.fresh.length) return;
     this.lookL = L;
     this.lookA = A;
     const [a, b, c, d] = shadowMap(L / 80, A / 160);
+    this.lookMat = [a, b, c, d];
     for (const sh of all ? this.shadows : this.fresh) {
       const px = sh.x - sh.cx, py = sh.y - sh.cy;
       sh.s.setFromMatrix(this.mat.set(a, b, c, d, sh.cx + a * px + c * py, sh.cy + b * px + d * py));
     }
     this.fresh = [];
+  }
+
+  /**
+   * How dark the cast shadows on the floor are at iso world point (wx, wy) (0: lit … the layer's
+   * opacity; D130): each mask that may cover it (`shadeCells`) read back through the day's map
+   * (cast-shadows.ts `maskCover`), overlaps darkening as the layer's sprites blend. For the items
+   * the items view sorts among the volumes on the floor, which are over that layer: they take this
+   * shade as a tint. The look is the last applied (`animate` runs after the items view). Kept by
+   * 4-px cell until the look or the shadows change: the items ride the same lines again and again.
+   */
+  readonly shadowAt = (wx: number, wy: number): number => {
+    if (!this.shadowRoot.visible || this.rootAlpha <= 0) return 0;
+    const qx = Math.floor(wx / 4), qy = Math.floor(wy / 4), key = (qy + 16384) * 32768 + qx + 16384;
+    const got = this.shadeMemo.get(key);
+    if (got !== undefined) return got;
+    const list = this.shadeCells.get(shadeKey(Math.floor(wx / SHADE_CELL), Math.floor(wy / SHADE_CELL)));
+    let lit = 1;
+    if (list) {
+      const k = this.rootAlpha / 255, m = this.lookMat, px = (qx + 0.5) * 4, py = (qy + 0.5) * 4;
+      for (const sh of list) {
+        if (!sh.s.visible) continue;
+        const v = maskCover((sh.m ??= maskOf(sh.s.texture)), m, sh.x, sh.y, sh.cx, sh.cy, px, py);
+        if (v > 0) lit *= 1 - v * sh.s.alpha * k;
+      }
+    }
+    if (this.shadeMemo.size > 1 << 18) this.shadeMemo.clear();
+    this.shadeMemo.set(key, 1 - lit);
+    return 1 - lit;
+  };
+
+  /** A floor shadow into (or out of) the cells it may cover at any hour (a lifted one lies among the volumes: not indexed). */
+  private indexShade(sh: Shade, on: boolean): void {
+    if (sh.s.parent !== this.shadowRoot) return;
+    this.shadeMemo.clear();
+    const { width: w, height: h } = sh.s.texture.frame;
+    const r = maskReach(sh.x, sh.y, w, h, sh.cx, sh.cy);
+    const i0 = Math.floor((sh.x - r) / SHADE_CELL), i1 = Math.floor((sh.x + w + r) / SHADE_CELL);
+    const j0 = Math.floor((sh.y - r) / SHADE_CELL), j1 = Math.floor((sh.y + h + r) / SHADE_CELL);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const key = shadeKey(i, j);
+      const list = this.shadeCells.get(key);
+      if (on) { if (list) list.push(sh); else this.shadeCells.set(key, [sh]); continue; }
+      const at = list ? list.indexOf(sh) : -1;
+      if (at < 0) continue;
+      if (list!.length === 1) this.shadeCells.delete(key);
+      else { list![at] = list![list!.length - 1]!; list!.pop(); }
+    }
   }
 
   /**
@@ -830,11 +1030,13 @@ export class BuildingsView {
   /** Hide a building's sprites (both views) until `show`; it stays hidden through rebuilds. */
   hide(id: number): void {
     this.hidden.add(id);
+    this.shadeMemo.clear();
     for (const s of this.owned(id)) s.visible = false;
   }
 
   show(id: number): void {
     this.hidden.delete(id);
+    this.shadeMemo.clear();
     for (const s of this.owned(id)) s.visible = true;
   }
 
@@ -879,8 +1081,11 @@ export class BuildingsView {
    * down (world/sky-decks.ts, baked on demand), at the ends' height (an end standing on rock lifts
    * its pair). Iso: volumes among the buildings — a ramp just after the end on its square (it lies
    * over the footing and draws the end's gantry over itself), a deck square after whatever stands
-   * on it — so the line the bridge crosses, on the ground layers, runs under it, and the items
-   * riding it are drawn over it (items view). Plan: over the plan's buildings. Shadows: with the
+   * on it — so the line the bridge crosses, on the ground layers, runs under it — each piece in two
+   * parts (D130): its back, and its front (`FRONT_DZ` after: the near girder, the near face, a
+   * ramp's toe plate and its gantry's near leg and beam), the items riding it between the two or,
+   * on a ramp in front of the gantry's beam, over both (items view, belt-lift.ts `spanZ`). Plan:
+   * over the plan's buildings. Shadows: with the
    * buildings', laid along the light by the day.
    */
   private addDecks(sim: Sim): void {
@@ -889,10 +1094,13 @@ export class BuildingsView {
     const lay = (piece: SkyPiece, x: number, y: number, rot: Rot, level: number, z: number, ent: number): void => {
       const fr = skyFrames(piece, rot, SHADOW_DX, SHADOW_DY);
       const [wx, wy] = tileToIso(x, y, level);
-      const iso = new Sprite(fr.iso.tex);
-      iso.scale.set(ISO_K);
-      iso.position.set(wx - fr.iso.ox * ISO_K, wy - fr.iso.oy * ISO_K);
-      this.lay(iso, this.objectLayer, z);
+      // Its back under the items riding it, its front over them (D130).
+      for (const [f, dz] of [[fr.back, 0], [fr.front, FRONT_DZ]] as const) {
+        const iso = new Sprite(f.tex);
+        iso.scale.set(ISO_K);
+        iso.position.set(wx - f.ox * ISO_K, wy - f.oy * ISO_K);
+        this.lay(iso, this.objectLayer, z + dz);
+      }
       const plan = new Sprite(fr.plan.tex);
       plan.scale.set(PLAN_K);
       plan.position.set(x - fr.plan.ox * PLAN_K, y - fr.plan.oy * PLAN_K);
@@ -1160,10 +1368,11 @@ export class BuildingsView {
     const [wx, wy] = tileToIso(e.x, e.y, st?.level ?? 0);
     const isoMv = this.atlas.moving.get(isoKey);
     const artRot = isoKey === bKey(id, e.rot, lv) ? e.rot : 0;
-    const pit = BUILDING_KIND[e.def] === 'sink';
+    const pit = BUILDING_KIND[e.def] === 'sink', jct = BUILDING_KIND[e.def] === 'crossing';
     this.addShadow(e, id as BuildingId, artRot, pending ? 0.35 : 1, st, lv);
     const look: Look | null = foreign === undefined && looksAtWork(e.def) ? { ent: e.id, id: id as BuildingId, dormant, views: [], parts: [], off: false, waits: false, dead: false } : null;
     if (pit) this.addPit(e, artRot, wx, wy, alpha, tint, z);
+    else if (jct) this.addJunction(wx, wy, alpha, tint, z);
     else {
       const key = isoMv ? bodyKey(isoKey) : isoKey;
       const s = this.place(key, this.objectLayer, wx, wy, alpha, tint, z);

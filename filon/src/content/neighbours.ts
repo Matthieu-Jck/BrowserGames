@@ -50,14 +50,59 @@ export const NEIGHBOUR_TENT = 2;
 /** Boundary cairns along a holding's outer edge, one every so many tiles. */
 export const NEIGHBOUR_CAIRN_STEP = 5;
 
+/**
+ * What each trade leans to beyond what its colony supplies at the Crier, the first first (D134;
+ * owner, 2026-10-18: « Elle commande de la pierre, la transforme en minerai de fer et la revend ? Ça
+ * n'a pas trop de sens »): a base makes the best of these its own land gives it, mined there and
+ * worked up step by step (sim/world/neighbour-chain.ts); raw goods only a mining camp (or a salt port)
+ * sells as they are, and only from a deposit that holds a real mine.
+ */
+export const NEIGHBOUR_LEANS: Readonly<Record<ColonyProfileId, readonly string[]>> = {
+  mining: ['iron_ore', 'copper_ore', 'coal', 'salt', 'stone'],
+  foundry: ['gear', 'steel', 'motor', 'iron_plate', 'copper_plate', 'pipe'],
+  glasshouse: ['glass', 'circuit'],
+  wind: ['motor', 'copper_coil', 'cable', 'copper_wire', 'copper_plate'],
+  saltport: ['salt', 'glass'],
+  ember: ['pipe', 'steel', 'gear', 'iron_plate'],
+  scholar: ['circuit', 'glass', 'cable', 'copper_wire'],
+  drifter: ['gear', 'glass', 'cable', 'iron_plate'],
+};
+
+/**
+ * What a base is, by the good its main line ends in: the word its card and its band put before what
+ * it does (D134: « Fonderie » over « minerai de fer → plaque de fer → engrenage »). A good not
+ * listed: « Atelier ».
+ */
+export const NEIGHBOUR_TRADES: Readonly<Record<string, { readonly fr: string; readonly en: string }>> = {
+  iron_ore: { fr: 'Mine', en: 'Mine' },
+  copper_ore: { fr: 'Mine', en: 'Mine' },
+  coal: { fr: 'Mine', en: 'Mine' },
+  salt: { fr: 'Saline', en: 'Salt works' },
+  stone: { fr: 'Carrière', en: 'Quarry' },
+  sand: { fr: 'Sablière', en: 'Sand pit' },
+  iron_plate: { fr: 'Fonderie', en: 'Foundry' },
+  copper_plate: { fr: 'Fonderie', en: 'Foundry' },
+  gear: { fr: 'Fonderie', en: 'Foundry' },
+  steel: { fr: 'Aciérie', en: 'Steelworks' },
+  pipe: { fr: 'Forge', en: 'Forge' },
+  glass: { fr: 'Verrerie', en: 'Glassworks' },
+  copper_wire: { fr: 'Tréfilerie', en: 'Wire works' },
+  cable: { fr: 'Tréfilerie', en: 'Wire works' },
+  copper_coil: { fr: 'Bobinerie', en: 'Coil works' },
+  motor: { fr: 'Atelier de moteurs', en: 'Motor works' },
+  circuit: { fr: 'Atelier d’électronique', en: 'Electronics works' },
+};
+export const NEIGHBOUR_TRADE_OTHER = { fr: 'Atelier', en: 'Workshop' } as const;
+
 export const NEIGHBOUR_KITS: Readonly<Record<ColonyProfileId, NeighbourKit>> = {
   mining: { power: ['wind_flower', 'wind_flower'], extra: [], tents: 2 },
-  foundry: { power: ['brazier', 'wind_flower'], extra: [], tents: 1 },
+  // A foundry and an ember forge smelt: an incinerator beside the hub, where their slag goes (D125, for the look).
+  foundry: { power: ['brazier', 'wind_flower'], extra: ['incinerator'], tents: 1 },
   glasshouse: { power: ['solar_farm', 'sun_bulb'], extra: [], tents: 1 },
   // A wind citadel: turbines for its chargers, an accumulator beside.
   wind: { power: ['big_turbine', 'pitch_turbine', 'wind_flower'], extra: ['accumulator'], tents: 1 },
   saltport: { power: ['wind_flower', 'wind_flower'], extra: [], tents: 2 },
-  ember: { power: ['brazier', 'brazier'], extra: [], tents: 1 },
+  ember: { power: ['brazier', 'brazier'], extra: ['incinerator'], tents: 1 },
   // A scholar spire, its servers beside.
   scholar: { power: ['solar_farm', 'wind_flower'], extra: ['server'], tents: 1 },
   drifter: { power: ['wind_flower', 'wind_flower'], extra: [], tents: 2 },

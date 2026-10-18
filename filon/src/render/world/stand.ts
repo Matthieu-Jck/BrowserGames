@@ -55,10 +55,18 @@ export const standZ = (x: number, y: number, w: number, h: number, reach: number
 /**
  * A skybridge span's pieces among the volumes (buildings-view `addDecks`): a ramp on its end's tile
  * just after that end (it lies over the footing, the end's gantry drawn over itself), a deck square
- * just after whatever stands on its tile, at the pair's level. The items riding the span sort just
- * after the piece they are over (belt-lift.ts `spanZ`), so what stands in front hides them with it.
+ * just after whatever stands on its tile, at the pair's level. The items riding the span sort
+ * between the back and the front of the piece they are over (belt-lift.ts `spanZ`, D130), so what
+ * stands in front hides them with it.
  */
 export const SPAN_DZ = 0.25;
+/**
+ * A piece drawn in two parts (D130): its back at its key, its front — what stands nearer the
+ * viewer than the items riding it or passing through it (a skybridge piece's near girder, its
+ * ramp's gantry; a junction's near wall, parapet and posts) — this much after, and those items in
+ * between (belt-lift.ts `ITEM_DZ`).
+ */
+export const FRONT_DZ = 0.04;
 /** A deck square's key on (x, y), the pair `level` levels up. */
 export const deckSquareZ = (x: number, y: number, level: number): number => (level > 0 ? standZ(x, y, 1, 1, 0) : buildingZ(x, y, 1, 1)) + SPAN_DZ;
 /** A ramp's key, on its end's tile. */

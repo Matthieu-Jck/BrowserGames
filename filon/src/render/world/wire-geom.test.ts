@@ -2,7 +2,8 @@
 // building that takes part in power has terminals, the art (iso and plan, every baked rotation)
 // draws each of them, an anchor lands on one, turned exactly as the art is, lifted onto the rock
 // top with a building standing on the mountains (D44); a pole picks the pin that faces the wire,
-// the Heart its nearer link mast; and the catenary's sag rules hold.
+// the Heart its nearer link mast; the catenary's sag rules hold; and a wire behind a cliff is cut
+// where the rock in front rises over it.
 import { describe, it, expect } from 'vitest';
 import { BUILDING_IDS, buildingDef, buildingIdx, isBeltDef } from '@/content/registry';
 import type { BuildingId } from '@/content/buildings';
@@ -18,7 +19,7 @@ import { drawBuilding, isoHead } from '../art/recipes/buildings';
 import { drawBuildingTop } from '../art/recipes/buildings-top';
 import { HEART_MASTS, POLE, TERMINALS, artRot, onArm, terminalProbe, terminalsOf, turnsArt } from '../art/terminals';
 import { LH, tileToIso } from '../iso';
-import { catenary, flowWays, footCentre, pointAlong, polyLengths, sagPx, terminalsAt, wireAnchor, wireCurve, wireEnds, wireSegments } from './wire-geom';
+import { catenary, flowWays, footCentre, inHidden, pointAlong, polyLengths, sagPx, terminalsAt, wireAnchor, wireCurve, wireEnds, wireRuns, wireSegments } from './wire-geom';
 import { computeStands } from './stand';
 
 const at = (def: string, x: number, y: number, rot: Rot = 0): { def: number; x: number; y: number; rot: Rot } => ({ def: buildingIdx(def), x, y, rot });
@@ -209,6 +210,44 @@ describe('wire geometry', () => {
     pointAlong(pts, lens, 0.25, p); expect(p).toEqual({ x: 10, y: 0 });
     pointAlong(pts, lens, 0.5, p); expect(p).toEqual({ x: 10, y: 10 });
     pointAlong(pts, lens, 1, p); expect(p).toEqual({ x: 10, y: 30 });
+  });
+});
+
+describe('a wire behind a cliff', () => {
+  // Floor, and a band of rock (four terraces: tops 8 levels up) across y 12–13 for x in [x0, x1).
+  const field = (x0: number, x1: number) => ({
+    terrain: (x: number, y: number): number => (y >= 12 && y < 14 && x >= x0 && x < x1 ? T.Rock2 : T.Sand),
+    level: (x: number, y: number): number => (y >= 12 && y < 14 && x >= x0 && x < x1 ? 4 : 0),
+  });
+  const A = { x: 10, y: 10, z: 2 }, B = { x: 20, y: 10, z: 2 };
+
+  it('is cut where the rock in front rises over it, at the cliff\'s edges (owner: « some electrical wires are shown above the cliff that\'s in front »)', () => {
+    // The band's screen columns (x − y from 5 to 8) are those of the wire's middle (x from 15 to 18 at y 10).
+    const { runs, hidden } = wireRuns(A, B, field(17, 20));
+    expect(runs).toHaveLength(2);
+    expect(hidden).toHaveLength(2);
+    expect(hidden[0]!).toBeGreaterThan(0.2);
+    expect(hidden[1]!).toBeLessThan(0.9);
+    expect(hidden[1]! - hidden[0]!).toBeGreaterThan(0.2);
+    // Its runs keep to the curve: the first starts at A's terminal, the last ends at B's.
+    const whole = wireCurve(A, B);
+    expect([runs[0]![0], runs[0]![1]]).toEqual([whole[0], whole[1]]);
+    const last = runs[1]!;
+    expect([last[last.length - 2], last[last.length - 1]]).toEqual([whole[whole.length - 2], whole[whole.length - 1]]);
+    expect(inHidden(hidden, (hidden[0]! + hidden[1]!) / 2)).toBe(true);
+    expect(inHidden(hidden, 0.05)).toBe(false);
+  });
+
+  it('is whole in front of the rock, with no rock, or with no land; gone when all of it is behind', () => {
+    const front = { x: 10, y: 16, z: 2 }, front2 = { x: 20, y: 16, z: 2 };
+    for (const [a, b, land] of [[front, front2, field(0, 40)], [A, B, field(0, 0)], [A, B, null]] as const) {
+      const { runs, hidden } = wireRuns(a, b, land);
+      expect(runs).toEqual([wireCurve(a, b)]);
+      expect(hidden).toEqual([]);
+    }
+    const all = wireRuns(A, B, field(0, 40));
+    expect(all.runs).toEqual([]);
+    expect(all.hidden).toEqual([0, 1]);
   });
 });
 

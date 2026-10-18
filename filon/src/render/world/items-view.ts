@@ -7,17 +7,28 @@
 //
 // Where each is drawn:
 // - **On the floor**, on `items`, under every volume, as particles (one ParticleContainer per atlas
-//   page; the particle lists rebuilt only when the count changes): those passing under a junction
-//   vanish under its bridge and show through its tunnel (owner, 2026-10-13: "a little bridge, with
-//   items going under it in one direction, and over it in another"); an item riding a junction's
-//   deck (flagged by the model, `o` = `OVER.junction`) on `itemsOver`, over the buildings. The
-//   junctions' passages — the under line's ribbon through each tunnel — are laid by `JunctionsView`
-//   (junctions-view.ts), which this view owns and rebuilds with its pieces.
-// - **On a skybridge's span** (`OVER.sky`: its ramps, its deck, the ribbons' stretch at its ends): in
-//   iso among the volumes, just after the span's piece it rides (belt-lift.ts `spanZ`), so a building
-//   in front of the deck hides what waits on it as it hides the deck (D121; owner, 2026-10-17: « quand
-//   la file est pleine, les objets devraient pouvoir patienter sur le pont »); in plan in a box on
-//   the plan layer over every plan sprite, the deck's among them (`PLAN_Z.spans`).
+//   page; the particle lists rebuilt only when the count changes) — but by a building's near face
+//   and on a junction's tile (D130, below). The junctions' passages — the under line's ribbon
+//   through each tunnel — are laid by `JunctionsView` (junctions-view.ts), which this view owns and
+//   rebuilds with its pieces.
+// - **On a bridge** — a skybridge's span (`OVER.sky`: its ramps, its deck, the ribbons' stretch at
+//   its ends) or a junction's deck (`OVER.junction`; owner, 2026-10-13: "a little bridge, with items
+//   going under it in one direction, and over it in another") —: in iso among the volumes, between
+//   the back and the front of the piece it rides (belt-lift.ts `spanZ`, `junctionZ`; D130: the
+//   junction's were drawn over every building, so over a silo or a skybridge in front of it), so
+//   what stands in front of the bridge hides what rides or waits on it as it hides the bridge (D121;
+//   owner, 2026-10-17: « quand la file est pleine, les objets devraient pouvoir patienter sur le
+//   pont »); in plan in a box on the plan layer over every plan sprite, the deck's among them
+//   (`PLAN_Z.spans`).
+// - **By a building's near face** (D130; owner, 2026-10-18: « quand est-ce qu'il devrait être devant
+//   les items sur les ribbons, quand est-ce qu'ils devraient être derrière, et quelle partie
+//   surtout »): an item on the floor within `FACE_REACH` of a building's south or east face (out of
+//   a front port, into one, along it) is drawn among the volumes after that building, so the wall
+//   and port boxes it is in front of no longer cut into it — tinted with the cast shadows' shade
+//   where it stands (their layer is under the volumes: buildings-view.ts `shadowAt`, read across
+//   its glyph so it darkens as a shadow's edge crosses it, as the layer did); on a junction's
+//   tile the items through its tunnel sort under it, seen through its near mouth, and over it once
+//   out of the mouth. By a routing block, not on its intake side: what goes in passes under its hopper.
 // - **Above the floor, in an elevator's shaft, or on an incinerator's tile** (owner, 2026-10-14:
 //   "the copper is above the building that is in front… the traction ribbon sometimes makes items
 //   disappear when they're oriented opposite to the camera"), in iso: as pooled Sprites inside the
@@ -51,11 +62,12 @@ import type { Sim } from '@/sim/state';
 import { IB_PX, ibKey, type Atlas } from '../art/atlas';
 import { DECK_Z, beltPiece } from './buildings-view';
 import { BeltLift, type Placed } from './belt-lift';
-import { LH } from '../iso';
+import { LH, isoToTile } from '../iso';
 import { OVER, buildPieces } from './item-flow';
 import { CellFlow, type FlowItem } from './cell-flow';
 import { JunctionsView } from './junctions-view';
 import { PLAN_Z } from './stand';
+import { shadeTint } from './cast-shadows';
 import { ISO_LIN, TOP, invert, isoToView, type Lin } from '../projection';
 
 /** Item frame size (world px): iso and plan (0.5 of a 32 px plan tile; the owner found 0.7, then 0.6 a bit big). Iso 21 → 18 (owner, 2026-10-18: « réduis un tout petit peu la taille des items sur les ribbons en vue isométrique »). */
@@ -149,8 +161,8 @@ class Sorted {
     this.ky = Math.atan2(b, a); this.kx = -Math.atan2(-c, d);
   }
 
-  /** One item at iso px (x, y), its depth key, its scale (× the frame's) and alpha. */
-  add(tex: Texture, x: number, y: number, z: number, scale: number, alpha: number): void {
+  /** One item at iso px (x, y), its depth key, its scale (× the frame's), alpha and tint (the cast shadows' shade, D130). */
+  add(tex: Texture, x: number, y: number, z: number, scale: number, alpha: number, tint = 0xffffff): void {
     let s = this.pool[this.used];
     if (!s) {
       s = new Sprite(tex);
@@ -166,6 +178,7 @@ class Sorted {
     s.skew.set(this.kx, this.ky);
     s.zIndex = z; // change-only in Pixi
     if (s.alpha !== alpha) s.alpha = alpha;
+    if (s.tint !== tint) s.tint = tint;
     if (!s.visible) s.visible = true;
   }
 
@@ -208,9 +221,10 @@ export class ItemsView {
   debugSnapshot(): DrawnItem[] { return this.dbg; }
 
   /**
-   * `layer`: items on the floor, under the buildings; `overLayer`: items on a junction's bridge,
-   * over them (the same layer when omitted); `ground`: where the junctions' passages are laid (the
-   * ribbons' layer); `lifted`: where those above the floor go (the volumes, the plan sprites).
+   * `layer`: items on the floor, under the buildings; `overLayer`: items on a bridge, over them,
+   * when there are no `lifted` layers to sort them among the volumes (the same layer when omitted);
+   * `ground`: where the junctions' passages are laid (the ribbons' layer); `lifted`: where those
+   * above the floor, on a bridge or by a building's near face go (the volumes, the plan sprites).
    */
   constructor(layer: Container, private readonly atlas: Atlas, overLayer: Container = layer, ground?: Container, lifted?: { volumes: Container; plan: Container }) {
     this.under = new Group(layer);
@@ -247,9 +261,12 @@ export class ItemsView {
 
   /**
    * Per frame: `now` is the fractional tick (interpolation), P the view, t its plan-ness,
-   * `view` the visible tile rect (items outside are skipped).
+   * `view` the visible tile rect (items outside are skipped); the shade on the floor (D130: an item
+   * sorted among the volumes there takes it) — `shadowAt` the buildings' cast shadows' at an iso
+   * world point (buildings-view.ts), `rockAt` the rock's sun shadows' at a ground point (tiles,
+   * relief-view.ts `floorShadeAt`).
    */
-  update(sim: Sim, now: number, P: Lin, t: number, zoom: number, view: [number, number, number, number]): void {
+  update(sim: Sim, now: number, P: Lin, t: number, zoom: number, view: [number, number, number, number], shadowAt?: (wx: number, wy: number) => number, rockAt?: (x: number, y: number) => number): void {
     this.under.begin();
     this.over.begin();
     this.planned?.begin();
@@ -262,6 +279,17 @@ export class ItemsView {
     const show = zoom >= 0.28;
     const sorted = t < ISO_UNTIL ? this.sorted : null, planned = t > PLAN_FROM ? this.planned : null;
     sorted?.begin(P, scale);
+    // The shade on the floor over a glyph at iso px (gx, gy) — the buildings' cast shadows over the
+    // rock's, as their layers lie — read at its middle and a third of its width either side, so it
+    // darkens by steps as a shadow's edge crosses it (D130).
+    const half = px * 0.3;
+    const floorAt = (gx: number, gy: number): number => {
+      const b = shadowAt ? shadowAt(gx, gy) : 0;
+      if (!rockAt) return b;
+      const [x, y] = isoToTile(gx, gy);
+      return 1 - (1 - b) * (1 - rockAt(x, y));
+    };
+    const shade = (gx: number, gy: number): number => (shadowAt || rockAt ? shadeTint((floorAt(gx - half, gy) + floorAt(gx, gy) + floorAt(gx + half, gy)) / 3) : 0xffffff);
     // The plan copies' box: in view px under the plan's P (its matrix P⁻¹, set when P changes).
     if (this.planBox && planned && this.planP !== P) {
       this.planP = P;
@@ -285,20 +313,26 @@ export class ItemsView {
       const x = P.a * at.x + P.c * at.y, y = P.b * at.x + P.d * at.y;
       // In iso the sticker stands a little proud of the belt, and rides decks, bridges and the land at their height.
       const h = 3 + k.z + lv * LH;
-      // Over a junction's bridge: over every building, in both views. Over a skybridge's span (D121: a backed-up line waits on its deck; owner, 2026-10-17: « les objets
-      // devraient pouvoir patienter sur le pont »): among the volumes just after the piece it rides, so
-      // what stands in front of the deck hides it with the deck; in plan over the plan sprites, the deck's among them.
-      const span = k.o === OVER.sky && this.sorted ? this.lift.spanZ(at.x, at.y) : NaN;
+      // Over a skybridge's span (D121: a backed-up line waits on its deck; owner, 2026-10-17: « les
+      // objets devraient pouvoir patienter sur le pont ») or a junction's deck (D130: it was drawn over
+      // every building): among the volumes between the back and the front of the piece it rides, so
+      // what stands in front of the bridge hides it with the bridge; in plan over the plan sprites,
+      // the deck's among them.
+      const span = !this.sorted ? NaN : k.o === OVER.sky ? this.lift.spanZ(at.x, at.y) : k.o === OVER.junction ? this.lift.junctionZ(at.x, at.y) : NaN;
       const onSpan = !Number.isNaN(span);
-      const z = onSpan ? span : k.o || !this.sorted ? NaN : this.lift.itemZ(at.x, at.y, lv, lifted, k.d);
+      const z = onSpan || !this.sorted ? NaN : this.lift.itemZ(at.x, at.y, lv, lifted, k.d);
       if (onSpan) {
         sorted?.add(tex, ISO_LIN.a * at.x + ISO_LIN.c * at.y, ISO_LIN.b * at.x + ISO_LIN.d * at.y - h, span, 1, 1);
         if (planned) this.spanPlan!.add(fr.page, tex, x, y - (3 + k.z) * iso, scale);
-      } else if (k.o) this.over.add(fr.page, tex, x, y - h * iso, scale);
+      } else if (k.o && !this.sorted) this.over.add(fr.page, tex, x, y - h * iso, scale);
       else if (Number.isNaN(z)) this.under.add(fr.page, tex, x, y - h * iso, scale);
       else {
         // Among the volumes at its iso px (M carries it with its ribbon); in plan flat, as the plan copies of the ribbons on rock.
-        sorted?.add(tex, ISO_LIN.a * at.x + ISO_LIN.c * at.y, ISO_LIN.b * at.x + ISO_LIN.d * at.y - h, z, 1 - FALL_SHRINK * k.d, 1 - k.d * k.d);
+        // On the floor in front of a building it takes the cast shadows' shade itself (their layer is under the volumes).
+        if (sorted) {
+          const gx = ISO_LIN.a * at.x + ISO_LIN.c * at.y, gy = ISO_LIN.b * at.x + ISO_LIN.d * at.y - h;
+          sorted.add(tex, gx, gy, z, 1 - FALL_SHRINK * k.d, 1 - k.d * k.d, lifted ? 0xffffff : shade(gx, gy));
+        }
         if (planned) (lifted ? planned : this.under).add(fr.page, tex, x, y - (lifted ? 3 + k.z : h) * iso, scale);
       }
       n++;

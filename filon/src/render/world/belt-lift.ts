@@ -30,17 +30,36 @@
 // point is on (an item is about a third of a tile across), so it is not clipped by the next
 // column's top as it crosses a tile edge on a plateau — when every tile it overhangs is no higher
 // than it rides and holds no building (else its centre's tile: a higher column in front still
-// hides it). An item over an incinerator's tile, or overhanging one, is the pit's. An item on the
-// floor elsewhere is drawn with the ribbons, under every volume (NaN).
+// hides it). An item over an incinerator's tile, or overhanging one, is the pit's.
+//
+// In front of a building (D130; owner, 2026-10-18: « quand est-ce qu'il devrait être devant les
+// items sur les ribbons, quand est-ce qu'ils devraient être derrière, et quelle partie surtout »):
+// an item on the floor within `FACE_REACH` of a building's near face — the tile south or east of
+// it, where its walls and port boxes rise over the item's glyph: a line out of a front port, into
+// one, along it — sorts among the volumes too, by its host tile, after that building (`fronts`), so
+// the wall it has left (or not reached) stays behind it. As a sprite among the volumes it is no
+// longer under the buildings' cast shadows (their layer is under the volumes): the items view tints
+// it with the shade that layer lays where it stands (buildings-view.ts `shadowAt`). A routing block
+// the same, out of the slots in its front and sides — but not on its intake's side: what goes in
+// passes under the hopper leaning out over the ribbon (`INTAKE`). A junction's tile is the same: the
+// items through its tunnel sort under it (seen through its near mouth), out of the mouth after it.
+// An item on the floor elsewhere is drawn with the ribbons, under every volume (NaN).
 //
 // An item riding a skybridge's span (flagged `OVER.sky` by the motion model, item-flow.ts: up its
 // start, over each square of its deck, down its far end, and the ribbons' last and first stretch at
-// its ends) sorts just after the span's piece it is over (`spanZ`: stand.ts `rampZ`, `deckSquareZ`),
-// by its front-most point when that is on the span too — so the deck square in front never clips
-// it, and whatever stands in front of the deck hides it with the deck (owner, 2026-10-17: « quand la
-// file est pleine, les objets devraient pouvoir patienter sur le pont »: a backed-up line waits there, D121).
-import { BUILDING_KIND } from '@/content/registry';
+// its ends) sorts just after the back of the span's piece it is over (`spanZ`: stand.ts `rampZ`,
+// `deckSquareZ`), under its front (the near girder: D130), by its front-most point when that is on
+// the span too — so the deck square in front never clips it, and whatever stands in front of the
+// deck hides it with the deck (owner, 2026-10-17: « quand la file est pleine, les objets devraient
+// pouvoir patienter sur le pont »: a backed-up line waits there, D121). On a ramp, the gantry's
+// beam spans the line: an item behind its plane goes under it, one in front of it over it all; on
+// the ribbon by an end, under that end's front when the end is in front of it, over it all when
+// the end is behind it. An item riding a junction's deck (`OVER.junction`, D130: it was drawn over
+// every building, so over a silo or a skybridge in front of the junction) sorts the same way
+// between the junction's back and front (`junctionZ`).
+import { BUILDING_IDS, BUILDING_KIND, buildingDef } from '@/content/registry';
 import { WORLD } from '@/sim/constants';
+import { footprint } from '@/sim/entities';
 import { DX, DY, type Ent } from '@/sim/types';
 import { LIFT } from '../art/recipes/lifts';
 import { STEP_LEVELS, tileTop, type ReliefLand } from '../relief';
@@ -74,8 +93,27 @@ export const RETURN_TICKS = 5;
 export const SLIDE = 0.2;
 /** How far an item reaches from its centre towards the viewer, along x and along y (tiles): its glyph is about a third of a tile across. */
 export const ITEM_REACH = 0.16;
-/** An item's key above its host tile's (see the header): on a ribbon, on an elevator, under a building it goes into. */
-export const ITEM_DZ = { belt: 0.05, lift: 0.03, under: -0.02, span: 0.02 } as const;
+/**
+ * An item's key above its host tile's (see the header): on a ribbon, on an elevator, under a
+ * building it goes into; above a piece's key (stand.ts `FRONT_DZ`): between its back and front
+ * (`span`), over both (`front`).
+ */
+export const ITEM_DZ = { belt: 0.05, lift: 0.03, under: -0.02, span: 0.02, front: 0.06 } as const;
+/**
+ * How near a building's near face (tiles) an item on the floor sorts after it (D130): its glyph
+ * rises over the face's foot from about half a tile away (a little more zoomed out, where items
+ * are drawn bigger), so an item waiting on the tile's centre is among them.
+ */
+export const FACE_REACH = 0.55;
+/** An item in front of a building sorts after all it lays (a moving part ± 0.2, a solar overlay + 0.25, a skybridge end's ramp's front + 0.29, a chosen item + 0.4). */
+const AFTER_DZ = 0.45;
+/** The routing blocks with an intake hopper at their back (in from behind only): all but the distributor, whose mouths take and give on every side. */
+const INTAKE = new Set(BUILDING_IDS.flatMap((id, i) => (BUILDING_KIND[i] === 'fork' && buildingDef(i).logic !== 'distributor' ? [i] : [])));
+
+/** A skybridge span's piece on a tile (`spanZ`): its key, a ramp or a deck square, the way its line runs (N–S or not) and the plane of a ramp's gantry beam across it (its square's middle). */
+interface Span { z: number; ramp: boolean; ns: boolean; m: number }
+/** A floor tile by a building's near face (`fronts`): which faces (N: a building north of it, W: west; `inside`: a junction's own tile), the key its items sort after. */
+interface Front { n: boolean; w: boolean; inside: boolean; after: number }
 
 /** What a tile is to the items that ride over it: its top, its key for them, and whether they may overhang it (no building on it), or it is a pit. */
 interface Host { top: number; z: number; open: boolean; pit: boolean }
@@ -94,8 +132,12 @@ export class BeltLift {
   private hosts = new Map<number, Host>();
   /** The tiles round each incinerator (an item there may overhang its pit): the only floor tiles whose items sort among the volumes. */
   private nearPit = new Set<number>();
-  /** The skybridges' spans: each tile a piece lies on (its ends' ramps, its deck's squares), and that piece's key. */
-  private spans = new Map<number, number>();
+  /** The skybridges' spans: each tile a piece lies on (its ends' ramps, its deck's squares), and that piece. */
+  private spans = new Map<number, Span>();
+  /** The junctions' tiles and their keys (their back's), for the items riding their decks. */
+  private junctions = new Map<number, number>();
+  /** The floor tiles by a building's near face (D130). */
+  private fronts = new Map<number, Front>();
   private last = NaN;
 
   /** Re-read the traction steps (after structural changes, or another colony); cars keep their height; the hosts start afresh (after the buildings view's stands). */
@@ -107,19 +149,25 @@ export class BeltLift {
     this.hosts.clear();
     this.nearPit.clear();
     this.spans.clear();
+    this.junctions.clear();
+    this.fronts.clear();
     const occupant = (x: number, y: number): number => world.ents.get(world.grid.occ[y * WORLD + x]!)?.def ?? -1;
     const bridgeAt = (t: number): Ent | undefined => { const e = world.ents.get(world.grid.occ[t]!); return e && BUILDING_KIND[e.def] === 'bridge' ? e : undefined; };
     // The spans, as the buildings view lays them (`addDecks`): a pair whose start leaps to the next end ahead, the same way.
     for (const [t, g] of world.graph?.jumps ?? []) {
       const e = bridgeAt(t), far = bridgeAt(g);
       if (!e || !far || far.rot !== e.rot) continue;
-      const lv = liftOf(e), d = e.rot;
-      this.spans.set(t, rampZ(e));
-      this.spans.set(g, rampZ(far));
-      for (let x = e.x + DX[d]!, y = e.y + DY[d]!, k = 0; k < 64 && y * WORLD + x !== g; k++, x += DX[d]!, y += DY[d]!) this.spans.set(y * WORLD + x, deckSquareZ(x, y, lv));
+      const lv = liftOf(e), d = e.rot, ns = (d & 1) === 0;
+      const ramp = (o: Ent): Span => ({ z: rampZ(o), ramp: true, ns, m: (ns ? o.y : o.x) + 0.5 });
+      this.spans.set(t, ramp(e));
+      this.spans.set(g, ramp(far));
+      for (let x = e.x + DX[d]!, y = e.y + DY[d]!, k = 0; k < 64 && y * WORLD + x !== g; k++, x += DX[d]!, y += DY[d]!) this.spans.set(y * WORLD + x, { z: deckSquareZ(x, y, lv), ramp: false, ns, m: 0 });
     }
     for (const e of world.ents.map.values()) {
-      if (BUILDING_KIND[e.def] === 'sink') for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) this.nearPit.add((e.y + j) * WORLD + e.x + i);
+      const kind = BUILDING_KIND[e.def];
+      if (kind === 'sink') for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) this.nearPit.add((e.y + j) * WORLD + e.x + i);
+      if (kind === 'crossing') this.junctions.set(e.y * WORLD + e.x, depthKey(e));
+      if (!flat(e.def) && kind !== 'sink') this.faceOf(world, e);
       const l = liftOfBelt(world.grid, occupant, e);
       if (!l) continue;
       if (!l.shaft) { this.slides.set(e.y * WORLD + e.x, l); continue; }
@@ -192,23 +240,97 @@ export class BeltLift {
 
   /**
    * The depth key among the volumes of an item riding a skybridge's span at (x, y) (tile coords;
-   * flagged `OVER.sky` by the motion model, item-flow.ts): just after the piece under it, or under
-   * its front-most point when that is the span's too and in front; on the ribbon by an end (the
-   * last or first stretch drawn over the bridge), just after that end's ramp across the nearer edge.
-   * NaN when no span is there (the items view then draws it over the buildings, as a junction's).
+   * flagged `OVER.sky` by the motion model, item-flow.ts): just after the back of the piece under
+   * it — or of its front-most point's, when that is the span's too and in front — under its front
+   * (D130); on a ramp in front of the gantry's beam, over its front too. On the ribbon by an end
+   * (the last or first stretch drawn over the bridge), across the nearer edge: under that end's
+   * front when the end is in front of the item's tile, over it all when it is behind. NaN when no
+   * span is there (the items view then draws it as any other item).
    */
   spanZ(x: number, y: number): number {
     if (!this.spans.size) return NaN;
     const tx = Math.floor(x), ty = Math.floor(y);
     const own = this.spans.get(ty * WORLD + tx);
-    if (own !== undefined) {
+    if (own) {
       const front = this.spans.get(Math.floor(y + ITEM_REACH) * WORLD + Math.floor(x + ITEM_REACH));
+      const p = front && front.z > own.z ? front : own;
+      return p.z + (p.ramp && (p.ns ? y : x) > p.m ? ITEM_DZ.front : ITEM_DZ.span);
+    }
+    const n = this.across(this.spans, x, y);
+    return n ? n.v.z + (n.ahead ? ITEM_DZ.span : ITEM_DZ.front) : NaN;
+  }
+
+  /**
+   * The depth key among the volumes of an item riding a junction's deck at (x, y) (flagged
+   * `OVER.junction`, item-flow.ts; D130 — it was drawn over every building): between the
+   * junction's back and front, or the next junction's of a run when its front-most point is on
+   * it; on the ribbon by one, across the nearer edge, between its parts when the junction is in
+   * front of the item's tile, over it all (and its own tile's ribbon) when it is behind. NaN when
+   * no junction is there.
+   */
+  junctionZ(x: number, y: number): number {
+    if (!this.junctions.size) return NaN;
+    const tx = Math.floor(x), ty = Math.floor(y);
+    const own = this.junctions.get(ty * WORLD + tx);
+    if (own !== undefined) {
+      const front = this.junctions.get(Math.floor(y + ITEM_REACH) * WORLD + Math.floor(x + ITEM_REACH));
       return (front !== undefined && front > own ? front : own) + ITEM_DZ.span;
     }
+    const n = this.across(this.junctions, x, y);
+    if (!n) return NaN;
+    return n.ahead ? n.v + ITEM_DZ.span : Math.max(n.v + ITEM_DZ.front, this.host(tx, ty)?.z ?? -Infinity);
+  }
+
+  /** What lies across the nearer edges of (x, y)'s tile in `map` (the one with the higher key), and whether its tile is in front of the item's. */
+  private across<V extends number | Span>(map: ReadonlyMap<number, V>, x: number, y: number): { v: V; ahead: boolean } | null {
+    const tx = Math.floor(x), ty = Math.floor(y);
     const nx = x - tx < 0.5 ? tx - 1 : tx + 1, ny = y - ty < 0.5 ? ty - 1 : ty + 1;
-    const a = this.spans.get(ty * WORLD + nx), b = this.spans.get(ny * WORLD + tx);
-    const k = a === undefined ? b : b === undefined ? a : Math.max(a, b);
-    return k === undefined ? NaN : k + ITEM_DZ.span;
+    const a = map.get(ty * WORLD + nx), b = map.get(ny * WORLD + tx);
+    const key = (v: V | undefined): number => (v === undefined ? -Infinity : typeof v === 'number' ? v : v.z);
+    if (a === undefined && b === undefined) return null;
+    return key(a) >= key(b) ? { v: a!, ahead: nx > tx } : { v: b!, ahead: ny > ty };
+  }
+
+  /**
+   * Register the tiles along a building's near faces at its height — the row south of it, the
+   * column east of it — and a junction's own tile (D130): what their items sort after. Not a glazed ribbon's
+   * tile: its glass hood (on a layer under the volumes) covers its items. Not a routing block's
+   * intake side: its hopper leans out over the incoming ribbon (art/recipes/buildings.ts
+   * `intakeIso`), so what comes in passes under it.
+   */
+  private faceOf(world: LiftWorld, e: Ent): void {
+    const [w, h] = footprint(e.def, e.rot);
+    const back = INTAKE.has(e.def) ? (e.rot + 2) & 3 : -1; // the side items come in by (S: 2, E: 1 are near faces)
+    const after = depthKey(e) + AFTER_DZ;
+    const lv = liftOf(e);
+    const at = (x: number, y: number): Front | null => {
+      if (x < 0 || y < 0 || x >= WORLD || y >= WORLD) return null;
+      // Only at the building's own height: a building on rock may sort past the columns ahead of it
+      // (stand.ts `reach`), so an item below or above it would be pushed past rock in front of it.
+      if (tileTop(world.grid, x, y) !== lv) return null;
+      const t = y * WORLD + x;
+      const o = world.ents.get(world.grid.occ[t]!);
+      if (o && o !== e && buildingDef(o.def).glazed) return null;
+      let f = this.fronts.get(t);
+      if (!f) this.fronts.set(t, (f = { n: false, w: false, inside: false, after: -Infinity }));
+      return f;
+    };
+    const face = (f: Front | null, side: 'n' | 'w'): void => {
+      if (!f) return;
+      f[side] = true;
+      if (after > f.after) f.after = after;
+    };
+    if (back !== 2) for (let i = 0; i < w; i++) face(at(e.x + i, e.y + h), 'n');
+    if (back !== 1) for (let j = 0; j < h; j++) face(at(e.x + w, e.y + j), 'w');
+    if (BUILDING_KIND[e.def] === 'crossing') { const f = at(e.x, e.y); if (f) f.inside = true; }
+  }
+
+  /** The tile record of an item at (x, y) by a building's near face, when it is near enough to sort after it (`FACE_REACH`), or on a junction's tile. */
+  private faceAt(x: number, y: number): Front | null {
+    if (!this.fronts.size) return null;
+    const tx = Math.floor(x), ty = Math.floor(y);
+    const f = this.fronts.get(ty * WORLD + tx);
+    return f && (f.inside || (f.n && y - ty < FACE_REACH) || (f.w && x - tx < FACE_REACH)) ? f : null;
   }
 
   /** What tile (tx, ty) is to the items over it (see the header). */
@@ -231,26 +353,29 @@ export class BeltLift {
   /**
    * The depth key among the volumes of an item drawn at (x, y) (tile coords, where `place` put it),
    * `lv` levels up, `lifted` (above the floor or in a shaft), fallen `d` into a pit: its host
-   * tile's (see the header); NaN for an item on the floor away from any pit, drawn with the ribbons.
+   * tile's (see the header), and after the building whose near face it is by (D130); NaN for an
+   * item on the floor away from any pit and any near face, drawn with the ribbons.
    */
   itemZ(x: number, y: number, lv: number, lifted: boolean, d: number): number {
     const tx = Math.floor(x), ty = Math.floor(y);
-    if (!lifted && !this.nearPit.has(ty * WORLD + tx)) return NaN; // on the floor, away from any pit: with the ribbons
+    const face = this.faceAt(x, y);
+    if (!lifted && !face && !this.nearPit.has(ty * WORLD + tx)) return NaN; // on the floor, away from any pit or near face: with the ribbons
     const fx = Math.floor(x + ITEM_REACH), fy = Math.floor(y + ITEM_REACH);
     const bx = Math.floor(x - ITEM_REACH), by = Math.floor(y - ITEM_REACH);
     // Over a pit, or overhanging one: the pit's — behind its flame on the far half (the flame
     // rises from the throat in front of it) or once it falls in, over everything on the near half.
-    for (const [i, j] of [[tx, ty], [fx, ty], [tx, fy], [fx, fy], [bx, ty], [tx, by]] as const) {
+    // (Every tile it may overhang is within a tile of its own: none can be a pit off `nearPit`.)
+    if (this.nearPit.has(ty * WORLD + tx)) for (const [i, j] of [[tx, ty], [fx, ty], [tx, fy], [fx, fy], [bx, ty], [tx, by]] as const) {
       const h = this.host(i, j);
       if (h?.pit) return h.z + (d > 0 || x + y < i + j + 1 ? PIT_Z.fall : PIT_Z.over);
     }
-    if (!lifted) return NaN;
+    if (!lifted && !face) return NaN;
     const own = this.host(tx, ty);
     if (!own) return NaN;
-    if (fx === tx && fy === ty) return own.z;
+    let z = own.z;
     // Overhanging the tiles in front: keyed by the front-most one, if none is higher or built on.
     const ok = (i: number, j: number): boolean => { const h = this.host(i, j); return !!h && h.open && h.top <= lv + 1e-6; };
-    if ((fx !== tx && !ok(fx, ty)) || (fy !== ty && !ok(tx, fy)) || !ok(fx, fy)) return own.z;
-    return this.host(fx, fy)!.z;
+    if ((fx !== tx || fy !== ty) && (fx === tx || ok(fx, ty)) && (fy === ty || ok(tx, fy)) && ok(fx, fy)) z = this.host(fx, fy)!.z;
+    return face && face.after > z ? face.after : z;
   }
 }

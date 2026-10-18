@@ -133,32 +133,41 @@ for (let attempt = 0; attempt < 10 && !caught; attempt++) {
   if (!silos.stands) continue;
   const mid = silos.stands[silos.stands.length >> 1];
   const at = [mid[0], mid[1]];
-  const posts = await page.evaluate(([mx, my]) => (window.FL.gleaners().raids.find((r) => r.x === mx && r.y === my)?.posts ?? []).map(([x, y]) => y * 1024 + x), silos.mid ?? [raid.x, raid.y]);
+  const allPosts = await page.evaluate(([mx, my]) => (window.FL.gleaners().raids.find((r) => r.x === mx && r.y === my)?.posts ?? []).map(([x, y]) => y * 1024 + x), silos.mid ?? [raid.x, raid.y]);
+  const { arrive, take: takeFor } = await page.evaluate(() => window.FL.gleaners().timing);
+  const end = t0 + arrive + takeFor;
   const count0 = await page.evaluate(() => { const g = window.FL.gleaners(); return { paired: g.paired, onBelt: g.onBelt, unforeseen: g.unforeseen, unseen: g.unseen, late: g.late }; });
-  // The late base's desert line carries next to nothing: glass on its free cells (sandbox: `fillRibbons`),
-  // topped up as the raid goes, so a stream of shiny things rides past the posts.
-  // (Then a frame drawn, so the view foresees a take on a token just laid on a post.)
-  const topUp = async () => { if (RAID_BASE === 'late') { await page.evaluate(() => window.FL.fillRibbons('glass')); await page.waitForTimeout(60); } };
-  await tick(t0 - 160 - (await now()));
+  // The late base's desert line carries next to nothing: circuits on its free cells (sandbox:
+  // `fillRibbons`; 17 ◉, so the line calls a band of four), topped up as the raid goes, so a stream of
+  // shiny things rides past the posts. (Then a frame drawn, so the view foresees a take on a token
+  // just laid on a post.)
+  const topUp = async () => { if (RAID_BASE === 'late') { await page.evaluate(() => window.FL.fillRibbons('circuit')); await page.waitForTimeout(60); } };
+  await tick(t0 - 60 - (await now()));
   await topUp();
-  await tick(t0 - 120 - (await now()));
-  await both('1-furrow', at, 700); sheet.push(['seq-1-furrow', 'under the sand, in from the empty desert']); sheet.push(['seq-1-furrow-mid', 'the furrows (mid zoom)']);
-  await tick(t0 - 52 - (await now()));
+  // The call, at the line's first step of its slot: who comes.
+  await tick(t0 + 30 - (await now()));
+  const band = await page.evaluate(([mx, my]) => window.FL.gleaners().raids.find((r) => r.x === mx && r.y === my)?.band ?? 0, silos.mid ?? [raid.x, raid.y]);
+  const posts = allPosts.slice(0, band);
+  console.log(`  called: a band of ${band} (of ${allPosts.length} posts)`);
+  if (!band) { console.log('  nobody called'); continue; }
+  await both('1-furrow', at, 700); sheet.push(['seq-1-furrow', `called: ${band} under the sand, in from the empty desert`]); sheet.push(['seq-1-furrow-mid', 'the furrows (mid zoom)']);
+  await tick(t0 + 82 - (await now()));
   await both('2-surface', at); sheet.push(['seq-2-surface', 'rising out of the sand']);
-  await tick(t0 + 4 - (await now()));
-  await both('3-wait', at); sheet.push(['seq-3-wait', 'waiting half-buried, a silo behind and one in front']);
+  await tick(t0 + arrive - 2 - (await now()));
+  await both('3-wait', at); sheet.push(['seq-3-wait', 'up at the line, a silo behind and one in front']);
   // Every take of the raid, tick by tick: when a post foresees its take on this very tick, the frame
   // before it (the hand on the token), the one after (the token off the belt, in the hand), and four
   // ticks on (rising up the arm); on until every post has taken (the sim's own log) or the raid is over.
   const takenSoFar = () => page.evaluate(([ks, from]) => {
     const r = window.FL.app.sim.gleaners.recent;
     let n = 0;
-    for (let i = 0; i + 2 < r.length; i += 3) if (ks.includes(r[i]) && r[i + 2] >= from && r[i + 2] < from + 600) n++;
+    for (let i = 0; i + 2 < r.length; i += 3) if (ks.includes(r[i]) && r[i + 2] >= from && r[i + 2] < from + 400) n++;
     return n;
   }, [posts, t0]);
   let k = 0;
   const riding = []; // [tick to shoot, take number, tile]
-  while ((await now()) < t0 + 600 && ((await takenSoFar()) < posts.length || riding.length)) {
+  let firstTake = -1;
+  while ((await now()) < end && ((await takenSoFar()) < posts.length || riding.length)) {
     const f = await page.evaluate(() => ({ tick: window.FL.app.sim.tick, fore: window.FL.app.gleaners.foreseen_() }));
     const ride = riding.findIndex(([t]) => t === f.tick);
     if (ride >= 0) {
@@ -177,6 +186,7 @@ for (let attempt = 0; attempt < 10 && !caught; attempt++) {
       console.log(`  take ${k} on ${tile & 1023},${tile >> 10} at ${T}: foreseen item ${item}, the sim took ${took}${due.length > 1 ? `; ${due.length - 1} more on the same step` : ''}`);
       if (took !== item) console.log('  ✗ the take foreseen is not the one made');
       riding.push([T + 5, k, tile]);
+      if (firstTake < 0) firstTake = T;
       caught = { x: tile & 1023, y: tile >> 10, item, T, silos: [silos.back, silos.front].filter(Boolean) };
       continue;
     }
@@ -191,16 +201,16 @@ for (let attempt = 0; attempt < 10 && !caught; attempt++) {
   if (delta.onBelt || delta.unforeseen || delta.unseen) console.log('  ✗ a grab without its token');
   await both('7-holding', at); sheet.push(['seq-7-holding', 'held up, glowing']);
   console.log('  holding', JSON.stringify(await page.evaluate(() => { const g = window.FL.gleaners(); return { tick: g.tick, night: g.night, figures: g.figures, waiting: g.waiting, carrying: g.carrying, raid: window.FL.app.gleaners.raidAt_, view: window.FL.view() }; })));
-  // On to the band leaving: 40 ticks after every post has taken (the view's LINGER), or at the raid's end (600).
-  const leaveAt = () => page.evaluate(([ks, from]) => {
+  // On to the band leaving: 20 ticks after every one of it has taken (the view's LINGER), or at the raid's end.
+  const leaveAt = () => page.evaluate(([ks, from, to]) => {
     const r = window.FL.app.sim.gleaners.recent, got = new Map();
-    for (let i = 0; i + 2 < r.length; i += 3) if (ks.includes(r[i]) && r[i + 2] >= from && r[i + 2] < from + 600) got.set(r[i], r[i + 2]);
-    return got.size === ks.length ? Math.max(...got.values()) + 40 : null;
-  }, [posts, t0]);
+    for (let i = 0; i + 2 < r.length; i += 3) if (ks.includes(r[i]) && r[i + 2] >= from && r[i + 2] < to) got.set(r[i], r[i + 2]);
+    return got.size === ks.length ? Math.max(...got.values()) + 20 : null;
+  }, [posts, t0, end]);
   let leave = await leaveAt();
-  while (!leave && (await now()) < t0 + 600) { await tick(10); leave = await leaveAt(); }
-  leave ??= t0 + 600;
-  console.log(`  leaving at ${leave} (${leave - t0} into the raid), bearing ${silos.bearing.map((v) => v.toFixed(2)).join(',')}`);
+  while (!leave && (await now()) < end) { await tick(10); leave = await leaveAt(); }
+  leave ??= end;
+  console.log(`  up at the line at ${t0 + arrive}; first grab ${firstTake - t0 - arrive} ticks after; leaving at ${leave} (${leave - t0 - arrive} ticks at the line), bearing ${silos.bearing.map((v) => v.toFixed(2)).join(',')}`);
   await tick(leave + 14 - (await now()));
   await both('8-sink', at); sheet.push(['seq-8-sink', 'sinking back with what they took']);
   await tick(leave + 80 - (await now()));

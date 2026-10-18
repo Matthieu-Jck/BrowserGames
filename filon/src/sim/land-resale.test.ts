@@ -2,7 +2,7 @@
 // Ring Cadastre's tax; Parcel Resale (`xp_resell`) is gone from the tree and from saves; Far Claim is Tier 2.
 import { describe, it, expect } from 'vitest';
 import { BAL } from '@/content/balance';
-import { RESEARCH } from '@/content/research';
+import { RESEARCH, researchNeeds } from '@/content/research';
 import { CENTER } from './constants';
 import { deserialize, serialize } from './serialize';
 import { landPrice } from './systems/land';
@@ -36,7 +36,7 @@ describe('land resale (D119)', () => {
     const back = deserialize(JSON.parse(JSON.stringify(serialize(sim))), testSource());
     expect(back.done.has('xp_resell')).toBe(false);
     expect('xp_resell' in RESEARCH).toBe(false);
-    expect(RESEARCH.xp_treaties.prereq).toContain('xp4');
+    expect(researchNeeds('xp_treaties')).toContain('xp4'); // D128: Transport waits for the Territory, its pylons in it
   });
 
   it('Far Claim is a Tier 2 node of Logistique', () => {

@@ -37,7 +37,7 @@ describe('the debug bases’ research (D118, D122)', () => {
     expect(p, 'an_queue under way').toBeTruthy();
     expect(p.tokens).toBeGreaterThan(0);
     expect(p.buy).toBeGreaterThan(0);
-    expect(late.projects.some((q) => q.id === 'en_solarfarm'), 'the Fabrique’s lab under way').toBe(true);
+    expect(late.projects.some((q) => q.id === 'dn7'), 'the Fabrique’s lab under way (D128: Robotics)').toBe(true);
     late.run(EPOCH);
     const f = tokenFlows(late, (n) => late.netPower[n]?.sat ?? 0).get('an_queue')!;
     expect(f.free).toBeGreaterThan(0);

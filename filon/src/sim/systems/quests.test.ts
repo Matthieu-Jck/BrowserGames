@@ -274,7 +274,26 @@ function play(sim: Sim, last: QuestId = 'synth_parts'): Record<string, number> {
   until(sim, 'crier_trade', 8 * EPOCH);
   if (stop('crier_trade')) return ids;
 
-  // 7 — goal: the Core's level 2 (D101), the player's own click, paid from the Hearth's stock: plates,
+  // 7 — goal: the slag (D125). The plans; a sorter on the plates' line below the smelter (a straight
+  // stretch), set to the plates; an incinerator against its east side: the slag falls in, the plates
+  // run on into the Hearth.
+  hint('slag', 0);
+  unlock('sorter', 'incinerator');
+  hint('slag', 1);
+  place('slagSorter', 'sorter', 517, 508, 2);
+  expect(sim.setForkFilter(ids.slagSorter!, 0, 'iron_plate')).toBe(true);
+  hint('slag', 2);
+  place('slagPit', 'incinerator', 518, 508);
+  hint('slag', -1);
+  until(sim, 'slag', QUEST_CHECK_TICKS);
+  if (stop('slag')) return ids;
+  // The slag that comes now burns in the pit; the plates still reach the Hearth.
+  const burnt0 = sim.consumed[itemIdx('slag')]!, plates0 = sim.stock[itemIdx('iron_plate')]!;
+  sim.run(2 * EPOCH);
+  expect(sim.consumed[itemIdx('slag')]!).toBeGreaterThan(burnt0);
+  expect(sim.stock[itemIdx('iron_plate')]!).toBeGreaterThan(plates0);
+
+  // 8 — goal: the Core's level 2 (D101), the player's own click, paid from the Hearth's stock: plates,
   // glass and copper wire are there (the colony's spare materials, « La Criée »'s wire).
   hint('core_upgrade', 3);
   expect(sim.upgradeHearth().ok).toBe(true);
@@ -283,7 +302,7 @@ function play(sim: Sim, last: QuestId = 'synth_parts'): Record<string, number> {
   until(sim, 'core_upgrade', QUEST_CHECK_TICKS);
   if (stop('core_upgrade')) return ids;
 
-  // 8 — goal: « Le laboratoire » (D71, D101, D122). Every plan left, each as soon as the Hearth can
+  // 9 — goal: « Le laboratoire » (D71, D101, D122). Every plan left, each as soon as the Hearth can
   // pay for it, then the research lab's (the gate); the lab south-east of the Hearth, wired — no
   // ribbon feeds it —; Mechanics launched, its plates and wire paid from the Core, its tokens the
   // Core's compute's.
@@ -325,21 +344,33 @@ function play(sim: Sim, last: QuestId = 'synth_parts'): Record<string, number> {
   until(sim, 'wall_quartz', 6 * EPOCH);
   if (stop('wall_quartz')) return ids;
 
-  // 10 — goal: Parts for the Synthesis (D90, after D93): the two workshops (the quartz workshop off the
-  // quartz and wire lines, the electronics workshop off the wire and glass lines, each a router on
-  // the line), their oscillators and circuits into the Hearth; no press (D101: its gears wait for
-  // Mechanics, started in « Données d'arpentage »). The long lines are found by the layout kit.
+  // 10 — goal: Parts for the Synthesis (D90, after D93): the quartz workshop off the quartz and wire
+  // lines, the assembly bench (D129: the electronics workshop is Tier 2's) off the wire line and the
+  // plates' line past its slag sorter, each a router on the line, their oscillators and coils into
+  // the Hearth; no press (D101: its gears wait for Mechanics, started in « Données d'arpentage »). The long lines are found by the layout kit. The
+  // quartz workshop's own node first (D128): launched once Mechanics leaves the lab, its tokens the
+  // Core's compute's, its quartz and wire from the Core.
   hint('synth_parts', 0);
+  for (let t = 0; t < 30 * EPOCH && !sim.done.has('dn_quartzshop'); t += EPOCH) {
+    if (!sim.projects.length) sim.startResearch('dn_quartzshop');
+    sim.run(EPOCH);
+  }
+  expect(sim.done.has('dn_quartzshop')).toBe(true);
+  hint('synth_parts', 1);
   const fed = (name: string, def: string, near: [number, number], feeds: Feed[], to: number | null): number => {
     const r = placeFed(sim, def, near, feeds, to, { r: 16, tries: 120 });
     if (!r) throw new Error(`${name} (${def} near ${near}): no spot with its lines`);
     return (ids[name] = r.id);
   };
   fed('quartzW', 'quartz_workshop', [490, 516], [{ lines: [quartzLine] }, { lines: [wireLine] }], sim.hearthId);
-  fed('circuits', 'workshop', [500, 522], [{ lines: [wireLine] }, { lines: [glassLine] }], sim.hearthId);
-  hint('synth_parts', 2); // both fed, neither wired yet
+  // The plates past the slag sorter (517, 508): a slag on the branch would jam the bench (D125).
+  fed('bench', 'assembly_bench', [500, 522], [{ lines: [wireLine] }, { lines: [plateLine.slice(2)] }], sim.hearthId);
+  // Mechanics is learnt: two recipes, the bench waits for its choice (D83).
+  hint('synth_parts', 3);
+  expect(sim.setRecipe(ids.bench!, 'copper_coil')).toBe(true);
+  hint('synth_parts', 4); // both fed, neither wired yet
   powerLine(sim, ids.quartzW!);
-  powerLine(sim, ids.circuits!);
+  powerLine(sim, ids.bench!);
   hint('synth_parts', -1); // their lines were laid with them: the parts on their way
   until(sim, 'synth_parts', 10 * EPOCH);
   return ids;
@@ -351,7 +382,7 @@ const logged = (sim: Sim, k: Command['k']): Command[] => sim.log.filter((l) => l
 describe('quests', () => {
   it('the quest table holds together (the tutorial unlocks before it uses), and checks fall on every epoch boundary', () => {
     expect(questProblems()).toEqual([]);
-    expect(QUEST_IDS.length).toBe(11); // the claim's name, then ten quests (D101: « Le Cœur grandit » the ninth; D114: « La vapeur » the tenth)
+    expect(QUEST_IDS.length).toBe(12); // the claim's name, then eleven quests (D101: « Le Cœur grandit »; D114: « La vapeur »; D125: « Les scories »)
     expect(QUEST_IDS.filter((id) => (QUESTS[id] as QuestDef).steps).slice(1)).toEqual(['first_strike', 'bloom_kiln']); // guided: the first basics only
     expect(EPOCH % QUEST_CHECK_TICKS).toBe(0);
   });
@@ -367,7 +398,7 @@ describe('quests', () => {
     // One logged completion per quest, in order, none forced; one quest event each.
     expect(logged(sim, 'quest')).toEqual(QUEST_IDS.map((id) => ({ k: 'quest', id })));
     // The tree: every plan the tutorial asked for, unlocked through the logged command.
-    const first = ['kiln', 'sand_collector', 'router', 'wind_flower', 'brazier', 'steam', 'telemetry', 'trade_post', 'wire_mill'];
+    const first = ['kiln', 'sand_collector', 'router', 'wind_flower', 'brazier', 'steam', 'telemetry', 'trade_post', 'wire_mill', 'sorter', 'incinerator'];
     expect(logged(sim, 'unlockPlan').map((c) => (c as { id: string }).id)).toEqual([
       ...first, ...PLAN_IDS.filter((p) => ![...first, 'observatory'].includes(p)), 'observatory',
     ]);
@@ -525,9 +556,9 @@ describe('quests', () => {
     const OLD = ['claim', 'first_strike', 'ribbon_lines', 'bloom_kiln', 'first_wind', 'glassworks', 'crier_calls', 'tired_vein', 'first_purchase', 'beyond_crown', 'field_journal', 'wall_quartz', 'synth_parts'];
     const NOW: Record<string, string | null> = {
       claim: 'claim', first_strike: 'first_strike', ribbon_lines: 'bloom_kiln', bloom_kiln: 'bloom_kiln', first_wind: 'first_wind', glassworks: 'glassworks',
-      // « Le Cœur grandit » (table 3) comes first for a player at « La Criée »'s end, « La vapeur » (table 4, D114)
-      // for one still in it; each passed by once a later quest was done.
-      crier_calls: 'steam_power', tired_vein: 'steam_power', first_purchase: 'steam_power', beyond_crown: 'core_upgrade', field_journal: 'core_upgrade',
+      // « Les scories » (table 5, D125) comes first for a player at « La Criée »'s end, then « Le Cœur grandit »
+      // (table 3); « La vapeur » (table 4, D114) for one still in it; each passed by once a later quest was done.
+      crier_calls: 'steam_power', tired_vein: 'steam_power', first_purchase: 'steam_power', beyond_crown: 'slag', field_journal: 'slag',
       wall_quartz: 'wall_quartz', synth_parts: 'synth_parts', '': null,
     };
     for (const cur of [...OLD, '']) {
@@ -546,12 +577,14 @@ describe('quests', () => {
     }
     // A save from the D101 table before « Le Cœur grandit » (table 2): the same rule.
     const T2 = ['claim', 'first_strike', 'bloom_kiln', 'first_wind', 'glassworks', 'crier_trade', 'field_journal', 'wall_quartz', 'synth_parts'];
-    for (const [cur, now] of [['field_journal', 'core_upgrade'], ['wall_quartz', 'wall_quartz'], ['synth_parts', 'synth_parts']] as const) {
+    for (const [cur, now] of [['field_journal', 'slag'], ['wall_quartz', 'wall_quartz'], ['synth_parts', 'synth_parts']] as const) {
       const done = T2.slice(0, T2.indexOf(cur));
       const sim = testSim();
       loadQuests(sim, { done, doneAt: done.map((_, i) => 100 * i), cur, base: [0, 0], win: [-1, 0, -1, 0, -1, 0, -1, 0], named: true, titles: [], table: 2 });
       expect(QUEST_IDS[sim.quests.cur], `table 2 at ${cur}`).toBe(now);
-      expect(sim.quests.done.includes('core_upgrade')).toBe(now !== 'core_upgrade');
+      // The quests added since (« Le Cœur grandit », « Les scories ») done only once a later one was.
+      expect(sim.quests.done.includes('core_upgrade')).toBe(now !== 'slag');
+      expect(sim.quests.done.includes('slag')).toBe(now !== 'slag');
       expect([...sim.quests.doneAt].sort((a, b) => a - b)).toEqual(sim.quests.doneAt);
     }
     // Today's table: a quest not done stays to do, whatever came after it.

@@ -23,7 +23,7 @@ import { CENTER, EPOCH, WORLD } from './constants';
 import { footprint, worldPorts } from './entities';
 import { checkpoint, join, rollback, type BeltTiles } from './dev';
 import type { Chain } from './flow/chain';
-import { MachineNode } from './flow/nodes';
+import { GeneratorNode, MachineNode } from './flow/nodes';
 import { oreBlockOf } from './ore-blocks';
 import type { FNode } from './flow/node';
 import type { Builder } from './scenarios';
@@ -91,7 +91,8 @@ function rateOf(b: Builder, id: number): number {
 
 /**
  * What the machines at the end of these drills' lines burn of `item` a minute (their recipes'
- * inputs at their speed), when those lines lead into machines only; null when one leads on into a
+ * inputs at their speed; a generator its fuel at full output), when those lines lead into machines
+ * and generators only; null when one leads on into a
  * store, the Heart or the trade post, which take whatever comes (D87: the coal line into the two
  * kilns takes about 25 a minute, not a ribbon's 60 — a drill more on it stood backed up, D85).
  */
@@ -110,6 +111,9 @@ function burnOf(b: Builder, roles: readonly string[], item: number): number | nu
         if (seen.has(d)) continue;
         seen.add(d);
         if (d.kind === 'chain' || d.kind === 'fork') { todo.push(d); continue; }
+        // A generator burns at most its full output's fuel (D129: on land 3 a third coal drill joined the
+        // steam boiler's line, counted as a ribbon's room, and stood backed up while the wind did the work).
+        if (d instanceof GeneratorNode && d.fuelItem === item) { if (!counted.has(d)) { counted.add(d); mu += d.burnEp; } continue; }
         if (!(d instanceof MachineNode) || !d.recipe) return null;
         if (counted.has(d)) continue;
         counted.add(d);

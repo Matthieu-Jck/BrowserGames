@@ -1,12 +1,13 @@
-// tree-layout.test.ts — the tech tree's layout (D107): computed from content alone, it must keep
-// its cards apart (two siblings in one slot take a row each), its links off the cards (each turns in the gaps between sub-columns and runs along the gaps
-// between lanes), put the Synthesis right of all of Tier 1 so every family's last Tier 1 node joins
-// it on one bus, keep the tier bands apart (Tier 1 and Tier 2 further, an ink rule between them:
-// D118), and light a selected node's chain without spilling through the gates. Also the launch
-// dialog's estimates (D118, D122): the tokens a flow buys, the bank's tokens first.
+// tree-layout.test.ts — the tech tree's layout (D107, D128): computed from content alone, it must
+// keep its cards apart (two siblings in one slot take a row each), its links off the cards (each
+// turns in the gaps between sub-columns and runs along the gaps between categories), stack each
+// tier's own categories in its band (a block each, paper between, every node in its own block under
+// its header), draw each category gate from the gate's block across the gutter to the block it
+// opens, keep the tier bands apart (Tier 1 and Tier 2 further, an ink rule between them: D118), and
+// light a selected node's chain without spilling through the gates. The launch dialog's estimates
+// are the engine's (`launchSources`: sim/research/research.test.ts).
 import { describe, it, expect } from 'vitest';
-import { RESEARCH, TIER1_WHOLE } from '@/content/research';
-import { bankFirst, boughtEstimate } from '../launch-dialog';
+import { CATEGORIES, RESEARCH, categoryNodes, tierCategories } from '@/content/research';
 import { ZOOM_FLOOR, ZOOM_MAX, chainOf, elbowPath, fitZoom, treeLayout, zoomLevel } from './research';
 
 /** The straight legs of a route (its corners' curves cut to their ends: they stay within the gap). */
@@ -58,15 +59,42 @@ describe('the tech tree’s layout (D107)', () => {
     }
   });
 
-  it('the Synthesis stands right of all of Tier 1: each family’s last Tier 1 node joins it on one bus', () => {
-    const synth = at.get(TIER1_WHOLE)!;
-    for (const [id, r] of Object.entries(RESEARCH)) if (r.tier === 1 && id !== TIER1_WHOLE) expect(at.get(id)!.x + at.get(id)!.w, id).toBeLessThan(synth.x);
-    const into = L.links.filter((l) => l.to === TIER1_WHOLE && l.kind === 'cross');
-    // Extraction's last Tier 1 node (the Brickworks, D123) reaches it through the Steelworks, which needs its bricks: no link of its own.
-    expect(into.map((l) => l.from).sort()).toEqual(['an_data', 'cm_floor', 'dn_wiremill', 'en2', 'xp_guard']);
-    // One bus: every route turns at the same x, left of the Synthesis.
-    const turns = new Set(into.map((l) => legs(l.d).find(([x1, , x2]) => x1 === x2)![0]));
-    expect(turns.size).toBe(1);
+  it('each tier stacks its own categories (D128): a block each in its band, paper between, every node in its block under its header', () => {
+    const blocks = new Map(L.cats.map((k) => [k.id, k]));
+    for (const tier of [1, 2, 3, 4] as const) {
+      const band = L.tiers.find((t) => t.tier === tier)!;
+      const mine = tierCategories(tier).map((c) => blocks.get(c)!);
+      expect(mine.every(Boolean), `Tier ${tier}`).toBe(true);
+      for (let k = 0; k < mine.length; k++) {
+        const b = mine[k]!;
+        expect(b.x >= band.x && b.x + b.w <= band.x + band.w, b.id).toBe(true);
+        if (k) expect(b.y, `${b.id} under ${mine[k - 1]!.id}`).toBeGreaterThan(mine[k - 1]!.y + mine[k - 1]!.h);
+      }
+    }
+    for (const k of L.cats) for (const id of categoryNodes(k.id)) {
+      const s = at.get(id)!;
+      expect(s.x >= k.x && s.x + s.w <= k.x + k.w && s.y + s.h <= k.y + k.h, `${id} in ${k.id}`).toBe(true);
+      expect(s.y, `${id} under ${k.id}'s header`).toBeGreaterThanOrEqual(k.y + 26 + (k.gates.length ? 22 : 0));
+    }
+  });
+
+  it('each category gate is a line from the gate’s block across the gutter to the block it opens, its turn its own (D128)', () => {
+    const blocks = new Map(L.cats.map((k) => [k.id, k]));
+    const want = Object.entries(CATEGORIES).flatMap(([c, k]) => k.gates.map((g) => `${g}>${c}`)).sort();
+    expect(L.gates.map((g) => `${g.from}>${g.to}`).sort()).toEqual(want);
+    const turns = new Set<number>();
+    for (const g of L.gates) {
+      const a = blocks.get(g.from)!, b = blocks.get(g.to)!;
+      expect(g.d.startsWith(`M${a.x + a.w} `), g.from).toBe(true);
+      const ls = legs(g.d), last = ls[ls.length - 1]!;
+      expect(last[2], g.to).toBe(b.x);
+      const turn = ls.find(([x1, , x2]) => x1 === x2);
+      if (turn) {
+        expect(turn[0] > a.x + a.w && turn[0] < b.x, `${g.from}>${g.to} turns in the gutter`).toBe(true);
+        expect(turns.has(turn[0]), `${g.from}>${g.to} shares its turn`).toBe(false);
+        turns.add(turn[0]);
+      }
+    }
   });
 
   it('tier bands stand apart, a gutter between each', () => {
@@ -88,15 +116,19 @@ describe('the tech tree’s layout (D107)', () => {
     expect([L.rule!.y, L.rule!.h]).toEqual([t1.y, t1.h]);
   });
 
-  it('a node’s chain: what it needs and what needs it, through the gates no further', () => {
-    const c = chainOf('en_bigwind').nodes;
-    for (const id of ['en_solarfarm', 'en4', 'en_heavyacc', 'en2', 'en_pitch', 'en_tower', 'tr6', 'tr_synth', 'observatory']) expect(c.has(id), id).toBe(true);
-    for (const id of ['en5', 'en_cellgen', 'tr4', 'tr3', 'tr1', 'xp_swift', 'kiln']) expect(c.has(id), id).toBe(false);
-    // A gate's own chain is the trunk's: what it opens is not in it.
+  it('a node’s chain: what it needs and what needs it, through the gates no further (D128: the categories’ too)', () => {
+    const c = chainOf('en_bigwind');
+    // What it needs: the node before it, its category's gate (the Power Grid, whole) and its tier's
+    // (Optics); what needs it: the categories its own opens (the Great Power Plants).
+    for (const id of ['en_solarfarm', 'en4', 'en_heavyacc', 'en_tower', 'enK', 'tr6']) expect(c.nodes.has(id), id).toBe(true);
+    expect(c.links.has('cat:t2_grid>cat:t3_plants') && c.links.has('cat:t3_plants>cat:t4_plants')).toBe(true);
+    // No further than the gates: not what the Power Grid waits for, nor its own category's other line.
+    for (const id of ['en2', 'en_pitch', 'en5', 'en_cellgen', 'tr3', 'tr1', 'xp_swift', 'kiln']) expect(c.nodes.has(id), id).toBe(false);
+    // Optics' own chain: Ceramics before it; what its tier gate opens is not in it.
     const g = chainOf('tr6').nodes;
-    expect(g.has('tr4') && g.has('tr7') && g.has('tr8')).toBe(true);
-    expect(g.has('en_solarfarm')).toBe(false);
-    // Across lanes: the Compute Plan needs the Server Room.
+    expect(g.has('tr3')).toBe(true);
+    expect(g.has('en_solarfarm') || g.has('tr8')).toBe(false);
+    // Across categories of a tier: the Compute Plan needs the Server Room.
     expect(chainOf('cm_plan').nodes.has('an_servers')).toBe(true);
     expect(chainOf('cm_plan').links.has('an_servers>cm_plan')).toBe(true);
   });
@@ -111,25 +143,5 @@ describe('the tech tree’s layout (D107)', () => {
     expect(fitZoom(10, 10, L)).toBe(ZOOM_FLOOR);
     expect(ZOOM_MAX).toBeGreaterThan(1);
     expect([1, 0.7, 0.5, 0.36, 0.3, fit].map(zoomLevel)).toEqual(['near', 'near', 'mid', 'mid', 'far', 'far']);
-  });
-});
-
-describe('the launch dialog’s estimates (D118, D122)', () => {
-  it('the tokens a flow buys: until they are in, the free flows first, in the order projects started', () => {
-    // No server: 1 000 a minute buys all 2 500 (1 000, 1 000, then the last 500).
-    expect(boughtEstimate(0, [], [], { tokens: 2500, buy: 1000 })).toBe(2500);
-    // Servers at 600 a minute, all for it: 1 000 the first minute, the last 300 the second.
-    expect(boughtEstimate(600, [], [], { tokens: 2500, buy: 1000 })).toBe(1300);
-    // An earlier project still needing 1 000 takes the servers first: 1 000, 1 000, then the servers finish it.
-    expect(boughtEstimate(600, [1000], [0], { tokens: 2500, buy: 1000 })).toBe(2000);
-    // The servers alone suffice: nothing bought; no flow at all: nothing bought, never done.
-    expect(boughtEstimate(5000, [], [], { tokens: 2500, buy: 0 })).toBe(0);
-    expect(boughtEstimate(0, [], [], { tokens: 100, buy: 0 })).toBe(0);
-  });
-
-  it('the bank pays first, the oldest project first, each to its need (D122)', () => {
-    expect(bankFirst([1000, 3000, 500], 2500)).toEqual([0, 1500, 500]);
-    expect(bankFirst([1000, 0, 500], 0)).toEqual([1000, 0, 500]);
-    expect(bankFirst([200], 10_000)).toEqual([0]);
   });
 });

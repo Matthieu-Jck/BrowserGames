@@ -26,7 +26,7 @@ import { BAL } from './balance';
 import { BUILDINGS } from './buildings';
 import { COLONY_PROFILES } from './colonies';
 import { ITEMS } from './items';
-import { RECIPES } from './recipes';
+import { RECIPES, recipeMakes } from './recipes';
 import { PLAN_IDS, RESEARCH, buildingsUnlockedBy, isPlan, planDef, researchNode, treePrereq } from './research';
 import { CIRQUE, COMMON_DEPOSITS } from './world';
 import type { BuildingDef, Effect, ItemDef, RecipeDef } from './types';
@@ -47,6 +47,8 @@ export const FEATURE_NEEDS: Readonly<Record<string, readonly string[]>> = {
   // The Crier's features: a trade post to sell from and buy into.
   orders: ['trade_post'], floorPrices: ['trade_post'], post2: ['trade_post'], tradeL2: ['trade_post'], tradeL3: ['trade_post'],
   expressFreight: ['trade_post'], post3: ['trade_post'], forecast: ['trade_post'],
+  // Auto-sell (D127): the Core sells its own surplus, no post needed.
+  autoSell: [],
   // The token plans: no token is billed before the servers (D105), and rental sells what they leave.
   tokenPlan: ['server', 'cooled_server', 'supercomputer'], serverRental: ['server', 'cooled_server', 'supercomputer'],
   // Research itself: a lab.
@@ -115,7 +117,7 @@ export function usableWith(known: ReadonlySet<string>): { items: Set<string>; bu
     if ([...Bs].some((id) => B[id]!.kind === 'trade')) for (const it of Object.keys(items)) if (buyable(it)) add(it);
     for (const [, r] of recipes) {
       if (!has(r.unlock) || !r.machines.some((m) => Bs.has(m)) || !r.ins.every(([it]) => U.has(it))) continue;
-      for (const [o] of r.outs) add(o);
+      for (const o of recipeMakes(r)) add(o); // its waste too (D125): what it puts out can be used
     }
   }
   return { items: U, buildings: Bs };

@@ -427,7 +427,7 @@ export function learnPlans(sim: Sim, ids: readonly string[] = PLAN_IDS): string[
 export function buildDemo(sim: Sim, opt: { kiln?: readonly [number, number, Rot] } = {}): Record<string, number> {
   sim.skipTutorial(); // an advanced base: the whole interface, no tutorial
   learnPlans(sim); // and the whole tree's plans (D33), through commands: the demo replays
-  for (const [it, n] of [['iron_plate', 900], ['glass', 300], ['copper_wire', 300], ['gear', 60], ['circuit', 60], ['coal', 200], ['ceramic', 40]] as const) sim.grant(it, n);
+  for (const [it, n] of [['iron_plate', 900], ['glass', 300], ['copper_wire', 300], ['gear', 60], ['copper_coil', 60], ['coal', 200], ['ceramic', 40]] as const) sim.grant(it, n);
   const ids: Record<string, number> = {};
   const hearth = sim.hearthId;
   const at = (dx: number, dy: number): [number, number] => [CENTER + dx, CENTER + dy];
@@ -456,18 +456,19 @@ export function buildDemo(sim: Sim, opt: { kiln?: readonly [number, number, Rot]
   if (s5) place('coal2', 'drill', s5[0], s5[1], 1);
   // The smelter against the Heart's west side, between the iron and the coal (inlets west, its
   // outlet one square from the Heart's west inlet); `opt.kiln` tries another spot. Wind flowers
-  // and a workshop around.
+  // and an assembly bench around (D129: the electronics workshop is Tier 2's research now).
   const [kx, ky, kr] = opt.kiln ?? [...at(-5, -1), 1 as Rot] as const;
   place('kiln', 'kiln', kx, ky, kr);
   if (ids.kiln) sim.setRecipe(ids.kiln, 'iron_plate');
-  place('workshop', 'workshop', ...at(-9, -4), 0);
-  if (ids.workshop) sim.setRecipe(ids.workshop, 'circuit');
+  place('bench', 'assembly_bench', ...at(-9, -4), 0);
+  if (ids.bench) sim.setRecipe(ids.bench, 'copper_coil');
   place('observatory', 'observatory', ...at(-12, 3), 0); // fed by nothing (D122: research on tokens)
   place('silo', 'silo', ...at(9, -9), 0);
   // The trade post against the Hearth's south side, turned half round (its entrance against the
   // Heart, its exit opening south, D62): it sells from the Hearth's stock.
   place('trade', 'trade_post', ...at(-4, 3), 2);
-  for (const [i, [dx, dy]] of ([[-6, 9], [-3, 9], [0, 9], [3, 9]] as const).entries()) place(`wind${i}`, 'wind_flower', ...at(dx, dy), 0);
+  // A turbine's room apart (D132: `BAL.wind.spacing`, six tiles middle to middle).
+  for (const [i, [dx, dy]] of ([[-12, 9], [-6, 9], [0, 9], [6, 9]] as const).entries()) place(`wind${i}`, 'wind_flower', ...at(dx, dy), 0);
   if (s5) {
     // The coal generator a few tiles east of its drill, on free floor.
     for (let d = 3; d < 8 && !ids.brazier; d++) if (freeSpot(sim, 'brazier', s5[0] + 2 + d, s5[1] + 1, 0)) place('brazier', 'brazier', s5[0] + 2 + d, s5[1] + 1, 0);
@@ -487,7 +488,7 @@ export function buildDemo(sim: Sim, opt: { kiln?: readonly [number, number, Rot]
   if (ids.collector && ids.observatory) connect(sim, ids.collector, ids.observatory);
   // Power (D25): every building that makes or uses power is wired into the Hearth's grid,
   // through lines of poles where the Hearth's own wires (8 tiles) do not reach.
-  for (const k of ['drillA', 'drillB', 'sand', 'coal', 'coal2', 'workshop', 'observatory', 'collector', 'trade', 'brazier', 'wind0', 'wind1', 'wind2', 'wind3']) {
+  for (const k of ['drillA', 'drillB', 'sand', 'coal', 'coal2', 'bench', 'observatory', 'collector', 'trade', 'brazier', 'wind0', 'wind1', 'wind2', 'wind3']) {
     if (ids[k]) powerLine(sim, ids[k]!);
   }
   return ids;
@@ -505,32 +506,59 @@ export function buildDemo(sim: Sim, opt: { kiln?: readonly [number, number, Rot]
 export type BeltTiles = Array<[number, number, Rot]>;
 
 /** The tiles in front of every building's ports: a placement must leave them free. */
-export function portFronts(sim: Sim): Set<number> {
-  const out = new Set<number>();
-  for (const e of sim.ents.map.values()) for (const p of worldPorts(e)) if (inWorld(p.fx, p.fy)) out.add(tileIndex(p.fx, p.fy));
-  return out;
+export function portFronts(sim: Sim): ReadonlySet<number> {
+  const f = frontsOf(sim);
+  if (!f.ports) {
+    const out = new Set<number>();
+    for (const e of sim.ents.map.values()) for (const p of worldPorts(e)) if (inWorld(p.fx, p.fy)) out.add(tileIndex(p.fx, p.fy));
+    f.ports = out;
+  }
+  return f.ports;
 }
 
 /** The tiles in front of every building's outputs (what is laid there gets that building's output). */
-function outFronts(sim: Sim): Set<number> {
-  const out = new Set<number>();
-  for (const e of sim.ents.map.values()) for (const p of worldPorts(e)) if (p.io === 'out' && inWorld(p.fx, p.fy)) out.add(tileIndex(p.fx, p.fy));
-  return out;
+function outFronts(sim: Sim): ReadonlySet<number> {
+  const f = frontsOf(sim);
+  if (!f.outs) {
+    const out = new Set<number>();
+    for (const e of sim.ents.map.values()) for (const p of worldPorts(e)) if (p.io === 'out' && inWorld(p.fx, p.fy)) out.add(tileIndex(p.fx, p.fy));
+    f.outs = out;
+  }
+  return f.outs;
 }
 
 /**
  * Tiles a new ribbon must not cross: in front of a building's port (it would take from it, or
  * hand into it, there) and beside a routing block (it would become one of its outlets, D35).
  */
-export function keepOff(sim: Sim): Set<number> {
-  const out = portFronts(sim);
-  for (const e of sim.ents.map.values()) {
-    if (BUILDING_KIND[e.def] !== 'fork') continue;
-    forTiles(e, (x, y) => {
-      for (let d = 0; d < 4; d++) if (inWorld(x + DX[d]!, y + DY[d]!)) out.add(tileIndex(x + DX[d]!, y + DY[d]!));
-    });
+export function keepOff(sim: Sim): ReadonlySet<number> {
+  const f = frontsOf(sim);
+  if (!f.keep) {
+    const out = new Set(portFronts(sim));
+    for (const e of sim.ents.map.values()) {
+      if (BUILDING_KIND[e.def] !== 'fork') continue;
+      forTiles(e, (x, y) => {
+        for (let d = 0; d < 4; d++) if (inWorld(x + DX[d]!, y + DY[d]!)) out.add(tileIndex(x + DX[d]!, y + DY[d]!));
+      });
+    }
+    f.keep = out;
   }
-  return out;
+  return f.keep;
+}
+
+/**
+ * The three sets above for one set of buildings, kept while it stands: the layout kit asks for them
+ * at every line and spot it tries, and the late debug base tries thousands (its build measured in
+ * the scenario test). Keyed by `sorted()`'s array, which the entity table drops at each add or
+ * remove; an entity's place, turn and def never change in place (a replacement is a remove and an
+ * add), so its ports with it.
+ */
+const FRONTS = new WeakMap<readonly Ent[], { ports?: ReadonlySet<number>; outs?: ReadonlySet<number>; keep?: ReadonlySet<number> }>();
+function frontsOf(sim: Sim): { ports?: ReadonlySet<number>; outs?: ReadonlySet<number>; keep?: ReadonlySet<number> } {
+  const key = sim.ents.sorted();
+  let f = FRONTS.get(key);
+  if (!f) FRONTS.set(key, (f = {}));
+  return f;
 }
 
 /** Does a routing block stand beside tile (x, y)? */

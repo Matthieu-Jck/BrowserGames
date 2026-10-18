@@ -323,7 +323,8 @@ function recipesOf(id: string, ctx: FactCtx): RecipeFact[] {
     return {
       name: recipeDef(r.idx).name[L],
       ins: r.ins.map((s) => ({ item: s.item, perMin: per(s.mu) })),
-      outs: r.outs.map((s) => ({ item: s.item, perMin: per(s.mu) })),
+      // Its waste beside its product (D125): « [plate] 10 + [slag] 1 », shown, not told.
+      outs: [...r.outs.map((s) => ({ item: s.item, perMin: per(s.mu) })), ...(r.waste ? [{ item: r.waste.item, perMin: per(1000 / r.waste.every) }] : [])],
     };
   });
 }

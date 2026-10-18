@@ -518,7 +518,39 @@ export function dataRetired(d: Record<string, unknown>): Record<string, unknown>
   };
 }
 
-export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsToTowers, 6: researchToTokens, 7: researchAtBase, 8: parcelsResized, 9: labsToThree, 10: expertiseArc, 11: electricSmelting, 12: coreData, 13: tierOneWhole, 14: docksRetired, 15: steamPlan, 16: beaconsRetired, 17: researchFlows, 18: dataRetired };
+/**
+ * 19 → 20, the tree in categories (D128): the quartz workshop and its oscillator, which came with the
+ * Face Cutter's plan (`ex_quartz`, D87, D101), are a research node of their own (`dn_quartzshop`,
+ * the Workshop's in Tier 1). A claim holding the plan holds the node too: what it learnt stays learnt,
+ * its workshops buildable, and the Workshop — which the Synthesis and Tier 2's Automation wait for —
+ * as finished as it was. A younger claim researches it (two minutes on the Core's compute). Nothing
+ * else moves: the nodes keep their ids, the families' became the categories' themes, a node learnt
+ * stays learnt even where its category now waits for another. Ids frozen here.
+ */
+export function quartzWorkshop(d: Record<string, unknown>): Record<string, unknown> {
+  const done = (d.done as string[] | undefined) ?? [];
+  if (!done.includes('ex_quartz') || done.includes('dn_quartzshop')) return d;
+  return { ...d, done: [...done, 'dn_quartzshop'].sort() };
+}
+
+/**
+ * 20 → 21, the electronics workshop at Tier 2 and the assembly bench in its place (D129; owner,
+ * 2026-10-18: « le electronics workshop devrait probablement avoir un style plus avancé… on peut le
+ * reléguer au Tier 2 et faire autre chose de plus basique au Tier 1 »). The workshop's plan became a
+ * research node of the same id (`workshop`, Tier 2): a claim holding the plan holds the node — its
+ * workshops stay buildable and keep making circuits — with nothing to do here. The Production path
+ * gained a plan, the assembly bench's (`assembly_bench`): a claim holding the research lab's plan —
+ * the gate that needs every plan, D71 — holds the new plan too, as D114's `steamPlan` did, so the gate's
+ * prerequisites stay met and its coils and motors are at hand. A claim before the lab takes it as any
+ * other plan. Ids frozen here.
+ */
+export function assemblyBench(d: Record<string, unknown>): Record<string, unknown> {
+  const done = (d.done as string[] | undefined) ?? [];
+  if (done.includes('assembly_bench') || !done.includes('observatory')) return d;
+  return { ...d, done: [...done, 'assembly_bench'].sort() };
+}
+
+export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsToTowers, 6: researchToTokens, 7: researchAtBase, 8: parcelsResized, 9: labsToThree, 10: expertiseArc, 11: electricSmelting, 12: coreData, 13: tierOneWhole, 14: docksRetired, 15: steamPlan, 16: beaconsRetired, 17: researchFlows, 18: dataRetired, 19: quartzWorkshop, 20: assemblyBench };
 
 export class SaveTooNew extends Error {
   constructor(readonly version: number) { super(`save version ${version} is newer than this build (${SAVE_VERSION})`); }

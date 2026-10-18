@@ -1,10 +1,10 @@
 /* neighbour-card.css — a neighbouring base's card (D110, ui/neighbour-card.ts): a small cartouche
    beside the pointer clicked on one of its pieces — its emblem and name, « Base voisine » and its
-   trade, what it means for the claim. The deposit card's look; it catches no pointer and zooms with
+   trade, a line per good it sells, mine to post (D134), what it means for the claim. The deposit card's look; it catches no pointer and zooms with
    the UI scale, as #ui does. */
 .ncard {
   position: fixed; left: 0; top: 0; z-index: 36; pointer-events: none;
-  zoom: var(--ui-zoom); min-width: 190px; max-width: 250px; padding: 8px 10px 9px;
+  zoom: var(--ui-zoom); min-width: 190px; max-width: 280px; padding: 8px 10px 9px;
   font-size: 13px; line-height: 1.3; box-shadow: 2px 3px 0 var(--c-ink);
 }
 .ncard[hidden] { display: none; }
@@ -15,4 +15,8 @@
 .ncard-tag { align-self: flex-start; padding: 0 6px; border-radius: 8px; background: var(--c-coral); color: var(--c-paper); font-size: 11px; font-weight: 700; }
 .ncard-trade { display: flex; gap: 6px; align-items: baseline; margin-top: 6px; padding-top: 5px; border-top: 1px dashed var(--c-ink-soft); font-size: 12px; color: var(--c-ink-soft); }
 .ncard-trade b { color: var(--c-coral-d); }
+.ncard-story { display: flex; flex-wrap: wrap; gap: 3px 5px; align-items: center; margin-top: 4px; font-size: 11.5px; color: var(--c-ink); }
+.ncard-step { display: inline-flex; gap: 3px; align-items: center; white-space: nowrap; }
+.ncard-step canvas { width: 18px; height: 18px; }
+.ncard-arrow { margin-right: 2px; color: var(--c-ink-soft); }
 .ncard-note { margin: 4px 0 0; font-size: 11.5px; font-style: italic; color: var(--c-ink-soft); }

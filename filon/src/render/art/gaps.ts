@@ -20,7 +20,44 @@ export const SEA_BIOME = 24;
 /** The open sea's deep water: a little bluer and darker than a lake's. */
 export const SEA_DEEP = mix(C.deep, '#2a6b98', 0.4);
 /** The eight ways a river flows (0 = +x, 2 = +y, clockwise): the step to the next tile along it. */
-const FLOW_DX = [1, 1, 0, -1, -1, -1, 0, 1], FLOW_DY = [0, 1, 1, 1, 0, -1, -1, -1];
+export const FLOW_DX = [1, 1, 0, -1, -1, -1, 0, 1], FLOW_DY = [0, 1, 1, 1, 0, -1, -1, -1];
+
+/** A river tile's way (its biome code's eighth of a turn; 0 when it holds none). */
+export const wayOf = (d: PaintData, n: number): number => { const c = (d.biome[n] ?? 0) - RIVER_BIOME; return c >= 0 && c < 8 ? c : 0; };
+
+/**
+ * The tile a river tile runs on into (window index; D135: owner, 2026-10-18, « if there's a
+ * waterfall, there should be water where it lands »). Its biome code is the way of the segment it
+ * was traced on, and where the river turns its next tile along that way can be dry (land beside
+ * the bend, a cliff's foot beside the pool it pours into): the water goes on into the tile next to
+ * it that holds water turning least from its way — straight on, then ±45°, then ±90°; at the same
+ * turn its own level before a lower one, a river before still water —, never uphill, never back
+ * into a tile running into it. With none, the next along its way (where it runs out). A fall, its
+ * sheet and where it lands, and where the floor's water meets the water falling into it all read it.
+ */
+export function exitOf(d: PaintData, n: number): number {
+  const i = n % WIN, j = (n - i) / WIN, f = wayOf(d, n), L = d.level[n]!;
+  const wet = (t: number): boolean => isWaterT(t) || t === T.River;
+  let best = -1, score = Infinity;
+  for (const turn of [0, -1, 1, -2, 2]) {
+    const g = (f + turn + 8) % 8, u = i + FLOW_DX[g]!, v = j + FLOW_DY[g]!;
+    if (u < 0 || v < 0 || u >= WIN || v >= WIN) continue;
+    const m = v * WIN + u, t = d.terrain[m]!;
+    if (!wet(t) || d.level[m]! > L) continue;
+    // Not back into a river running into it.
+    if (t === T.River) { const h = wayOf(d, m); if (u + FLOW_DX[h]! === i && v + FLOW_DY[h]! === j) continue; }
+    const sc = Math.abs(turn) * 4 + (d.level[m] === L ? 0 : 2) + (t === T.River ? 0 : 1);
+    if (sc < score) { score = sc; best = m; }
+  }
+  return best >= 0 ? best : n + FLOW_DY[f]! * WIN + FLOW_DX[f]!;
+}
+
+/** The way (eighth of a turn) from window tile n to its neighbour m. */
+export const wayTo = (n: number, m: number): number => {
+  const di = ((m % WIN) - (n % WIN)), dj = Math.round((m - n - di) / WIN);
+  for (let g = 0; g < 8; g++) if (FLOW_DX[g] === di && FLOW_DY[g] === dj) return g;
+  return 0;
+};
 
 /**
  * Where one water meets another — a river into its lake or the sea, the deep heart in its shallows
@@ -31,7 +68,7 @@ const FLOW_DX = [1, 1, 0, -1, -1, -1, 0, 1], FLOW_DY = [0, 1, 1, 1, 0, -1, -1, -
  * its tiles' edge: steps too fine to read as stripes. Clipped to the water's outline: along a bank the bands fall outside it, so
  * a bank keeps its crisp edge and its ink.
  */
-const FEATHER: ReadonlyArray<readonly [iso: number, alpha: number]> = Array.from({ length: 7 }, (_, k) => [0.06 + (0.44 * k) / 6, 1 / (7 - k)] as const);
+export const FEATHER: ReadonlyArray<readonly [iso: number, alpha: number]> = Array.from({ length: 7 }, (_, k) => [0.06 + (0.44 * k) / 6, 1 / (7 - k)] as const);
 
 /**
  * The water's palette (D115; owner, 2026-10-17, of a mesa canyon and its falls: « the style here is
@@ -64,25 +101,27 @@ const DEPTH_MAX = 3;
  * the sand through the shallows along every bank; then the marks (`paintMarks`: currents, foam,
  * glints, ripples), the wet sand round it, one inked shore, the surf. No line inside: where a river
  * meets its lake there is no bank (D94's river art: before, two outlines, a hard seam and slivers
- * of ground between them).
+ * of ground between them). `only`: the water tiles it paints (terrain.ts paints the floor's under
+ * the rock and the water up on the rock over it, D135: in plan a stream up on a massif runs at its
+ * level, between its banks, not down a canyon).
  */
-export function paintWater(ctx: Ctx2, d: PaintData, ppt: number): void {
+export function paintWater(ctx: Ctx2, d: PaintData, ppt: number, only: (i: number, j: number) => boolean = () => true): void {
   const t = (i: number, j: number): number => d.terrain[j * WIN + i]!;
   const k = ppt / 32;
-  const isRiver = (i: number, j: number): boolean => t(i, j) === T.River;
-  const wet = (i: number, j: number): boolean => isWaterT(t(i, j)) || isRiver(i, j);
+  const isRiver = (i: number, j: number): boolean => t(i, j) === T.River && only(i, j);
+  const wet = (i: number, j: number): boolean => (isWaterT(t(i, j)) || t(i, j) === T.River) && only(i, j);
   const all = march(wet, ppt, isRiver);
   if (!all.polys.length) return;
   const depth = depths(wet);
   const deeper = (n: number) => (i: number, j: number): boolean => depth[j * WIN + i]! >= n;
   // The open sea's deep water a little bluer than a lake's (its biome code).
-  const isSea = (i: number, j: number): boolean => d.biome[j * WIN + i] === SEA_BIOME;
-  const still = (i: number, j: number): boolean => isWaterT(t(i, j));
+  const isSea = (i: number, j: number): boolean => d.biome[j * WIN + i] === SEA_BIOME && only(i, j);
+  const still = (i: number, j: number): boolean => isWaterT(t(i, j)) && only(i, j);
   ctx.save();
   clipPolys(ctx, all.polys);
   fillPolys(ctx, all.polys, C.shallow);
   feather(ctx, (i, j) => still(i, j) && deeper(2)(i, j), ppt, WATER.lakeMid);
-  feather(ctx, (i, j) => t(i, j) === T.Deep, ppt, C.deep);
+  feather(ctx, (i, j) => t(i, j) === T.Deep && only(i, j), ppt, C.deep);
   feather(ctx, (i, j) => t(i, j) === T.Deep && isSea(i, j), ppt, SEA_DEEP);
   feather(ctx, isRiver, ppt, C.river, isRiver);
   feather(ctx, (i, j) => isRiver(i, j) && deeper(2)(i, j), ppt, WATER.riverMid);
@@ -241,10 +280,12 @@ function paintMarks(ctx: Ctx2, d: PaintData, ppt: number, shore: readonly number
           if (isRiver(ni, nj) && flowOf(ni, nj) === q && ((q - f + 8) % 8 >= 2 && (q - f + 8) % 8 <= 6)) meets++;
         }
         if (meets && hashUnit(wx, wy, 0x640) < 0.8) foamArcs(ctx, px, py, ppt, ux, uy, wx, wy, 0x650);
-        // A fall: the next tile along the stream's way stands lower.
-        const ni = i + FLOW_DX[f]!, nj = j + FLOW_DY[f]!, no = nj * WIN + ni;
-        if (ni >= 0 && nj >= 0 && ni < WIN && nj < WIN && d.level[no]! < d.level[o]!) {
-          const ex = px + (0.5 + FLOW_DX[f]! * 0.5) * ppt, ey = py + (0.5 + FLOW_DY[f]! * 0.5) * ppt;
+        // A fall: the tile it runs on into stands lower (`exitOf`: where the river turns, the water
+        // beside its way), the foam at its lip on that side.
+        const no = exitOf(d, o), g = wayTo(o, no), gx = Math.cos((g * Math.PI) / 4), gy = Math.sin((g * Math.PI) / 4);
+        if (d.level[no]! < d.level[o]!) {
+          const ux = gx, uy = gy;
+          const ex = px + (0.5 + FLOW_DX[g]! * 0.5) * ppt, ey = py + (0.5 + FLOW_DY[g]! * 0.5) * ppt;
           ctx.strokeStyle = 'rgba(255,255,255,0.9)';
           ctx.lineWidth = 3 * k;
           ctx.beginPath();
@@ -272,10 +313,10 @@ function paintMarks(ctx: Ctx2, d: PaintData, ppt: number, shore: readonly number
         }
         if (dep >= 2 && hashUnit(wx, wy, 0x2f3) < 0.06) glint(ctx, px + (0.2 + hashUnit(wx, wy, 0x2f4) * 0.6) * ppt, py + (0.2 + hashUnit(wx, wy, 0x2f5) * 0.6) * ppt, 0.12 * ppt);
       }
-      // Where a fall lands: a stream up-tile pouring in from a level higher.
+      // Where a fall lands: a stream up-tile pouring in from a level higher (running on into it, `exitOf`).
       for (let q = 0; q < 8; q++) {
         const ui = i - FLOW_DX[q]!, uj = j - FLOW_DY[q]!;
-        if (!isRiver(ui, uj) || flowOf(ui, uj) !== q || d.level[uj * WIN + ui]! <= d.level[o]!) continue;
+        if (!isRiver(ui, uj) || d.level[uj * WIN + ui]! <= d.level[o]! || exitOf(d, uj * WIN + ui) !== o) continue;
         plunge(ctx, px, py, ppt, wx, wy);
         break;
       }

@@ -55,8 +55,10 @@ const spots = await page.evaluate(() => {
   // The spring's falls: a few tiles down its stream from the summit (map 4, D115), or the tarn; the
   // whole summit (its plateau and basin, the falls, the ledge, the pool), seen from further off;
   // the basin up close; the foot of the ledge's fall, where the stream comes down the Crown's last
-  // terraces into its pool (owner, 2026-10-17: « the visuals are still a little bit broken »).
-  const out = { spring: sp ? (g.source.spring ? [sp.x, sp.y + 5] : [sp.x, sp.y]) : null, summit: g.source.spring ? [sp.x, sp.y + 7] : null, basin: g.source.spring ? [sp.x, sp.y] : null, foot: g.source.spring ? [sp.x, sp.y + 11] : null, stream: null, broad: null, confluence: null, fall: null, lake: null, sea: null };
+  // terraces into its pool (owner, 2026-10-17: « the visuals are still a little bit broken »); the
+  // basin's outflow up on the plateau (owner, 2026-10-18: « cascade is still slightly broken here,
+  // there's a brown stripe inside the lake »), its iso view lifted to the plateau's height.
+  const out = { spring: sp ? (g.source.spring ? [sp.x, sp.y + 5] : [sp.x, sp.y]) : null, summit: g.source.spring ? [sp.x, sp.y + 7] : null, basin: g.source.spring ? [sp.x, sp.y] : null, foot: g.source.spring ? [sp.x, sp.y + 11] : null, outflow: g.source.spring ? [sp.x, sp.y + 2] : null, stream: null, broad: null, confluence: null, fall: null, lake: null, sea: null };
   for (let r = 40; r < 440 && Object.values(out).some((v) => !v); r += 1) {
     for (let a = 0; a < 720; a++) {
       const x = Math.round(C + r * Math.cos((a * Math.PI) / 360)), y = Math.round(C + r * Math.sin((a * Math.PI) / 360));
@@ -89,7 +91,7 @@ console.log('spots', JSON.stringify(spots));
 const ZOOMS = { near: 3, mid: 1.2 };
 const clip = { x: 300, y: 200, width: 600, height: 400 };
 // The summit whole: further off, the whole window.
-const WIDE = { summit: { zooms: { far: 0.85 }, clip: undefined }, foot: { zooms: { near: 1.6, mid: 1.0 }, clip: { x: 300, y: 150, width: 600, height: 500 } } };
+const WIDE = { summit: { zooms: { far: 0.85 }, clip: undefined }, foot: { zooms: { near: 1.6, mid: 1.0 }, clip: { x: 300, y: 150, width: 600, height: 500 } }, outflow: { zooms: { near: 2.4, mid: 1.2 }, clip: { x: 300, y: 150, width: 600, height: 500 }, lift: true } };
 for (const [name, at] of Object.entries(spots)) {
   if (!at || (ONLY && !ONLY.includes(name))) continue;
   for (const time of ['noon', 'night']) {
@@ -97,7 +99,10 @@ for (const [name, at] of Object.entries(spots)) {
     for (const mode of ['iso', 'plan']) {
       await view(mode);
       for (const [zn, z] of Object.entries(WIDE[name]?.zooms ?? ZOOMS)) {
-        await page.evaluate(([x, y, zz]) => window.FL.lookAt(x, y, zz), [at[0], at[1], z]);
+        // Lifted (iso): a top a level up shows where the ground a tile back along −x −y does (relief.ts
+        // `surfaceTile`: a relief level is SHIFT, half a tile; a level of the land two of them).
+        const up = WIDE[name]?.lift && mode === 'iso' ? await page.evaluate(([x, y]) => window.FL.app.sim.grid.level(x, y), at) : 0;
+        await page.evaluate(([x, y, zz]) => window.FL.lookAt(x, y, zz), [at[0] - up, at[1] - up, z]);
         await settle();
         await page.screenshot({ path: shot(`${name}-${zn}-${mode}-${time}`), clip: WIDE[name] ? WIDE[name].clip : clip });
         console.log(`✓ shot-water-${TAG}-${name}-${zn}-${mode}-${time}.png`);

@@ -17,6 +17,9 @@
 //   building's signature as it stands — at once on the claim; off it, when its kite lands, and
 //   only near the camera (the sites are watched until then). A building selected plays its
 //   signature's softer variant. Both fade with the distance to the screen's centre.
+// - the incinerators' burns (D125): four times a second, a pit in view that destroyed something since
+//   the last look (its node's `burns`) plays its signature's soft variant, lower still, at most once
+//   every `BURN_GAP` seconds a pit — a crackle with the flare, not a drum roll on a busy line.
 import { activityOf } from '@/audio/director';
 import type { SoundWorld } from '@/audio/engine';
 import { SIG_OF_DEF, spatialGain, spatialPan, type SigVariant } from '@/audio/signatures';
@@ -27,6 +30,7 @@ import { apply } from '@/render/projection';
 import { EPOCH } from '@/sim/constants';
 import { footprint } from '@/sim/entities';
 import { gustPermille } from '@/sim/power/network';
+import type { SinkNode } from '@/sim/flow/nodes';
 import type { Sim } from '@/sim/state';
 import { St, type Ent } from '@/sim/types';
 import { settings } from '../settings';
@@ -39,6 +43,9 @@ export interface SoundShell {
   /** For the debug handle and the smoke test: `FL.app.sound.describe()`. */
   describe(): SoundReport;
 }
+
+/** A pit's burn sound (D125): at most one this many seconds apart per pit, at this share of its signature's soft variant. */
+const BURN_GAP = 1.5, BURN_GAIN = 0.45;
 
 /** Buttons that switch between views of the same thing sound as tabs. */
 const TABS = '.bb-tab, .cr-tab, .set-opt, [role="tab"]';
@@ -86,16 +93,38 @@ export function installSound(app: App, seed: number): SoundShell {
   const toastWatch = new MutationObserver(toasts);
   toastWatch.observe(app.toasts.root, { childList: true });
 
-  /** A building's signature (D120), faded by its distance to the screen's centre (`floor`: the least gain). */
-  function signature(e: Ent, variant: SigVariant, floor: number): void {
+  /** A building's signature (D120), faded by its distance to the screen's centre (`floor`: the least gain; `k`: a further trim). */
+  function signature(e: Ent, variant: SigVariant, floor: number, k = 1): void {
     const s = SIG_OF_DEF[e.def];
     if (!s) return;
     const cam = app.camera.cur;
     const [w, h] = footprint(e.def, e.rot);
     const [px, py] = apply(app.view.P, e.x + w / 2 - cam.tx, e.y + h / 2 - cam.ty);
     const u = px / Math.max(1, app.stage.width / 2 / cam.zoom), v = py / Math.max(1, app.stage.height / 2 / cam.zoom);
-    sound.signature(s, variant, spatialGain(u, v, cam.zoom, floor), spatialPan(u));
+    sound.signature(s, variant, k * spatialGain(u, v, cam.zoom, floor), spatialPan(u));
   }
+
+  // The pits' burns (D125): each sink's count at the last look, and when it last sounded (seconds).
+  const burnsSeen = new Map<number, number>(), burnSounded = new Map<number, number>();
+  let burnClock = 0, burnSim: Sim | null = null;
+  const burns = (): void => {
+    const s = app.sim, nodes = s.graph?.nodes;
+    burnClock += 0.25;
+    if (s !== burnSim) { burnSim = s; burnsSeen.clear(); burnSounded.clear(); }
+    if (!nodes || app.paused) return;
+    const [x0, y0, x1, y1] = app.view.visibleTiles(app.camera.state, app.stage.width, app.stage.height);
+    for (const n of nodes) {
+      if (n.kind !== 'sink') continue;
+      const k = (n as SinkNode).burns, was = burnsSeen.get(n.ent);
+      burnsSeen.set(n.ent, k);
+      if (was === undefined || k <= was) continue; // first look, or a recompile reset its count
+      const e = s.ents.get(n.ent);
+      if (!e || e.x < x0 || e.x > x1 || e.y < y0 || e.y > y1) continue;
+      if (burnClock - (burnSounded.get(n.ent) ?? -Infinity) < BURN_GAP) continue;
+      burnSounded.set(n.ent, burnClock);
+      signature(e, 'pick', 0, BURN_GAIN);
+    }
+  };
 
   // Spot trades and placements are commands sent straight to the colony: read them off its log.
   // A placement on the claim stands at once (its signature now); off it a kite flies the
@@ -155,7 +184,7 @@ export function installSound(app: App, seed: number): SoundShell {
       if (sound.state !== 'running') { sim = app.sim; seen = sim.log.length; sites.clear(); sound.frame(world); return; }
       fromLog();
       scan += dt;
-      if (scan >= 0.25) { scan = 0; machines(); }
+      if (scan >= 0.25) { scan = 0; machines(); burns(); }
       // Toasts shown during this frame's events (a quest done…) join this frame's batch, so the
       // specific cue that came with them silences their generic one.
       toasts(toastWatch.takeRecords());

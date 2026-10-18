@@ -3,18 +3,19 @@
 // order, then the expertises in place at their rank (D93), in their slots' order, with an integer
 // floor after each step, so every engine computes the same values. Multipliers are permille; "add"
 // values are plain integers. The tree unlocks machines and features, not boosts (D70): the
-// percentages are the expertises' alone — a production number (`mod`), or a family's research
-// (`fam`: its nodes' time, tokens and resources, ‰, read by `effectiveCost` when a project starts).
+// percentages are the expertises' alone — a production number (`mod`), or a theme's research
+// (`fam`, by theme since D128 — the families' ids: its categories' nodes' time, tokens and resources,
+// ‰, read by `effectiveCost` when a project starts).
 import { BAL } from '@/content/balance';
 import { effectAt, expertiseDef } from '@/content/expertises';
-import { FAMILY_IDS, PLAN_IDS, PLANS, RESEARCH, type ResearchId } from '@/content/research';
+import { THEME_IDS, PLAN_IDS, PLANS, RESEARCH, type ResearchId } from '@/content/research';
 import { RESEARCH_IDS } from '@/content/registry';
-import type { Effect, FamilyId, ModTarget, PlanDef, ResearchDef } from '@/content/types';
+import type { Effect, ThemeId, ModTarget, PlanDef, ResearchDef } from '@/content/types';
 
-/** A family's research as the expertises leave it (‰ of the table's): its nodes' time (D118: their tokens), AI tokens, resources (D122). */
+/** A theme's research (D128; a family's until then) as the expertises leave it (‰ of the table's): its nodes' time (D118: their tokens), AI tokens, resources (D122). */
 export interface FamilyMods { time: number; tokens: number; resources: number }
 
-export type Mods = Record<ModTarget, number> & { flags: ReadonlySet<string>; slots: number; fam: Readonly<Record<FamilyId, FamilyMods>> };
+export type Mods = Record<ModTarget, number> & { flags: ReadonlySet<string>; slots: number; fam: Readonly<Record<ThemeId, FamilyMods>> };
 
 const ADDITIVE: ReadonlySet<ModTarget> = new Set<ModTarget>([
   'landGrowth', 'pylonLink', 'bridgeSpan', 'orders', 'tradeFee', 'coreCompute',
@@ -31,7 +32,7 @@ export function baseMods(): Mods {
   for (const t of targets) m[t] = ADDITIVE.has(t) ? 0 : 1000;
   m.tradeFee = BAL.tradeFee; // nothing lowers it (D64)
   m.landGrowth = BAL.land.growth;
-  const fam = Object.fromEntries(FAMILY_IDS.map((f) => [f, { time: 1000, tokens: 1000, resources: 1000 }])) as Record<FamilyId, FamilyMods>;
+  const fam = Object.fromEntries(THEME_IDS.map((f) => [f, { time: 1000, tokens: 1000, resources: 1000 }])) as Record<ThemeId, FamilyMods>;
   return { ...(m as Record<ModTarget, number>), flags: new Set<string>(), slots: 1, fam };
 }
 
@@ -41,7 +42,7 @@ export function baseMods(): Mods {
  */
 export function computeMods(done: ReadonlySet<string>, held: ReadonlyArray<{ id: string; rank: number }> = []): Mods {
   const m = baseMods() as Mods & Record<string, number>;
-  const fam = m.fam as Record<FamilyId, FamilyMods>;
+  const fam = m.fam as Record<ThemeId, FamilyMods>;
   const flags = new Set<string>();
   let slots = 1;
   const apply = (effects: readonly Effect[]): void => {
@@ -75,6 +76,6 @@ export function modsKey(m: Mods): string {
   const parts: string[] = [];
   for (const [k, v] of Object.entries(m)) if (typeof v === 'number') parts.push(`${k}=${v}`);
   parts.push([...m.flags].sort().join(','));
-  for (const f of FAMILY_IDS) parts.push(`${f}=${m.fam[f].time},${m.fam[f].tokens},${m.fam[f].resources}`);
+  for (const f of THEME_IDS) parts.push(`${f}=${m.fam[f].time},${m.fam[f].tokens},${m.fam[f].resources}`);
   return parts.join(';');
 }

@@ -1,14 +1,14 @@
-// expertise.test.ts — the expertises (D93): the table and the arc (the Synthesis closes Tier 1,
-// mounts the Archive at the Core's level 3, two expertises open Tier 2); feats and ranks read at a
+// expertise.test.ts — the expertises (D93): the table and the arc (the Synthesis, D128: what the
+// Core's level 3 is paid in, mounts the Archive at the Core's level 3, two expertises open Tier 2); feats and ranks read at a
 // minute's boundary, earned in silence before the Archive; choosing and reorienting (refusals,
-// the price that grows, the 24 h without); the effects through the Mods (a drill's rate, a family's
+// the price that grows, the 24 h without); the effects through the Mods (a drill's rate, a theme's
 // research, land's price); saves and the commands' replay; online ≈ offline — a rank rising and a
 // réorientation coming into place during an absence, the same as ticking, bit for bit.
 import { describe, it, expect } from 'vitest';
 import { BAL } from '@/content/balance';
 import { EXPERTISES, EXPERTISE_IDS, expertiseProblems } from '@/content/expertises';
 import { itemIdx } from '@/content/registry';
-import { FAMILY_IDS, RESEARCH, TIER1_WHOLE, TIER_GATE } from '@/content/research';
+import { RESEARCH, THEME_IDS, TIER_GATE, researchNeeds } from '@/content/research';
 import type { ResearchDef } from '@/content/types';
 import { validateContent } from '@/content/validate';
 import { EPOCH } from '../constants';
@@ -22,6 +22,8 @@ import { drillToHearth, steadyPower, testSim, testSource } from '../testkit';
 import { featValue, tierTwoOpen } from './expertise';
 import { expertiseArc, migrate } from '@/persist/migrate';
 
+/** The node behind the Core's level 3 and its Archive (D93). */
+const SYNTH = 'tr_synth';
 /** Run to the end of the minute (the boundary the feats are read at). */
 const toBoundary = (sim: Sim): void => { sim.run(EPOCH - (sim.tick % EPOCH)); };
 /** Whole milli-items of iron ore made (a rig: what a long life of drills would have made). */
@@ -40,20 +42,23 @@ const expertiseEvents = (sim: Sim) => sim.events.filter((e) => e.k === 'expertis
 
 describe('the expertises (D93)', () => {
   it('hold two per family, one production and one research, each earned by a feat of its own', () => {
-    expect(expertiseProblems(FAMILY_IDS)).toEqual([]);
+    expect(expertiseProblems(THEME_IDS)).toEqual([]);
     expect(validateContent()).toEqual([]);
     expect(EXPERTISE_IDS.length).toBe(12);
     expect(new Set(EXPERTISE_IDS.map((id) => EXPERTISES[id].feat)).size).toBe(12);
   });
 
-  it('close Tier 1 whole with the Synthesis, which mounts the Archive; Tier 2 opens with it and two expertises', () => {
-    const t1 = (Object.entries(RESEARCH) as Array<[string, ResearchDef]>).filter(([id, r]) => r.tier === 1 && id !== TIER1_WHOLE).map(([id]) => id);
-    expect((RESEARCH as Record<string, ResearchDef>)[TIER1_WHOLE]!.prereq).toEqual(expect.arrayContaining(t1));
-    expect(TIER_GATE[2]).toBe(TIER1_WHOLE);
-    expect(BAL.hearthUpgrades[BAL.expertise.level - 2]!.unlock).toBe(TIER1_WHOLE);
+  it('mount the Archive with the Synthesis; Tier 2 opens with it and two expertises', () => {
+    const t1 = (Object.entries(RESEARCH) as Array<[string, ResearchDef]>).filter(([id, r]) => r.tier === 1 && id !== SYNTH).map(([id]) => id);
+    // D128: the Synthesis needs what the Core's level 3 is paid in (the Workshop, the Steelworks, the
+    // Core's compute), no longer Tier 1 whole.
+    expect(researchNeeds(SYNTH)).toEqual(expect.arrayContaining(['an_data', 'dn_wiremill']));
+    expect(researchNeeds(SYNTH)).not.toContain('cm_floor');
+    expect(TIER_GATE[2]).toBe(SYNTH);
+    expect(BAL.hearthUpgrades[BAL.expertise.level - 2]!.unlock).toBe(SYNTH);
     // A claim with all of Tier 1: Tier 2 waits for the expertises.
     const sim = archived();
-    for (const id of [...t1, TIER1_WHOLE]) sim.done.add(id);
+    for (const id of [...t1, SYNTH]) sim.done.add(id);
     sim.rebuildDerived();
     expect(sim.researchBlock('tr2')).toBe('expertise');
     expect(sim.researchBlock('en_heavyacc')).toBe('expertise'); // a family's first Tier 2 node
@@ -71,10 +76,10 @@ describe('the expertises (D93)', () => {
     delete save.expertise;
     const back = deserialize(save, testSource());
     expect(tierTwoOpen(back)).toBe(true);
-    expect(expertiseArc({ v: 10, done: ['tr1', 'tr2'] }).done).toEqual(['tr1', 'tr2', TIER1_WHOLE]);
-    expect(expertiseArc({ v: 10, done: ['tr1'], projects: [{ id: 'ex3' }] }).done).toEqual(['tr1', TIER1_WHOLE]);
+    expect(expertiseArc({ v: 10, done: ['tr1', 'tr2'] }).done).toEqual(['tr1', 'tr2', SYNTH]);
+    expect(expertiseArc({ v: 10, done: ['tr1'], projects: [{ id: 'ex3' }] }).done).toEqual(['tr1', SYNTH]);
     expect(expertiseArc({ v: 10, done: ['tr1', 'en2'] }).done).toEqual(['tr1', 'en2']);
-    expect(migrate({ ...JSON.parse(JSON.stringify(save)), v: 10, done: ['tr1', 'tr2'] }).data.done).toContain(TIER1_WHOLE);
+    expect(migrate({ ...JSON.parse(JSON.stringify(save)), v: 10, done: ['tr1', 'tr2'] }).data.done).toContain(SYNTH);
   });
 
   it('read the feats at a minute’s boundary: ranks rise, never fall, and are announced once the Archive is mounted', () => {
@@ -147,14 +152,16 @@ describe('the expertises (D93)', () => {
     expect(slot.on).toBe(true);
     expect(expertiseEvents(sim)).toEqual([{ k: 'expertise', id: 'methods', rank: 1, what: 'ready' }]);
     expect(sim.mods.fam.dn.time).toBe(EXPERTISES.methods.permille[0]);
-    // A research expertise: its family's nodes started now take its share off; the trunk's and other
-    // families' do not. Research has no time since D118: one of research time takes its share off
-    // what the time follows, the tokens (D122: its resources are another aspect's).
+    // A research expertise: its theme's nodes started now take its share off — every category of it
+    // (D128: the Workshop's Mechanics, the trunk's until then, is Machines') —; other themes' do not.
+    // Research has no time since D118: one of research time takes its share off what the time
+    // follows, the tokens (D122: its resources are another aspect's).
     const table = effectiveCost('dn4'), now = effectiveCost('dn4', sim.mods), p = EXPERTISES.methods.permille[0];
     expect(now.tokens).toBe(Math.floor((table.tokens * p) / 1000));
     expect(now.cost).toEqual(table.cost);
     expect(now.aim).toBe(table.aim);
-    expect(effectiveCost('tr1', sim.mods)).toEqual(effectiveCost('tr1'));
+    expect(effectiveCost('tr1', sim.mods).tokens).toBe(Math.floor((effectiveCost('tr1').tokens * p) / 1000));
+    expect(effectiveCost('tr2', sim.mods)).toEqual(effectiveCost('tr2'));
     expect(effectiveCost('en_pitch', sim.mods)).toEqual(effectiveCost('en_pitch'));
   });
 

@@ -14,7 +14,8 @@
 //   building by building (D92: a building keeps its lights until what they were laid from changes),
 //   from pooled sprites; per frame only the layer's alpha (the night factor: one render-group
 //   uniform), the beacon's pulse, the incinerators' fire (a glow over each pit and up its flame,
-//   bright as an item burns: world/pits.ts) and, during a morph, two transforms. A production
+//   bright as an item burns, and a spark of light rising with each burst's sparks: world/pits.ts,
+//   world/pit-burst.ts) and, during a morph, two transforms. A production
 //   building that does not work is dark (D83): its glows and its work lamp hidden while the
 //   buildings view's `WorkLook` says it is switched off — re-applied only when a look flips. A
 //   neighbouring base's buildings (D110, `layForeign`) get their lights too, always on: kept apart
@@ -45,10 +46,11 @@ import {
   SOLAR_STAGES, type Emitter, type GlowClass, type SolarStage,
 } from '../art/recipes/fx';
 import type { Grade } from '../daynight';
-import { tileToIso } from '../iso';
+import { LH, TW, tileToIso } from '../iso';
 import { isoToView, type Lin } from '../projection';
 import { buildingZ, standOf } from './stand';
 import { pitFire } from './pits';
+import { BURST, PLAN_LIFT, burstGlow, sparkAt, type SparkAt } from './pit-burst';
 import { OFF_TINT, looksAtWork, type WorkLook } from './work-look';
 import { PIT } from '../art/recipes/buildings';
 
@@ -195,6 +197,8 @@ function bakeCells(sheet: FxSheet, view: 'i' | 'p', id: string, rot: Rot, cells:
 
 /** Light colours: cyan LEDs, work-lamp white (amber LEDs on cold machines), amber (hot machines), red, green. */
 const COLD = num(C.led), WHITE = num('#eaf6ff'), AMBER = num(C.ledWarm), RED = num(C.ledRed), GREEN = num(C.ledGreen);
+/** A burst's spark at night (D125): a hot point, paler than the fire's amber. */
+const SPARK_LIGHT = num('#ffd59a');
 const POOL_COLD = num('#d6efff'), POOL_WARM = num('#ffb562'), BEACON = num('#c4fbff');
 /** Glow strength by class. */
 const ALPHA: Record<GlowClass, number> = { cold: 1, warm: 0.9, red: 1, green: 0.85 };
@@ -240,11 +244,23 @@ interface LightRec {
   plan: Sprite[];
   overlays: Overlay[];
   beacons: Array<{ s: Sprite; a: number }>;
-  pit: { ent: number; glows: Array<{ s: Sprite; a: number }> } | null;
+  pit: PitLights | null;
   /** Watched (D83): its glows shown as last applied. */
   watched: boolean;
   on: boolean;
   seen: number;
+}
+
+/**
+ * An incinerator's night lights: its fire's glows (alpha by its heat), and per burst slot (D125) a
+ * haze rising with that burst's cloud of sparks in each view and, in iso, a point of light on each
+ * spark — from the throat's centre on the ground (iso world px; plan tiles).
+ */
+interface PitLights {
+  ent: number;
+  glows: Array<{ s: Sprite; a: number }>;
+  sparks: Array<{ i: Sprite; p: Sprite; pts: Sprite[] }>;
+  x: number; y: number; px: number; py: number;
 }
 
 /**
@@ -274,7 +290,7 @@ export class LightsView {
   /** Gathered from the records for the per-frame work: the watched ones (D83), the beacons, the pits, the overlays. */
   private readonly watched = new Set<LightRec>();
   private readonly beacons = new Set<{ s: Sprite; a: number }>();
-  private readonly pits = new Set<{ ent: number; glows: Array<{ s: Sprite; a: number }> }>();
+  private readonly pits = new Set<PitLights>();
   private readonly overlays = new Set<Overlay>();
   private cur: LightRec | null = null;
   private pass = 0;
@@ -292,6 +308,9 @@ export class LightsView {
   /** The neighbouring bases' lights (D110), by key (their hub parcel); bumped when they are dropped. */
   private readonly foreign = new Map<number, LightRec[]>();
   foreignEpoch = 0;
+
+  /** Scratch for a burst's spark (pit-burst.ts `sparkAt`): no allocation per frame. */
+  private readonly spark: SparkAt = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, a: 0, s: 1 };
 
   /** Is this neighbouring base's light laid? */
   hasForeign(key: number): boolean { return this.foreign.has(key); }
@@ -521,7 +540,16 @@ export class LightsView {
         { s: this.glow('i', 'glow', X, Y - 4, 30, 18, AMBER, 0), a: 1 },
         { s: this.glow('p', 'soft', e.x + 0.5, e.y + 0.5, 1.8, 1.8, POOL_WARM, 0), a: 0.7 },
       ];
-      r.pit = { ent: e.id, glows };
+      // A burst's sparks (D125): a warm haze over each burst's cloud of them, rising and spreading with it (`update`), hidden until one shows.
+      const [GX, GY] = tileToIso(e.x + 0.5, e.y + 0.5, lv);
+      const sparks = Array.from({ length: BURST.slots }, () => {
+        const i = this.glow('i', 'soft', GX, GY, 40, 40, AMBER, 0), p = this.glow('p', 'soft', e.x + 0.5, e.y + 0.5, 0.7, 0.7, AMBER, 0);
+        const pts = Array.from({ length: BURST.sparks }, () => this.glow('i', 'glow', GX, GY, 15, 15, SPARK_LIGHT, 0));
+        i.visible = p.visible = false;
+        for (const q of pts) q.visible = false;
+        return { i, p, pts };
+      });
+      r.pit = { ent: e.id, glows, sparks, x: GX, y: GY, px: e.x + 0.5, py: e.y + 0.5 };
     }
     // Solar states over the sprites: the bulb's petals, any cells drawn in PV.
     const z = (st ? st.z : buildingZ(e.x, e.y, w, h)) + 0.25;
@@ -591,6 +619,30 @@ export class LightsView {
       for (const p of this.pits) {
         const k = 0.12 + 0.88 * fire.heat(p.ent);
         for (const gl of p.glows) gl.s.alpha = gl.a * k;
+        // Each burst's sparks: a haze over their cloud and a point on each, gone as they fade (pit-burst.ts `burstGlow`, `sparkAt`).
+        const bs = this.hidden.has(p.ent) ? undefined : fire.bursts(p.ent);
+        for (let i = 0; i < p.sparks.length; i++) {
+          const sp = p.sparks[i]!, age = bs ? fire.tick - bs.at[i]! : -1, g = burstGlow(age);
+          if (g.k <= 0.01) {
+            if (sp.i.visible) { sp.i.visible = sp.p.visible = false; for (const q of sp.pts) q.visible = false; }
+            continue;
+          }
+          for (let k = 0; k < sp.pts.length; k++) {
+            const o = sparkAt(bs!.seed[i]!, k, age, this.spark), q = sp.pts[k]!;
+            q.visible = o.a > 0.01;
+            if (!q.visible) continue;
+            q.position.set(p.x + (o.x - o.y) * (TW / 2), p.y + (o.x + o.y) * (TW / 4) - o.z * LH + 3 * o.s); // on the streak's head, a little down its tail
+            q.alpha = o.a;
+          }
+          const d = 2 * g.r * TW + 26; // the cloud's breadth (iso px), a margin for the streaks
+          sp.i.position.set(p.x, p.y - g.z * LH);
+          sp.i.scale.set(d / SOFT_PX, (d * 0.85) / SOFT_PX);
+          sp.i.alpha = 0.75 * g.k;
+          sp.p.position.set(p.px, p.py - g.z * PLAN_LIFT);
+          sp.p.scale.set((2 * g.r + 0.4) / SOFT_PX);
+          sp.p.alpha = 0.6 * g.k;
+          if (!sp.i.visible) sp.i.visible = sp.p.visible = true;
+        }
       }
     }
     if (te !== this.te) {

@@ -117,8 +117,15 @@ export function outputItem(sim: Sim, id: number): number {
   return -1;
 }
 
+/** The waste a building puts out beside its product (D125: a machine's recipe's slag or scrap; −1: none). */
+export function wasteItem(sim: Sim, id: number): number {
+  const n = sim.graph?.nodeByEnt.get(id) as { kind?: string; recipe?: { waste: { item: number } | null } | null } | undefined;
+  return n?.kind === 'machine' ? n.recipe?.waste?.item ?? -1 : -1;
+}
+
 /**
- * Built, awake buildings that put out `item` (drills on its deposit, machines on a recipe making it,
+ * Built, awake buildings that put out `item` (drills on its deposit, machines on a recipe making it
+ * — or putting it out as its waste, D125 —,
  * trade posts whose exit hands it out: their cargo, D62), in id order (the Core gave its Survey
  * Data until D122: it gives nothing now). A post counts so a land without a quartz vein (maps
  * 1–2, D87) feeds « Les pièces de la Synthèse »'s quartz workshop with the quartz it buys (D90).
@@ -128,7 +135,7 @@ export function producersOf(sim: Sim, item: number, only?: readonly string[]): n
   const want = only ? new Set(only.map((d) => buildingIdx(d))) : null;
   for (const e of sim.ents.sorted()) {
     if (e.builtAt !== 0 || sim.isDormant(e) || (want && !want.has(e.def))) continue;
-    if (outputItem(sim, e.id) === item || (BUILDING_KIND[e.def] === 'trade' && cargoOf(sim, e.id).includes(item))) out.push(e.id);
+    if (outputItem(sim, e.id) === item || wasteItem(sim, e.id) === item || (BUILDING_KIND[e.def] === 'trade' && cargoOf(sim, e.id).includes(item))) out.push(e.id);
   }
   return out;
 }
@@ -145,12 +152,13 @@ export function receives(sim: Sim, id: number, item: number, from: readonly numb
 export function flows(sim: Sim, fromId: number, toId: number): boolean {
   const g = sim.graph, start = g?.nodeByEnt.get(fromId), goal = g?.nodeByEnt.get(toId);
   if (!g || !start || !goal) return false;
+  const entry = g.postIn.get(toId); // a trade post's lines end at its entrance's node (D131)
   const seen = new Set([start]);
   const todo = [start];
   for (let i = 0; i < todo.length; i++) {
     for (const e of todo[i]!.outE) {
       const d = g.nodes[g.eDst[e]!]!;
-      if (d === goal) return true;
+      if (d === goal || d === entry) return true;
       if (seen.has(d) || (d.kind !== 'chain' && d.kind !== 'fork')) continue;
       seen.add(d);
       todo.push(d);

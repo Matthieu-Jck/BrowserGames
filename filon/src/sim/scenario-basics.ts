@@ -9,7 +9,8 @@
 //     where an iron line and a coal line pass closest, an electric smelter on a branch of the iron
 //     (plates on power, no coal) and the steel mill on a branch of the coal (the steam boiler's line
 //     first: that boiler burns only what the grid asks, its coal backs up most of the day), its steel
-//     into the Core, a press rolling pipes off it.
+//     into the Core, a press rolling pipes off it; a sorter on the plates' line sends the smelter's
+//     slag (D125) aside into an incinerator, so the mill sees only plates.
 // What goes into the Core goes straight in where an intake can be reached, else joins a line that
 // runs into it with nothing on the way to turn it aside, else a trade post's line (the Crier buys it),
 // else a silo of its own (`intoCore`). A work that cannot be laid is taken back up (`rollback`) and
@@ -21,6 +22,7 @@ import { checkpoint, join, lay, placeFeeding, rollback, routeLevel, spotsNear, t
 import { worldPorts, type WorldPort } from './entities';
 import { waterSpots } from './readouts/water';
 import { toward } from './scenario-late';
+import { filterFeed, sortWaste } from './scenario-waste';
 import type { Builder } from './scenarios';
 import { DX, DY, opposite, type Rot } from './types';
 import { inWorld, tileIndex } from './world/grid';
@@ -83,15 +85,19 @@ function steelWorks(b: Builder): void {
 /**
  * The steel line round `at`, in one order or the other (the smelter on its iron first, the mill
  * then laying both its feeds; or the mill on its coal first, the smelter then feeding it): whether
- * all of it stands. A failed order is taken back up before the next.
+ * all of it stands. A failed order is taken back up before the next. Only the first piece looks far
+ * (`Builder.fed`'s wider search, where land 2's smelter stands); the rest stay near the piece before
+ * them — a smelter feeding a mill from 20 tiles off is no steel line, and on the lands where it does
+ * not fit (1 and 3) those wide searches, a line in and a line out at each of 160 spots, were a
+ * second of the late build.
  */
 function steelAt(b: Builder, at: readonly [number, number], ore: BeltTiles[], coal: BeltTiles[]): boolean {
   const sim = b.sim;
   const orders: Array<() => boolean> = [
     () => !!b.fed('steelPlates', 'electric_smelter', at, [{ lines: ore }], null)
-      && !!b.fed('steel', 'steel_mill', b.centre('steelPlates'), [b.ids.steelPlates!, { lines: coal }], null),
-    () => !!b.fed('steel', 'steel_mill', at, [{ lines: coal }], null)
-      && !!b.fed('steelPlates', 'electric_smelter', b.centre('steel'), [{ lines: ore }], b.ids.steel!, 'steelPlates.out'),
+      && !!b.fed('steel', 'steel_mill', b.centre('steelPlates'), [b.ids.steelPlates!, { lines: coal }], null, undefined, false),
+    () => !!b.fed('steel', 'steel_mill', at, [{ lines: coal }], null, undefined, false)
+      && !!b.fed('steelPlates', 'electric_smelter', b.centre('steel'), [{ lines: ore }], b.ids.steel!, 'steelPlates.out', false),
   ];
   for (const lay2 of orders) {
     const cp = checkpoint(sim);
@@ -111,11 +117,20 @@ function steelAt(b: Builder, at: readonly [number, number], ore: BeltTiles[], co
 function steelOn(b: Builder): boolean {
   const sim = b.sim;
   b.recipe('steelPlates', 'arc_plate');
+  // Two recipes at the mill since D125 (recycled steel): it waits for a choice (D83).
+  b.recipe('steel', 'steel');
+  // The smelter's slag (D125) must not reach the mill, which takes plates: a sorter on their line
+  // keeps the plates on, an incinerator beside it takes the slag.
+  const plates = b.lines['steelPlates.out'] ?? b.lines['steel.in0'];
+  b.affordAll(['sorter', 1], ['incinerator', 1]);
+  if (!plates || !sortWaste(sim, plates, 'iron_plate')) return false;
   const out = intoCore(b, b.ids.steel!) ?? (b.fed('steelSilo', 'silo', b.centre('steel'), [b.ids.steel!], null) ? b.lines['steelSilo.in0'] ?? null : null);
   if (!out) return false;
   b.lines['steel.out'] = out;
   if (!b.fed('pipes', 'press', b.centre('steel'), [{ lines: [out] }], null)) return false;
   b.recipe('pipes', 'pipe');
+  // The mill's slag rides the steel's line (D125): the router's side toward the press takes steel only.
+  filterFeed(sim, b.ids.pipes!, 'steel');
   // Past the router that feeds the press, the steel's line runs on: into the Core, the pipes join it
   // there (not into a silo: a silo holds one kind).
   const k = b.ids.steelSilo ? -1 : out.findIndex(([x, y]) => { const o = sim.entityAt(x, y); return !!o && BUILDING_KIND[o.def] === 'fork'; });
@@ -123,6 +138,13 @@ function steelOn(b: Builder): boolean {
     ?? (b.fed('pipesSilo', 'silo', b.centre('pipes'), [b.ids.pipes!], null) ? b.lines['pipesSilo.in0'] ?? null : null);
   if (!pipes) return false;
   b.lines['pipes.out'] = pipes;
+  // A silo holds one kind: the mill's slag or the press's scrap would stop at its door (D125).
+  for (const [silo, keep] of [['steelSilo', 'steel'], ['pipesSilo', 'pipe']] as const) {
+    const l = b.ids[silo] ? b.lines[`${silo}.in0`] : undefined;
+    if (!l) continue;
+    b.affordAll(['sorter', 1], ['incinerator', 1]);
+    if (!sortWaste(sim, l, keep)) return false;
+  }
   return true;
 }
 
@@ -245,6 +267,7 @@ function worksBy(b: Builder, out: WorldPort, water: readonly [number, number], b
     const cp = checkpoint(sim);
     const w = sim.place('brickworks', x, y, rot);
     if (!w.ok) continue;
+    sim.setRecipe(w.id!, 'brick'); // two recipes since D125 (slag bricks): it waits for a choice (D83)
     const ins = worldPorts(sim.ents.get(w.id!)!).filter((p) => p.io === 'in');
     const pipe = routeLevel(sim, [out.fx, out.fy], into(ins[1]!), CONDUIT_SEARCH, true);
     if (pipe && sim.placeBelts('conduit', pipe) === pipe.length) {

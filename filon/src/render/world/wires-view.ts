@@ -24,6 +24,12 @@
 // as it lays the base) hang the same way, terminal to terminal, always lit (their grids always run),
 // in a graphics of their own drawn after the claim's: never part of the claim's grids, kept until
 // another colony comes into play (`clearForeign`).
+//
+// Drawn over every volume, a wire hung behind a cliff would show across the rock in front of it
+// (owner, 2026-10-18, on a neighbouring base at a cliff's foot): in iso each wire is drawn only
+// where the relief leaves it in view (wire-geom `wireRuns`, cut at the cliff's edges), its glints
+// too; the plan view has no relief. Worked out with the geometry, again when the land changes
+// (`landChanged`: a dig, a fill).
 import { CanvasSource, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import type { LinkPreview } from '@/input/link-tool';
 import type { Sim } from '@/sim/state';
@@ -32,7 +38,8 @@ import { buildingDef } from '@/content/registry';
 import { C, num } from '../art/tokens';
 import { GRID_COLORS } from '../art/view-icons';
 import { tileToIso } from '../iso';
-import { flowWays, pointAlong, polyLengths, wireCurve, wireEnds, type Anchor } from './wire-geom';
+import type { ReliefLand } from '../relief';
+import { flowWays, inHidden, pointAlong, polyLengths, wireCurve, wireEnds, wireRuns, type Anchor } from './wire-geom';
 
 /** One wire as drawn. */
 interface Wire {
@@ -42,6 +49,9 @@ interface Wire {
   net: number;
   iso: Float32Array;
   isoLen: Float32Array;
+  /** What the relief in front leaves in view of `iso` (iso polylines), and the hidden spans (pairs of the curve's parameter). */
+  runs: Float32Array[];
+  hidden: number[];
   /** Plan: the two terminals (tiles). */
   ax: number; ay: number; bx: number; by: number;
   /** Glint phase, from the ids. */
@@ -80,8 +90,9 @@ function sameWires(a: readonly Wire[], b: readonly Wire[]): boolean {
   for (let i = 0; i < a.length; i++) {
     const p = a[i]!, q = b[i]!;
     if (p.a !== q.a || p.b !== q.b || p.net !== q.net || p.way !== q.way || p.ax !== q.ax || p.ay !== q.ay || p.bx !== q.bx || p.by !== q.by) return false;
-    if (p.iso.length !== q.iso.length) return false;
+    if (p.iso.length !== q.iso.length || p.hidden.length !== q.hidden.length) return false;
     for (let k = 0; k < p.iso.length; k++) if (p.iso[k] !== q.iso[k]) return false;
+    for (let k = 0; k < p.hidden.length; k++) if (p.hidden[k] !== q.hidden[k]) return false;
   }
   return true;
 }
@@ -136,7 +147,11 @@ export class WiresView {
   /** The neighbouring bases' wires (D110): by base, drawn in their own graphics. */
   private readonly foreignIso = new Graphics();
   private readonly foreignPlan = new Graphics();
-  private readonly foreign = new Map<number, Array<{ iso: Float32Array; ax: number; ay: number; bx: number; by: number }>>();
+  private readonly foreign = new Map<number, Array<{ A: Anchor; B: Anchor; runs: Float32Array[]; ax: number; ay: number; bx: number; by: number }>>();
+  /** The land the neighbouring bases' wires are cut against (`layForeign`). */
+  private foreignLand: ReliefLand | null = null;
+  /** Each wire's cut against the relief, by its two ends: a rebuild works out only new wires (some 36 ms a thousand); emptied when the land changes. */
+  private seen = new Map<string, { runs: Float32Array[]; hidden: number[] }>();
 
   constructor(isoLayer: Container, planLayer: Container) {
     this.glintTex = glintTexture();
@@ -155,10 +170,20 @@ export class WiresView {
   /** How many neighbouring bases' wires are drawn (smoke). */
   get foreignCount(): number { let n = 0; for (const ws of this.foreign.values()) n += ws.length; return n; }
 
-  /** A neighbouring base's grid (D110): its wires, end to end (terminals the caller picked: its Core's are its own), hung as the claim's are, lit. */
-  layForeign(key: number, ends: ReadonlyArray<readonly [Anchor, Anchor]>): void {
+  /** A neighbouring base's grid (D110): its wires, end to end (terminals the caller picked: its Core's are its own), hung as the claim's are, lit, hidden where the relief in front of them rises (`land`). */
+  layForeign(key: number, ends: ReadonlyArray<readonly [Anchor, Anchor]>, land: ReliefLand | null = null): void {
     if (this.foreign.has(key)) return;
-    this.foreign.set(key, ends.map(([A, B]) => ({ iso: wireCurve(A, B), ax: A.x, ay: A.y, bx: B.x, by: B.y })));
+    this.foreignLand = land;
+    this.foreign.set(key, ends.map(([A, B]) => ({ A, B, runs: wireRuns(A, B, land).runs, ax: A.x, ay: A.y, bx: B.x, by: B.y })));
+    this.drawForeign();
+  }
+
+  /** The land changed (a dig, a fill: the chunks the relief redraws): every wire's view of it worked out again. */
+  landChanged(): void {
+    this.linksV = -1;
+    this.seen.clear();
+    if (!this.foreign.size) return;
+    for (const ws of this.foreign.values()) for (const w of ws) w.runs = wireRuns(w.A, w.B, this.foreignLand).runs;
     this.drawForeign();
   }
 
@@ -174,9 +199,9 @@ export class WiresView {
     iso.clear(); plan.clear();
     const all = [...this.foreign.values()].flat();
     if (!all.length) return;
-    for (const w of all) isoPath(iso, w.iso, 0);
+    for (const w of all) for (const r of w.runs) isoPath(iso, r, 0);
     iso.stroke({ width: LINE.iso, color: INK, alpha: LINE.on, cap: 'round', join: 'round' });
-    for (const w of all) isoPath(iso, w.iso, -LINE.hiOff);
+    for (const w of all) for (const r of w.runs) isoPath(iso, r, -LINE.hiOff);
     iso.stroke({ width: LINE.isoHi, color: LIT, alpha: LINE.onHi, cap: 'round', join: 'round' });
     for (const w of all) plan.moveTo(w.ax, w.ay).lineTo(w.bx, w.by);
     plan.stroke({ width: LINE.plan, color: INK, alpha: LINE.on, cap: 'round' });
@@ -208,15 +233,17 @@ export class WiresView {
 
   /** The wires from the colony; false when every one is drawn as before (same ends, grid, way and curve). */
   private rebuild(sim: Sim): boolean {
-    const out: Wire[] = [];
+    const out: Wire[] = [], seen = new Map<string, { runs: Float32Array[]; hidden: number[] }>();
     for (const [ia, ib] of sim.links.pairs()) {
       const ea = sim.ents.get(ia), eb = sim.ents.get(ib);
       if (!ea || !eb) continue;
       const [A, B] = wireEnds(ea, eb);
-      const iso = wireCurve(A, B);
+      const key = `${A.x},${A.y},${A.z},${B.x},${B.y},${B.z}`, cut = this.seen.get(key) ?? seen.get(key) ?? wireRuns(A, B, sim.grid);
+      seen.set(key, cut);
+      const iso = wireCurve(A, B), { runs, hidden } = cut;
       const na = sim.graph.netOfEnt.get(ia), nb = sim.graph.netOfEnt.get(ib);
       out.push({
-        a: ia, b: ib, net: na !== undefined && na === nb ? na : -1, iso, isoLen: polyLengths(iso),
+        a: ia, b: ib, net: na !== undefined && na === nb ? na : -1, iso, isoLen: polyLengths(iso), runs, hidden,
         ax: A.x, ay: A.y, bx: B.x, by: B.y,
         seed: ((ia * 0.618034 + ib * 0.414214) % 1 + 1) % 1, way: 0,
       });
@@ -227,6 +254,7 @@ export class WiresView {
     });
     const same = sameWires(this.wires, out);
     this.wires = out;
+    this.seen = seen;
     return !same;
   }
 
@@ -272,9 +300,9 @@ export class WiresView {
     // The ends sit on the terminals the art draws (plan insulators included): no knots on top.
     const wIso = byGrid ? LINE.isoGrid : LINE.iso, wPlan = byGrid ? LINE.planGrid : LINE.plan;
     for (const grp of groups.values()) {
-      for (const w of grp.ws) isoPath(iso, w.iso, 0);
+      for (const w of grp.ws) for (const r of w.runs) isoPath(iso, r, 0);
       iso.stroke({ width: wIso, color: grp.color, alpha: grp.alpha, cap: 'round', join: 'round' });
-      for (const w of grp.ws) isoPath(iso, w.iso, -LINE.hiOff);
+      for (const w of grp.ws) for (const r of w.runs) isoPath(iso, r, -LINE.hiOff);
       iso.stroke({ width: LINE.isoHi, color: grp.hi, alpha: grp.hiAlpha, cap: 'round', join: 'round' });
       for (const w of grp.ws) plan.moveTo(w.ax, w.ay).lineTo(w.bx, w.by);
       plan.stroke({ width: wPlan, color: grp.color, alpha: grp.alpha, cap: 'round' });
@@ -282,7 +310,7 @@ export class WiresView {
       plan.stroke({ width: LINE.planHi, color: grp.hi, alpha: grp.hiAlpha, cap: 'round' });
     }
     if (planned.length) {
-      for (const w of planned) dashedIso(iso, w.iso, 5, 4);
+      for (const w of planned) for (const r of w.runs) dashedIso(iso, r, 5, 4);
       iso.stroke({ width: LINE.iso * 0.8, color: INK, alpha: LINE.planned, cap: 'round' });
       for (const w of planned) dashed(plan, w.ax, w.ay, w.bx, w.by, 0.24, 0.18);
       plan.stroke({ width: LINE.plan * 0.85, color: INK, alpha: LINE.planned, cap: 'round' });
@@ -330,7 +358,8 @@ export class WiresView {
       const lenTiles = Math.hypot(w.bx - w.ax, w.by - w.ay) + 0.5;
       const run = (this.time * GLINT_TILES_PER_S * (0.35 + 0.65 * sat) / lenTiles + w.seed) % 1;
       const f = w.way > 0 ? run : 1 - run; // from the generators' side
-      if (showIso) {
+      // Behind a cliff, no glint (its span hidden: the fraction along the curve stands in for its parameter).
+      if (showIso && !inHidden(w.hidden, f)) {
         const s = this.glint(this.isoGlints, ni, 0.2);
         pointAlong(w.iso, w.isoLen, f, this.pt);
         s.position.set(this.pt.x, this.pt.y);

@@ -1,5 +1,5 @@
 // quests.ts — the tutorial (design §8 « Prise en main », decisions D28 and D101): the claim's name,
-// then ten quests, run in this order, one at a time. The fiction: the player is an investor
+// then eleven quests (« Les scories » added by D125), run in this order, one at a time. The fiction: the player is an investor
 // living in Verrière, Ysmère's glass city, in partnership with CrierBelt (the company that runs the
 // Crier Ring and its cargo lifts, and takes a cut on every trade); their base in the Bonne-Veine
 // cirque is fully automated, built by drones and steered from afar. CrierBelt is the voice that sets
@@ -51,9 +51,9 @@ export const QUEST_HINT_AFTER = 3000;
  * The quest table's shape, saved with the quest state (D101): a save from an older table has its
  * quest ids folded into today's (`QUEST_FOLDS`), the quests added since counted done when it was
  * past them (`QUEST_ADDED`), and its current quest's baselines taken afresh. 2: the D101 table;
- * 3: « Le Cœur grandit » added; 4: « La vapeur » (D114).
+ * 3: « Le Cœur grandit » added; 4: « La vapeur » (D114); 5: « Les scories » (D125).
  */
-export const QUEST_TABLE = 4;
+export const QUEST_TABLE = 5;
 
 /**
  * What a quest asks. Counters marked *since* count from the moment the quest became current, or
@@ -636,7 +636,45 @@ export const QUESTS = {
     ],
   },
 
-  // ── 7 ── goal: the Core's level 2 (D101) ──────────────────────────────────────
+  // ── 7 ── goal: the slag (D125) ────────────────────────────────────────────────
+  // Owner, 2026-10-18: « il faudrait que certaines machines produisent des déchets en alternance avec
+  // leur vraie production, qu'il faille traiter ». The first smelter's slag has gone into the Core
+  // since « La fonderie » (one every ten plates: harmless there, it only fills its room); here, once
+  // copper wire is to hand for the sorter, CrierBelt says what it is and how it is dealt with before a
+  // line into a machine (the press, the steel mill) jams on it: sorted off and burnt, or sold.
+  slag: {
+    name: { fr: 'Les scories', en: 'The Slag' },
+    reveals: ['plan:sorter', 'plan:incinerator', 'stock:slag'],
+    desc: {
+      fr: 'Vos fonderies laissent des scories : une toutes les dix plaques, par la même sortie. Le Cœur les prend mais n’en fait rien, elles occupent sa réserve ; une machine, elle, les refuse, et toute sa ligne se bouche derrière. Triez-les : un trieur réglé sur les plaques les laisse filer et pousse le reste sur ses côtés, un incinérateur brûle ce qui y tombe. Ou vendez-les à la Criée, pour presque rien.',
+      en: 'Your smelters leave slag: one every ten plates, through the same output. The Core takes it but has no use for it, it only fills its room; a machine refuses it, and its whole line jams behind it. Sort it: a sorter set to the plates lets them through and pushes the rest out of its sides, an incinerator burns whatever falls in. Or sell it at the Crier, for next to nothing.',
+    },
+    objectives: [
+      { k: 'feeds', item: 'slag', to: ['incinerator'], n: 1, label: { fr: 'Les scories triées vers un incinérateur', en: 'The slag sorted to an incinerator' } },
+      { k: 'export', items: ['slag'], n: 5, ever: true, label: { fr: 'Ou des scories vendues', en: 'Or slag sold' } },
+    ],
+    any: true,
+    reward: { items: [['iron_plate', 30], ['copper_wire', 10]] },
+    hints: [
+      {
+        hint: { fr: 'Le Trieur et l’Incinérateur sont dans l’arbre, voie Logistique.', en: 'The Sorter and the Incinerator are in the tree, on the Logistics path.' },
+        target: { k: 'unlock', ids: ['sorter', 'incinerator'] },
+        done: { k: 'unlocked', ids: ['sorter', 'incinerator'] },
+      },
+      {
+        hint: { fr: 'Pose un trieur sur la ligne des plaques, tout droit, près de la fonderie ; clique-le et choisis la plaque de fer.', en: 'Place a sorter on the plates’ line, on a straight stretch, near the smelter; click it and pick the iron plate.' },
+        target: { k: 'build', def: 'sorter', at: { newest: 'kiln' } },
+        done: { k: 'build', defs: ['sorter', 'inverted_sorter'], n: 1 },
+      },
+      {
+        hint: { fr: 'Un incinérateur contre un côté du trieur : les scories y tombent, les plaques filent tout droit.', en: 'An incinerator against one side of the sorter: the slag falls in, the plates run straight on.' },
+        target: { k: 'build', def: 'incinerator', at: { newest: 'sorter' } },
+        done: { k: 'feeds', item: 'slag', to: ['incinerator'], n: 1 },
+      },
+    ],
+  },
+
+  // ── 8 ── goal: the Core's level 2 (D101) ──────────────────────────────────────
   // Owner, 2026-10-16: « there should be a quest in the tutorial where you upgrade it ». A player
   // action paid in what the base makes by now (BAL.hearthUpgrades[0]: plates, glass, copper wire),
   // one click on the Core's card (the logged `hearthUp`). The level grows the Core's power (its core
@@ -678,7 +716,7 @@ export const QUESTS = {
     ],
   },
 
-  // ── 8 ── goal: every plan, then the lab on the Core's compute (D71, D101, D122) ──
+  // ── 9 ── goal: every plan, then the lab on the Core's compute (D71, D101, D122) ──
   // The research lab is the gate between the plans and research (owner, 2026-10-14). The plans are
   // a goal at the player's own pace (D101: a calm count, no arrow down the tree). The first lab runs
   // on the Core's compute (D122: its tokens from level 2, no ribbon — it ran on the Core's Survey Data
@@ -729,7 +767,7 @@ export const QUESTS = {
     ],
   },
 
-  // ── 9 ── goal: quartz in the wall, past the Crown (D87) ───────────────────────
+  // ── 10 ── goal: quartz in the wall, past the Crown (D87) ──────────────────────
   // The resource the cirque lacks, a parcel away: the land's first purchase, a face cutter at the
   // foot of the nearest mountain's wall, its quartz carried home over the Crown on traction ribbons.
   // It is the tutorial's way past the Crown (D101: « Au-delà de la Couronne » folded in, its
@@ -782,39 +820,54 @@ export const QUESTS = {
     ],
   },
 
-  // ── 10 ── goal: two of the parts the Core's level 3 is paid in (D90, after D93) ─
+  // ── 11 ── goal: two of the parts the Core's level 3 is paid in (D90, after D93) ─
   // From the tutorial into the end of Tier 1 (playtest 2026-10-16: once the quartz came, nothing named
-  // the next goal). Level 3 is paid in gears, circuits and quartz oscillators (and, since D123, in the
-  // bricks, steel and copper plates of Tier 1's new works — named in the text, not asked here); the gears wait for
-  // Mechanics' press (started in « Le laboratoire », it is learnt in its own time), so the
-  // tutorial ends on the two lines it can build at once (D101: no wait but building time).
+  // the next goal). Level 3 is paid in gears, motors and quartz oscillators (and, since D123, in the
+  // bricks, steel and copper plates of Tier 1's new works — named in the text, not asked here); the
+  // gears and the motors wait for Mechanics' press (started in « Le laboratoire », it is learnt in its
+  // own time), so the tutorial ends on the two lines it can build at once (D101: no wait but building
+  // time) — the quartz workshop's after its own node, a few minutes on the Core's compute (D128), and
+  // the assembly bench's coils, of which the motors are wound (D129: the electronics workshop and its
+  // circuits went to Tier 2; this step built it until then).
   synth_parts: {
     name: { fr: 'Les pièces de la Synthèse', en: 'Parts for the Synthesis' },
     desc: {
-      fr: 'Le Tier 1 se referme sur la Synthèse : elle demande tout le Tier 1, puis le niveau 3 du Cœur se paie en engrenages, circuits et oscillateurs à quartz, et dans les nouveaux matériaux du Tier 1 : briques, acier, plaques de cuivre. Ce niveau porte l’Archive des expertises ; deux expertises ouvrent le Tier 2. Les engrenages viendront de la presse, quand la Mécanique sera apprise ; montez dès maintenant les lignes des circuits et des oscillateurs, jusqu’au Cœur.',
-      en: 'Tier 1 closes on the Synthesis: it asks for all of Tier 1, then the Core’s level 3 is paid in gears, circuits and quartz oscillators, and in Tier 1’s new materials: bricks, steel, copper plates. That level mounts the Expertise Archive; two expertises open Tier 2. The gears will come from the press once Mechanics is learnt; set up the circuit and oscillator lines now, into the Core.',
+      fr: 'Le Tier 1 se referme sur la Synthèse : elle demande l’Atelier (la presse, l’atelier de quartz, la tréfileuse double), l’aciérie et le calcul du Cœur, puis le niveau 3 du Cœur se paie en engrenages, moteurs et oscillateurs à quartz, et dans les nouveaux matériaux du Tier 1 : briques, acier, plaques de cuivre. Ce niveau porte l’Archive des expertises ; deux expertises ouvrent le Tier 2, où chaque catégorie attend celles du Tier 1 sur lesquelles elle bâtit. Lancez l’Atelier de quartz, puis montez les lignes des oscillateurs et des bobines de cuivre, jusqu’au Cœur : l’établi de montage fera des moteurs des bobines.',
+      en: 'Tier 1 closes on the Synthesis: it asks for the Workshop (the press, the quartz workshop, the twin wire mill), the steel mill and the Core’s compute, then the Core’s level 3 is paid in gears, motors and quartz oscillators, and in Tier 1’s new materials: bricks, steel, copper plates. That level mounts the Expertise Archive; two expertises open Tier 2, where each category waits for those of Tier 1 it builds on. Launch the Quartz Workshop, then set up the oscillator and copper coil lines, into the Core: the assembly bench will make motors of the coils.',
     },
     objectives: [
       { k: 'feeds', item: 'oscillator', to: ['hearth'], n: 1, label: { fr: 'Oscillateurs jusqu’au Cœur', en: 'Oscillators to the Core' } },
-      { k: 'feeds', item: 'circuit', to: ['hearth'], n: 1, label: { fr: 'Circuits jusqu’au Cœur', en: 'Circuits to the Core' } },
+      { k: 'feeds', item: 'copper_coil', to: ['hearth'], n: 1, label: { fr: 'Bobines jusqu’au Cœur', en: 'Coils to the Core' } },
     ],
     // Ocelles for what comes next: the next parcels, the Crier's orders.
     reward: { credits: 300 },
     hints: [
+      {
+        // Its own research node since D128 (`dn_quartzshop`): two thousand tokens, the Core's compute's two minutes.
+        hint: { fr: 'Dans l’arbre (T), lance l’Atelier de quartz : le calcul du Cœur l’apprend en quelques minutes.', en: 'In the tree (T), launch the Quartz Workshop: the Core’s compute learns it within minutes.' },
+        target: { k: 'unlock', ids: ['dn_quartzshop'] },
+        done: { k: 'unlocked', ids: ['dn_quartzshop'] },
+      },
       {
         hint: { fr: 'L’atelier de quartz près du Cœur : ses matériaux t’ont été livrés.', en: 'The quartz workshop near the Core: its materials were delivered to you.' },
         target: { k: 'build', def: 'quartz_workshop', at: NEAR_HEART },
         done: { k: 'build', defs: ['quartz_workshop'], n: 1 },
       },
       {
-        hint: { fr: 'Un atelier d’électronique à côté : il fait les circuits.', en: 'An electronics workshop beside it: it makes the circuits.' },
-        target: { k: 'build', def: 'workshop', at: { entity: 'quartz_workshop' } },
-        done: { k: 'build', defs: ['workshop'], n: 1 },
+        hint: { fr: 'Un établi de montage à côté : il bobine le fil de cuivre sur des plaques de fer.', en: 'An assembly bench beside it: it winds copper wire on iron plates.' },
+        target: { k: 'build', def: 'assembly_bench', at: { entity: 'quartz_workshop' } },
+        done: { k: 'build', defs: ['assembly_bench'], n: 1 },
       },
       {
-        hint: { fr: 'Relie les deux ateliers au réseau.', en: 'Wire both workshops into the grid.' },
+        // Once Mechanics is learnt the bench has two recipes and waits for a choice (D83); before, it starts on its coils.
+        hint: { fr: 'Clique-le et choisis la recette Bobine de cuivre.', en: 'Click it and pick the Copper Coil recipe.' },
+        target: { k: 'recipe', defs: ['assembly_bench'], recipe: 'copper_coil' },
+        done: { k: 'recipe', defs: ['assembly_bench'], recipe: 'copper_coil', n: 1 },
+      },
+      {
+        hint: { fr: 'Relie l’atelier et l’établi au réseau.', en: 'Wire the workshop and the bench into the grid.' },
         target: { k: 'link' },
-        done: { k: 'powered', defs: ['quartz_workshop', 'workshop'], n: 2 },
+        done: { k: 'powered', defs: ['quartz_workshop', 'assembly_bench'], n: 2 },
       },
       {
         hint: { fr: 'Du quartz pour l’atelier de quartz : un routeur sur ta ligne de quartz, un ruban jusqu’à une de ses entrées.', en: 'Quartz for the quartz workshop: a router on your quartz line, a ribbon to one of its inputs.' },
@@ -827,14 +880,15 @@ export const QUESTS = {
         done: { k: 'feeds', item: 'copper_wire', to: ['quartz_workshop'], n: 1 },
       },
       {
-        hint: { fr: 'Du fil de cuivre pour l’atelier d’électronique aussi : un ruban depuis le routeur de la ligne de fil.', en: 'Copper wire for the electronics workshop too: a ribbon from the wire line’s router.' },
-        target: { k: 'branch', item: 'copper_wire', to: ['workshop'] },
-        done: { k: 'feeds', item: 'copper_wire', to: ['workshop'], n: 1 },
+        hint: { fr: 'Du fil de cuivre pour l’établi aussi : un ruban depuis le routeur de la ligne de fil.', en: 'Copper wire for the bench too: a ribbon from the wire line’s router.' },
+        target: { k: 'branch', item: 'copper_wire', to: ['assembly_bench'] },
+        done: { k: 'feeds', item: 'copper_wire', to: ['assembly_bench'], n: 1 },
       },
       {
-        hint: { fr: 'Et du verre : un ruban depuis un routeur de la ligne de verre jusqu’à son autre entrée.', en: 'And glass: a ribbon from a router on the glass line to its other input.' },
-        target: { k: 'branch', item: 'glass', to: ['workshop'] },
-        done: { k: 'feeds', item: 'glass', to: ['workshop'], n: 1 },
+        // The plates' line carries the smelter's slag (D125): branched past its sorter, or a slag jams the bench.
+        hint: { fr: 'Et des plaques de fer : un routeur sur la ligne des plaques, après le trieur des scories (une scorie bloquerait l’établi), un ruban jusqu’à son autre entrée.', en: 'And iron plates: a router on the plates’ line, past the slag sorter (a slag would jam the bench), a ribbon to its other input.' },
+        target: { k: 'branch', item: 'iron_plate', to: ['assembly_bench'] },
+        done: { k: 'feeds', item: 'iron_plate', to: ['assembly_bench'], n: 1 },
       },
       {
         hint: { fr: 'Les oscillateurs au Cœur : un ruban de l’atelier de quartz jusqu’à une entrée du Cœur, ou dans un ruban qui y mène.', en: 'The oscillators to the Core: a ribbon from the quartz workshop to an input of the Core, or into a ribbon that leads there.' },
@@ -842,9 +896,9 @@ export const QUESTS = {
         done: { k: 'feeds', item: 'oscillator', to: ['hearth'], n: 1 },
       },
       {
-        hint: { fr: 'Les circuits aussi : un ruban de l’atelier d’électronique jusqu’au Cœur.', en: 'The circuits too: a ribbon from the electronics workshop to the Core.' },
+        hint: { fr: 'Les bobines aussi : un ruban de l’établi jusqu’au Cœur.', en: 'The coils too: a ribbon from the bench to the Core.' },
         target: { k: 'build', def: 'ribbon', at: INTAKE },
-        done: { k: 'feeds', item: 'circuit', to: ['hearth'], n: 1 },
+        done: { k: 'feeds', item: 'copper_coil', to: ['hearth'], n: 1 },
       },
     ],
   },
@@ -872,7 +926,7 @@ export const QUEST_FOLDS: Readonly<Record<string, QuestId>> = {
  * `foldDone`). « Le Cœur grandit » came with table 3: before, « La Criée » paid level 2's materials.
  * « La vapeur » came with table 4 (D114): a player past it plays on, one still at « La Criée » meets it first.
  */
-export const QUEST_ADDED: Readonly<Partial<Record<QuestId, number>>> = { core_upgrade: 3, steam_power: 4 };
+export const QUEST_ADDED: Readonly<Partial<Record<QuestId, number>>> = { core_upgrade: 3, steam_power: 4, slag: 5 };
 
 /** Titles a quest can grant: a mention of the base in the Crier's register (shown with its name). */
 export const QUEST_TITLES: Readonly<Record<string, Loc>> = {

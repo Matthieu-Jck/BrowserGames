@@ -8,9 +8,11 @@
 // · its two gates (D62): the entrance — it sells whatever it brings, every minute —, and the exit,
 //   which hands its purchases out in turn, a cut ribbon while it leads nowhere (its orders then buy
 //   nothing);
-// · « Au conteneur »: what its container holds, each item's icon, × how many and what they bring at
-//   today's bid (CrierBelt's cut taken), the total in the card's head, and a bar of its purchases
-//   against its load (a full one stops the purchases, D43);
+// · « À vendre » (D131): what its entrance brought, in a store of its own — its cargo's items too —,
+//   each item's icon, × how many and what they bring at today's bid (CrierBelt's cut taken), the total
+//   in the card's head: sold at the minute's end;
+// · « Livré, attend la sortie »: its container, the purchases its exit hands out, × how many, and a
+//   bar of them against its load (a full one stops the purchases, D43);
 // · « En route »: by item, × how many, when the first lands, what they cost, the total in the head;
 // · « Ordres »: one card line per order — its rate and what a minute of it costs at today's ask,
 //   then its state and its price cap — with ✕; and the Crier's button, where orders are placed.
@@ -22,6 +24,7 @@ import { duration, num, rate } from '@/i18n/format';
 import { t } from '@/i18n/i18n';
 import { afterFee, valueCents } from '@/market/pricing';
 import { containerFull, containerMu, handsOut, tradables, waitingMu } from '@/sim/systems/trade';
+import { N_ITEMS } from '@/content/registry';
 import type { Ent } from '@/sim/types';
 import type { Sim } from '@/sim/state';
 import { glyph } from '../glyphs';
@@ -37,7 +40,7 @@ export const tradeHero = ({ sim }: PanelCtx): HTMLElement => el('div.insp-hero',
 
 export const tradePanel: Panel = ({ sim, e, host, live, action }) => {
   const f = postFacts(sim);
-  const out: Array<HTMLElement | null> = [gateRows(sim, e, live), cargoCard(sim, e, live), flightCard(sim, e, live), ordersCard(sim, e, live, f)];
+  const out: Array<HTMLElement | null> = [gateRows(sim, e, live), sellCard(sim, e, live), cargoCard(sim, e, live), flightCard(sim, e, live), ordersCard(sim, e, live, f)];
   const open = (host as CrierLink).openCrier;
   if (open) action(el('button.btn.primary.insp-recipe.tp-crier', { 'data-insp-crier': '', onclick: () => open.call(host, 'trade') }, [glyph('crier'), ' ', t('insp.trade.openCrier')]));
   return out;
@@ -62,13 +65,23 @@ function card(hook: string, icon: MarkId, title: string, total: HTMLElement | nu
   return s;
 }
 
-function cargoCard(sim: Sim, e: Ent, live: PanelCtx['live']): HTMLElement {
+/** What its entrance brought (D131), sold at the minute's end: by item, what it brings at today's bid; the total in the head. */
+function sellCard(sim: Sim, e: Ent, live: PanelCtx['live']): HTMLElement {
   const total = el('b.tp-total');
+  live(() => {
+    const rows = sellRows(sim, e);
+    setText(total, rows.length ? oc(rows.reduce((s, r) => s + (r.cents ?? 0), 0)) : '');
+  });
+  const c = card('sell', 'gate', t('insp.trade.sell'), total, [liveRows(live, () => sellRows(sim, e), t('insp.trade.sell.empty'))]);
+  c.title = t('insp.trade.sell.tip');
+  return c;
+}
+
+/** Its container (D43): the purchases its exit hands out, by item, and a bar of them against its load. */
+function cargoCard(sim: Sim, e: Ent, live: PanelCtx['live']): HTMLElement {
   const bar = progressBar();
   const fill = el('small.tp-fill-n');
   live(() => {
-    const rows = cargoRows(sim, e);
-    setText(total, rows.length ? oc(rows.reduce((s, r) => s + r.cents, 0)) : '');
     // The bar: its purchases waiting for the exit against the container's load.
     const held = Math.floor(waitingMu(sim, e) / 1000), cap = Math.round(containerMu(sim) / 1000);
     const full = containerFull(sim, e);
@@ -76,7 +89,7 @@ function cargoCard(sim: Sim, e: Ent, live: PanelCtx['live']): HTMLElement {
     setText(fill, full ? t('insp.trade.containerFull') : t('insp.trade.container', { n: num(held), cap: num(cap) }));
     setAttr(fill, 'data-full', full ? '' : null);
   });
-  return card('cargo', 'cargo', t('insp.trade.cargo'), total, [
+  return card('cargo', 'cargo', t('insp.trade.cargo'), null, [
     liveRows(live, () => cargoRows(sim, e), t('insp.trade.cargo.empty')),
     el('div.tp-fill', { title: t('insp.trade.containerHint') }, [bar.root, fill]),
   ]);
@@ -117,18 +130,30 @@ function ordersCard(sim: Sim, e: Ent, live: PanelCtx['live'], f: PostFacts): HTM
 
 // ── the recap's rows ──────────────────────────────────────────────────────────
 
-/** One line of a card: an item, how many, a note (when it lands) and a value (centi-◉). */
-interface RecapRow { key: string; item: number; n: number; cents: number; note?: string }
+/** One line of a card: an item, how many, a note (when it lands) and a value (centi-◉; none for the container's purchases). */
+interface RecapRow { key: string; item: number; n: number; cents?: number; note?: string }
 
-/** What the container holds, by item: how many and what they bring at today's bid, CrierBelt's cut taken. */
-function cargoRows(sim: Sim, e: Ent): RecapRow[] {
-  const st = sim.stores.get(e.id);
+/** What its entrance brought (D131), by item: how many and what they bring at today's bid, CrierBelt's cut taken. */
+function sellRows(sim: Sim, e: Ent): RecapRow[] {
+  const st = sim.selling.get(e.id);
   if (!st) return [];
   const rows: RecapRow[] = [];
   for (const i of tradables()) {
     const n = Math.floor(st[i]! / 1000);
     if (n <= 0) continue;
-    rows.push({ key: `c${i}`, item: i, n, cents: afterFee(valueCents(n * 1000, sim.prices.bid[i] ?? 0, 'sell'), 'sell', sim.mods.tradeFee) });
+    rows.push({ key: `s${i}`, item: i, n, cents: afterFee(valueCents(n * 1000, sim.prices.bid[i] ?? 0, 'sell'), 'sell', sim.mods.tradeFee) });
+  }
+  return rows;
+}
+
+/** What its container holds, by item: the purchases waiting for its exit. */
+function cargoRows(sim: Sim, e: Ent): RecapRow[] {
+  const st = sim.stores.get(e.id);
+  if (!st) return [];
+  const rows: RecapRow[] = [];
+  for (let i = 0; i < N_ITEMS; i++) {
+    const n = Math.floor(st[i]! / 1000);
+    if (n > 0) rows.push({ key: `c${i}`, item: i, n });
   }
   return rows;
 }
@@ -170,7 +195,7 @@ function liveRows(live: PanelCtx['live'], read: () => RecapRow[], empty: string)
       const c = cells[k]!;
       setText(c.n, `× ${num(r.n)}`);
       setText(c.note, r.note ?? '');
-      setText(c.v, oc(r.cents));
+      setText(c.v, r.cents === undefined ? '' : oc(r.cents));
     });
   });
   return box;

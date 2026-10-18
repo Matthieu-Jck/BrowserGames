@@ -92,6 +92,16 @@ const F_CLIFF = 1, F_RAMP = 2, F_FIXED = 3;
 const NETS = new Map<string, SegIndex>();
 const NETS_KEPT = 24;
 
+/**
+ * The chunks made, by land and chunk (a pure function of the seeds and the version, as the lines
+ * above), kept for the next MapGen of the same land: a base reopened, the forecast's copy, the debug
+ * bases built one after another (the scenario test builds six levels on each land, the late one in
+ * a time limit, and a third of its build was the land made again). Copies go out — a grid digs and
+ * fills its own arrays —; at most `MADE_KEPT` chunks (about 7 KB each), the oldest dropped first.
+ */
+const MADE = new Map<string, { terrain: Uint8Array; ore: Uint8Array; rich: Uint16Array; height: Uint8Array; biome: Uint8Array; level: Uint8Array }>();
+const MADE_KEPT = 4096;
+
 /** How far a deposit's blocks wobble off the round (D104: added to a block's doubled distance², squared; the next ring is 32–64 further): enough for the patch to bulge and notch, not to wander off. */
 const WOBBLE = 80;
 const clamp255 = (v: number): number => (v < 0 ? 0 : v > 255 ? 255 : v);
@@ -1067,6 +1077,24 @@ export class MapGen implements TerrainSource {
     return false;
   }
 
+  /**
+   * The deposits whose blob centres lie in the tile rect [x0, x1) × [y0, y1), drillable ones only
+   * (not a cliff face's), sampled without making a chunk (D110: a neighbouring base set on the ore of
+   * its square, so that it mines what it makes): item, centre, radius². Its tiles take ore only where
+   * the ground does: a centre on rock gives little.
+   */
+  depositsIn(x0: number, y0: number, x1: number, y1: number): Array<{ item: number; cx: number; cy: number; r2: number }> {
+    const out: Array<{ item: number; cx: number; cy: number; r2: number }> = [], seen = new Set<Blob>();
+    for (let cy = Math.floor(y0 / CHUNK); cy <= Math.floor((y1 - 1) / CHUNK); cy++) for (let cx = Math.floor(x0 / CHUNK); cx <= Math.floor((x1 - 1) / CHUNK); cx++) {
+      for (const b of this.blobsNear(cx, cy)) {
+        if (seen.has(b)) continue;
+        seen.add(b);
+        if (!b.onRock && b.cx >= x0 && b.cx < x1 && b.cy >= y0 && b.cy < y1) out.push({ item: b.item, cx: b.cx, cy: b.cy, r2: b.r2 });
+      }
+    }
+    return out.sort((a, b) => a.cy - b.cy || a.cx - b.cx || a.item - b.item);
+  }
+
   /** Base terrain class of a tile (before deposits), as `fill` writes it. */
   terrainAt(x: number, y: number): number {
     const c = this.classify(x, y, true), raw = c & LV;
@@ -1188,6 +1216,25 @@ export class MapGen implements TerrainSource {
   }
 
   fill(cx: number, cy: number, terrain: Uint8Array, ore: Uint8Array, rich: Uint16Array, height?: Uint8Array, biome?: Uint8Array, level?: Uint8Array): void {
+    const key = `${this.worldSeed}:${this.playerSeed >>> 0}:${this.mapV}:${cx}:${cy}`;
+    let m = MADE.get(key);
+    if (!m) {
+      const n = CHUNK * CHUNK;
+      m = { terrain: new Uint8Array(n), ore: new Uint8Array(n), rich: new Uint16Array(n), height: new Uint8Array(n), biome: new Uint8Array(n), level: new Uint8Array(n) };
+      this.make(cx, cy, m.terrain, m.ore, m.rich, m.height, m.biome, m.level);
+      if (MADE.size >= MADE_KEPT) MADE.delete(MADE.keys().next().value!);
+      MADE.set(key, m);
+    }
+    terrain.set(m.terrain);
+    ore.set(m.ore);
+    rich.set(m.rich);
+    height?.set(m.height);
+    biome?.set(m.biome);
+    level?.set(m.level);
+  }
+
+  /** One chunk as the land makes it (`fill`'s, which keeps it). */
+  private make(cx: number, cy: number, terrain: Uint8Array, ore: Uint8Array, rich: Uint16Array, height: Uint8Array, biome: Uint8Array, level: Uint8Array): void {
     const x0 = cx * CHUNK, y0 = cy * CHUNK;
     // The chunk and a border of REACH tiles (map 4: REACH4): settling a tile reads that far, so the
     // chunk's own levels come out exactly as `levelAt` gives them, whatever the neighbouring chunks hold.

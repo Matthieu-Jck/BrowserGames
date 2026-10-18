@@ -32,7 +32,7 @@
 import { BAL } from '@/content/balance';
 import type { BuildingId } from '@/content/buildings';
 import { COLONY_PROFILES, COLONY_PROFILE_IDS, type ColonyProfile, type ColonyProfileId } from '@/content/colonies';
-import { NEIGHBOUR_CAIRN_STEP, NEIGHBOUR_CORE, NEIGHBOUR_KITS, NEIGHBOUR_MAST, NEIGHBOUR_PAD, NEIGHBOUR_TENT } from '@/content/neighbours';
+import { NEIGHBOUR_CAIRN_STEP, NEIGHBOUR_CORE, NEIGHBOUR_KITS, NEIGHBOUR_LEANS, NEIGHBOUR_MAST, NEIGHBOUR_PAD, NEIGHBOUR_TENT } from '@/content/neighbours';
 import { BUILDING_IDS, BUILDING_KIND, ITEM_IDS, buildingDef, buildingIdx, itemDef, itemIdx } from '@/content/registry';
 import { RECIPES } from '@/content/recipes';
 import type { RecipeDef } from '@/content/types';
@@ -43,17 +43,17 @@ import { footprint, worldPorts, type WorldPort } from '../entities';
 import { gap2, linkable } from '../power/links';
 import { DX, DY, isFloor, opposite, T, type Rot } from '../types';
 import { inWorld, tileIndex, type Grid } from './grid';
-import { planChain, type Stage } from './neighbour-chain';
+import { mainInput, planChain, runs, type Stage } from './neighbour-chain';
 import { HOME_COL, PARCEL, PARCEL_COLS, parcelAt, parcelCentre, parcelRect, ringOf, type Land } from './land';
 
 /** What a building is to its base: its Core, its trade post, its store, an extractor, a maker, its power, a mast, something beside. */
-export type NRole = 'core' | 'post' | 'store' | 'depot' | 'extract' | 'make' | 'power' | 'mast' | 'extra';
+export type NRole = 'core' | 'post' | 'store' | 'extract' | 'make' | 'power' | 'mast' | 'extra';
 
 /**
  * A building of a neighbouring base: what it is, where it stands (its footprint's top-left tile), how
  * it is turned; its role, the recipe it runs (a maker), what it puts out or holds (item indices).
  */
-export interface NStruct { readonly def: number; readonly x: number; readonly y: number; readonly rot: Rot; readonly role?: NRole; readonly recipe?: string; readonly items?: readonly number[] }
+export interface NStruct { readonly def: number; readonly x: number; readonly y: number; readonly rot: Rot; readonly role?: NRole; readonly recipe?: string; readonly items?: readonly number[]; readonly stage?: number }
 
 /**
  * A ribbon line of a neighbouring base: its tiles in the order items ride (x, y, rot each), what it
@@ -72,6 +72,14 @@ export interface NLayout {
   readonly structs: readonly NStruct[];
   /** The goods it sells at its trade post (item indices). */
   readonly products: readonly number[];
+  /**
+   * What it does, a line per good it sells (its products' order), raw good first, as its ribbons carry
+   * it: back from the store through each machine's main input to the mine (item indices: « minerai de
+   * fer → plaque de fer → engrenage »). What its card says (D134).
+   */
+  readonly lines: ReadonlyArray<readonly number[]>;
+  /** Its main line (`lines`' first); empty: nothing. */
+  readonly story: readonly number[];
   /** Its Core among `structs` (laid as `NEIGHBOUR_CORE`'s footprint; the render draws its own); −1: none. */
   readonly core: number;
   readonly ribbons: readonly NRibbon[];
@@ -83,7 +91,7 @@ export interface NLayout {
   readonly tiles: ReadonlySet<number>;
 }
 
-const EMPTY_LAYOUT: NLayout = { structs: [], core: -1, products: [], ribbons: [], wires: [], flag: null, banners: [], tents: [], cairns: [], tiles: new Set() };
+const EMPTY_LAYOUT: NLayout = { structs: [], core: -1, products: [], lines: [], story: [], ribbons: [], wires: [], flag: null, banners: [], tents: [], cairns: [], tiles: new Set() };
 
 /** A neighbouring base's land: its colony (the Crier's, by index), its trade, its parcels (the hub's first). */
 export interface Holding {
@@ -144,6 +152,8 @@ export class Neighbours {
   private readonly ofParcel = new Int32Array(PARCEL_COLS * PARCEL_COLS).fill(-2);
   private readonly holdings = new Map<number, Holding>();
   private readonly layouts = new Map<number, NLayout>();
+  /** Each base's survey for its tries (`lay`): its Core's place, its floor, what that floor gives and how many drills each ore of it holds. */
+  private readonly surveys = new Map<string, { hub: number; hx: number; hy: number; region: Set<number>; raws: ReadonlySet<string>; oreAt: Map<string, [number, number]>; drills: Map<string, number> }>();
   /** The colonies the holdings take, shuffled from the seed (map 4); every colony but the drifter guilds' (very far). */
   private readonly perm: number[];
 
@@ -167,38 +177,51 @@ export class Neighbours {
   /** A base's buildings and ribbons (laid out on first need). */
   layout(h: Holding): NLayout {
     let L = this.layouts.get(h.hub);
-    if (!L) { L = this.layChecked(h); this.layouts.set(h.hub, L); }
+    if (!L) { L = this.layChecked(h); this.layouts.set(h.hub, L); this.surveys.clear(); }
     return L;
   }
 
   /**
    * A base laid out until it checks (`neighbourProblems`): each try again with the pad on the Core's
-   * other side, then with the bought goods' lines laid first; then a raw good whose extractor or line could not be laid is given up and the chain
-   * planned again without it; then fewer copies of its chain; one product only, as many copies again
-   * then fewer; at last its plainest
-   * chain (glass from sand…). None checks: the best try, what still does not check taken away (`prune`)
-   * — the fewest problems left, then the most machines.
+   * other side, then its lines laid from the mines down (each side); then fewer copies of its chain; one product only, as many copies again then fewer;
+   * then a raw good whose extractor or line could not be laid is given up and the chain planned again
+   * without it; at last its plainest chain (glass from sand…). None checks: the best try, what still
+   * does not check taken away (`prune`) — the fewest problems left, then the most machines.
    */
   private layChecked(h: Holding): NLayout {
     const ban = new Set<string>();
-    let products = 2, copies = 4, side = 1, early = false;
+    let products = 2, copies = 4, side = 1, mineFirst = false;
     let best: NLayout = EMPTY_LAYOUT, bestScore = -Infinity;
-    for (let k = 0; k < 48; k++) {
-      const { layout: L, raws, unplaced } = this.lay(h, ban, products, copies, side, early);
+    for (let k = 0; k < 64; k++) {
+      const { layout: L, raws, unplaced } = this.lay(h, ban, products, copies, side, mineFirst);
       const probs = neighbourProblems(this.grid, L);
       if (!probs.length && !unplaced.length) return L;
-      const P = prune(L, this.grid);
-      const score = -1000 * neighbourProblems(this.grid, P).length + 10 * P.products.length + P.structs.filter((q) => q.role === 'make' || q.role === 'extract').length;
+      const P = prune(L, this.grid), left = neighbourProblems(this.grid, P).length;
+      // A spare drill or a copy that found no way taken away and everything else standing: that base,
+      // laid again without them (its lines and its grid for what stands).
+      if (!left && P.products.length === L.products.length && P.products.length) {
+        const kept = new Set(P.structs.map((q) => q.stage).filter((q): q is number => q !== undefined));
+        const skip = new Set(L.structs.map((q) => q.stage).filter((q): q is number => q !== undefined && !kept.has(q)));
+        const R = this.lay(h, ban, products, copies, side, mineFirst, skip);
+        if (!neighbourProblems(this.grid, R.layout).length && R.layout.products.length === L.products.length) return R.layout;
+      }
+      const score = -1000 * left + 10 * P.products.length + P.structs.filter((q) => q.role === 'make' || q.role === 'extract').length;
       if (score > bestScore) { best = P; bestScore = score; }
-      // A line or a piece that found no way: the pad (and the depot after it) on the Core's other side,
-      // then the bought goods' lines laid before the chain's, on either side.
-      if (side > 0) { side = -1; continue; }
+      // A line or a piece that found no way: the pad on the Core's other side, then the lines laid
+      // from the mines down. Only an extractor without ground: no line's fault, straight to fewer copies.
+      const lines = probs.some((q) => !/ is not on | sends its .* nowhere$/.test(q.what) || !unplaced.length);
+      if (lines && side > 0) { side = -1; continue; }
       side = 1;
-      if (!early) { early = true; continue; }
-      early = false;
+      if (lines && !mineFirst && copies === 1) { mineFirst = true; continue; }
+      mineFirst = false;
+      // Fewer copies first (its deposit may hold drills for one: 4, 2, 1), then one good, then a raw
+      // good it could not lay given up, at last its plainest chain.
+      if (copies > 1) { copies = copies > 2 ? 2 : 1; continue; }
+      if (products > 1) { products = 1; copies = 4; continue; }
       let gave = false;
       for (const it of [...unplaced, ...probs.map((q) => q.item ?? '')]) if (it && it !== 'sand' && raws.has(it) && !ban.has(it)) { ban.add(it); gave = true; }
-      if (!gave) { if (copies > 1) copies--; else if (products > 1) { products = 1; copies = 4; } else if (!ban.has('*')) ban.add('*'); else break; }
+      if (gave) { copies = 4; continue; }
+      if (!ban.has('*')) ban.add('*'); else break;
     }
     return best;
   }
@@ -237,7 +260,7 @@ export class Neighbours {
   }
 
   /** Forget the layouts (the claim's land changed under a base: an older save given way to, `neighboursGiveWay`). */
-  forget(): void { this.layouts.clear(); }
+  forget(): void { this.layouts.clear(); this.surveys.clear(); }
 
   // ── who holds what ────────────────────────────────────────────────────────
 
@@ -285,15 +308,30 @@ export class Neighbours {
     cells.sort((a, b) => a - b);
     for (const p of cells) this.ofParcel[p] = -1;
     const h = hash32(this.land.seed, bx + 1024, by + 1024, SALT.block);
-    if (h % 1000 >= N.chance) return;
+    if (h % 1000 >= Math.max(N.chance, N.chanceOre)) return;
     const ok = cells.filter((p) => this.eligible(p));
     if (!ok.length) return;
-    const parcels = [ok[(h >>> 10) % ok.length]!];
+    // On the square's ore (owner, 2026-10-18: « Elle commande de la pierre, la transforme en minerai de
+    // fer et la revend ? »: a base mines what it makes): its first parcel the one whose deposits on
+    // open floor are the largest (`depositsIn`, no chunk made: their radii² summed — a big deposit
+    // holds the drills of a real base, D134), grown towards the next richest; among equals, the draw.
+    const src = this.grid.source, ore = new Map<number, number>();
+    for (const p of ok) {
+      const r = parcelRect(p);
+      ore.set(p, (src.depositsIn?.(r.x0 + 3, r.y0 + 3, r.x1 - 3, r.y1 - 3) ?? []).filter((d) => !src.floorAt || src.floorAt(d.cx, d.cy)).reduce((t, d) => t + d.r2, 0));
+    }
+    // A square with a deposit holds a base more often than bare ground (`chanceOre` against `chance` ‰).
+    if (h % 1000 >= (ok.some((p) => ore.get(p)! > 0) ? N.chanceOre : N.chance)) return;
+    const richest = (from: readonly number[], draw: number): number => {
+      const most = Math.max(...from.map((p) => ore.get(p)!)), top = from.filter((p) => ore.get(p) === most);
+      return top[draw % top.length]!;
+    };
+    const parcels = [richest(ok, h >>> 10)];
     const size = N.size[0]! + ((h >>> 20) % (N.size[1]! - N.size[0]! + 1));
     for (let k = 1; k < size; k++) {
       const front = ok.filter((p) => !parcels.includes(p) && parcels.some((q) => sideBySide(p, q)));
       if (!front.length) break;
-      parcels.push(front[hash32(this.land.seed, parcels[0]!, k, SALT.grow) % front.length]!);
+      parcels.push(richest(front, hash32(this.land.seed, parcels[0]!, k, SALT.grow)));
     }
     if (parcels.length < N.size[0]!) return; // a real base, two parcels at least (owner: « c'est tout petit »)
     const colony = this.perm[mod(bx * 7 + by * 3, this.perm.length)]!;
@@ -318,7 +356,7 @@ export class Neighbours {
    * Core), the masts and wires of its own grid from the Core (the claim's rule of reach: a mast at one end, its
    * range and slots), and the cairns along its outer edge.
    */
-  private lay(h: Holding, ban: ReadonlySet<string> = new Set(), maxProducts = 2, copies = 4, side = 1, importsFirst = true): { layout: NLayout; raws: ReadonlySet<string>; unplaced: string[] } {
+  private lay(h: Holding, ban: ReadonlySet<string> = new Set(), maxProducts = 2, copies = 4, side = 1, mineFirst = false, skip: ReadonlySet<number> = new Set()): { layout: NLayout; raws: ReadonlySet<string>; unplaced: string[] } {
     const kit = NEIGHBOUR_KITS[h.profile];
     const unplaced: string[] = [];
     // An older base's lease or grant on its land: that part of the base is not there.
@@ -326,6 +364,8 @@ export class Neighbours {
     const allowed = new Set(parcels);
     const solid = new Set<number>(); // what stands: buildings, ribbons, masts, the flag, poles, tents, cairns
     const room = new Set<number>(); // the buildings and the tile of room round each
+    const drillRoom = new Set<number>(), otherRoom = new Set<number>(); // that room: the drills', everything else's
+    const fronts = new Set<number>(); // the tile before each port of what stands: never built on
     const structs: NStruct[] = [];
     const made = (x: number, y: number): { terrain: number; level: number; ore: number } => this.grid.made0(x, y); // the land as made: digging never moves a base
     const open = (x: number, y: number): boolean => {
@@ -336,44 +376,53 @@ export class Neighbours {
     const free = (x: number, y: number): boolean => open(x, y) && !solid.has(tileIndex(x, y));
     // The floor the pad stands on, joined to it (4-neighbours, on the base's parcels): every other
     // building stands there, so a ribbon can always find its way between them.
-    const region = new Set<number>();
+    let region = new Set<number>();
     const fits = (w: number, hh: number, x: number, y: number, p: number, ore: boolean, joined: boolean, bare = false): boolean => {
       const r = parcelRect(p);
       if (x < r.x0 + 1 || y < r.y0 + 1 || x + w > r.x1 - 1 || y + hh > r.y1 - 1) return false;
       for (let ty = y; ty < y + hh; ty++) for (let tx = x; tx < x + w; tx++) {
         const t = tileIndex(tx, ty);
-        if (room.has(t) || solid.has(t) || !open(tx, ty) || (joined && region.size && !region.has(t))) return false;
+        // A drill on its deposit may stand in the room round what stands beside it (D134: a deposit is
+        // the drills' — a small one by the Core held none), never before a port.
+        if ((room.has(t) && !ore) || fronts.has(t) || solid.has(t) || !open(tx, ty) || (joined && region.size && !region.has(t))) return false;
         if (ore) { const o = made(tx, ty).ore; if (o < 0 || itemDef(o).face) return false; }
+        else { const o = made(tx, ty).ore; if (o >= 0 && !itemDef(o).face) return false; } // a deposit is for the drills
         if (bare) { const m = made(tx, ty); if (m.ore >= 0 || m.terrain !== T.Sand) return false; } // a sand collector: on bare sand
       }
       return true;
     };
     /** The nearest place on parcel p round (ax, ay) where a w × hh footprint fits, its room claimed; null: none. */
-    const spot = (w: number, hh: number, p: number, ax: number, ay: number, ore = false, joined = true, bare = false, wide = false, ports?: { def: number; rot: Rot }): [number, number] | null => {
+    const spot = (w: number, hh: number, p: number, ax: number, ay: number, ore = false, joined = true, bare = false, wide = false, ports?: { def: number; rot: Rot }, need?: (x: number, y: number, w: number, h: number) => boolean): [number, number] | null => {
       for (const [dx, dy] of wide ? SPIRAL_FAR : SPIRAL) {
         const x = ax + dx - (w >> 1), y = ay + dy - (hh >> 1);
-        if (!fits(w, hh, x, y, p, ore, joined, bare)) continue;
+        if (!fits(w, hh, x, y, p, ore, joined, bare) || (need && !need(x, y, w, hh))) continue;
         // Every port before open floor (of the pad's floor): a line can leave it or come in.
         if (ports && worldPorts({ def: ports.def, x, y, rot: ports.rot }).some((q) => !free(q.fx, q.fy) || (joined && region.size && !region.has(tileIndex(q.fx, q.fy))))) continue;
-        for (let ty = y - 1; ty <= y + hh; ty++) for (let tx = x - 1; tx <= x + w; tx++) room.add(tileIndex(tx, ty));
+        for (let ty = y - 1; ty <= y + hh; ty++) for (let tx = x - 1; tx <= x + w; tx++) { room.add(tileIndex(tx, ty)); otherRoom.add(tileIndex(tx, ty)); }
         for (let ty = y; ty < y + hh; ty++) for (let tx = x; tx < x + w; tx++) solid.add(tileIndex(tx, ty));
         return [x, y];
       }
       return null;
+    };
+    /** An excavator's place: rock (what it digs) within its reach of its footprint. */
+    const byRock = (x: number, y: number, w: number, hh: number): boolean => {
+      const R = buildingDef(buildingIdx('excavator')).excavator?.reach ?? 3;
+      for (let ty = y - R; ty < y + hh + R; ty++) for (let tx = x - R; tx < x + w + R; tx++) { const m = made(tx, ty); if (m.level > 0 || !isFloor(m.terrain)) return true; }
+      return false;
     };
     /**
      * A building on one of `ps` (in order) round (ax, ay); a drill wants a deposit, else a sand
      * collector stands in; `joined`: on the pad's floor (the chain's pieces). Its index, or −1.
      */
     const put = (id: BuildingId, ps: readonly number[], ax: number, ay: number, salt: number, joined = true, turn?: Rot, wide = false): number => {
-      const def = buildingIdx(id);
+      const def = buildingIdx(id), need = buildingDef(def).excavator ? byRock : undefined;
       const rot = (turn ?? (BUILDING_KIND[def] === 'machine' ? hash32(this.land.seed, h.hub, salt, SALT.rot) % 4 : 0)) as Rot;
       const bare = !!buildingDef(def).drill?.ground;
       // The parcel it is aimed at first (the flow crosses parcels), then the others in order.
       const pa = inWorld(ax, ay) ? parcelAt(ax, ay) : -1;
       for (const p of ps.includes(pa) ? [pa, ...ps.filter((q) => q !== pa)] : ps) {
-        const at = spot(...footprint(def, rot), p, ax, ay, false, joined, bare, wide, { def, rot });
-        if (at) { structs.push({ def, x: at[0], y: at[1], rot }); return structs.length - 1; }
+        const at = spot(...footprint(def, rot), p, ax, ay, false, joined, bare, wide, { def, rot }, need);
+        if (at) { structs.push({ def, x: at[0], y: at[1], rot }); for (const q of worldPorts(structs[structs.length - 1]!)) fronts.add(tileIndex(q.fx, q.fy)); return structs.length - 1; }
       }
       return -1;
     };
@@ -385,17 +434,21 @@ export class Neighbours {
         if (parcelAt(x, y) !== p || !fits(w, hh, x, y, p, true, true)) continue;
         let all = true;
         for (let ty = y; ty < y + hh && all; ty++) for (let tx = x; tx < x + w && all; tx++) all = made(tx, ty).ore === ore;
-        const rot = turn(x + w / 2, y + hh / 2);
-        if (!all || worldPorts({ def, x, y, rot }).some((q) => !free(q.fx, q.fy) || !region.has(tileIndex(q.fx, q.fy)))) continue;
-        for (let ty = y - 1; ty <= y + hh; ty++) for (let tx = x - 1; tx <= x + w; tx++) room.add(tileIndex(tx, ty));
+        if (!all) continue;
+        // Turned towards what it feeds, else the next way round whose outlet opens on its floor.
+        const want = turn(x + w / 2, y + hh / 2);
+        const rot = ([0, 1, 3, 2] as const).map((k) => ((want + k) & 3) as Rot).find((q) => !worldPorts({ def, x, y, rot: q }).some((o) => !free(o.fx, o.fy) || !region.has(tileIndex(o.fx, o.fy))));
+        if (rot === undefined) continue;
+        for (let ty = y - 1; ty <= y + hh; ty++) for (let tx = x - 1; tx <= x + w; tx++) { room.add(tileIndex(tx, ty)); drillRoom.add(tileIndex(tx, ty)); }
         for (let ty = y; ty < y + hh; ty++) for (let tx = x; tx < x + w; tx++) solid.add(tileIndex(tx, ty));
         structs.push({ def, x, y, rot });
+        for (const q of worldPorts({ def, x, y, rot })) fronts.add(tileIndex(q.fx, q.fy));
         return structs.length - 1;
       }
       return -1;
     };
     /** What each struct is to the base: its role, its recipe, what it puts out or holds. */
-    const meta = new Map<number, { role: NRole; recipe?: string; items?: readonly string[] }>();
+    const meta = new Map<number, { role: NRole; recipe?: string; items?: readonly string[]; stage?: number }>();
     if (!parcels.length) return { layout: EMPTY_LAYOUT, raws: new Set(), unplaced };
     // 1. Its Core in the hub's middle, and the floor it stands on: every piece of its chain stands there,
     // so a ribbon can always find its way between them. A middle on a pocket of floor too small for a
@@ -418,27 +471,24 @@ export class Neighbours {
     const [cw0, ch0] = footprint(buildingIdx(NEIGHBOUR_CORE), 0);
     const floorAt = (p: number, ax: number, ay: number): number => (fits(cw0, ch0, ax - (cw0 >> 1), ay - (ch0 >> 1), p, false, false) ? flood(ax - (cw0 >> 1), ay - (ch0 >> 1), new Set()) : -1);
     let hub = parcels[0]!, [hx, hy] = parcelCentre(hub);
+    let raws: Set<string>, oreAt: Map<string, [number, number]>, drills: Map<string, number>;
+    // The survey (its Core's place, its floor, what that floor gives) is the same for every try: once a base.
+    const key = `${h.hub}:${parcels.join(',')}`, sv = this.surveys.get(key);
+    if (sv) ({ hub, hx, hy, region, raws, oreAt, drills } = { ...sv, raws: new Set(sv.raws) });
+    else {
     let most = floorAt(hub, hx, hy);
     if (most < BAL.land.neighbours.pocket) for (const p of parcels) for (const [dx, dy] of CORE_TRIES) {
       const [cx, cy] = parcelCentre(p), n = floorAt(p, cx + dx, cy + dy);
       if (n > most) { most = n; hub = p; hx = cx + dx; hy = cy + dy; }
     }
-    const others = parcels.filter((p) => p !== hub);
-    // The way its goods flow: from its other parcels (upstream) to the Core's (north when it stands alone).
-    const [ox, oy] = others.length ? parcelCentre(others[0]!) : [hx, hy - 1];
-    const sx = Math.sign(ox - hx), sy = Math.sign(oy - hy);
-    const ux = Math.abs(ox - hx) >= Math.abs(oy - hy) ? sx : 0, uy = ux ? 0 : sy || -1; // upstream, on one axis
-    const down = dirOf(-ux, -uy); // the way its goods leave: to the pad
-    const hubFirst = [hub, ...others], othersFirst = others.length ? [...others, hub] : [hub];
-    // Its intakes (its back) towards the pad's side, where its store stands.
-    const core = put(NEIGHBOUR_CORE, [hub], hx, hy, 0, true, dirOf(-uy * side, -ux * side));
-    if (core >= 0) {
-      flood(structs[core]!.x, structs[core]!.y, region);
-      meta.set(core, { role: 'core' });
+    // Its Core's place on the hub round (hx, hy) (laid below, once its flow is known): the floor joined to it is the base's.
+    for (const [dx, dy] of SPIRAL) {
+      const x = hx + dx - (cw0 >> 1), y = hy + dy - (ch0 >> 1);
+      if (fits(cw0, ch0, x, y, hub, false, false)) { flood(x, y, region); break; }
     }
     // 2. What its land gives it: sand everywhere, each ore with room for a drill on it on that floor.
     // Sand where that floor has room for its collectors: `BAL.land.neighbours.sand` places of 2 × 2 bare sand.
-    const raws = new Set<string>();
+    raws = new Set<string>();
     const bare = (x: number, y: number): boolean => { const m = made(x, y); return m.ore < 0 && m.terrain === T.Sand && region.has(tileIndex(x, y)); };
     let sandSpots = 0;
     for (const t of region) {
@@ -447,19 +497,59 @@ export class Neighbours {
       if (bare(x, y) && bare(x + 1, y) && bare(x, y + 1) && bare(x + 1, y + 1)) sandSpots++;
     }
     if (sandSpots >= BAL.land.neighbours.sand) raws.add('sand');
+    oreAt = new Map<string, [number, number]>(); // each ore's drill place nearest the Core's
+    // How many drills each ore holds (D134: a small copper deposit, two — a chain never wants more):
+    // its 2 × 2 places taken in reading order, a tile of room between two (for their lines out).
+    drills = new Map<string, number>();
+    const taken = new Set<number>();
     for (const p of parcels) {
       const r = parcelRect(p);
       for (let y = r.y0 + 1; y < r.y1 - 2; y++) for (let x = r.x0 + 1; x < r.x1 - 2; x++) {
         const o = made(x, y).ore;
-        if (o < 0 || itemDef(o).face || raws.has(ITEM_IDS[o]!)) continue;
-        if ([[1, 0], [0, 1], [1, 1]].every(([dx, dy]) => made(x + dx!, y + dy!).ore === o) && [[0, 0], [1, 0], [0, 1], [1, 1]].every(([dx, dy]) => region.has(tileIndex(x + dx!, y + dy!)))) raws.add(ITEM_IDS[o]!);
+        if (o < 0 || itemDef(o).face) continue;
+        if ([[1, 0], [0, 1], [1, 1]].every(([dx, dy]) => made(x + dx!, y + dy!).ore === o) && [[0, 0], [1, 0], [0, 1], [1, 1]].every(([dx, dy]) => region.has(tileIndex(x + dx!, y + dy!)))) {
+          const id = ITEM_IDS[o]!, was = oreAt.get(id), d = (x - hx) * (x - hx) + (y - hy) * (y - hy);
+          raws.add(id);
+          if (!was || d < (was[0] - hx) * (was[0] - hx) + (was[1] - hy) * (was[1] - hy)) oreAt.set(id, [x + 1, y + 1]);
+          if ([[0, 0], [1, 0], [0, 1], [1, 1]].some(([dx, dy]) => taken.has(tileIndex(x + dx!, y + dy!)))) continue;
+          drills.set(id, (drills.get(id) ?? 0) + 1);
+          for (let ty = y - 1; ty <= y + 2; ty++) for (let tx = x - 1; tx <= x + 2; tx++) taken.add(tileIndex(tx, ty));
+        }
       }
+    }
+    // A mining camp quarries its rock: stone where an excavator's place on that floor has rock within its reach.
+    if (NEIGHBOUR_LEANS[h.profile]?.includes('stone')) {
+      const [ew, eh] = footprint(buildingIdx('excavator'), 0);
+      search: for (const p of parcels) {
+        const r = parcelRect(p);
+        for (let y = r.y0 + 1; y + eh <= r.y1 - 1; y += 2) for (let x = r.x0 + 1; x + ew <= r.x1 - 1; x += 2) {
+          if (fits(ew, eh, x, y, p, false, true) && byRock(x, y, ew, eh)) { raws.add('stone'); break search; }
+        }
+      }
+    }
+    this.surveys.set(key, { hub, hx, hy, region, raws: new Set(raws), oreAt, drills });
     }
     // 3. What it makes (world/neighbour-chain.ts): its trade's goods, back-chained to that land (less
     // what an earlier try could not lay: `layChecked`).
     for (const b of ban) raws.delete(b);
-    if (ban.has('*')) for (const r of [...raws]) if (r !== 'sand') raws.delete(r);
-    const chain = planChain(h.profile, raws, maxProducts, ban.has('*'), copies);
+    // Its plainest: glass from its sand, else a mine on its largest deposit.
+    if (ban.has('*')) {
+      const keep = raws.has('sand') ? 'sand' : [...raws].sort((a, b) => (drills.get(b) ?? 0) - (drills.get(a) ?? 0) || (a < b ? -1 : a > b ? 1 : 0))[0];
+      for (const r of [...raws]) if (r !== keep) raws.delete(r);
+    }
+    const chain = planChain(h.profile, raws, maxProducts, ban.has('*'), copies, drills);
+    // The way its goods flow: from the deposit its main line starts at (upstream) to the Core — its
+    // drills on the ore, its machines between, one flow towards the pad; else from its other parcels
+    // (north when it stands alone).
+    const others = parcels.filter((p) => p !== hub);
+    const [ox, oy] = oreAt.get(chain.story[0] ?? '') ?? (others.length ? parcelCentre(others[0]!) : [hx, hy - 1]);
+    const sx = Math.sign(ox - hx), sy = Math.sign(oy - hy);
+    const ux = Math.abs(ox - hx) >= Math.abs(oy - hy) ? sx || 1 : 0, uy = ux ? 0 : sy || -1; // upstream, on one axis
+    const down = dirOf(-ux, -uy); // the way its goods leave: to the pad
+    const hubFirst = [hub, ...others], othersFirst = others.length ? [...others, hub] : [hub];
+    // Its Core, its intakes (its back) towards the pad's side, where its store stands.
+    const core = put(NEIGHBOUR_CORE, [hub], hx, hy, 0, true, dirOf(-uy * side, -ux * side));
+    if (core >= 0) meta.set(core, { role: 'core' });
     // 4. CrierBelt's trade post downstream of the Core, its back (its intake) upstream; the silo before
     // its intake, its front (its outlets) towards it.
     // Beside the Core (across the flow), so the chain comes in from upstream with nothing in its way.
@@ -479,61 +569,55 @@ export class Neighbours {
     for (const st of chain.stages) if (!feeds.has(st.id)) feeds.set(st.id, -1);
     const centreOf = (k: number): [number, number] => { const q = structs[k]!, [w, hh] = footprint(q.def, q.rot); return [q.x + w / 2, q.y + hh / 2]; };
     const towards = (x: number, y: number, k: number): Rot => { const [cx, cy] = centreOf(k); return Math.abs(cx - x) >= Math.abs(cy - y) ? dirOf(Math.sign(cx - x) || 1, 0) : dirOf(0, Math.sign(cy - y) || 1); };
+    // Turned so its outlet faces `want` (an excavator's stone leaves at its back).
+    const aim = (id: BuildingId, want: Rot): Rot => ((want - (worldPorts({ def: buildingIdx(id), x: 0, y: 0, rot: 0 }).find((q) => q.io === 'out')?.dir ?? 0) + 4) & 3) as Rot;
+    // Each stage's depth (steps from the store) and the deposit its main line comes from: a machine
+    // stands on the way from that deposit to the store, by its depth (one main flow, short lines),
+    // its drills on the deposit; a chain of sand or stone, out from what it feeds along the flow.
+    const depth = new Map<number, number>();
+    const depthOf = (id: number): number => { let d = depth.get(id); if (d === undefined) { const to = feeds.get(id)!; depth.set(id, (d = to < 0 ? 1 : depthOf(to) + 1)); } return d; };
+    const rawOf = (st: Stage): string => {
+      if (st.role !== 'make') return st.item;
+      const main = mainInput(RECIPES[st.recipe as keyof typeof RECIPES] as RecipeDef);
+      const f = st.ins.find((i) => i.item === main);
+      return f ? rawOf(chain.stages[f.from]!) : st.item;
+    };
+    const deepest = Math.max(1, ...chain.stages.map((st) => depthOf(st.id)));
     const missed: Stage[] = [];
-    for (const st of [...chain.stages].reverse()) {
-      if (st.role === 'import' || !st.building) continue;
+    // The drills first, on their deposits, turned towards the store (D134: a small deposit by the
+    // Core held no drill once a machine stood before it); then the rest, consumers first.
+    const drill = (st: Stage): boolean => st.role === 'extract' && !!st.building && wantsOre(buildingIdx(st.building));
+    const order = [...chain.stages].reverse();
+    for (const st of [...order.filter(drill), ...order.filter((o) => !drill(o))]) {
+      if (!st.building || skip.has(st.id)) continue;
+      if (drill(st)) {
+        const dep = oreAt.get(st.item);
+        const idx = store >= 0 && dep ? putOn(st.building, itemIdx(st.item), othersFirst, dep[0], dep[1], (x, y) => aim(st.building!, towards(x, y, store))) : -1;
+        if (idx < 0) { missed.push(st); continue; }
+        at.set(st.id, idx);
+        meta.set(idx, { role: 'extract', items: [st.item], stage: st.id });
+        continue;
+      }
       const to = feeds.get(st.id)!, target = to < 0 ? store : at.get(to) ?? -1;
       if (target < 0) continue;
-      const sibs = chain.stages.filter((o) => feeds.get(o.id) === to && o.role !== 'import'), k = sibs.findIndex((o) => o.id === st.id);
+      const sibs = chain.stages.filter((o) => feeds.get(o.id) === to), k = sibs.findIndex((o) => o.id === st.id);
       const [tx, ty] = centreOf(target), lat = (k - (sibs.length - 1) / 2) * 4, far = st.role === 'extract' ? 9 : 6;
-      const ax = Math.round(tx + ux * far + uy * lat), ay = Math.round(ty + uy * far + ux * lat);
-      const idx = st.role === 'extract' && wantsOre(buildingIdx(st.building))
-        ? putOn(st.building, itemIdx(st.item), othersFirst, ax, ay, (x, y) => towards(x, y, target))
-        : put(st.building, st.role === 'extract' ? othersFirst : hubFirst, ax, ay, 10 + st.id, true, towards(ax, ay, target));
+      const dep = oreAt.get(rawOf(st)), [sx0, sy0] = store >= 0 ? centreOf(store) : [hx, hy];
+      const f = depthOf(st.id) / deepest;
+      const ax = dep ? Math.round(sx0 + (dep[0] - sx0) * f + uy * lat) : Math.round(tx + ux * far + uy * lat);
+      const ay = dep ? Math.round(sy0 + (dep[1] - sy0) * f + ux * lat) : Math.round(ty + uy * far + ux * lat);
+      // An extractor (a sand collector, an excavator) looks farther for its ground.
+      const idx = put(st.building, st.role === 'extract' ? othersFirst : hubFirst, ax, ay, 10 + st.id, true, aim(st.building, towards(ax, ay, target)), st.role === 'extract');
       if (idx < 0) { missed.push(st); continue; }
       at.set(st.id, idx);
-      meta.set(idx, { role: st.role === 'extract' ? 'extract' : 'make', recipe: st.recipe ?? undefined, items: [st.item] });
+      meta.set(idx, { role: st.role === 'extract' ? 'extract' : 'make', recipe: st.recipe ?? undefined, items: [st.item], stage: st.id });
     }
     // An extractor that found no ground is given up when another of its kind feeds the same machine.
     for (const st of missed) if (st.role !== 'extract' || !chain.stages.some((o) => o.role === 'extract' && o.item === st.item && feeds.get(o.id) === feeds.get(st.id) && at.has(o.id))) unplaced.push(st.item);
-    // What it buys for two machines or three (its chain laid again, or two goods bought) leaves the pad's
-    // one outlet for a depot upstream of them (a silo, a great silo for three), its front (its outlets) towards them.
-    // More than three: two depots, the first feeding two of them and the second (the rest).
-    const bought = chain.stages.filter((st) => st.role === 'import');
-    const boughtItems = [...new Set(bought.map((st) => st.item))];
-    const groups = bought.length > 3 ? [bought.slice(0, 2), bought.slice(2)] : [bought];
-    const depots: number[] = []; // per group
-    const viaDepot = new Map<number, [number, number]>(); // import stage → [depot, its outlet]
-    const onward: number[] = []; // a depot's outlet into the next
-    if (post >= 0 && bought.length > 1 && bought.every((st) => at.has(feeds.get(st.id)!))) {
-      for (const [g, grp] of groups.entries()) {
-        const users = grp.map((st) => at.get(feeds.get(st.id)!)!);
-        const cx = users.reduce((s2, k) => s2 + centreOf(k)[0], 0) / users.length, cy = users.reduce((s2, k) => s2 + centreOf(k)[1], 0) / users.length;
-        const outs = grp.length + (g < groups.length - 1 ? 1 : 0);
-        // Upstream of machines that take nothing else; beside them (away from the pad) when another
-        // input comes up the chain's own line, which the depot would stand across.
-        const alone = users.every((k) => (RECIPES[(meta.get(k)?.recipe ?? '') as keyof typeof RECIPES] as RecipeDef | undefined)?.ins.length === 1);
-        const [ax2, ay2] = alone ? [cx + ux * 5, cy + uy * 5] : [cx - uy * 6 * side, cy - ux * 6 * side];
-        const d = put(outs > 2 ? 'big_silo' : 'silo', hubFirst, Math.round(ax2), Math.round(ay2), 3 + g, true, alone ? down : dirOf(uy * side, ux * side));
-        if (d < 0) { unplaced.push(grp[0]!.item); break; }
-        depots.push(d);
-        meta.set(d, { role: 'depot', items: boughtItems });
-      }
-      // Each outlet to what stands across from it, in the same order along the depot's front (the
-      // next depot among them): no two of its lines cross.
-      if (depots.length === groups.length) for (const [g, grp] of groups.entries()) {
-        const d = depots[g]!, outs = worldPorts(structs[d]!).filter((q) => q.io === 'out');
-        const along = (x: number, y: number): number => ((outs[0]!.dir & 1) ? y : x);
-        const order = outs.map((q, i) => [along(q.fx, q.fy), i] as const).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map((o) => o[1]);
-        const targets: Array<{ st: Stage | null; at: [number, number] }> = grp.map((st) => ({ st, at: centreOf(at.get(feeds.get(st.id)!)!) }));
-        if (g < groups.length - 1) targets.push({ st: null, at: centreOf(depots[g + 1]!) });
-        targets.sort((a, b) => along(...a.at) - along(...b.at) || (a.st?.id ?? 1e9) - (b.st?.id ?? 1e9));
-        targets.forEach((tg, j) => { if (tg.st) viaDepot.set(tg.st.id, [d, order[j]!]); else onward[g] = order[j]!; });
-      }
-    }
-    // 6. The ribbons, port to port, nearest the pad first: the silo into the pad and into the Core,
-    // then each stage into what it feeds (a second producer of one input joins the first's line from
-    // its side); a bought input leaves the pad's outlet. Every port's outside tile is kept for its own line.
+    // 6. The ribbons, port to port, nearest the pad first: the silo into the pad, then each stage into
+    // what it feeds (a second producer of one input joins the first's line from its side), the silo
+    // into the Core last. Nothing leaves the pad but by CrierBelt's lift: the base buys nothing.
+    // Every port's outside tile is kept for its own line.
     const ribbons: NRibbon[] = [];
     const edges: Array<{ from: number; outPort: number; to: number; inPort: number; items: string[] }> = [];
     // The silo's outlet before the pad's intake runs into it, the other into the Core: their lines never cross.
@@ -542,31 +626,18 @@ export class Neighbours {
     const toCore = storeOuts.length > 1 && gapTo(storeOuts[0]) <= gapTo(storeOuts[1]) ? 1 : 0;
     if (store >= 0 && post >= 0) edges.push({ from: store, outPort: 1 - toCore, to: post, inPort: 0, items: [...chain.products] });
     const inPortOf = new Map<number, Map<string, number>>(); // struct → item → its in-port (in order)
-    for (const st of [...chain.stages].reverse()) {
+    for (const st of mineFirst ? chain.stages : [...chain.stages].reverse()) {
       const to = feeds.get(st.id)!, target = to < 0 ? store : at.get(to) ?? -1;
-      const from = st.role === 'import' ? viaDepot.get(st.id)?.[0] ?? post : at.get(st.id) ?? -1;
+      const from = at.get(st.id) ?? -1;
       if (target < 0 || from < 0) continue;
       const ins = worldPorts(structs[target]!).filter((q) => q.io === 'in');
       let byItem = inPortOf.get(target);
       if (!byItem) inPortOf.set(target, (byItem = new Map()));
       if (!byItem.has(st.item)) byItem.set(st.item, Math.min(byItem.size, ins.length - 1));
-      edges.push({ from, outPort: viaDepot.get(st.id)?.[1] ?? 0, to: target, inPort: byItem.get(st.item)!, items: [st.item] });
+      edges.push({ from, outPort: 0, to: target, inPort: byItem.get(st.item)!, items: [st.item] });
     }
-    // The pad's outlet round to the depot (the first's last outlet to the second), then the silo's second
-    // outlet into the Core, last: their lines keep out of the chain's way.
-    if (viaDepot.size) {
-      edges.push({ from: post, outPort: 0, to: depots[0]!, inPort: 0, items: boughtItems });
-      if (depots.length > 1) edges.push({ from: depots[0]!, outPort: onward[0]!, to: depots[1]!, inPort: 0, items: boughtItems });
-    }
+    // The silo's second outlet into the Core, last: its line keeps out of the chain's way.
     if (store >= 0 && core >= 0) edges.push({ from: store, outPort: toCore, to: core, inPort: -1, items: [...chain.products] });
-    // Laid in this order: the store's two short lines (into the pad, across to the Core), the bought
-    // goods' (the pad's outlet the long way round to the depots or the machine that takes them: laid
-    // after the chain's, they found their way closed), then the chain's.
-    if (importsFirst) {
-      const rank = (e: (typeof edges)[number]): number => (e.to === post || e.to === core ? 0 : e.from === post || depots.includes(e.from) || depots.includes(e.to) ? 1 : 2);
-      const order = edges.map((e, i) => [rank(e), i, e] as const).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-      edges.splice(0, edges.length, ...order.map((o) => o[2]));
-    }
     const keep = new Set<number>();
     const portTile = (k: number, io: 'in' | 'out', n: number): WorldPort | undefined => worldPorts(structs[k]!).filter((q) => q.io === io)[n];
     for (const e of edges) {
@@ -644,9 +715,10 @@ export class Neighbours {
         cairns.push([x, y]);
       }
     }
-    for (const [k, m] of meta) structs[k] = { ...structs[k]!, role: m.role, ...(m.recipe ? { recipe: m.recipe } : {}), ...(m.items ? { items: m.items.map(itemIdx) } : {}) };
+    for (const [k, m] of meta) structs[k] = { ...structs[k]!, role: m.role, ...(m.recipe ? { recipe: m.recipe } : {}), ...(m.items ? { items: m.items.map(itemIdx) } : {}), ...(m.stage !== undefined ? { stage: m.stage } : {}) };
     for (let k = 0; k < structs.length; k++) if (!structs[k]!.role) structs[k] = { ...structs[k]!, role: structs[k]!.def === buildingIdx(NEIGHBOUR_MAST) ? 'mast' : 'extra' };
-    return { layout: { structs, core, products: chain.products.map(itemIdx), ribbons, wires, flag, banners, tents, cairns, tiles: solid }, raws, unplaced };
+    const products = chain.products.map(itemIdx), lines = linesOf(structs, ribbons, products);
+    return { layout: { structs, core, products, lines, story: lines[0] ?? [], ribbons, wires, flag, banners, tents, cairns, tiles: solid }, raws, unplaced };
   }
 
   /**
@@ -769,9 +841,12 @@ export class Neighbours {
 
 /**
  * What a base's layout gets wrong against the content and its own geometry (empty: nothing) — the
- * owner's « du charbon rentre dans des fileuses… rien n'est jamais envoyé par trade post »:
+ * owner's « du charbon rentre dans des fileuses… rien n'est jamais envoyé par trade post », then
+ * « Elle commande de la pierre, la transforme en minerai de fer et la revend ? » (D134):
  * - a maker whose building cannot run its recipe, that does not put out what it claims, that misses
  *   one of its recipe's inputs, is fed something its recipe does not take, or sends its goods nowhere;
+ *   one that is no business (no value added, a raw good made: a sifter's stone → ore);
+ * - anything leaving its trade post by a ribbon (the post ships what the base makes; it buys nothing);
  * - an extractor not on its own ground (a drill off its ore, a collector off bare sand), or idle;
  * - a ribbon that does not leave its producer's outlet, carries what its producer does not put out, or
  *   ends neither in its consumer's intake (turned into it) nor on the side of a line going there;
@@ -794,13 +869,19 @@ export function neighbourProblems(grid: Grid, L: NLayout): Array<{ what: string;
       for (const [n] of r.ins) if (!into(k).some((rb) => rb.items.includes(itemIdx(n)))) out.push({ what: `${name(k)} (${s.recipe}) gets no ${n}`, item: n });
       for (const rb of into(k)) for (const it of rb.items) if (!r.ins.some(([n]) => n === ITEM_IDS[it])) out.push({ what: `${name(k)} (${s.recipe}) fed ${ITEM_IDS[it]}, which it does not take` });
       if (!from(k).length) out.push({ what: `${name(k)} (${s.recipe}) sends its ${item} nowhere`, item });
-    } else if (s.role === 'depot') {
-      // What it hands out comes from the pad (or the depot before it): a depot fed by nothing feeds out of thin air.
-      if (!into(k).length) out.push({ what: `${name(k)} (a depot) gets nothing from the trade post` });
-      if (!from(k).length) out.push({ what: `${name(k)} (a depot) feeds nothing` });
+      // A business: every step adds value, none makes a raw good (neighbour-chain.ts `runs`).
+      if (!runs(r)) out.push({ what: `${name(k)} (${s.recipe}) is no business: no value added, a raw good made, or a fluid` });
+    } else if (s.role === 'post') {
+      // Its trade post ships what the base makes; nothing comes in through it (D134).
+      for (const rb of from(k)) out.push({ what: `${name(k)} (its trade post) hands out ${rb.items.map((i) => ITEM_IDS[i]).join('+')}`, item: ITEM_IDS[rb.item] });
     } else if (s.role === 'extract') {
-      const item = s.items?.[0] ?? -1, [w, h] = footprint(s.def, s.rot), d = buildingDef(s.def).drill;
-      for (let y = s.y; y < s.y + h; y++) for (let x = s.x; x < s.x + w; x++) {
+      const item = s.items?.[0] ?? -1, [w, h] = footprint(s.def, s.rot), d = buildingDef(s.def).drill, ex = buildingDef(s.def).excavator;
+      // An excavator digs the rock within its reach (it stands on floor beside it).
+      if (ex) {
+        let rock = false;
+        for (let y = s.y - ex.reach; y < s.y + h + ex.reach && !rock; y++) for (let x = s.x - ex.reach; x < s.x + w + ex.reach && !rock; x++) { const m = grid.made0(x, y); rock = m.level > 0 || !isFloor(m.terrain); }
+        if (!rock) out.push({ what: `${name(k)} has no rock to dig`, item: ITEM_IDS[item] });
+      } else for (let y = s.y; y < s.y + h; y++) for (let x = s.x; x < s.x + w; x++) {
         const m = grid.made0(x, y);
         if (d?.ground ? m.ore >= 0 || m.terrain !== T.Sand : m.ore !== item) { out.push({ what: `${name(k)} is not on its ${ITEM_IDS[item]}`, item: ITEM_IDS[item] }); y = s.y + h; break; }
       }
@@ -853,7 +934,38 @@ function prune(L: NLayout, grid: Grid): NLayout {
     if (!bad.size) break;
     cur = without(cur, bad);
   }
-  return { ...cur, products: cur.products.filter((p) => cur.ribbons.some((rb) => cur.structs[rb.to]?.role === 'store' && rb.items.includes(p) && cur.structs[rb.from]?.role !== 'store')) };
+  const products = cur.products.filter((p) => cur.ribbons.some((rb) => cur.structs[rb.to]?.role === 'store' && rb.items.includes(p) && cur.structs[rb.from]?.role !== 'store'));
+  // What it no longer makes leaves its store's lines, its store and its pad too.
+  const sold = (it: number): boolean => products.includes(it);
+  const ribbons = cur.ribbons.map((rb) => (cur.structs[rb.from]?.role === 'store' ? { ...rb, items: rb.items.filter(sold), item: rb.items.find(sold) ?? rb.item } : rb)).filter((rb) => rb.items.length);
+  const structs = cur.structs.map((q) => (q.role === 'store' || q.role === 'post' ? { ...q, items: (q.items ?? []).filter(sold) } : q));
+  // Its lines told again of what it still sells, as what stands carries it.
+  const lines = linesOf(structs, ribbons, products);
+  return { ...cur, structs, ribbons, products, lines, story: lines[0] ?? [] };
+}
+
+/**
+ * What a laid base does, a line per good it sells, raw good first, read off what stands: from the
+ * maker whose ribbon brings the good into the store, back through each maker's main input (neighbour-
+ * chain.ts `mainInput`, among the inputs its ribbons bring) to the extractor at the head — so the card
+ * says what the ribbons carry, even of a base a try cut short.
+ */
+function linesOf(structs: readonly NStruct[], ribbons: readonly NRibbon[], products: readonly number[]): number[][] {
+  const role = (k: number): NRole | undefined => structs[k]?.role;
+  return products.map((p) => {
+    const line = [p];
+    let rb = ribbons.find((r) => role(r.to) === 'store' && role(r.from) !== 'store' && r.items.includes(p));
+    for (let k = 0; rb && k < 8; k++) {
+      const s = structs[rb.from]!;
+      if (s.role !== 'make' || !s.recipe) break;
+      const feeds = ribbons.filter((q) => q.to === rb!.from && (role(q.from) === 'make' || role(q.from) === 'extract'));
+      const main = mainInput(RECIPES[s.recipe as keyof typeof RECIPES] as RecipeDef, (i) => feeds.some((q) => q.item === itemIdx(i)));
+      if (main === undefined) break;
+      line.unshift(itemIdx(main));
+      rb = feeds.find((q) => q.item === itemIdx(main));
+    }
+    return line;
+  });
 }
 
 /** A layout less some of its structures, with their lines and wires; the rest renumbered. */

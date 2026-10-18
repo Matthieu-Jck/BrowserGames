@@ -32,6 +32,8 @@
 .stk-body .ksec { margin: 0; }
 .stk-body .ksec-icon canvas { display: block; }
 .stk-list { display: grid; }
+/* The waste's section (D125): where slag and scrap go instead of the Core. */
+.stk-note { margin: 4px 2px 0; font-size: 11px; line-height: 1.3; opacity: 0.75; font-style: italic; }
 /* A row: icon, name, the shortfall, amount, the minute's intake (an empty cell stays a cell: the columns line up). */
 .stk-row {
   display: grid; grid-template-columns: 22px minmax(0, 1fr) auto auto 4.6em; align-items: center; gap: 2px 8px;
@@ -58,3 +60,31 @@
 .stk-row[data-fill='near'] .stk-fill > i { background: var(--c-warn); }
 .stk-row[data-fill='full'] .stk-fill > i { background: var(--c-coral); }
 .stk-row[data-fill='full']:not([data-lack]) .stk-need { background: var(--c-coral); color: var(--c-paper); }
+/* Auto-sell (D127, once researched): a small ◉ toggle at the row's end (its own column, so a row keeps
+   its height); on, the threshold as an ink mark across the gauge and a chip beside it a click turns into
+   a number field, and a line under them — what it sold an hour. An auto-sold item is never « plein »:
+   the Core takes it all. */
+.stockp[data-autosell] .stk-row { grid-template-columns: 22px minmax(0, 1fr) auto auto 4.6em 20px; }
+.stockp[data-autosell]:not([data-tele]) .stk-row { grid-template-columns: 22px minmax(0, 1fr) auto auto 0 20px; }
+.stk-auto {
+  width: 20px; height: 16px; padding: 0; border-radius: 999px; cursor: pointer;
+  font: 700 10px/1 var(--f-body); color: var(--c-ink-soft); background: var(--c-paper); border: 1.5px solid var(--c-ink-soft); opacity: 0.7;
+}
+.stk-auto:hover { border-color: var(--c-ink); color: var(--c-ink); opacity: 1; }
+.stk-auto[aria-pressed='true'] { background: var(--c-turq); border-color: var(--c-ink); color: var(--c-ink); opacity: 1; }
+.stk-auto[hidden] { display: none; }
+.stk-gauge { grid-column: 2 / -1; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.stk-gauge > .stk-fill { flex: 1 1 auto; position: relative; }
+.stk-row[data-auto] .stk-fill { overflow: visible; }
+.stk-fill > .stk-mark { display: none; position: absolute; top: -4px; bottom: -4px; width: 2px; height: auto; margin-left: -1px; border-radius: 1px; background: var(--c-ink); }
+.stk-row[data-auto] .stk-fill > .stk-mark { display: block; }
+.stk-autoline { grid-column: 2 / -1; min-width: 0; font-size: 11.5px; font-weight: 600; color: var(--c-turq-d); }
+.stk-autoline[hidden] { display: none; }
+.stk-sold { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stk-at {
+  flex: none; padding: 0 7px; border-radius: 999px; cursor: pointer; font: 600 11px/1.45 var(--f-body);
+  color: var(--c-ink); background: transparent; border: 1.5px dashed var(--c-ink-soft);
+}
+.stk-at:hover { border-style: solid; border-color: var(--c-ink); }
+.stk-at[hidden], .stk-at-in[hidden] { display: none; }
+.stk-at-in { flex: none; width: 6.5em; padding: 1px 4px; font: 600 12px var(--f-body); border: 1.5px solid var(--c-ink); border-radius: 5px; background: var(--c-paper); color: var(--c-ink); }

@@ -74,7 +74,9 @@ function why(node: FNode | undefined, kind: BuildingKind, st: number, unwired: b
       return short.length ? { icons: () => short.map((i) => itemReason(i, 'missing')), sig: `s${short.join('.')}`, text: itemList(short) } : none;
     }
     case St.Blocked: {
-      const item = m?.recipe ? m.recipe.outs.find((s, j) => m.outBuf[j]! + s.mu > m.outCap[j]!)?.item ?? m.recipe.outs[0]?.item
+      // Its waste waiting at the output (D125) blocks it before its product: that is what to lead away.
+      const item = m && m.wBuf >= 1000 && m.wItem >= 0 ? m.wItem
+        : m?.recipe ? m.recipe.outs.find((s, j) => m.outBuf[j]! + s.mu > m.outCap[j]!)?.item ?? m.recipe.outs[0]?.item
         : node?.kind === 'drill' ? (node as DrillNode).item : undefined;
       return item !== undefined && item >= 0 ? { icons: () => [itemReason(item, 'full')], sig: `b${item}`, text: itemRef(item) } : none;
     }

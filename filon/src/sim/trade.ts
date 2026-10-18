@@ -61,7 +61,8 @@ export interface TradeLine {
   epoch: number;
   post: number;
   item: number;
-  kind: 'export' | 'import' | 'spotSell' | 'spotBuy';
+  /** `autoSell`: the Core's surplus sold at the boundary (D127; `post` is the Core's id). */
+  kind: 'export' | 'import' | 'spotSell' | 'spotBuy' | 'autoSell';
   mu: number;
   /** Ocelles received (+) or paid (−), after fees. */
   cents: number;
@@ -133,6 +134,12 @@ export interface TradeState {
   activity: Map<number, PostActivity>;
   /** Floor Prices (cm_floor): per item, the bid (centi-◉ an item) under which the posts hold it back. */
   floors: Map<number, number>;
+  /**
+   * Auto-sell (cm_autosell, D127): per item switched on, its threshold in whole items — what the Core
+   * holds beyond it is sold at each boundary (systems/trade.ts `autoSales`), and the Core takes the
+   * item in without its cap meanwhile (`autoSellCaps`).
+   */
+  autoSell: Map<number, number>;
   /** Lifetime ocelles earned and spent through the Crier (centi-◉), and mu sold / bought per item. */
   earned: number;
   spent: number;
@@ -146,7 +153,7 @@ export function newTradeState(nItems: number): TradeState {
   return {
     cargo: new Map(), orders: [], nextOrderId: 1, inflight: [],
     sold: new Float64Array(nItems), bought: new Float64Array(nItems),
-    ledger: [], activity: new Map(), floors: new Map(), earned: 0, spent: 0,
+    ledger: [], activity: new Map(), floors: new Map(), autoSell: new Map(), earned: 0, spent: 0,
     soldTotal: new Float64Array(nItems), boughtTotal: new Float64Array(nItems),
     starterTaken: false,
   };

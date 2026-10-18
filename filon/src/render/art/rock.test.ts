@@ -9,6 +9,7 @@ import { T } from '@/sim/types';
 import { ledges, levelOf, MAX_LEVEL, masksAt, STEP_LEVELS } from '../relief';
 import { BEDS, columnSeed, columnVariant, drawColumn, ROCK, slabTop, topColor, wallColor } from './rock';
 import { BORDER, WIN, columnLook, layersOf, windowLevels, type PaintData } from './terrain';
+import { depthColor } from './water-top';
 import { C, rgba } from './tokens';
 
 /** A stand-in 2D context: draws nothing, records the fill style of each fill. */
@@ -150,7 +151,8 @@ describe('a stream up on a massif (D94)', () => {
     for (let t = 0; t * STEP_LEVELS < lv[o]!; t++) ms.push(masks[t]![o]!);
     const { ctx, fills } = recorder();
     drawColumn(ctx, P, look.cls, ms, { detail: 2, seed: 3, k: 1, top: look.top });
-    expect(fills).toContain(C.river);
+    // Its top running water (the deep middle of the ramp, water-top.ts `depthColor`), its sheet down the wall.
+    expect(fills).toContain(depthColor(1.05, 1));
     expect(fills).toContain(rgba(C.river, 0.94));
     // A stream that does not fall has no sheet.
     const mid = columnLook(d, lv, o - 3), rec = recorder();

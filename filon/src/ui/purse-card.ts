@@ -8,6 +8,8 @@
 //   · a section per trade post: each item it sold (its icon, « 12/min », a bar, « +8,4 k ◉/h »,
 //     after CrierBelt's fee) and each standing order (« 30/min », its cost now at today's price);
 //     « other trade » when the ledger no longer holds a minute's lines;
+//   · « Vente automatique »: what the Core sold of its surplus at the minutes' ends (D127), item by
+//     item, « 12/min » and the ◉/h after CrierBelt's 40 %;
 //   · « Recherche »: the AI tokens bought — « 1 600/min · 13 ◉/min » and the share research got
 //     free (D122: the Core's compute, the servers, the bank) as a chip with the Core's look (a line
 //     of words on first sight, then the icons alone) —, the Compute Plan's fee, the servers' rental;
@@ -62,6 +64,7 @@ export function flowName(f: FlowLine): string {
     case 'sale': return itemName(f.item!);
     case 'order': return t('purse.order', { item: itemName(f.item!) });
     case 'trade': return t('purse.trade');
+    case 'auto': return itemName(f.item!);
     case 'tokens': return t('purse.tokens');
     case 'fee': return t('purse.plan');
     case 'rental': return t('purse.rental');
@@ -122,7 +125,7 @@ export class PurseCard {
 
   private icon(f: FlowLine): Node | null {
     switch (f.kind) {
-      case 'sale': case 'order': return itemIcon(this.atlas, f.item!, 22);
+      case 'sale': case 'order': case 'auto': return itemIcon(this.atlas, f.item!, 22);
       case 'trade': return buildingIcon(this.atlas, 'trade_post', 22);
       case 'tokens': case 'fee': return mark('token');
       case 'rental': return buildingIcon(this.atlas, 'server', 22);
@@ -164,6 +167,8 @@ export class PurseCard {
         const mine = (f: FlowLine): boolean => f.post === p;
         return section({ sec: `purse-post-${p}`, title: () => t('crier.post.name', { n: p }), icon: buildingIcon(this.atlas, 'trade_post', 20), aside: net(mine) }, at(mine));
       });
+      const auto = (f: FlowLine): boolean => f.kind === 'auto';
+      if (s.lines.some(auto)) sections.push(section({ sec: 'purse-auto', title: () => t('purse.auto'), icon: buildingIcon(this.atlas, 'hearth', 20, this.host.sim().hearthLevel), aside: net(auto) }, at(auto)));
       const other = (f: FlowLine): boolean => f.kind === 'trade';
       if (s.lines.some(other)) sections.push(section({ sec: 'purse-trade', title: () => t('purse.trade'), icon: buildingIcon(this.atlas, 'trade_post', 20), aside: net(other) }, at(other)));
       const research = (f: FlowLine): boolean => f.kind === 'tokens' || f.kind === 'fee' || f.kind === 'rental';
@@ -185,6 +190,7 @@ export class PurseCard {
       setStyle(l.fill, 'transform', `scaleX(${(Math.abs(f.perHour) / top).toFixed(3)})`);
       // The detail under the name: a rate, and what a minute costs now.
       const detail = f.kind === 'sale' ? rateMin(f.perMin ?? 0)
+        : f.kind === 'auto' ? t('purse.auto.detail', { n: rateMin(f.perMin ?? 0) })
         : f.kind === 'order' ? `${rateMin(f.perMin ?? 0)}${f.liveCost !== undefined ? ` · ${t('purse.order.now', { v: oc(f.liveCost, false, 0) })}` : ''}`
         : f.kind === 'tokens' ? t('purse.tokens.detail', { n: rateMin(f.perMin ?? 0), c: oc(Math.round(-f.perHour / 60), false, 0) })
         : f.kind === 'rent' ? (f.parcels ?? []).map((p) => parcelLabel(p)).join(' · ')

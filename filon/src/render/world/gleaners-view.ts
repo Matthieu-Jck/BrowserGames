@@ -20,9 +20,12 @@
 //   desert from the line — of 24 bearings, the one whose first 14 tiles cross the fewest buildings,
 //   ribbons, rock and the claim's land, the nearer weighing more, leaning away from the Core. The band
 //   comes in under the sand along it and goes back out along it; it waits on the line's side facing it.
-// - **The raids** — the real thing. Every exposed chain's raid is known at compile (`raidPosts`,
-//   `raidAt`). Before it each of the band travels in under the sand to its post a tile off the line
-//   (1.8 on its near side, so no Gleaner hides its neighbour's cell), and rises out of it — the body
+// - **The raids** — the real thing. Every exposed chain's raid slot is known at compile (`raidPosts`,
+//   `raidAt`); at it the line calls its band (the sim's `raidHeld`: only if something to their taste
+//   rides it, more of them the more it is worth — owner, 2026-10-18: « il faut qu'ils aillent
+//   nécessairement vers un tapis où il y a des items … qu'ils attrapent les items plus rapidement »).
+//   From the call each of the band travels in under the sand to its post a tile off the line (1.8 on
+//   its near side, so no Gleaner hides its neighbour's cell), and rises out of it — the body
 //   cut at the sand line (`cropTex`), a heap of sand pushed up round it (`drawSandCollar`) hiding the
 //   cut, grains sliding off its shoulders — to wait half-buried (`GLEANER_CUT`: hood, shoulders, sack
 //   and arm), swaying. It reaches only for the token the sim will take: each frame it asks its chain
@@ -30,8 +33,8 @@
 //   for a token, its long arm goes out over the last `REACH` ticks, the hand following that token where
 //   the items view draws it (`ItemsView.seen`), meeting it as the step comes. On that step the sim takes
 //   it — the token is gone from the belt that frame — and here it appears in the hand where it was last
-//   drawn, and rides the arm up. When every post has taken (or the raid is over) each sinks back into
-//   the sand with what it took, its glow dimming as the hand goes under, and its furrow heads away into
+//   drawn, and rides the arm up. A moment after every post has taken — or when the raid's twelve seconds
+//   of taking are up — each sinks back into the sand with what it took, its glow dimming as the hand goes under, and its furrow heads away into
 //   the empty desert. Each take is checked as it first shows (`paired`, `onBelt`, `unforeseen`,
 //   `unseen`, `late`; FL and the shots read them).
 // - **The glass** (`Graph.glean.glass`, every `TAP_EVERY`-th): two or three come under the sand, pop up
@@ -47,7 +50,7 @@ import { CanvasSource, Container, Matrix, Rectangle, Sprite, Texture } from 'pix
 import { BUILDING_KIND, ITEM_IDS, buildingDef } from '@/content/registry';
 import { hash32 } from '@/core/hash';
 import { CENTER } from '@/sim/constants';
-import { GLEAN_WINDOW, RAID_TICKS, stepAt, type Chain } from '@/sim/flow/chain';
+import { GLEAN_WINDOW, RAID_ARRIVE, RAID_STAGGER, RAID_TICKS, raidBandOf, raidCalled, stepAt, type Chain } from '@/sim/flow/chain';
 import type { Sim } from '@/sim/state';
 import { isFloor } from '@/sim/types';
 import { tileIndex } from '@/sim/world/grid';
@@ -63,10 +66,14 @@ import { ISO_LIN, invert, isoToView, type Lin } from '../projection';
 import { beltMatrix, beltPiece } from './buildings-view';
 import { itemPx, type ItemsView, type SeenItem } from './items-view';
 
-/** A raid's arrival: each sets out under the sand `ARRIVE` ticks before it starts (`ARR_STAGGER` after the one before), travels `TRAVEL`, rises over `RISE`. */
-const ARRIVE = 190, TRAVEL = 120, RISE = 26, ARR_STAGGER = 10;
+/**
+ * A raid's arrival, from its slot (the sim calls it on the line's first step of it, `RAID_CALL_BY`):
+ * each sets out under the sand `RAID_STAGGER` after the one before, travels `TRAVEL`, rises over `RISE`
+ * — up just before its post opens (`RAID_ARRIVE`, then `RAID_STAGGER` apart).
+ */
+const RISE = 26, TRAVEL = RAID_ARRIVE - RISE - 4, ARRIVE = 0;
 /** After the last take, how long they stay; sinking back; the way out under the sand (each `DEP_STAGGER` apart). */
-const LINGER = 40, SINK = 30, DEPART = 150, DEP_STAGGER = 9;
+const LINGER = 20, SINK = 30, DEPART = 150, DEP_STAGGER = 9;
 /** The grab: ticks for the item to ride the arm from where its token was into the hand. */
 const GRAB = 12;
 /** The arm goes out over the last `REACH` ticks before the token it takes reaches the post's centre. */
@@ -249,7 +256,7 @@ function clipTo(sim: Sim, sx: number, sy: number, ex: number, ey: number): [numb
 /** One post of a raid: its cell and tile, the tile's centre, where it rises, the side it stands on, its ways in and out under the sand. */
 interface Post { cell: number; tile: number; cx: number; cy: number; sx: number; sy: number; ox: number; oy: number; inP: Path; outP: Path }
 /** A chain's raid: the chain, its tick in the window, its posts, the tiles it covers (for culling), its way into the desert. */
-interface Raid { chain: Chain; at: number; posts: Post[]; box: [number, number, number, number]; bx: number; by: number }
+interface Raid { chain: Chain; at: number; posts: Post[]; box: [number, number, number, number]; bx: number; by: number; calledAt: number; band: number }
 /** A visit to the glass: the tile; for each who comes, the glazed tile it taps, where it rises (on that tile's side `ox, oy`), its ways in and out; its own phase. */
 interface Tap { x: number; y: number; stands: Array<{ sx: number; sy: number; tx: number; ty: number; ox: number; oy: number; inP: Path; outP: Path }>; h: number }
 /** A visit outside a fence: two furrows in, round a loop outside it, and out. */
@@ -417,7 +424,7 @@ export class GleanersView {
           x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
         }
       }
-      this.raids.push({ chain: c, at: c.raidAt, posts, box: [x0, y0, x1, y1], bx, by });
+      this.raids.push({ chain: c, at: c.raidAt, posts, box: [x0, y0, x1, y1], bx, by, calledAt: -1, band: 0 });
     }
     for (const t of [...this.posts.keys()]) if (!this.watched.has(t)) this.posts.delete(t);
     this.items.watch = this.watched;
@@ -578,7 +585,12 @@ export class GleanersView {
    * back with it and going out under the sand.
    */
   private raid(sim: Sim, r: Raid, t0: number, now: number, took: ReadonlyMap<number, readonly number[]>, place: () => void): void {
-    const posts = r.posts, size = posts.length, end = t0 + RAID_TICKS, simTick = sim.tick;
+    const end = t0 + RAID_TICKS, simTick = sim.tick, c = r.chain;
+    // Who comes: what the line called at its slot (the sim's `raidHeld`, kept here for the band's way
+    // out after the sim has cleared it); nobody before the call, nobody for a line with nothing for them.
+    if (simTick >= t0 && simTick < end && raidCalled(c.raidHeld)) { r.calledAt = t0; r.band = raidBandOf(c.raidHeld); }
+    if (r.calledAt !== t0 || r.band <= 0) return;
+    const posts = r.posts.slice(0, r.band), size = posts.length;
     // Each post's take this raid (its tick and item), once the sim has made it.
     const takes: Array<[number, number] | null> = posts.map((p) => {
       const l = took.get(p.tile);
@@ -589,7 +601,7 @@ export class GleanersView {
     let all = true, last = t0;
     for (const t of takes) if (t) last = Math.max(last, t[0]); else all = false;
     const leave = all ? last + LINGER : end;
-    const F = this.F, c = r.chain;
+    const F = this.F;
     // The line's next step from the sim's tick on: the one each post's coming take is made on.
     let T = -1;
     for (let d = 0; d <= 64 && T < 0; d++) if (stepAt(c.perMin, simTick + d)) T = simTick + d;
@@ -608,7 +620,7 @@ export class GleanersView {
         const mine = item >= 0 ? seen?.find((s) => s.item === item) : undefined;
         if (mine) { st.seen = mine; st.seenT = T; }
       }
-      const a0 = t0 - ARRIVE + p * ARR_STAGGER, a1 = a0 + TRAVEL, a2 = a1 + RISE;
+      const a0 = t0 + p * RAID_STAGGER, a1 = a0 + TRAVEL, a2 = a1 + RISE;
       const l0 = leave + ((p * 3) % size) * DEP_STAGGER, l1 = l0 + SINK, l2 = l1 + DEPART;
       if (now < a0 || now > l2) continue;
       F.frame = Math.floor(now * 0.22 + p * 1.3);

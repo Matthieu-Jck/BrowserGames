@@ -34,7 +34,7 @@ import { parcelFloor, parcelOre } from '@/sim/world/floor';
 import { PARCEL, parcelRect } from '@/sim/world/land';
 import { glyph, type GlyphId } from './glyphs';
 import { itemMention } from './mention';
-import { buildingsOn, contentsSig, neighbourName, ownsForGood, parcelContents, parcelLabel, parcelState, type ParcelState } from './land-facts';
+import { buildingsOn, contentsSig, neighbourName, neighbourTrade, ownsForGood, parcelContents, parcelLabel, parcelState, type ParcelState } from './land-facts';
 import { oc } from './trade-view';
 
 export interface LandHost {
@@ -184,7 +184,8 @@ export class LandPanel {
       const ctx = badge.getContext('2d');
       if (ctx) drawEmblem(ctx, colonyEmblem(sim.worldSeed, colony), 22, 22, 19, 2.2);
       const name = neighbourName(sim, colony) || t('land.state.neighbour');
-      const trade = el('span.land-trade', { title: t('land.neighbour.trade') }, (COLONY_PROFILES[h.profile] as ColonyProfile).name[locale()]);
+      const does = neighbourTrade(sim, h.hub);
+      const trade = el('span.land-trade', { title: `${t('land.neighbour.trade')}${does?.lines.length ? `\u00a0: ${does.lines.map((l) => l.names.join(' → ')).join(' · ')}` : ''}` }, does?.label ?? (COLONY_PROFILES[h.profile] as ColonyProfile).name[locale()]);
       return el('div.land-who', { 'data-neighbour': '' }, [
         el('div.land-owner', { title: t('land.owner') }, [badge, el('b', {}, name)]),
         el('div.land-tags', {}, [tag, trade]),

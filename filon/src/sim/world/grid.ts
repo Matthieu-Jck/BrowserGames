@@ -31,6 +31,8 @@ export interface TerrainSource {
   floorAt?(x: number, y: number): boolean;
   /** Does the tile rect [x0, x1) × [y0, y1) hold something the land guarantees the claim — a unique site, the copper field, a vent, the quartz vein, a corridor (D94)? No neighbouring base takes it (D110). Absent: nothing. */
   keepsClear?(x0: number, y0: number, x1: number, y1: number): boolean;
+  /** The drillable deposits whose centres lie in the tile rect [x0, x1) × [y0, y1), without making a chunk (D110: a neighbouring base set on its square's ore). Absent: none known. */
+  depositsIn?(x0: number, y0: number, x1: number, y1: number): ReadonlyArray<{ readonly item: number; readonly cx: number; readonly cy: number; readonly r2: number }>;
 }
 
 /**

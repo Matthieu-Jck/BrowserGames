@@ -299,26 +299,26 @@ describe('replacement', () => {
   });
 
   it('a new machine starts on its only recipe unlocked (D83); with two to choose from it waits; explicit settings win; the replay agrees', () => {
-    const sim = testSim(); // every plan: the wire mill draws copper wire only, the smelter casts plates or glass, the workshop makes circuits until Pace Bells are researched
+    const sim = testSim(); // every plan: the wire mill draws copper wire only, the smelter casts plates or glass, the assembly bench winds coils until Mechanics' motors (D129)
     const recipe = (r: { id?: number }): number => recipeOf(sim.ents.get(r.id!)!.cfg);
     const mill = sim.place('wire_mill', 520, 520, 0);
     expect(mill.ok, mill.reason).toBe(true);
     expect(recipe(mill)).toBe(recipeIdx('copper_wire') + 1);
     expect(sim.log[sim.log.length - 1]!.cmd).toMatchObject({ k: 'place', def: 'wire_mill', cfg: recipeIdx('copper_wire') + 1 }); // logged with it
     expect(recipe(sim.place('kiln', 522, 520, 0))).toBe(0);
-    expect(recipe(sim.place('workshop', 525, 520, 0))).toBe(recipeIdx('circuit') + 1);
+    expect(recipe(sim.place('assembly_bench', 525, 520, 0))).toBe(recipeIdx('copper_coil') + 1);
     expect(recipe(sim.place('wire_mill', 528, 520, 0, 0))).toBe(0); // given explicitly: none
     sim.run(50); // a placed machine on its recipe compiles and runs like one set by hand
-    unlock(sim, 'dn4'); // Pace Bells: the workshop's second recipe
-    expect(recipe(sim.place('workshop', 530, 520, 0))).toBe(0);
+    unlock(sim, 'tr1'); // Mechanics: the bench's second recipe, the motor
+    expect(recipe(sim.place('assembly_bench', 530, 520, 0))).toBe(0);
     expect(sim.setRecipe(mill.id!, 'copper_wire')).toBe(true); // already on it: nothing to do, nothing logged
-    expect(sim.log[sim.log.length - 1]!.cmd).toMatchObject({ k: 'place', def: 'workshop' });
+    expect(sim.log[sim.log.length - 1]!.cmd).toMatchObject({ k: 'place', def: 'assembly_bench' });
   });
 
   it('a placement replayed from a log carries the recipe it started on', () => {
     const sim = testSim();
     expect(sim.place('wire_mill', 520, 520, 0).ok).toBe(true);
-    expect(sim.place('workshop', 525, 520, 0).ok).toBe(true);
+    expect(sim.place('assembly_bench', 525, 520, 0).ok).toBe(true);
     sim.run(30);
     const b = testSim();
     replay(b, sim.log, sim.tick);

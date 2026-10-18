@@ -61,6 +61,8 @@ export interface CRecipe {
   ticks: number;
   ins: Array<{ item: number; mu: number }>;
   outs: Array<{ item: number; mu: number }>;
+  /** Its waste (D125): one `item` every `every` crafts, out through the product's output; null: none. */
+  waste: { item: number; every: number } | null;
   /** Extra electrical energy per craft in kW·tick. */
   energyKwTicks: number;
   machines: Set<number>;
@@ -75,6 +77,7 @@ export const CRECIPES: readonly CRecipe[] = RECIPE_IDS.map((id, idx) => {
     ticks: Math.round(r.seconds * 10),
     ins: r.ins.map(([it, q]) => ({ item: itemIdx(it), mu: toMu(q) })),
     outs: r.outs.map(([it, q]) => ({ item: itemIdx(it), mu: toMu(q) })),
+    waste: r.waste ? { item: itemIdx(r.waste[0]), every: r.waste[1] } : null,
     energyKwTicks: Math.round((r.energyKwMin ?? 0) * 600),
     machines: new Set(r.machines.map((m) => buildingIdx(m))),
     unlock: r.unlock,

@@ -6,7 +6,8 @@
 //     sales at the Crier, the Core's grid held at 95 % hour after hour, parcels bought…), in three
 //     ranks (I–III) whose thresholds the feat must reach — kept up, it climbs; a rank once earned
 //     stays.
-//   · Each IMPROVES one family: its production (a multiplier on a number the engine already reads
+//   · Each IMPROVES one theme (D128: a family until then, its id kept — every category of that
+//     theme at every tier, the Foundry and the Workshop as Machines): its production (a multiplier on a number the engine already reads
 //     through the Mods: generators' output, drills' rate, machines' pace, the claim's own tokens,
 //     deliveries' delay, land's price) or its research (the AI tokens or the resources a node of that
 //     family takes; « time » is its tokens since D118, research taking no time). The percentages of the game live here only (D70, D72): the tree unlocks what
@@ -16,7 +17,7 @@
 //     « réorientation »: paid in ocelles, dearer each time, the new one in place 24 h later.
 // The rules are the engine's (src/sim/systems/expertise.ts); the window is ui/screens/expertise.ts.
 // Pure data: no DOM, no clock.
-import type { FamilyId, Loc, ModTarget } from './types';
+import type { ThemeId, Loc, ModTarget } from './types';
 
 /**
  * What a feat counts, read off the colony at each minute's boundary (systems/expertise.ts
@@ -54,7 +55,8 @@ export type ExpertiseEffect =
 
 export interface ExpertiseDef {
   readonly name: Loc;
-  readonly family: FamilyId;
+  /** Its theme (D128; `family` since D93, the id kept): every category of it, at every tier. */
+  readonly family: ThemeId;
   readonly feat: FeatKind;
   /** The feat's value that earns ranks I, II and III (strictly rising). */
   readonly ranks: readonly [number, number, number];
@@ -76,7 +78,7 @@ const BOOST = [1100, 1150, 1200] as const;
 const SAVING = [850, 750, 650] as const;
 
 /**
- * The expertises, by family in the tree's order (`FAMILY_IDS`): for each, the production one,
+ * The expertises, by family in the tree's order (`THEME_IDS`): for each, the production one,
  * then the research one. Thresholds are set so a claim that completes Tier 1 has earned rank I of
  * several when the window opens (measured on the debug bases, 2026-10-16: the tutorial's base has
  * about 2 000 kW standing, 300 ribbon tiles, a parcel, 1 600 ◉ of sales after its first hour) — one
@@ -130,7 +132,7 @@ export const effectAt = (def: ExpertiseDef, rank: number): number => (rank >= 1 
  * whole; production boosts above 1000 ‰ (or a saving under it where the number is a cost or a
  * delay), research savings under it, both rising with the rank; icons of a known kind.
  */
-export function expertiseProblems(families: readonly FamilyId[]): string[] {
+export function expertiseProblems(families: readonly ThemeId[]): string[] {
   const errs: string[] = [];
   const feats = new Map<FeatKind, string>();
   for (const id of EXPERTISE_IDS) {

@@ -117,25 +117,25 @@ describe('power wires in a colony', () => {
     expect(sim.produced[IRON()]).toBeGreaterThan(0);
   });
 
-  it('Hearth → mast → mast → workshop powers the workshop; cutting the middle mast splits the grid', () => {
+  it('Hearth → mast → mast → bench powers the bench; cutting the middle mast splits the grid', () => {
     const sim = testSim();
     const m1 = sim.place('mast', 520, 512, 0), m2 = sim.place('mast', 525, 512, 0);
-    const w = sim.place('workshop', 528, 512, 0); // in the zone (r 18), beyond m1's 6 tiles
+    const w = sim.place('assembly_bench', 528, 512, 0); // in the zone (r 18), beyond m1's 6 tiles (D129: the bench, a plan's)
     expect(m1.ok && m2.ok && w.ok).toBe(true);
     // Each new mast wired itself to the nearest pillar or Hearth in reach: Hearth – m1 – m2.
     expect(sim.linksOf(sim.hearthId)).toEqual([m1.id]);
     expect(sim.linksOf(m2.id!)).toEqual([m1.id]);
-    sim.setRecipe(w.id!, 'circuit');
+    sim.setRecipe(w.id!, 'copper_coil');
     sim.ensureCompiled();
     const node = sim.graph.nodeByEnt.get(w.id!) as MachineNode;
-    node.inBuf[0] = 6000; node.inBuf[1] = 2000; // two crafts' worth: copper wire, glass (sandbox write)
+    node.inBuf[0] = 4000; node.inBuf[1] = 2000; // two crafts' worth: copper wire, iron plates (sandbox write)
     sim.run(50);
     expect(node.status).toBe(St.Unpowered);
-    expect(sim.produced[itemIdx('circuit')]).toBe(0);
+    expect(sim.produced[itemIdx('copper_coil')]).toBe(0);
     expect(sim.link(m2.id!, w.id!).ok).toBe(true);
     sim.run(300);
     expect(gridOf(sim, w.id!)).toBe(gridOf(sim, sim.hearthId));
-    expect(sim.produced[itemIdx('circuit')]).toBe(2000);
+    expect(sim.produced[itemIdx('copper_coil')]).toBe(2000);
     // Take m1 down: its wires go with it; m2 and the workshop are a grid of their own, unpowered.
     expect(sim.remove(520, 512)).toBe(true);
     expect(sim.linksOf(sim.hearthId)).toEqual([]);
@@ -199,7 +199,8 @@ describe('power wires in a colony', () => {
     grantCost(sim, 'pylon'); // its price today (D123)
     const c = sim.place('mast', 520, 512, 0);
     expect(sim.linksOf(c.id!)).toEqual([sim.hearthId]);
-    const flowers = ([[522, 510], [522, 513], [517, 516], [520, 506]] as const).map(([x, y]) => {
+    // Round the mast, a turbine's room apart (D132: six tiles middle to middle).
+    const flowers = ([[526, 511], [523, 517], [516, 517], [523, 505]] as const).map(([x, y]) => {
       const f = sim.place('wind_flower', x, y, 0);
       expect(f.ok, f.reason).toBe(true);
       expect(sim.link(c.id!, f.id!).ok).toBe(true);
@@ -323,7 +324,7 @@ describe('power wires in a colony', () => {
     const sim = new Sim({ worldSeed: WORLD_SEED, playerSeed: 1, source: new MapGen(WORLD_SEED, 1), foundingEpoch: WORLD_EPOCH0 + 24 });
     const ids = buildDemo(sim);
     const home = gridOf(sim, sim.hearthId);
-    for (const k of ['drillA', 'drillB', 'sand', 'coal', 'coal2', 'workshop', 'observatory', 'trade', 'brazier', 'wind0', 'wind1', 'wind2', 'wind3']) {
+    for (const k of ['drillA', 'drillB', 'sand', 'coal', 'coal2', 'bench', 'observatory', 'trade', 'brazier', 'wind0', 'wind1', 'wind2', 'wind3']) {
       expect(ids[k], k).toBeGreaterThan(0);
       expect(gridOf(sim, ids[k]!), k).toBe(home);
     }

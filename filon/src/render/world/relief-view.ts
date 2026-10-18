@@ -78,6 +78,8 @@ export class ReliefView {
   private tinted = '';
   /** Each tile's shade under the sun of the moment, worked out once: the smoothing reads it for every tile round. */
   private readonly shades = new Map<number, number>();
+  /** The floor in the rock's shadows or not, by quarter tile, under the sun of the moment (`floorShadeAt`, D130). */
+  private readonly floorShades = new Map<number, number>();
   private readonly outlines = new Map<string, OutlinePt[][]>();
   private readonly ledgeCache = new Map<string, number[]>();
   private on = true;
@@ -96,6 +98,7 @@ export class ReliefView {
         const k = ny * CHUNKS + nx;
         this.chunks.delete(k);
         this.shades.clear();
+        this.floorShades.clear();
         for (let by = 0; by < CHUNK / BLOCK; by++) {
           for (let bx = 0; bx < CHUNK / BLOCK; bx++) this.dropBlock((ny * CHUNK) / BLOCK + by, (nx * CHUNK) / BLOCK + bx);
         }
@@ -129,11 +132,13 @@ export class ReliefView {
           if (lv[o]) {
             const look = columnLook(d, lv, o);
             c.cls[k] = look.cls; c.top[k] = look.top; c.vein[k] = look.vein ? 1 : 0;
-            c.foot[k] = look.top ? null : footOf(lv, masks, o);
+            // Rock the water only reaches (D135) keeps its talus and its layers as plain rock does.
+            const water = look.top && look.top.kind !== 'rock';
+            c.foot[k] = water ? null : footOf(lv, masks, o);
             // The rock of each step, when it is not the column's own all the way down (terrain.ts
             // `layersOf`) — only where it shows: a step with no wall and no top in sight (no drop, no
             // ledge) keeps the column's own, so looks that draw the same share one sprite.
-            let layers = look.top ? null : windowLayers(d, lv, o, look.cls, lv[o]! / STEP_LEVELS);
+            let layers = water ? null : windowLayers(d, lv, o, look.cls, lv[o]! / STEP_LEVELS);
             if (layers) {
               const ms = tileMasks(lv, masks, o), shows = ledges(ms);
               layers = layers.map((l, t) => (ms[t] || shows.includes(t) ? l : look.cls));
@@ -293,6 +298,7 @@ export class ReliefView {
     if (key === this.tinted) return;
     this.tinted = key;
     this.shades.clear();
+    this.floorShades.clear();
     for (const b of this.blocks.values()) for (const c of b) c.s.tint = this.tintAt(c.x, c.y, c.lv, c.ms);
   }
 
@@ -359,6 +365,31 @@ export class ReliefView {
     }
     return n / pts.length;
   }
+
+  /**
+   * How dark the rock's sun shadows lie on the floor at ground point (x, y) (tiles; 0: lit … their
+   * opacity; D130): rock as drawn (`heightAt`) standing above the ray towards the sun somewhere along
+   * it, as art/terrain.ts `paintSunShadows` lays them on the ground (by quarter tile, worked out once
+   * per sun). For the items sorted among the volumes on the floor (by a building's near face), drawn
+   * over that paint: they take it as a tint (items-view.ts).
+   */
+  readonly floorShadeAt = (x: number, y: number): number => {
+    const [dx, dy] = this.sun;
+    if (this.sunAlpha <= 0 || (!dx && !dy)) return 0;
+    const qx = Math.floor(x * 4), qy = Math.floor(y * 4), key = qy * 8192 + qx;
+    let s = this.floorShades.get(key);
+    if (s === undefined) {
+      s = 0;
+      const px = (qx + 0.5) / 4, py = (qy + 0.5) / 4;
+      for (let k = 0.25; k <= MAX_LEVEL; k += 0.25) {
+        const rx = px - dx * k, ry = py - dy * k;
+        // The cheap test first: only a tile standing higher than the ray can hold rock in the way.
+        if (tileTop(this.grid, Math.floor(rx), Math.floor(ry)) > k && this.heightAt(rx, ry) > k) { s = 1; break; }
+      }
+      this.floorShades.set(key, s);
+    }
+    return s * this.sunAlpha;
+  };
 
   /** `shadeAt` at height t, worked out once per tile and height for the sun of the moment. */
   private shadeCached(x: number, y: number, t: number, ms: readonly number[] | null = null): number {

@@ -141,7 +141,7 @@ export function planBelts(sim: Sim, defId: string, path: BeltPath): BeltStep[] {
     if (st.skip || !st.ok) continue;
     if (!affordable(sim, st.cost, st.replaces, spent)) { refuse(st, 'unaffordable'); continue; }
     for (const c of st.cost) spent.set(c.item, (spent.get(c.item) ?? 0) + c.mu);
-    for (const r of st.replaces) for (const c of refundCost(sim.costFloor, sim.ents.get(r)!)) spent.set(c.item, (spent.get(c.item) ?? 0) - c.mu);
+    for (const r of st.replaces) for (const c of refundCost(sim, sim.ents.get(r)!)) spent.set(c.item, (spent.get(c.item) ?? 0) - c.mu);
   }
   return out;
 }

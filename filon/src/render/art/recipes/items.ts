@@ -223,6 +223,8 @@ function gem(ctx: Ctx, col: string, table = hi(col, 0.55)): void {
 
 /** Copper (wire, leads): warm, a touch darker than brass. */
 const COPPER = '#d9844a';
+/** Dark iron (a bobbin's flanges and core, D129): bluer and deeper than the machined steel. */
+const IRON = '#4f566c';
 
 /**
  * A rock-crystal point: a hexagonal prism standing at (x, base) with its foot hidden, `h` tall and
@@ -767,7 +769,184 @@ const GLYPHS: Record<Glyph, G> = {
     fill(ctx, circle(26.8, 25.6, 2.1), COPPER);
     for (const a of [0.3, 2.4, 4.5]) fill(ctx, circle(26.8 + Math.cos(a) * 1.05, 25.6 + Math.sin(a) * 1.05, 0.55), lo(COPPER, 0.4));
   },
+  // ── D129: the assembly bench's parts ────────────────────────────────────
+  bobbin: (ctx, col) => {
+    // Copper coil: a bobbin lying aslant — fat copper windings between two dark iron flanges, the
+    // near one seen face on with the square iron core through it, two leads out of its top. Not
+    // the wire's upright spool (`coil`: steel bars top and bottom): a reel on its side, iron-ended.
+    ctx.save();
+    ctx.translate(c, c);
+    ctx.rotate(-0.38);
+    ctx.translate(-c, -c);
+    const far = oval(7, 16, 2.6, 10.2);
+    part(ctx, far, IRON, { d: 1, l: 0.8 });
+    const body: Shape = (k) => {
+      k.moveTo(7, 9);
+      k.lineTo(22, 9);
+      k.lineTo(22, 23);
+      k.lineTo(7, 23);
+      k.closePath();
+    };
+    fill(ctx, body, col);
+    inside(ctx, body, () => {
+      fill(ctx, rrect(0, 10.2, 40, 2.4, 0), hi(col, 0.45));
+      fill(ctx, rrect(0, 18.6, 40, 5, 0), lo(col, 0.3));
+      // The turns: close slanted strokes across the winding, darker than the copper.
+      for (let x = 7.6; x < 23; x += 2.2) line(ctx, [[x, 8.5], [x + 1.4, 23.5]], 0.85, lo(col, 0.5));
+    });
+    stroke(ctx, body);
+    // The near flange, face on: dark iron, lit on its upper rim, the square core in the middle.
+    const near = oval(22.5, 16, 4.4, 10.8);
+    part(ctx, near, IRON, { d: 1.3, l: 1.1 });
+    // The core's end: a square of laminated iron through the flange, its plates' seams, a dark bore.
+    const core = poly([[20.6, 12.6], [24.4, 13.2], [24.4, 19.4], [20.6, 18.8]]);
+    fill(ctx, core, hi(IRON, 0.3));
+    line(ctx, [[20.6, 14.7], [24.4, 15.3]], 0.6, lo(IRON, 0.3));
+    line(ctx, [[20.6, 16.8], [24.4, 17.4]], 0.6, lo(IRON, 0.3));
+    stroke(ctx, core, LINE);
+    fill(ctx, oval(22.5, 16, 0.9, 1.4), C.ink);
+    // The two leads, out of the winding at the near flange's top.
+    for (const [a, b] of [[[19.5, 9], [21, 4.8]], [[17, 9], [17.6, 3.6]]] as const) {
+      line(ctx, [a, b], 3.2);
+      line(ctx, [a, b], 1.4, hi(col, 0.2));
+    }
+    ctx.restore();
+    glint(ctx, 11, 9.4, 1.2);
+  },
+  motor: (ctx, col) => {
+    // Electric motor: a finned cast housing lying on its feet, seen three-quarters — the fins along
+    // its length, the fan cowl's rounded end bell at the back, the near end bell face on with the
+    // steel shaft stub and its key, the terminal box on top with its cable gland. Not the
+    // servomotor (a ringed can on a flange): fins along, a box on top, feet below.
+    const feet = rrect(6, 24.5, 15, 4, 1);
+    part(ctx, feet, lo(col, 0.3), { d: 0.9, l: 0.7 });
+    const bell = (k: Ctx): void => {
+      k.moveTo(6.5, 10.5);
+      k.bezierCurveTo(1.8, 10.5, 1.8, 24.5, 6.5, 24.5);
+      k.closePath();
+    };
+    part(ctx, bell, hi(col, 0.12), { d: 1, l: 0.9 });
+    for (const y of [14, 17.5, 21]) line(ctx, [[3.4, y], [6.2, y]], 0.8, lo(col, 0.45));
+    const body = rrect(6, 10, 16, 15, 0.8);
+    fill(ctx, body, col);
+    inside(ctx, body, () => {
+      fill(ctx, rrect(0, 11.2, 40, 2.4, 0), hi(col, 0.45));
+      fill(ctx, rrect(0, 20.5, 40, 5, 0), lo(col, 0.3));
+      // The fins: ridges along the housing, each a dark groove under a lit edge.
+      for (const y of [13.6, 16.4, 19.2, 22]) {
+        line(ctx, [[6, y], [22, y]], 1.2, lo(col, 0.5));
+        line(ctx, [[6, y - 1.1], [22, y - 1.1]], 0.7, hi(col, 0.5));
+      }
+    });
+    stroke(ctx, body);
+    // The near end bell, face on, and the shaft.
+    const end = oval(22.5, 17.5, 3.6, 7.6);
+    part(ctx, end, hi(col, 0.2), { d: 1, l: 0.9 });
+    const shaft = rrect(23.5, 15.6, 6.5, 3.8, 0.8);
+    fill(ctx, shaft, STEEL);
+    rim(ctx, shaft, -0.6, -1, STEEL_D);
+    stroke(ctx, shaft, LINE);
+    line(ctx, [[25.6, 16.2], [28.6, 16.2]], 1, C.ink);
+    // The terminal box on top, its gland out of its side.
+    const box = rrect(10, 5, 8, 6.2, 1.2);
+    part(ctx, box, hi(col, 0.25), { d: 1, l: 0.8 });
+    line(ctx, [[12, 7.6], [16, 7.6]], 0.8, lo(col, 0.45));
+    const gland = rrect(17.6, 6.6, 2.6, 2.8, 0.6);
+    fill(ctx, gland, STEEL);
+    stroke(ctx, gland, LINE);
+    glint(ctx, 11.6, 6.6, 1);
+  },
+  // ── D125: the machines' waste ───────────────────────────────────────────
+  slag: (ctx, col) => {
+    // Slag: a lump of clinker — rounded bulges run together (where coal is angular facets and stone
+    // a squared block), a frozen drip under it, frothy with gas bubbles of every size, its skin
+    // vitreous: lit in a cool glassy grey rather than a warm tone, a dull streak on its shoulder.
+    // One silhouette made of lobes: its outline inked once round the union, lit top-left and
+    // shaded bottom-right as one body (`lumpLit`).
+    const lobes: ReadonlyArray<readonly [number, number, number]> = [
+      [14, 14.5, 8.4], [22, 11.5, 5.6], [8.6, 20.5, 5.4], [19, 21, 6.8], [26.2, 18.8, 3.4], [11.2, 7.6, 3.8], [24.2, 26.6, 2.3], [5.2, 13.5, 2.6],
+    ];
+    lumpLit(ctx, lobes, col, mix(col, '#a7c0c2', 0.5));
+    // The bubbles: dark pits, each lit on its far wall (the light falls in from the top-left).
+    for (const [x, y, r] of [[11, 12.5, 1.7], [16.5, 10, 1.15], [21.5, 9.5, 1.3], [8.2, 20, 1.6], [13.2, 18.4, 1.25], [11.5, 23.6, 0.95], [6, 15, 0.8], [17.4, 14.2, 0.8], [21.6, 18.2, 1.5], [25.6, 13, 0.9], [18.6, 25.2, 1.2], [24.4, 22.6, 1], [26.6, 19.4, 0.7], [15.2, 22.4, 0.7]] as const) {
+      const b = oval(x, y, r, r * 0.86);
+      fill(ctx, b, lo(col, 0.66));
+      rim(ctx, b, -r * 0.5, -r * 0.6, hi(col, 0.32));
+    }
+    // The glassy skin: a cool, dull streak round the big bulge's lit shoulder, and the one glint on the break.
+    stroke(ctx, (k) => { k.moveTo(14 + Math.cos(1.1 * Math.PI) * 6.2, 14.5 + Math.sin(1.1 * Math.PI) * 6.2); k.arc(14, 14.5, 6.2, 1.1 * Math.PI, 1.38 * Math.PI); }, 1.6, mix(hi(col, 0.3), '#9fc3c0', 0.45));
+    glint(ctx, 23.4, 9.4, 1.15);
+  },
+  scrap: (ctx, col) => {
+    // Scrap: the press's offcuts — behind, a corner of sheet sheared off with a jagged edge and bent
+    // along one fold (a lit plane, a shaded one); in front, the skeleton of a punched strip (the row
+    // of holes the blanks were cut from), kinked up halfway, its torn end ragged. Bent, torn, holed
+    // sheet: not the plate's clean slab, the bar's block or the pipe's tube.
+    const A: P = [3, 12], B: P = [14, 3.8], Cc: P = [28, 7.6], F0: P = [16, 4.4], F1: P = [16.6, 14.6]; // the corners, the fold
+    const jag: P[] = [[26.6, 10.4], [24, 10], [22.5, 13], [20, 12], [18, 15.2], [F1[0] - 1.2, 14.1], [13, 16.6], [10.4, 15], [7.4, 16.4], [5, 14.4]];
+    const sheet = poly([A, B, Cc, ...jag]);
+    const under: P[] = jag.slice().reverse().map(([x, y]) => [x, y + 2] as P);
+    const edge = poly([Cc, ...jag, A, [A[0], A[1] + 2], ...under, [Cc[0], Cc[1] + 2]]);
+    fill(ctx, edge, lo(col, 0.45));
+    stroke(ctx, edge);
+    fill(ctx, sheet, col);
+    inside(ctx, sheet, () => {
+      fill(ctx, poly([A, B, F0, F1, [13, 16.6], [3, 17]]), hi(col, 0.42));
+      fill(ctx, poly([F0, Cc, [28, 12], F1]), lo(col, 0.2));
+    });
+    line(ctx, [F0, F1], LINE, lo(col, 0.55));
+    stroke(ctx, sheet);
+    // The punched strip: two flat runs either side of a kink (the near one level, the far one bent
+    // up to the light), its thickness under them, a row of holes, the near end torn.
+    const P0: P = [3.6, 25.6], P1: P = [16, 22.8], P2: P = [28.2, 15.6], v: P = [0.8, -3.2];
+    const add = (p: P, q: P, k = 1): P => [p[0] + q[0] * k, p[1] + q[1] * k];
+    const torn: P[] = [[4.6, 24.2], [3.2, 23.4]]; // the ragged end, between P0−v and P0+v
+    const run1 = poly([add(P0, v), add(P1, v), add(P1, v, -1), add(P0, v, -1), ...torn]);
+    const run2 = poly([add(P1, v), add(P2, v), add(P2, v, -1), add(P1, v, -1)]);
+    const T = 1; // its thickness
+    const thick = poly([add(P0, v, -1), add(P1, v, -1), add(P2, v, -1), add(add(P2, v, -1), [0, T]), add(add(P1, v, -1), [0, T]), add(add(P0, v, -1), [0, T])]);
+    fill(ctx, thick, lo(col, 0.45));
+    stroke(ctx, thick);
+    fill(ctx, run1, col);
+    rim(ctx, run1, 0.9, 1, hi(col, 0.4));
+    fill(ctx, run2, hi(col, 0.3));
+    for (const [p, q, ts] of [[P0, P1, [0.36, 0.78]], [P1, P2, [0.3, 0.74]]] as const) {
+      for (const t of ts) {
+        const x = p[0] + (q[0] - p[0]) * t, y = p[1] + (q[1] - p[1]) * t;
+        const h = oval(x, y, 1.75, 1.45, Math.atan2(q[1] - p[1], q[0] - p[0]));
+        fill(ctx, h, lo(col, 0.72));
+        rim(ctx, h, -0.7, -0.8, lo(col, 0.2)); // the hole's lit far wall: the sheet's own thickness
+      }
+    }
+    line(ctx, [add(P1, v), add(P1, v, -1)], LINE, lo(col, 0.5));
+    stroke(ctx, run1);
+    stroke(ctx, run2);
+    glint(ctx, 8.2, 9.6, 1.2);
+  },
 };
+
+/** Circles' union as one shape (nonzero: overlaps fill once). */
+const union = (lobes: ReadonlyArray<readonly [number, number, number]>, dx = 0, dy = 0): Shape => (ctx) => {
+  for (const [x, y, r] of lobes) circle(x + dx, y + dy, r)(ctx);
+};
+
+/**
+ * A body made of round lobes, lit as one: its outline inked round the union (a double-width stroke
+ * whose inner half the fill covers), the lit band where the union shifted down-right leaves it
+ * (top-left; `lit`, its tone), the shaded band where it shifted up-left leaves it (bottom-right) —
+ * `rim` for a shape of many overlapping contours, by nested clips.
+ */
+function lumpLit(ctx: Ctx, lobes: ReadonlyArray<readonly [number, number, number]>, col: string, lit = hi(col, 0.36)): void {
+  const all: Shape = (k) => k.rect(-GLYPH, -GLYPH, GLYPH * 3, GLYPH * 3);
+  stroke(ctx, union(lobes), OUT * 2);
+  inside(ctx, union(lobes), () => {
+    fill(ctx, all, lit);
+    inside(ctx, union(lobes, 1.1, 1.3), () => {
+      fill(ctx, all, lo(col, 0.34));
+      inside(ctx, union(lobes, -1.7, -2.1), () => fill(ctx, all, col));
+    });
+  });
+}
 
 /** Draw one item glyph in the 32 px space (the caller scales). */
 export function drawItem(ctx: Ctx, id: ItemId): void {

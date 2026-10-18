@@ -15,6 +15,15 @@
 // lies on the sun's side is the base's shadow under the building itself (hidden by it), and the
 // map leaves the seam where it is, so what is kept only ever moves along the light, away from
 // the sun.
+//
+// An item sorted among the volumes (D130: by a building's near face) is drawn over the shadows'
+// layer, so it takes the shade the layer lays there itself, as a tint: the buildings view reads
+// the masks back (`maskCover`, through the day's map) where the item stands.
+
+import { C, mix, num } from '../art/tokens';
+
+/** The shadows' colour: ink with a little lilac (Moebius shadows are cool on the warm sand). */
+export const SHADOW_TINT = num(mix(C.ink, C.lilacD, 0.3));
 
 /** The reference shadow the masks are baked with: ground tiles per level of height (screen-fixed tile terms). */
 export const SHADOW_DX = 0.42;
@@ -122,6 +131,51 @@ export function reliefSun(hour: number, night: number, reach: number, maxLevel: 
   const n = Math.hypot(dx, dy), cap = reach / maxLevel;
   if (n > cap) { dx *= cap / n; dy *= cap / n; }
   return [dx, dy, look.alpha * 0.85];
+}
+
+/** A baked shadow mask's alpha, one byte a px, row-major: read back once from its sheet (`maskCover`). */
+export interface MaskAlpha { readonly w: number; readonly h: number; readonly a: Uint8Array }
+
+/** The day's map (`shadowMap`) as Pixi lays it: X = a·x + c·y, Y = b·x + d·y. */
+export type ShadowMat = readonly [number, number, number, number];
+
+/**
+ * How much of a cast shadow covers iso world point (px, py) (0…1, the mask's alpha there; D130):
+ * its mask laid as the buildings view lays it — its top-left at (x, y) before the day's map, then
+ * stretched and swung about its foot (fx, fy) by `m` — read back through the map's inverse. An
+ * item sorted among the volumes (items-view.ts) is over the shadows' layer, so it takes this
+ * shade itself, as a tint (`shadeTint`).
+ */
+export function maskCover(mask: MaskAlpha, m: ShadowMat, x: number, y: number, fx: number, fy: number, px: number, py: number): number {
+  const [a, b, c, d] = m, det = a * d - b * c;
+  const rx = px - fx, ry = py - fy;
+  const qx = (d * rx - c * ry) / det + fx - x, qy = (a * ry - b * rx) / det + fy - y;
+  if (!(qx >= 0 && qy >= 0 && qx < mask.w && qy < mask.h)) return 0;
+  return mask.a[Math.floor(qy) * mask.w + Math.floor(qx)]! / 255;
+}
+
+/**
+ * How far past its own box (iso px) a mask's shadow can reach at any hour: the day's map moves a
+ * point of it along the light by its own reach along the light (from the foot) times the change of
+ * length, at most the longest shadow's plus the reference's (`shadowMap`: what lies on the seam
+ * stays). For the buildings view's index of which shadows may cover a point.
+ */
+export function maskReach(x: number, y: number, w: number, h: number, fx: number, fy: number): number {
+  const [sx, sy] = SHADOW_PX, n2 = sx * sx + sy * sy;
+  let along = 0;
+  for (const [cx, cy] of [[x, y], [x + w, y], [x, y + h], [x + w, y + h]] as const) along = Math.max(along, ((cx - fx) * sx + (cy - fy) * sy) / n2);
+  return along * Math.sqrt(n2) * (SHADOW_LONGEST + 1) * 1.05;
+}
+
+/**
+ * The tint that lays the shadows' ink at opacity `a` over what it multiplies: exact over white,
+ * near enough over an item's colours (the ink is dark). White for no shade.
+ */
+export function shadeTint(a: number): number {
+  if (!(a > 0)) return 0xffffff;
+  const k = Math.min(1, a);
+  const ch = (v: number): number => Math.round(255 * (1 - k) + k * v);
+  return (ch((SHADOW_TINT >> 16) & 255) << 16) | (ch((SHADOW_TINT >> 8) & 255) << 8) | ch(SHADOW_TINT & 255);
 }
 
 /**

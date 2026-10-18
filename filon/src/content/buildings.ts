@@ -44,7 +44,7 @@ export const BUILDINGS = {
     name: { fr: 'Excavatrice', en: 'Excavator' },
     desc: { fr: 'Creuse la roche marquée avec Aménager à 3 tuiles d’elle au plus, et sans marque à portée exploite la roche voisine en carrière, sans l’entamer. La pierre sort à l’arrière, le minerai enfoui file au Cœur.', en: 'Digs the rock you mark with Landscape up to 3 tiles from it, and with no mark in reach quarries the rock beside it without wearing it away. Stone leaves at the back; ore buried in the rock goes to the Core.' },
     kind: 'excavator', category: 'extraction', w: 3, h: 3, needsZone: true, unlock: 'tr2', kw: 240, idleKw: 24,
-    cost: [['steel', 12], ['iron_plate', 10], ['gear', 10], ['circuit', 4]], ports: [P(1, 2, 'S', 'out')], excavator: { reach: 3, speed: 1000 },
+    cost: [['steel', 12], ['iron_plate', 10], ['gear', 10], ['motor', 4]], ports: [P(1, 2, 'S', 'out')], excavator: { reach: 3, speed: 1000 }, // D129: motors, not circuits
   },
   pump: {
     name: { fr: 'Pompe à eau', en: 'Water Pump' },
@@ -152,7 +152,7 @@ export const BUILDINGS = {
   // ── production ────────────────────────────────────────────────────────────
   kiln: {
     name: { fr: 'Fonderie', en: 'Smelter' },
-    desc: { fr: 'Fond le minerai de fer en plaques et le sable en verre, en brûlant du charbon : pas besoin d’électricité. Amène minerai et charbon à ses deux entrées, à l’arrière.', en: 'Smelts iron ore into plates and sand into glass by burning coal: no power needed. Bring ore and coal to its two inputs at the back.' },
+    desc: { fr: 'Fond le minerai de fer en plaques et le sable en verre, en brûlant du charbon : pas besoin d’électricité. Minerai et charbon à ses deux entrées, à l’arrière ; le métal laisse des scories par la même sortie que les plaques.', en: 'Smelts iron ore into plates and sand into glass by burning coal: no power needed. Ore and coal to its two inputs at the back; metal leaves slag through the plates’ own output.' },
     kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'kiln', crafts: true,
     cost: [['iron_plate', 15]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
   },
@@ -168,9 +168,9 @@ export const BUILDINGS = {
   // two recipes (plates or glass: it waits for the player's choice, D83). Built of Tier 1 materials.
   electric_smelter: {
     name: { fr: 'Fonderie électrique', en: 'Electric Smelter' },
-    desc: { fr: 'Fond le minerai de fer en plaques et le sable en verre à l’électricité, sans charbon, au rythme de la fonderie. Elle tire beaucoup sur le réseau : prévois l’énergie avant de l’allumer.', en: 'Smelts iron ore into plates and sand into glass with power, no coal, at the smelter’s pace. It draws heavily on the grid: plan the power before you switch it on.' },
+    desc: { fr: 'Fond le minerai de fer en plaques et le sable en verre à l’électricité, sans charbon, au rythme de la fonderie, le métal avec ses scories par la même sortie. Elle tire beaucoup sur le réseau : prévois l’énergie avant de l’allumer.', en: 'Smelts iron ore into plates and sand into glass with power, no coal, at the smelter’s pace, metal with its slag through the same output. It draws heavily on the grid: plan the power before you switch it on.' },
     kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'dn_esmelt', crafts: true, kw: 300, idleKw: 15,
-    cost: [['iron_plate', 15], ['copper_plate', 10], ['brick', 10], ['glass', 4]], ports: [P(0, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
+    cost: [['iron_plate', 15], ['copper_plate', 10], ['brick', 10], ['copper_coil', 6]], ports: [P(0, 1, 'S', 'in'), P(0, 0, 'N', 'out')], // D129: its induction coils
   },
   wire_mill: {
     name: { fr: 'Tréfileuse', en: 'Wire Mill' },
@@ -178,17 +178,22 @@ export const BUILDINGS = {
     kind: 'machine', category: 'production', w: 1, h: 2, needsZone: true, unlock: 'wire_mill', crafts: true, kw: 60, idleKw: 6,
     cost: [['iron_plate', 15], ['glass', 4]], ports: [P(0, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
   },
+  // The electronics workshop: Tier 2's research since D129 (owner, 2026-10-18: « devrait probablement
+  // avoir un style plus avancé, et demander plus en ressources que du verre et du cuivre »), a plan of
+  // the Production path before. Its id and its 2×2 are kept (saves hold both); a third intake on its
+  // side takes the circuit's third input, as the compact assembly workshop's does.
   workshop: {
     name: { fr: 'Atelier d’électronique', en: 'Electronics Workshop' },
-    desc: { fr: 'Grave des circuits imprimés (fil de cuivre et verre) et, avec la recherche, monte des servomoteurs et des bras robotisés. Choisis la recette dans l’inspecteur.', en: 'Etches circuit boards (copper wire and glass) and, with research, assembles servomotors and robot arms. Pick the recipe in the inspector.' },
+    desc: { fr: 'Une ligne d’électronique sous verre : grave des circuits imprimés (une plaque de cuivre, deux fils de cuivre, un verre) et, avec la recherche, monte des servomoteurs et des bras robotisés. Deux entrées à l’arrière, une sur le côté.', en: 'An electronics line under glass: etches circuit boards (a copper plate, two copper wires, a glass) and, with research, assembles servomotors and robot arms. Two inputs at the back, one on the side.' },
     kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'workshop', crafts: true, kw: 120, idleKw: 12,
-    cost: [['iron_plate', 20], ['glass', 4], ['copper_wire', 6]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
+    cost: [['steel', 10], ['copper_plate', 10], ['cable', 6], ['glass', 6], ['oscillator', 4]],
+    ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(0, 1, 'W', 'in'), P(0, 0, 'N', 'out')],
   },
   great_workshop: {
     name: { fr: 'Atelier d’assemblage', en: 'Assembly Workshop' },
     desc: { fr: 'Assemble les pièces lourdes avec trois entrées : batteries vides, cœurs thermiques et, plus tard, résonateurs.', en: 'Assembles heavy parts from three inputs: empty batteries, thermal cores and, later, resonators.' },
     kind: 'machine', category: 'production', w: 3, h: 3, needsZone: true, unlock: 'tr3', crafts: true, kw: 240, idleKw: 24,
-    cost: [['steel', 20], ['brick', 20], ['gear', 10], ['circuit', 10]],
+    cost: [['steel', 20], ['brick', 20], ['gear', 10], ['motor', 4]], // D129: motors, not circuits (Ceramics may come before the electronics workshop)
     ports: [P(0, 2, 'S', 'in'), P(1, 2, 'S', 'in'), P(2, 2, 'S', 'in'), P(1, 0, 'N', 'out')],
   },
   great_workshop_compact: {
@@ -258,9 +263,9 @@ export const BUILDINGS = {
   },
   wind_flower: {
     name: { fr: 'Éolienne', en: 'Wind Turbine' },
-    desc: { fr: 'De l’électricité au gré du vent : jusqu’à 160 kW. Le vent change d’un lieu à l’autre — fort sur les crêtes et les grands espaces dégagés, faible au creux du cirque et à l’abri des reliefs — et d’une heure à l’autre ; par grande tempête, elle s’arrête.', en: 'Power as the wind blows: up to 160 kW. The wind changes from place to place — strong on the ridges and wide open ground, weak down in the cirque and in the lee of the relief — and from hour to hour; in a great storm it stops.' },
+    desc: { fr: 'De l’électricité au gré du vent : jusqu’à 130 kW. Le vent change d’un lieu à l’autre — fort sur les crêtes et les grands espaces dégagés, faible au creux du cirque et à l’abri des reliefs — et d’une heure à l’autre ; par grande tempête, elle s’arrête.', en: 'Power as the wind blows: up to 130 kW. The wind changes from place to place — strong on the ridges and wide open ground, weak down in the cirque and in the lee of the relief — and from hour to hour; in a great storm it stops.' },
     kind: 'wind', replaceGroup: 'wind', category: 'energy', w: 2, h: 2, needsZone: true, onRock: true, unlock: 'wind_flower',
-    cost: [['iron_plate', 10], ['glass', 4], ['copper_wire', 6]], ports: [], gen: { kw: 160, wind: { cutIn: 400, rated: 1400, cutOut: 3600 } }, // D95: its rating, reached at 1.4× the reference wind; 360 → 160 kW (D116: half a coal generator at best)
+    cost: [['iron_plate', 10], ['glass', 4], ['copper_wire', 6]], ports: [], gen: { kw: 130, wind: { cutIn: 400, rated: 1400, cutOut: 3600 } }, // D95: its rating, reached at 1.4× the reference wind; 360 → 160 kW (D116: half a coal generator at best) → 130 (D132)
   },
   sun_bulb: {
     name: { fr: 'Panneau solaire', en: 'Solar Panel' },
@@ -272,13 +277,13 @@ export const BUILDINGS = {
     name: { fr: 'Accumulateur', en: 'Accumulator' },
     desc: { fr: 'La batterie du réseau : se remplit des surplus et les rend quand la demande dépasse la production. 1 200 kW·min, 300 kW au plus.', en: 'The grid’s battery: fills up with surplus power and gives it back when demand outruns supply. 1,200 kW·min, 300 kW at most.' },
     kind: 'accumulator', category: 'energy', w: 2, h: 2, needsZone: true, unlock: 'tr3',
-    cost: [['ceramic', 10], ['empty_cell', 4], ['circuit', 4], ['cable', 4]], ports: [], accumulator: { kwMin: 1200, kw: 300 },
+    cost: [['ceramic', 10], ['empty_cell', 4], ['copper_coil', 6], ['cable', 4]], ports: [], accumulator: { kwMin: 1200, kw: 300 },
   },
   cell_charger: {
     name: { fr: 'Chargeur', en: 'Battery Charger' },
     desc: { fr: 'Charge une batterie vide en 2 minutes à 300 kW : de l’énergie en boîte, à vendre à la Criée.', en: 'Charges an empty battery in 2 minutes at 300 kW: boxed energy to sell at the Crier Ring.' },
     kind: 'machine', category: 'energy', w: 2, h: 2, needsZone: true, unlock: 'en4', crafts: true, kw: 300, idleKw: 10,
-    cost: [['ceramic', 10], ['circuit', 6], ['copper_plate', 8]], ports: [P(0, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
+    cost: [['ceramic', 10], ['copper_coil', 8], ['copper_plate', 8]], ports: [P(0, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
   },
   fumarole_tap: {
     name: { fr: 'Centrale géothermique', en: 'Geothermal Plant' },
@@ -337,7 +342,7 @@ export const BUILDINGS = {
   },
   press: {
     name: { fr: 'Presse', en: 'Press' },
-    desc: { fr: 'Frappe les engrenages, trois plaques de fer pour un.', en: 'Stamps gears, three iron plates each.' },
+    desc: { fr: 'Frappe les engrenages, trois plaques de fer pour un, et laisse des chutes par la même sortie : une tous les deux engrenages.', en: 'Stamps gears, three iron plates each, and leaves scrap through the same output: one every two gears.' },
     kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'tr1', crafts: true, kw: 60, idleKw: 6,
     cost: [['iron_plate', 20]], ports: [P(0, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
   },
@@ -357,15 +362,15 @@ export const BUILDINGS = {
   },
   pitch_turbine: {
     name: { fr: 'Éolienne à pas variable', en: 'Pitch-Control Turbine' },
-    desc: { fr: 'Ses pales s’orientent au vent : jusqu’à 220 kW, dès le moindre souffle et jusque dans la tempête. Posée sur une éolienne, elle la remplace.', en: 'Its blades turn to the wind: up to 220 kW, from the lightest breeze and on through a storm. Placed over a wind turbine, it replaces it.' },
+    desc: { fr: 'Ses pales s’orientent au vent : jusqu’à 180 kW, dès le moindre souffle et jusque dans la tempête. Posée sur une éolienne, elle la remplace.', en: 'Its blades turn to the wind: up to 180 kW, from the lightest breeze and on through a storm. Placed over a wind turbine, it replaces it.' },
     kind: 'wind', replaceGroup: 'wind', category: 'energy', w: 2, h: 2, needsZone: true, onRock: true, unlock: 'en_pitch',
-    cost: [['iron_plate', 15], ['glass', 6], ['copper_wire', 8], ['gear', 4]], ports: [], gen: { kw: 220, wind: { cutIn: 300, rated: 1250 } }, // D95: feathered blades, no storm stop; 480 → 220 kW (D116)
+    cost: [['iron_plate', 15], ['glass', 6], ['copper_coil', 4], ['gear', 4]], ports: [], gen: { kw: 180, wind: { cutIn: 300, rated: 1250 } }, // D95: feathered blades, no storm stop; 480 → 220 kW (D116) → 180 (D132)
   },
   heavy_accumulator: {
     name: { fr: 'Accumulateur lourd', en: 'Heavy Accumulator' },
     desc: { fr: 'Une batterie de réseau plus grosse : 4 000 kW·min, 800 kW au plus.', en: 'A bigger grid battery: 4,000 kW·min, 800 kW at most.' },
     kind: 'accumulator', category: 'energy', w: 2, h: 2, needsZone: true, unlock: 'en_heavyacc',
-    cost: [['ceramic', 20], ['empty_cell', 10], ['circuit', 8], ['cable', 10]], ports: [], accumulator: { kwMin: 4000, kw: 800 },
+    cost: [['ceramic', 20], ['empty_cell', 10], ['copper_coil', 12], ['cable', 10]], ports: [], accumulator: { kwMin: 4000, kw: 800 },
   },
   solar_farm: {
     name: { fr: 'Ferme solaire', en: 'Solar Farm' },
@@ -402,7 +407,7 @@ export const BUILDINGS = {
     name: { fr: 'Foreuse rapide', en: 'Fast Drill' },
     desc: { fr: 'Une foreuse 2×2 plus puissante : jusqu’à 35/min selon la richesse des tuiles. Posée sur une foreuse, elle la remplace.', en: 'A stronger 2×2 drill: up to 35/min, depending on how rich the tiles are. Placed over a drill, it replaces it.' },
     kind: 'drill', replaceGroup: 'drill', category: 'extraction', w: 2, h: 2, needsZone: true, unlock: 'ex_fastdrill', kw: 180, idleKw: 18,
-    cost: [['iron_plate', 20], ['gear', 6], ['circuit', 2]], ports: [P(0, 0, 'N', 'out')], drill: { perMin: 35 },
+    cost: [['iron_plate', 20], ['gear', 6], ['copper_coil', 4]], ports: [P(0, 0, 'N', 'out')], drill: { perMin: 35 }, // D129: coils, not circuits
   },
   hp_pump: {
     name: { fr: 'Pompe haute pression', en: 'High-Pressure Pump' },
@@ -426,7 +431,7 @@ export const BUILDINGS = {
     name: { fr: 'Tréfileuse double', en: 'Twin Wire Mill' },
     desc: { fr: 'Deux filières : le fil de cuivre deux fois plus vite que la tréfileuse.', en: 'Two dies: copper wire twice as fast as the wire mill.' },
     kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'dn_wiremill', crafts: true, kw: 120, idleKw: 12, speed: 2000,
-    cost: [['steel', 6], ['copper_plate', 6], ['glass', 4]], ports: [P(0, 1, 'S', 'in'), P(1, 0, 'N', 'out')],
+    cost: [['steel', 6], ['copper_plate', 6], ['motor', 2]], ports: [P(0, 1, 'S', 'in'), P(1, 0, 'N', 'out')], // D129: its dies' motors
   },
   etcher: {
     name: { fr: 'Graveuse', en: 'Etcher' },
@@ -482,7 +487,8 @@ export const BUILDINGS = {
   // ── appended (D87): quartz, from the cliff face to the oscillator ─────────
   // The face cutter stands on the floor beside a wall, never on it (owner, 2026-10-15: « une
   // machine particulière qui le récupère et qui se pose à côté et pas au-dessus, car c'est dans une
-  // paroi »): its back against the face, its cutting head in the rock, its output at its front.
+  // paroi »): its back against the face, its cutting head in the rock, its output at its front. The
+  // quartz workshop is its own research node since D128 (`dn_quartzshop`), the cutter a plan (D101).
   face_cutter: {
     name: { fr: 'Haveuse', en: 'Face Cutter' },
     desc: { fr: 'Se pose au pied d’une paroi de quartz, dos contre la roche : sa tête taille le quartz des tuiles de paroi qu’elle touche, jusqu’à 10/min. La production sort à l’avant, sur un ruban.', en: 'Stands at the foot of a quartz face, its back to the rock: its head cuts the quartz out of the face tiles it touches, up to 10/min. Its output leaves at the front, onto a ribbon.' },
@@ -492,7 +498,7 @@ export const BUILDINGS = {
   quartz_workshop: {
     name: { fr: 'Atelier de quartz', en: 'Quartz Workshop' },
     desc: { fr: 'Taille le quartz en lames et les monte sur deux fils de cuivre : des oscillateurs à quartz, pour les serveurs et la recherche. Deux entrées à l’arrière.', en: 'Cuts quartz into blades and mounts each on two copper wires: quartz oscillators, for the servers and research. Two inputs at the back.' },
-    kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'ex_quartz', crafts: true, kw: 60, idleKw: 6,
+    kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'dn_quartzshop', crafts: true, kw: 60, idleKw: 6,
     cost: [['iron_plate', 15], ['glass', 4], ['copper_wire', 4]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
   },
   // ── appended (D103): what keeps the Gleaners off the ribbons ─────────────
@@ -533,16 +539,27 @@ export const BUILDINGS = {
   // heavy machines, and the press's pipes. Each its one recipe (it starts on it, D83).
   brickworks: {
     name: { fr: 'Briqueterie', en: 'Brickworks' },
-    desc: { fr: 'Moule le sable mouillé en briques et les cuit : un sable et deux eaux par brique. Le sable arrive par ruban, l’eau des pompes par conduit.', en: 'Moulds wet sand into bricks and bakes them: a sand and two waters a brick. Sand comes by ribbon, water from pumps by conduit.' },
+    desc: { fr: 'Moule le sable mouillé en briques et les cuit : un sable et deux eaux par brique, ou deux scories et une eau. Le sable ou les scories arrivent par ruban, l’eau des pompes par conduit.', en: 'Moulds wet sand into bricks and bakes them: a sand and two waters a brick, or two slag and a water. Sand or slag comes by ribbon, water from pumps by conduit.' },
     // onRock: by the Crown's tarn too, like the ceramic oven (D63), where the water is.
     kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, onRock: true, unlock: 'ex_brick', crafts: true, kw: 90, idleKw: 9,
     cost: [['iron_plate', 20], ['glass', 4], ['copper_wire', 4]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
   },
   steel_mill: {
     name: { fr: 'Aciérie', en: 'Steel Mill' },
-    desc: { fr: 'Souffle deux plaques de fer et un charbon en un acier, dans un convertisseur garni de briques. Une fonderie suffit à la nourrir.', en: 'Blows two iron plates and a coal into one steel, in a brick-lined converter. One smelter is enough to feed it.' },
+    desc: { fr: 'Souffle deux plaques de fer et un charbon en un acier, dans un convertisseur garni de briques, ou refond trois chutes de la presse ; ses scories sortent par la même sortie. Une fonderie suffit à la nourrir.', en: 'Blows two iron plates and a coal into one steel, in a brick-lined converter, or remelts three of the press’s scrap; its slag leaves through the same output. One smelter is enough to feed it.' },
     kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'dn_steel', crafts: true, kw: 150, idleKw: 15,
     cost: [['iron_plate', 20], ['brick', 20], ['copper_plate', 4]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
+  },
+  // ── appended (D129): the assembly bench ───────────────────────────────────
+  // Tier 1's plain workbench, in the electronics workshop's place on the Production path (the
+  // workshop went to Tier 2's research): it winds copper coils from its plan and, once Mechanics'
+  // press makes gears, builds motors. « Établi », not « Atelier »: not to be taken for the assembly
+  // workshop (`great_workshop`, « Atelier d'assemblage ») of Ceramics.
+  assembly_bench: {
+    name: { fr: 'Établi de montage', en: 'Assembly Bench' },
+    desc: { fr: 'Un établi d’atelier : bobine le fil de cuivre sur un noyau de fer (deux fils et une plaque par bobine) et, avec la Mécanique, monte des moteurs électriques (deux bobines et un engrenage). Deux entrées à l’arrière.', en: 'A workshop bench: winds copper wire on an iron core (two wires and a plate a coil) and, with Mechanics, builds electric motors (two coils and a gear). Two inputs at the back.' },
+    kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'assembly_bench', crafts: true, kw: 60, idleKw: 6,
+    cost: [['iron_plate', 20], ['copper_wire', 4]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
   },
 } as const satisfies Record<string, BuildingDef>;
 

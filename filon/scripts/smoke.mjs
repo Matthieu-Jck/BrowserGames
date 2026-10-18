@@ -112,7 +112,7 @@ await step('power: the demo base is fully wired to the Heart’s grid', async ()
     sim.ensureCompiled();
     const home = sim.graph.netOfEnt.get(sim.hearthId);
     const off = sim.ents.sorted()
-      .filter((e) => ['drill', 'workshop', 'observatory', 'trade_post', 'brazier', 'wind_flower'].includes(window.FL.entityAt(e.x, e.y)?.def))
+      .filter((e) => ['drill', 'assembly_bench', 'observatory', 'trade_post', 'brazier', 'wind_flower'].includes(window.FL.entityAt(e.x, e.y)?.def))
       .filter((e) => sim.graph.netOfEnt.get(e.id) !== home)
       .map((e) => window.FL.entityAt(e.x, e.y)?.def);
     return { off, pairs: sim.links.size, wires: window.FL.wires() };
@@ -151,8 +151,19 @@ await step('build: pick a drill in the tray and click it onto a deposit', async 
 await step('build: drag a ribbon L, then box-demolish it (refunded)', async () => {
   await page.keyboard.press('Escape');
   await FL(() => window.FL.tool('ribbon'));
-  const a = await FL(() => window.FL.freeSpot('ribbon', 518, 520, 10));
-  assert(a, 'no ribbon spot');
+  // A spot whose whole box, a tile round the L, is free: the box takes down everything in it, and the
+  // demo base's turbines stand six tiles apart now (D132), one of them near enough to fall in it.
+  const a = await FL(() => {
+    const sim = window.FL.app.sim, clear = (x0, y0) => {
+      for (let y = y0 - 1; y <= y0 + 3; y++) for (let x = x0 - 1; x <= x0 + 5; x++) { const c = sim.canPlace('ribbon', x, y, 0); if (!c.ok || c.replaces.length) return false; }
+      return true;
+    };
+    for (let d = 0; d <= 10; d++) for (let dy = -d; dy <= d; dy++) for (let dx = -d; dx <= d; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) === d && clear(518 + dx, 520 + dy)) return [518 + dx, 520 + dy];
+    }
+    return null;
+  });
+  assert(a, 'no ribbon spot with a clear box');
   const b = [a[0] + 4, a[1] + 2];
   await FL(([x, y]) => window.FL.lookAt(x, y, 1.2), [a[0] + 2, a[1] + 1]);
   await page.waitForTimeout(300);
@@ -438,7 +449,7 @@ await step('power: a wire too long is refused, with the reason', async () => {
   const far = await FL(() => {
     const e = window.FL.app.sim.ents.sorted().find((o) => {
       const d = window.FL.entityAt(o.x, o.y)?.def;
-      return (d === 'drill' || d === 'workshop') && (Math.abs(o.x - 512) > 14 || Math.abs(o.y - 512) > 14);
+      return (d === 'drill' || d === 'assembly_bench') && (Math.abs(o.x - 512) > 14 || Math.abs(o.y - 512) > 14);
     });
     return e ? [e.x, e.y] : null;
   });
@@ -465,7 +476,7 @@ await step('inspect: the grid module (D76) — a wind flower shows rated × fact
   const ids = await FL(() => {
     const sim = window.FL.app.sim;
     const of = (def) => sim.ents.sorted().find((e) => window.FL.entityAt(e.x, e.y)?.def === def && e.builtAt === 0)?.id ?? 0;
-    return { wind: of('wind_flower'), shop: of('workshop') };
+    return { wind: of('wind_flower'), shop: of('assembly_bench') };
   });
   assert(ids.wind && ids.shop, `demo base: ${JSON.stringify(ids)}`);
   await FL((id) => window.FL.selected(id), ids.wind);
@@ -677,13 +688,14 @@ await step('crier: a standing order imports copper ore by the post’s one exit 
     pickers: document.querySelectorAll('.inspector [data-outlet], .inspector [data-pick^="stream"]').length,
     linked: !!document.querySelector('.inspector [data-gate="out"][data-gate-linked]'),
     recaps: document.querySelectorAll('.inspector .tp-recap').length,
+    cards: ['sell', 'cargo'].every((k) => !!document.querySelector(`.inspector [data-tp="${k}"]`)),
     order: !!document.querySelector('.inspector .tr-order[data-item="copper_ore"]'),
     lines: [...document.querySelectorAll('.inspector .tp-recap .tp-line[data-item]')].map((n) => n.getAttribute('data-item')),
   }));
   console.log(`    recap: ${g.lines.join(',') || 'empty'}${g.linked ? '' : ' (exit not linked)'}`);
   assert(g.pickers === 0, 'the trade post still shows outlet or stream pickers');
-  assert(g.recaps === 2, `no cargo / on-its-way recap: ${g.recaps}`);
-  assert(g.linked && g.order, `the exit or the copper order is not shown: ${JSON.stringify(g)}`);
+  assert(g.recaps === 3, `no to-sell / delivered / on-its-way recap (D131): ${g.recaps}`);
+  assert(g.linked && g.order && g.cards, `the exit, the copper order or the two stores (à vendre, livré) are not shown: ${JSON.stringify(g)}`);
   await page.waitForTimeout(600);
   await page.screenshot({ path: shot('smoke-m6-post.png') });
   // Iso picking: a click on the post's pad or apron picks the post — a flat ribbon in front never
@@ -709,7 +721,7 @@ await step('space: mark rock with the brush, an excavator digs six tiles (stone,
     const sim = window.FL.app.sim;
     for (const id of ['tr1', 'tr2', 'tr3', 'tr4', 'tr6']) sim.done.add(id);
     sim.rebuildDerived();
-    for (const [it, n] of [['iron_plate', 4000], ['gear', 800], ['circuit', 400], ['ceramic', 400], ['lens', 40], ['resin_canvas', 60], ['thermal_core', 40], ['steel', 200], ['brick', 200], ['pipe', 100], ['cable', 100], ['copper_plate', 100]]) sim.grant(it, n); // D123: the excavator is built of steel
+    for (const [it, n] of [['iron_plate', 4000], ['gear', 800], ['circuit', 400], ['ceramic', 400], ['lens', 40], ['resin_canvas', 60], ['thermal_core', 40], ['steel', 200], ['brick', 200], ['pipe', 100], ['cable', 100], ['copper_plate', 100], ['motor', 40], ['copper_coil', 100]]) sim.grant(it, n); // D123: the excavator is built of steel; D129: and motors
     if (!sim.upgradeHearth().ok) return { err: 'hearth upgrade' };
     // The nearest rock to the Hearth, and an excavator on the claim's land facing it.
     let best = null;
@@ -1148,7 +1160,8 @@ await step('views (D88, D95): P, F, O, V and I show one system each over the bas
   await page.screenshot({ path: shot('smoke-views-production.png') });
   // Vent (V, D95: the late base has the Anémométrie plan): the turbines' badges, the card's compass, the 24 h chart, the turbines' rows.
   await page.keyboard.press('v');
-  await page.waitForFunction(() => { const v = window.FL.mapView(); return v.view === 'wind' && v.marks > 0 && v.panel && (window.FL.app.views.data.wind?.turbines.length ?? 0) > 0; }, undefined, { timeout: 3000 });
+  // (the card rebuilds at its next refresh, a quarter second after the view's readings: wait for its compass too)
+  await page.waitForFunction(() => { const v = window.FL.mapView(); return v.view === 'wind' && v.marks > 0 && v.panel && (window.FL.app.views.data.wind?.turbines.length ?? 0) > 0 && !!document.querySelector('[data-screen="view"] canvas.vp-rose'); }, undefined, { timeout: 3000 });
   const wv = await FL(() => ({
     rose: !!document.querySelector('[data-screen="view"] canvas.vp-rose'),
     chart: !!document.querySelector('[data-screen="view"] .vp-wind canvas.vp-chart'),
@@ -1303,6 +1316,66 @@ await step('stock (D96): no stock bar on the HUD; « Stock » opens the Heart\'s
   await page.mouse.click(720, 600);
   assert(await FL(() => document.querySelector('[data-screen="stock"]').hasAttribute('hidden')), 'a click on the world did not close it');
   assert(/"open":false/.test(await FL(() => localStorage.getItem('filon.stock.v1') ?? '')), 'the closed choice was not kept');
+  await FL(() => { window.FL.selected(0); window.FL.pause(); });
+  await FL(() => window.FL.debugSave(null));
+  assert((await FL(() => window.FL.hash())) === own, 'the player’s base did not come back as it was');
+  await FL(() => window.FL.resume());
+});
+
+await step('auto-sell (D127): on the late base the Stock shows a ◉ per item, its auto-sold item marked; a click switches another on, its threshold edited in place; the purse breaks out « Vente automatique »', async () => {
+  const saves = await FL(() => window.FL.debugSaves());
+  if (!saves) { console.log('    (no debug page on this build)'); return; }
+  await FL(() => window.FL.pause());
+  const own = await FL(() => window.FL.hash());
+  const r = await FL(() => window.FL.debugSave('late'));
+  assert(r.ok, `late base: ${JSON.stringify(r)}`);
+  await FL(() => { window.FL.menu(false); window.FL.close(); window.FL.resume(); });
+  await page.waitForFunction(() => !document.querySelector('[data-hud-stock]')?.hidden, undefined, { timeout: 2000 });
+  await page.click('[data-hud-stock]');
+  await page.waitForTimeout(1300); // a refresh, and a second of the rates' samples
+  // The late base auto-sells its most plentiful item (scenarios.ts): its row is marked, its line and threshold shown.
+  const a = await FL(() => {
+    const root = document.querySelector('[data-screen="stock"]');
+    const on = [...root.querySelectorAll('.stk-row[data-auto]')];
+    return { toggles: root.querySelectorAll('[data-stock-auto]:not([hidden])').length, on: on.map((n) => n.getAttribute('data-item')),
+      at: on[0]?.querySelector('[data-stock-at]')?.textContent ?? '', line: on[0]?.querySelector('.stk-sold')?.textContent ?? '',
+      engine: [...window.FL.app.sim.trade.autoSell.keys()].length };
+  });
+  assert(a.toggles >= 5 && a.on.length === 1 && a.engine === 1 && /seuil/.test(a.at) && /Vendu automatiquement/.test(a.line), `the auto-sold row: ${JSON.stringify(a)}`);
+  // Another item switched on: the one the Core takes in fastest (its rate), not yet on.
+  const pick = await FL(() => {
+    const rows = [...document.querySelectorAll('[data-screen="stock"] .stk-row[data-item]:not([data-auto])')].filter((n) => !n.querySelector('[data-stock-auto]')?.hidden);
+    const rate = (n) => Number((n.querySelector('.stk-rate')?.textContent ?? '').replace(/[^0-9,]/g, '').replace(',', '.')) || 0;
+    rows.sort((x, y) => rate(y) - rate(x));
+    return rows[0]?.getAttribute('data-item') ?? null;
+  });
+  assert(pick, 'no item to switch on');
+  await page.click(`[data-stock-auto="${pick}"]`);
+  await page.waitForFunction((id) => !!document.querySelector(`[data-screen="stock"] .stk-row[data-item="${id}"][data-auto]`), pick, { timeout: 2000 });
+  // Its threshold edited in place: the chip gives way to a field; 100, Enter.
+  await page.click(`[data-stock-at="${pick}"]`);
+  await page.waitForSelector(`[data-stock-at-in="${pick}"]:not([hidden])`, { timeout: 1000 });
+  await page.fill(`[data-stock-at-in="${pick}"]`, '100');
+  await page.keyboard.press('Enter');
+  const set = await FL((id) => ({ at: window.FL.app.sim.trade.autoSell.get(window.FL.itemIndex(id)), log: window.FL.app.sim.log.filter((l) => l.cmd.k === 'autoSell').map((l) => l.cmd) }), pick);
+  assert(set.at === 100 && set.log.length >= 2, `the threshold: ${JSON.stringify(set)}`);
+  // Ten game minutes one at a time (the HUD samples the purse once a minute): the surplus sold.
+  for (let m = 0; m < 10; m++) { await FL(() => window.FL.tick(600)); await page.waitForTimeout(100); }
+  if (await FL(() => document.querySelector('[data-screen="stock"]').hasAttribute('hidden'))) await page.click('[data-hud-stock]');
+  await page.waitForTimeout(600);
+  const sold = await FL((id) => document.querySelector(`[data-screen="stock"] .stk-row[data-item="${id}"] .stk-sold`)?.textContent ?? '', pick);
+  assert(/◉\/h/.test(sold), `its line: ${sold}`);
+  await page.screenshot({ path: shot('smoke-autosell-stock.png') });
+  await page.click('[data-hud-purse]');
+  await page.waitForSelector('[data-screen="purse"]:not([hidden]) .purse-line[data-flow="auto"]', { timeout: 3000 });
+  const c = await FL(() => ({ sec: !!document.querySelector('[data-screen="purse"] [data-sec="purse-auto"]'), lines: document.querySelectorAll('[data-screen="purse"] .purse-line[data-flow="auto"]').length }));
+  assert(c.sec && c.lines >= 1, `the purse: ${JSON.stringify(c)}`);
+  await FL(() => document.querySelector('[data-screen="purse"] [data-sec="purse-auto"]')?.scrollIntoView({ block: 'center' }));
+  await page.screenshot({ path: shot('smoke-autosell-purse.png') });
+  // A click on the line opens the Stock, where it is set.
+  await page.click('[data-screen="purse"] .purse-line[data-flow="auto"]');
+  await page.waitForFunction(() => !document.querySelector('[data-screen="stock"]').hasAttribute('hidden') && document.querySelector('[data-screen="purse"]').hasAttribute('hidden'), undefined, { timeout: 2000 });
+  await page.keyboard.press('Escape');
   await FL(() => { window.FL.selected(0); window.FL.pause(); });
   await FL(() => window.FL.debugSave(null));
   assert((await FL(() => window.FL.hash())) === own, 'the player’s base did not come back as it was');
@@ -1508,7 +1581,7 @@ await step('quests: CrierBelt has the claim named; the log moves on; rewards pay
   const c0 = await FL(() => window.FL.credits());
   assert((await FL(() => window.FL.completeQuest('synth_parts'))) === null, 'completeQuest refused'); // the last quest (D90)
   q = await FL(() => window.FL.quests());
-  assert(q.done.length === 11, `done: ${q.done.length}`); // the claim's name and the tutorial's ten quests (D101: « Le Cœur grandit » added; D114: « La vapeur »; the Synthesis's parts last, D90)
+  assert(q.done.length === 12, `done: ${q.done.length}`); // the claim's name and the tutorial's eleven quests (D101: « Le Cœur grandit » added; D114: « La vapeur »; D125: « Les scories », paid in items; the Synthesis's parts last, D90)
   const c1 = await FL(() => window.FL.credits());
   assert(Math.abs(c1 - c0 - 1150) < 0.01, `credits ${c0} → ${c1}`); // 150 (« La Criée ») + 100 (« Le Cœur grandit ») + 600 (Survey Data) + 300 (the Synthesis's parts), D90, D101
   await FL(() => window.FL.completeQuest('synth_parts'));

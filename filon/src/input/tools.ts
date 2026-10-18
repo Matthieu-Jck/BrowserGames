@@ -284,7 +284,7 @@ export class Tools {
         const e = sim.ents.get(id);
         if (!e) continue;
         if (c.ok) out.doomed.push(id);
-        for (const k of refundCost(sim.costFloor, e)) out.cost.set(k.item, (out.cost.get(k.item) ?? 0) - k.mu);
+        for (const k of refundCost(sim, e)) out.cost.set(k.item, (out.cost.get(k.item) ?? 0) - k.mu);
       }
     };
     if (s.k === 'build') {

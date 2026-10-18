@@ -9,15 +9,15 @@ import type { Sim } from './state';
 
 /** What changed the purse: the recurring flows, then the one-offs. */
 export const PURSE_KINDS = [
-  // recurring
-  'sales', 'orders', 'tokens', 'fee', 'rental', 'rent',
+  // recurring (`autoSell`: the Core's surplus sold at each minute's end, D127)
+  'sales', 'orders', 'tokens', 'fee', 'rental', 'rent', 'autoSell',
   // one-offs
   'spotSell', 'spotBuy', 'land', 'reorient', 'reward', 'grant',
 ] as const;
 export type PurseKind = (typeof PURSE_KINDS)[number];
 
 /** The flows that come back every minute or hour: the HUD's figure. The rest are one-offs, told apart. */
-export const RECURRING: ReadonlySet<PurseKind> = new Set<PurseKind>(['sales', 'orders', 'tokens', 'fee', 'rental', 'rent']);
+export const RECURRING: ReadonlySet<PurseKind> = new Set<PurseKind>(['sales', 'orders', 'tokens', 'fee', 'rental', 'rent', 'autoSell']);
 
 export type PurseLog = Record<PurseKind, number>;
 

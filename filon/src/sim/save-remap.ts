@@ -56,10 +56,10 @@ type Kind = 'plain' | 'index' | 'refs';
 export const FIELDS: { readonly [K in keyof Required<SaveData>]: Kind } = {
   v: 'plain', worldSeed: 'plain', playerSeed: 'plain', mapV: 'plain', foundingEpoch: 'plain', colonyName: 'plain', emblem: 'plain', tick: 'plain',
   credits: 'plain', hearthLevel: 'plain', hearthId: 'plain', nextId: 'plain', content: 'plain',
-  ents: 'index', portItems: 'index', stock: 'index', stores: 'index', acc: 'refs', links: 'refs',
+  ents: 'index', portItems: 'index', stock: 'index', stores: 'index', selling: 'index', acc: 'refs', links: 'refs',
   done: 'plain', terrainDiff: 'plain', levelDiff: 'plain', oreDiff: 'index', land: 'plain', explored: 'plain',
   nodes: 'index', chains: 'index', produced: 'index', consumed: 'index', projects: 'index', tokens: 'plain', labQueue: 'refs',
-  costFloor: 'plain', notes: 'plain', respecs: 'plain', lastRespec: 'plain', designated: 'plain', jobs: 'refs',
+  costFloor: 'plain', costFloorD129: 'plain', notes: 'plain', respecs: 'plain', lastRespec: 'plain', designated: 'plain', jobs: 'refs',
   market: 'plain', trade: 'index', quests: 'plain', value: 'plain', expertise: 'plain',
   gleaners: 'index',
 };
@@ -68,7 +68,7 @@ export const FIELDS: { readonly [K in keyof Required<SaveData>]: Kind } = {
 export const TRADE_FIELDS: { readonly [K in keyof Required<NonNullable<SaveData['trade']>>]: Kind } = {
   cargo: 'index', orders: 'index', nextOrderId: 'plain', inflight: 'index', sold: 'index', bought: 'index',
   ledger: 'index', activity: 'refs', earned: 'plain', spent: 'plain', soldTotal: 'index', boughtTotal: 'index', floors: 'index',
-  starterTaken: 'plain',
+  autoSell: 'index', starterTaken: 'plain',
 };
 
 const sigOf = (r: CRecipe): string =>
@@ -195,7 +195,16 @@ export function remapSave(d: SaveData, to: ContentTable = contentTable(), retire
   for (const [ent, s] of d.nodes) {
     const o = s as Record<string, unknown> | null;
     if (o && Array.isArray(o.inBuf) && Array.isArray(o.outBuf)) {
-      if (alive(ent) && !resetEnts.has(ent)) { nodes.push([ent, s]); continue; }
+      // Its waste bin (D125) holds an item by index: re-pointed, or handed to the Heart with the rest.
+      const wMu = typeof o.wBuf === 'number' && typeof o.wItem === 'number' ? o.wBuf : 0;
+      if (alive(ent) && !resetEnts.has(ent)) {
+        if (wMu <= 0) { nodes.push([ent, s]); continue; }
+        const j = item(o.wItem as number);
+        if (j < 0) { lose(o.wItem as number, wMu); nodes.push([ent, { ...o, wBuf: 0, wItem: -1 }]); }
+        else nodes.push([ent, { ...o, wItem: j }]);
+        continue;
+      }
+      if (wMu > 0) give(o.wItem as number, wMu);
       const r = recipeOf(oldCfg.get(ent) ?? 0);
       if (r > 0) {
         const [ins, outs] = recipeItems(r - 1);
@@ -218,6 +227,12 @@ export function remapSave(d: SaveData, to: ContentTable = contentTable(), retire
   const stores: Array<[number, number[]]> = [];
   for (const [id, st] of d.stores) {
     if (alive(id)) stores.push([id, dense(st, true)]);
+    else st.forEach((mu, i) => give(i, mu));
+  }
+  // A trade post's entrance, what it brought to sell (D131): the same.
+  const selling: Array<[number, number[]]> | undefined = d.selling && [];
+  for (const [id, st] of d.selling ?? []) {
+    if (alive(id)) selling!.push([id, dense(st, true)]);
     else st.forEach((mu, i) => give(i, mu));
   }
 
@@ -280,6 +295,8 @@ export function remapSave(d: SaveData, to: ContentTable = contentTable(), retire
     ...(t.soldTotal ? { soldTotal: dense(t.soldTotal, false) } : {}),
     ...(t.boughtTotal ? { boughtTotal: dense(t.boughtTotal, false) } : {}),
     ...(t.floors ? { floors: t.floors.filter(([it]) => item(it) >= 0).map(([it, c]) => [item(it), c] as [number, number]) } : {}),
+    // Auto-sell (D127): a gone item's setting goes with it.
+    ...(t.autoSell ? { autoSell: t.autoSell.filter(([it]) => item(it) >= 0).map(([it, at]) => [item(it), at] as [number, number]) } : {}),
   };
 
   for (let j = 0; j < NT; j++) stock[j]! += refund[j]!;
@@ -293,6 +310,7 @@ export function remapSave(d: SaveData, to: ContentTable = contentTable(), retire
     portItems: d.portItems.filter(([id]) => alive(id)).map(([id, its]) => [id, its.map(item)] as [number, number[]]),
     stock,
     stores,
+    ...(selling ? { selling } : {}),
     acc: d.acc.filter(([id]) => alive(id)),
     links,
     oreDiff: d.oreDiff.map(([tile, v]) => {

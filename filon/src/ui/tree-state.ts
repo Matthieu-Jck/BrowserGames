@@ -36,10 +36,11 @@ export function researchState(sim: Sim, id: string): ResearchState {
   if (sim.done.has(id)) return 'done';
   if (sim.projects.some((p) => p.id === id)) return 'active';
   const block = sim.researchBlock(id);
-  // The Core's level short of the tier's (D118) or Tier 2 waiting for two expertises (D93) is locked
+  // The Core's level short of the tier's (D118), a category waiting for those it builds on (D128) or
+  // Tier 2 waiting for two expertises (D93) is locked
   // like a missing prerequisite: nothing to wait out, something to do first. Its resources short
   // (D122) read as a plan's do: « poor ».
-  if (block === 'prereq' || block === 'expertise' || block === 'core') return 'locked';
+  if (block === 'prereq' || block === 'gate' || block === 'expertise' || block === 'core') return 'locked';
   if (block === 'unaffordable' || block === 'reserve') return 'poor';
   return block ? 'waiting' : 'ready';
 }

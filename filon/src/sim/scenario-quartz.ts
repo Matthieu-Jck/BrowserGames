@@ -4,13 +4,15 @@
 // poles over the Crown, one line home — up and down the Crown on traction ribbons (`routeOver`),
 // into the Heart, the second cutter joining it from the side. Two, because a traction ribbon carries
 // 30 a minute: what two cutters cut (15 each), so neither stands backed up (D85). Then, once the
-// tutorial's trade lines are laid, the quartz workshop the quest pays for turns that quartz into
+// tutorial's trade lines are laid, the quartz workshop the quest pays for — its own research node
+// since D128, learnt in the lab first, a few minutes of the Core's compute — turns that quartz into
 // oscillators: fed by a router on the quartz line and one on the wire line, its oscillators into the
 // Heart, where the late base's servers take theirs (`quartzWorks`). Laid that early, while the
 // floor is open: the later levels route round it, where one laid among the grown base's works drew
 // the furnaces' search out (seconds of build). What the land does not allow is skipped and
 // reported, never thrown; a land without a vein (none of today's) skips it all.
 import { buildingIdx } from '@/content/registry';
+import { EPOCH } from './constants';
 import { join, placeFed, routeOver, sideGoalsOver, type BeltTiles } from './dev';
 import { footprint, worldPorts } from './entities';
 import { faceTiles } from './face';
@@ -152,6 +154,25 @@ function veinLine(b: Builder): void {
   }
 }
 
+/** The quartz workshop's own node (D128). */
+const SHOP_NODE = 'dn_quartzshop';
+/** Game minutes the lab may take over it (Mechanics first, then its own two): past them it is skipped, reported. */
+const SHOP_WAIT_MIN = 20;
+
+/**
+ * The quartz workshop's node learnt for real (D128: its own since then): once the lab's project
+ * (Mechanics, started at « Le laboratoire ») is done, it is launched — its resources from the Core,
+ * granted where short —, and its tokens come from the Core's compute in a few minutes.
+ */
+function learnQuartzShop(b: Builder): boolean {
+  const sim = b.sim;
+  for (let t = 0; t < SHOP_WAIT_MIN * EPOCH && !sim.done.has(SHOP_NODE); t += EPOCH) {
+    if (!sim.projects.length) { b.affordNode(SHOP_NODE); sim.startResearch(SHOP_NODE); }
+    b.run(EPOCH);
+  }
+  return sim.done.has(SHOP_NODE);
+}
+
 /** Spots `quartzWorks` tries round each point (a cheap search: a crowded base skips it, reported). */
 const WORKS_TRIES = 24;
 /** Where it looks first: the quartz line this far from the Heart, by the Crown's inner foot (the floor's rim is at 23). */
@@ -167,6 +188,7 @@ const WORKS_R = 20;
 export function quartzWorks(b: Builder): void {
   const sim = b.sim, quartz = b.laid('quartz'), wire = b.laid('wire');
   if (!quartz.length || !wire.length) { b.skip('osc'); return; }
+  if (!learnQuartzShop(b)) { b.skip(`research:${SHOP_NODE}`); return; }
   const q = quartz[0]!;
   let foot = q[q.length - 1]!, best = Infinity;
   for (const t of q) {

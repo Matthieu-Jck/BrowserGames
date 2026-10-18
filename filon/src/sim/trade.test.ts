@@ -13,7 +13,7 @@ import { catchUp } from './offline/catchup';
 import { serialize, deserialize, type SaveData } from './serialize';
 import { contentTable, remapSave, type ContentTable } from './save-remap';
 import { deliveryTicks, orderTrades, throughputMu, type ImportOrder } from './trade';
-import { containerFull, containerMu, handsOut, orderCentsPerMin, orderHold, waitingMu } from './systems/trade';
+import { containerFull, containerMu, handsOut, orderCentsPerMin, orderHold, sellingOf, waitingMu } from './systems/trade';
 import { computeMods } from './research/modifiers';
 import { Sim } from './state';
 import { MapGen } from './world/mapgen';
@@ -54,12 +54,12 @@ describe('trade posts', () => {
   it('a post sells whatever its entrance brought at the epoch’s bid, CrierBelt taking a fifth; never the Hearth’s stock (D64)', () => {
     const { sim, post } = postSim();
     sim.ensureCompiled();
-    // Its entrance takes any tradable item but its cargo: plates brought in wait in its store.
+    // Its entrance takes any tradable item (its cargo's too, D131): plates brought in wait in its entrance's store.
     expect(sim.cargoOf(post)).toEqual([]);
-    sim.stores.get(post)![PLATE()] = 50_000;
+    sellingOf(sim, post)[PLATE()] = 50_000;
     const stock0 = sim.stock[PLATE()]!, credits0 = sim.credits, bid = sim.prices.bid[PLATE()]!;
     sim.run(600); // one epoch: the boundary sells
-    expect(sim.stores.get(post)![PLATE()]).toBe(0);
+    expect(sellingOf(sim, post)[PLATE()]).toBe(0);
     expect(sim.stock[PLATE()]).toBe(stock0); // the Hearth next door keeps its own
     expect(sim.mods.tradeFee).toBe(200);
     expect(sim.credits - credits0).toBe(afterFee(valueCents(50_000, bid, 'sell'), 'sell', 200));
@@ -68,13 +68,13 @@ describe('trade posts', () => {
   });
 
   it('CrierBelt’s fifth: no research lowers it (D64)', () => {
-    // Every Commerce node (D69's family ids: the old cm1…cmK are gone, RESEARCH_RENAMED).
-    const commerce = RESEARCH_IDS.filter((id) => researchNode(id)!.branch === 'cm');
+    // Every Commerce node (its theme's, D128; the old cm1…cmK are gone, RESEARCH_RENAMED).
+    const commerce = RESEARCH_IDS.filter((id) => researchNode(id)!.theme === 'cm');
     expect(commerce.length).toBeGreaterThanOrEqual(7);
     expect(computeMods(new Set(commerce)).tradeFee).toBe(200);
   });
 
-  it('an order makes its item cargo: the entrance stops taking it, the exit hands it out; cancelled, it stays cargo until the container has none left', () => {
+  it('an order makes its item cargo: the exit hands it out, the entrance still takes it (D131); cancelled, it stays cargo until the container has none left', () => {
     const { sim, post } = postSim();
     exitToHearth(sim);
     sim.grantCredits(1_000_000);
@@ -82,12 +82,14 @@ describe('trade posts', () => {
     expect(typeof id).toBe('number');
     expect(sim.cargoOf(post)).toEqual([COPPER()]);
     sim.ensureCompiled();
-    const node = sim.graph.nodeByEnt.get(post)! as unknown as { accepts: ReadonlySet<number>; cycle: readonly number[] | null };
-    expect(node.accepts.has(COPPER())).toBe(false);
-    expect(node.accepts.has(PLATE())).toBe(true);
+    // Two stores (D131): its entrance takes every tradable item, the cargo's too; its container hands the cargo out.
+    const node = sim.graph.nodeByEnt.get(post)! as unknown as { cycle: readonly number[] | null };
+    const entry = sim.graph.postIn.get(post)!;
+    expect(entry.accepts!.has(COPPER())).toBe(true);
+    expect(entry.accepts!.has(PLATE())).toBe(true);
     expect(node.cycle).toEqual([COPPER()]);
     // Bought for a while, then cancelled: what is on its way still lands and leaves by the exit,
-    // then the item leaves the cargo at a boundary and the entrance takes it again.
+    // then the item leaves the cargo at a boundary (the entrance took it all along).
     let k = 0;
     while (!sim.trade.inflight.length && k++ < 10) sim.run(600);
     expect(sim.cancelImport(id as number)).toBe(true);
@@ -97,7 +99,8 @@ describe('trade posts', () => {
     expect(sim.trade.boughtTotal[COPPER()]).toBeGreaterThan(0);
     expect(sim.trade.soldTotal[COPPER()]).toBe(0); // none of it was sold back
     sim.ensureCompiled();
-    expect((sim.graph.nodeByEnt.get(post)! as unknown as { accepts: ReadonlySet<number> }).accepts.has(COPPER())).toBe(true);
+    expect(sim.graph.postIn.get(post)!.accepts!.has(COPPER())).toBe(true);
+    expect((sim.graph.nodeByEnt.get(post)! as unknown as { cycle: readonly number[] | null }).cycle).toBeNull();
   });
 
   it('a standing order buys at the ask under its max; the goods land in the container after the lift and the colony’s delay, and leave by its outlet', () => {
@@ -199,7 +202,7 @@ describe('trade posts', () => {
     exitToHearth(sim);
     sim.addImport(post, 'copper_ore', 50, 1_000_000);
     sim.ensureCompiled();
-    sim.stores.get(post)![PLATE()] = 200_000;
+    sellingOf(sim, post)[PLATE()] = 200_000;
     sim.run(600);
     const a = sim.trade.activity.get(post)!;
     expect(a.boughtMu).toBe(50_000);
@@ -278,9 +281,11 @@ describe('trade posts', () => {
     expect(b.trade.ledger.length).toBeGreaterThan(100);
     near(b.trade.ledger.length, a.trade.ledger.length, 5);
     const ps = (s: Sim): Float64Array => s.stores.get(s.tradePosts()[0]!.id)!;
+    const ss = (s: Sim): Float64Array => sellingOf(s, s.tradePosts()[0]!.id); // its entrance's (D131)
     for (let i = 0; i < a.stock.length; i++) {
       near(b.stock[i]!, a.stock[i]!, 5_000);
       near(ps(b)[i]!, ps(a)[i]!, 10_000);
+      near(ss(b)[i]!, ss(a)[i]!, 10_000);
     }
   });
 

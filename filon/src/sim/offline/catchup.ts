@@ -194,7 +194,11 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
     const pulledAny = new Set<number>();
     for (const n of grp.nodes) {
       if (n instanceof DrillNode && n.item >= 0) made.add(n.item);
-      if (n instanceof MachineNode && n.recipe) for (const o of n.recipe.outs) made.add(o.item);
+      if (n instanceof MachineNode && n.recipe) {
+        for (const o of n.recipe.outs) made.add(o.item);
+        if (n.recipe.waste) made.add(n.recipe.waste.item); // its waste, out through the same port (D125)
+      }
+      if (n instanceof MachineNode && n.wBuf > 0 && n.wItem >= 0) made.add(n.wItem);
     }
     const pull = new Map<number, Set<number>>(), push = new Map<number, Set<number>>();
     for (const ri of grp.res) {

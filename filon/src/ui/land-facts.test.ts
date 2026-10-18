@@ -1,15 +1,18 @@
 // land-facts.test.ts — what the land panel says about a parcel (land-facts.ts): its name on the
 // map from the Heart's parcel, who holds it and how, what it holds tile by tile, the buildings on
-// it; and the land mode's tool (input/land-tool.ts): a click picks, Esc lets the parcel go first.
+// it; what a neighbouring base does (D134); and the land mode's tool (input/land-tool.ts): a click picks, Esc lets the parcel go first.
 import { afterEach, describe, expect, it } from 'vitest';
-import { itemIdx } from '@/content/registry';
+import { ITEMS } from '@/content/items';
+import { ITEM_IDS, itemIdx } from '@/content/registry';
 import { setLocale } from '@/i18n/i18n';
 import { LandTool } from '@/input/land-tool';
 import { CENTER } from '@/sim/constants';
 import { Sim } from '@/sim/state';
 import { testSim, testSource } from '@/sim/testkit';
-import { PARCEL, parcelAt } from '@/sim/world/land';
-import { buildingsOn, ownsForGood, parcelContents, parcelLabel, parcelState, parcelUnder } from './land-facts';
+import { PARCEL, PARCEL_COLS, parcelAt } from '@/sim/world/land';
+import { WORLD_SEED } from '@/content/world';
+import { MapGen } from '@/sim/world/mapgen';
+import { buildingsOn, neighbourBanner, neighbourName, neighbourTrade, ownsForGood, parcelContents, parcelLabel, parcelState, parcelUnder } from './land-facts';
 
 const HOME = parcelAt(CENTER, CENTER);
 const EAST3 = parcelAt(CENTER + 3 * PARCEL, CENTER);
@@ -57,6 +60,28 @@ describe('land facts', () => {
     const far = parcelContents(sim, EAST3);
     expect(far.hidden).toBeGreaterThan(0);
     expect(far.hidden + far.floor + far.rock + far.water + far.salt + far.vent + far.dunes).toBe(far.tiles);
+  });
+
+  it('says what a neighbouring base does: its trade\'s word, a line per good it sells from what it mines, and both on its band (D134)', () => {
+    const sim = new Sim({ worldSeed: WORLD_SEED, playerSeed: 9, source: new MapGen(WORLD_SEED, 9, 4), foundingEpoch: 29453760 });
+    const words = new Set<string>();
+    let n = 0;
+    for (let p = 0; p < PARCEL_COLS * PARCEL_COLS; p++) {
+      const h = sim.neighbours.holdingOf(p);
+      if (!h || h.hub !== p) continue;
+      n++;
+      setLocale('fr');
+      const does = neighbourTrade(sim, p)!, L = sim.neighbours.layout(h);
+      expect(does.lines.map((l) => l.items)).toEqual(L.lines);
+      for (const l of does.lines) expect(l.names.every((x) => x.length > 0)).toBe(true);
+      expect(does.label.length).toBeGreaterThan(0);
+      words.add(does.label);
+      expect(neighbourBanner(sim, h)).toBe(`${neighbourName(sim, h.colony)} · ${does.label}`);
+      setLocale('en');
+      expect(neighbourTrade(sim, p)!.lines[0]?.names).toEqual(L.lines[0]?.map((i) => ITEMS[ITEM_IDS[i] as keyof typeof ITEMS].name.en));
+    }
+    expect(n).toBeGreaterThan(5);
+    expect(words.size).toBeGreaterThanOrEqual(2);
   });
 
   it('finds the buildings standing on a parcel, and clamps the pointer to the world', () => {

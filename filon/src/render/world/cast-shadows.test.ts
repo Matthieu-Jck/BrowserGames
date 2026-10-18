@@ -3,10 +3,13 @@
 // the sun's, keeps the direction across it), and the look (none at night, shortest at noon,
 // long and softer in a low sun, darkest at midday), every shadow falling away from the sun at
 // every hour (the seam: owner, 2026-10-13), and how far a shadow can ever reach (what a building
-// on the mountains sorts past: world/stand.ts).
+// on the mountains sorts past: world/stand.ts). An item sorted among the volumes reads the shade
+// back from a mask through the day's map (D130), within the reach the shadows are indexed by, and
+// takes it as a tint.
 import { describe, it, expect } from 'vitest';
 import {
-  farSide, seamClip, SHADOW_DX, SHADOW_DY, SHADOW_LONGEST, SHADOW_PX, shadowLook, shadowMap, shadowReach, sunDirection, sunHeight,
+  farSide, maskCover, maskReach, seamClip, shadeTint, SHADOW_DX, SHADOW_DY, SHADOW_LONGEST, SHADOW_PX, SHADOW_TINT, shadowLook, shadowMap, shadowReach, sunDirection, sunHeight,
+  type MaskAlpha,
 } from './cast-shadows';
 
 const apply = ([a, b, c, d]: [number, number, number, number], x: number, y: number): [number, number] => [a * x + c * y, b * x + d * y];
@@ -131,6 +134,73 @@ describe('cast shadows', () => {
       const a = shadowLook(h, 0), b = shadowLook(h + 0.05, 0);
       expect(Math.abs(a.length - b.length)).toBeLessThan(0.1);
       expect(Math.abs(a.alpha - b.alpha)).toBeLessThan(0.02);
+    }
+  });
+});
+
+describe('cast shadows: read back where an item stands (D130)', () => {
+  /** A w × h mask, opaque on the px `on` says. */
+  const mask = (w: number, h: number, on: (x: number, y: number) => boolean): MaskAlpha => {
+    const a = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) a[y * w + x] = on(x, y) ? 255 : 0;
+    return { w, h, a };
+  };
+  const I = [1, 0, 0, 1] as const;
+
+  it('reads the mask px a point is over, as laid (its top-left at (x, y)), none off it', () => {
+    const m = mask(10, 6, (x, y) => x === 7 && y === 2);
+    expect(maskCover(m, I, 100, 50, 105, 53, 107.5, 52.5)).toBe(1);
+    expect(maskCover(m, I, 100, 50, 105, 53, 106.5, 52.5)).toBe(0);
+    expect(maskCover(m, I, 100, 50, 105, 53, 99, 52)).toBe(0);
+    expect(maskCover(m, I, 100, 50, 105, 53, 111, 52)).toBe(0);
+  });
+
+  it('through the day’s map: a mask px is read back where the map sends it about the foot', () => {
+    const W = 40, H = 30, x = 200, y = 120, fx = 210, fy = 130;
+    const m = mask(W, H, (i, j) => i === 31 && j === 22);
+    for (const [len, ang] of [[0.6, 0], [SHADOW_LONGEST, 0.2], [1.3, -0.2]] as const) {
+      const M = shadowMap(len, ang);
+      // The px's centre, relative to the foot, mapped.
+      const qx = x + 31.5 - fx, qy = y + 22.5 - fy;
+      const [px, py] = apply(M, qx, qy);
+      expect(maskCover(m, M, x, y, fx, fy, fx + px, fy + py)).toBe(1);
+      const [ox, oy] = apply(M, qx + 1, qy);
+      expect(maskCover(m, M, x, y, fx, fy, fx + ox, fy + oy)).toBe(0);
+    }
+  });
+
+  it('a mask’s shadow stays within its box and reach at every hour', () => {
+    let seed = 7;
+    const rnd = (): number => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    for (let n = 0; n < 40; n++) {
+      const w = 20 + rnd() * 140, h = 20 + rnd() * 120, x = rnd() * 400, y = rnd() * 400;
+      const fx = x + w * (0.2 + 0.4 * rnd()), fy = y + h * (0.4 + 0.5 * rnd());
+      const r = maskReach(x, y, w, h, fx, fy);
+      for (let h24 = 4.5; h24 < 19.6; h24 += 0.5) {
+        const look = shadowLook(h24, 0);
+        const M = shadowMap(look.length, look.angle);
+        for (let k = 0; k < 30; k++) {
+          const qx = x + rnd() * w - fx, qy = y + rnd() * h - fy;
+          if (!farSide(qx, qy)) continue; // only the far side of the seam is baked
+          const [px, py] = apply(M, qx, qy);
+          expect(fx + px).toBeGreaterThanOrEqual(x - r);
+          expect(fx + px).toBeLessThanOrEqual(x + w + r);
+          expect(fy + py).toBeGreaterThanOrEqual(y - r);
+          expect(fy + py).toBeLessThanOrEqual(y + h + r);
+        }
+      }
+    }
+  });
+
+  it('as a tint: white unshaded, the shadows’ ink fully shaded, darker the more it covers', () => {
+    expect(shadeTint(0)).toBe(0xffffff);
+    expect(shadeTint(1)).toBe(SHADOW_TINT);
+    const ch = (c: number): number[] => [(c >> 16) & 255, (c >> 8) & 255, c & 255];
+    const half = ch(shadeTint(0.46)), less = ch(shadeTint(0.2));
+    for (let i = 0; i < 3; i++) {
+      expect(half[i]!).toBeLessThan(less[i]!);
+      expect(less[i]!).toBeLessThan(255);
+      expect(half[i]!).toBeGreaterThan(ch(SHADOW_TINT)[i]!);
     }
   });
 });

@@ -166,13 +166,14 @@
 .tr-unlocks canvas { width: 24px; height: 24px; display: block; }
 .rs-chips { display: flex; gap: 10px; font-size: 15px; }
 .rs-chips .tr-chip canvas { width: 20px; height: 20px; }
-/* The detail pane's cost: one item a line — how many, the item, what the Heart holds (coral when short). */
-.tr-costs { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; font-size: 14px; }
-.tr-costs li { display: flex; align-items: center; gap: 6px; }
-.tr-costs b { min-width: 2em; text-align: right; font-variant-numeric: tabular-nums; }
-.tr-costs small { margin-left: auto; padding-left: 8px; font-size: 12px; color: var(--c-ink-soft); white-space: nowrap; }
-.tr-costs li[data-poor] b, .tr-costs li[data-poor] small { color: var(--c-coral-d); font-weight: 700; }
-.tr-paid { color: var(--c-ink-soft); }
+/* The detail pane's cost (D128), as the placing tip says one: a chip per item — its icon, how many,
+   then what the Heart holds, soft (« 60 / 3 010 »); the whole chip coral while it is short. */
+.rs-costs { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 15px; }
+.rs-costchip { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; cursor: help; }
+.rs-costchip canvas { width: 20px; height: 20px; display: block; }
+.rs-costchip b { font-variant-numeric: tabular-nums; }
+.rs-have { margin-left: 1px; font-size: 11.5px; font-weight: 600; color: var(--c-ink-soft); font-variant-numeric: tabular-nums; }
+.rs-costchip[data-poor] b, .rs-costchip[data-poor] .rs-have { color: var(--c-coral-d); font-weight: 700; }
 .rs-pre { margin: 0; padding-left: 16px; font-size: 13px; }
 .rs-pre li { color: var(--c-coral-d); }
 .rs-pre li[data-ok] { color: var(--c-turq-d); }

@@ -13,6 +13,13 @@ import { isFluidItem, stepAt } from './chain';
 const MU = 1000;
 
 // ── Machine ─────────────────────────────────────────────────────────────────
+/** A machine's saved state: its buffers and craft, and its waste (D125: absent before, or none held). */
+export interface MachineSnap {
+  inBuf: number[]; outBuf: number[]; crafting: boolean; p: number; carry: number; status: number;
+  /** Crafts since the last waste; the waste bin's milli-items and its item (index). */
+  wc?: number; wBuf?: number; wItem?: number;
+}
+
 export class MachineNode extends FNode {
   readonly kind = 'machine' as const;
   inBuf: Float64Array;
@@ -25,6 +32,16 @@ export class MachineNode extends FNode {
   /** Speed in ‰ (research, modules, tower, dug floor). */
   speed = 1000;
   needsPower: boolean;
+  /**
+   * The waste bin (D125): `wItem` the item it holds (the recipe's waste; a bin kept from an older
+   * content may hold another, which still goes out first), `wBuf` its milli-items (whole items),
+   * `wCap` its room, `wc` the crafts since the last waste (0 … every − 1). The bin goes out through
+   * the product's output, first: the line carries both and the player sorts them.
+   */
+  wItem = -1;
+  wBuf = 0;
+  readonly wCap = BAL.wasteBufItems * MU;
+  wc = 0;
   private free = new Float64Array(3);
 
   constructor(ent: number, readonly recipe: CRecipe | null, kw: number, idleKw: number) {
@@ -52,6 +69,9 @@ export class MachineNode extends FNode {
   }
 
   override offer(e: number, _port: number, ctx: TickCtx): void {
+    // Its waste first, a whole item (D125): one at the head of the line blocks it as a wrong item
+    // would, so a line into a machine that does not take it needs a sorter (or an incinerator).
+    if (this.wBuf >= MU && this.wItem >= 0) { ctx.offItem[e] = this.wItem; ctx.offMu[e] = MU; return; }
     if (!this.recipe || this.outBuf[0]! <= 0) { ctx.offItem[e] = -1; ctx.offMu[e] = 0; return; }
     const it = this.recipe.outs[0]!.item;
     ctx.offItem[e] = it;
@@ -92,7 +112,12 @@ export class MachineNode extends FNode {
     }
   }
 
-  override take(_port: number, _item: number, mu: number): void {
+  override take(_port: number, item: number, mu: number): void {
+    if (this.wBuf > 0 && item === this.wItem) {
+      this.wBuf -= mu;
+      if (this.wBuf <= 0) { this.wBuf = 0; this.wItem = -1; } // an empty bin holds no item (its state is its contents)
+      return;
+    }
     this.outBuf[0] = this.outBuf[0]! - mu;
   }
 
@@ -119,7 +144,16 @@ export class MachineNode extends FNode {
   private canEmit(): boolean {
     const r = this.recipe!;
     for (let j = 0; j < r.outs.length; j++) if (this.outBuf[j]! + r.outs[j]!.mu > this.outCap[j]!) return false;
+    // A craft that makes its waste needs room in the bin, and the bin free of any other waste.
+    const w = r.waste;
+    if (w && this.wc + 1 >= w.every && (this.wBuf + MU > this.wCap || (this.wBuf > 0 && this.wItem !== w.item))) return false;
     return true;
+  }
+
+  /** Does the craft in hand stop on its waste (the bin full, D125)? The inspector and the guide name it. */
+  wasteFull(): boolean {
+    const w = this.recipe?.waste;
+    return !!w && this.wc + 1 >= w.every && (this.wBuf + MU > this.wCap || (this.wBuf > 0 && this.wItem !== w.item));
   }
 
   override update(ctx: TickCtx): void {
@@ -144,6 +178,13 @@ export class MachineNode extends FNode {
         this.outBuf[j] = this.outBuf[j]! + r.outs[j]!.mu;
         ctx.produced[r.outs[j]!.item] = ctx.produced[r.outs[j]!.item]! + r.outs[j]!.mu;
       }
+      const w = r.waste;
+      if (w && ++this.wc >= w.every) {
+        this.wc = 0;
+        this.wItem = w.item;
+        this.wBuf += MU;
+        ctx.produced[w.item] = ctx.produced[w.item]! + MU;
+      }
       this.p -= need;
       this.crafting = false;
       if (this.canStart()) this.start(ctx);
@@ -158,16 +199,26 @@ export class MachineNode extends FNode {
 
   override hash(h: StateHasher): void {
     h.ints(this.inBuf).ints(this.outBuf).int(this.crafting ? 1 : 0).int(this.p).int(this.carry);
+    // The waste's count and bin (D125), only where there is any: a machine without waste hashes as before.
+    if (this.recipe?.waste || this.wBuf > 0) h.int(this.wc).int(this.wBuf).int(this.wItem);
   }
 
   override snapshot(): unknown {
-    return { inBuf: [...this.inBuf], outBuf: [...this.outBuf], crafting: this.crafting, p: this.p, carry: this.carry, status: this.status };
+    const s: MachineSnap = { inBuf: [...this.inBuf], outBuf: [...this.outBuf], crafting: this.crafting, p: this.p, carry: this.carry, status: this.status };
+    if (this.wc) s.wc = this.wc;
+    if (this.wBuf > 0) { s.wBuf = this.wBuf; s.wItem = this.wItem; }
+    return s;
   }
 
   override restore(s: unknown): void {
-    const o = s as { inBuf: number[]; outBuf: number[]; crafting: boolean; p: number; carry: number; status: number };
+    const o = s as MachineSnap;
     this.inBuf.set(o.inBuf); this.outBuf.set(o.outBuf);
     this.crafting = o.crafting; this.p = o.p; this.carry = o.carry; this.status = o.status;
+    // A save from before D125 has no waste: an empty bin and a fresh count (its buffers kept as they were).
+    this.wc = o.wc ?? 0; this.wBuf = o.wBuf ?? 0; this.wItem = o.wBuf ? o.wItem ?? -1 : -1;
+    const w = this.recipe?.waste;
+    if (!w) this.wc = 0;
+    else if (this.wc >= w.every) this.wc = w.every - 1;
   }
 }
 
@@ -671,15 +722,27 @@ export class GeneratorNode extends FNode {
  */
 export class SinkNode extends FNode {
   readonly kind = 'sink' as const;
+  /**
+   * Render-only bookkeeping (D125: the pit's burst, world/pits.ts), neither hashed nor saved, like a
+   * ribbon's `lastOut`: the tick of the last item it destroyed (-1: none since the compile), that
+   * item, the in-port it came by, and how many it has destroyed since the compile.
+   */
+  burnTick = -1;
+  burnItem = -1;
+  burnPort = -1;
+  burns = 0;
   override accept(ctx: TickCtx): void {
     for (const e of this.inE) ctx.acc[e] = ctx.offItem[e]! >= 0 && ctx.offMu[e]! > 0 ? ctx.offMu[e]! : 0;
   }
-  override give(_port: number, item: number, mu: number, ctx: TickCtx): void {
-    if (item >= 0 && mu > 0) ctx.consumed[item] = ctx.consumed[item]! + mu;
+  override give(port: number, item: number, mu: number, ctx: TickCtx): void {
+    if (item < 0 || mu <= 0) return;
+    ctx.consumed[item] = ctx.consumed[item]! + mu;
+    this.burnTick = ctx.now; this.burnItem = item; this.burnPort = port; this.burns++;
   }
   override hash(): void {}
   override snapshot(): unknown { return null; }
-  override restore(): void {}
+  /** A catch-up's warm-up ran ahead and was rolled back: its burns never happened. */
+  override restore(): void { this.burnTick = -1; }
 }
 
 // ── Plain powered building without flows (no building compiles to it today) ──

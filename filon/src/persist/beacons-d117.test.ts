@@ -71,6 +71,12 @@ function sameButRetired(back: Sim, clean: Sim, owed: Map<number, number>, fog: A
   for (const [x, y, r] of fog) expect(back.revealed(x + r - 1, y), `${x},${y} r ${r} lifted`).toBe(true);
   back.explored.length = clean.explored.length;
   expect([...back.done].some((id) => id === 'beacon' || id === 'unloader')).toBe(false);
+  // Save 20 (D128): a claim holding the Face Cutter's plan holds the quartz workshop's own node too.
+  if (clean.done.has('ex_quartz') && !clean.done.has('dn_quartzshop')) {
+    expect(back.done.has('dn_quartzshop')).toBe(true);
+    back.done.delete('dn_quartzshop');
+    back.rebuildDerived();
+  }
   expect(back.ents.size).toBe(clean.ents.size);
   expect(back.hash(), 'the rest of the base as it was').toBe(clean.hash());
 }

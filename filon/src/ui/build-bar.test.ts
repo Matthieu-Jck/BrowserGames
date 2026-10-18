@@ -53,11 +53,11 @@ describe('build bar', () => {
     const all = CATEGORIES.flatMap((c) => unlockedTray(sim, c));
     expect(all).toEqual(['drill', 'ribbon', 'mast']);
     sim.grant('iron_plate', 100); sim.grant('glass', 20); sim.grant('copper_wire', 20);
-    // The electronics workshop after the wire mill and the sand collector (D107: its circuits are wire and glass).
-    for (const id of ['kiln', 'sand_collector', 'wire_mill', 'workshop', 'wind_flower']) expect(sim.unlockPlan(id).ok, id).toBe(true);
-    expect(unlockedTray(sim, 'production')).toEqual(['kiln', 'wire_mill', 'workshop']);
+    // The assembly bench after the wire mill (D129: its coils are copper wire; the electronics workshop stood here, a Tier 2 node now).
+    for (const id of ['kiln', 'sand_collector', 'wire_mill', 'assembly_bench', 'wind_flower']) expect(sim.unlockPlan(id).ok, id).toBe(true);
+    expect(unlockedTray(sim, 'production')).toEqual(['kiln', 'wire_mill', 'assembly_bench']);
     expect(unlockedTray(sim, 'energy')).toEqual(['mast', 'wind_flower']);
-    // Not before its prerequisite (the observatory needs the workshop's plan, which it now has).
+    // Not before its prerequisite (the observatory needs every plan).
     expect(unlockedTray(sim, 'production')).not.toContain('observatory');
   });
 });

@@ -7,7 +7,9 @@ export type Tier = 1 | 2 | 3 | 4;
 export type Side = 'N' | 'E' | 'S' | 'W';
 
 export type ItemKind =
-  | 'ore' | 'fuel' | 'fluid' | 'material' | 'part' | 'unique' | 'energy' | 'rubble';
+  | 'ore' | 'fuel' | 'fluid' | 'material' | 'part' | 'unique' | 'energy' | 'rubble'
+  // What a machine puts out beside its product (D125: slag, scrap): sorted off, burnt, sold cheap or recycled.
+  | 'waste';
 
 /** Glyph shapes the art pipeline knows how to ink (render/art/recipes/items.ts). */
 export type Glyph =
@@ -16,7 +18,11 @@ export type Glyph =
   | 'resin' | 'ember' | 'lens' | 'canvas' | 'core' | 'moss' | 'nacre' | 'quartz' | 'resonator'
   | 'lattice' | 'oscillator'
   // D123: steel's bar, the brick, the pipe, the cable (copper plate is a plate, in copper).
-  | 'ingot' | 'brick' | 'pipe' | 'cable';
+  | 'ingot' | 'brick' | 'pipe' | 'cable'
+  // D125: the waste — slag's glassy clinker, the press's scrap offcuts.
+  | 'slag' | 'scrap'
+  // D129: the assembly bench's parts — a wound bobbin on an iron core, a finned motor.
+  | 'bobbin' | 'motor';
 
 export interface ItemDef {
   readonly name: Loc;
@@ -45,6 +51,14 @@ export interface RecipeDef {
   readonly seconds: number;
   readonly ins: ReadonlyArray<readonly [string, number]>;
   readonly outs: ReadonlyArray<readonly [string, number]>;
+  /**
+   * Its waste (D125): `[item, every]` — one of that item (kind `waste`) every `every` crafts, put out
+   * through the same output as the product, in turn with it (a deterministic count of crafts, so the
+   * catch-up repeats it exactly). `every` divides the crafts its machines make in a minute at their
+   * pace and ten (`WASTE_BEAT`: a smelter's ten a minute down a line), so a line fed at the base's
+   * usual rates still repeats within the catch-up's warm-up (validate.ts).
+   */
+  readonly waste?: readonly [string, number];
   /** Extra electrical energy per craft (kW·min), e.g. the cell charger. */
   readonly energyKwMin?: number;
   /** Research id that unlocks it, or 'start'. */
@@ -193,22 +207,46 @@ export interface BuildingDef {
   readonly desc: Loc;
 }
 
-/** The research families (D69): each a lineage named anew at every tier, most splitting in two at Tier 3. */
-export type FamilyId = 'en' | 'ex' | 'dn' | 'cm' | 'an' | 'xp';
+/**
+ * The research themes (D128; the families of D69 until then, their ids kept): energy, extraction,
+ * machines, commerce, analytics, logistics. Each category of the tree carries one, the colour it is
+ * drawn in, and an expertise improves one theme's research (D93).
+ */
+export type ThemeId = 'en' | 'ex' | 'dn' | 'cm' | 'an' | 'xp';
 export type ResearchTier = 1 | 2 | 3 | 4;
+
+/**
+ * A research category (D128; owner, 2026-10-18: « chaque tier aura ses propres catégories »): a group
+ * of one tier's nodes, named after what a base focused on it does (Tier 1's Foundry, Tier 2's
+ * Finance…). It opens once its gates — categories of the tier before — are finished, every node of
+ * them learnt; with none, the tier's Core level alone opens it (D118).
+ */
+export interface CategoryDef {
+  readonly name: Loc;
+  /** What a base focused on it builds, in a line (the tree's tooltip). */
+  readonly desc: Loc;
+  readonly tier: ResearchTier;
+  readonly theme: ThemeId;
+  /** The categories of the tier before that must be finished first (none: the tier's Core level alone). */
+  readonly gates: readonly string[];
+}
 
 export interface ResearchDef {
   readonly name: Loc;
   readonly desc: Loc;
-  /** Its family, or the trunk (the Foundations that open each tier). */
-  readonly branch: 'trunk' | FamilyId;
-  /** Its speciality within the family from Tier 3 on (a key of the family's `specs`); none before the split. */
-  readonly spec?: string;
-  /** Its tier (D69): the column it stands in, and the Core's level it waits for (D118). */
+  /** Its category (D128: `CATEGORIES`), a group of its tier's nodes. */
+  readonly cat: string;
+  /** Its category's theme (D128): its colour, and what an expertise of that theme improves (D93). */
+  readonly theme: ThemeId;
+  /** Its tier (D69): its category's — the band it stands in, and the Core's level it waits for (D118). */
   readonly tier: ResearchTier;
-  /** Depth: the cost band (`DEPTH_COST`; 9 = a keystone ★); trunk nodes use their order. */
+  /** Depth: the cost band (`DEPTH_COST`; 9 = a keystone ★); a node of its own pace (the Core's gates, the desks) keeps its old order. */
   readonly depth: number;
-  /** Tree nodes it needs: research ids, or a plan id (the family roots need the lab's plan). */
+  /**
+   * Tree nodes it needs, as drawn (D128): the node before it in its category, the lab's plan for a
+   * category's first, and what it acts on from another category of its tier. Its category's gates
+   * and its tier's gate are not listed: `researchNeeds` adds them.
+   */
   readonly prereq: readonly string[];
   /**
    * The resources it asks for (D122): paid from the Core's stock when it is launched, as a plan is,

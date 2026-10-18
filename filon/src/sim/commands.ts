@@ -65,6 +65,8 @@ export type Command =
   | { k: 'tokenBuy'; id: string; perMin: number }
   /** Floor Prices (cm_floor): the trade posts hold back an item whose bid is under this (centi-◉; null: none). */
   | { k: 'floorPrice'; item: string; cents: number | null }
+  /** Auto-sell (cm_autosell, D127): the Core sells what it holds of `item` beyond `at` whole items at each minute's end (null: off). */
+  | { k: 'autoSell'; item: string; at: number | null }
   /** The expertises (D93): an earned one chosen into an empty slot, in place at once. */
   | { k: 'expertise'; slot: number; id: string }
   /** A réorientation: the slot's expertise replaced by `id` — paid, in place 24 h later. */
@@ -143,6 +145,7 @@ export function exec(sim: Sim, cmd: Command): boolean {
     case 'tokenPlan': return sim.setTokenPlan(cmd.on);
     case 'tokenBuy': return sim.setTokenBuy(cmd.id, cmd.perMin);
     case 'floorPrice': return sim.setFloorPrice(cmd.item, cmd.cents);
+    case 'autoSell': return sim.setAutoSell(cmd.item, cmd.at);
     case 'expertise': return sim.chooseExpertise(cmd.slot, cmd.id) === null;
     case 'reorient': return sim.reorient(cmd.slot, cmd.id) === null;
     default: { const never: never = cmd; return never; } // a new Command kind must be handled here

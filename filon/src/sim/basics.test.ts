@@ -10,7 +10,7 @@ import { BUILDINGS } from '@/content/buildings';
 import { ITEMS } from '@/content/items';
 import { COSTS_BEFORE_D123 } from '@/content/past-costs';
 import { RECIPES } from '@/content/recipes';
-import { RESEARCH } from '@/content/research';
+import { RESEARCH, treePrereq } from '@/content/research';
 import { nodeUnusable } from '@/content/usable';
 import { itemIdx } from '@/content/registry';
 import { WORLD_EPOCH0 } from './constants';
@@ -114,6 +114,7 @@ describe('more to make of the basic resources (D123)', () => {
     const sim = d123Sim();
     steadyPower(sim);
     const id = put(sim, 'brickworks', 516, 505); // 516–517 × 505–506: sand in at (516,506) S, water at (517,506) S
+    sim.setRecipe(id, 'brick'); // two recipes since D125 (slag bricks): it waits for a choice (D83)
     put(sim, 'incinerator', 516, 504);
     stockedSilo(sim, 514, 508, 0, 'sand', 3000);
     expect(sim.placeBelts('ribbon', [[515, 507, 1], [516, 507, 0]])).toBe(2);
@@ -139,15 +140,19 @@ describe('more to make of the basic resources (D123)', () => {
     expect((b.consumed[itemIdx('copper_wire')]! - w0) / 1000 / 12).toBeCloseTo(30, 0);
   });
 
-  it('the tree: copper smelting opens Machines, the brickworks follows the Fast Drill, the steel mill needs both and the press; all in the Synthesis', () => {
+  it('the tree: copper smelting opens the Foundry, the brickworks follows the Fast Drill, the steel mill needs both and the press; all before the Synthesis (D128)', () => {
     expect(RESEARCH.dn_copper.prereq).toEqual(['observatory']);
     expect(RESEARCH.dn3.prereq).toContain('dn_copper');
     expect(RESEARCH.ex_brick.prereq).toContain('ex_fastdrill');
     for (const p of ['dn3', 'tr1', 'ex_brick']) expect(RESEARCH.dn_steel.prereq).toContain(p);
     expect(RESEARCH.dn_esmelt.prereq).toContain('dn_steel');
+    // The Synthesis needs them (D128: through the Workshop's twin wire mill, which the Steelworks' steel feeds).
+    const before = new Set<string>();
+    const walk = (id: string): void => { for (const p of treePrereq(id)) if (!before.has(p)) { before.add(p); walk(p); } };
+    walk('tr_synth');
     for (const id of ['dn_copper', 'ex_brick', 'dn_steel']) {
       expect(RESEARCH[id as 'dn_copper'].tier).toBe(1);
-      expect(RESEARCH.tr_synth.prereq).toContain(id);
+      expect(before.has(id), id).toBe(true);
     }
     expect([RECIPES.copper_plate.unlock, RECIPES.steel.unlock, RECIPES.pipe.unlock, RECIPES.brick.unlock, RECIPES.arc_copper.unlock, RECIPES.cable.unlock])
       .toEqual(['dn_copper', 'dn_steel', 'dn_steel', 'ex_brick', 'dn_esmelt', 'dn_wiremill']);
@@ -191,7 +196,7 @@ describe('what a building put up before D123 refunds (costFloor)', () => {
     sim.costFloor = sim.ents.nextId; // as a save from before D123 would set it
     const now = put(sim, 'sifter', 504, 520);
     const plate = itemIdx('iron_plate'), steel = itemIdx('steel');
-    expect(refundCost(sim.costFloor, sim.ents.get(old)!)).toEqual(COSTS_BEFORE_D123.sifter!.map(([it, q]) => ({ item: itemIdx(it), mu: q * 1000 })));
+    expect(refundCost(sim, sim.ents.get(old)!)).toEqual(COSTS_BEFORE_D123.sifter!.map(([it, q]) => ({ item: itemIdx(it), mu: q * 1000 })));
     const p0 = sim.stock[plate]!, s0 = sim.stock[steel]!;
     expect(sim.remove(500, 520)).toBe(true);
     expect(sim.stock[plate]! - p0).toBe(20_000); // the 20 plates it was built for

@@ -24,6 +24,7 @@ export function setRecipe(sim: Sim, id: number, recipe: string | null): boolean 
   if (n instanceof MachineNode) {
     refundNode(n, (it, mu) => sim.refund(it, mu));
     n.inBuf.fill(0); n.outBuf.fill(0); n.crafting = false; n.p = 0; n.carry = 0;
+    n.wBuf = 0; n.wItem = -1; n.wc = 0; // its waste bin went back with the rest (D125)
   }
   e.cfg = withRecipe(e.cfg, r);
   sim.log.push({ tick: sim.tick, cmd: { k: 'recipe', id, recipe } });

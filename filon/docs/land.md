@@ -43,9 +43,11 @@ the Heart's growing disc, the waystations and the land reclaimed next to a zone 
     PNJ autour de moi »). None within three rings of the Heart's parcel (`BAL.land.neighbours.minRing`
     4: the two rings round the starting square stay free; the nearest bases some 90 tiles out).
     Map 4 (`MapParams.holdings`): the parcel grid is cut in 3 × 3 squares round the Heart's parcel;
-    120 ‰ of them hold one base of 2–4 parcels side by side, grown from a seed parcel, so each reads
-    as one — on lands 1–3, 17, 17 and 13 bases (39, 34, 31 parcels), of which 2, 2 and 5 parcels
-    on ring 4, none nearer (420 ‰ from ring 3 before: some sixty bases). Maps 1–3 (and test
+    a square with a deposit on its open floor holds one base 350 ‰ of the time (`chanceOre`), bare
+    ground 30 ‰ (`chance`): 2–3 parcels side by side, grown from the parcel with the largest
+    deposits towards the next richest, so each reads as one and stands on its ore (D134) — on lands
+    1–3, 13, 10 and 16 bases (33, 22, 36 parcels); 420 ‰ from ring 3 at first (some sixty bases),
+    then 120 ‰. Maps 1–3 (and test
     worlds) keep a share of the sister claims' scattered parcels (40 ‰ of the same draw, the same
     colony: fewer, never others), one base each. Either way, on a parcel that is mostly open floor
     (`TerrainSource.floorAt`, sampled 5 × 5 without making a chunk) and holds nothing the land
@@ -61,26 +63,49 @@ the Heart's growing disc, the waystations and the land reclaimed next to a zone 
   - **Its chain, made from the recipes** (fifth pass; owner: « Du charbon rentre dans des fileuses,
     puis le trou de sortie d'une batterie génère des composés électriques, et rien n'est jamais envoyé
     par trade post. En plus c'est tout petit »;
-    [sim/world/neighbour-chain.ts](../src/sim/world/neighbour-chain.ts)). The goods its trade
-    supplies (content/colonies.ts, its staples first) back-chained through the recipes, up to four
-    steps, to what its land gives — sand where its floor has `BAL.land.neighbours.sand` places of
-    bare sand for collectors, each ore with room for a drill on it — and, where the land falls short,
-    one good bought at the Crier through its trade post (stone for its sifters, steel for its presses,
-    empty cells for its chargers). Every machine runs a recipe its building can make, each input
-    comes on a line from the stage that makes it, each extractor stands on its ground. The chain is
-    laid side by side up to four times (some eight machines); its bought good leaves the trade post's
-    one outlet for a depot (a silo; a great silo for three; a second depot after the first for four),
-    whose outlets feed the machines across from them in order, so no two lines cross. Its goods run
-    into the store, the store's two outlets into the trade post (what it sells: a CrierBelt drone
-    lifts off from there) and the Core. Laid until it checks (`neighbourProblems`: each machine on its
-    recipe and fed, each line from an outlet to an intake or onto another line's side carrying what
-    its source puts out, every depot fed, the goods reaching the post and the Core), trying again
-    with the post on the Core's other side, the bought goods' lines laid first, fewer copies, one
-    product, then its plainest chain (glass from its sand, an ore as it is, else its trade's simplest
-    good from two bought inputs); what still does not check is taken away (`prune`), never left
-    standing idle. Lands 1–8 of map 4: 96 bases, none failing, 5.2 machines a base, 71 selling their
-    own trade's goods (the salt ports and most scholar spires, short of salt or of room, make glass).
-    Maps 1–3 keep the old claims' single parcels: their bases stay small.
+    [sim/world/neighbour-chain.ts](../src/sim/world/neighbour-chain.ts)). **A business that makes
+    sense** ([D134](decisions.md); owner, 2026-10-18, on « Seven Horns »: « Elle commande de la
+    pierre, la transforme en minerai de fer et la revend ? Ça n'a pas trop de sens »):
+    - **It mines its raw goods on site and buys nothing.** What its land gives — sand where its
+      floor has `BAL.land.neighbours.sand` places of bare sand (sand collectors), each ore with room
+      for a drill on it (drills on the deposit), a mining camp's stone where rock stands within an
+      excavator's reach — is all it works. Its trade post only ships what it makes: no line ever
+      leaves the post, so every line runs from the mine to the post. A map-4 base sits on the
+      richest deposits of its square (`MapGen.depositsIn`, their radii² summed, no chunk made), and
+      a square with a deposit holds one far more often (`chanceOre` 350 ‰ against `chance`).
+    - **Each step adds value, and none makes a raw good** (`runs`): ore → plates → gears, or steel
+      → pipes; copper → wire → cable or coil; sand → glass. No sifter's stone → ore. A mining camp
+      sells its ore as it is only from a deposit that holds a real mine (three drills,
+      `MINE_DRILLS`); a smaller one it smelts on site.
+    - **What it makes**: of every good its land allows, the best by its trade's leanings
+      (content/neighbours.ts `NEIGHBOUR_LEANS`), what its colony supplies at the Crier, the longer
+      chain, the ore it mines first — two goods at most, six machines a copy. The survey counts the
+      drills each ore holds (2 × 2 places, a tile apart): a chain never wants more drills of an ore
+      than that, its copies and its extractors a step cut to fit (a small copper deposit, two
+      drills: one for the plates, one for the wire). Drills go down first, on their deposits.
+    - **What it does, said** (owner: « je ne comprends pas bien ce que fait cette base de PNJ »):
+      `NLayout.lines`, a line per good it sells, raw good first, read off what stands (back from the
+      store through each machine's main input to the mine), so it is what its ribbons carry. Its
+      card shows its trade's word from the good its main line ends in (`NEIGHBOUR_TRADES`:
+      « Fonderie », « Forge », « Verrerie », « Tréfilerie », « Mine », « Carrière »…), then each
+      line glyph by glyph (« Minerai de fer → Plaque de fer → Engrenage »); the band over the base
+      says it from afar (« Sept-Cornes · Fonderie »); the land panel's trade tag, its lines in the
+      tooltip. A land that gives it nothing: no line, « Sa terre ne lui donne rien à extraire ».
+
+    The chain is laid side by side up to four times (some eight machines). Its goods run into the
+    store, the store's two outlets into the trade post (what it sells: a CrierBelt drone lifts off
+    from there) and the Core. Laid until it checks (`neighbourProblems`: each machine on its recipe
+    and fed, each line from an outlet to an intake or onto another line's side carrying what its
+    source puts out, nothing handed out of the post, the goods reaching the post and the Core),
+    trying again with the post on the Core's other side, fewer copies (at one copy, the lines laid
+    from the mines down too), one product, a raw good it could not lay given up, then its plainest
+    chain (glass from its sand, else a mine on its largest deposit); what still does not check is
+    taken away (`prune`), never left standing idle. Lands 1–9 of map 4: 98 bases, every one selling,
+    5.8 machines a base, some 35–40 ms to lay one; two lose their Core's line; some 58 % work the
+    ore they stand on (the rest: glass from their sand, a quarry). Not laid yet: circuits and
+    motors (three inputs' lines into one bench find no way on two or three parcels). Maps 1–3 keep
+    the old claims' single parcels: their bases stay small (mostly glass), and a few whose land
+    gives nothing to mine sell nothing.
     Then its power on the hub's far side (turbines, a coal generator, panels) and its own grid: every
     building that takes part in power wired from its Core through masts (a chain of masts that
     cannot reach the grid is taken back), by the claim's own

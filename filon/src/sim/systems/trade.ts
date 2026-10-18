@@ -2,15 +2,21 @@
 // import orders, or trade at once (spot); `tradeEpoch` runs at every epoch boundary — online in
 // Sim.step, offline in the catch-up loop: the same function, so the ledgers match. A post has one
 // entrance and one exit (D62) and no export streams to set (D64): its entrance takes every
-// tradable item but its cargo (what it bought and holds or awaits), and it sells all of it; its
-// exit hands its cargo out, each item in turn. At a boundary, for the epoch that just ended (its
-// prices):
+// tradable item — its cargo's too, since D131 (owner, 2026-10-18: « le tradepost est bloqué si l'on
+// essaie de mettre en entrée une ressource que l'on est en train d'importer… tant pis pour le
+// joueur ») — into a store of its own (`sim.selling`), and it sells all of it; its container
+// (`sim.stores`) holds its cargo (what it bought and holds or awaits), which its exit hands out,
+// each item in turn. The two never mix: a purchase is never sold, a sale never leaves by the exit.
+// At a boundary, for the epoch that just ended (its prices):
 //   1. imports that have arrived land in their post's container while it has room; one that does
 //      not fit waits in the air, and so do the post's next ones (D43);
 //   2. each post buys its orders — only while its exit leads somewhere, and not while its
 //      container is full: nothing is spent on goods that could not come out — then sells what
 //      its entrance brought, within its throughput. The starter contract (D101, `takeStarter`)
 //      buys under the same holds at its fixed price, off the market, and is gone once bought in full;
+//   2b. auto-sell (cm_autosell, D127): what the Core holds beyond each switched-on item's
+//      threshold is sold at the bid, less the Core's fee (D126) — the Core took it in uncapped
+//      meanwhile (`autoSellCaps`), so its lines never back up on it;
 //   3. the cargo no order wants, none on its way and none left in its container leaves it (the
 //      graph is then recompiled: the entrance takes the item again);
 //   4. the market settles that epoch with the mu sold / bought → the next epoch's prices;
@@ -19,16 +25,19 @@
 import { book } from '../purse';
 import { BAL } from '@/content/balance';
 import { BUILDING_KIND, ITEM_IDS, N_ITEMS, itemDef } from '@/content/registry';
+import { PLAN_IDS, planDef } from '@/content/research';
 import { afterFee, valueCents } from '@/market/pricing';
 import { LocalMarketService } from '@/market/service';
 import { EPOCH } from '../constants';
 import { ReservoirNode } from '../flow/nodes';
+import { effectiveCost } from '../research/runtime';
 import {
   deliveryTicks, LEDGER_MAX, orderSlots, orderTrades, postCap, throughputMu, tradeLevel,
   type ImportOrder, type SpotSide, type TradeLine, type TradeRefusal,
 } from '../trade';
 import type { Ent } from '../types';
 import type { Sim } from '../state';
+import { planCost } from './research';
 
 /** Can this item go through the Crier at all (a market depth, not a fluid)? */
 export const tradable = (item: number): boolean => item >= 0 && item < N_ITEMS && itemDef(item).depth > 0 && itemDef(item).kind !== 'fluid';
@@ -131,16 +140,23 @@ export function orderHold(sim: Sim, o: ImportOrder): OrderHold | null {
 let TRADABLE: readonly number[] | null = null;
 export const tradables = (): readonly number[] => (TRADABLE ??= Array.from({ length: N_ITEMS }, (_, i) => i).filter(tradable));
 
-/** What each post's entrance takes (D64): every tradable item but its cargo — the graph compiler builds the node with it. */
+/**
+ * What each post's entrance takes: every tradable item, its cargo's too (D131: until then it refused
+ * its cargo, D64, and a line bringing an item the post imports backed up there) — into its own store,
+ * apart from the container. The graph compiler builds the post's entrance node with it.
+ */
 export function exportAccepts(sim: Sim): Map<number, Set<number>> {
   const m = new Map<number, Set<number>>();
   let all: Set<number> | null = null;
-  for (const e of sim.ents.sorted()) {
-    if (BUILDING_KIND[e.def] !== 'trade') continue;
-    const cargo = cargoOf(sim, e.id);
-    m.set(e.id, cargo.length ? new Set(tradables().filter((i) => !cargo.includes(i))) : (all ??= new Set(tradables())));
-  }
+  for (const e of sim.ents.sorted()) if (BUILDING_KIND[e.def] === 'trade') m.set(e.id, (all ??= new Set(tradables())));
   return m;
+}
+
+/** What a post's entrance brought, to sell at the boundary (D131): its own store, apart from its container. */
+export function sellingOf(sim: Sim, post: number): Float64Array {
+  let st = sim.selling.get(post);
+  if (!st) sim.selling.set(post, (st = new Float64Array(N_ITEMS)));
+  return st;
 }
 
 /** What each post's exit hands out in turn (D62): its cargo, sorted, once each. */
@@ -172,8 +188,8 @@ export function addImport(sim: Sim, post: number, item: string, perMin: number, 
   o.active = (sim.prices.ask[it] ?? 0) > 0 && sim.prices.ask[it]! <= maxCents;
   sim.trade.orders.push(o);
   sim.log.push({ tick: sim.tick, cmd: { k: 'importOrder', post, item, perMin, maxCents, ...(express ? { express: true } : {}) } });
-  // Its cargo now: the exit hands it out, the entrance no longer takes it (what it brought of it,
-  // still in the container, leaves by the exit too: nothing is sold or lost).
+  // Its cargo now: the exit hands it out. The entrance still takes it (D131), into its own store:
+  // what a line brings of it is sold, what the post bought of it leaves by the exit.
   addCargo(sim, post, it);
   sim.dirty = true;
   return o.id;
@@ -224,6 +240,96 @@ export function setFloorPrice(sim: Sim, item: string, cents: number | null): boo
   else { if (!Number.isInteger(cents) || cents < 1) return false; sim.trade.floors.set(it, cents); }
   sim.log.push({ tick: sim.tick, cmd: { k: 'floorPrice', item, cents } });
   return true;
+}
+
+// ── auto-sell (cm_autosell, D127) ─────────────────────────────────────────
+// Owner, 2026-10-18: « il faudrait qu'une amélioration de l'arbre permette de faire de la vente
+// automatique des items qui arrivent en surplus dans le cœur (+10 000) ». The Core takes a switched-on
+// item in without its cap (so the lines bringing it never back up on it: the overflow is sold, not
+// refused), and at each boundary what it holds beyond the item's threshold is sold (`autoSales`).
+// Offline-exact by construction: within a minute the item is an ordinary level between its bounds
+// (the catch-up's NORMAL: never FULL, its cap lifted), and the boundary's sale is this same call.
+
+/**
+ * The Core's room for an item it auto-sells (mu): none to speak of. A sentinel, not a number to tune:
+ * far above any stock, and exact in float arithmetic with any level added to it.
+ */
+export const UNCAPPED = 2 ** 50;
+
+/** Auto-sell researched: its settings act only then (they stay saved otherwise). */
+export const autoSellOn = (sim: Sim): boolean => sim.mods.flags.has('autoSell');
+
+/** The highest threshold an item may take (whole items): what the Core holds of it at most. */
+export const autoSellMax = (sim: Sim): number => Math.floor(sim.hearthCap() / 1000);
+
+/**
+ * Switch auto-sell on for a tradable item at a threshold (whole items, `BAL.autoSell.min` up to the
+ * Core's cap), move its threshold, or switch it off (null). Logged; the graph is recompiled (the
+ * Core's cap for the item goes or comes back). False when refused or when nothing changes.
+ */
+export function setAutoSell(sim: Sim, item: string, at: number | null): boolean {
+  if (!autoSellOn(sim)) return false;
+  const it = ITEM_IDS.indexOf(item as never);
+  if (!tradable(it)) return false;
+  const t = sim.trade;
+  if (at === null) { if (!t.autoSell.delete(it)) return false; }
+  else {
+    if (!Number.isInteger(at) || at < BAL.autoSell.min || at > autoSellMax(sim) || t.autoSell.get(it) === at) return false;
+    t.autoSell.set(it, at);
+  }
+  sim.log.push({ tick: sim.tick, cmd: { k: 'autoSell', item, at } });
+  sim.dirty = true;
+  return true;
+}
+
+/** The Core's caps for the graph compiler (mu, per item; null: its one cap for all): an auto-sold item's lifted. */
+export function autoSellCaps(sim: Sim): Float64Array | null {
+  if (!autoSellOn(sim) || !sim.trade.autoSell.size) return null;
+  const caps = new Float64Array(N_ITEMS).fill(sim.hearthCap());
+  for (const it of sim.trade.autoSell.keys()) caps[it] = UNCAPPED;
+  return caps;
+}
+
+/**
+ * What the Core keeps of an auto-sold item at a boundary (mu); the rest is sold. Its threshold, never
+ * above the Core's cap (beyond it the Core would have refused the item: selling it is the point);
+ * raised to what an open plan or a queued research costs of it — a sale never makes the base short
+ * of an item (the Stock's shortages, ui/stock-facts.ts); never below CrierBelt's restart reserve (D36).
+ */
+export function autoSellKeep(sim: Sim, it: number): number {
+  let need = (sim.trade.autoSell.get(it) ?? autoSellMax(sim)) * 1000;
+  for (const id of PLAN_IDS) {
+    if (sim.done.has(id) || !planDef(id)!.prereq.every((q) => sim.done.has(q))) continue;
+    for (const c of planCost(id)) if (c.item === it && c.mu > need) need = c.mu;
+  }
+  for (const id of sim.labQueue.values()) for (const c of effectiveCost(id, sim.mods).cost) if (c.item === it && c.mu > need) need = c.mu;
+  return Math.max(sim.reserveFloor(it), Math.min(sim.hearthCap(), need));
+}
+
+/**
+ * The boundary's auto-sales (D127), after the posts' own: each switched-on item, in item order, its
+ * whole items beyond what the Core keeps, at the epoch's bid less the Core's fee (`spotFee`'s sale:
+ * `BAL.coreSellFee`, D126). Booked as a post's sales are — in `t.sold` (the market sees the supply),
+ * the lifetime totals, and the ledger as an `autoSell` line from the Core (the purse's breakdown,
+ * D102). The posts' floor prices are theirs (cm_floor): the Core's surplus goes at the bid.
+ */
+function autoSales(sim: Sim, bid: readonly number[]): void {
+  const t = sim.trade;
+  if (!t.autoSell.size || !autoSellOn(sim)) return;
+  const f = spotFee(sim, 'sell');
+  for (const it of [...t.autoSell.keys()].sort((a, b) => a - b)) {
+    if ((bid[it] ?? 0) <= 0 || sim.stock[it]! < 1000) continue;
+    const n = Math.floor((sim.stock[it]! - autoSellKeep(sim, it)) / 1000);
+    if (n <= 0) continue;
+    const mu = n * 1000;
+    sim.stock[it] = sim.stock[it]! - mu;
+    const cents = afterFee(valueCents(mu, bid[it]!, 'sell'), 'sell', f);
+    sim.credits += cents;
+    t.earned += cents;
+    t.sold[it] = t.sold[it]! + mu;
+    t.soldTotal[it] = t.soldTotal[it]! + mu;
+    line(sim, { post: sim.hearthId, item: it, kind: 'autoSell', mu, cents });
+  }
 }
 
 /** What one item costs a standing order at the next lift now (centi-◉): the ask, CrierBelt's fee, express freight's share. */
@@ -330,7 +436,7 @@ export function spotTrade(sim: Sim, item: string, side: SpotSide, n: number): { 
 }
 
 // ── the epoch boundary ────────────────────────────────────────────────────
-/** A post's store: its container (its cargo, waiting for its exit) and what its entrance brought to sell. */
+/** A post's container: its cargo, waiting for its exit (what its entrance brought is `sellingOf`'s, D131). */
 function storeOf(sim: Sim, e: Ent): Float64Array {
   let st = sim.stores.get(e.id);
   if (!st) sim.stores.set(e.id, (st = new Float64Array(N_ITEMS)));
@@ -435,12 +541,12 @@ export function tradeEpoch(sim: Sim): boolean {
       if (!from.includes(src.colony)) from.push(src.colony);
       line(sim, { post: p.id, item: o.item, kind: 'import', mu, cents: -cost });
     }
-    const own = storeOf(sim, p);
-    const cargo = cargoOf(sim, p.id);
+    // What its entrance brought, its cargo's items too (D131): its own store, never the container's purchases.
+    const own = sellingOf(sim, p.id);
     for (const it of tradables()) {
       if (budget <= 0) break;
-      if (own[it]! < 1000 || cargo.includes(it) || (bid[it] ?? 0) <= 0) continue;
-      // Floor Prices (cm_floor): under its floor, the item waits in the container for a better bid.
+      if (own[it]! < 1000 || (bid[it] ?? 0) <= 0) continue;
+      // Floor Prices (cm_floor): under its floor, the item waits at the entrance for a better bid.
       if (sim.mods.flags.has('floorPrices') && bid[it]! < (t.floors.get(it) ?? 0)) continue;
       // Whole items, as many as the throughput lets go (the rest waits for the next lift).
       const mu = Math.min(Math.floor(own[it]! / 1000), Math.floor(budget / 1000)) * 1000;
@@ -461,6 +567,9 @@ export function tradeEpoch(sim: Sim): boolean {
   }
   // The starter contract bought in full stays, stopped (D101, `orderHold` 'fulfilled'): the player
   // continues it at the market's price (`continueStarter`) or stops it (`cancelImport`).
+
+  // 2b. The Core's surplus (D127), after the posts: the market sees both at its settlement.
+  autoSales(sim, bid);
 
   // 3. The cargo handed out in full leaves it.
   const changed = pruneCargo(sim);

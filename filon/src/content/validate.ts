@@ -17,15 +17,17 @@ import { BUILDINGS } from './buildings';
 import { ITEMS } from './items';
 import { NEIGHBOUR_KITS, NEIGHBOUR_MAST, NEIGHBOUR_PAD } from './neighbours';
 import { questProblems } from './quests';
-import { MAX_RECIPES, RECIPES } from './recipes';
+import { MAX_RECIPES, RECIPES, recipeMakes } from './recipes';
 import { reserveProblems } from './reserve';
 import { usabilityProblems } from './usable';
-import { FAMILIES, FAMILY_IDS, PLANS, RESEARCH, TIER1_WHOLE, TIER_GATE, buildingsUnlockedBy, isPlan, isResearch, isTreeNode, pathProblems, treePrereq } from './research';
+import { CATEGORIES, CATEGORY_IDS, DEPTH_COST, PLANS, RESEARCH, THEMES, THEME_IDS, TIER_GATE, buildingsUnlockedBy, categoryNodes, isCategory, isPlan, isResearch, isTreeNode, pathProblems, tierCategories, tierOfDepth, treePrereq } from './research';
 import { expertiseProblems } from './expertises';
 import { CIRQUE, UNIQUE_BIOMES } from './world';
-import type { BuildingDef, ItemDef, PlanDef, RecipeDef, ResearchDef, ResearchTier } from './types';
+import type { BuildingDef, CategoryDef, ItemDef, PlanDef, RecipeDef, ResearchDef, ResearchTier } from './types';
 
 const CYCLE_LCM = 1200;
+/** A smelter's crafts a minute (D97), the beat most lines run at: every waste count divides it (D125). */
+export const WASTE_BEAT = 10;
 
 /** Items mined straight from the land (deposits, unique biomes, digging, pumping, the cliff faces' veins, D87). */
 export const RAW: readonly string[] = [
@@ -41,6 +43,50 @@ const treeIds: readonly string[] = [...plans.map(([id]) => id), ...research.map(
 const buildings = Object.entries(BUILDINGS) as Array<[string, BuildingDef]>;
 const isUnique = (id: string): boolean => (ITEMS as Record<string, ItemDef>)[id]?.kind === 'unique';
 
+/**
+ * The categories' invariants (D128; run by validateContent): each of a tier and a known theme,
+ * holding nodes; Tier 1's open with the lab (no gate), a later tier's gates are categories of the
+ * tier before — so the gates never loop, and each tier is reached through the one before —, named
+ * once each. A node stands in its category's tier and theme, a node costed by its depth in that
+ * depth's tier; what it needs by name (`prereq`) is of its own tier, the tiers before coming through
+ * its category's gates and its tier's gate. Each tier has categories, and the node behind the
+ * Core's level it waits for (`TIER_GATE`) stands in the tier before. Whether every gate can be
+ * finished — every node reached, nothing unusable on the way — is the tree's own checks'
+ * (`reachableNodes`, usable.ts), which read the gates as needs (`researchNeeds`).
+ */
+export function categoryProblems(): string[] {
+  const errs: string[] = [];
+  for (const c of CATEGORY_IDS) {
+    const k: CategoryDef = CATEGORIES[c];
+    if (!(k.tier >= 1 && k.tier <= 4)) errs.push(`category ${c}: tier ${k.tier}`);
+    if (!THEME_IDS.includes(k.theme) || !THEMES[k.theme]) errs.push(`category ${c}: unknown theme ${k.theme}`);
+    if (!categoryNodes(c).length) errs.push(`category ${c}: no node`);
+    if (k.tier === 1 && k.gates.length) errs.push(`category ${c}: Tier 1 opens with the lab, no gate`);
+    if (new Set(k.gates).size !== k.gates.length) errs.push(`category ${c}: a gate named twice`);
+    for (const g of k.gates) {
+      if (!isCategory(g)) errs.push(`category ${c}: unknown gate ${g}`);
+      else if (CATEGORIES[g].tier !== k.tier - 1) errs.push(`category ${c}: its gate ${g} is not of Tier ${k.tier - 1}`);
+    }
+  }
+  for (const [id, r] of research) {
+    if (!isCategory(r.cat)) { errs.push(`research ${id}: unknown category ${r.cat}`); continue; }
+    const k: CategoryDef = CATEGORIES[r.cat];
+    if (r.tier !== k.tier || r.theme !== k.theme) errs.push(`research ${id}: not of its category's tier and theme (${r.cat})`);
+    const d = DEPTH_COST[r.depth];
+    if (d && d.tokens === r.tokens && d.minutes === r.minutes && tierOfDepth(r.depth) !== r.tier) errs.push(`research ${id}: depth ${r.depth} is Tier ${tierOfDepth(r.depth)}'s, not ${r.tier}'s`);
+    for (const p of r.prereq) {
+      const q = (RESEARCH as Record<string, ResearchDef>)[p];
+      if (q && q.tier !== r.tier) errs.push(`research ${id}: needs ${p} of Tier ${q.tier} by name (a category's gates say what of the tier before it needs)`);
+    }
+  }
+  for (const tier of [1, 2, 3, 4] as const) {
+    if (!tierCategories(tier).length) errs.push(`Tier ${tier}: no category`);
+    const g = TIER_GATE[tier];
+    if (tier === 1 ? g !== null : !g || (RESEARCH as Record<string, ResearchDef>)[g]?.tier !== tier - 1) errs.push(`Tier ${tier}: its gate ${g} must stand in Tier ${tier - 1}`);
+  }
+  return errs;
+}
+
 /** Items reachable from the raw set through recipes. */
 export function reachableItems(): Set<string> {
   const have = new Set(RAW);
@@ -48,7 +94,7 @@ export function reachableItems(): Set<string> {
     changed = false;
     for (const [, r] of recipes) {
       if (!r.ins.every(([it]) => have.has(it))) continue;
-      for (const [o] of r.outs) if (!have.has(o)) { have.add(o); changed = true; }
+      for (const o of recipeMakes(r)) if (!have.has(o)) { have.add(o); changed = true; }
     }
   }
   return have;
@@ -66,7 +112,7 @@ export function makeableWith(known: ReadonlySet<string>): Set<string> {
     for (const [, r] of recipes) {
       if (!has(r.unlock) || !r.machines.some((m) => has((BUILDINGS as Record<string, BuildingDef>)[m]!.unlock))) continue;
       if (!r.ins.every(([it]) => have.has(it))) continue;
-      for (const [o] of r.outs) if (!have.has(o)) { have.add(o); changed = true; }
+      for (const o of recipeMakes(r)) if (!have.has(o)) { have.add(o); changed = true; }
     }
   }
   return have;
@@ -162,6 +208,29 @@ export function validateContent(): string[] {
     if (!unlocks.has(r.unlock)) errs.push(`recipe ${id}: unknown unlock ${r.unlock}`);
     const ticks = Math.round(r.seconds * 10);
     if (CYCLE_LCM % ticks !== 0) errs.push(`recipe ${id}: ${ticks} ticks do not divide ${CYCLE_LCM}`);
+    // Its waste (D125): a known waste item, a whole count of crafts, never what it makes, and a
+    // count that divides each of its machines' crafts a minute and the base's beat (`WASTE_BEAT`: a
+    // smelter's ten a minute, what most lines carry) — so a steady line, at full pace or fed by k
+    // smelters, still repeats within the catch-up's warm-up, which its exact periods rest on.
+    if (r.waste) {
+      const [w, every] = r.waste;
+      const wd = (ITEMS as Record<string, ItemDef>)[w];
+      if (!wd) errs.push(`recipe ${id}: unknown waste ${w}`);
+      else if (wd.kind !== 'waste') errs.push(`recipe ${id}: its waste ${w} is not of kind waste`);
+      if (!(Number.isInteger(every) && every >= 2)) errs.push(`recipe ${id}: a waste every ${every} crafts (a whole number, 2 or more)`);
+      if (WASTE_BEAT % every !== 0) errs.push(`recipe ${id}: a waste every ${every} crafts does not divide the base's beat of ${WASTE_BEAT} a minute`);
+      if (r.outs.some(([o]) => o === w || (ITEMS as Record<string, ItemDef>)[o]?.kind === 'fluid')) errs.push(`recipe ${id}: waste beside its own waste or a fluid`);
+      for (const m of r.machines) {
+        const perMin = (600 * ((BUILDINGS as Record<string, BuildingDef>)[m]?.speed ?? 1000)) / (1000 * ticks);
+        if (!Number.isInteger(perMin) || perMin % every !== 0) errs.push(`recipe ${id}: a waste every ${every} crafts does not divide ${m}'s ${perMin} a minute`);
+      }
+    }
+  }
+  // The waste items: each some recipe's waste, none a product (D125).
+  for (const [it, d] of Object.entries(ITEMS) as Array<[string, ItemDef]>) {
+    if (d.kind !== 'waste') continue;
+    if (!recipes.some(([, r]) => r.waste?.[0] === it)) errs.push(`item ${it}: a waste no recipe puts out`);
+    if (recipes.some(([, r]) => r.outs.some(([o]) => o === it))) errs.push(`item ${it}: a waste made as a product`);
   }
 
   // The neighbouring bases' kits (D110): known buildings, power for each (their chains: sim/neighbour-chain.test.ts).
@@ -238,27 +307,11 @@ export function validateContent(): string[] {
     for (const [it] of r.cost) if (reach.has(it) && !known.has(it)) errs.push(`research ${id}: ${it} cannot be made before it (its prerequisites and the plans)`);
   }
 
-  // Machines are specialised (D70); research nodes unlock things (D70); the tree's shape (D69).
+  // Machines are specialised (D70); research nodes unlock things (D70); the tree's categories (D128).
   for (const [b, rs] of recipesPerMachine()) if (rs.length > MAX_RECIPES) errs.push(`machine ${b}: ${rs.length} recipes (${rs.join(', ')}), at most ${MAX_RECIPES}`);
-  for (const [id, r] of research) {
-    if (!nodeGives(id).length) errs.push(`research ${id}: unlocks nothing (a node must give a building, a recipe or a feature)`);
-    if (r.branch === 'trunk') continue;
-    const fam = FAMILIES[r.branch];
-    if (r.spec && !fam.specs?.[r.spec]) errs.push(`research ${id}: unknown speciality ${r.spec} of ${r.branch}`);
-    if (r.spec && r.tier < 3) errs.push(`research ${id}: a speciality starts at Tier 3`);
-    if (!r.spec && r.tier >= 3 && fam.specs) errs.push(`research ${id}: ${r.branch} splits at Tier 3, the node needs a speciality`);
-    const gate = TIER_GATE[r.tier];
-    if (gate && !r.prereq.includes(gate)) errs.push(`research ${id}: a Tier ${r.tier} node needs ${gate}`);
-  }
-
-  // Tier 1 is completed whole before the Core's level 3 and the expertises (D93): its closing node
-  // needs every other Tier 1 node, and opens Tier 2.
-  const t1 = research.filter(([id, r]) => r.tier === 1 && id !== TIER1_WHOLE).map(([id]) => id);
-  const whole = (RESEARCH as Record<string, ResearchDef>)[TIER1_WHOLE];
-  if (!whole || whole.tier !== 1) errs.push(`research ${TIER1_WHOLE}: the node closing Tier 1 is missing`);
-  else for (const id of t1) if (!whole.prereq.includes(id)) errs.push(`research ${TIER1_WHOLE}: does not need ${id} (Tier 1 is completed whole)`);
-  if (TIER_GATE[2] !== TIER1_WHOLE) errs.push(`Tier 2 must open with ${TIER1_WHOLE}`);
-  errs.push(...expertiseProblems(FAMILY_IDS));
+  for (const [id] of research) if (!nodeGives(id).length) errs.push(`research ${id}: unlocks nothing (a node must give a building, a recipe or a feature)`);
+  errs.push(...categoryProblems());
+  errs.push(...expertiseProblems(THEME_IDS));
   // Every node takes tokens and has a pace, with no minimum time (D118, D122: tokens at every tier):
   // `minutes` is only the pace the launch dialog aims at. Its resources are whole and positive.
   for (const [id, r] of research) {

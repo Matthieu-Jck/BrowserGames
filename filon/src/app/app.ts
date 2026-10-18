@@ -31,7 +31,7 @@ import { LandingView } from '@/render/world/landing-view';
 import { DayNight } from '@/render/daynight';
 import { CloudShadows, LightsView } from '@/render/world/lights-view';
 import { NeighboursView } from '@/render/world/neighbours-view';
-import { neighbourName } from '@/ui/land-facts';
+import { neighbourBanner, neighbourName } from '@/ui/land-facts';
 import { NeighbourCard } from '@/ui/neighbour-card';
 import { WindHints } from '@/render/world/wind-hints-view';
 import { RiversView } from '@/render/world/rivers-view';
@@ -233,7 +233,7 @@ export class App {
     this.neighbours = new NeighboursView({
       buildings: this.buildings, lights: this.lights, wires: this.wires, cargo: this.cargo, atlas,
       layers: { decals: this.layers.get('decals'), objects: this.layers.get('objects'), plan: this.layers.get('plan'), items: this.layers.get('items'), status: this.layers.get('status'), fx: this.layers.get('fxTop') },
-      name: (colony) => neighbourName(this.sim, colony),
+      name: (h) => neighbourBanner(this.sim, h),
     });
     this.clouds = new CloudShadows(this.layers.get('shade'), this.lights.cloudTextures());
     this.windHints = new WindHints(this.layers.get('shade'));
@@ -311,6 +311,7 @@ export class App {
     this.tip = new Tip(tipNode, atlas);
     this.depositCard = new DepositCard(atlas);
     document.body.append(this.depositCard.root);
+    this.neighbourCard.atlas = this.atlas;
     document.body.append(this.neighbourCard.root); // a neighbouring base's card, on a click on its pieces (D110)
     document.getElementById('ui')?.append(this.hud.root, this.hud.stock.root, this.hud.purse.root, this.inspector.root, this.landPanel.root, this.viewPanel.root, this.bar.root, this.toasts.root);
     // On a narrow window the side panels and the Stock are bottom sheets with a grip (D96, ui/sheet.ts).
@@ -363,7 +364,7 @@ export class App {
    * order on the Crier's Trade tab (the order's line, or the post's card, brought into view and
    * flashed); other trade on that tab; tokens, the Compute Plan or the servers' rental in the tech
    * tree (on the first running project, whose header holds the plan and the bill); the rent in the
-   * land mode, the first lease's parcel picked.
+   * land mode, the first lease's parcel picked; an auto-sold item (D127) in the Stock panel, where it is set.
    */
   goToFlow(f: FlowLine): void {
     switch (f.kind) {
@@ -371,6 +372,10 @@ export class App {
         this.crier.show('trade');
         if (f.order || f.post !== undefined) this.crier.focusLine(f.order ? `[data-order="${f.order}"]` : `[data-post="${f.post}"]`);
         if (this.screens.current !== 'market') this.screens.open('market');
+        break;
+      case 'auto':
+        if (this.screens.current) this.screens.open(null);
+        this.hud.setStock(true);
         break;
       case 'tokens': case 'fee': case 'rental':
         this.treeFocus = this.sim.projects[0]?.id ?? null;
@@ -469,6 +474,7 @@ export class App {
     if (!sameLand) for (let ck = 0; ck < CHUNKS * CHUNKS; ck++) chunks.add(ck);
     else for (const g of [old.grid, sim.grid]) for (const t of [...g.terrainDiff.keys(), ...g.oreDiff.keys()]) chunks.add(((t >> 10) >> 5) * CHUNKS + ((t & 1023) >> 5)); // tile y·1024 + x → its chunk
     for (const ck of chunks) { this.terrain.invalidate(ck); this.relief.invalidate(ck); }
+    if (chunks.size) this.wires.landChanged();
     sim.grid.dirtyChunks.clear();
     this.stats.fine.length = 0;
     this.stats.coarse.length = 0;
@@ -510,6 +516,7 @@ export class App {
       bus.emit('sim:structure');
     }
     for (const ck of this.sim.grid.dirtyChunks) { this.terrain.invalidate(ck); this.relief.invalidate(ck); }
+    if (this.sim.grid.dirtyChunks.size) this.wires.landChanged(); // a wire behind a dug or filled cliff
     this.sim.grid.dirtyChunks.clear();
     // Under a full screen (the tree, the statistics, the Crier: 94 % paper and a backdrop blur) the
     // world is drawn 10 times a second, not every frame: it still moves behind the paper, and the
@@ -619,7 +626,7 @@ export class App {
     this.buildings.setPlanness(te);
     this.neighbours.update(this.sim, vt, P, te, cam.zoom, simTicks / 10, this.sim.absEpoch()); // the neighbouring bases near the view (D110)
     this.buildings.cull(vt); // off-screen buildings culled by 16-tile squares, when the view's range of them changes (D92)
-    this.items.update(this.sim, simTicks, P, te, cam.zoom, vt); // first: it moves the elevators' cars the buildings view draws
+    this.items.update(this.sim, simTicks, P, te, cam.zoom, vt, this.buildings.shadowAt, this.relief.floorShadeAt); // first: it moves the elevators' cars the buildings view draws (the shadows' shade on the items sorted among the volumes, D130)
     this.gleaners.update(this.sim, P, te, simTicks, vt, cam.zoom); // the Gleaners at night (D103, D112): after the items, whose tokens on their posts they take
     this.buildings.animate(this.sim, simTicks / 10, grade); // moving parts on game time; cast shadows with the sun
     if (pre && this.tools.state && pointer) this.tip.show(this.sim, this.tools.def, pre, pointer.sx, pointer.sy);

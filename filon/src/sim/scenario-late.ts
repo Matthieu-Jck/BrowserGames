@@ -7,9 +7,9 @@
 //     the rock top into a ceramic oven, its stone climbing from excavators digging the Crown's
 //     inner foot, its ceramic down the terraces on traction ribbons into the Core, which builds with it;
 //   - the Fabrique on the guaranteed copper field past the Crown (`FABRIQUE`): a deep bore, wire,
-//     circuits, gears, servomotors in an etcher, a second research lab (D122: fed by nothing), round a
-//     second trade post that buys glass and plates and sells the rest; its power on a pylon line
-//     over the Crown;
+//     copper plates, circuits, servomotors in an etcher, a second research lab (D122: fed by nothing),
+//     round a second trade post that buys glass and motors and sells the rest; its power on a pylon
+//     line over the Crown;
 //   - the Ember Fields mine (when the land has that tier-3 site, out at r 180–280): a deep bore on
 //     embersalt into a third trade post set beside it, which sells it where it is mined; its power
 //     on a pylon line.
@@ -44,17 +44,24 @@ import { isSpanTile } from './flow/chain';
  * has one at r 70–110), round the second trade post (P, the second wharf). Everything flows down
  * the plan; the sell line runs up its left edge into the post's entrance (D64: it sells whatever
  * comes in), and every intermediate product spills onto it through an overflow gate (%) when its
- * consumers are full, so nothing ever backs up into the post's exit: the glass and plates it buys
+ * consumers are full, so nothing ever backs up into the post's exit: the glass and motors it buys
  * come out in turn (D62), and one item held up would hold the other.
  * - copper ore from the deep bore on the field arrives at `e` (the bore's line, laid after),
- *   along a copper bus (row 3, leftwards) whose routers feed the two wire mills (M, N) below them;
- * - the post's exit (a swift ribbon: glass and plates together pass 60 a minute): an inverted
- *   sorter (I) sends the plates aside, down to the gear workshop (G), the glass on along a glass
- *   bus (row 2) whose routers drop it, across the copper bus on junctions, into the circuit
- *   workshops' other inputs (C, c); each mill hands its wire straight into its workshop below;
- * - the gears and the circuits down to the etcher (T: servomotors, three times as fast as an
- *   electronics workshop), what it leaves of them onto the sell line; below, the research lab O,
- *   fed by no line (D122: the data collector J that filled it went with the data).
+ *   along a copper bus (row 3, leftwards) whose routers feed the electric smelter (S, D129: copper
+ *   plates on power) and the two wire mills (M, N) below them;
+ * - the smelter's plates and slag (D125) down into an inverted sorter (K): the slag straight on into
+ *   an incinerator (X), the plates aside to both circuit workshops' side intakes (C, c: the
+ *   circuit is a copper plate, two wires and a glass since D129) — no line from the post's exit
+ *   carries them, so the glass the same workshops need never waits behind them there;
+ * - the post's exit (a swift ribbon): an inverted sorter (I) sends the motors aside, down toward the
+ *   etcher, the glass on along a glass bus (row 2) whose routers drop it, across the copper bus on
+ *   junctions, into the circuit workshops' other inputs; each mill hands its wire straight into its
+ *   workshop below;
+ * - the motors and the circuits down to the etcher (T: servomotors, a motor and two circuits, three
+ *   times as fast as an electronics workshop), what it leaves of them onto the sell line, sold at the
+ *   post; below, the research lab O, fed by no line (D122: the data collector that filled it went
+ *   with the data). Until D129 a press (G) made the etcher's gears of plates the post bought, and an
+ *   inverted sorter turned its scrap aside.
  * Until D108 a skydock (D) stood on its right, the potteries' ceramic and the Ember Fields'
  * embersalt flown into it, and a great workshop (K) made thermal cores of them with the circuits:
  * both went with the drifters, and with them the sell line's second spill row.
@@ -64,13 +71,13 @@ export const FABRIQUE: PlanSpec = {
   rows: [
     ' PPPPP',
     ' PPPPP .  .. ..',
-    '→PPPPP>I>>R+>R+.',
-    '↑PPPPP v .+R<+R<<e',
-    '↑PPPPP v  vM vN',
-    '↑      v  vM vN',
-    '↑     GG  CC cc',
-    '↑     GG  CC cc',
-    '↑      v   v  v',
+    '→PPPPP>I>>R+>R+..',
+    '↑PPPPP v .+R<+R<R<e',
+    '↑PPPPP v  vM vNSS',
+    '↑      v  vM vNSS',
+    '↑      v  CC<cc<Kv',
+    '↑      v  CC^cc Xv',
+    '↑<<<<<<v.  v^<+<<<',
     '↑<<<<<<%.  v<<<',
     '↑<<<<<<+<<<%.',
     '↑      v   v',
@@ -95,10 +102,15 @@ export const FABRIQUE: PlanSpec = {
     N: { role: 'mill3', def: 'wire_mill', recipe: 'copper_wire' },
     C: { role: 'circuits', def: 'workshop', recipe: 'circuit' },
     c: { role: 'circuits2', def: 'workshop', recipe: 'circuit' },
-    G: { role: 'gears2', def: 'press', recipe: 'gear' },
+    // D129: the circuits' copper plates, smelted on power off the copper bus; its slag (D125) straight
+    // on into an incinerator, its plates aside to both workshops' side intakes.
+    S: { role: 'plates2', def: 'electric_smelter', recipe: 'arc_copper' },
+    K: { role: 'platesSort', def: 'inverted_sorter', filter: 'copper_plate' },
+    X: { role: 'slagPit', def: 'incinerator' },
     T: { role: 'bells', def: 'etcher', recipe: 'pace_bell' },
     O: { role: 'observatory2', def: 'observatory' },
-    I: { role: 'sorter2', def: 'inverted_sorter', filter: 'iron_plate' },
+    // D129: the bought motors aside, down to the etcher (where the press's gears went until then).
+    I: { role: 'sorter2', def: 'inverted_sorter', filter: 'motor' },
     R: { def: 'router' },
     '%': { def: 'overflow_gate' },
     e: { role: 'works.in', def: 'mark', dir: 3 },
@@ -106,11 +118,13 @@ export const FABRIQUE: PlanSpec = {
 };
 
 /**
- * What the second post buys a minute: the circuit workshops' glass and the gear workshop's
- * plates, both from foundries a quarter hour away (plus the post's lift: about twenty minutes).
- * The gears take what the glass leaves of the exit's turns.
+ * What the second post buys a minute: the circuit workshops' glass and the etcher's motors, both
+ * from foundries a quarter hour away (plus the post's lift: about twenty minutes). D129: no more
+ * than the workshops and the etcher use (the smelter's 10 copper plates a minute make 10 circuits,
+ * five servomotors' worth), so neither backs the exit up for long; the plates for the press went
+ * with the press (the servomotor is a motor and two circuits now).
  */
-export const FABRIQUE_BUY: Readonly<Record<string, number>> = { glass: 30, iron_plate: 25 };
+export const FABRIQUE_BUY: Readonly<Record<string, number>> = { glass: 10, motor: 4 };
 
 // ── small geometry ───────────────────────────────────────────────────────────
 
@@ -520,14 +534,14 @@ export function fabrique(b: Builder): boolean {
   if (!laid) { b.skip('fabrique:plan'); const e = sim.ents.get(bore)!; sim.remove(e.x, e.y); delete b.ids.boreCu; return false; }
   Object.assign(b.ids, laid.ids);
   b.lines['works.return'] = laid.ret;
-  // The post's trade: glass and plates bought, out of its one exit in turn (D62); its entrance
+  // The post's trade: glass and motors bought, out of its one exit in turn (D62); its entrance
   // sells what the sell line brings (D64).
   const post = laid.ids.post2!;
   const ask = (it: string): number => Math.floor((sim.prices.ask[itemIdx(it)]! * 3) / 2);
   for (const [item, n] of Object.entries(FABRIQUE_BUY)) if (typeof sim.addImport(post, item, n, ask(item)) !== 'number') b.skip(`import:${item}`);
   // Power: a pylon line over the Crown to the post, then masts to the rest.
   wireFar(b, 'post2');
-  b.wire('boreCu', 'mill2', 'mill3', 'circuits', 'circuits2', 'gears2', 'bells', 'observatory2');
+  b.wire('boreCu', 'mill2', 'mill3', 'plates2', 'circuits', 'circuits2', 'bells', 'observatory2');
   return true;
 }
 

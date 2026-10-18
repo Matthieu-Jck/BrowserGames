@@ -126,8 +126,13 @@ export class Sim {
   credits = 0; // centi-ocelles
   hearthLevel = 1;
   hearthId = 0;
-  /** Stores of reservoir buildings other than the Hearth (silos, waystations, docks…), by entity. */
+  /** Stores of reservoir buildings other than the Hearth (silos, waystations, docks…), by entity. A trade post's is its container: its cargo, waiting for its exit. */
   readonly stores = new Map<number, Float64Array>();
+  /**
+   * What each trade post's entrance brought, to sell at the minute's end (D131), by post: apart from
+   * its container (`stores`), so a purchase is never sold and a sale never leaves by the exit.
+   */
+  readonly selling = new Map<number, Float64Array>();
   /** Energy held by each accumulator (kW·tick), by entity. */
   readonly accEnergy = new Map<number, number>();
 
@@ -158,6 +163,8 @@ export class Sim {
    * price from before (content/past-costs.ts, sim/refund.ts). 0 for a base founded since. Saved, hashed.
    */
   costFloor = 0;
+  /** The same for D129's prices (the electronics workshop at Tier 2, coils and motors for circuits). 0 for a base founded since. Saved, hashed. */
+  costFloorD129 = 0;
   /** Archive notes (centi-◉ of science value), refunded by reconversions, spent on research. */
   notes = 0;
   respecs = 0;
@@ -305,7 +312,7 @@ export class Sim {
     const old = this.graph ?? null;
     this.graph = compileGraph({
       ents: this.ents, grid: this.grid, mods: this.mods, now: this.tick, worldSeed: this.worldSeed,
-      hearthStock: this.stock, hearthCap: this.hearthCap(), hearthLevel: this.hearthLevel, stores: this.stores, old,
+      hearthStock: this.stock, hearthCap: this.hearthCap(), hearthCaps: trade.autoSellCaps(this), hearthLevel: this.hearthLevel, stores: this.stores, selling: this.selling, old,
       refund: (item, mu) => this.refund(item, mu),
       busyLabs: research.busyLabs(this),
       tradeAccepts: trade.exportAccepts(this),
@@ -537,6 +544,10 @@ export class Sim {
   priceForecast(minutes: number): ReturnType<typeof trade.priceForecast> { return trade.priceForecast(this, minutes); }
   /** Floor Prices: the bid (centi-◉ an item) under which the posts hold an item back (null: none). */
   setFloorPrice(item: string, cents: number | null): boolean { return trade.setFloorPrice(this, item, cents); }
+  /** Auto-sell (cm_autosell, D127): sell what the Core holds of `item` beyond `at` whole items each minute (null: off). Logged; false when refused. */
+  setAutoSell(item: string, at: number | null): boolean { return trade.setAutoSell(this, item, at); }
+  /** What the Core keeps of an auto-sold item at the minute's end (mu): its threshold, raised to an open plan's or a queued research's need, never below the reserve. */
+  autoSellKeep(item: number): number { return trade.autoSellKeep(this, item); }
   cancelImport(id: number): boolean { return trade.cancelImport(this, id); }
   /** The starter contract (D101): CrierBelt's one-time copper ore at a fixed price, off the market, on `post`. The order's id or a refusal (`no_post`, `taken`, `slots`). */
   takeStarter(post: number): number | TradeRefusal { return trade.takeStarter(this, post); }
@@ -660,6 +671,7 @@ export class Sim {
     this.ensureCompiled();
     let t = this.stock[item]!;
     for (const st of this.stores.values()) t += st[item]!;
+    for (const st of this.selling.values()) t += st[item]!;
     for (const n of this.graph.nodes) t += heldIn(n, item);
     return t;
   }
@@ -671,11 +683,12 @@ export class Sim {
     h.int(this.tick).int(this.credits).int(this.hearthLevel).ints(this.stock);
     for (const e of this.ents.sorted()) h.int(e.id).int(e.def).int(e.x).int(e.y).int(e.rot).int(e.cfg).int(e.builtAt);
     for (const [id, st] of [...this.stores].sort((a, b) => a[0] - b[0])) h.int(id).ints(st);
+    for (const [id, st] of [...this.selling].sort((a, b) => a[0] - b[0])) h.int(id).ints(st); // a post's entrance (D131)
     for (const [id, v] of [...this.accEnergy].sort((a, b) => a[0] - b[0])) h.int(id).int(v);
     h.int(this.links.size);
     for (const [a, b] of this.links.pairs()) h.int(a).int(b);
     for (const id of [...this.done].sort()) h.str(id);
-    h.int(this.notes).int(this.respecs).int(this.lastRespec).int(this.costFloor);
+    h.int(this.notes).int(this.respecs).int(this.lastRespec).int(this.costFloor).int(this.costFloorD129);
     for (const p of this.projects) { h.str(p.id).int(p.lab).int(p.dur).int(p.el).ints(p.paid).int(p.tokens ?? 0).int(p.tokIn ?? 0).int(p.buy ?? 0).int(p.lit ?? 0); }
     for (const [lab, id] of [...this.labQueue].sort((a, b) => a[0] - b[0])) h.int(lab).str(id);
     h.int(this.serverAcc).int(this.researchHeld ? 1 : 0).int(this.tokenPlan ? 1 : 0).int(this.tokenBank);
@@ -694,6 +707,8 @@ export class Sim {
     for (const o of t.orders) h.int(o.id).int(o.post).int(o.item).int(o.perMin).int(o.maxCents).int(o.active ? 1 : 0).int(o.starter ?? -1);
     for (const sh of t.inflight) h.int(sh.post).int(sh.item).int(sh.mu).int(sh.arrive);
     h.int(t.nextOrderId).int(t.earned).int(t.spent).ints(t.sold).ints(t.bought).int(t.starterTaken ? 1 : 0);
+    // Auto-sell's thresholds (D127; nothing when none, so older states hash as before).
+    for (const [it, at] of [...t.autoSell].sort((a, b) => a[0] - b[0])) h.int(it).int(at);
     h.str(JSON.stringify(this.market.save()));
     quests.hashQuests(this.quests, h);
     expertise.hashExpertise(this.expertise, h);
@@ -717,6 +732,7 @@ export function addHeld(n: FNode, out: Float64Array): void {
       const m = n as MachineNode;
       m.recipe?.ins.forEach((s, j) => { out[s.item] = out[s.item]! + m.inBuf[j]!; });
       m.recipe?.outs.forEach((s, j) => { out[s.item] = out[s.item]! + m.outBuf[j]!; });
+      if (m.wBuf > 0 && m.wItem >= 0) out[m.wItem] = out[m.wItem]! + m.wBuf; // its waste bin (D125)
       return;
     }
     case 'drill': if (anyN.item! >= 0) out[anyN.item!] = out[anyN.item!]! + anyN.outBuf!; return;
@@ -745,7 +761,7 @@ export function heldIn(n: FNode, item: number): number {
       let t = 0;
       m.recipe?.ins.forEach((s, j) => { if (s.item === item) t += m.inBuf[j]!; });
       m.recipe?.outs.forEach((s, j) => { if (s.item === item) t += m.outBuf[j]!; });
-      return t;
+      return m.wItem === item ? t + m.wBuf : t;
     }
     case 'drill': return (anyN.item === item ? (anyN.outBuf as number) : 0);
     case 'fork': return (anyN.item === item ? (anyN.mu as number) : 0);

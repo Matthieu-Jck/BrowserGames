@@ -12,9 +12,10 @@
 //   patched tarp each of its buildings stands on (the `decals` plane: both views), covered depots
 //   (dome tents), banner poles by its pad, cairns along its edge (iso among the volumes, plan flat);
 // - per frame, for the bases in view only: the goods riding its ribbons (a loop from the world's
-//   clock: no sim, nothing saved), smoke from its furnaces' chimneys, its name on a cloth band over
-//   it from mid zoom out (constant on screen), and now and then, at a minute's turn, a CrierBelt
-//   drone hauling a container off its pad (the cargo view's).
+//   clock: no sim, nothing saved), smoke from its furnaces' chimneys, its name and its trade's word
+//   on a cloth band over it from mid zoom out (« Seven Horns · Fonderie », D134; constant on screen),
+//   and now and then, at a minute's turn, a CrierBelt drone hauling a container off its pad (the
+//   cargo view's).
 // A base laid stays laid until another colony comes into play (the views' `foreignEpoch`); its
 // sprites are hidden while it is out of range. Checked for new bases when the view's range of
 // parcels changes or the fog lifts, not every frame.
@@ -78,8 +79,8 @@ export interface NeighboursDeps {
   cargo: CargoView;
   atlas: Atlas;
   layers: { decals: Container; objects: Container; plan: Container; items: Container; status: Container; fx: Container };
-  /** A colony's name in the player's language ('' while the market does not know it). */
-  name: (colony: number) => string;
+  /** The band over a base: its name and its trade's word, in the player's language ('' while the market does not know its colony; app: ui/land-facts.ts `neighbourBanner`). */
+  name: (h: Holding) => string;
 }
 
 /** A base as laid: its sprites, its box (tiles), its ribbons and smokers for the per-frame work, its pad, its name band. */
@@ -225,11 +226,11 @@ export class NeighboursView {
       ...L.banners.map(([x, y]) => ({ x: x + 0.5, y: y + 0.5, z: 5.6 })),
     ];
     this.d.lights.layForeign(h.hub, ents, lanterns);
-    // Its grid's wires, from its Core's crown (its own terminal) or terminal to terminal.
+    // Its grid's wires, from its Core's crown (its own terminal) or terminal to terminal, hidden where a cliff in front covers them.
     this.d.wires.layForeign(h.hub, L.wires.filter(([a, b]) => a < all.length && b < all.length).map(([a, b]) => {
       if (coreAt && (a === L.core || b === L.core)) { const o = all[a === L.core ? b : a]!; return [coreAt, wireAnchor(o, coreAt.x, coreAt.y)] as const; }
       return wireEnds(all[a]!, all[b]!);
-    }));
+    }), sim.grid);
     const ck = `${emblem.field}:${emblem.ink}`;
     const sprites: Sprite[] = [];
     // Its Core: iso among the volumes, plan flat.
@@ -391,7 +392,7 @@ export class NeighboursView {
   private placeName(L: Laid, show: boolean, P: Lin, iso: number, zoom: number): void {
     if (!show) { if (L.name) L.name.visible = false; return; }
     const hub = this.sim?.neighbours.holdingOf(L.hub);
-    const text = hub ? this.d.name(hub.colony) : '';
+    const text = hub ? this.d.name(hub) : '';
     if (!text) { if (L.name) L.name.visible = false; return; }
     if (text !== L.nameText || !L.name) {
       L.nameText = text;

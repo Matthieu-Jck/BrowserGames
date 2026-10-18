@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { reachableItems, reachableNodes, rootPlans, startBuildings, tiredVeinPerMin, uniquesNeeded, validateContent, wirePerElectronicsWorkshop } from './validate';
+import { categoryProblems, reachableItems, reachableNodes, rootPlans, startBuildings, tiredVeinPerMin, uniquesNeeded, validateContent, wirePerElectronicsWorkshop } from './validate';
 import { ITEMS } from './items';
 import { RECIPES } from './recipes';
 import { BAL } from './balance';
@@ -7,7 +7,7 @@ import { BUILDINGS } from './buildings';
 import { ANALYTICS, PLAN_IDS, PLAN_PATHS, PLANS, RESEARCH, pathEntries, pathPlans, pathProblems, planDef, treePrereq } from './research';
 import { BOOTSTRAP, ESSENTIAL, RESERVED, reserveNeed, reserveProblems, stagePlans } from './reserve';
 import { FEATURE_NEEDS, buyable, knownAt, mapSpecific, nodeUnusable, usabilityProblems, usableWith } from './usable';
-import { DEPTH_COST, FAMILIES, TIER1_WHOLE, tierOfDepth } from './research';
+import { CATEGORIES, CATEGORY_IDS, DEPTH_COST, THEMES, TIER_GATE, categoryNodes, researchNeeds, tierCategories, tierOfDepth } from './research';
 import type { BuildingDef, PlanDef, RecipeDef } from './types';
 
 describe('content invariants', () => {
@@ -23,7 +23,7 @@ describe('content invariants', () => {
   it('the tired vein cannot feed a single mechanics workshop: copper must be imported', () => {
     expect(tiredVeinPerMin()).toBeCloseTo(6.75, 6);
     expect(tiredVeinPerMin() * 2).toBeCloseTo(13.5, 6);
-    expect(wirePerElectronicsWorkshop()).toBe(30);
+    expect(wirePerElectronicsWorkshop()).toBe(20); // D129: two wires a circuit (three until then), on a copper plate
   });
 
   it('a resonator and a nacre lattice each need two different uniques (the atlas and codex went with the data, D122)', () => {
@@ -135,7 +135,7 @@ describe('nothing unusable (D107)', () => {
 
   it('the rule catches what the tree used to unlock too early (the violations D107 fixed)', () => {
     // Each fix is pinned: the prerequisite that makes it usable.
-    expect(PLANS.workshop.prereq).toEqual(expect.arrayContaining(['sand_collector', 'wire_mill']));
+    expect(PLANS.assembly_bench.prereq).toContain('wire_mill'); // D129: its coils are copper wire (the electronics workshop's plan stood here)
     expect(PLANS.ex_quartz.prereq).toContain('trade_post');
     expect(RESEARCH.ex_sifter.prereq).toContain('tr2'); // Basalt Bits after it: the excavator's bits
     expect(RESEARCH.dn_compact.prereq).toContain('tr3'); // the assembly recipes are Ceramics'
@@ -147,13 +147,49 @@ describe('nothing unusable (D107)', () => {
   });
 
   it('the tree’s shape (D107): Logistics, Commerce’s beginner Tier 1, the Fast Drill at Tier 1, Finance at Tier 2', () => {
-    expect(FAMILIES.xp.name).toEqual({ fr: 'Logistique', en: 'Logistics' });
+    expect(THEMES.xp.name).toEqual({ fr: 'Logistique', en: 'Logistics' });
     expect(RESEARCH.cm_post2.tier).toBe(1);
     expect(RESEARCH.cm2.tier).toBe(2);
     expect(RESEARCH.ex_fastdrill.tier).toBe(1);
     expect(RESEARCH.ex_sifter.tier).toBe(2);
-    expect(RESEARCH[TIER1_WHOLE].prereq).toEqual(expect.arrayContaining(['cm_post2', 'ex_fastdrill']));
-    expect(RESEARCH[TIER1_WHOLE].prereq).not.toContain('cm2');
+  });
+
+  it('the categories (D128): each tier its own, a category opening once those of the tier before it names are finished', () => {
+    expect(categoryProblems()).toEqual([]);
+    // Every tier has its own, and every node stands in one of its tier.
+    for (const tier of [1, 2, 3, 4] as const) expect(tierCategories(tier).length, `Tier ${tier}`).toBeGreaterThanOrEqual(5);
+    for (const [id, r] of Object.entries(RESEARCH)) expect(CATEGORIES[r.cat as keyof typeof CATEGORIES].tier, id).toBe(r.tier);
+    // The trunk and Machines merged, then re-split: Mechanics and the quartz workshop in the
+    // Workshop, the smelters in the Foundry, Ceramics with Optics, Land Registry in the Territory.
+    expect(RESEARCH.tr1.cat).toBe('t1_workshop');
+    expect(RESEARCH.dn_quartzshop.cat).toBe('t1_workshop');
+    expect(RESEARCH.dn_esmelt.cat).toBe('t1_foundry');
+    expect([RESEARCH.tr3.cat, RESEARCH.tr6.cat]).toEqual(['t2_ceramics', 't2_ceramics']);
+    expect(RESEARCH.tr4.cat).toBe('t2_land');
+    // Gates: usually one (Commerce → Finance), sometimes two (Foundry and Workshop → Automation).
+    expect(CATEGORIES.t2_finance.gates).toEqual(['t1_commerce']);
+    expect(CATEGORIES.t2_automation.gates).toEqual(['t1_foundry', 't1_workshop']);
+    for (const c of tierCategories(1)) expect(CATEGORIES[c].gates, c).toEqual([]);
+    // A node needs its category's gates whole, and its tier's gate: Standing Orders, Commerce and the Synthesis.
+    expect(researchNeeds('cm2')).toEqual(expect.arrayContaining(['cm_post2', 'cm_floor', 'tr_synth']));
+    expect(researchNeeds('cm2')).not.toContain('xp_swift');
+    // No node needs one of another tier by name: the gates carry the tiers' links.
+    for (const [id, r] of Object.entries(RESEARCH)) for (const p of r.prereq) {
+      const q = RESEARCH[p as keyof typeof RESEARCH];
+      if (q) expect(q.tier, `${id} → ${p}`).toBe(r.tier);
+    }
+    // Each tier's gate stands in a category of the tier before, and every category can be finished.
+    for (const tier of [2, 3, 4] as const) expect(RESEARCH[TIER_GATE[tier] as keyof typeof RESEARCH].tier).toBe(tier - 1);
+    const learnt = reachableNodes();
+    for (const c of CATEGORY_IDS) for (const id of categoryNodes(c)) expect(learnt.has(id), `${c}: ${id}`).toBe(true);
+  });
+
+  it('the Synthesis needs what the Core’s level 3 is paid in, no longer Tier 1 whole (D128)', () => {
+    const needs = new Set<string>();
+    const walk = (id: string): void => { for (const p of researchNeeds(id)) if (!needs.has(p)) { needs.add(p); walk(p); } };
+    walk('tr_synth');
+    for (const id of ['tr1', 'dn_quartzshop', 'dn_wiremill', 'an_data', 'dn_steel', 'ex_brick', 'dn_copper']) expect(needs.has(id), id).toBe(true);
+    for (const id of ['cm_post2', 'en_pitch', 'xp_swift', 'dn_esmelt']) expect(needs.has(id), id).toBe(false);
   });
 
   it('research is short early and long late (D107): the pace by tier; tokens at every tier, few at Tier 1 (D122)', () => {

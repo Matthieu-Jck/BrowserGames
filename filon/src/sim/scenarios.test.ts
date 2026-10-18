@@ -21,6 +21,14 @@ const build = (id: ScenarioId, seed: number) => {
   return { ...value, ms, wall };
 };
 
+/**
+ * Each level's build on the CPU at most (docs/testing.md, "Time limits"): 3 s; the late base 6 s,
+ * twice its build alone — it is the grown base (1.1–1.4 s) and its works, D123's steel line and
+ * brickworks, the Fabrique, the potteries, the far mines, its Great Turbines and its minutes run
+ * (about 2.5 s alone with three other sessions at work, up to 4.7 s inside the whole parallel suite).
+ */
+const LIMIT_MS: Record<ScenarioId, number> = { claim: 3000, smelter: 3000, survey: 3000, tutorial: 3000, grown: 3000, late: 6000 };
+
 /** The quest each level leaves current (null: the tutorial is over). */
 const AT: Record<ScenarioId, string | null> = { claim: 'first_strike', smelter: 'bloom_kiln', survey: 'crier_trade', tutorial: 'synth_parts', grown: null, late: null };
 
@@ -39,7 +47,7 @@ const BUILT: Record<ScenarioId, readonly string[]> = {
   late: [
     'post', 'kiln1', 'observatory', 'cutter1', 'cutter2', 'osc', 'boiler', 'boilerPump', 'coalB',
     'oven', 'pump', 'potSilo', 'digger1',
-    'boreCu', 'post2', 'mill2', 'mill3', 'circuits', 'circuits2', 'gears2', 'bells', 'observatory2', 'sorter2',
+    'boreCu', 'post2', 'mill2', 'mill3', 'plates2', 'circuits', 'circuits2', 'bells', 'observatory2', 'sorter2',
   ],
 };
 
@@ -71,7 +79,7 @@ describe('debug bases (scenarios)', () => {
       expect(QUEST_IDS[sim.quests.cur] ?? null, id).toBe(AT[id]);
       for (const role of BUILT[id]) expect(report.ids[role], `${id}: ${role}`).toBeGreaterThan(0);
       for (const role of BUILT[id]) expect(sim.ents.get(report.ids[role]!), `${id}: ${role} standing`).toBeTruthy();
-      expect(ms, `${id} built in ${Math.round(ms)} ms of CPU (${Math.round(wall)} ms on the wall)`).toBeLessThan(3000);
+      expect(ms, `${id} built in ${Math.round(ms)} ms of CPU (${Math.round(wall)} ms on the wall)`).toBeLessThan(LIMIT_MS[id]);
       // Every line laid leads somewhere: into a building or on along another ribbon (owner,
       // 2026-10-14: a bridge fed from its side "doesn't work" — D55: entered from straight behind).
       sim.ensureCompiled();
@@ -82,9 +90,10 @@ describe('debug bases (scenarios)', () => {
         expect(sim.hearthLevel).toBe(5); // its last level: every tier open (D118)
         // Over half the tree done (D66, D69; D108: 54 of 70 with The Crier House's third post), the Research Queue researched for real.
         expect(Object.keys(RESEARCH).filter((r) => sim.done.has(r)).length, 'late: research done').toBeGreaterThanOrEqual(44);
-        // The first lab on the Research Queue, the Fabrique's on the Solar Farm (D122: on tokens, their
-        // resources paid at launch; the Compute Plan comes learnt with the Wider Wharf).
-        expect(sim.projects.map((p) => p.id).sort(), 'late: research under way').toEqual(['an_queue', 'en_solarfarm']);
+        // The first lab on the Research Queue, the Fabrique's on Robotics (D122: on tokens, their
+        // resources paid at launch; the Compute Plan comes learnt with the Wider Wharf; D128: the Solar
+        // Farm comes learnt with the Sunheart's category gate).
+        expect(sim.projects.map((p) => p.id).sort(), 'late: research under way').toEqual(['an_queue', 'dn7']);
         // The Ember Fields mine where the land has the site, its embersalt sold at a third post beside it (D108).
         if (report.ids.boreE) expect(report.ids.postE, 'late: postE').toBeGreaterThan(0);
         // Nothing the map refused (each part of the works is laid whole, or skipped by name) but the
@@ -124,7 +133,7 @@ describe('debug bases (scenarios)', () => {
     for (const id of ['tutorial', 'late'] as const) {
       const { sim, report } = build(id, seed);
       const post = report.ids.post!;
-      expect(sim.graph.nodeByEnt.get(post)!.inE.length, `${id}: a line into the post`).toBeGreaterThan(0);
+      expect(sim.graph.postIn.get(post)!.inE.length, `${id}: a line into the post's entrance (D131: its own node)`).toBeGreaterThan(0);
       expect(sim.cargoOf(post), `${id}: its cargo`).not.toContain(itemIdx('iron_ore')); // its entrance sells the ore (D64)
       // One standing order, whose goods an outlet takes out (D43): never one that only drains the purse.
       expect(sim.trade.orders.filter((o) => o.post === post).map((o) => o.item), `${id}: its order`).toEqual([itemIdx('iron_plate')]);
@@ -137,10 +146,12 @@ describe('debug bases (scenarios)', () => {
       expect(low, `${id}: the grid's lowest satisfaction over a day`).toBeGreaterThanOrEqual(900);
       expect(sim.credits - credits0, `${id}: ocelles earned over a day`).toBeGreaterThan(20_000);
       if (id === 'late') {
-        // The late base's chains run over the day (D66): the Fabrique's wire, circuits, gears,
-        // servomotors, the potteries' ceramic, the Ember Fields' embersalt where it is mined.
+        // The late base's chains run over the day (D66): the Fabrique's wire, copper plates (D129),
+        // circuits, servomotors, the potteries' ceramic, the Ember Fields' embersalt where it is mined;
+        // the cirque's gears where its press stands (the Fabrique's went with D129: its servomotors
+        // are bought motors and its circuits).
         const made = (it: string): number => sim.produced[itemIdx(it)]! - produced0[itemIdx(it)]!;
-        for (const it of ['copper_wire', 'circuit', 'gear', 'pace_bell', 'ceramic', ...(report.ids.boreE ? ['embersalt'] : [])]) expect(made(it), `late: ${it} made over a day`).toBeGreaterThan(0);
+        for (const it of ['copper_wire', 'copper_plate', 'circuit', 'pace_bell', 'ceramic', ...(report.ids.gears ? ['gear'] : []), ...(report.ids.boreE ? ['embersalt'] : [])]) expect(made(it), `late: ${it} made over a day`).toBeGreaterThan(0);
         // D123's works where they stand (scenario-basics.ts): the steel line's steel and pipes, the brickworks' bricks.
         for (const it of [...(report.ids.steel ? ['steel', 'pipe'] : []), ...(report.ids.bricks ? ['brick'] : [])]) expect(made(it), `late: ${it} made over a day`).toBeGreaterThan(0);
         // Far more than its way: its sales of what it makes, after what it buys.

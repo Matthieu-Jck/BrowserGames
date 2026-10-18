@@ -27,7 +27,7 @@ import { eventLine } from '@/ui/gazette';
 import type { Rot } from '@/sim/types';
 import { CENTER, EPOCH } from '@/sim/constants';
 import { catchUp } from '@/sim/offline/catchup';
-import { GLEAN_WINDOW, RAID_STAGGER } from '@/sim/flow/chain';
+import { GLEAN_WINDOW, RAID_ARRIVE, RAID_STAGGER, RAID_TAKE, raidBandOf } from '@/sim/flow/chain';
 import { veinSpots } from '@/sim/scenario-quartz';
 import { PARCEL, parcelAt, parcelCentre, ringOf } from '@/sim/world/land';
 
@@ -200,7 +200,9 @@ export interface FilonDebug {
     /** The next posts' turns on the exposed lines from now on (tile, tick), soonest first. */
     next: Array<{ x: number; y: number; tick: number }>;
     /** The next raids (D112), soonest first: when each starts and its posts (tiles), middle post first for aiming. */
-    raids: Array<{ at: number; x: number; y: number; posts: Array<[number, number]> }>;
+    raids: Array<{ at: number; x: number; y: number; posts: Array<[number, number]>; band: number }>;
+    /** A raid's timing (ticks from its slot): the band's crawl in, how long it takes, its posts' stagger. */
+    timing: { arrive: number; take: number; stagger: number };
   };
   /** A goal quest's hint (D101): `true` asks for it, `false` puts it away; the guide's hint state. */
   questHint(show?: boolean): { goal: boolean; shown: boolean; left: boolean; auto: boolean };
@@ -525,10 +527,10 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
         figures: app.gleaners.shown, arriving: app.gleaners.arriving, waiting: app.gleaners.waiting, reaching: app.gleaners.reaching,
         grabbing: app.gleaners.grabbing, carrying: app.gleaners.carrying, tapping: app.gleaners.tapping, prowling: app.gleaners.prowling,
         paired: app.gleaners.paired, onBelt: app.gleaners.onBelt, unforeseen: app.gleaners.unforeseen, unseen: app.gleaners.unseen, late: app.gleaners.late,
-        under: app.gleaners.under, risen: app.gleaners.risen,
-        // The next raids' posts (D112): each post's turn (the raid's start + its stagger).
+        under: app.gleaners.under, risen: app.gleaners.risen, timing: { arrive: RAID_ARRIVE, take: RAID_TAKE, stagger: RAID_STAGGER },
+        // The next raids' posts (D112): each post's turn (the raid's slot, the band's crawl in, its stagger).
         next: sim.graph.chains.flatMap((c) => Array.from(c.raidPosts, (cell, p) => {
-          const t = sim.tick - (sim.tick % GLEAN_WINDOW) + c.raidAt + p * RAID_STAGGER;
+          const t = sim.tick - (sim.tick % GLEAN_WINDOW) + c.raidAt + RAID_ARRIVE + p * RAID_STAGGER;
           const tile = c.tiles[cell]!;
           return { x: tile & 1023, y: tile >> 10, tick: t > sim.tick ? t : t + GLEAN_WINDOW };
         })).sort((a, b) => a.tick - b.tick).slice(0, 24),
@@ -536,7 +538,7 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
           const t = sim.tick - (sim.tick % GLEAN_WINDOW) + c.raidAt;
           const posts = Array.from(c.raidPosts, (cell) => [c.tiles[cell]! & 1023, c.tiles[cell]! >> 10] as [number, number]);
           const mid = posts[posts.length >> 1]!;
-          return { at: t > sim.tick ? t : t + GLEAN_WINDOW, x: mid[0], y: mid[1], posts };
+          return { at: t > sim.tick ? t : t + GLEAN_WINDOW, x: mid[0], y: mid[1], posts, band: raidBandOf(c.raidHeld) };
         }).sort((a, b) => a.at - b.at || a.x - b.x || a.y - b.y).slice(0, 24),
       };
     },

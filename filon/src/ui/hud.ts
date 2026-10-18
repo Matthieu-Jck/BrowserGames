@@ -55,7 +55,7 @@ import { makeStore } from '@/core/store';
 /** More ticks than this between two one-second samples: a catch-up ran (play runs `TPS` a second). */
 const CATCH_UP_TICKS = 3 * TPS;
 /** Items shown first when held (the early chain), then anything else in stock. */
-const ORDER = ['iron_ore', 'iron_plate', 'sand', 'glass', 'coal', 'copper_ore', 'copper_wire', 'gear', 'circuit', 'ceramic', 'stone', 'salt'];
+const ORDER = ['iron_ore', 'iron_plate', 'sand', 'glass', 'coal', 'copper_ore', 'copper_wire', 'copper_coil', 'gear', 'motor', 'circuit', 'ceramic', 'stone', 'salt'];
 /** Whether this viewer left the Stock panel open (D96): a convenience of this browser's, never the colony's. */
 const stockPref = makeStore<{ version: 1; open: boolean }>('filon.stock.v1', 1, () => ({ version: 1, open: false }));
 
@@ -495,7 +495,11 @@ export class Hud {
     setText(this.stockBadge, lacking.length ? String(lacking.length) : '');
     setAttr(this.stockBadge, 'data-tone', lacking.length ? (lacking.some((s) => s.out) ? 'out' : 'short') : null);
     setAttr(this.stockBtn, 'title', lacking.length ? `${t('hud.stock.btnTip')} · ${tr('hud.stock.lack', { n: lacking.length })}` : t('hud.stock.btnTip'));
-    if (this.stock.open) this.stock.refresh(sim, items, (i) => this.rate(sim, i), this.lacks);
+    if (this.stock.open) {
+      // What each auto-sold item brought in an hour (D127): the purse's own lines, one figure everywhere.
+      const auto = new Map(this.purseNow().lines.filter((f) => f.kind === 'auto').map((f) => [f.item!, f.perHour] as const));
+      this.stock.refresh(sim, items, (i) => this.rate(sim, i), this.lacks, (i) => auto.get(i) ?? null);
+    }
   }
 
   refresh(nowMs: number): void {

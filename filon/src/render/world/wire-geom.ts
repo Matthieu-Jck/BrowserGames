@@ -10,6 +10,7 @@ import { footprint } from '@/sim/entities';
 import type { Ent } from '@/sim/types';
 import { artRot, rotLocal, terminalsOf } from '../art/terminals';
 import { LH, tileToIso } from '../iso';
+import { MAX_LEVEL, SHIFT, tileTop, type ReliefLand } from '../relief';
 import { liftOf } from './stand';
 
 /** Where a wire meets a building: tile coords of the point it hangs from, and its height (levels, from the floor). */
@@ -103,6 +104,69 @@ export function wireCurve(A: Anchor, B: Anchor): Float32Array {
   const span = Math.hypot(B.x - A.x, B.y - A.y);
   return catenary(A, B, sagPx(span, Math.min(A.z, B.z)), wireSegments(span));
 }
+
+/** How far a view ray is walked between two looks at the relief (tiles along +x +y: half a level up; a few hundred looks a wire, on a rebuild only). */
+const RAY_STEP = SHIFT / 2;
+
+/**
+ * Is the point of the wire from A to B at `t` ∈ [0, 1] hidden by the relief in front of it? Its
+ * ground point and height (levels, the sag taken off) give its view ray: a point `lv` levels up
+ * lies `lv·SHIFT` tiles along +x +y towards the viewer, as `surfaceTile` walks it. Hidden when
+ * the ray meets a tile whose top (`tileTop`) stands higher before it rises over the highest relief.
+ */
+function hiddenAt(A: Anchor, B: Anchor, sag: number, t: number, land: ReliefLand): boolean {
+  const px = A.x + (B.x - A.x) * t, py = A.y + (B.y - A.y) * t;
+  const hz = A.z + (B.z - A.z) * t - (sag * 4 * t * (1 - t)) / LH;
+  for (let d = 0; hz + d / SHIFT <= MAX_LEVEL; d += RAY_STEP) {
+    if (tileTop(land, Math.floor(px + d), Math.floor(py + d)) > hz + d / SHIFT) return true;
+  }
+  return false;
+}
+
+/**
+ * The stretches of a wire the relief in front leaves in view (owner, 2026-10-18: « some electrical
+ * wires are shown above the cliff that's in front »): the wires are drawn over every volume (one
+ * batched stroke a style, D92), so a wire hung behind a cliff showed across it. Each point of its
+ * curve is looked at (`hiddenAt`); where it passes behind the rock, the curve is cut at the cliff's
+ * edge (found by halving the piece that crosses it). Returns the shown runs as iso polylines (the
+ * whole curve when nothing hides it, none when all of it is) and the hidden spans as pairs of the
+ * curve's parameter (the glints skip them). No land: nothing hidden.
+ */
+export function wireRuns(A: Anchor, B: Anchor, land: ReliefLand | null): { runs: Float32Array[]; hidden: number[] } {
+  const span = Math.hypot(B.x - A.x, B.y - A.y), sag = sagPx(span, Math.min(A.z, B.z)), n = wireSegments(span);
+  const pts = catenary(A, B, sag, n);
+  if (!land) return { runs: [pts], hidden: [] };
+  const seen: boolean[] = [];
+  for (let i = 0; i <= n; i++) seen.push(!hiddenAt(A, B, sag, i / n, land));
+  if (seen.every(Boolean)) return { runs: [pts], hidden: [] };
+  const [ax, ay] = tileToIso(A.x, A.y, A.z), [bx, by] = tileToIso(B.x, B.y, B.z);
+  const at = (t: number): [number, number] => [ax + (bx - ax) * t, ay + (by - ay) * t + sag * 4 * t * (1 - t)];
+  /** Where the view turns between t0 (seen as `s0`) and t1: halved six times. */
+  const edge = (t0: number, t1: number, s0: boolean): number => {
+    for (let k = 0; k < 6; k++) { const m = (t0 + t1) / 2; if (!hiddenAt(A, B, sag, m, land) === s0) t0 = m; else t1 = m; }
+    return (t0 + t1) / 2;
+  };
+  const runs: Float32Array[] = [], hidden: number[] = [];
+  let cur: number[] | null = seen[0] ? [pts[0]!, pts[1]!] : null;
+  if (!seen[0]) hidden.push(0);
+  for (let i = 1; i <= n; i++) {
+    const t0 = (i - 1) / n, t1 = i / n;
+    if (seen[i] && cur) { cur.push(pts[i * 2]!, pts[i * 2 + 1]!); continue; }
+    if (!seen[i] && !cur) continue;
+    const e = edge(t0, t1, seen[i - 1]!), [ex, ey] = at(e);
+    if (cur) { cur.push(ex, ey); runs.push(Float32Array.from(cur)); cur = null; hidden.push(e); }
+    else { cur = [ex, ey, pts[i * 2]!, pts[i * 2 + 1]!]; hidden.push(e); }
+  }
+  if (cur) runs.push(Float32Array.from(cur));
+  else hidden.push(1);
+  return { runs: runs.filter((r) => r.length >= 4), hidden };
+}
+
+/** Is the fraction `f` of a wire within one of its hidden spans (`wireRuns`)? */
+export const inHidden = (hidden: readonly number[], f: number): boolean => {
+  for (let k = 0; k + 1 < hidden.length; k += 2) if (f >= hidden[k]! && f <= hidden[k + 1]!) return true;
+  return false;
+};
 
 /** Cumulative lengths along a polyline of x, y pairs (first 0, last the whole length). */
 export function polyLengths(pts: Float32Array): Float32Array {

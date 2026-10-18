@@ -26,7 +26,7 @@ import { BAL } from '@/content/balance';
 import { BUILDING_KIND, buildingDef, hasResearch, itemIdx, toMu } from '@/content/registry';
 import { planDef, researchNode } from '@/content/research';
 import {
-  advanceProject, applyNotes, def as researchDef, effectiveCost, prereqsMet, projectDone,
+  advanceProject, applyNotes, def as researchDef, effectiveCost, gatesMet, prereqsMet, projectDone,
   tokensLeft, type Project, type StartBlock,
 } from '../research/runtime';
 import type { Ent } from '../types';
@@ -116,6 +116,8 @@ export function researchBlock(sim: Sim, id: string): StartBlock | null {
   if (sim.done.has(id)) return 'done';
   if (sim.projects.some((p) => p.id === id)) return 'active';
   if (!prereqsMet(id, sim.done)) return 'prereq';
+  // Its category waits for the categories of the tier before it builds on, finished (D128).
+  if (!gatesMet(id, sim.done)) return 'gate';
   const tier = researchDef(id).tier;
   // Each tier waits for the Core's level (D118), Tier 2 also for two expertises chosen at its Archive (D93).
   if (!tierCoreOpen(sim, tier)) return 'core';
@@ -451,21 +453,101 @@ export function tokenFlowSteps(max: number): number[] {
 /** The ladder's first flow at least `n` (0 for nothing to buy). */
 export const flowStepAtLeast = (n: number): number => (n <= 0 ? 0 : tokenFlowSteps(n).at(-1)!);
 
+/** Where a new project's tokens would come from (D128's launch dialog), and when they would be in. */
+export interface LaunchSources {
+  /** From the bank (an older save's data turned into tokens, D122), all at the first boundary. */
+  bank: number;
+  /** From the free flows: the Core's compute and the claim's servers. */
+  free: number;
+  /** Bought from CrierBelt at its flow. */
+  bought: number;
+  /** Never delivered at these flows (none reaches it once the others are done). */
+  short: number;
+  /** Minute boundaries until its tokens are in (Infinity: never). */
+  minutes: number;
+}
+
+/**
+ * Where a new project's tokens would come from, appended after the running ones, as the minute's
+ * boundary delivers them (`tokenEpoch`, D118, D122): the free `rate` to the projects in the order
+ * they started, each to its need; then the bank's tokens, each to what it still needs; then each
+ * one's bought flow, at most what it still needs. The bank pays at the first boundary — after it,
+ * the bank is spent or every need met —; then stretch by stretch at fixed shares, the last minute of
+ * each stepped exactly, as `tokenEtas` does. `running`: each running project's tokens still needed
+ * (0 for one whose lab has no power: it takes nothing) and its flow (0 while the purse is in the red).
+ * Pure: the launch dialog's bar and end, and the flow it proposes (`tokenBuyDefault`).
+ */
+export function launchSources(rate: number, running: ReadonlyArray<{ need: number; buy: number }>, bank: number, extra: { tokens: number; buy: number }): LaunchSources {
+  const need = [...running.map((p) => Math.max(0, p.need)), Math.max(0, extra.tokens)], buy = [...running.map((p) => p.buy), extra.buy];
+  const x = need.length - 1;
+  const out: LaunchSources = { bank: 0, free: 0, bought: 0, short: 0, minutes: 0 };
+  if (need[x]! <= 0) return out;
+  // The first boundary: the free flows, then the bank, then the flows bought.
+  let left = rate, bk = Math.max(0, bank);
+  need.forEach((v, i) => {
+    if (v <= 0) return;
+    const s = Math.min(v, left); left -= s;
+    const k = Math.min(v - s, bk); bk -= k;
+    const b = Math.min(buy[i]!, v - s - k);
+    need[i] = v - s - k - b;
+    if (i === x) { out.free += s; out.bank += k; out.bought += b; }
+  });
+  out.minutes = 1;
+  for (let guard = 0; need[x]! > 0 && guard < 64; guard++) {
+    left = rate;
+    const s = need.map((v) => { if (v <= 0) return 0; const g = Math.min(v, left); left -= g; return g; });
+    const r = need.map((v, i) => (v <= 0 ? 0 : s[i]! + Math.min(buy[i]!, v - s[i]!)));
+    let step = Infinity;
+    need.forEach((v, i) => { if (v > 0 && r[i]! > 0) step = Math.min(step, Math.ceil(v / r[i]!)); });
+    if (!Number.isFinite(step)) break;
+    // The stretch's whole minutes before its last, at fixed shares…
+    out.free += s[x]! * (step - 1);
+    out.bought += (r[x]! - s[x]!) * (step - 1);
+    need.forEach((v, i) => { if (v > 0) need[i] = v - r[i]! * (step - 1); });
+    // …then its last minute, as the boundary delivers it.
+    left = rate;
+    need.forEach((v, i) => {
+      if (v <= 0) return;
+      const g = Math.min(v, left); left -= g;
+      const bb = Math.min(buy[i]!, v - g);
+      if (i === x) { out.free += g; out.bought += bb; }
+      need[i] = v - g - bb;
+    });
+    out.minutes += step;
+  }
+  if (need[x]! > 0) { out.short = need[x]!; out.minutes = Infinity; }
+  return out;
+}
+
+/**
+ * The running projects as the next boundaries see them (D118, D122): each one's tokens still needed
+ * (none while its lab has no power) and its bought flow (none while the purse is in the red), in the
+ * order they started; and the free rate now (the Core's compute and the servers at their power).
+ */
+export function launchQueue(sim: Sim, satOf: (net: number) => number): { rate: number; running: Array<{ id: string; need: number; buy: number }> } {
+  const hold = sim.credits < 0;
+  return {
+    rate: freeRate(sim, satOf),
+    running: sim.projects.map((p) => ({ id: p.id, need: litNow(sim, p, satOf) ? tokensLeft(p) : 0, buy: hold ? 0 : p.buy ?? 0 })),
+  };
+}
+
 /**
  * The flow the launch dialog proposes for a node (D118: « enough to finish in a sensible time given
- * the servers »): its tokens over its tier's pace (`minutes`, `effectiveCost`'s `aim`), less the free
- * rate it would get now — the Core's compute and the servers, all of it unless a running project
- * still takes it, as they go in order of start; and the bank's tokens likewise (D122) —, up to the
- * ladder's next step. 0 when the free flows suffice: at Tier 1, the Core's compute alone (D122).
+ * the servers »): the first of the ladder's flows (`tokenFlowSteps`) at which its tokens are in by its
+ * tier's pace (`minutes`, `effectiveCost`'s `aim`), the tokens coming as the engine delivers them
+ * (`launchSources`): the free flows once the projects before it have theirs, the bank's first (D128:
+ * a reserve that covers it proposes nothing to buy). 0 when the free flows and the bank suffice: at
+ * Tier 1, the Core's compute alone (D122).
  */
 export function tokenBuyDefault(sim: Sim, id: string, satOf: (net: number) => number = (n) => sim.netPower[n]?.sat ?? 0): number {
   if (!hasResearch(id)) return 0;
   const e = effectiveCost(id, sim.mods);
   if (e.tokens <= 0) return 0;
   const minutes = Math.max(1, Math.ceil(e.aim / EPOCH));
-  const busy = sim.projects.some((p) => tokensLeft(p) > 0);
-  const free = busy ? 0 : freeRate(sim, satOf), bank = busy ? 0 : sim.tokenBank;
-  return flowStepAtLeast(Math.ceil(Math.max(0, e.tokens - bank) / minutes) - free);
+  const q = launchQueue(sim, satOf);
+  const steps = tokenFlowSteps(e.tokens);
+  return steps.find((b) => launchSources(q.rate, q.running, sim.tokenBank, { tokens: e.tokens, buy: b }).minutes <= minutes) ?? steps[steps.length - 1]!;
 }
 
 /** Subscribe to (or leave) CrierBelt's Compute Plan (cm_plan): tokens at a share of the price, for a fee each hour. Logged. */
