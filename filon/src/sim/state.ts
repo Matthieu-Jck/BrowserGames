@@ -12,14 +12,15 @@
 //   3. power: per grid, demands vs weather → satisfaction ‰, dispatch, accumulators
 //   4. flow phases A (offers/accepts) → B (transfers) → C (machines, drills, internal updates);
 //      at night the Gleaners take from the exposed ribbons (systems/gleaners.ts, D103)
-//   5. research projects take the data in their labs; servers make tokens; the Heart and the
-//      autonomous labs make data files (systems/research.ts)
+//   5. servers (and autonomous labs) make tokens, the labs' power is summed for the minute, a
+//      reconversion runs its time (systems/research.ts; research takes no data since D122)
 //   6. landscape: dig / fill jobs advance and finish (the drifters' freight between skydocks,
 //      which came next, went with the skydocks: D108)
 //   7. tick++; at every epoch boundary (each game minute) the trade posts trade and the Crier
 //      settles (systems/trade.ts), the leases due take their hour's rent or lapse
-//      (systems/land.ts), then research's tokens are delivered — the servers' minute, the bought
-//      flows billed — and the projects they complete finish (systems/research.ts `tokenEpoch`, D118),
+//      (systems/land.ts), then research's tokens are delivered — the Core's compute and the servers'
+//      minute, the bank, the bought flows billed — and the projects they complete finish
+//      (systems/research.ts `tokenEpoch`, D118, D122),
 //      then the expertises' feats and slots (systems/expertise.ts `expertiseEpoch`, D93), then the
 //      Gleaners' nightfall and dawn (systems/gleaners.ts `gleanEpoch`, D103) — the catch-up calls
 //      the same functions — then an 'epoch' event
@@ -39,7 +40,7 @@ import type { Chain } from './flow/chain';
 import type { FNode, TickCtx } from './flow/node';
 import type { MachineNode, ReservoirNode } from './flow/nodes';
 import { makeCtx, runPhases } from './flow/step';
-import { compileGraph, hearthCaps, type Graph } from './graph/compile';
+import { compileGraph, type Graph } from './graph/compile';
 import { computeMods, type Mods } from './research/modifiers';
 import { projectDone, type Project, type StartBlock } from './research/runtime';
 import type { Job, JobKind } from './space';
@@ -86,12 +87,16 @@ export interface SimOptions {
 /** Last tick's power of one grid (for the HUD), kW. */
 export interface NetPower { demand: number; renew: number; fuel: number; sat: number }
 
-/** A minute's tokens (D68, D118) and the running totals: delivered to research, from the claim's servers, bought; centi-◉. */
+/**
+ * A minute's tokens (D68, D118, D122) and the running totals: delivered to research, from the Core's
+ * compute, from the claim's servers, from the bank, bought; the servers' output (`supply`) and the
+ * Core's rate (`core`) of the minute; centi-◉.
+ */
 export interface TokenStats {
-  used: number; fromServers: number; bought: number; cents: number; supply: number; rental: number;
+  used: number; fromCore: number; fromServers: number; fromBank: number; bought: number; cents: number; supply: number; core: number; rental: number;
   totalUsed: number; totalBought: number; totalCents: number;
 }
-export const newTokenStats = (): TokenStats => ({ used: 0, fromServers: 0, bought: 0, cents: 0, supply: 0, rental: 0, totalUsed: 0, totalBought: 0, totalCents: 0 });
+export const newTokenStats = (): TokenStats => ({ used: 0, fromCore: 0, fromServers: 0, fromBank: 0, bought: 0, cents: 0, supply: 0, core: 0, rental: 0, totalUsed: 0, totalBought: 0, totalCents: 0 });
 
 export class Sim {
   // ── identity & clock ──────────────────────────────────────────────────────
@@ -133,7 +138,7 @@ export class Sim {
   projects: Project[] = [];
   /** The Research Queue (an_queue): the node each lab starts once its project is done. Saved. */
   readonly labQueue = new Map<number, string>();
-  // AI tokens (D68, D118): never held — delivered to research at each minute boundary.
+  // AI tokens (D68, D118, D122): never held — delivered to research at each minute boundary.
   /** The servers' output since the last boundary, in token·‰·ticks (÷ 600 000 = tokens). Saved, hashed. */
   serverAcc = 0;
   /** The purse is in the red: the tokens bought for research hold until it is back above zero (D118). Saved, hashed. */
@@ -142,8 +147,17 @@ export class Sim {
   tokenPlan = false;
   /** Last minute's token bill and the totals (statistics for the UI: saved, not hashed). */
   tokenStats: TokenStats = newTokenStats();
-  /** Carried fractions of the data makers (the Heart, autonomous labs), by entity: mu·‰·ticks. Saved, hashed. */
-  readonly dataAcc = new Map<number, number>();
+  /**
+   * Tokens banked for research (D122): what an older save's data was worth (`RETIRED_ITEM_TOKENS`),
+   * given to the projects at each boundary after the free flows, before any bought one. The one
+   * exception to « never held », and it only shrinks. Saved (`tokens.bank`), hashed.
+   */
+  tokenBank = 0;
+  /**
+   * The first entity id placed under today's building prices (D123): anything below it refunds its
+   * price from before (content/past-costs.ts, sim/refund.ts). 0 for a base founded since. Saved, hashed.
+   */
+  costFloor = 0;
   /** Archive notes (centi-◉ of science value), refunded by reconversions, spent on research. */
   notes = 0;
   respecs = 0;
@@ -241,21 +255,20 @@ export class Sim {
   }
 
   // ── derived state ─────────────────────────────────────────────────────────
-  /** What the Hearth holds at most of one item (mu): its level's `hearthCap`, a data item at most `BAL.hearthDataCap` (D118). */
-  hearthCapOf(item: number): number {
-    return hearthCaps(this.hearthCap())[item]!;
-  }
+  /** What the Hearth holds at most of each item (mu): its level's `hearthCap` (the data's own cap went with the data, D122). */
   hearthCap(): number {
     return BAL.hearthCap[Math.min(BAL.hearthCap.length, this.hearthLevel) - 1]! * 1000;
   }
 
   /**
-   * The Survey Data the Heart makes a minute (mu), once its level has mounted the data outlet (D86),
-   * else none: its own (`BAL.hearthDataBase`, D101: the first lab runs on it) and the Analytics
-   * research's (and Archiving's share, D93).
+   * The Core's compute (D122): the AI tokens a minute it gives research, from the level that mounts
+   * its compute bay — its level's (`BAL.coreCompute`) and the Analytics research's (`coreCompute`),
+   * × Archiving's share (D93, `tokenRate`) —, else none. No power, no ribbon: delivered at each
+   * minute's end with the servers' (systems/research.ts `tokenEpoch`).
    */
-  heartDataRate(): number {
-    return this.hearthLevel >= BAL.hearthDataLevel ? Math.floor(((BAL.hearthDataBase + this.mods.heartData) * this.mods.dataRate) / 1000) : 0;
+  coreComputeRate(): number {
+    const base = BAL.coreCompute[Math.min(BAL.coreCompute.length, this.hearthLevel) - 1] ?? 0;
+    return base > 0 ? Math.floor(((base + this.mods.coreCompute) * this.mods.tokenRate) / 1000) : 0;
   }
 
   absEpoch(tick = this.tick): number {
@@ -292,9 +305,9 @@ export class Sim {
     const old = this.graph ?? null;
     this.graph = compileGraph({
       ents: this.ents, grid: this.grid, mods: this.mods, now: this.tick, worldSeed: this.worldSeed,
-      hearthStock: this.stock, hearthCap: this.hearthCap(), heartData: this.heartDataRate(), hearthLevel: this.hearthLevel, stores: this.stores, old,
+      hearthStock: this.stock, hearthCap: this.hearthCap(), hearthLevel: this.hearthLevel, stores: this.stores, old,
       refund: (item, mu) => this.refund(item, mu),
-      labAccepts: research.labAccepts(this),
+      busyLabs: research.busyLabs(this),
       tradeAccepts: trade.exportAccepts(this),
       tradeBuys: trade.importItems(this),
       tradeCap: trade.tradeCap(this),
@@ -481,11 +494,11 @@ export class Sim {
   landEpoch(): boolean { return land.landEpoch(this); }
   idleLabs(): number[] { return research.idleLabs(this); }
   researchBlock(id: string): StartBlock | null { return research.researchBlock(this, id); }
-  /** Start a node in a lab, buying `buy` tokens a minute for it while it needs them (D118; Tier 2 and up). */
+  /** Start a node in a lab, its resources paid from the Core, buying `buy` tokens a minute for it while it needs them (D118, D122). */
   startResearch(id: string, lab = 0, buy = 0): { ok: boolean; reason: StartBlock | null } { return research.startResearch(this, id, lab, buy); }
-  /** Change the tokens a minute a running project buys from CrierBelt (D118; 0: the servers' alone). */
+  /** Change the tokens a minute a running project buys from CrierBelt (D118; 0: the free flows alone). */
   setTokenBuy(id: string, perMin: number): boolean { return research.setTokenBuy(this, id, perMin); }
-  /** The flow the launch dialog proposes for a node (D118): its tokens over its tier's pace, less the servers it would get. */
+  /** The flow the launch dialog proposes for a node (D118): its tokens over its tier's pace, less the free flows it would get. */
   tokenBuyDefault(id: string): number { return research.tokenBuyDefault(this, id); }
   /** Whether the Core's level opens a tier (D118: `BAL.tierCoreLevel`). */
   tierCoreOpen(tier: number): boolean { return research.tierCoreOpen(this, tier); }
@@ -499,7 +512,6 @@ export class Sim {
   tokenPriceK(): number { return research.tokenPriceK(this); }
   /** The minute boundary's tokens (online: from step; offline: the catch-up): delivered and billed. Whether the bought flows' hold changed. */
   tokenEpoch(): boolean { return research.tokenEpoch(this); }
-  projectStock(p: Project): Float64Array | null { return research.projectStock(this, p); }
   projectSat(p: Project, satOf: (net: number) => number): number { return research.projectSat(this, p, satOf); }
   finishProjects(): string[] { return research.finishProjects(this); }
 
@@ -604,8 +616,10 @@ export class Sim {
       this.tradeEpoch();
       this.landEpoch();
       this.tokenEpoch();
-      // Tokens in at the minute's end: a project with its data paid is done there (D118).
+      // Tokens in at the minute's end: a project is done there (D118, D122); a queued node whose
+      // resources came in since starts there (D122).
       if (this.projects.some(projectDone)) this.finishProjects();
+      if (research.queuedReady(this)) research.startQueued(this);
       this.expertiseEpoch((n) => this.ctx.sat[n] ?? 0);
       this.gleanEpoch();
       this.events.push({ k: 'epoch', epoch: this.absEpoch() });
@@ -661,11 +675,10 @@ export class Sim {
     h.int(this.links.size);
     for (const [a, b] of this.links.pairs()) h.int(a).int(b);
     for (const id of [...this.done].sort()) h.str(id);
-    h.int(this.notes).int(this.respecs).int(this.lastRespec);
-    for (const p of this.projects) { h.str(p.id).int(p.lab).int(p.dur).int(p.el).ints(p.paid).int(p.tokens ?? 0).int(p.tokIn ?? 0).int(p.buy ?? 0); }
+    h.int(this.notes).int(this.respecs).int(this.lastRespec).int(this.costFloor);
+    for (const p of this.projects) { h.str(p.id).int(p.lab).int(p.dur).int(p.el).ints(p.paid).int(p.tokens ?? 0).int(p.tokIn ?? 0).int(p.buy ?? 0).int(p.lit ?? 0); }
     for (const [lab, id] of [...this.labQueue].sort((a, b) => a[0] - b[0])) h.int(lab).str(id);
-    h.int(this.serverAcc).int(this.researchHeld ? 1 : 0).int(this.tokenPlan ? 1 : 0);
-    for (const [id, v] of [...this.dataAcc].sort((a, b) => a[0] - b[0])) h.int(id).int(v);
+    h.int(this.serverAcc).int(this.researchHeld ? 1 : 0).int(this.tokenPlan ? 1 : 0).int(this.tokenBank);
     for (const [t, k] of this.designated) h.int(t).int(k === 'dig' ? 1 : 2);
     for (const j of this.jobs) h.int(j.ent).int(j.tile).int(j.dur).int(j.el).int(j.mu).int(j.moved).int(j.quarry ? 1 : 0);
     // The land as changed by play: terrain / ore diffs, the parcels held, the lifted fog.

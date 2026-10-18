@@ -29,12 +29,13 @@
 //    laying it tile by tile would.
 // Conduits get 1, 2 and 4 only: no junction, lift or bridge carries fluids. Fences (D103) are laid the
 // same way, a fence on each free tile of the drag (one already there is kept, whatever its way).
-import { BUILDING_IDS, BUILDING_KIND, buildingDef, buildingIdx, costOf } from '@/content/registry';
+import { BUILDING_IDS, BUILDING_KIND, buildingDef, buildingIdx } from '@/content/registry';
 import { DX, DY, type Rot } from '../types';
 import { inWorld, tileIndex } from '../world/grid';
 import { parcelAt } from '../world/land';
+import { refundCost } from '../refund';
 import type { Sim } from '../state';
-import { affordable, canPlace, place, stepAt, stepRefusal, type PlaceCheck, type PlaceReason } from './build';
+import { affordable, canPlace, place, stepAt, stepRefusal, tallAt, type PlaceCheck, type PlaceReason } from './build';
 
 /** One tile of a ribbon drag as planned: what goes there (or why nothing does), and its check. */
 export interface BeltStep extends PlaceCheck {
@@ -63,6 +64,7 @@ const CAMO = BUILDING_IDS.findIndex((_, i) => BUILDING_KIND[i] === 'belt' && !!b
 
 /** Refusals a bridge pair can leap: what stands or lies on the tile — not a step, nor the purse. */
 const LEAPABLE: ReadonlySet<PlaceReason> = new Set<PlaceReason>(['occupied', 'terrain', 'neighbour_land', 'junction_chain', 'chasm', 'river']);
+// (`bridge_over_tall`, D124, is set by `leap` itself on the tiles it refuses: it is not leapable.)
 
 const learnt = (sim: Sim, def: number): boolean => def >= 0 && sim.unlocked(buildingDef(def).unlock);
 
@@ -139,7 +141,7 @@ export function planBelts(sim: Sim, defId: string, path: BeltPath): BeltStep[] {
     if (st.skip || !st.ok) continue;
     if (!affordable(sim, st.cost, st.replaces, spent)) { refuse(st, 'unaffordable'); continue; }
     for (const c of st.cost) spent.set(c.item, (spent.get(c.item) ?? 0) + c.mu);
-    for (const r of st.replaces) for (const c of costOf(sim.ents.get(r)!.def)) spent.set(c.item, (spent.get(c.item) ?? 0) - c.mu);
+    for (const r of st.replaces) for (const c of refundCost(sim.costFloor, sim.ents.get(r)!)) spent.set(c.item, (spent.get(c.item) ?? 0) - c.mu);
   }
   return out;
 }
@@ -194,6 +196,13 @@ function leap(sim: Sim, path: BeltPath, out: BeltStep[], def: number, s: number,
     const k = (st.x - sx) * DX[d]! + (st.y - sy) * DY[d]!;
     if ((DX[d] === 0 ? st.x === sx : st.y === sy) && k >= -span && k <= e - s + span) return;
   }
+  // Height rule (D124): a bridge never leaps a tall building. The tiles that hold one say so, and the drag stops there.
+  let tall = false;
+  for (let j = s + 1; j < e; j++) {
+    const [x, y] = path[j]!;
+    if (tallAt(sim, x, y)) { tall = true; if (!out[j]!.ok) refuse(out[j]!, 'bridge_over_tall'); }
+  }
+  if (tall) return;
   const id = BUILDING_IDS[BRIDGE]!;
   const cs = canPlace(sim, id, sx, sy, d), ce = canPlace(sim, id, ex, ey, d);
   if (!cs.ok || !ce.ok) return;

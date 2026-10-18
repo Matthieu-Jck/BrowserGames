@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { testSim, wire } from '../testkit';
+import { grantCost, testSim, wire } from '../testkit';
 import { solvePower } from './solve';
 import { sunPermille } from './network';
 import { serialize, deserialize } from '../serialize';
@@ -12,7 +12,7 @@ function gourdSim(): { sim: Sim; gourd: number } {
   const sim = testSim();
   sim.done.add('tr1'); sim.done.add('tr3');
   sim.rebuildDerived();
-  sim.grant('ceramic', 20); sim.grant('empty_cell', 8); sim.grant('circuit', 12);
+  grantCost(sim, 'accumulator', 2);
   const g = sim.place('accumulator', 516, 512, 0);
   if (!g.ok) throw new Error(`gourd: ${g.reason}`);
   wire(sim, g.id!);

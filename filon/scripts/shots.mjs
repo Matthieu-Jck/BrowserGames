@@ -135,7 +135,8 @@ await page.evaluate(() => {
   const sim = window.FL.app.sim;
   for (const id of ['tr1', 'tr2', 'en_pitch', 'en2', 'en_heavyacc', 'xp_swift', 'ex_sifter', 'ex3']) sim.done.add(id);
   sim.rebuildDerived();
-  window.FL.feedLab('journal_1', 80);
+  // D122: a research's resources are paid from the Core at launch (no data to feed a lab): the Core stocked for it.
+  for (let i = 0; i < sim.stock.length; i++) sim.stock[i] = Math.max(sim.stock[i], 200_000);
   window.FL.research('ex4');
   window.FL.tick(400);
 });

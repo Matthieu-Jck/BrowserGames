@@ -84,11 +84,12 @@ export function expertiseIcon(atlas: Atlas, spec: string, size: number): HTMLEle
 /** What an expertise improves, as a picture: the production number's, or research's mark beside the aspect. */
 function effectIcon(atlas: Atlas, d: ExpertiseDef): HTMLElement {
   if (d.effect.k === 'research') {
-    const aspect = d.effect.aspect === 'time' ? mark('order') : d.effect.aspect === 'tokens' ? mark('token') : expertiseIcon(atlas, 'item:journal_1', 16);
+    // Its aspect (D122): the time (now its tokens' pace), the tokens, the resources paid at launch (a gear stands for them).
+    const aspect = d.effect.aspect === 'time' ? mark('order') : d.effect.aspect === 'tokens' ? mark('token') : expertiseIcon(atlas, 'item:gear', 16);
     return el('span.ex-fxicon', {}, [mark('tree'), aspect]);
   }
   const target = d.effect.targets[0]!;
-  const spec: Record<string, string> = { genOut: 'glyph:power', drillRate: 'building:drill', craftSpeed: 'building:workshop', dataRate: 'item:journal_1', deliveryDelay: 'mark:flight', landPrice: 'glyph:parcel' };
+  const spec: Record<string, string> = { genOut: 'glyph:power', drillRate: 'building:drill', craftSpeed: 'building:workshop', tokenRate: 'mark:token', deliveryDelay: 'mark:flight', landPrice: 'glyph:parcel' };
   return el('span.ex-fxicon', {}, [expertiseIcon(atlas, spec[target] ?? 'mark:level', 18)]);
 }
 

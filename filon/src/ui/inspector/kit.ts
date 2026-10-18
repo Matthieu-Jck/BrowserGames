@@ -108,7 +108,7 @@ export const seenBy = (sim: Sim) => (i: number): boolean => sim.produced[i]! > 0
 
 const NS = 'http://www.w3.org/2000/svg';
 
-export type MarkId = 'on' | 'slow' | 'pause' | 'off' | 'build' | 'sleep' | 'tree' | 'full' | 'recipe' | 'store' | 'data' | 'level' | 'route' | 'cargo' | 'flight' | 'order' | 'gate' | 'filter' | 'job' | 'token';
+export type MarkId = 'on' | 'slow' | 'pause' | 'off' | 'build' | 'sleep' | 'tree' | 'full' | 'recipe' | 'store' | 'level' | 'route' | 'cargo' | 'flight' | 'order' | 'gate' | 'filter' | 'job' | 'token';
 
 /** Each mark on a 16 × 16 board: [tag, attributes]. Classes `k-*` take the palette (kit.css). */
 const MARKS: Readonly<Record<MarkId, ReadonlyArray<readonly [string, Record<string, string>]>>> = {
@@ -132,8 +132,6 @@ const MARKS: Readonly<Record<MarkId, ReadonlyArray<readonly [string, Record<stri
   recipe: [['path', { class: 'k-sheet', d: 'M3.4 1.8h6.8l2.4 2.4v10H3.4z' }], ['path', { class: 'k-stroke k-thin', d: 'M5.4 6.4h5.2M5.4 8.8h5.2M5.4 11.2h3.4' }]],
   // A store: a crate.
   store: [['rect', { class: 'k-box', x: '2.2', y: '4', width: '11.6', height: '9.6', rx: '1.2' }], ['path', { class: 'k-stroke k-thin', d: 'M2.2 7.4h11.6M8 7.4v6.2' }]],
-  // Data: a punched card.
-  data: [['path', { class: 'k-sheet', d: 'M2.4 3.4h9.4l1.8 1.8v7.4H2.4z' }], ['path', { class: 'k-stroke k-thin', d: 'M4.6 6.4h1M7.4 6.4h1M10.2 6.4h1M4.6 9.4h1M7.4 9.4h1' }]],
   // A level: three steps.
   level: [['path', { class: 'k-box', d: 'M2 14V10.4h4V7.2h4V4h4v10z' }]],
   // A route: two points and a dashed arc.

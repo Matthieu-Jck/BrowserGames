@@ -1,12 +1,13 @@
 // gleaner-shots.mjs — the Gleaners (D103, D112) for review, the whole raid by night: on the grown
 // debug base (its quartz line home crosses the desert floor), the game paused and stepped tick by
-// tick through a raid the sim really makes — the group out of the dunes, waiting at its posts, an arm
-// out over the line, the grab (the item off the belt into a hand), the group away with what it took —
-// at near and mid zoom, and from afar as small moving lights; the Logistique view's night marks; a
-// stretch of the line fenced in, with two pacing outside; the late base's glazed lines by day and by
-// night, a few tapping the glass; the first-night card and
-// the morning report in French and English; a ribbon's inspector: scripts/shot-gleaners-*.png
-// (gitignored). Usage: a server (default :5183; URL=… for another), then `node scripts/gleaner-shots.mjs`.
+// tick through a raid the sim really makes — the band's furrows coming in under the sand, rising out
+// of it at the line, waiting half-buried, every take (the token off the belt into a hand), sinking back
+// and the furrows going out — at near and mid zoom, by a silo set behind the band and one in front; the
+// Logistique view's night marks; a stretch of the line fenced in, with two furrows circling outside;
+// the late base's glazed lines by day and by night, a few popping up to tap the glass; the first-night
+// card and the morning report in French and English; a ribbon's inspector: scripts/shot-gleaners-*.png
+// (gitignored). Usage: a server (default :5183; URL=… for another), then `node scripts/gleaner-shots.mjs`
+// (`ONLY=raid`: the raid alone).
 import { chromium } from 'playwright-core';
 import { fileURLToPath } from 'node:url';
 
@@ -45,18 +46,20 @@ const look = (at, zoom) => page.evaluate(([x, y, z]) => window.FL.lookAt(x, y, z
 const tick = (n) => page.evaluate((k) => { if (k > 0) window.FL.tick(k); }, n);
 const now = () => page.evaluate(() => window.FL.app.sim.tick);
 
-// ── the grown base by night ──────────────────────────────────────────────────
-const lvl = await page.evaluate(() => window.FL.debugSave('grown'));
-console.log('debug base', JSON.stringify({ ok: lvl.ok, ms: lvl.ms }));
+// ── a raid by night, on the base whose band the camera sees best (RAID_BASE; the late base's lines
+// out in the open desert, the grown base's main line running behind a plateau) ─────────────────
+const RAID_BASE = process.env.RAID_BASE ?? 'late';
+const lvl = await page.evaluate((id) => window.FL.debugSave(id), RAID_BASE);
+console.log('debug base', RAID_BASE, JSON.stringify({ ok: lvl.ok, ms: lvl.ms }));
 await hideUi();
 await view('iso');
 await page.evaluate(() => { window.FL.pause(); window.FL.dayPhase(null); window.FL.gleaners({ toNight: 2 }); window.FL.tick(400); });
 
 // A raid stepped through (D112), by buildings: a silo placed just behind the band and one just in
-// front of it (on the claim's land, granted for the shot) so the depth shows; the band coming in out
-// of the empty desert, waiting; every take frame by frame — the hand on the token as it comes, the
+// front of it (on the claim's land, granted for the shot) so the depth shows; the band coming in under
+// the sand (furrows) out of the empty desert, rising, waiting half-buried; every take frame by frame — the hand on the token as it comes, the
 // token gone from the belt and in the hand, riding the arm — at near zoom (1.7, some at mid 0.85);
-// the band going back out. The view's own check of every take (`FL.gleaners()`: paired, onBelt,
+// the band sinking back and its furrows going out. The view's own check of every take (`FL.gleaners()`: paired, onBelt,
 // unforeseen, unseen, late) is printed, and a contact sheet of it all: shot-gleaners-sequence.png.
 const both = async (name, at, ms = 300) => {
   await look(at, 1.7); await settle(ms); await snap(`shot-gleaners-seq-${name}.png`);
@@ -68,9 +71,11 @@ let caught = null;
 for (let attempt = 0; attempt < 10 && !caught; attempt++) {
   // A raid ahead that falls in the night from its arrival to its end, a band of three or more if there is one.
   const raid = await page.evaluate(() => {
-    const g = window.FL.gleaners(), sim = window.FL.app.sim;
+    const g = window.FL.gleaners(), sim = window.FL.app.sim, v = window.FL.app.gleaners;
+    // The biggest band the camera sees (none of its stands behind a building or a cliff).
+    const hid = new Map(v.describe_(sim).map((d) => [`${d.x},${d.y}`, d.hidden]));
     const ok = g.raids.filter((r) => r.at - g.tick > 260 && sim.gleanNight(r.at - 200) && sim.gleanNight(r.at + 800));
-    return ok.find((r) => r.posts.length >= 3) ?? ok[0] ?? null;
+    return ok.sort((p, q) => (hid.get(`${p.x},${p.y}`) ?? 9) - (hid.get(`${q.x},${q.y}`) ?? 9) || q.posts.length - p.posts.length || p.at - q.at)[0] ?? null;
   });
   if (!raid) {
     await page.evaluate(() => { const s = window.FL.app.sim; if (s.gleanNight()) window.FL.tick(1200); else window.FL.gleaners({ toNight: 0.5 }); });
@@ -83,7 +88,7 @@ for (let attempt = 0; attempt < 10 && !caught; attempt++) {
     window.FL.unlock('silo');
     for (const [it, n] of [['iron_plate', 600], ['copper_wire', 300], ['glass', 200], ['gear', 200], ['stone', 600], ['brick', 300]]) { try { sim.grant(it, n); } catch { /* not an item here */ } }
     sim.ensureCompiled(); v.rebuild(sim);
-    const d = v.describe_().find((r) => r.x === x && r.y === y);
+    const d = v.describe_(sim).find((r) => r.x === x && r.y === y);
     if (!d) return { err: 'no such raid' };
     // The band's stands, and the tile beyond each (a Gleaner on the line's near side stands 1.8 tiles out: on it).
     const keep = new Set(d.stands.flatMap(([sx, sy]) => [0, 1].map((k) => Math.floor(sy + d.side[1] * k) * 1024 + Math.floor(sx + d.side[0] * k))));
@@ -121,7 +126,7 @@ for (let attempt = 0; attempt < 10 && !caught; attempt++) {
     const back = place(ring(-1)) ?? place(ring(-1, 6.5)), front = place(ring(1));
     sim.ensureCompiled(); v.rebuild(sim);
     // The silos may shift the line's exposure, so its posts: the same raid is the one at the same tick of the window, nearest.
-    const e = v.describe_().filter((r) => r.at === wat).sort((p, q) => Math.abs(p.x - x) + Math.abs(p.y - y) - Math.abs(q.x - x) - Math.abs(q.y - y))[0];
+    const e = v.describe_(sim).filter((r) => r.at === wat).sort((p, q) => Math.abs(p.x - x) + Math.abs(p.y - y) - Math.abs(q.x - x) - Math.abs(q.y - y))[0];
     return { back, front, stands: e?.stands, side: e?.side, bearing: e?.bearing, mid: e ? [e.x, e.y] : null };
   }, [raid.x, raid.y, raid.at % 2400]);
   console.log(`raid at ${t0} on ${raid.x},${raid.y}: ${raid.posts.length} posts; silos`, JSON.stringify(silos));
@@ -130,12 +135,18 @@ for (let attempt = 0; attempt < 10 && !caught; attempt++) {
   const at = [mid[0], mid[1]];
   const posts = await page.evaluate(([mx, my]) => (window.FL.gleaners().raids.find((r) => r.x === mx && r.y === my)?.posts ?? []).map(([x, y]) => y * 1024 + x), silos.mid ?? [raid.x, raid.y]);
   const count0 = await page.evaluate(() => { const g = window.FL.gleaners(); return { paired: g.paired, onBelt: g.onBelt, unforeseen: g.unforeseen, unseen: g.unseen, late: g.late }; });
-  await tick(t0 - 150 - (await now()));
-  await both('1-arrive', at, 700); sheet.push(['seq-1-arrive-mid', 'in from the empty desert (mid zoom)']);
-  await tick(t0 - 30 - (await now()));
-  await near('2-gather', at); sheet.push(['seq-2-gather', 'gathering at the posts']);
+  // The late base's desert line carries next to nothing: glass on its free cells (sandbox: `fillRibbons`),
+  // topped up as the raid goes, so a stream of shiny things rides past the posts.
+  // (Then a frame drawn, so the view foresees a take on a token just laid on a post.)
+  const topUp = async () => { if (RAID_BASE === 'late') { await page.evaluate(() => window.FL.fillRibbons('glass')); await page.waitForTimeout(60); } };
+  await tick(t0 - 160 - (await now()));
+  await topUp();
+  await tick(t0 - 120 - (await now()));
+  await both('1-furrow', at, 700); sheet.push(['seq-1-furrow', 'under the sand, in from the empty desert']); sheet.push(['seq-1-furrow-mid', 'the furrows (mid zoom)']);
+  await tick(t0 - 52 - (await now()));
+  await both('2-surface', at); sheet.push(['seq-2-surface', 'rising out of the sand']);
   await tick(t0 + 4 - (await now()));
-  await both('3-wait', at); sheet.push(['seq-3-wait', 'waiting, a silo behind and one in front']);
+  await both('3-wait', at); sheet.push(['seq-3-wait', 'waiting half-buried, a silo behind and one in front']);
   // Every take of the raid, tick by tick: when a post foresees its take on this very tick, the frame
   // before it (the hand on the token), the one after (the token off the belt, in the hand), and four
   // ticks on (rising up the arm); on until every post has taken (the sim's own log) or the raid is over.
@@ -170,6 +181,7 @@ for (let attempt = 0; attempt < 10 && !caught; attempt++) {
       continue;
     }
     await tick(1);
+    if ((await now()) % 30 === 0) await topUp();
     await page.waitForTimeout(40);
   }
   if (!caught) { console.log('  no take this raid'); continue; }
@@ -189,11 +201,11 @@ for (let attempt = 0; attempt < 10 && !caught; attempt++) {
   while (!leave && (await now()) < t0 + 600) { await tick(10); leave = await leaveAt(); }
   leave ??= t0 + 600;
   console.log(`  leaving at ${leave} (${leave - t0} into the raid), bearing ${silos.bearing.map((v) => v.toFixed(2)).join(',')}`);
-  await tick(leave + 45 - (await now()));
-  await both('8-leave', at); sheet.push(['seq-8-leave', 'back out into the desert']);
-  await tick(70);
+  await tick(leave + 14 - (await now()));
+  await both('8-sink', at); sheet.push(['seq-8-sink', 'sinking back with what they took']);
+  await tick(leave + 80 - (await now()));
   const far = [at[0] + silos.bearing[0] * 4, at[1] + silos.bearing[1] * 4];
-  await both('9-away', far); sheet.push(['seq-9-away', 'fading into the empty desert']);
+  await both('9-away', far); sheet.push(['seq-9-away', 'furrows out into the empty desert']); sheet.push(['seq-9-away-mid', 'the furrows going (mid zoom)']);
 }
 if (!caught) console.log('✗ no take caught');
 // The contact sheet: every frame above, cropped round its middle.
@@ -203,7 +215,7 @@ if (!caught) console.log('✗ no take caught');
   const dir = fileURLToPath(new globalThis.URL('.', import.meta.url));
   const html = `<html><body style="margin:0;background:#1b1830;font:15px sans-serif;color:#eee">
 <style>figure{margin:6px;display:inline-block}.f{width:560px;height:373px;background-size:1120px 747px;background-position:-280px -187px;border-radius:6px}figcaption{padding:4px 2px}</style>
-<div style="padding:8px 10px;font-size:18px">D112 — a raid of the Gleaners by two silos, near zoom (1.7)</div>
+<div style="padding:8px 10px;font-size:18px">D112 — a raid of the Gleaners under the sand, by two silos (near zoom 1.7 unless said)</div>
 ${sheet.map(([f, l]) => `<figure><div class="f" style="background-image:url('file://${dir}shot-gleaners-${f}.png')"></div><figcaption>${l}</figcaption></figure>`).join('')}</body></html>`;
   const tmp = `${tmpdir()}/gleaner-sheet-${process.pid}.html`;
   writeFileSync(tmp, html);
@@ -218,15 +230,19 @@ ${sheet.map(([f, l]) => `<figure><div class="f" style="background-image:url('fil
 }
 if (process.env.ONLY === 'raid') { await browser.close(); process.exit(0); } // the raid alone, for quick looks
 
-// The Logistique view: the night's marks.
-const at = caught ? [caught.x, caught.y] : (await page.evaluate(() => window.FL.gleaners().exposedTiles[0]));
+// ── the grown base by night: the Logistique view's marks, a fence ─────────────────────────────
+if (RAID_BASE !== 'grown') {
+  await page.evaluate(() => window.FL.debugSave('grown'));
+  await page.evaluate(() => { window.FL.pause(); window.FL.dayPhase(null); window.FL.gleaners({ toNight: 2 }); window.FL.tick(400); });
+}
+const at = caught && RAID_BASE === 'grown' ? [caught.x, caught.y] : (await page.evaluate(() => window.FL.gleaners().exposedTiles.at(-1)));
 await page.evaluate(([x, y]) => { window.FL.lookAt(x, y, 0.9); window.FL.mapView('logistics'); }, at);
 await hideUi(false);
 await settle(1200);
 await snap('shot-gleaners-logistics.png');
 
 // The silos set for the raid go (nothing lost: the Heart takes them back), so the fence has its room.
-if (caught && caught.silos) await page.evaluate((list) => { for (const [x, y] of list) window.FL.app.sim.remove(x, y); }, caught.silos);
+if (caught && caught.silos && RAID_BASE === 'grown') await page.evaluate((list) => { for (const [x, y] of list) window.FL.app.sim.remove(x, y); }, caught.silos);
 // A stretch of the line fenced in: a box round it, two tiles off each side, the ribbon its gate; two pace outside.
 const box = await page.evaluate(([x, y]) => {
   const sim = window.FL.app.sim;
@@ -314,8 +330,8 @@ for (let k = 0; k < 300 && !tap; k++) {
   const p = await page.evaluate(() => window.FL.app.gleaners.tapAt_);
   if (p && p[2] < 50) tap = p;
 }
-// On to the first tap (75 ticks into the visit), the glint on the glass.
-if (tap) { await tick(Math.round(76 - tap[2])); await look(tap, 1.7); }
+// On to the first tap (up out of the sand at 100 ticks into the visit, the fingers on the glass 6 later), the glint.
+if (tap) { await tick(Math.round(107 - tap[2])); await look(tap, 1.7); }
 await settle(800);
 console.log('figures by the glass', tap);
 await snap('shot-gleaners-glazed-night.png');

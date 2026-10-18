@@ -252,7 +252,7 @@ export class App {
     this.views = new MapViews({ sim: () => this.sim, land: this.landTool, setLand: (on) => this.build.land(on), lit: (id) => this.buildings.work.isLit(id) });
     this.screens = new ScreenHost(document.getElementById('screens'));
     const notify = (k: 'good' | 'bad' | 'info' | 'warn', txt: string): void => this.toasts.show(k, txt);
-    this.screens.register('research', new ResearchScreen(atlas, { sim: () => this.sim, close: () => this.screens.open(null), notify, focus: () => { const f = this.treeFocus; this.treeFocus = null; return f ?? this.guide?.focusNode() ?? null; }, dataRate: (item) => { const r = this.stats.rates('10m'); return r.span > 0 ? r.made[item]! : null; } }));
+    this.screens.register('research', new ResearchScreen(atlas, { sim: () => this.sim, close: () => this.screens.open(null), notify, focus: () => { const f = this.treeFocus; this.treeFocus = null; return f ?? this.guide?.focusNode() ?? null; } }));
     this.screens.register('stats', new StatsScreen(atlas, this.stats, { close: () => this.screens.open(null), sim: () => this.sim }));
     this.screens.register('expertise', new ExpertiseScreen(atlas, { sim: () => this.sim, close: () => this.screens.open(null), notify }));
     const openExpertise = (): void => { if (this.screens.current !== 'expertise') this.screens.open('expertise'); };

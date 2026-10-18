@@ -13,7 +13,6 @@ describe('the Stock panel\'s sections', () => {
     expect(groupOf(itemIdx('coal'))).toBe('raw');
     expect(groupOf(itemIdx('iron_plate'))).toBe('material');
     expect(groupOf(itemIdx('gear'))).toBe('part');
-    expect(groupOf(itemIdx('journal_1'))).toBe('data');
     expect(groupOf(itemIdx('sporeglass'))).toBe('rare');
     for (const g of STOCK_GROUPS) expect(groupOf(itemIdx(g.icon)), g.id).toBe(g.id);
   });

@@ -119,8 +119,8 @@ Every building has a short sound evocative of the machine ([D120](decisions.md))
 | `wind` | wind turbines | an airy swoosh crossing the field; built, the blade comes round again | −15 / −23.5 |
 | `solar` | solar panel, farm and tower, Sunheart, optics workshop | a glassy shimmer: high chord tones, each beating with a twin | −15 / −23.5 |
 | `steam` | steam boiler, geothermal plant | a hiss of steam, then a puff | −13.5 / −22 |
-| `lab` | research labs, data collector, test bench | a soft data chirp (quick sines bending up) over a round low tone | −15 / −23.5 |
-| `server` | servers, supercomputer, data relay | a digital blip-blip (filtered squares an octave apart) and a tick | −15 / −23.5 |
+| `lab` | research labs, the autonomous lab (the data collector and the test bench went with the data, D122) | a soft data chirp (quick sines bending up) over a round low tone | −15 / −23.5 |
+| `server` | servers, cooled server, supercomputer (the data relay went with the data, D122) | a digital blip-blip (filtered squares an octave apart) and a tick | −15 / −23.5 |
 | `trade` | trade post | a bell (inharmonic partials) answered by a second one, a third built | −13.5 / −22 |
 | `silo` | silos | a hollow tin drum: a low body and a resonant ring | −13.5 / −22 |
 | `line` | ribbons, routing blocks, junction, bridge, conduit, fence | a light click and a tiny tone | −26 / −32 |

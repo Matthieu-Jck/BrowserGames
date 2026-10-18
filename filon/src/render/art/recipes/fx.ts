@@ -225,7 +225,7 @@ export function planArt(id: BuildingId, rot: Rot, lv = 1): SpriteArt {
 // ── 2. night rigs: what a machine adds at night, from its kind and footprint ─────
 
 /** Machines that run hot: their lights and work lamps are amber; every other light is cold. */
-export const HOT: ReadonlySet<BuildingId> = new Set<BuildingId>(['kiln', 'kiln_compact', 'brazier', 'steam_boiler', 'ceramic_oven', 'sunheart', 'fumarole_tap', 'arc_furnace', 'forge_press']);
+export const HOT: ReadonlySet<BuildingId> = new Set<BuildingId>(['kiln', 'kiln_compact', 'brazier', 'steam_boiler', 'ceramic_oven', 'sunheart', 'fumarole_tap', 'arc_furnace', 'forge_press', 'steel_mill', 'brickworks']); // D123: the converter's melt, the brick kiln
 
 export interface NightRig {
   /** A pool of work-lamp light on the ground round the footprint: radius (tiles), strength; amber when hot. */

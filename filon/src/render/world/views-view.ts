@@ -61,6 +61,7 @@ import { apply, type Lin } from '../projection';
 import { SHIFT } from '../relief';
 import { needsWire } from './overlays-view';
 import { liftOf } from './stand';
+import { isSpanTile } from '@/sim/flow/chain';
 
 /** What the shell computed for the view on show (4 Hz; sim/readouts/readouts.ts); `version` bumps with each new reading. */
 export type ViewData = Readouts;
@@ -356,7 +357,8 @@ export class ViewsView {
 
   /** A line's path through its tiles' centres, from its tail's edge to its head's; a leap (a bridge, a junction's pass) left out. */
   private ribbonPath(g: Graphics, sim: Sim, l: RibbonLook, levelAt: (x: number, y: number) => number, d: (lv: number) => number, jumps?: ReadonlyMap<number, number>): void {
-    const t = l.chain.tiles;
+    // Its world tiles: the cells over a leap (D121, `isSpanTile`) are left out with the leap.
+    const t = l.chain.tiles.filter((v) => !isSpanTile(v));
     if (!t.length) return;
     const at = (i: number): [number, number] => { const v = t[i]!, x = v & 1023, y = v >> 10, o = d(levelAt(x, y)); return [x + 0.5 - o, y + 0.5 - o]; };
     const dir = (i: number): [number, number] => { const v = t[i]!, e = sim.entityAt(v & 1023, v >> 10); const r = e?.rot ?? 0; return [[0, 1, 0, -1][r]!, [-1, 0, 1, 0][r]!]; };
@@ -550,7 +552,7 @@ export class ViewsView {
     } else if (f.view === 'logistics' && d.ribbons) {
       for (const l of d.ribbons) {
         if (!l.jam && !l.dead) continue;
-        const v = l.chain.tiles[l.chain.tiles.length - 1]!;
+        const v = l.chain.lastTile;
         const x = v & 1023, y = v >> 10;
         const m = this.mark(n++);
         m.x = x + 0.5; m.y = y + 0.5; m.head = f.levelAt(x, y) + 0.4;

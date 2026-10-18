@@ -157,4 +157,21 @@ describe('a stream up on a massif (D94)', () => {
     drawColumn(rec.ctx, P, mid.cls, ms, { detail: 2, seed: 3, k: 1, top: mid.top });
     expect(rec.fills).not.toContain(rgba(C.river, 0.94));
   });
+
+  it('where a fall lands on the stream below (D115: « the falls flowing into the next segment »), that tile knows the water pouring in: its side there no bank, its corners whole, foam on it', () => {
+    // The massif's stream falls a level onto a lower run of it going on east (levels 2, then 1).
+    const d = massif(), B = BORDER;
+    for (let i = B + 10; i < B + 14; i++) for (let j = B + 4; j < B + 10; j++) { const o = j * WIN + i; d.terrain[o] = T.Rock2; d.level[o] = 1; }
+    for (let i = B + 10; i < B + 14; i++) { const o = (B + 7) * WIN + i; d.terrain[o] = T.River; d.biome[o] = 16; }
+    const { lv, masks } = windowLevels(d), o = (B + 7) * WIN + B + 10;
+    const look = columnLook(d, lv, o);
+    // Its west neighbour (bit 3) pours into it; the tile after it does not.
+    expect(look.top?.from).toBe(1 << 3);
+    expect(columnLook(d, lv, o + 1).top?.from).toBeUndefined();
+    // Its banks stand at its level: its column is whole (no side drops but none), not cut at a corner.
+    expect(masks[0]![o]! & 0b1111).toBe(0);
+    const { ctx, fills } = recorder();
+    drawColumn(ctx, P, look.cls, [masks[0]![o]!], { detail: 2, seed: 3, k: 1, top: look.top });
+    expect(fills).toContain('rgba(235,248,252,0.62)');
+  });
 });

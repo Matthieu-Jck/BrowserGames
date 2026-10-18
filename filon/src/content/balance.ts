@@ -16,12 +16,7 @@ export const BAL = {
   // never cuts the base dead. The world clock is shared, so a base may be founded at night.
   hearthSolarKw: [90, 130, 180, 240, 320],
   hearthCoreKw: [210, 300, 420, 560, 740],
-  hearthPortPerMin: 120, // an outlet's pace: the Core's data outlet (D86), a trade post's exit
-  // The Core holds at most this many of each data item (every `kind: 'science'` item, whatever its
-  // level; D118, owner 2026-10-17: « pour la data, le cœur ne devrait pouvoir stocker que 200 max »):
-  // at it, the Core makes no more of its own and the lines bringing data wait. A save holding more
-  // keeps it and takes none until it is under.
-  hearthDataCap: 200,
+  hearthPortPerMin: 120, // an outlet's pace: a trade post's exit (the Core's data outlet went with the data, D122)
   reservoirMargin: 20, // items: within this of a bound, offline treats the reservoir as at the bound
 
   // ── machines ─────────────────────────────────────────────────────────────
@@ -143,8 +138,10 @@ export const BAL = {
      * guarantees the claim (a site, the copper field, a vent, a corridor). Maps 1–3 keep a share of
      * the sister claims' scattered parcels (`scatter` ‰ past `minRing`, the same draw as before D110:
      * fewer, never others) where a base fits. Was 420 ‰ and 125 ‰ from ring 3 (D110's first cut).
+     * A base has sand to collect when its floor holds `sand` places of 2 × 2 bare sand (a collector's);
+     * its Core leaves its hub's middle when fewer than `pocket` tiles of floor join it there.
      */
-    neighbours: { minRing: 4, scatter: 40, block: 3, chance: 120, size: [2, 4] as readonly number[], floor: 450, samples: 5 },
+    neighbours: { minRing: 4, scatter: 40, block: 3, chance: 120, size: [2, 3] as readonly number[], floor: 450, samples: 5, sand: 12, pocket: 400 },
     farRadius: 320, // tiles: land beyond is cheaper with Far Claims (xp8)
   },
 
@@ -158,10 +155,11 @@ export const BAL = {
    * upgrade (`hearthUpgrades`), behind the trunk node that closes the tier before.
    */
   tierCoreLevel: [1, 3, 4, 5] as readonly number[],
-  // ── AI tokens (D68, D118): never owned, delivered to research as a flow ───
-  // Tier 1 uses none. From Tier 2 a node needs a number of tokens, delivered at each minute's end:
-  // the claim's servers' output of the minute (the oldest project first; what nobody needs is lost,
-  // or rented with Server Rental), then each project's flow bought from CrierBelt at this price.
+  // ── AI tokens (D68, D118, D122): never owned, delivered to research as a flow ───
+  // Every node needs a number of tokens (D122: research's one currency, with resources paid at
+  // launch), delivered at each minute's end: the Core's compute and the claim's servers' output of
+  // the minute (the oldest project first; what nobody needs is lost, or rented with Server Rental),
+  // then each project's flow bought from CrierBelt at this price.
   tokenCentsPerK: 1000, // centi-ocelles per 1 000 tokens at CrierBelt: 10 ◉ the thousand
   /**
    * The flows the launch dialog offers (tokens a minute, D118): these mantissas at every power of
@@ -274,24 +272,29 @@ export const BAL = {
    */
   hearthUpgrades: [
     // Level 2 is the player's to raise (D101: a tutorial quest, « Le Cœur grandit »), paid in what the
-    // base makes by « La Criée »: it mounts the data outlet, whose Survey Data feeds the first lab.
+    // base makes by « La Criée »: it mounts the compute bay, whose tokens run the first lab (D122).
     { unlock: 'start', cost: [['iron_plate', 120], ['glass', 40], ['copper_wire', 40]] },
-    // Level 3 closes Tier 1 (D93): the Synthesis, paid in Tier 1's own parts; it mounts the Archive of the expertises.
-    { unlock: 'tr_synth', cost: [['gear', 150], ['circuit', 60], ['oscillator', 30]] },
-    { unlock: 'tr6', cost: [['circuit', 200], ['thermal_core', 20]] },
-    // Level 5 opens Tier 4 (D118): after Codex Lore, paid in Tier 3's optics; it mounts the uplink (north-west).
-    { unlock: 'tr8', cost: [['lens', 120], ['thermal_core', 60], ['atlas', 30]] },
+    // Level 3 closes Tier 1 (D93): the Synthesis, paid in Tier 1's own parts; it mounts the Archive of
+    // the expertises. D123: its walls are Tier 1's new materials too — bricks, steel, copper plates
+    // (gears 150 → 100), so the steel mill and the brickworks have the Core to build towards.
+    { unlock: 'tr_synth', cost: [['gear', 100], ['circuit', 60], ['oscillator', 30], ['brick', 120], ['steel', 40], ['copper_plate', 30]] },
+    // Level 4 closes Tier 2 (D118), in Tier 2's parts and, since D123, the steel, bricks, pipes and
+    // cables a base of that size makes in bulk (circuits 200 → 150).
+    { unlock: 'tr6', cost: [['circuit', 150], ['thermal_core', 20], ['steel', 150], ['brick', 300], ['pipe', 60], ['cable', 60]] },
+    // Level 5 opens Tier 4 (D118): after Resonance (ex Codex Lore), paid in Tier 3's optics and the
+    // first resonators (30 atlases until D122); it mounts the uplink (north-west).
+    { unlock: 'tr8', cost: [['lens', 120], ['thermal_core', 60], ['resonator', 20]] },
   ] as ReadonlyArray<{ unlock: string; cost: ReadonlyArray<readonly [string, number]> }>,
   /**
-   * The Heart level that mounts its data outlet on its south-east corner (D86): below it the
-   * outlet hands out nothing and the Heart makes no Survey Data, whatever Analytics researched.
+   * The Core's compute (D122; owner, 2026-10-17: « la monnaie pour débloquer les recherches sera
+   * uniquement les tokens »): AI tokens a minute it gives research, by level 1..5, with no power
+   * and no ribbon — delivered at each minute's end with the servers' (systems/research.ts
+   * `tokenEpoch`), lost when no project needs them. Level 2 mounts its compute bay on the south-east
+   * corner (D86's data outlet's place): from there Tier 1 runs on it alone, a node in a few minutes
+   * (`DEPTH_COST`); a bought flow or the servers go faster. Each level raises it; the Analytics
+   * research adds to it (`coreCompute`, whole tokens), the Archiving expertise multiplies it.
    */
-  hearthDataLevel: 2,
-  /**
-   * The Survey Data the Heart makes a minute from that level on (mu), research or not (D101: the
-   * first lab runs on it; « Traitement des données » adds to it and brings the data collector).
-   */
-  hearthDataBase: 2000,
+  coreCompute: [0, 1000, 1500, 2000, 3000] as readonly number[],
 
   // ── expertises (D93, content/expertises.ts) ──────────────────────────────
   expertise: {

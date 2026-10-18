@@ -538,9 +538,16 @@ export class MapGen implements TerrainSource {
         return w > 0 ? w | CROWN | WET | FIXED | flow : FLOOR | flow;
       }
       // Its banks and its ledge stand as the massifs' rock does (owner: « the waterfall… looks like
-      // it's levitating »): never settled lower, so the water runs between walls at least its height
-      // (it stands at the lowest the Crown reaches along its way), and the ledge stays flat.
-      if (sp && c > 0 && (within(sp, 4 * x + 2, 4 * y + 2, sp.hw + 4) || this.onLedge(x, y))) return c | CROWN | MASSIF;
+      // it's levitating »): never settled lower, and a bank never below the water beside it (raised to
+      // it where the Crown or the floor there lies lower; owner, of a fall whose water was lost at its
+      // foot: « the visuals are still a little bit broken »), so the water runs in a channel between
+      // walls at least its height — no column of it standing over lower land, cut at the corner by the
+      // relief's chamfers — and steps down only along its way; the ledge stays flat.
+      if (sp && within(sp, 4 * x + 2, 4 * y + 2, sp.hw + 4)) {
+        const w = this.springLevel(x, y);
+        if (c > 0 || w > 0) return Math.max(c, w) | CROWN | MASSIF;
+      }
+      if (sp && c > 0 && this.onLedge(x, y)) return c | CROWN | MASSIF;
       // So does the summit (« a little plateau »): its plateau whole round the basin wherever the
       // land beside it lies lower (the vein's corridor: a cliff there, not its top worn away).
       if (S && c > 0 && this.peak(x, y) === c) return c | CROWN | MASSIF;

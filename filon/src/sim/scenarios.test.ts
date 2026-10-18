@@ -30,16 +30,16 @@ const BUILT: Record<ScenarioId, readonly string[]> = {
   smelter: ['iron1'],
   // « La vapeur » (D114): the boiler, its pump at the water and its own coal drill, from this level on.
   survey: ['iron1', 'iron2', 'kiln1', 'coal', 'wind1', 'wind2', 'kiln2', 'sand1', 'sand2', 'boiler', 'boilerPump', 'coalB'],
-  // No data collector in the tutorial (D101): its lab runs on the Core's own data; the collector comes at the grown level.
+  // Its lab runs on the Core's compute (D122: no data, no collector).
   tutorial: ['post', 'kiln1', 'kiln2', 'observatory', 'mill', 'copper', 'wind3', 'wind4', 'cutter1', 'cutter2', 'osc', 'boiler', 'boilerPump', 'coalB'],
-  grown: ['post', 'kiln1', 'kiln2', 'collector', 'observatory', 'mill', 'copper', 'cutter1', 'cutter2', 'osc', 'boiler', 'boilerPump', 'coalB'],
+  grown: ['post', 'kiln1', 'kiln2', 'observatory', 'mill', 'copper', 'cutter1', 'cutter2', 'osc', 'boiler', 'boilerPump', 'coalB'],
   // The late base's works (scenario-late.ts): the potteries on the tarn's peak (their silo at its
   // foot), the Fabrique on the copper field — on every land (the Ember Fields mine and its post where
   // the land has that site: checked below). No skydock since D108.
   late: [
-    'post', 'kiln1', 'collector', 'observatory', 'cutter1', 'cutter2', 'osc', 'boiler', 'boilerPump', 'coalB',
+    'post', 'kiln1', 'observatory', 'cutter1', 'cutter2', 'osc', 'boiler', 'boilerPump', 'coalB',
     'oven', 'pump', 'potSilo', 'digger1',
-    'boreCu', 'post2', 'mill2', 'mill3', 'circuits', 'circuits2', 'gears2', 'bells', 'data2', 'observatory2', 'sorter2',
+    'boreCu', 'post2', 'mill2', 'mill3', 'circuits', 'circuits2', 'gears2', 'bells', 'observatory2', 'sorter2',
   ],
 };
 
@@ -82,13 +82,16 @@ describe('debug bases (scenarios)', () => {
         expect(sim.hearthLevel).toBe(5); // its last level: every tier open (D118)
         // Over half the tree done (D66, D69; D108: 54 of 70 with The Crier House's third post), the Research Queue researched for real.
         expect(Object.keys(RESEARCH).filter((r) => sim.done.has(r)).length, 'late: research done').toBeGreaterThanOrEqual(44);
-        // The first lab on the Research Queue (D107: the Compute Plan comes learnt with the Wider Wharf).
-        expect(sim.projects.map((p) => p.id).sort(), 'late: research under way').toEqual(['an_queue']);
+        // The first lab on the Research Queue, the Fabrique's on the Solar Farm (D122: on tokens, their
+        // resources paid at launch; the Compute Plan comes learnt with the Wider Wharf).
+        expect(sim.projects.map((p) => p.id).sort(), 'late: research under way').toEqual(['an_queue', 'en_solarfarm']);
         // The Ember Fields mine where the land has the site, its embersalt sold at a third post beside it (D108).
         if (report.ids.boreE) expect(report.ids.postE, 'late: postE').toBeGreaterThan(0);
         // Nothing the map refused (each part of the works is laid whole, or skipped by name) but the
-        // grown base's gear workshop where its plate line is too short to branch (land 3).
-        expect(report.skipped.filter((s) => s !== 'gears'), 'late skipped').toEqual([]);
+        // grown base's gear workshop where its plate line is too short to branch, and D123's steel line
+        // and brickworks where the cirque, mined out and ringed with lines by then, leaves them no room
+        // (scenario-basics.ts: on lands 1–2 the steel line, on land 2 the brickworks).
+        expect(report.skipped.filter((s) => !['gears', 'steel', 'bricks'].includes(s)), 'late skipped').toEqual([]);
         expect(idle(sim), 'late: idle three minutes on end').toEqual([]);
         continue;
       }
@@ -99,10 +102,10 @@ describe('debug bases (scenarios)', () => {
       }
       expect(report.granted, `${id}: nothing outside the commands`).toEqual([]);
       if (id === 'tutorial') {
-        // The whole factory runs: plates, glass, data files (the Core's), copper wire, the vein's quartz all made.
-        for (const it of ['iron_plate', 'glass', 'journal_1', 'copper_wire', 'quartz']) expect(sim.produced[itemIdx(it)], it).toBeGreaterThan(0);
+        // The whole factory runs: plates, glass, copper wire, the vein's quartz all made.
+        for (const it of ['iron_plate', 'glass', 'copper_wire', 'quartz']) expect(sim.produced[itemIdx(it)], it).toBeGreaterThan(0);
         expect(sim.done.has('ex_quartz'), 'the Face Cutter’s plan').toBe(true);
-        // The Core raised by the player's command (D101), Mechanics begun on its data (learnt by now: D107).
+        // The Core raised by the player's command (D101), Mechanics begun on its compute (learnt by now: D107, D122).
         expect(sim.hearthLevel).toBe(2);
         expect(sim.log.filter((l) => l.cmd.k === 'hearthUp')).toHaveLength(1);
         expect(sim.projects.map((p) => p.id).concat([...sim.done].filter((id) => id === 'tr1'))).toContain('tr1');
@@ -135,9 +138,11 @@ describe('debug bases (scenarios)', () => {
       expect(sim.credits - credits0, `${id}: ocelles earned over a day`).toBeGreaterThan(20_000);
       if (id === 'late') {
         // The late base's chains run over the day (D66): the Fabrique's wire, circuits, gears,
-        // servomotors and data files, the potteries' ceramic, the Ember Fields' embersalt where it is mined.
+        // servomotors, the potteries' ceramic, the Ember Fields' embersalt where it is mined.
         const made = (it: string): number => sim.produced[itemIdx(it)]! - produced0[itemIdx(it)]!;
-        for (const it of ['copper_wire', 'circuit', 'gear', 'pace_bell', 'journal_1', 'ceramic', ...(report.ids.boreE ? ['embersalt'] : [])]) expect(made(it), `late: ${it} made over a day`).toBeGreaterThan(0);
+        for (const it of ['copper_wire', 'circuit', 'gear', 'pace_bell', 'ceramic', ...(report.ids.boreE ? ['embersalt'] : [])]) expect(made(it), `late: ${it} made over a day`).toBeGreaterThan(0);
+        // D123's works where they stand (scenario-basics.ts): the steel line's steel and pipes, the brickworks' bricks.
+        for (const it of [...(report.ids.steel ? ['steel', 'pipe'] : []), ...(report.ids.bricks ? ['brick'] : [])]) expect(made(it), `late: ${it} made over a day`).toBeGreaterThan(0);
         // Far more than its way: its sales of what it makes, after what it buys.
         expect(sim.credits - credits0, 'late: ocelles earned over a day').toBeGreaterThan(100_000);
       }

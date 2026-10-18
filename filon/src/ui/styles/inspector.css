@@ -159,3 +159,14 @@
 
 /* ── the facet of a specialised view (D88): its part first; the root says which ── */
 .inspector[data-facet] .ksec:not([data-dim]) { box-shadow: 2px 2px 0 var(--c-ink); }
+
+/* A lab's project, the tokens a minute bringing it now (D122): free (the Core's look), banked, bought — icons first, the words on hover. */
+.insp-toknow { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 12px; padding: 3px 0 1px; font-size: 12px; cursor: help; }
+.insp-tk { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.insp-tk canvas { display: block; width: 16px; height: 16px; }
+.insp-tk .glyph, .insp-tk .kmark { width: 15px; height: 15px; }
+.insp-tk b { font-weight: 700; font-variant-numeric: tabular-nums; }
+.insp-toknow[data-held] .insp-tk[data-k='bought'] b { color: var(--c-coral-d); }
+/* The Core's compute (D122): « Calcul du Cœur · 1 000 tokens/min », under its level. */
+.insp-compute { margin-top: 4px; font-size: 12.5px; color: var(--c-ink-soft); cursor: help; }
+.insp-compute b { margin-left: auto; color: var(--c-ink); font-variant-numeric: tabular-nums; }

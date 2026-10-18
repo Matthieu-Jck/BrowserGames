@@ -7,12 +7,12 @@
 //
 // What counts as working, per kind (`workOf`, in the sim's systems/work.ts since D85: the debug
 // bases are checked for buildings that stay off with it):
-// - machines: crafting, powered (`Ok` / `LowPower`); drills, sand and data collectors, pumps:
-//   extracting, powered; fuel generators: burning (dispatched, fuelled); research labs: a project
-//   whose clock runs; servers, wind turbines, solar panels, geothermal plants: on a grid (a server
-//   on a powered one).
+// - machines: crafting, powered (`Ok` / `LowPower`); drills, sand collectors, pumps: extracting,
+//   powered; fuel generators: burning (dispatched, fuelled); research labs: a project on a powered
+//   grid (an autonomous lab whenever it computes, D122); servers, wind turbines, solar panels,
+//   geothermal plants: on a grid (a server on a powered one).
 // - A *passing* stop — inputs late (`Starved`), output backed up (`Blocked`), a generator not
-//   called on (`Idle`) or waiting for fuel, a lab whose time is done waiting for data — keeps the
+//   called on (`Idle`) or waiting for fuel — keeps the
 //   look for `WORK_GRACE` ticks after it last worked, so a machine fed a little slower than it
 //   crafts never blinks between two crafts. A hard stop — no recipe, no power, no grid, dormant,
 //   still being built — switches it off at once.

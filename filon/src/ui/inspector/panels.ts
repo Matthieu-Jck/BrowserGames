@@ -43,7 +43,7 @@ export const PANELS: Partial<Record<BuildingKind, readonly Panel[]>> = {
   belt: [ribbonPanel],
   conduit: [ribbonPanel],
   fork: [forkPanel],
-  hearth: [hearthPanel], // no outlets to set: the Heart takes, it never gives (but its data outlet, D68)
+  hearth: [hearthPanel], // no outlets to set: the Heart takes, it never gives (D34; its data outlet went with the data, D122)
   // storage: none — a silo's one item is its hero (`storeHero`), nothing more.
   excavator: [landscapePanel],
   backfiller: [landscapePanel],

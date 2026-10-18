@@ -16,10 +16,10 @@ export const ITEMS = {
   iron_plate: { name: { fr: 'Plaque de fer', en: 'Iron Plate' }, tier: 1, kind: 'material', value: 2.7, depth: 600, glyph: 'plate', color: '#a7b0bf' },
   glass: { name: { fr: 'Verre', en: 'Glass' }, tier: 1, kind: 'material', value: 4.1, depth: 200, glyph: 'pane', color: '#a9e3dc' },
   copper_wire: { name: { fr: 'Fil de cuivre', en: 'Copper Wire' }, tier: 1, kind: 'material', value: 2.2, depth: 300, glyph: 'coil', color: '#c8743a' },
-  // Research's one data item (D68): made by data collectors out of power alone, or by the Heart
-  // with the Analytics research; never traded (depth 0) — research is paid in data and tokens.
-  journal_1: { name: { fr: 'Données d’arpentage', en: 'Survey Data' }, tier: 1, kind: 'science', value: 11, depth: 40, glyph: 'journal', color: '#f2c6a0' },
-  journal_2: { name: { fr: 'Données mécaniques', en: 'Mechanics Data' }, tier: 2, kind: 'science', value: 59, depth: 15, glyph: 'journal2', color: '#9d8cc9' },
+  // The data items (Survey Data `journal_1`, Mechanics Data `journal_2`, atlases, codices) are gone
+  // (D122; owner, 2026-10-17: « on va enlever le principe de la data »): research is paid in AI
+  // tokens and resources. A save holding some has them turned into tokens for research
+  // (`RETIRED_ITEM_TOKENS`, content/retired.ts).
 
   // ── tier 2 ────────────────────────────────────────────────────────────────
   gear: { name: { fr: 'Engrenage', en: 'Gear' }, tier: 2, kind: 'part', value: 10, depth: 150, glyph: 'gear', color: '#8d97a8' },
@@ -38,7 +38,6 @@ export const ITEMS = {
   lens: { name: { fr: 'Lentille', en: 'Lens' }, tier: 3, kind: 'part', value: 47, depth: 8, glyph: 'lens', color: '#8fd8cf' },
   resin_canvas: { name: { fr: 'Toile de résine', en: 'Resin Canvas' }, tier: 3, kind: 'material', value: 64, depth: 6, glyph: 'canvas', color: '#f2c6a0' },
   thermal_core: { name: { fr: 'Cœur thermique', en: 'Thermal Core' }, tier: 3, kind: 'part', value: 64, depth: 6, glyph: 'core', color: '#c4533c' },
-  atlas: { name: { fr: 'Atlas', en: 'Atlas' }, tier: 3, kind: 'science', value: 188, depth: 4, glyph: 'atlas', color: '#2a8c85' },
   // Robotics (D81): two servomotors and two circuits make an arm; the Chip Fab is built of them.
   robot_arm: { name: { fr: 'Bras robotisé', en: 'Robot Arm' }, tier: 3, kind: 'part', value: 230, depth: 4, glyph: 'arm', color: '#e0b04a' },
 
@@ -48,16 +47,32 @@ export const ITEMS = {
   singing_quartz: { name: { fr: 'Quartz chantant', en: 'Singing Quartz' }, tier: 4, kind: 'unique', value: 40, depth: 6, glyph: 'quartz', color: '#c9bee6' },
   resonator: { name: { fr: 'Résonateur', en: 'Resonator' }, tier: 4, kind: 'part', value: 260, depth: 1.5, glyph: 'resonator', color: '#6f5fa0' },
   nacre_lattice: { name: { fr: 'Treillis de nacre', en: 'Nacre Lattice' }, tier: 4, kind: 'part', value: 252, depth: 1.5, glyph: 'lattice', color: '#e6dcf2' },
-  codex: { name: { fr: 'Codex', en: 'Codex' }, tier: 4, kind: 'science', value: 1014, depth: 0.5, glyph: 'codex', color: '#3a3550' },
 
   // ── appended (D87): the quartz of the cliff faces, and its oscillator ──────
   // Rock crystal set in a cliff face past the Crown (map 3: a guaranteed vein in the nearest
   // mountain, a parcel away): only the face cutter works it, from the floor beside the wall
   // (`face`). Not the T4 unique « Quartz chantant » (`singing_quartz`): a plain ore, milky white.
   quartz: { name: { fr: 'Quartz', en: 'Quartz' }, tier: 1, kind: 'ore', value: 4.5, depth: 150, glyph: 'crystal', color: '#e6eef0', face: true },
-  // A quartz blade on copper leads (the quartz workshop): the clock of Mechanics Data's load
-  // tests and of the servers.
+  // A quartz blade on copper leads (the quartz workshop): the clock of the servers, and of the
+  // research that asks for it (D122).
   oscillator: { name: { fr: 'Oscillateur à quartz', en: 'Quartz Oscillator' }, tier: 1, kind: 'part', value: 11, depth: 100, glyph: 'oscillator', color: '#b9c3cc' },
+
+  // ── appended (D123): more to make of the basic resources ─────────────────
+  // (owner, 2026-10-17: « Il faut rajouter des trucs à faire avec les ressources de base. De
+  // l'intérêt à faire fondre le cuivre en plaque de cuivre peut-être… on a vite fait le tour des
+  // ressources de base »). Five products of Tier 1's research, each a step past plates, glass and
+  // wire, each wanted by the buildings, the Core's levels and the research that come after it:
+  //   copper plate — copper ore and coal at the smelter: the metal of what runs on power;
+  //   steel        — iron plates and coal at the steel mill: the frame of the heavy machines;
+  //   brick        — sand and water at the brickworks: the furnaces' lining, the Core's walls;
+  //   pipe         — steel at the press: what carries water and steam;
+  //   cable        — copper wire twisted at the wire mill: what carries power far.
+  // Values sit a little over their inputs' (V of what goes in, and the machine's time).
+  copper_plate: { name: { fr: 'Plaque de cuivre', en: 'Copper Plate' }, tier: 1, kind: 'material', value: 6.0, depth: 200, glyph: 'plate', color: '#d9844a' },
+  steel: { name: { fr: 'Acier', en: 'Steel' }, tier: 1, kind: 'material', value: 8.5, depth: 200, glyph: 'ingot', color: '#7f8b9e' },
+  brick: { name: { fr: 'Brique', en: 'Brick' }, tier: 1, kind: 'material', value: 1.6, depth: 400, glyph: 'brick', color: '#b9583c' },
+  pipe: { name: { fr: 'Tuyau', en: 'Pipe' }, tier: 2, kind: 'part', value: 5.0, depth: 150, glyph: 'pipe', color: '#93a0b2' },
+  cable: { name: { fr: 'Câble', en: 'Cable' }, tier: 2, kind: 'part', value: 8.0, depth: 120, glyph: 'cable', color: '#3d3852' },
 } as const satisfies Record<string, ItemDef>;
 
 export type ItemId = keyof typeof ITEMS;

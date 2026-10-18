@@ -19,7 +19,7 @@ import { locale, t } from '@/i18n/i18n';
 import { credits, duration, num } from '@/i18n/format';
 import { buildingDef, N_ITEMS } from '@/content/registry';
 import { nodeName } from '@/content/research';
-import { RETIRED_NAMES } from '@/content/retired';
+import { RETIRED_ITEM_NAMES, RETIRED_NAMES } from '@/content/retired';
 import { TICK_MS } from '@/sim/constants';
 import type { AwayReport, Incident, IncidentKind } from '@/sim/offline/report';
 import type { RemapNote } from '@/sim/save-remap';
@@ -229,5 +229,13 @@ export function changesPanel(c: RemapNote): HTMLElement {
   if (c.removed.length) rows.push(el('p', {}, t('away.changes.removed', { list: list(c.removed.map((b) => `${RETIRED_NAMES[b.id]?.[locale()] ?? b.id} ×${b.n}`)) })));
   if (c.lost.length) rows.push(el('p', {}, t('away.changes.lost', { list: list(c.lost.map((l) => `${num(l.mu / 1000)} ${l.id}`)) })));
   if (c.reset.length) rows.push(el('p', {}, t('away.changes.reset', { list: list(c.reset) })));
+  // Research's data, gone (D122): what the base held of it, banked as tokens for its next research.
+  const conv = c.converted ?? [];
+  if (conv.length) {
+    const tokens = conv.reduce((a, x) => a + x.tokens, 0);
+    rows.push(el('p', { 'data-absence-converted': '' }, [mark('token'), ' ', t('away.changes.converted', {
+      list: list(conv.map((x) => `${num(Math.floor(x.mu / 1000))} ${RETIRED_ITEM_NAMES[x.id]?.[locale()] ?? x.id}`)), n: num(tokens),
+    })]));
+  }
   return panel('changes', () => t('away.changes'), mark('build'), rows);
 }

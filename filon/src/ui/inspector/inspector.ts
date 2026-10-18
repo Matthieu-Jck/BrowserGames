@@ -8,7 +8,7 @@
 //   asleep, D80), and why not (the reason as icons: the inputs it waits for, its full output, no
 //   power, the weak grid and its %, no wire, no recipe; under it, the few words of what to do);
 // · the kind's sections (panels.ts: its recipe and buffers, its stores, its filters, its project's
-//   data…), each its own card, then the grid card (power.ts, D25/D76);
+//   tokens…), each its own card, then the grid card (power.ts, D25/D76);
 // · the foot: every action of the panels (choose a research, open the Crier, take the Link tool,
 //   grow the Core) and Demolish.
 // A specialised view (D88) names its facet (`InspectorHost.facet`): that part is lifted under the

@@ -3,9 +3,11 @@
 // its craft under way; what a drill cuts a minute and the next item; a generator's fuel against
 // the power it makes; a research lab's project and its progress; a server's tokens), then the
 // details in their own sections: a machine's recipe choice and its buffers (each input and output
-// as a meter of what it holds against its room), a drill's output, a generator's fuel, a lab's
-// data (paid of what the project costs, what waits in store), its AI tokens (D68) and what it runs
-// next. Every item shows its icon (mention.ts); every number goes through the kit's formats.
+// as a meter of what it holds against its room), a drill's output, a generator's fuel, a lab's AI
+// tokens (D68, D122: no data, no store — its project's tokens delivered of those it needs, the flows
+// bringing them now, whether its lab has the power to take them; an autonomous lab's own compute)
+// and what it runs next. Every item shows its icon (mention.ts); every number goes through the kit's
+// formats.
 import { CRECIPES, ITEM_IDS, recipesFor } from '@/content/registry';
 import { RECIPES } from '@/content/recipes';
 import { RESEARCH, type ResearchId } from '@/content/research';
@@ -17,8 +19,11 @@ import { recipeOf } from '@/sim/cfg';
 import type { DrillNode, GeneratorNode, MachineNode } from '@/sim/flow/nodes';
 import { projectPermille } from '@/sim/research/runtime';
 import { St } from '@/sim/types';
+import { buildingIcon } from '../build-bar';
 import { glyph } from '../glyphs';
 import { itemMention } from '../mention';
+import { compact } from '../stock-panel';
+import { projectTiming } from '../tree-state';
 import {
   equation, fmt, itemTerm, kw, mark, meter, note, perMin, progressBar, row, section, smoothProgress, STATUS_TONE, type Panel, type PanelCtx,
 } from './kit';
@@ -156,7 +161,7 @@ export const generatorPanel: Panel = ({ node, live }) => {
 /** Tokens in thousands, as research counts them (« 12,5 k »). */
 const tokensK = (n: number): string => t('unit.ktokens', { v: fmt(n / 1000, n >= 100_000 ? 0 : 1) });
 
-/** The project it runs and its progress (hours, not seconds: the 4 Hz refresh is smooth enough); none: an empty slot. */
+/** The project it runs and its progress (its tokens in, D122); coral while its bought flow is held or it has no power; none: an empty slot. */
 export const labHero = ({ sim, e, live }: PanelCtx): HTMLElement => {
   const name = el('b.insp-hero-name.lettering'), pct = el('span.insp-hero-pct');
   const bar = progressBar();
@@ -167,50 +172,62 @@ export const labHero = ({ sim, e, live }: PanelCtx): HTMLElement => {
     setAttr(bar.root, 'hidden', p ? null : '');
     if (!p) { setText(name, ''); setText(pct, ''); return; }
     const r = RESEARCH[p.id as ResearchId] as ResearchDef | undefined;
+    const tm = projectTiming(sim, p);
     setText(name, r ? r.name[locale()] : p.id);
     setText(pct, t('hud.powerPct', { v: Math.floor(projectPermille(p) / 10) }));
-    bar.set(projectPermille(p) / 1000, sim.credits < 0 && (p.buy ?? 0) > 0 && (p.tokIn ?? 0) < (p.tokens ?? 0) ? 'bad' : 'lilac');
+    bar.set(projectPermille(p) / 1000, tm.held || tm.waiting === 'power' ? 'bad' : 'lilac');
   });
   return el('div.insp-hero', { 'data-hero': 'lab' }, [el('div.insp-hero-line', {}, [mark('tree'), name, pct]), bar.root, none]);
 };
 
-/** Per data item, what is paid of what the project costs and what waits in store; its AI tokens; what it runs next. */
-export const labPanel: Panel = ({ sim, e, host, live, action }) => {
-  const rowsBox = el('div.kbufs');
-  // Its AI tokens (D68, D118): delivered of those it needs, and why its bought flow may be paused (the purse in the red).
+/**
+ * Its project's AI tokens (D68, D122: a lab takes nothing in, holds nothing): delivered of those it
+ * needs, the flows bringing them now — the free ones (the Core's compute, the servers), the bank's,
+ * the flow bought from CrierBelt — and why they may stop (no power: it takes none; the purse in the
+ * red: the bought flow is held); an autonomous lab's own compute; what it runs next.
+ */
+export const labPanel: Panel = ({ sim, e, host, live, action, atlas }) => {
   const tok = meter(), tokRow = el('div.kbuf', { 'data-k': 'tokens', title: t('insp.lab.tokens') }, [el('span.kbuf-icon', {}, mark('token')), tok.root]);
+  const free = el('b'), bank = el('b'), bought = el('b');
+  const bankChip = el('span.insp-tk', { 'data-k': 'bank' }, [mark('store'), bank]);
+  const flows = el('div.insp-toknow', { 'data-lab-flows': '' }, [
+    el('span.insp-tk', { 'data-k': 'free' }, [buildingIcon(atlas, 'hearth', 16, sim.hearthLevel), free]),
+    bankChip,
+    el('span.insp-tk', { 'data-k': 'bought' }, [glyph('crier'), bought]),
+  ]);
+  const unpowered = el('p.insp-note', { 'data-tone': 'bad', 'data-lab-unpowered': '' }, [glyph('noPower'), ' ', t('insp.lab.unpowered')]);
   const held = el('p.insp-note', { 'data-tone': 'bad' }, t('insp.lab.held'));
   const next = el('span'), nextRow = row(t('insp.lab.next'), next);
-  let sig: string | null = null;
-  const vals: Array<{ paid: ReturnType<typeof meter>; held: HTMLElement }> = [];
-  const sec = section({ sec: 'data', title: t('insp.sec.data'), icon: mark('data'), tip: t('insp.lab.hint'), group: 'production' }, [rowsBox, tokRow, held, nextRow]);
+  // An autonomous lab computes too (D122), into the claim's pool like a server — a project or not.
+  const own = el('b'), ownRow = row(t('insp.lab.compute'), own, mark('token'));
+  const isServer = (sim.graph?.servers ?? []).some((x) => x.ent === e.id);
+  const sec = section({ sec: 'tokens', title: t('insp.lab.tokens'), icon: mark('token'), tip: t('insp.lab.hint'), group: 'production' }, [tokRow, flows, unpowered, held, isServer ? ownRow : null, nextRow]);
   live(() => {
     const p = sim.projects.find((q) => q.lab === e.id);
-    const paused = !!p && sim.credits < 0 && (p.buy ?? 0) > 0 && (p.tokIn ?? 0) < (p.tokens ?? 0);
-    setAttr(held, 'hidden', paused ? null : '');
+    const tm = p ? projectTiming(sim, p) : null;
+    setAttr(held, 'hidden', tm?.held ? null : '');
+    setAttr(unpowered, 'hidden', tm?.waiting === 'power' ? null : '');
     setAttr(tokRow, 'hidden', p?.tokens ? null : '');
-    if (p?.tokens) tok.set(p.tokIn ?? 0, p.tokens, paused ? 'bad' : 'lilac', t('insp.lab.tokens.v', { used: tokensK(p.tokIn ?? 0), of: tokensK(p.tokens) }));
+    setAttr(flows, 'hidden', p?.tokens ? null : '');
+    if (p?.tokens && tm) {
+      tok.set(p.tokIn ?? 0, p.tokens, tm.held || tm.waiting === 'power' ? 'bad' : 'lilac', t('insp.lab.tokens.v', { used: tokensK(p.tokIn ?? 0), of: tokensK(p.tokens) }));
+      setText(free, t('hud.perMin', { v: compact(tm.free) }));
+      setText(bank, t('hud.perMin', { v: compact(tm.bank) }));
+      setAttr(bankChip, 'hidden', tm.bank > 0 || sim.tokenBank > 0 ? null : '');
+      setText(bought, tm.held ? t('tree.rs.toknow.held') : t('hud.perMin', { v: compact(tm.bought) }));
+      setAttr(flows, 'data-held', tm.held ? '' : null);
+      setAttr(flows, 'title', t('insp.lab.flow.tip', { f: compact(tm.free), k: compact(tm.bank), b: compact(tm.bought) }));
+    }
+    if (isServer) {
+      const s = sim.graph?.servers.find((x) => x.ent === e.id);
+      const sat = s ? sim.ctx?.sat[s.net] ?? 0 : 0;
+      setText(own, t('hud.perMin', { v: tokensK(s ? Math.floor((s.tpm * sat) / 1000) : 0) }));
+      setAttr(own, 'data-tone', sat > 0 ? null : 'bad');
+    }
     const q = sim.labQueue.get(e.id);
     setAttr(nextRow, 'hidden', q ? null : '');
     if (q) setText(next, (RESEARCH[q as ResearchId] as ResearchDef | undefined)?.name[locale()] ?? q);
-    setAttr(sec, 'hidden', p || q ? null : '');
-    const s = p ? p.cost.map((c) => ITEM_IDS[c.item]).join(',') : '';
-    if (s !== sig) {
-      sig = s;
-      vals.length = 0;
-      rowsBox.replaceChildren(...(p?.cost ?? []).map((c) => {
-        const v = { paid: meter(), held: el('small.kbuf-held') };
-        vals.push(v);
-        return el('div.kbuf', { 'data-item': ITEM_IDS[c.item] }, [el('span.kbuf-icon', {}, itemMention(c.item, { name: false })), v.paid.root, v.held]);
-      }));
-    }
-    if (!p) return;
-    const st = sim.stores.get(e.id);
-    p.cost.forEach((c, i) => {
-      vals[i]!.paid.set(p.paid[i]!, c.mu, 'lilac', `${fmt(p.paid[i]! / 1000, 0)}/${fmt(c.mu / 1000, 0)}`);
-      const h = (st?.[c.item] ?? 0) / 1000;
-      setText(vals[i]!.held, t('insp.lab.inStore', { n: fmt(h, 0) }));
-    });
+    setAttr(sec, 'hidden', p || q || isServer ? null : '');
   });
   action(el('button.btn.insp-recipe', { onclick: () => host.openResearch() }, [mark('tree'), ' ', t('insp.lab.choose')]));
   return [sec];

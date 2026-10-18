@@ -238,18 +238,6 @@ function intakeOf(sim: Sim): [number, number, number] | null {
 }
 
 /**
- * Where the Survey Data ribbon starts (D101): the tile just outside the Heart's data outlet, its one
- * `out` port (D68), on the corner its level 2 mounts (D86).
- */
-function outletOf(sim: Sim): [number, number, number] | null {
-  const h = sim.ents.get(sim.hearthId);
-  const p = BUILDINGS.hearth.ports.find((x) => x.io === 'out');
-  if (!h || !p) return null;
-  const s = sideIndex[p.side];
-  return [h.x + p.x + DX[s]!, h.y + p.y + DY[s]!, 0.75];
-}
-
-/**
  * A production line (D34: machines are fed by lines, never by the Heart): the ribbon tiles that
  * carry what `from` puts out, followed through ribbons and routing blocks up to the first
  * machine or store, and whether a routing block already stands on it.
@@ -366,7 +354,6 @@ export function spotOf(sim: Sim, at: GuideSpot): [number, number, number] | null
   }
   if ('hearth' in at) return centreOf(sim, sim.hearthId);
   if ('intake' in at) return intakeOf(sim);
-  if ('outlet' in at) return outletOf(sim);
   if ('beyond' in at) {
     // Past the Crown, due east (the cirque is closed, D45: no pass to point at).
     return [CENTER + CIRQUE.crownOuter + 4, CENTER, 3];
@@ -781,6 +768,9 @@ export class Guide {
       }
       case 'research': {
         if (this.host.screen() === 'research') {
+          // « Lancer » opens the launch dialog at every tier (D122): its own « Lancer » next.
+          const go = q('[data-launch]:not([hidden]) [data-launch-go]');
+          if (go) return aimEl(go, `research:go:${tg.id}`);
           const card = q(`.rs-card[data-id="${tg.id}"]`);
           if (card && this.shownNode !== tg.id) { this.shownNode = tg.id; card.scrollIntoView({ block: 'nearest', inline: 'center' }); }
           if (card?.hasAttribute('data-on')) return aimEl(q('.rs-detail .rs-actions .btn.primary'), `research:start:${tg.id}`) ?? aimEl(card, `research:card:${tg.id}`);

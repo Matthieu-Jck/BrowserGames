@@ -34,7 +34,8 @@ the Heart's growing disc, the waystations and the land reclaimed next to a zone 
   faut qu'il y ait vraiment une base, et appelle-ça d'un nom plus logique »): another claim of the
   Crier — one of the market's colonies, so the base next door is one the player trades with —, its
   name and its emblem the colony's (`colonyEmblem`), and on its land a small working base
-  ([sim/world/neighbours.ts](../src/sim/world/neighbours.ts), kits in
+  ([sim/world/neighbours.ts](../src/sim/world/neighbours.ts), its chain from
+  [sim/world/neighbour-chain.ts](../src/sim/world/neighbour-chain.ts), its dress in
   [content/neighbours.ts](../src/content/neighbours.ts)). Nothing of it is saved: it follows from
   the world and player seeds and the land as its source made it (`Grid.made0`: what the claim digs
   never moves it).
@@ -53,12 +54,33 @@ the Heart's growing disc, the waystations and the land reclaimed next to a zone 
   - **The base: a working chain round its own Core** (owner: « leurs bases sont vraiment nulles, il
     n'y a rien qui marche, même pas de câble électrique », « ils devraient avoir un cœur, juste pas le
     même que le mien », « plus petit »). Its Core in its hub's middle, 3 × 3 (the claim's is 5 × 5;
-    the sim lays it as `NEIGHBOUR_CORE`'s footprint, `NLayout.core`; the render draws its own), with
-    CrierBelt's lift pad set beside it (what it holds leaves for the Crier from there) and its store
-    the other way. Its trade's chain (content/neighbours.ts): its makers round the hub, its extractors out on its other parcels (a mining camp's drills on the deposits — a
-    sand collector where none lies —, a glasshouse's collectors, a scholar spire's data collectors),
-    all on the floor joined to the Core's; ribbons from each extractor into the first maker, maker
-    into maker, the last into the store, the store into the Core, carrying what each stage hands on.
+    the sim lays it as `NEIGHBOUR_CORE`'s footprint, `NLayout.core`; the render draws its own; a
+    middle on a pocket of floor under `BAL.land.neighbours.pocket` tiles: the spot of its parcels
+    with the most floor joined), its intakes towards CrierBelt's trade post set beside it across the
+    flow, its store before the post's intake.
+  - **Its chain, made from the recipes** (fifth pass; owner: « Du charbon rentre dans des fileuses,
+    puis le trou de sortie d'une batterie génère des composés électriques, et rien n'est jamais envoyé
+    par trade post. En plus c'est tout petit »;
+    [sim/world/neighbour-chain.ts](../src/sim/world/neighbour-chain.ts)). The goods its trade
+    supplies (content/colonies.ts, its staples first) back-chained through the recipes, up to four
+    steps, to what its land gives — sand where its floor has `BAL.land.neighbours.sand` places of
+    bare sand for collectors, each ore with room for a drill on it — and, where the land falls short,
+    one good bought at the Crier through its trade post (stone for its sifters, steel for its presses,
+    empty cells for its chargers). Every machine runs a recipe its building can make, each input
+    comes on a line from the stage that makes it, each extractor stands on its ground. The chain is
+    laid side by side up to four times (some eight machines); its bought good leaves the trade post's
+    one outlet for a depot (a silo; a great silo for three; a second depot after the first for four),
+    whose outlets feed the machines across from them in order, so no two lines cross. Its goods run
+    into the store, the store's two outlets into the trade post (what it sells: a CrierBelt drone
+    lifts off from there) and the Core. Laid until it checks (`neighbourProblems`: each machine on its
+    recipe and fed, each line from an outlet to an intake or onto another line's side carrying what
+    its source puts out, every depot fed, the goods reaching the post and the Core), trying again
+    with the post on the Core's other side, the bought goods' lines laid first, fewer copies, one
+    product, then its plainest chain (glass from its sand, an ore as it is, else its trade's simplest
+    good from two bought inputs); what still does not check is taken away (`prune`), never left
+    standing idle. Lands 1–8 of map 4: 96 bases, none failing, 5.2 machines a base, 71 selling their
+    own trade's goods (the salt ports and most scholar spires, short of salt or of room, make glass).
+    Maps 1–3 keep the old claims' single parcels: their bases stay small.
     Then its power on the hub's far side (turbines, a coal generator, panels) and its own grid: every
     building that takes part in power wired from its Core through masts (a chain of masts that
     cannot reach the grid is taken back), by the claim's own

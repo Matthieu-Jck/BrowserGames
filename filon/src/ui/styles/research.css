@@ -1,7 +1,7 @@
 /* research.css — the research half of the tech tree (D68–D70; ui/screens/research.ts, which
    imports it): the research lab's gate between the two blocks (D71), the tier bands and their heads, the trunk and the family lanes (their names per
    tier, the specialities' divider), the links (their kinds; a hovered node's chain lit, the rest
-   faded, D107), the research nodes (what they unlock, their data, their tokens from Tier 2, the
+   faded, D107), the research nodes (what they unlock, their resources and tokens — D122 —, the
    queue's tag), the header's research strip (slots, labs, the token bill, the purse-in-the-red
    warning, the Compute Plan, the queue), the detail pane's research parts (the running project's
    token row, its flows now and the flow it buys) and the launch dialog (D118, ../launch-dialog.ts).
@@ -31,7 +31,6 @@
 .rs-legend { gap: 12px; }
 .rs-legend > span { display: inline-flex; align-items: center; gap: 4px; }
 .rs-legend canvas { width: 16px; height: 16px; display: block; }
-.rs-legend .rs-kind { display: inline-flex; margin-right: -2px; }
 
 /* ── the research lab's gate (D71): its own column between the plans and research ── */
 .tr-gatecap {
@@ -181,13 +180,13 @@
 .tree .tr-node[data-kind='research'] .tr-main { gap: 1px; }
 .tree .tr-node[data-kind='research'] .tr-name { font-size: 14.5px; line-height: 16px; }
 .tree .tr-node[data-kind='research'][data-long] .tr-name { font-size: 13px; }
-/* What it uses as it runs: data files, tokens, their price at CrierBelt. */
+/* What it costs (D122): the resources paid from the Core at launch (coral while short), its tokens and their price at CrierBelt. */
 .tr-rcost { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; font-size: 11.5px; line-height: 16px; white-space: nowrap; }
 .tr-rcost .tr-chip { gap: 1px; }
 .tr-rcost .tr-chip canvas, .tr-rcost .tr-mark { width: 13px; height: 13px; }
 .tr-oc { color: var(--c-ink-soft); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; }
 .tr-oc .coin { width: 1em; height: 1em; }
-/* Its data on one line, its tokens and their price on the next from Tier 2 (D118: no time). */
+/* Its resources on one line, its tokens and their price on the next, at every tier (D122; D118: no time). */
 .tr-rline { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 11.5px; line-height: 16px; white-space: nowrap; }
 .tr-rline .tr-mark { width: 13px; height: 13px; }
 .tr-rfoot { display: flex; align-items: center; gap: 8px; font-size: 11.5px; line-height: 15px; color: var(--c-ink-soft); white-space: nowrap; }
@@ -243,11 +242,11 @@
 .rs-cmp small { font-size: 10.5px; color: var(--c-ink-soft); }
 .rs-cmp b { font-weight: 700; color: var(--c-coral-d); white-space: nowrap; }
 .rs-cmp[data-best] { background: var(--c-turq-l); }
-/* A running project's tokens now (D102, D118): the servers' share and the flow bought a minute, their ◉ a minute — icons, the words on hover. */
+/* A running project's tokens now (D102, D118, D122): free (the Core's look), banked, bought a minute, their ◉ a minute — icons, the words on hover. */
 .rs-toknow { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin: 6px 0 2px; font-size: 12.5px; cursor: help; }
 .rs-tk { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .rs-tk canvas { display: block; width: 16px; height: 16px; }
-.rs-tk .glyph { width: 15px; height: 15px; }
+.rs-tk .glyph, .rs-tk .kmark { width: 15px; height: 15px; }
 .rs-toknow b { font-weight: 700; font-variant-numeric: tabular-nums; }
 .rs-toknow[data-held] .rs-tk[data-k='bought'] b { color: var(--c-coral-d); }
 .rs-toknow[data-in] { opacity: 0.5; }
@@ -283,7 +282,7 @@
 .rs-rcosts .tr-mark { width: 18px; height: 18px; }
 .rs-cl { display: inline-flex; align-items: center; gap: 5px; }
 .rs-rcosts .rs-price { flex-basis: 100%; padding-left: calc(3.4em + 6px); color: var(--c-ink); font-weight: 600; margin: -2px 0 2px; }
-/* A running project: data paid, tokens in — a bar each (D118: no time). */
+/* A running project: its tokens in, a bar (D118: no time; D122: no data). */
 .rs-prog { margin-top: 4px; }
 .rs-prow { display: grid; grid-template-columns: 118px 1fr auto; align-items: center; gap: 6px; font-size: 12.5px; margin: 3px 0; }
 .rs-plabel { line-height: 1.15; }
@@ -437,16 +436,20 @@
 .ld-end { gap: 6px; }
 .ld-eta { font: 400 22px/1.1 var(--f-title); cursor: help; }
 .ld-eta[data-never] { color: var(--c-coral-d); }
-.ld-parts { display: flex; flex-wrap: wrap; gap: 5px 7px; }
-.ld-part {
-  display: inline-flex; align-items: center; gap: 4px; padding: 1px 9px 1px 5px; cursor: help; white-space: nowrap;
-  border: 1.5px solid rgba(30, 27, 46, 0.3); border-radius: 999px; background: var(--c-paper); font-size: 12.5px; font-weight: 600;
-}
-.ld-part canvas { width: 18px; height: 18px; display: block; }
-.ld-part .kmark { width: 17px; height: 17px; }
-.ld-part[data-tone='never'] { color: var(--c-coral-d); border-color: var(--c-coral-d); border-style: dashed; }
-.ld-part[data-tone='unknown'] { color: var(--c-ink-soft); border-style: dotted; }
-.ld-part[data-tone='here'] { color: var(--c-turq-d); border-color: var(--c-turq-d); }
+/* The resources it takes from the Core at launch (D122): icon, how many, what the Core holds — coral when short. */
+.ld-res { display: flex; flex-wrap: wrap; gap: 6px 14px; padding-left: 26px; }
+.ld-reschip { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: help; }
+.ld-reschip canvas { width: 22px; height: 22px; display: block; }
+.ld-reschip b { font-size: 16px; font-variant-numeric: tabular-nums; }
+.ld-have { font-size: 11.5px; color: var(--c-ink-soft); }
+.ld-reschip[data-poor] b, .ld-reschip[data-poor] .ld-have { color: var(--c-coral-d); font-weight: 700; }
+.ld-buyhead canvas { width: 20px; height: 20px; display: block; }
+/* The free flows (D122): the Core's compute under its look, the servers' beside it. */
+.ld-chip { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.ld-chip > b { font-size: 15px; font-variant-numeric: tabular-nums; }
+.ld-chip[data-none] { opacity: 0.5; }
+.ld-coreicon { display: inline-flex; }
+.ld-bad { color: var(--c-coral-d); font-weight: 600; }
 .ld-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 2px; }
 /* A finger (D96): the steps and the flow's − / + big enough to tap. */
 @media (pointer: coarse) {
@@ -459,3 +462,10 @@
   .rs-held, .tr-tierhead[data-opens] .tr-gate, .ld { animation: none; }
   .tr-canvas .tr-node, .tr-canvas .tr-link { transition: none; }
 }
+
+/* D122: the Core's look on the free chips (its compute and the servers); a running project's lab without power. */
+.rs-bcore { display: inline-flex; }
+.rs-bcore canvas { display: block; width: 16px; height: 16px; }
+.rs-bchip .kmark { width: 15px; height: 15px; }
+.rs-powernote { display: flex; align-items: center; gap: 6px; }
+.rs-powernote .glyph { width: 15px; height: 15px; filter: brightness(0) invert(1); }

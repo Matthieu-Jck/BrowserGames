@@ -916,6 +916,22 @@ describe('the spring on the Crown (map 4, D115)', () => {
     }
   });
 
+  it('its banks never stand below its water (owner, of a fall whose water was lost at its foot: « the visuals are still a little bit broken »): it runs in a channel, stepping down only along its way', () => {
+    for (const seed of SEEDS.slice(0, 6)) {
+      const { gen, g } = world(seed, 4);
+      let low = 0, n = 0;
+      for (const [x, y] of stream(gen, g)) {
+        const l = g.level(x, y);
+        if (l === 0) continue;
+        n++;
+        // Across its way (the stream runs south): the tiles either side, unless the stream's own water.
+        for (const dx of [-1, 1]) if (g.terrain(x + dx, y) !== T.River && g.level(x + dx, y) < l) low++;
+      }
+      expect(n, `seed ${seed}: the stream up on the rock`).toBeGreaterThan(8);
+      expect(low, `seed ${seed}: a bank below the water beside it`).toBe(0);
+    }
+  });
+
   it('the same stream for every player, tile for tile', () => {
     const ref = world(SEEDS[0]!, 4), key = (gen: MapGen, g: Grid): string => stream(gen, g).map(([x, y]) => `${x},${y},${g.level(x, y)}`).join(' ');
     const want = key(ref.gen, ref.g);

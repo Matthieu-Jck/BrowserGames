@@ -2,7 +2,7 @@
 // 2026-10-16: « n'affiche plus cette barre de ressource en haut à gauche par défaut, il faut que le
 // joueur clique sur un bouton Stock pour le voir »), pure (no DOM):
 //   · `STOCK_GROUPS` / `groupOf`: the items by kind, the panel's sections — raw (ores, coal, water,
-//     stone), materials, parts, data, the rare finds;
+//     stone), materials, parts, the rare finds (D122: research's data items are gone);
 //   · `shortages`: which of the Heart's items the base lacks for what the Heart pays for (D33, D34:
 //     the Heart pays for buildings — refunded when they come down — and for plans, for good), the
 //     button's badge and the panel's marks. An item **ran out** when the Heart holds less than one
@@ -16,14 +16,13 @@ import type { ItemKind } from '@/content/types';
 import { planCost } from '@/sim/systems/research';
 import type { Sim } from '@/sim/state';
 
-export type StockGroup = 'raw' | 'material' | 'part' | 'data' | 'rare';
+export type StockGroup = 'raw' | 'material' | 'part' | 'rare';
 
 /** The panel's sections in order: the kinds each holds and the item whose icon heads it. */
 export const STOCK_GROUPS: ReadonlyArray<{ readonly id: StockGroup; readonly kinds: readonly ItemKind[]; readonly icon: string }> = [
   { id: 'raw', kinds: ['ore', 'fuel', 'fluid', 'rubble'], icon: 'iron_ore' },
   { id: 'material', kinds: ['material'], icon: 'iron_plate' },
   { id: 'part', kinds: ['part', 'energy'], icon: 'gear' },
-  { id: 'data', kinds: ['science'], icon: 'journal_1' },
   { id: 'rare', kinds: ['unique'], icon: 'sporeglass' },
 ];
 

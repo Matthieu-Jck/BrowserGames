@@ -84,7 +84,7 @@ describe('neighbouring bases (D110)', () => {
       expect(L.core).toBeGreaterThanOrEqual(0);
       const core = L.structs[L.core]!, [cw, ch] = footprint(core.def, core.rot);
       expect([cw, ch]).toEqual([3, 3]);
-      expect(parcelAt(core.x + 1, core.y + 1)).toBe(h.hub);
+      expect(h.parcels).toContain(parcelAt(core.x + 1, core.y + 1)); // the hub's middle, unless that is a pocket of floor
       const reach = new Set([L.core]);
       for (let grew = true; grew;) { grew = false; for (const [i, j] of L.wires) if (reach.has(i) !== reach.has(j)) { reach.add(i); reach.add(j); grew = true; } }
       for (const i of wired) expect(reach.has(i)).toBe(true);

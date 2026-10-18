@@ -11,7 +11,7 @@
 import { BAL } from '@/content/balance';
 import { WORLD_SEED } from '@/content/world';
 import {
-  BUILDING_KIND, CRECIPES, N_ITEMS, buildingDef, buildingIdx, itemDef, itemIdx,
+  BUILDING_KIND, CRECIPES, N_ITEMS, buildingDef, itemIdx,
 } from '@/content/registry';
 import { filterOf, recipeOf } from '../cfg';
 import { MU, WORLD } from '../constants';
@@ -21,7 +21,7 @@ import { DX, DY, T, isWater, opposite, type Ent, type Rot } from '../types';
 import type { RouterLogic } from '@/content/types';
 import type { Grid } from '../world/grid';
 import { tileIndex } from '../world/grid';
-import { Chain, VIA_NONE, planRaid } from '../flow/chain';
+import { Chain, VIA_NONE, planRaid, spanTile } from '../flow/chain';
 import type { FNode } from '../flow/node';
 import { DrillNode, ForkNode, GeneratorNode, MachineNode, ReservoirNode, SinkNode } from '../flow/nodes';
 import type { Mods } from '../research/modifiers';
@@ -74,8 +74,6 @@ export interface CompileInput {
   worldSeed?: number;
   hearthStock: Float64Array;
   hearthCap: number;
-  /** The Survey Data the Heart makes a minute (mu, `Sim.heartDataRate`): 0 until its level mounts the data outlet (D86), which then hands it out. */
-  heartData: number;
   /** The Heart's level (its power grows with it, D101; default 1). */
   hearthLevel?: number;
   /** Tiles the Gleaners keep off beyond the claim's own — a neighbouring base's land (D110, world/neighbours.ts). */
@@ -85,8 +83,8 @@ export interface CompileInput {
   old: Graph | null;
   /** Return orphaned items to the Hearth. */
   refund(item: number, mu: number): void;
-  /** Observatories: the science items each one takes in (absent = idle, takes nothing). */
-  labAccepts?: ReadonlyMap<number, ReadonlySet<number>>;
+  /** The research labs with a project (D122: they take nothing in; a busy one draws its full power, an idle one its lights). */
+  busyLabs?: ReadonlySet<number>;
   /** Trade posts: what each one's inlets take (its export streams), and their store size (mu). */
   tradeAccepts?: ReadonlyMap<number, ReadonlySet<number>>;
   /** What each trade post buys (its import orders' items, sorted): what its exit hands out in turn (D62). */
@@ -102,35 +100,13 @@ export interface CompileInput {
 
 const NO_WIRES: WireSource = { of: () => [] };
 
-/** A research lab's store: enough data files for a while (milli-items per item). */
-export const LAB_CAP = 200 * 1000;
-
-/**
- * The Core's per-item capacities (mu): its level's `hearthCap` for every item, but each data item
- * (`kind: 'science'`) at most `BAL.hearthDataCap` (D118). One array per capacity, kept: the compile
- * runs often and the Core's level changes rarely.
- */
-const HEARTH_CAPS = new Map<number, Float64Array>();
-export function hearthCaps(cap: number): Float64Array {
-  let a = HEARTH_CAPS.get(cap);
-  if (!a) {
-    a = new Float64Array(N_ITEMS).fill(cap);
-    const data = BAL.hearthDataCap * 1000;
-    for (let i = 0; i < N_ITEMS; i++) if (itemDef(i).kind === 'science') a[i] = Math.min(cap, data);
-    HEARTH_CAPS.set(cap, a);
-  }
-  return a;
-}
 const NOTHING: ReadonlySet<number> = new Set();
-/** A server's store: it holds nothing (its node only draws the grid's power). */
+/** A server's or a lab's store: it holds nothing (its node only draws the grid's power). */
 const NO_STOCK = new Float64Array(0);
 
 const isBeltKind = (k: string): boolean => k === 'belt' || k === 'conduit' || k === 'bridge';
 const RUBBLE_IDX = (): number => itemIdx('stone');
 const WATER_IDX = (): number => itemIdx('water');
-/** The Heart's data outlet (D68): its only `out` port, handing out the data files it makes. */
-export const HEART_OUTLET = buildingDef(buildingIdx('hearth')).ports.findIndex((p) => p.io === 'out');
-const DATA_IDX = (): number => itemIdx('journal_1');
 
 interface PortRef { node: FNode; port: number; dir: Rot }
 
@@ -181,16 +157,13 @@ export function compileGraph(inp: CompileInput): Graph {
     let node: FNode | null = null;
     switch (kind) {
       case 'hearth': {
-        // Its ports are inlets, but for its data outlet: the data files it makes, once the
-        // Analytics research has it make some (D68) and its level has mounted the outlet (D86) —
-        // never anything else of its stock. Before that the port stands, offering nothing.
-        const items = (e.portItems ?? []).slice();
+        // Its ports are all inlets (its data outlet went with the data, D122): it never gives.
+        const items = (e.portItems ?? []).slice(0, b.ports.length);
         while (items.length < b.ports.length) items.push(-1);
-        if (HEART_OUTLET >= 0) items[HEART_OUTLET] = inp.heartData > 0 ? DATA_IDX() : -1;
         node = reuse(e, () => new ReservoirNode(e.id, inp.hearthStock, inp.hearthCap, items, mpt(BAL.hearthPortPerMin), false),
           (o) => o.kind === 'reservoir');
         const r = node as ReservoirNode;
-        r.cap = inp.hearthCap; r.caps = hearthCaps(inp.hearthCap); r.portItems = items; r.stock = inp.hearthStock; r.hearth = true;
+        r.cap = inp.hearthCap; r.caps = null; r.portItems = items; r.stock = inp.hearthStock; r.hearth = true;
         hearth = r;
         break;
       }
@@ -244,14 +217,14 @@ export function compileGraph(inp: CompileInput): Graph {
         break;
       }
       case 'lab': {
-        let st = inp.stores.get(e.id);
-        if (!st) inp.stores.set(e.id, (st = new Float64Array(N_ITEMS)));
-        const accepts = inp.labAccepts?.get(e.id) ?? null;
-        node = reuse(e, () => new ReservoirNode(e.id, st!, LAB_CAP, [], 0, false, b.kw ?? 0), (o) => o.kind === 'reservoir');
+        // A research lab (D122) takes nothing in and holds nothing: its node only draws its power —
+        // in full with a project (its tokens come at the minute's end while it has power, systems/
+        // research.ts), its lights alone when idle. An autonomous lab computes like a server (its
+        // `server`): in full at all times, its tokens counted at the sim level with the servers'.
+        node = reuse(e, () => new ReservoirNode(e.id, NO_STOCK, 0, [], 0, false, b.kw ?? 0), (o) => o.kind === 'reservoir');
         const r = node as ReservoirNode;
-        r.accepts = accepts ?? NOTHING;
-        // An idle lab only keeps its lights on.
-        r.kw = accepts ? b.kw ?? 0 : b.idleKw ?? 0;
+        r.accepts = NOTHING;
+        r.kw = b.server || inp.busyLabs?.has(e.id) ? b.kw ?? 0 : b.idleKw ?? 0;
         r.idleKw = r.kw;
         break;
       }
@@ -492,6 +465,23 @@ export function compileGraph(inp: CompileInput): Graph {
   };
   for (const t of tilesSorted) if (!prev.has(t)) traceFrom(t);
   for (const t of tilesSorted) if (!visited.has(t)) traceFrom(t); // pure loops: break at the smallest tile
+  // A tile that leaps — a skybridge's start over its gap, a ribbon before junctions — is followed in
+  // its chain by a cell for each tile it passes over (D121, flow/chain.ts `spanTile`): the leap takes
+  // its real length in time, a tile a step, and holds as many items as it is long.
+  for (let li = 0; li < chainTiles.length; li++) {
+    const list = chainTiles[li]!;
+    if (!list.some((t) => jumps.has(t))) continue;
+    const out: number[] = [];
+    for (const t of list) {
+      out.push(t);
+      const g = jumps.get(t);
+      if (g === undefined) continue;
+      const e = beltAt.get(t)!, d = e.rot, gx = g % WORLD, gy = (g - gx) / WORLD;
+      let x = e.x + DX[d]!, y = e.y + DY[d]!;
+      for (let k = 0; k < 64 && (x !== gx || y !== gy); k++, x += DX[d]!, y += DY[d]!) out.push(spanTile(tileIndex(x, y), d));
+    }
+    chainTiles[li] = out;
+  }
 
   // ── 5. chain nodes, contents preserved ──────────────────────────────────
   // A conduit's parcels by tile; a ribbon's items by tile (each on its own cell: nothing to spread).
@@ -605,7 +595,8 @@ export function compileGraph(inp: CompileInput): Graph {
     d.inE.push(e);
   };
   for (const c of chains) {
-    const headTile = c.tiles[c.tiles.length - 1]!;
+    // Its head's way on: the last world tile's (the span cells after a leap hand on as it would).
+    const headTile = c.lastTile;
     const tg = target.get(headTile);
     if (!tg) continue;
     if ('belt' in tg) {
@@ -700,11 +691,14 @@ export function compileGraph(inp: CompileInput): Graph {
     }
   }
   for (const n of nets) n.producers.sort((a: Producer, b: Producer) => a.ent - b.ent);
+  // The claim's own tokens (D68, D122): the servers', and the autonomous labs' (a lab with `server`),
+  // × Archiving's share (D93, `tokenRate`).
   const servers: Graph['servers'] = [];
   for (const e of sorted) {
-    if (BUILDING_KIND[e.def] !== 'server' || !nodeByEnt.has(e.id)) continue;
+    const tpm = buildingDef(e.def).server?.tokensPerMin;
+    if (!tpm || !nodeByEnt.has(e.id)) continue;
     const net = netOfEnt.get(e.id);
-    if (net !== undefined) servers.push({ ent: e.id, net, tpm: buildingDef(e.def).server!.tokensPerMin });
+    if (net !== undefined) servers.push({ ent: e.id, net, tpm: Math.floor((tpm * mods.tokenRate) / 1000) });
   }
 
   const nE = src.length;
@@ -738,16 +732,13 @@ function onDugFloor(grid: Grid, e: Ent): boolean {
 /** Majority ore under a drill and its rate cap (mu per epoch); a face cutter's, the face behind it (D87). */
 export function drillRate(grid: Grid, e: Ent, mods: Mods): { item: number; rateEp: number } {
   const b = buildingDef(e.def);
-  // Ore Cutting (an expertise, D93): every extractor's rate and its deposit's cap × `drillRate`;
-  // Archiving's: a data collector's × `dataRate`.
+  // Ore Cutting (an expertise, D93): every extractor's rate and its deposit's cap × `drillRate`.
   const by = (r: { item: number; rateEp: number }, permille: number): { item: number; rateEp: number } =>
     (permille === 1000 ? r : { item: r.item, rateEp: Math.floor((r.rateEp * permille) / 1000) });
   // A face cutter (D87): the face ore of the wall its back is against, not what lies under it.
   if (b.drill?.face) return by(faceRate(grid, e.def, e.x, e.y, e.rot), mods.drillRate);
   // A ground collector: a steady rate off the bare ground (its placement checked the sand).
   if (b.drill?.ground) return by({ item: itemIdx(b.drill.ground), rateEp: b.drill.perMin * 1000 }, mods.drillRate);
-  // A data collector (D68): its item out of power alone, anywhere.
-  if (b.drill?.anywhere) return by({ item: itemIdx(b.drill.anywhere), rateEp: b.drill.perMin * 1000 }, mods.dataRate);
   const counts = new Map<number, number>();
   const caps = new Map<number, number>();
   forTiles(e, (x, y) => {

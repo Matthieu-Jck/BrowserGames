@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { N_ITEMS, itemIdx } from '@/content/registry';
-import { testSim, drillToHearth, line, steadyPower, stockedSilo, wire, IRON, COAL } from '../testkit';
+import { grantCost, testSim, drillToHearth, line, steadyPower, stockedSilo, wire, IRON, COAL } from '../testkit';
 import { catchUp } from './catchup';
 import { makeRng } from '@/core/rng';
 import { timed } from '@/core/cpu-time';
@@ -186,6 +186,7 @@ describe('offline power', () => {
     for (const id of ['tr1', 'tr2', 'tr3', 'an_servers']) sim.done.add(id);
     sim.rebuildDerived();
     for (const [it, n] of [['iron_plate', 400], ['ceramic', 200], ['gear', 200], ['circuit', 20], ['copper_wire', 20], ['oscillator', 4]] as const) sim.grant(it, n);
+    grantCost(sim, 'server'); // its price today (D123)
     drillToHearth(sim);
     const r = sim.place('server', 503, 504, 0);
     if (!r.ok) throw new Error(`server ${r.reason}`);
@@ -208,7 +209,7 @@ describe('offline power', () => {
   it('an accumulator that runs dry stops covering the deficit offline too', () => {
     const withGourd = (): Sim => {
       const sim = brownBase();
-      sim.grant('empty_cell', 10); sim.grant('circuit', 10);
+      grantCost(sim, 'accumulator');
       const g = sim.place('accumulator', 506, 516, 0);
       if (!g.ok) throw new Error(`gourd ${g.reason}`);
       wire(sim, g.id!);

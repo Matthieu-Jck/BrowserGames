@@ -94,24 +94,22 @@ export const KIND_SIGNATURE: Record<BuildingKind, Signature> = {
 
 /** Buildings that do not sound like their kind. */
 export const ID_SIGNATURE: Partial<Record<BuildingId, Signature>> = {
-  // Drills of another sort: the deep ones, the sand, the data, the quartz face.
+  // Drills of another sort: the deep ones, the sand, the quartz face (the data antennas went with the data, D122).
   deep_bore: 'bore',
   giant_drill: 'bore',
   sand_collector: 'sand',
-  data_collector: 'lab',
-  data_relay: 'server',
   face_cutter: 'cutter',
   // Machines that burn, hum, grind glass or sift.
   kiln: 'smelter',
   kiln_compact: 'smelter',
   ceramic_oven: 'smelter',
+  steel_mill: 'smelter', // D123: the converter roars like a furnace; the brickworks presses (its kind's)
   electric_smelter: 'electric',
   arc_furnace: 'electric',
   cell_charger: 'electric',
   etcher: 'electric',
   chip_fab: 'electric',
   optics_workshop: 'solar',
-  test_bench: 'lab',
   sifter: 'sand',
   // Generators: coal burns, batteries hum, the Sunheart shines; the steam boiler is the kind's.
   brazier: 'smelter',

@@ -165,11 +165,10 @@ body[data-noui] #ui { opacity: 0; visibility: hidden; transition: opacity 200ms 
 }
 .hud-rs-name { font-size: 15px; }
 .hud-rs-eta { color: var(--c-ink-soft); font-size: 12px; }
-/* A project's tokens a minute (D102): the token mark and the figure; ◉ and the servers' share in the tooltip. */
+/* A project's tokens a minute (D102): the token mark and the figure; ◉ and the free share in the tooltip. */
 .hud-rs-tok { display: inline-flex; align-items: center; gap: 2px; font-size: 11.5px; font-weight: 600; color: var(--c-lilac-d); }
 .hud-rs-tok .kmark { width: 1.1em; height: 1.1em; }
-/* A project's two bars (D118), each after its mark: its data in (turquoise), its tokens in (lilac;
-   Tier 1 has none: one bar, centred). */
+/* A project's one bar (D122: its tokens in, lilac; no data any more), after the token mark. */
 .hud-rs-bars { display: inline-flex; flex-direction: column; justify-content: center; gap: 2px; height: 22px; margin-left: 4px; }
 .hud-rs-row { display: flex; align-items: center; gap: 3px; }
 .hud-rs-row[hidden] { display: none; }
@@ -182,6 +181,9 @@ body[data-noui] #ui { opacity: 0; visibility: hidden; transition: opacity 200ms 
 .hud-rs[data-held] .hud-rs-bar[data-k="tok"] { border-color: var(--c-coral-d); }
 .hud-rs[data-held] .hud-rs-bar[data-k="tok"] > i { background: var(--c-coral-d); }
 .hud-rs[data-held] .hud-rs-eta { color: var(--c-coral-d); font-weight: 700; }
+/* Its lab without power (D122): it takes no tokens — the bar dashed, « sans énergie » in coral. */
+.hud-rs[data-wait="power"] .hud-rs-bar { border-style: dashed; border-color: var(--c-coral-d); }
+.hud-rs[data-wait="power"] .hud-rs-eta { color: var(--c-coral-d); font-weight: 700; }
 
 /* ── tool states and tips ──────────────────────────────────────────────────── */
 .tip-chip .imention-icon { margin-right: 1px; }

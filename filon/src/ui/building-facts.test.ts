@@ -35,20 +35,17 @@ const row = (f: BuildingFacts, k: string): string | undefined => {
 describe('building facts', () => {
   afterEach(() => setLocale('fr'));
 
-  it('data makers say what they make, servers their tokens (the research redesign, D68–D71)', () => {
+  it('servers and the autonomous lab say their tokens; a lab takes nothing in and holds no store (D68, D122)', () => {
     setLocale('en');
-    for (const id of ['data_collector', 'data_relay']) {
-      const f = buildingFacts(id, all);
-      expect(row(f, 'mines'), id).toBeUndefined(); // no deposit: power alone
-      expect(f.rows.find((r) => r.k === 'makes')?.items, id).toEqual([itemIdx('journal_1')]);
-      expect(row(f, 'place'), id).not.toMatch(/deposit/);
-    }
-    expect(row(buildingFacts('data_collector', all), 'makes')).toBe('2/min, anywhere, from power alone');
     expect(row(buildingFacts('sand_collector', all), 'mines')).toBe('The bare ground, no deposit');
     expect(row(buildingFacts('server', all), 'tokens')).toMatch(/^2 k tokens\/min/);
     expect(row(buildingFacts('supercomputer', all), 'tokens')).toMatch(/^20 k tokens\/min/);
-    expect(row(buildingFacts('auto_lab', all), 'makes')).toBe('3/min, for its own project');
-    expect(row(buildingFacts('observatory', all), 'makes')).toBeUndefined();
+    expect(row(buildingFacts('auto_lab', all), 'tokens')).toMatch(/^5 k tokens\/min/);
+    const lab = buildingFacts('observatory', all);
+    expect(row(lab, 'tokens')).toBeUndefined();
+    expect(row(lab, 'runs')).toMatch(/one research at a time/i);
+    for (const k of ['takes', 'store', 'makes']) expect(row(lab, k), k).toBeUndefined();
+    expect(lab.ports).toBeNull();
   });
 
   it('every building, in both languages and at both ends of research: no missing key, French spacing kept', () => {

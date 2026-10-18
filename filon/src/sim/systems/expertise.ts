@@ -54,17 +54,23 @@ const MINED = new Set(['ore', 'fuel', 'rubble', 'unique']);
 const MADE = new Set(['material', 'part']);
 
 /** The items of each counted kind (the registry's order), cached: the boundary sums them each minute. */
-let byFeat: { mined: number[]; made: number[]; data: number[] } | null = null;
-function featItems(): { mined: number[]; made: number[]; data: number[] } {
+let byFeat: { mined: number[]; made: number[] } | null = null;
+function featItems(): { mined: number[]; made: number[] } {
   if (byFeat) return byFeat;
-  const mined: number[] = [], made: number[] = [], data: number[] = [];
+  const mined: number[] = [], made: number[] = [];
   for (let i = 0; i < N_ITEMS; i++) {
     const k = itemDef(i).kind;
     if (MINED.has(k)) mined.push(i);
     else if (MADE.has(k)) made.push(i);
-    else if (k === 'science') data.push(i);
   }
-  return (byFeat = { mined, made, data });
+  return (byFeat = { mined, made });
+}
+
+/** Research nodes learnt (D122: Archiving's feat; plans are not research). */
+function learnt(sim: Sim): number {
+  let n = 0;
+  for (const id of sim.done) if (researchNode(id)) n++;
+  return n;
 }
 
 /** Whole items made of these kinds (`produced` is in milli-items). */
@@ -93,7 +99,7 @@ export function featValue(sim: Sim, kind: FeatKind): number {
     case 'machines': return standing(sim, (d) => (BUILDING_KIND[d] === 'machine' ? 1 : 0));
     case 'sold': return Math.floor(sim.trade.earned / 100);
     case 'bought': return Math.floor(sim.trade.spent / 100);
-    case 'data': return madeOf(sim, featItems().data);
+    case 'research': return learnt(sim);
     case 'tokens': return sim.tokenStats.totalUsed;
     case 'parcels': return sim.land.bought.size;
     case 'ribbons': return standing(sim, (d) => (BUILDING_KIND[d] === 'belt' ? 1 : 0));

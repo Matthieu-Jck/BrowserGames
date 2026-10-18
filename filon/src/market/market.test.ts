@@ -71,7 +71,7 @@ describe('market: price formation', () => {
       return 1 - got / perItem / 1000; // what buying back with the proceeds returns
     };
     // Commons (4 % spread) lose ≈ 18–19 %, uniques (10 %) ≈ 23 %: whole-cent rounding adds a little.
-    for (const id of ['iron_plate', 'glass', 'circuit', 'copper_ore', 'atlas']) {
+    for (const id of ['iron_plate', 'glass', 'circuit', 'copper_ore', 'robot_arm']) {
       expect(loss(id), id).toBeGreaterThan(0.18);
       expect(loss(id), id).toBeLessThan(0.195);
     }
@@ -83,7 +83,7 @@ describe('market: price formation', () => {
   });
 
   it('prices are integer cents, ask above bid, inside [0.25 V, 4 V] however hard the player dumps or buys', () => {
-    const dump = { sold: flows({ iron_plate: 100 * 600, codex: 50 }), bought: flows({ copper_ore: 100 * 150, sporeglass: 2000 }) };
+    const dump = { sold: flows({ iron_plate: 100 * 600, resonator: 50 }), bought: flows({ copper_ore: 100 * 150, sporeglass: 2000 }) };
     for (const svc of [new LocalMarketService(calm()), new LocalMarketService({ worldSeed: WORLD_SEED, foundingEpoch: F })]) {
       run(svc, F, F + 3 * 1440, dump);
       const out = svc.settle({ epoch: F + 3 * 1440 });
@@ -101,7 +101,7 @@ describe('market: price formation', () => {
     // Without noise the dumped and the bought-out goods end on the bounds (within what 6 τ leaves).
     const svc = new LocalMarketService(calm());
     run(svc, F, F + 3 * 1440, dump);
-    for (const [id, r] of [['iron_plate', 0.25], ['codex', 0.25], ['copper_ore', 4], ['sporeglass', 4]] as const) {
+    for (const [id, r] of [['iron_plate', 0.25], ['resonator', 0.25], ['copper_ore', 4], ['sporeglass', 4]] as const) {
       const bound = r * def(id).value! * 100;
       expect(Math.abs(item(svc, id).mid - bound), id).toBeLessThanOrEqual(Math.max(1, 0.005 * bound));
     }
@@ -110,7 +110,7 @@ describe('market: price formation', () => {
   it('the noise has unit σ before scaling, decorrelates over ≈ 12 h, and is σ = 0.06 (commons) / 0.12 (uniques) in the price', () => {
     const seed = noiseSeedOf(WORLD_SEED), N = 120_000;
     let n = 0, s = 0, s2 = 0, c60 = 0, c720 = 0, c2880 = 0;
-    for (const id of ['iron_ore', 'glass', 'circuit', 'lens', 'atlas', 'codex', 'salt', 'ceramic']) {
+    for (const id of ['iron_ore', 'glass', 'circuit', 'lens', 'robot_arm', 'resonator', 'salt', 'ceramic']) {
       const i = itemIdx(id), u = new Float64Array(N);
       for (let t = 0; t < N; t++) u[t] = noiseAt(seed, i, F + t);
       for (let t = 0; t < N; t++) { n++; s += u[t]!; s2 += u[t]! * u[t]!; }
@@ -359,7 +359,7 @@ describe('market: service contract', () => {
     const a = new LocalMarketService(cfg);
     const input = (e: number): MarketEpochIn => ({
       epoch: e,
-      sold: flows({ iron_plate: 40 + (e % 7) * 5, glass: e % 3 === 0 ? 30 : 0, atlas: 0.5 }),
+      sold: flows({ iron_plate: 40 + (e % 7) * 5, glass: e % 3 === 0 ? 30 : 0, robot_arm: 0.5 }),
       bought: flows({ copper_ore: 12, sporeglass: e % 11 === 0 ? 4 : 0 }),
     });
     for (let e = F; e < F + 1003; e++) a.settle(input(e));
@@ -394,7 +394,7 @@ describe('market: service contract', () => {
 
   it('a week offline — 10 080 settles in a row — takes under 0.5 s of CPU', () => {
     const svc = new LocalMarketService({ worldSeed: WORLD_SEED, foundingEpoch: F });
-    const sold = flows({ iron_plate: 120, glass: 40, circuit: 6, charged_cell: 1, atlas: 0.5 });
+    const sold = flows({ iron_plate: 120, glass: 40, circuit: 6, charged_cell: 1, robot_arm: 0.5 });
     const bought = flows({ copper_ore: 20, sporeglass: 4, embersalt: 3 });
     // CPU time, not the wall's: other test runs on the machine do not count (core/cpu-time.ts).
     const { ms, wall } = timed(() => { for (let e = F; e < F + 10_080; e++) svc.settle({ epoch: e, sold, bought }); });
@@ -428,7 +428,7 @@ describe('market: service contract', () => {
     for (const d of CIRQUE.deposits) if (d.item !== 'copper_ore') expect(caps[d.item], d.item).toBe(d.rich / 100);
     for (const u of Object.values(UNIQUE_BIOMES)) expect(caps[u.item], u.item).toBe(1);
     // Rows come sorted by ◉ per raw tile-minute.
-    const rows = svc.board(['iron_plate', 'glass', 'copper_wire', 'gear', 'circuit', 'ceramic', 'atlas'], 0.04);
+    const rows = svc.board(['iron_plate', 'glass', 'copper_wire', 'gear', 'circuit', 'ceramic', 'robot_arm'], 0.04);
     const per = rows.filter((r) => r.perTile !== null).map((r) => r.perTile!);
     expect(per).toEqual([...per].sort((x, y) => y - x));
   });

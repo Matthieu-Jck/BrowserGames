@@ -96,9 +96,6 @@ export const TERMINALS: Readonly<Partial<Record<BuildingId, readonly Terminal[]>
   sunheart: [roof(4.3, 4.3, 3.2)],
   trade_post: [roof(3.58, 1.42, 0.66, 0.25)], // on its power pedestal, a corner of its pad (recipes/buildings.ts `TP_PED`)
   // The research redesign and the second tier: on a cabinet, a power pack or a motor house.
-  test_bench: [roof(1.66, 1.16, 1.25, 0.22)], // on the instrument rack
-  data_collector: [roof(0.37, 1.7, 1.22, 0.22)],
-  data_relay: [roof(2.62, 2.62, 1.0)],
   server: [roof(1.76, 1.62, 1.72, 0.2)],
   cooled_server: [roof(2.55, 2.58, 1.3, 0.22)],
   supercomputer: [roof(2.9, 1.1, 1.65, 0.3)],
@@ -107,7 +104,9 @@ export const TERMINALS: Readonly<Partial<Record<BuildingId, readonly Terminal[]>
   scriptorium: [roof(2.7, 0.5, 1.0)],
   sifter: [roof(1.34, 1.07, 1.52, 0.2)],
   arc_furnace: [roof(1.76, 0.26, 1.15, 0.22)],
-  electric_smelter: [roof(1.74, 0.3, 1.42, 0.22)], // on its inverter cabinet (D106), its heavy cable down into the gland beside it
+  electric_smelter: [roof(1.74, 0.3, 1.42, 0.22)],
+  steel_mill: [roof(1.8, 1.34, 1.12, 0.22)], // on its blower house (D123; recipes/buildings.ts `SM`), clear of the fan
+  brickworks: [roof(1.24, 0.34, 1.12, 0.2)], // on the kiln's vault (D123), away from its stack // on its inverter cabinet (D106), its heavy cable down into the gland beside it
   steam_boiler: [roof(2.1, 0.55, 1.69, 0.25)], // on the dynamo's field drum (D114; recipes/buildings.ts `SB`), clear of the flywheel beyond it
   wire_mill_double: [roof(1.0, 1.72, 0.95, 0.25)],
   forge_press: [roof(2.74, 2.3, 1.05)],

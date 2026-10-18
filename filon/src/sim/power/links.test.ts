@@ -13,7 +13,7 @@ import { buildDemo, hearthNetwork, powerLine } from '../dev';
 import { catchUp } from '../offline/catchup';
 import { serialize, deserialize } from '../serialize';
 import { Sim } from '../state';
-import { learnPlans, testSim, testSource, wire, drillToHearth, line, stockedSilo, IRON, SAND } from '../testkit';
+import { grantCost, learnPlans, testSim, testSource, wire, drillToHearth, line, stockedSilo, IRON, SAND } from '../testkit';
 import { St, T, type Ent, type Rot } from '../types';
 import { MapGen } from '../world/mapgen';
 import { FlatSource } from '../world/grid';
@@ -196,6 +196,7 @@ describe('power wires in a colony', () => {
     const sim = testSim();
     sim.done.add('tr4'); sim.rebuildDerived();
     sim.grant('ceramic', 4); sim.grant('glass', 20); sim.grant('copper_wire', 20); sim.grant('iron_plate', 40);
+    grantCost(sim, 'pylon'); // its price today (D123)
     const c = sim.place('mast', 520, 512, 0);
     expect(sim.linksOf(c.id!)).toEqual([sim.hearthId]);
     const flowers = ([[522, 510], [522, 513], [517, 516], [520, 506]] as const).map(([x, y]) => {
@@ -243,7 +244,7 @@ describe('power wires in a colony', () => {
     const farm = testSim();
     farm.done.add('en_solarfarm');
     farm.rebuildDerived();
-    farm.grant('glass', 40); farm.grant('circuit', 4); farm.grant('copper_wire', 12);
+    grantCost(farm, 'solar_farm');
     const f = farm.place('solar_farm', 516, 504, 0);
     expect(f.ok, f.reason).toBe(true);
     expect(farm.link(farm.hearthId, f.id!).ok).toBe(true);
@@ -394,6 +395,7 @@ describe('power wires: the land (D78)', () => {
       });
       sim.done.add('tr4'); sim.rebuildDerived(); // the pylon's research
       sim.grant('iron_plate', 200); sim.grant('copper_wire', 100); sim.grant('ceramic', 20);
+      grantCost(sim, 'pylon', 4);
       return sim;
     };
     const pair = (sim: Sim, def: string, ax: number, bx: number, y: number): [number, number] => {

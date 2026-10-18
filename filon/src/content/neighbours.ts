@@ -3,27 +3,23 @@
 // vraiment nulles, il n'y a rien qui marche, même pas de câble électrique pour relier les
 // installations »). A neighbouring base is another claim of the Crier (a colony of
 // content/colonies.ts) holding parcels beside the player's: a small working base, run by its own
-// drones, laid out as a chain that fits its trade — what it extracts, the machines the goods go
-// through, the store, then CrierBelt's lift pad, where it sells — and powered: its own sources and
-// masts, wired by the claim's own rule of reach. sim/world/neighbours.ts lays it out from the seeds;
-// nothing of it is saved.
+// drones, laid out as a chain of its trade made from the recipes — what it extracts or buys, the
+// machines the goods go through, the store, then CrierBelt's trade post, where it sells and buys —
+// and powered: its own sources and masts, wired by the claim's own rule of reach.
+// sim/world/neighbours.ts lays it out from the seeds; nothing of it is saved.
 import type { BuildingId } from './buildings';
 import type { ColonyProfileId } from './colonies';
 
+/**
+ * What a base stands beside its chain, by trade. The chain itself (its extractors, machines, store,
+ * depots) comes from its trade's goods and the recipes (sim/world/neighbour-chain.ts, fifth pass of
+ * D110; owner: « Du charbon rentre dans des fileuses »): no kit names its machines any more.
+ */
 export interface NeighbourKit {
-  /** What heads the chain: a drill stands on a deposit (else a sand collector stands in), a collector anywhere; `extractN` of them. */
-  readonly extract: BuildingId;
-  readonly extractN: number;
-  /** The machines the goods go through, in order, the last into the store. */
-  readonly makers: readonly BuildingId[];
-  /** The store the chain hands to the Core through. */
-  readonly store: BuildingId;
   /** Its power: generators, turbines, panels. */
   readonly power: readonly BuildingId[];
   /** Buildings beside the chain, on its grid (a lab's servers…). */
   readonly extra: readonly BuildingId[];
-  /** What rides each stage's ribbons (item ids): what leaves the extractors (a drill on a deposit carries its ore), then each maker. */
-  readonly carries: readonly string[];
   /** Covered depots (canvas dome tents) round the hub: its drones' stores. */
   readonly tents: number;
 }
@@ -55,20 +51,14 @@ export const NEIGHBOUR_TENT = 2;
 export const NEIGHBOUR_CAIRN_STEP = 5;
 
 export const NEIGHBOUR_KITS: Readonly<Record<ColonyProfileId, NeighbourKit>> = {
-  // A mining camp: drills on its deposits into a store, sold at the pad.
-  mining: { extract: 'drill', extractN: 3, makers: [], store: 'silo', power: ['wind_flower', 'wind_flower'], extra: [], carries: ['iron_ore'], tents: 2 },
-  // A foundry: ore smelted, plates pressed into gears.
-  foundry: { extract: 'drill', extractN: 2, makers: ['kiln', 'press'], store: 'silo', power: ['brazier', 'wind_flower'], extra: [], carries: ['iron_ore', 'iron_plate', 'gear'], tents: 1 },
-  // A glasshouse: sand to glass to lenses, on the sun.
-  glasshouse: { extract: 'sand_collector', extractN: 2, makers: ['kiln', 'optics_workshop'], store: 'silo', power: ['solar_farm', 'sun_bulb'], extra: [], carries: ['sand', 'glass', 'lens'], tents: 1 },
-  // A wind citadel: turbines charging batteries.
-  wind: { extract: 'drill', extractN: 1, makers: ['wire_mill_double', 'cell_charger'], store: 'silo', power: ['big_turbine', 'pitch_turbine', 'wind_flower'], extra: ['accumulator'], carries: ['copper_ore', 'copper_wire', 'charged_cell'], tents: 1 },
-  // A salt port: salt dug and sifted, stored in bulk.
-  saltport: { extract: 'drill', extractN: 2, makers: ['sifter'], store: 'big_silo', power: ['wind_flower', 'wind_flower'], extra: [], carries: ['salt', 'salt'], tents: 2 },
-  // An ember forge: arc furnaces and ovens on coal fire.
-  ember: { extract: 'drill', extractN: 2, makers: ['arc_furnace', 'ceramic_oven'], store: 'silo', power: ['brazier', 'brazier'], extra: [], carries: ['iron_ore', 'iron_plate', 'ceramic'], tents: 1 },
-  // A scholar spire: data collected into its lab, its servers beside.
-  scholar: { extract: 'data_collector', extractN: 2, makers: ['observatory'], store: 'silo', power: ['solar_farm', 'wind_flower'], extra: ['server'], carries: ['journal_1', 'circuit'], tents: 1 },
-  // A drifter guild's yard: sand into glass, glass into its workshops' parts.
-  drifter: { extract: 'sand_collector', extractN: 2, makers: ['kiln', 'workshop'], store: 'silo', power: ['wind_flower', 'wind_flower'], extra: [], carries: ['sand', 'glass', 'gear'], tents: 2 },
+  mining: { power: ['wind_flower', 'wind_flower'], extra: [], tents: 2 },
+  foundry: { power: ['brazier', 'wind_flower'], extra: [], tents: 1 },
+  glasshouse: { power: ['solar_farm', 'sun_bulb'], extra: [], tents: 1 },
+  // A wind citadel: turbines for its chargers, an accumulator beside.
+  wind: { power: ['big_turbine', 'pitch_turbine', 'wind_flower'], extra: ['accumulator'], tents: 1 },
+  saltport: { power: ['wind_flower', 'wind_flower'], extra: [], tents: 2 },
+  ember: { power: ['brazier', 'brazier'], extra: [], tents: 1 },
+  // A scholar spire, its servers beside.
+  scholar: { power: ['solar_farm', 'wind_flower'], extra: ['server'], tents: 1 },
+  drifter: { power: ['wind_flower', 'wind_flower'], extra: [], tents: 2 },
 };

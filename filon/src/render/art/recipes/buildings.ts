@@ -6,10 +6,10 @@
 // cooling tower… — riveted steel, teal/violet housings, coral/brass hot parts, hazard stripes,
 // LEDs. Nothing shows people (no lit windows, doors, walkways, planters, houses): the base's own
 // buildings show machine things — the Heart's fortified depot under its solar rows and uplink
-// dish, drone pads and the drones on them, status beacons, sensor and relay masts, the trade
-// post's landing pad in its scorched apron; research is labs in white enamel banded in violet,
-// phased-array antennas and racks of servers dense with indicator dots (no domes left: the
-// observatory became the research lab). Upgrades (the second tier) keep their base machine's
+// dish, drone pads and the drones on them, status beacons, sensor masts, the trade
+// post's landing pad in its scorched apron; research is labs in white enamel banded in violet
+// and racks of servers dense with indicator dots (no domes left: the observatory became the
+// research lab; no data antennas since the data went, D122). Upgrades (the second tier) keep their base machine's
 // look, bigger or doubled, with a coral band or a heavier frame.
 // Routing blocks share one body: a box whose four sides open on ribbon mouths exactly as wide as
 // the ribbon's band, the lid saying what the block does. Recipes draw in the building's own
@@ -19,12 +19,12 @@
 import { fenceIso } from './gleaners';
 import { BAL } from '@/content/balance';
 import { BUILDINGS, type BuildingId } from '@/content/buildings';
-import type { BuildingDef, PortDef } from '@/content/types';
+import type { BuildingDef } from '@/content/types';
 import { makeRng } from '@/core/rng';
 import { sideIndex, type Rot } from '@/sim/types';
 import { C, mix } from '../tokens';
 import { castShadow, ellipsePts, flat, hatch, ink, pathOf, shape, stipple, type Ctx, type Pt } from '../ink';
-import { arrowPoly, cable, crierMarkMapped, hull, light, rivet } from '../shapes';
+import { arrowPoly, crierMarkMapped, hull, light, rivet } from '../shapes';
 import { pvPanel } from '../solar';
 import { UNLIT, isUnlit } from '../unlit';
 import {
@@ -702,35 +702,55 @@ function depotIso(ctx: Ctx, f: IsoFrame, mouths: ReadonlyArray<readonly [number,
 }
 
 /**
- * The Heart's data outlet (D68) on the out port's tile (tx, ty), its port on local `side`: a violet
- * data cabinet set back from the edge — LED rows, a grille, a short whip antenna with a cyan tip
- * — fed by a conduit from the depot, its dispenser hood dropping files onto a roller apron that
- * runs out to the port's coral nozzle.
+ * Where the compute bay's parts stand on its corner tile (local; the Heart never turns): the
+ * cabinet's rect round the corner's centre and its roof (levels), its two roof fans side by side,
+ * the whip on the roof's far corner and its tip. The plan (buildings-top.ts `computeBayTop`)
+ * reads the same spots.
  */
-function dataOutletIso(ctx: Ctx, f: IsoFrame, tx: number, ty: number, side: number, s: number): void {
-  const DX = [0, 1, 0, -1], DY = [-1, 0, 1, 0];
-  const dx = DX[side]!, dy = DY[side]!, cx = tx + 0.5, cy = ty + 0.5;
-  const ccx = cx - dx * 0.2, ccy = cy - dy * 0.2;
-  const hx = Math.abs(dy) * 0.36 + Math.abs(dx) * 0.19, hy = Math.abs(dx) * 0.36 + Math.abs(dy) * 0.19;
-  // The apron from under the hood out to the nozzle.
-  const a0 = 0.0, a1 = 0.36, w = 0.17;
-  const bx0 = Math.min(cx + dx * a0 - Math.abs(dy) * w, cx + dx * a1 + Math.abs(dy) * w), bx1 = Math.max(cx + dx * a0 - Math.abs(dy) * w, cx + dx * a1 + Math.abs(dy) * w);
-  const by0 = Math.min(cy + dy * a0 - Math.abs(dx) * w, cy + dy * a1 + Math.abs(dx) * w), by1 = Math.max(cy + dy * a0 - Math.abs(dx) * w, cy + dy * a1 + Math.abs(dx) * w);
-  apronBelt(ctx, f, bx0, by0, bx1, by1, dx === 0 ? 'y' : 'x', s);
-  // The conduit from the depot's wall into the cabinet's roof.
-  pipeIso(ctx, f, [[Math.min(DEP.x1, Math.max(DEP.x0, ccx)) - dx * 0.12 - 0.08, Math.min(DEP.y1, Math.max(DEP.y0, ccy)) - dy * 0.12 - 0.08, 1.05], [ccx - 0.08, ccy - 0.08, 1.2], [ccx - 0.08, ccy - 0.08, 0.98]], 4, C.steelL, s + 1, false);
-  const rr = box(ctx, f, ccx - hx, ccy - hy, ccx + hx, ccy + hy, SZ, 1.0, { top: mix(C.violet, C.steelD, 0.25), left: C.violet, right: mix(C.violet, C.ink, 0.4) }, s + 2, { outline: 1.8 });
-  faceLeds(ctx, f, rr, 'L', 0.84, 0.15, 0.85, 5, [C.led, C.ledGreen, C.led]);
-  faceLeds(ctx, f, rr, 'R', 0.84, 0.2, 0.8, 4, [C.led, C.led, C.ledGreen]);
-  faceGrille(ctx, f, rr, 'R', 0.15, 0.85, SZ + 0.08, 0.66, s + 3, 3);
-  facePanel(ctx, f, rr, 'L', 0.18, 0.82, SZ + 0.08, 0.66, mix(C.violet, C.steelL, 0.35), s + 4);
-  // The dispenser hood over the apron's head, a cyan light at its mouth.
-  const hdx = cx + dx * 0.05, hdy = cy + dy * 0.05, hw = 0.2, hd = 0.09;
-  box(ctx, f, hdx - Math.abs(dy) * hw - Math.abs(dx) * hd, hdy - Math.abs(dx) * hw - Math.abs(dy) * hd, hdx + Math.abs(dy) * hw + Math.abs(dx) * hd, hdy + Math.abs(dx) * hw + Math.abs(dy) * hd, 0.52, 0.72, { top: C.steelD }, s + 5, { outline: 1.4, shadow: false });
-  light(ctx, ...f.p(hdx + dx * 0.1, hdy + dy * 0.1, 0.56), 1.8, C.led);
-  // The whip antenna, its cyan tip.
-  pipeIso(ctx, f, [[ccx + 0.12, ccy + 0.12, 1.0], [ccx + 0.12, ccy + 0.12, 1.75]], 2, C.steelD, s + 6, false);
-  light(ctx, ...f.p(ccx + 0.12, ccy + 0.12, 1.8), 2, C.led);
+export function computeSpots(tx: number, ty: number): { cab: readonly [number, number, number, number]; top: number; fans: ReadonlyArray<readonly [number, number]>; fanR: number; whip: readonly [number, number]; whipTop: number } {
+  const [cx, cy] = heartCornerAt(tx, ty);
+  const x0 = cx - 0.27, y0 = cy - 0.24, x1 = cx + 0.27, y1 = cy + 0.24;
+  return { cab: [x0, y0, x1, y1], top: 1.4, fans: [[cx - 0.12, cy + 0.04], [cx + 0.13, cy + 0.04]], fanR: 0.1, whip: [x0 + 0.07, y0 + 0.07], whipTop: 2.25 };
+}
+
+/**
+ * The Core's compute bay (D122, from the first level `BAL.coreCompute` gives research tokens: 2)
+ * on the south-east corner, the nearest in iso: a compact server cabinet of violet rack steel on
+ * a steel plinth — a research-violet band under its roof, its south doors dense with indicator
+ * dots (`dotRows`, a real LED a door), a column of status LEDs down their edge, louvred fan
+ * grilles on its east face, two fans on its roof, a short whip with a cyan tip on the roof's far
+ * corner; a conduit and a drooping cable from its back into the depot's wall. A machine: nothing
+ * lit from inside, no window.
+ */
+function computeBayIso(ctx: Ctx, f: IsoFrame, tx: number, ty: number, s: number): void {
+  const { cab: [x0, y0, x1, y1], top, fans, fanR, whip: [wx, wy], whipTop } = computeSpots(tx, ty);
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, z0 = SZ + 0.07;
+  // Into the depot's wall (its nearest corner, a little inside the battered plate): a conduit
+  // high, a cable drooping low.
+  const dx = Math.min(DEP.x1, Math.max(DEP.x0, cx)), dy = Math.min(DEP.y1, Math.max(DEP.y0, cy));
+  const ix = dx + (dx === DEP.x0 ? 0.12 : -0.12), iy = dy + (dy === DEP.y0 ? 0.12 : -0.12);
+  pipeIso(ctx, f, [[ix, iy, 1.0], [x0 + 0.1, y0 + 0.1, 1.0]], 4.2, C.steelL, s, false);
+  cableIso(ctx, f, [x0 + 0.04, y0 + 0.16, 0.62], [ix + 0.04, iy + 0.1, 0.78], 2.2, s + 1);
+  box(ctx, f, x0 - 0.06, y0 - 0.06, x1 + 0.06, y1 + 0.06, SZ, z0, { top: C.steel, left: C.steelD, right: mix(C.steelD, C.ink, 0.4) }, s + 2, { outline: 1.3 });
+  const rr = box(ctx, f, x0, y0, x1, y1, z0, top, { top: mix(RACK, C.steelD, 0.5), left: RACK, right: mix(RACK, C.ink, 0.42) }, s + 3, { outline: 1.8 });
+  bandIso(ctx, f, rr, top - 0.2, top - 0.08, C.violetL, s + 4);
+  bandIso(ctx, f, rr, z0, z0 + 0.07, C.steelD, s + 5);
+  // The south face (L): two doors dense with dots, a real LED on each; the LED column down its edge.
+  const zt = top - 0.26;
+  for (const [d, [u0, u1]] of ([[0.06, 0.45], [0.49, 0.84]] as const).entries()) {
+    shape(ctx, faceQuad(f, rr, 'L', u0, u1, z0 + 0.1, zt), C.steelDD, { w: 1, shade: false, jitter: 0, seed: s + 6 + d });
+    dotRows(ctx, f, rr, 'L', u0 + 0.04, u1 - 0.04, z0 + 0.2, zt - 0.1, s + 8 + d * 7, 0.1);
+    light(ctx, ...facePt(f, rr, 'L', u0 + 0.06, zt - 0.05), 1.4, d ? C.ledGreen : C.led);
+  }
+  for (let k = 0; k < 6; k++) light(ctx, ...facePt(f, rr, 'L', 0.93, z0 + 0.16 + k * 0.14), 1.3, k === 2 ? C.ledWarm : k % 2 ? C.ledGreen : C.led);
+  // The east face (R): two louvred fan grilles.
+  faceGrille(ctx, f, rr, 'R', 0.14, 0.86, z0 + 0.1, z0 + 0.36, s + 30, 4);
+  faceGrille(ctx, f, rr, 'R', 0.14, 0.86, z0 + 0.44, zt, s + 31, 4);
+  // The roof: two fans, the whip on its far corner, its cyan tip.
+  for (const [i, [fx, fy]] of fans.entries()) fanIso(ctx, f, fx, fy, top, fanR, s + 40 + i);
+  cylinder(ctx, f, wx, wy, 0.045, top, top + 0.08, C.steelD, s + 44, { top: C.steel });
+  pipeIso(ctx, f, [[wx, wy, top + 0.06], [wx, wy, whipTop]], 2, C.steelL, s + 45, false);
+  light(ctx, ...f.p(wx, wy, whipTop + 0.04), 2, C.led);
 }
 
 // ── the Heart's levels (D86): bare corners, the pieces each level mounts, its trims ─────────
@@ -752,24 +772,31 @@ export function heartLook(lv: number): { beacons: number; strips: number; cornic
 /** Level 5's crown (D118): the lamps along each visible face of the depot's cornice (u, 0…1 across it), clear of the brass pilasters at its ends. */
 export const HEART_CROWN = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9] as const;
 
-/** What a level mounts on one of the Heart's corners (D86, D118). */
-export type HeartPiece = 'outlet' | 'archive' | 'station' | 'uplink';
+/** What a level mounts on one of the Heart's corners (D86, D118, D122). */
+export type HeartPiece = 'compute' | 'archive' | 'station' | 'uplink';
+
+/**
+ * The level that mounts the compute bay (D122): the first whose `BAL.coreCompute` gives research
+ * tokens (2), read from the table so the art follows the balance; never, if no level computes.
+ */
+export const COMPUTE_BAY_LEVEL = ((i: number) => (i < 0 ? Infinity : i + 1))(BAL.coreCompute.findIndex((t) => t > 0));
 
 /**
  * The Heart's four corner tiles (local) and the level that mounts a piece on each (D86): level 2
- * the data outlet, on its out port's tile (south-east, the nearest in iso); level 3 the expertise
- * archive (south-west) — the way into the Expertise window (D93: a click on it, app/picking.ts
- * `heartPieceAt`); level 4 the grid station (north-east), a placeholder that unlocks nothing yet;
- * level 5 (D118) the uplink mast on the last one, north-west, behind the depot — a placeholder
- * too, and tall so it shows over the depot's roof. A piece that does nothing on a click is left
- * alone by the picker: only the Archive opens a window.
+ * the compute bay (D122; `COMPUTE_BAY_LEVEL`), south-east, the nearest in iso — where the data
+ * outlet stood until the data went; level 3 the expertise archive (south-west) — the way into the
+ * Expertise window (D93: a click on it, app/picking.ts `heartPieceAt`); level 4 the grid station
+ * (north-east), a placeholder that unlocks nothing yet; level 5 (D118) the uplink mast on the
+ * last one, north-west, behind the depot — a placeholder too, and tall so it shows over the
+ * depot's roof. A piece that does nothing on a click is left alone by the picker: only the
+ * Archive opens a window.
  */
 export const HEART_CORNERS: ReadonlyArray<{ tx: number; ty: number; lv: number; piece: HeartPiece | null }> = (() => {
-  const out = (BUILDINGS.hearth as BuildingDef).ports.find((p) => p.io === 'out')!;
+  const { w, h } = BUILDINGS.hearth as BuildingDef;
   return [
-    { tx: out.x, ty: out.y, lv: BAL.hearthDataLevel, piece: 'outlet' },
-    { tx: 0, ty: 4, lv: 3, piece: 'archive' },
-    { tx: 4, ty: 0, lv: 4, piece: 'station' },
+    { tx: w - 1, ty: h - 1, lv: COMPUTE_BAY_LEVEL, piece: 'compute' },
+    { tx: 0, ty: h - 1, lv: 3, piece: 'archive' },
+    { tx: w - 1, ty: 0, lv: 4, piece: 'station' },
     { tx: 0, ty: 0, lv: 5, piece: 'uplink' },
   ];
 })();
@@ -1810,11 +1837,12 @@ export function petalMastIso(ctx: Ctx, f: IsoFrame, s: number): void {
   light(ctx, ...f.p(0.5, 0.52, 2.2), 3, C.led);
 }
 
-// ── research and compute: labs, data antennas, server racks (the research redesign) ─────────
-// Research runs on data files (D68): collectors and relays pull them out of the air with
-// phased-array panels, labs take them in through a turquoise intake hopper and analyse them in a
-// glazed chamber (a glowing cyan sample), servers crunch them in racks dense with indicator dots.
-// Clean white enamel banded in violet says "lab"; violet racks and cyan dots say "compute".
+// ── research and compute: labs and server racks (the research redesign) ───────────────────
+// Research runs on AI tokens since D122 (the data files, their antennas and the labs' intake
+// hoppers are gone): tokens reach a lab with no ribbon, so a lab takes nothing in — it analyses
+// its own samples in a glazed chamber (a glowing cyan sample) by an instrument bench, and servers
+// compute the tokens in racks dense with indicator dots. Clean white enamel banded in violet says
+// "lab"; violet racks and cyan dots say "compute" (the autonomous lab is both).
 
 /** The labs' white enamel (top, lit +y face, shaded +x face). */
 export const LAB = mix(C.paper, C.ice, 0.45);
@@ -1904,29 +1932,6 @@ function sampleIso(ctx: Ctx, f: IsoFrame, x: number, y: number, z0: number, s: n
   light(ctx, c[0] - 1, c[1] - 1, r * 34, C.led);
 }
 
-/** Data files (D68: cyan cards) lying in an open mouth (its canvas polygon). */
-function fileChips(ctx: Ctx, mouth: readonly Pt[], n: number, s: number): void {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const [x, y] of mouth) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
-  const rng = makeRng(s);
-  ctx.save(); pathOf(ctx, mouth); ctx.clip();
-  for (let i = 0; i < n; i++) {
-    const cx = x0 + (x1 - x0) * (0.25 + 0.5 * rng.next()), cy = y0 + (y1 - y0) * (0.35 + 0.45 * rng.next());
-    const a = rng.range(-0.6, 0.6), w = 7, h = 4.6, c = Math.cos(a), sn = Math.sin(a);
-    const q: Pt[] = [[-w, -h], [w, -h], [w, h], [-w, h]].map(([u, v]) => [cx + u! * c - v! * sn, cy + u! * sn + v! * c] as Pt);
-    shape(ctx, q, i % 3 ? C.cyan : C.tealL, { w: 1, shade: false, jitter: 0, seed: s + i });
-    flat(ctx, [q[0]!, [(q[0]![0] + q[1]![0]) / 2, (q[0]![1] + q[1]![1]) / 2], [(q[3]![0] + q[2]![0]) / 2, (q[3]![1] + q[2]![1]) / 2], q[3]!], C.paper, 0.85);
-  }
-  ctx.restore();
-}
-
-/** The labs' turquoise intake hopper (the way data files come in), flaring open, files inside. */
-function intakeHopperIso(ctx: Ctx, f: IsoFrame, x0: number, y0: number, x1: number, y1: number, z1: number, s: number): Pt[] {
-  const top = frustumIso(ctx, f, x0, y0, x1, y1, SZ, z1, -0.07, { top: C.turqL, left: C.turq, right: mix(C.turq, C.ink, 0.38) }, s, { open: C.ink });
-  fileChips(ctx, top, 5, s + 1);
-  return top;
-}
-
 /** An instrument cabinet: a panelled box with rows of status LEDs and a grille. */
 function cabinetIso(ctx: Ctx, f: IsoFrame, x0: number, y0: number, x1: number, y1: number, z1: number, col: string, s: number, rows = 2): RRect {
   const rr = box(ctx, f, x0, y0, x1, y1, SZ, z1, { top: mix(col, C.steelD, 0.35), left: col, right: mix(col, C.ink, 0.4) }, s, { outline: 1.8 });
@@ -1981,55 +1986,10 @@ function rackIso(ctx: Ctx, f: IsoFrame, x0: number, y0: number, x1: number, y1: 
   return rr;
 }
 
-/**
- * A phased-array panel (a data antenna) centred on c (local tiles, z in levels), w × h tiles,
- * facing the unit normal n (its z in tiles): a steel frame of `cols × rows` dark violet
- * elements with cyan feeds, seen from the front, or its ribbed back plate from behind.
- */
-function arrayPanel(ctx: Ctx, f: IsoFrame, c: V3, w: number, h: number, n: V3, cols: number, rows: number, s: number): void {
-  const C3: V3 = [c[0], c[1], c[2] / 2];
-  const u = norm3([-n[1], n[0], 0]);
-  const v = cross3(n, u);
-  const P = (a: number, b: number, off = 0): Pt => f.p(C3[0] + u[0] * a + v[0] * b + n[0] * off, C3[1] + u[1] * a + v[1] * b + n[1] * off, (C3[2] + u[2] * a + v[2] * b + n[2] * off) * 2);
-  const quad = (a0: number, b0: number, a1: number, b1: number, off = 0): Pt[] => [P(a0, b0, off), P(a1, b0, off), P(a1, b1, off), P(a0, b1, off)];
-  const [nrx, nry] = turned(f, n[0], n[1]);
-  const front = nrx + nry + n[2] > 0;
-  const W = w / 2, H = h / 2;
-  castShadow(ctx, quad(-W, -H, W, H), 8, 0.22);
-  // The mount: an arm from behind the panel's middle.
-  pipeIso(ctx, f, [[C3[0] - n[0] * 0.2, C3[1] - n[1] * 0.2, (C3[2] - n[2] * 0.2) * 2], [C3[0], C3[1], C3[2] * 2]], 5, C.steelD, s, false);
-  shape(ctx, quad(-W, -H, W, H, -0.05), C.steelD, { w: 1.6, shade: false, jitter: 0, seed: s + 1 });
-  if (!front) {
-    shape(ctx, quad(-W, -H, W, H, -0.05), C.steel, { w: 1.6, shade: false, jitter: 0, seed: s + 2 });
-    for (let i = 1; i < cols; i++) ink(ctx, [P(-W + (w * i) / cols, -H, -0.05), P(-W + (w * i) / cols, H, -0.05)], { w: 1.4, color: C.steelDD, alpha: 0.8, shade: false, taper: 0, jitter: 0, seed: s + 3 + i });
-    return;
-  }
-  shape(ctx, quad(-W, -H, W, H), C.steelL, { w: 1.8, shade: false, jitter: 0, seed: s + 3 });
-  const g = Math.min(w / cols, h / rows) * 0.12;
-  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
-    const a0 = -W + (w * i) / cols + g, a1 = -W + (w * (i + 1)) / cols - g, b0 = -H + (h * j) / rows + g, b1 = -H + (h * (j + 1)) / rows - g;
-    flat(ctx, quad(a0, b0, a1, b1), (i + j) % 2 ? mix(C.violet, C.ink, 0.45) : mix(C.violet, C.ink, 0.32));
-    const m = P((a0 + a1) / 2, (b0 + b1) / 2);
-    flat(ctx, ellipsePts(m[0], m[1], 1.5, 1.2, 1, 0, 8), j === rows - 1 ? C.ice : C.cyan);
-  }
-  ink(ctx, [P(-W, -H), P(-W, H), P(W, H)], { w: 1.4, color: '#ffffff', alpha: 0.5, shade: false, taper: 0, jitter: 0, seed: s + 4 });
-  ink(ctx, quad(-W, -H, W, H), { closed: true, w: 1.8, shade: false, jitter: 0, seed: s + 5 });
-  light(ctx, ...P(W - 0.05, H - 0.05), 1.5, C.led);
-}
-
 /** A unit normal leaning `tilt` radians from the vertical towards the screen-fixed rotated direction (rx, ry). */
 function leanTo(f: IsoFrame, rx: number, ry: number, tilt: number): V3 {
   const [lx, ly] = facingDir(f, rx, ry), l = Math.hypot(lx, ly) || 1;
   return [(lx / l) * Math.sin(tilt), (ly / l) * Math.sin(tilt), Math.cos(tilt)];
-}
-
-/** A stack of n data cartridges (cyan shells, paper labels) at local (x, y) on a surface at z. */
-function cartStackIso(ctx: Ctx, f: IsoFrame, x: number, y: number, z: number, n: number, s: number): void {
-  for (let i = 0; i < n; i++) {
-    const zz = z + i * 0.085, dx = (((i * 37 + s) % 5) - 2) * 0.01;
-    const rr = box(ctx, f, x - 0.13 + dx, y - 0.09, x + 0.13 + dx, y + 0.09, zz, zz + 0.075, { top: C.cyan, left: mix(C.cyan, C.ink, 0.18), right: mix(C.cyan, C.ink, 0.4) }, s + i, { outline: 1.1, shadow: i === 0 });
-    flat(ctx, faceQuad(f, rr, 'L', 0.25, 0.7, zz + 0.015, zz + 0.06), C.paper);
-  }
 }
 
 /** A circuit board lying on a surface at z (local rect): green laminate, brass traces, black chips. */
@@ -2046,17 +2006,102 @@ function pcbIso(ctx: Ctx, f: IsoFrame, x0: number, y0: number, x1: number, y1: n
   }
 }
 
+/** The labs' sample vials' contents (a carousel's, a tube rack's), by turns. */
+export const VIALS = [C.cyan, C.violetL, C.turqL, C.coralL, C.ice, C.violet] as const;
+
 /**
- * The research lab (`observatory`, 3×3 since D84; the telescope dome is gone with the research
- * redesign): a clean white block banded in violet, along its whole back the turquoise intake
- * hopper where the data files arrive (its three in-ports), a glazed analysis chamber on its roof
- * round a glowing cyan sample, a vent stack; a row of instrument cabinets with status LEDs on its
- * side, a short antenna on the tall one. A machine: no windows, no doors.
+ * A sample carousel on a worktop at z (local centre, radius r): a brass turntable, `n` glass vials
+ * standing round its rim — coloured contents under a clear top and a steel cap — and a spindle in
+ * its middle. The vials go far to near, so each overlaps the one behind it.
+ */
+function carouselIso(ctx: Ctx, f: IsoFrame, x: number, y: number, z: number, r: number, n: number, s: number): void {
+  cylinder(ctx, f, x, y, r, z, z + 0.06, C.brass, s, { top: C.brassL });
+  const vials = Array.from({ length: n }, (_, i) => { const a = (i / n) * Math.PI * 2 + 0.3; return [x + Math.cos(a) * r * 0.72, y + Math.sin(a) * r * 0.72, i] as const; });
+  const spindle = (): void => {
+    pipeIso(ctx, f, [[x, y, z + 0.06], [x, y, z + 0.34]], 2.6, C.steelL, s + 1, false);
+    cylinder(ctx, f, x, y, r * 0.22, z + 0.34, z + 0.38, C.steelD, s + 2, { top: C.steel });
+  };
+  let up = false;
+  for (const [vx, vy, i] of vials.slice().sort((p, q) => f.depth(p[0], p[1]) - f.depth(q[0], q[1]))) {
+    if (!up && f.depth(vx, vy) > f.depth(x, y)) { spindle(); up = true; }
+    cylinder(ctx, f, vx, vy, 0.032, z + 0.06, z + 0.2, VIALS[i % VIALS.length]!, s + 10 + i);
+    cylinder(ctx, f, vx, vy, 0.032, z + 0.2, z + 0.27, mix(C.ice, C.paper, 0.3), s + 20 + i, { top: C.steelD });
+  }
+  if (!up) spindle();
+}
+
+/**
+ * The lab's instrument bench (local rect, its worktop at `z`): steel cabinets under a dark
+ * worktop, a hazard foot; on its long face a bank of drawers, a scope showing its trace and a few
+ * LEDs; on the worktop a sample carousel, a spectrometer (a white box banded in violet, a dark
+ * sample slot, its optical tube) and a rack of test tubes.
+ */
+function benchIso(ctx: Ctx, f: IsoFrame, x0: number, y0: number, x1: number, y1: number, z: number, s: number): void {
+  const rr = box(ctx, f, x0, y0, x1, y1, SZ, z, { top: C.steelD, left: C.steel, right: mix(C.steel, C.ink, 0.4) }, s, { outline: 1.8 });
+  faceHazard(ctx, f, rr, 'L', 0.02, 0.98, SZ + 0.03, SZ + 0.1, s + 1);
+  for (let k = 0; k < 4; k++) {
+    const u0 = 0.05 + k * 0.12, u1 = u0 + 0.1;
+    shape(ctx, faceQuad(f, rr, 'L', u0, u1, SZ + 0.16, z - 0.08), mix(C.steel, C.steelL, 0.3), { w: 1, shade: false, jitter: 0, seed: s + 2 + k });
+    ink(ctx, [facePt(f, rr, 'L', u0 + 0.03, z - 0.18), facePt(f, rr, 'L', u1 - 0.03, z - 0.18)], { w: 1.4, color: C.steelDD, shade: false, taper: 0, jitter: 0, seed: s + 6 + k });
+  }
+  scopeIso(ctx, f, rr, 'L', 0.6, 0.86, SZ + 0.18, z - 0.06, s + 10);
+  faceLeds(ctx, f, rr, 'L', z - 0.12, 0.89, 0.97, 2, [C.ledGreen, C.led], 1.4);
+  faceGrille(ctx, f, rr, 'R', 0.15, 0.85, SZ + 0.14, z - 0.08, s + 11, 3);
+  const cy = (y0 + y1) / 2;
+  carouselIso(ctx, f, x0 + 0.38, cy, z, 0.2, 8, s + 20);
+  const sp = box(ctx, f, x0 + 0.8, y0 + 0.08, x0 + 1.3, y1 - 0.08, z, z + 0.36, LAB_FACES, s + 40, { outline: 1.6 });
+  bandIso(ctx, f, sp, z + 0.24, z + 0.3, C.violet, s + 41);
+  shape(ctx, faceQuad(f, sp, 'L', 0.18, 0.62, z + 0.07, z + 0.17), C.ink, { w: 1, shade: false, jitter: 0, seed: s + 42 });
+  light(ctx, ...facePt(f, sp, 'L', 0.8, z + 0.13), 1.4, C.led);
+  drumIso(ctx, f, x0 + 1.05, cy, z + 0.45, 0.06, 0.2, 'x', C.steelL, s + 43, { bands: [0], shadow: false });
+  const tx0 = x0 + 1.45, tx1 = x1 - 0.12;
+  box(ctx, f, tx0, cy - 0.09, tx1, cy + 0.09, z, z + 0.08, { top: C.steelL }, s + 50, { outline: 1.2, shadow: false });
+  for (let i = 0; i < 4; i++) {
+    const tx = tx0 + ((tx1 - tx0) * (i + 0.5)) / 4;
+    pipeIso(ctx, f, [[tx, cy, z + 0.08], [tx, cy, z + 0.22]], 3.2, VIALS[(i + 2) % VIALS.length]!, s + 51 + i, false);
+    pipeIso(ctx, f, [[tx, cy, z + 0.22], [tx, cy, z + 0.3]], 3.2, mix(C.ice, C.paper, 0.3), s + 55 + i, false);
+  }
+}
+
+/**
+ * A cryo dewar standing on the slab at local (x, y), radius r, up to z1: a white enamel flask
+ * banded in violet, frost round its foot, a domed steel cap with a brass valve wheel and a gauge
+ * whose green LED says it holds.
+ */
+function dewarIso(ctx: Ctx, f: IsoFrame, x: number, y: number, r: number, z1: number, s: number): void {
+  cylinder(ctx, f, x, y, r + 0.03, SZ, SZ + 0.06, C.steelD, s, { top: C.steel });
+  cylinder(ctx, f, x, y, r, SZ + 0.06, z1, LAB, s + 1, { top: mix(LAB, C.steelL, 0.2) });
+  cylinder(ctx, f, x, y, r + 0.008, SZ + 0.06, SZ + 0.3, mix(C.ice, '#ffffff', 0.35), s + 2);
+  const fc = f.p(x, y, SZ + 0.3), [fx] = f.ell(r);
+  stipple(ctx, fc[0] - fx * 0.9, fc[1] + 1, fx * 1.8, 9, 14, { color: '#ffffff', alpha: 0.8, seed: s + 3, r: 1 });
+  cylinder(ctx, f, x, y, r + 0.008, z1 - 0.22, z1 - 0.12, C.violet, s + 4, { top: C.violetL });
+  latheIso(ctx, f, x, y, [[z1, r * 0.96], [z1 + 0.06, r * 0.82], [z1 + 0.1, r * 0.4], [z1 + 0.18, r * 0.32], [z1 + 0.2, 0]], C.steelL, s + 5, { top: C.steel, seams: false, outline: 1.4 });
+  const w = f.p(x, y, z1 + 0.22), [ex, ey] = f.ell(r * 0.42);
+  ink(ctx, ellipsePts(w[0], w[1], ex, ey, s + 6, 0, 20), { closed: true, w: 3.2, shade: false, taper: 0, jitter: 0, seed: s + 6 });
+  ink(ctx, ellipsePts(w[0], w[1], ex, ey, s + 6, 0, 20), { closed: true, w: 1.6, color: C.brass, shade: false, taper: 0, jitter: 0, seed: s + 7 });
+  const g = f.p(x - r * 0.5, y + r * 0.6, z1 - 0.36);
+  shape(ctx, ellipsePts(g[0], g[1], 4.2, 4.2, s + 8, 0, 14), C.paper, { w: 1.2, shade: false, jitter: 0, seed: s + 8 });
+  light(ctx, g[0] + 6, g[1] + 1, 1.3, C.ledGreen);
+}
+
+/**
+ * The research lab (`observatory`, 3×3 since D84; the telescope dome went with the research
+ * redesign, its data intake with the data, D122): a clean white block banded in violet, a glazed
+ * analysis chamber on its roof round a glowing cyan sample, a vent stack; a row of instrument
+ * cabinets with status LEDs on its side, a short antenna on the tall one. Along its front, where
+ * the intake hopper stood, the sample bay: an instrument bench (`benchIso`: drawers, a scope, a
+ * sample carousel, a spectrometer, test tubes) and a frosted cryo dewar at its end, its line to
+ * the bench. It takes nothing in: research is paid in AI tokens, which come with no ribbon. A
+ * machine: no windows, no doors. Drawn once (no ports), so laid out for the camera at rot 0.
  */
 function labIso(ctx: Ctx, f: IsoFrame, s: number): void {
   slab(ctx, f, C.steel, 0.05, SZ, s);
   const sc = new Scene();
-  sc.add(f.depth(1.5, 2.58), () => intakeHopperIso(ctx, f, 0.2, 2.3, 2.8, 2.86, 0.9, s + 1));
+  sc.add(f.depth(1.15, 2.57), () => benchIso(ctx, f, 0.2, 2.3, 2.1, 2.84, 0.85, s + 1));
+  sc.add(f.depth(2.47, 2.57), () => {
+    pipeIso(ctx, f, [[2.3, 2.57, 1.0], [2.04, 2.57, 1.0], [2.0, 2.57, 0.86]], 3, mix(C.ice, C.steelL, 0.35), s + 30, false);
+    dewarIso(ctx, f, 2.47, 2.57, 0.2, 1.15, s + 31);
+  });
   sc.add(f.depth(1.1, 1.15), () => {
     const rr = box(ctx, f, 0.18, 0.18, 2.05, 2.12, SZ, 1.75, LAB_FACES, s + 2);
     bandIso(ctx, f, rr, SZ, SZ + 0.1, C.steelD, s + 3);
@@ -2155,104 +2200,6 @@ function scopeIso(ctx: Ctx, f: IsoFrame, rr: RRect, face: Face, u0: number, u1: 
 }
 
 /**
- * The test bench (`test_bench`, 2×2): it load-tests gears and circuits and records Mechanics
- * Data. A dynamometer at the front — a teal drive motor turning a gear train clamped in an open
- * frame under a coral clamp bar, braked by a coral load drum; a vibration table at the back on brass
- * springs, a circuit board clamped on it, over its shaker; the instrument rack beside them, its
- * status LEDs and a scope screen showing the trace; cable looms tying the rigs to the rack.
- */
-function testBenchIso(ctx: Ctx, f: IsoFrame, s: number): void {
-  slab(ctx, f, C.steel, 0.05, SZ, s, true);
-  const sc = new Scene();
-  // The vibration table: base and shaker, springs, the plate, the clamped board.
-  sc.add(f.depth(0.68, 1.4), () => {
-    const base = box(ctx, f, 0.16, 1.02, 1.24, 1.8, SZ, 0.4, { top: C.steelD, left: C.steel, right: mix(C.steel, C.ink, 0.4) }, s + 1);
-    faceGrille(ctx, f, base, 'L', 0.08, 0.4, SZ + 0.03, 0.37, s + 2, 2);
-    faceLeds(ctx, f, base, 'L', 0.35, 0.6, 0.9, 3, [C.ledGreen, C.led], 1.3);
-    drumIso(ctx, f, 0.69, 1.41, 0.48, 0.07, 0.16, 'x', C.coral, s + 3, { shadow: false });
-    for (const [i, [x, y]] of ([[0.26, 1.12], [1.12, 1.12], [0.26, 1.7], [1.12, 1.7]] as const).slice().sort((a, b) => f.depth(a[0], a[1]) - f.depth(b[0], b[1])).entries()) springIso(ctx, f, x, y, 0.4, 0.58, s + 4 + i);
-    const plate = box(ctx, f, 0.2, 1.06, 1.18, 1.76, 0.58, 0.67, { top: C.steelL, left: mix(C.steelL, C.ink, 0.15), right: mix(C.steel, C.ink, 0.3) }, s + 8, { outline: 1.6, shadow: false });
-    faceHazard(ctx, f, plate, 'L', 0.02, 0.98, 0.59, 0.66, s + 9);
-    pcbIso(ctx, f, 0.4, 1.18, 0.98, 1.64, 0.67, s + 10);
-    for (const x of [0.36, 1.02]) box(ctx, f, x - 0.05, 1.14, x + 0.05, 1.68, 0.67, 0.77, { top: C.steelDD }, s + 12 + x, { outline: 1.1, shadow: false });
-  });
-  // The dynamometer: a hazard-edged bed, the drive motor, the gear train clamped in an open frame
-  // (gears on shafts between two posts under a clamp bar), the coral load brake on its stand.
-  sc.add(f.depth(0.74, 0.46), () => {
-    const bed = box(ctx, f, 0.12, 0.22, 1.36, 0.7, SZ, 0.55, { top: C.steelD, left: C.steel, right: mix(C.steel, C.ink, 0.4) }, s + 20);
-    faceHazard(ctx, f, bed, 'L', 0.03, 0.97, SZ + 0.04, SZ + 0.13, s + 21);
-    const m = box(ctx, f, 0.14, 0.28, 0.4, 0.64, 0.55, 1.3, C.teal, s + 22, { outline: 1.6 });
-    faceGrille(ctx, f, m, 'L', 0.15, 0.85, 0.62, 1.08, s + 23, 3);
-    faceLeds(ctx, f, m, 'L', 1.2, 0.25, 0.75, 2, [C.led, C.ledGreen], 1.3);
-  });
-  const gears = [[0.72, 1.36, 0.27, 16, C.brass], [1.05, 1.44, 0.13, 9, C.steelL], [1.26, 1.3, 0.11, 8, C.brassL]] as const;
-  for (const [i, [x, z, r, n, col]] of gears.entries()) {
-    sc.add(f.depth(x, 0.46) + 0.001 * i, () => {
-      pipeIso(ctx, f, [[x, 0.34, z], [x, 0.58, z]], 2.6, C.steelD, s + 30 + i, false);
-      wheelIso(ctx, f, x, 0.46, z, r, 'y', n, col, s + 33 + i);
-    });
-  }
-  for (const [i, x] of [0.42, 1.42].entries()) sc.add(f.depth(x, 0.46) + 0.002, () => box(ctx, f, x - 0.035, 0.4, x + 0.035, 0.52, 0.55, 1.98, { top: C.steelD, left: C.steelL, right: mix(C.steel, C.ink, 0.3) }, s + 37 + i, { outline: 1.3 }));
-  sc.add(f.depth(0.92, 0.46) + 0.5, () => {
-    pipeIso(ctx, f, [[0.4, 0.46, 1.2], [0.6, 0.46, 1.3], [0.72, 0.46, 1.36]], 3.2, C.steelL, s + 39, false);
-    const bar = box(ctx, f, 0.37, 0.43, 1.47, 0.49, 1.98, 2.08, { top: C.coral }, s + 40, { outline: 1.4, shadow: false });
-    for (const u of [0.2, 0.5, 0.78]) rivet(ctx, ...facePt(f, bar, 'L', u, 2.03), 1.6, C.brassL);
-  });
-  sc.add(f.depth(1.62, 0.42), () => {
-    box(ctx, f, 1.44, 0.24, 1.82, 0.6, SZ, 0.62, { top: C.steelD, left: C.steel, right: mix(C.steel, C.ink, 0.4) }, s + 41, { outline: 1.4 });
-    pipeIso(ctx, f, [[1.26, 0.46, 1.3], [1.5, 0.46, 1.0]], 3, C.steelL, s + 42, false);
-    drumIso(ctx, f, 1.64, 0.44, 0.98, 0.2, 0.13, 'x', C.coral, s + 43, { bands: [0], end: mix(C.coral, C.coralD, 0.4) });
-    box(ctx, f, 1.56, 0.32, 1.72, 0.42, 1.32, 1.44, { top: C.steelD }, s + 44, { outline: 1.2, shadow: false });
-  });
-  // The instrument rack: status LEDs, the scope screen with its trace, a vent.
-  sc.add(f.depth(1.65, 0.8), () => {
-    const jb = box(ctx, f, 1.48, 0.66, 1.82, 0.94, SZ, 0.72, { top: C.steelD, left: C.steel, right: mix(C.steel, C.ink, 0.4) }, s + 48, { outline: 1.4 });
-    faceLeds(ctx, f, jb, 'L', 0.6, 0.3, 0.7, 2, [C.ledWarm, C.led], 1.3);
-  });
-  sc.add(f.depth(1.65, 1.41), () => {
-    const rr = box(ctx, f, 1.44, 1.02, 1.86, 1.8, SZ, 1.25, { top: mix(C.violet, C.steelD, 0.35), left: C.violet, right: mix(C.violet, C.ink, 0.42) }, s + 50);
-    scopeIso(ctx, f, rr, 'L', 0.12, 0.88, 0.8, 1.14, s + 51);
-    faceLeds(ctx, f, rr, 'L', 0.66, 0.16, 0.84, 4, [C.led, C.ledGreen, C.ledWarm], 1.5);
-    faceGrille(ctx, f, rr, 'L', 0.14, 0.86, SZ + 0.06, 0.54, s + 52, 3);
-    for (const z of [0.55, 0.78, 1.01]) faceLeds(ctx, f, rr, 'R', z, 0.08, 0.45, 5, [C.led, C.ledGreen, C.led], 1.3);
-    faceGrille(ctx, f, rr, 'R', 0.58, 0.92, 0.45, 1.1, s + 53, 4);
-  });
-  // The cable looms: from the rack's flank to the vibration table and to the dynamometer's plate.
-  sc.add(f.depth(1.3, 1.0) + 2, () => {
-    const loom = (a: V3, b: V3, col: string, k: number): void => cable(ctx, f.p(...a), f.p(...b), 2.2, 0.16, col, s + 60 + k);
-    loom([1.44, 1.3, 0.95], [1.18, 1.4, 0.7], C.teal, 0);
-    loom([1.44, 1.42, 0.85], [1.18, 1.52, 0.66], C.steelDD, 1);
-    loom([1.6, 1.02, 1.0], [1.6, 0.8, 0.72], C.coral, 2);
-    loom([1.5, 0.8, 0.7], [1.42, 0.5, 1.6], C.coral, 3);
-    loom([1.55, 0.7, 0.66], [1.42, 0.5, 1.25], C.steelDD, 4);
-  });
-  sc.run();
-}
-
-/**
- * A data collector's rig: a geared turntable carrying a yoke and a tilted phased-array panel,
- * screen-fixed (like the Heart's uplink): turned to the camera and a little to the left, so its
- * rows of elements run level across the screen whatever the rotation.
- */
-function arrayTurntable(ctx: Ctx, f: IsoFrame, x: number, y: number, r: number, z0: number, panel: { z: number; w: number; h: number; cols: number; rows: number; tilt: number }, s: number): void {
-  cylinder(ctx, f, x, y, r, z0, z0 + 0.22, C.steelD, s, { top: C.steel });
-  gearTeeth(ctx, f, x, y, r, z0 + 0.22, Math.round(r * 44), s + 1);
-  cylinder(ctx, f, x, y, r * 0.4, z0 + 0.22, z0 + 0.55, C.steelL, s + 2, { top: C.brass });
-  const n = leanTo(f, 0.35, 0.94, panel.tilt);
-  const zt = panel.z / 2;
-  pipeIso(ctx, f, [[x, y, z0 + 0.5], [x - n[0] * 0.2, y - n[1] * 0.2, (zt - n[2] * 0.2) * 2]], 6, C.steelD, s + 3, false);
-  arrayPanel(ctx, f, [x, y, panel.z], panel.w, panel.h, n, panel.cols, panel.rows, s + 4);
-}
-
-/** The cartridge stacker by a collector's outlet: a hazard-edged bin, a stack of fresh files on it. */
-function stackerIso(ctx: Ctx, f: IsoFrame, x0: number, y0: number, x1: number, y1: number, n: number, s: number): void {
-  const rr = box(ctx, f, x0, y0, x1, y1, SZ, 0.58, { top: C.steelD, left: C.steel, right: mix(C.steel, C.ink, 0.4) }, s);
-  faceHazard(ctx, f, rr, 'L', 0.05, 0.95, SZ + 0.04, SZ + 0.13, s + 1);
-  faceLeds(ctx, f, rr, 'R', 0.46, 0.3, 0.7, 2, [C.led, C.ledGreen], 1.5);
-  cartStackIso(ctx, f, (x0 + x1) / 2, (y0 + y1) / 2, 0.58, n, s + 2);
-}
-
-/**
  * The supercomputer's core (4×4): three stepped tiers of violet cabinets, their seams leaking
  * cyan light, LED strips and dot rows on every face; on top a glazed crown round the glowing core.
  */
@@ -2291,8 +2238,8 @@ function radiatorIso(ctx: Ctx, f: IsoFrame, x0: number, y0: number, x1: number, 
 // An upgrade keeps its base machine's look and says it is bigger or faster at a glance: twin
 // heads, a coral band, heavier frames, more of what made the base one (D21: machines only).
 
-/** The codices' dark covers (the item's colour). */
-export const COVER = '#3a3550';
+/** Resin canvas glazed with sky resin (the scriptorium's coating, D122: its one product): amber over the cloth's peach. */
+export const RESIN_GLAZE = mix(C.warn, C.peach, 0.3);
 
 /** A coil spring standing at local (x, y) from z0 to z1: a brass zigzag, screen-level (a screen deck's mount). */
 function springIso(ctx: Ctx, f: IsoFrame, x: number, y: number, z0: number, z1: number, s: number): void {
@@ -2330,21 +2277,26 @@ function lensIso(ctx: Ctx, f: IsoFrame, x: number, y: number, z: number, r: numb
   flat(ctx, ellipsePts(c[0] + ex * 0.3, c[1] - ey * 0.5, 2.4, 1.4, s + 5, 0, 10, -0.4), '#ffffff', 0.9);
 }
 
-/** A stack of n bound codices at local (x, y) from z: dark covers with brass corners, page edges on the lit side. */
-function codexStackIso(ctx: Ctx, f: IsoFrame, x: number, y: number, z: number, n: number, s: number): void {
-  for (let i = 0; i < n; i++) {
-    const zz = z + i * 0.13, d = ((((i * 29 + s) % 5) + 5) % 5 - 2) * 0.014;
-    const rr = box(ctx, f, x - 0.19 + d, y - 0.14 - d, x + 0.19 + d, y + 0.14 - d, zz, zz + 0.12, { top: COVER, left: mix(C.paper, C.paperD, 0.5), right: mix(COVER, C.ink, 0.25) }, s + i, { outline: 1.2, shadow: i === 0 });
-    ink(ctx, [facePt(f, rr, 'L', 0.04, zz + 0.06), facePt(f, rr, 'L', 0.96, zz + 0.06)], { w: 0.8, color: C.peachD, alpha: 0.8, shade: false, taper: 0, jitter: 0, seed: s + 10 + i });
-    for (const z of [zz + 0.025, zz + 0.095]) ink(ctx, [facePt(f, rr, 'L', 0, z), facePt(f, rr, 'L', 1, z)], { w: 1.4, color: COVER, shade: false, taper: 0, jitter: 0, seed: s + 20 + i });
-    for (const u of [0.25, 0.75]) ink(ctx, [facePt(f, rr, 'R', u, zz + 0.01), facePt(f, rr, 'R', u, zz + 0.11)], { w: 1.4, color: C.brass, shade: false, taper: 0, jitter: 0, seed: s + 30 + i });
-    const [a0, b0, a1, b1] = rr, zt = zz + 0.12, k = 0.08;
-    for (const [ca, cb, sa, sb] of [[a0, b0, 1, 1], [a1, b0, -1, 1], [a1, b1, -1, -1], [a0, b1, 1, -1]] as const) {
-      flat(ctx, [f.pr(ca, cb, zt), f.pr(ca + sa * k, cb, zt), f.pr(ca, cb + sb * k, zt)], C.brass);
-    }
-    const m = f.pr((a0 + a1) / 2, (b0 + b1) / 2, zt);
-    flat(ctx, ellipsePts(m[0], m[1], 3.2, 1.8, s + 40 + i, 0, 10), C.brassL);
-  }
+/**
+ * Bolts of finished resin canvas on a pallet top at z, centred on local (x, y), lying along x: two
+ * side by side and one in the groove between them, peach cloth glazed amber where it was coated,
+ * brass binding straps, the rolled ends showing. The lower two go far to near round the top one.
+ */
+function canvasBoltsIso(ctx: Ctx, f: IsoFrame, x: number, y: number, z: number, half: number, s: number): void {
+  const r = 0.12, zc = z + r * 2;
+  const nearT = f.depth(x + half, y) >= f.depth(x - half, y) ? 1 : -1;
+  const ring = (by: number, bz: number, k: number): Pt[] => Array.from({ length: 28 }, (_, i) => { const a = (i / 28) * Math.PI * 2; return f.p(x + nearT * half, by + Math.cos(a) * r * k, bz + Math.sin(a) * r * k * 2); });
+  const bolt = (by: number, bz: number, k: number): void => {
+    drumIso(ctx, f, x, by, bz, r, half, 'x', k % 2 ? RESIN_GLAZE : C.peach, s + k, { end: C.peachD, bands: [-0.62, 0.62], shadow: k < 2, hub: false });
+    // Its rolled end: the layers wound round a dark cardboard core (cloth, not a log).
+    for (const [j, kk] of [0.82, 0.62, 0.44].entries()) ink(ctx, ring(by, bz, kk), { closed: true, w: 1, color: C.peachL, alpha: 0.75, shade: false, taper: 0, jitter: 0, seed: s + 10 + k * 4 + j });
+    shape(ctx, ring(by, bz, 0.26), C.steelDD, { w: 1.1, shade: false, jitter: 0, seed: s + 20 + k });
+  };
+  const low = [[y - r * 1.05, 0], [y + r * 1.05, 1]] as const;
+  const [far, near] = f.depth(x, low[0][0]) < f.depth(x, low[1][0]) ? [low[0], low[1]] : [low[1], low[0]];
+  bolt(far[0], zc, far[1]);
+  bolt(y, zc + r * 1.75, 2);
+  bolt(near[0], zc, near[1]);
 }
 
 /** A rack of silicon wafers at local (x, y): two posts, a back, five wafers stacked on its slots. */
@@ -2474,36 +2426,35 @@ function heliostatIso(ctx: Ctx, f: IsoFrame, x: number, y: number, tx: number, t
   ink(ctx, [P(-h * 0.1, h * 0.7), P(h * 0.7, -h * 0.1)], { w: 1.2, color: '#ffffff', alpha: 0.55, shade: false, taper: 0.3, jitter: 0, seed: s + 3 });
 }
 
-/** A plotter table (local rect, top at z): a teal map with contour lines being drawn, a gantry pen over it. */
-function plotterIso(ctx: Ctx, f: IsoFrame, sc: Scene, x0: number, y0: number, x1: number, y1: number, z: number, s: number): void {
+/**
+ * The scriptorium's coating table (local rect, top at z): the canvas sheet across it — a weft of
+ * copper wire on the peach cloth where it comes in (the far half, +y), glazed amber with sky resin
+ * where the coater has passed (towards −y, the outlet), a sheen on the glaze — under a gantry on
+ * brass rails whose coral beam carries the violet coater head, its nozzle laying the resin on.
+ */
+function coaterIso(ctx: Ctx, f: IsoFrame, sc: Scene, x0: number, y0: number, x1: number, y1: number, z: number, s: number): void {
+  const zg = z + 0.75, ym = (y0 + y1) / 2 + 0.12, px = x0 + (x1 - x0) * 0.62;
   sc.add(f.depth((x0 + x1) / 2, (y0 + y1) / 2), () => {
     const rr = box(ctx, f, x0, y0, x1, y1, SZ, z, { top: C.steelD, left: C.steel, right: mix(C.steel, C.ink, 0.4) }, s);
     faceGrille(ctx, f, rr, 'R', 0.15, 0.85, SZ + 0.08, z - 0.1, s + 1, 2);
     const mx0 = x0 + 0.1, my0 = y0 + 0.1, mx1 = x1 - 0.1, my1 = y1 - 0.1;
-    const map: Pt[] = [f.p(mx0, my0, z), f.p(mx1, my0, z), f.p(mx1, my1, z), f.p(mx0, my1, z)];
-    shape(ctx, map, C.teal, { w: 1.2, shade: false, jitter: 0, seed: s + 2 });
-    const cx = mx0 + (mx1 - mx0) * 0.42, cy = my0 + (my1 - my0) * 0.55;
-    for (let k = 1; k <= 4; k++) {
-      const pts: Pt[] = Array.from({ length: 33 }, (_, i) => {
-        const a = (i / 32) * Math.PI * 2, w = 1 + 0.18 * Math.sin(a * 3 + k);
-        return f.p(cx + Math.cos(a) * (mx1 - mx0) * 0.11 * k * w, cy + Math.sin(a) * (my1 - my0) * 0.1 * k * w, z);
-      });
-      ctx.save(); pathOf(ctx, map); ctx.clip();
-      ink(ctx, pts, { w: 1, color: k === 4 ? C.brassL : C.turqL, alpha: 0.85, shade: false, taper: 0, jitter: 0, seed: s + 3 + k });
-      ctx.restore();
-    }
-    ink(ctx, [f.p(mx0 + 0.1, my1 - 0.12, z), f.p(cx, cy + 0.15, z), f.p(mx1 - 0.15, my0 + 0.2, z)], { w: 1.2, color: C.coral, alpha: 0.9, shade: false, taper: 0, jitter: 0, seed: s + 9 });
+    const Q = (a: number, b: number): Pt[] => [f.p(mx0, a, z), f.p(mx1, a, z), f.p(mx1, b, z), f.p(mx0, b, z)];
+    shape(ctx, Q(ym, my1), C.peachL, { w: 1.2, shade: false, jitter: 0, seed: s + 2 });
+    for (let k = 1; k < 9; k++) { const x = mx0 + ((mx1 - mx0) * k) / 9; ink(ctx, [f.p(x, ym, z), f.p(x, my1, z)], { w: 0.9, color: COPPER, alpha: 0.9, shade: false, taper: 0, jitter: 0, seed: s + 3 + k }); }
+    for (let k = 1; k < 6; k++) { const y = ym + ((my1 - ym) * k) / 6; ink(ctx, [f.p(mx0, y, z), f.p(mx1, y, z)], { w: 0.9, color: COPPER, alpha: 0.75, shade: false, taper: 0, jitter: 0, seed: s + 13 + k }); }
+    shape(ctx, Q(my0, ym), RESIN_GLAZE, { w: 1.2, shade: false, jitter: 0, seed: s + 20 });
+    for (let k = 1; k < 9; k++) { const x = mx0 + ((mx1 - mx0) * k) / 9; ink(ctx, [f.p(x, my0 + 0.02, z), f.p(x, ym - 0.02, z)], { w: 0.8, color: mix(COPPER, RESIN_GLAZE, 0.6), alpha: 0.7, shade: false, taper: 0, jitter: 0, seed: s + 21 + k }); }
+    ink(ctx, [f.p(mx0 + 0.15, ym - 0.12, z), f.p(mx1 - 0.3, my0 + 0.12, z)], { w: 2, color: '#ffffff', alpha: 0.45, shade: false, taper: 0.3, jitter: 0, seed: s + 31 });
   });
-  const zg = z + 0.75, ym = (y0 + y1) / 2 + 0.12, px = x0 + (x1 - x0) * 0.62;
   sc.add(f.depth((x0 + x1) / 2, (y0 + y1) / 2) + 0.4, () => {
     for (const x of [x0 + 0.02, x1 - 0.02]) {
-      pipeIso(ctx, f, [[x, y0 + 0.04, z], [x, y0 + 0.04, zg]], 2.4, C.steelD, s + 20 + x, false);
-      pipeIso(ctx, f, [[x, y1 - 0.04, z], [x, y1 - 0.04, zg]], 2.4, C.steelD, s + 21 + x, false);
-      pipeIso(ctx, f, [[x, y0, zg], [x, y1, zg]], 3.4, C.brass, s + 22 + x, false);
+      pipeIso(ctx, f, [[x, y0 + 0.04, z], [x, y0 + 0.04, zg]], 2.4, C.steelD, s + 40 + x, false);
+      pipeIso(ctx, f, [[x, y1 - 0.04, z], [x, y1 - 0.04, zg]], 2.4, C.steelD, s + 41 + x, false);
+      pipeIso(ctx, f, [[x, y0, zg], [x, y1, zg]], 3.4, C.brass, s + 42 + x, false);
     }
-    box(ctx, f, x0 - 0.04, ym - 0.06, x1 + 0.04, ym + 0.06, zg, zg + 0.1, { top: C.coral }, s + 24, { outline: 1.4, shadow: false });
-    const hr = box(ctx, f, px - 0.08, ym - 0.1, px + 0.08, ym + 0.1, z + 0.32, zg + 0.16, { top: C.violetL, left: C.violet, right: mix(C.violet, C.ink, 0.4) }, s + 25, { outline: 1.3, shadow: false });
-    pipeIso(ctx, f, [[px, ym, z + 0.32], [px, ym, z + 0.04]], 1.8, C.coral, s + 26, false);
+    box(ctx, f, x0 - 0.04, ym - 0.06, x1 + 0.04, ym + 0.06, zg, zg + 0.1, { top: C.coral }, s + 44, { outline: 1.4, shadow: false });
+    const hr = box(ctx, f, px - 0.08, ym - 0.1, px + 0.08, ym + 0.1, z + 0.32, zg + 0.16, { top: C.violetL, left: C.violet, right: mix(C.violet, C.ink, 0.4) }, s + 45, { outline: 1.3, shadow: false });
+    pipeIso(ctx, f, [[px, ym, z + 0.32], [px, ym, z + 0.05]], 2.2, RESIN_GLAZE, s + 46, false);
     light(ctx, ...facePt(f, hr, 'L', 0.5, zg), 1.4, C.led);
   });
 }
@@ -2525,6 +2476,16 @@ export const ES_SLAB = mix(C.steel, C.teal, 0.22);
 export const ES_POT = { x: 0.72, y: 1.0, r: 0.47, coil: 1.3, top: 1.44 } as const;
 export const ES_CERAMIC = mix(C.peachL, C.ice, 0.35);
 export const ES_CAB_Z = 1.42;
+/**
+ * The steel mill's converter (D123): its axis, the cradle's two posts along x, the trunnions'
+ * height and the mouth's radius (the iso and plan recipes share them).
+ */
+export const SM = { x: 0.74, y: 1.0, posts: [0.12, 1.36] as readonly number[], axle: 1.25, mouth: 0.17 } as const;
+/** The converter's profile ([z, r] from its foot up: a pear on its side's trunnions) and its shell. */
+const CONVERTER: ReadonlyArray<readonly [number, number]> = [[0.62, 0.2], [0.74, 0.32], [0.98, 0.44], [1.4, 0.46], [1.72, 0.42], [2.02, 0.32], [2.3, 0.2], [2.42, SM.mouth + 0.02], [2.48, SM.mouth + 0.02]];
+const SM_SHELL = mix(C.steel, C.steelL, 0.55);
+/** The brickworks (D123): its water tank (x, y, r, top) and the water's tint. */
+export const BW = { tank: [1.5, 1.54, 0.3, 1.08] as const, water: mix(C.steelL, C.cyan, 0.32) } as const;
 
 /**
  * An electric arc between two screen points: a jagged line, seeded, its halo translucent and its
@@ -3427,7 +3388,7 @@ const R: Partial<Record<BuildingId, Recipe>> = {
       // centre; two link masts for its wires, west and east, each between two of that side's
       // ribbons. It grows with its level (D86): its four slab corners stand bare at level 1, a
       // mounting plate stencilled on each, and each level mounts one piece on one (`HEART_CORNERS`:
-      // the data outlet, the expertise archive, the grid station, the uplink mast) while its trims,
+      // the compute bay, the expertise archive, the grid station, the uplink mast) while its trims,
       // beacons and lamps fill out (`heartLook`, level 5's crown of lamps). The roof is laid out screen-fixed, so it reads the same
       // however the Heart is turned (in play it never is).
       const look = heartLook(lv);
@@ -3436,8 +3397,6 @@ const R: Partial<Record<BuildingId, Recipe>> = {
       const ports = (BUILDINGS.hearth as BuildingDef).ports;
       for (const [i, p] of ports.entries()) {
         const side = sideIndex[p.side], c = (side & 1 ? p.y : p.x) + 0.5, h = 0.17, k = s + 100 + i * 50;
-        // The data outlet (D68) stands on its corner tile, off the depot: a corner piece, below.
-        if (p.io === 'out') continue;
         if (side === 0) { apronBelt(ctx, f, c - h, 0.15, c + h, DEP.y0, 'y', k); mouths.push([c, DEP.y0]); }
         else if (side === 2) { apronBelt(ctx, f, c - h, DEP.y1, c + h, 4.85, 'y', k); mouths.push([c, DEP.y1]); }
         else if (side === 1) { apronBelt(ctx, f, DEP.x1, c - h, 4.85, c + h, 'x', k); mouths.push([DEP.x1, c]); }
@@ -3451,10 +3410,8 @@ const R: Partial<Record<BuildingId, Recipe>> = {
         const k = s + 600 + i * 40;
         if (lv < c.lv || !c.piece) { mountPlateIso(ctx, f, c.tx, c.ty, k); continue; }
         const d = f.depth(c.tx + 0.5, c.ty + 0.5) - 0.04;
-        if (c.piece === 'outlet') {
-          const p = ports.find((q) => q.io === 'out')!;
-          sc.add(d, () => dataOutletIso(ctx, f, p.x, p.y, sideIndex[p.side], k));
-        } else if (c.piece === 'archive') sc.add(d, () => archiveIso(ctx, f, c.tx, c.ty, k));
+        if (c.piece === 'compute') sc.add(d, () => computeBayIso(ctx, f, c.tx, c.ty, k));
+        else if (c.piece === 'archive') sc.add(d, () => archiveIso(ctx, f, c.tx, c.ty, k));
         else if (c.piece === 'station') sc.add(d, () => stationIso(ctx, f, c.tx, c.ty, k));
         else sc.add(d, () => uplinkPieceIso(ctx, f, c.tx, c.ty, k));
       }
@@ -3860,7 +3817,7 @@ const R: Partial<Record<BuildingId, Recipe>> = {
       sc.run();
     },
   },
-  // ── research and compute (the research redesign): labs, data antennas, servers ──────────
+  // ── research and compute (the research redesign; no data since D122): labs, servers ──────────
   observatory: {
     // The research lab (the id is kept from the observatory it replaces; 3×3 since D84): see `labIso`.
     head: 3.15,
@@ -3870,78 +3827,6 @@ const R: Partial<Record<BuildingId, Recipe>> = {
     // The electronics workshop (the old press drawing went to `press`): see `electronicsIso`.
     head: 1.95,
     draw: electronicsIso,
-  },
-  test_bench: {
-    // The test bench: a dynamometer and a vibration table under load, the instrument rack and
-    // its scope; see `testBenchIso`.
-    head: 2.25,
-    draw: testBenchIso,
-  },
-  data_collector: {
-    head: 2.75,
-    draw(ctx, f, s) {
-      // A data-gathering antenna: a phased-array panel tilted on a geared turntable, the
-      // receiver cabinet with its blinking LEDs, a cartridge stacker by the outlet (N).
-      slab(ctx, f, C.steel, 0.05, SZ, s);
-      const sc = new Scene();
-      sc.add(f.depth(0.39, 0.4), () => stackerIso(ctx, f, 0.14, 0.14, 0.64, 0.66, 4, s + 1));
-      sc.add(f.depth(0.37, 1.36), () => {
-        const rr = cabinetIso(ctx, f, 0.12, 0.86, 0.62, 1.86, 1.22, C.teal, s + 10, 3);
-        dotRows(ctx, f, rr, 'R', 0.15, 0.85, 0.5, 0.62, s + 11);
-      });
-      sc.add(f.depth(1.3, 1.12), () => {
-        cableIso(ctx, f, [0.62, 1.3, 0.7], [1.0, 1.25, 0.45], 2.2, s + 20);
-        arrayTurntable(ctx, f, 1.3, 1.12, 0.48, SZ, { z: 1.78, w: 1.1, h: 0.76, cols: 6, rows: 4, tilt: 0.95 }, s + 21);
-      });
-      sc.run();
-    },
-  },
-  data_relay: {
-    head: 5.9,
-    draw(ctx, f, s) {
-      // The collector writ large: a guyed lattice mast carrying three array panels at different
-      // heights and bearings, the receiver cabinet and the power box at its foot, the stacker by
-      // the outlet (N), a red light on top.
-      slab(ctx, f, C.steelD, 0.04, SZ, s);
-      const sc = new Scene();
-      const mx = 1.6, my = 1.5, top = 5.3;
-      for (const [i, [ax, ay]] of ([[0.3, 0.32], [2.7, 0.32], [0.3, 1.5]] as const).entries()) {
-        sc.add(f.depth(ax, ay) - (f.depth(ax, ay) < f.depth(mx, my) ? 0 : -0.3), () => {
-          box(ctx, f, ax - 0.08, ay - 0.08, ax + 0.08, ay + 0.08, SZ, 0.44, { top: C.hazard, left: C.brass, right: mix(C.brass, C.ink, 0.4) }, s + 60 + i, { outline: 1.3 });
-          ink(ctx, [f.p(ax, ay, 0.44), f.p(mx, my, 4.3)], { w: 1.1, color: C.steelDD, alpha: 0.85, shade: false, taper: 0, jitter: 0, seed: s + 64 + i });
-        });
-      }
-      sc.add(f.depth(1.5, 0.38), () => stackerIso(ctx, f, 1.1, 0.14, 1.9, 0.62, 5, s + 1));
-      sc.add(f.depth(0.75, 2.4), () => {
-        const rr = cabinetIso(ctx, f, 0.2, 1.98, 1.3, 2.82, 1.45, C.teal, s + 10, 3);
-        dotRows(ctx, f, rr, 'L', 0.12, 0.88, 0.48, 0.7, s + 11);
-      });
-      sc.add(f.depth(2.42, 2.42), () => {
-        const rr = box(ctx, f, 2.05, 2.05, 2.8, 2.8, SZ, 1.0, { top: C.steelD, left: C.coral, right: mix(C.coral, C.ink, 0.42) }, s + 12);
-        faceGrille(ctx, f, rr, 'L', 0.12, 0.6, SZ + 0.1, 0.85, s + 13, 4);
-        faceLeds(ctx, f, rr, 'L', 0.84, 0.68, 0.9, 2, [C.ledWarm, C.led], 1.6);
-        faceGrille(ctx, f, rr, 'R', 0.15, 0.85, SZ + 0.1, 0.85, s + 14, 4);
-      });
-      sc.add(f.depth(mx, my), () => {
-        cableIso(ctx, f, [1.3, 2.1, 1.1], [1.45, 1.75, 0.6], 2.4, s + 15);
-        cylinder(ctx, f, mx, my, 0.5, SZ, 0.45, C.steelD, s + 16, { top: C.steel });
-        trussIso(ctx, f, mx, my, 0.4, 0.11, 0.45, top, 8, C.steelL, s + 17, 3.2);
-        pipeIso(ctx, f, [[mx, my, top - 0.1], [mx, my, top + 0.4]], 2.4, C.steelD, s + 18, false);
-        light(ctx, ...f.p(mx, my, top + 0.45), 2.8, C.ledRed);
-      });
-      // Low on the mast, the big array on its arm (screen-fixed, as the collector's); high up, a
-      // head of three sector panels a third of a turn apart, turning with the footprint.
-      const big = leanTo(f, 0.35, 0.94, 1.05), bl = Math.hypot(big[0], big[1]) || 1;
-      const bx = mx + (big[0] / bl) * 0.42, by = my + (big[1] / bl) * 0.42;
-      sc.add(f.depth(bx, by), () => arrayPanel(ctx, f, [bx, by, 2.35], 1.0, 0.7, big, 6, 4, s + 30));
-      for (let k = 0; k < 3; k++) {
-        const a = Math.PI / 2 + (k * 2 * Math.PI) / 3, t = 1.48;
-        const n: V3 = [Math.cos(a) * Math.sin(t), Math.sin(a) * Math.sin(t), Math.cos(t)];
-        const cx = mx + Math.cos(a) * 0.3, cy = my + Math.sin(a) * 0.3;
-        sc.add(f.depth(cx, cy) + 0.01 * k, () => arrayPanel(ctx, f, [cx, cy, 4.25], 0.3, 0.86, n, 2, 5, s + 40 + k * 9));
-      }
-      sc.run();
-    },
   },
   server: {
     head: 2.45,
@@ -4032,32 +3917,41 @@ const R: Partial<Record<BuildingId, Recipe>> = {
     },
   },
   auto_lab: {
-    head: 3.55,
+    head: 2.5,
     draw(ctx, f, s) {
-      // The research lab grown into an automated laboratory: a long white block banded in violet,
-      // an intake hopper behind each in-port, a glazed analysis annex and instrument cabinets
-      // beside it, and on its roof its own data antenna — an array panel on a turntable — and a
-      // vent stack.
+      // The research lab grown into an automated laboratory that computes (D122: its cabinets
+      // give research AI tokens as a server's do; it takes nothing in): the long white block
+      // banded in violet, on its roof a violet compute module — rack doors dense with indicator
+      // dots, two fans — and a vent stack; along its front, where its two intake hoppers stood, a
+      // row of three server racks with their fans, a hazard cable tray from them into the block;
+      // beside it the glazed analysis annex round its sample and a rack (its wires clamp on it).
+      // Drawn once (no ports): the racks' long faces turn to the camera at rot 0.
       slab(ctx, f, C.steel, 0.04, SZ, s);
       const sc = new Scene();
-      for (const [i, x] of [0.5, 2.5].entries()) sc.add(f.depth(x, 2.58), () => intakeHopperIso(ctx, f, x - 0.36, 2.3, x + 0.36, 2.86, 0.9, s + 1 + i * 5));
+      for (const [i, [x0, x1]] of ([[0.2, 0.82], [0.86, 1.48], [1.52, 2.14]] as const).entries()) {
+        sc.add(f.depth((x0 + x1) / 2, 2.57), () => rackIso(ctx, f, x0, 2.3, x1, 2.84, 1.3, s + 1 + i * 20, { fans: 1, col: i === 1 ? mix(RACK, C.steelL, 0.2) : RACK }));
+      }
       sc.add(f.depth(1.18, 1.18), () => {
-        const rr = box(ctx, f, 0.18, 0.18, 2.12, 2.16, SZ, 1.62, LAB_FACES, s + 10);
-        bandIso(ctx, f, rr, SZ, SZ + 0.1, C.steelD, s + 11);
-        bandIso(ctx, f, rr, 1.26, 1.44, C.violet, s + 12);
-        faceGrille(ctx, f, rr, 'R', 0.08, 0.4, 0.5, 1.1, s + 13, 5);
-        facePanel(ctx, f, rr, 'R', 0.5, 0.7, 0.5, 1.1, LAB, s + 14);
-        faceGrille(ctx, f, rr, 'L', 0.38, 0.62, 0.48, 0.9, s + 15, 4);
+        const rr = box(ctx, f, 0.18, 0.18, 2.12, 2.16, SZ, 1.62, LAB_FACES, s + 70);
+        bandIso(ctx, f, rr, SZ, SZ + 0.1, C.steelD, s + 71);
+        bandIso(ctx, f, rr, 1.26, 1.44, C.violet, s + 72);
+        faceGrille(ctx, f, rr, 'R', 0.08, 0.4, 0.5, 1.1, s + 73, 5);
+        facePanel(ctx, f, rr, 'R', 0.5, 0.7, 0.5, 1.1, LAB, s + 74);
         faceLeds(ctx, f, rr, 'L', 1.1, 0.06, 0.3, 4, [C.led, C.ledGreen], 1.7);
         faceLeds(ctx, f, rr, 'L', 1.1, 0.7, 0.94, 4, [C.led, C.ledGreen], 1.7);
-        latheIso(ctx, f, 1.86, 1.86, [[1.62, 0.09], [2.12, 0.09], [2.12, 0.16], [2.2, 0.16], [2.24, 0.07]], C.steelL, s + 16, { top: C.steelD, seams: false });
-        arrayTurntable(ctx, f, 1.0, 1.0, 0.38, 1.62, { z: 2.86, w: 0.95, h: 0.64, cols: 6, rows: 4, tilt: 0.95 }, s + 17);
+        rackIso(ctx, f, 0.42, 0.42, 1.5, 1.5, 2.2, s + 75, { z0: 1.62, fans: 2 });
+        latheIso(ctx, f, 1.86, 1.86, [[1.62, 0.09], [2.12, 0.09], [2.12, 0.16], [2.2, 0.16], [2.24, 0.07]], C.steelL, s + 76, { top: C.steelD, seams: false });
+      });
+      sc.add(f.depth(1.17, 2.23) + 1.2, () => {
+        const tr = box(ctx, f, 0.3, 2.1, 2.04, 2.36, 1.32, 1.42, { top: C.steelD, left: C.hazard, right: mix(C.hazard, C.ink, 0.4) }, s + 80, { outline: 1.4, shadow: false });
+        for (let k = 1; k < 10; k++) ink(ctx, [f.p(0.3 + (1.74 * k) / 10, 2.12, 1.42), f.p(0.3 + (1.74 * k) / 10 - 0.03, 2.34, 1.42)], { w: 1.1, color: C.ink, alpha: 0.7, shade: false, taper: 0, jitter: 0, seed: s + 81 + k });
+        faceHazard(ctx, f, tr, 'L', 0, 1, 1.32, 1.42, s + 92);
       });
       sc.add(f.depth(2.57, 0.6), () => {
         box(ctx, f, 2.26, 0.22, 2.88, 0.98, SZ, 0.55, { top: C.steelD, left: C.steel, right: mix(C.steel, C.ink, 0.4) }, s + 30);
         glassCase(ctx, f, 2.32, 0.28, 2.82, 0.92, 0.55, 1.22, s + 31, () => sampleIso(ctx, f, 2.57, 0.6, 0.55, s + 32));
       });
-      sc.add(f.depth(2.57, 1.6), () => cabinetIso(ctx, f, 2.28, 1.12, 2.86, 2.1, 1.25, C.violet, s + 40, 3));
+      sc.add(f.depth(2.57, 1.6), () => rackIso(ctx, f, 2.28, 1.12, 2.86, 2.1, 1.25, s + 40, { fans: 1, col: mix(RACK, C.violet, 0.4) }));
       sc.run();
     },
   },
@@ -4325,9 +4219,10 @@ const R: Partial<Record<BuildingId, Recipe>> = {
   scriptorium: {
     head: 2.2,
     draw(ctx, f, s) {
-      // A printing and binding works: a roll of peach resin canvas feeding a big printing drum,
-      // a plotter table drawing a teal map (the atlas) under its gantry pen, stacks of bound
-      // dark codices with brass corners by the outlet.
+      // A weaving and coating works (D122: resin canvas is all it makes now): a roll of peach
+      // cloth feeding the big calender drum that presses the copper weft in, the delivery table
+      // with its trimmed sheets, the coating table where the sky resin glazes the sheet under a
+      // gantry (`coaterIso`), and bolts of finished canvas on a pallet by the outlet.
       slab(ctx, f, C.steel, 0.04, SZ, s);
       const sc = new Scene();
       sc.add(f.depth(0.78, 2.4), () => {
@@ -4346,13 +4241,12 @@ const R: Partial<Record<BuildingId, Recipe>> = {
         drumIso(ctx, f, 0.78, 1.58, 1.08, 0.36, 0.5, 'x', C.steelL, s + 8, { bands: [-0.6, 0, 0.6] });
         drumIso(ctx, f, 0.78, 1.22, 0.62, 0.13, 0.5, 'x', C.teal, s + 9, { shadow: false });
         box(ctx, f, 0.32, 0.86, 1.24, 1.14, SZ, 0.62, { top: mix(C.peachL, C.paper, 0.5), left: C.steel, right: mix(C.steel, C.ink, 0.4) }, s + 10, { outline: 1.5 });
-        for (let k = 0; k < 3; k++) box(ctx, f, 0.42 + k * 0.03, 0.9, 1.0 + k * 0.03, 1.1, 0.62 + k * 0.035, 0.65 + k * 0.035, { top: k === 2 ? C.teal : C.peachL }, s + 11 + k, { outline: 1, shadow: false });
+        for (let k = 0; k < 3; k++) box(ctx, f, 0.42 + k * 0.03, 0.9, 1.0 + k * 0.03, 1.1, 0.62 + k * 0.035, 0.65 + k * 0.035, { top: k === 2 ? RESIN_GLAZE : C.peachL }, s + 11 + k, { outline: 1, shadow: false });
       });
-      plotterIso(ctx, f, sc, 1.6, 0.86, 2.84, 2.3, 0.72, s + 20);
+      coaterIso(ctx, f, sc, 1.6, 0.86, 2.84, 2.3, 0.72, s + 20);
       sc.add(f.depth(0.6, 0.5), () => {
         box(ctx, f, 0.14, 0.14, 1.06, 0.74, SZ, 0.4, { top: C.steelD, left: C.steel, right: mix(C.steel, C.ink, 0.4) }, s + 40);
-        codexStackIso(ctx, f, 0.4, 0.44, 0.4, 3, s + 41);
-        codexStackIso(ctx, f, 0.84, 0.42, 0.4, 2, s + 45);
+        canvasBoltsIso(ctx, f, 0.6, 0.44, 0.4, 0.38, s + 41);
       });
       sc.add(f.depth(2.3, 0.4), () => cabinetIso(ctx, f, 1.9, 0.14, 2.84, 0.62, 1.0, C.steelL, s + 50, 2));
       sc.run();
@@ -4528,6 +4422,116 @@ const R: Partial<Record<BuildingId, Recipe>> = {
         cans.sort((p, q) => f.depth(p[0], p[1]) - f.depth(q[0], q[1]));
         for (const [i, [x, y]] of cans.entries()) cylinder(ctx, f, x, y, 0.07, 0.44, 0.74, CAN, s + 51 + i, { top: CAN_L, rings: 1 });
         ink(ctx, [f.p(1.36, 1.66, 0.76), f.p(1.8, 1.66, 0.76)], { w: 2.4, color: C.brass, shade: false, taper: 0, jitter: 0, seed: s + 58 });
+      });
+      sc.run();
+    },
+  },
+  // ── D123: the steel mill and the brickworks, Tier 1's works past the smelter ──
+  steel_mill: {
+    head: 3.25,
+    draw(ctx, f, s) {
+      // A converter shop: a pear-shaped steel converter hung on its trunnions between two violet
+      // cradle posts over a brick pit, its mouth glowing and spitting embers while it blows; the
+      // teal blower house behind it, its fan on the roof and its blast main into the near post; a
+      // fume stack at the side; cast steel bars stacked by the outlet.
+      slab(ctx, f, C.steelD, 0.05, SZ, s, true);
+      const { x: vx, y: vy, posts, axle, mouth } = SM;
+      const sc = new Scene();
+      sc.add(f.depth(1.68, 0.42), () => stackIso(ctx, f, 1.68, 0.42, 0.14, 2.95, s + 1));
+      sc.add(f.depth(1.6, 1.55), () => {
+        const rr = cabinetIso(ctx, f, 1.3, 1.24, 1.9, 1.88, 1.12, C.teal, s + 2, 1);
+        faceHazard(ctx, f, rr, 'R', 0.06, 0.94, SZ + 0.04, SZ + 0.12, s + 3);
+        fanIso(ctx, f, 1.6, 1.56, 1.12, 0.2, s + 4);
+      });
+      // The pit under the converter, lined in brick.
+      sc.add(f.depth(vx, vy) - 0.02, () => {
+        const pit = box(ctx, f, 0.14, 0.44, 1.32, 1.56, SZ, 0.6, { top: C.steelD, left: BRICK, right: mix(BRICK, C.ink, 0.35) }, s + 10);
+        brickwork(ctx, f, pit, 'L', SZ, 0.6, s + 11);
+        brickwork(ctx, f, pit, 'R', SZ, 0.6, s + 12);
+        const c = f.p(vx, vy, 0.6), [ex, ey] = f.ell(0.36);
+        flat(ctx, ellipsePts(c[0], c[1], ex, ey, s + 13, 0, 24), C.ledWarm, 0.3);
+      });
+      // The cradle's posts (far one first, by the scene) and the blast main into the near one.
+      for (const [i, x] of posts.entries()) sc.add(f.depth(x, vy), () => {
+        const rr = box(ctx, f, x - 0.08, vy - 0.13, x + 0.08, vy + 0.13, 0.6, axle + 0.2, C.violet, s + 20 + i, { outline: 1.6 });
+        faceHazard(ctx, f, rr, 'L', 0.1, 0.9, axle + 0.08, axle + 0.18, s + 22 + i);
+      });
+      sc.add(f.depth(1.42, 1.2), () => pipeIso(ctx, f, [[1.5, 1.28, 0.9], [1.42, 1.18, axle], [posts[1]!, vy + 0.06, axle]], 4.6, C.steelL, s + 24));
+      sc.add(f.depth(vx, vy), () => {
+        drumIso(ctx, f, vx, vy, axle, 0.075, (posts[1]! - posts[0]!) / 2, 'x', C.steelL, s + 30, { shadow: false, hub: false });
+        // A pear: a narrow foot, the belly, a long shoulder up to a narrow nose and its lip.
+        latheIso(ctx, f, vx, vy, CONVERTER, SM_SHELL, s + 31, { open: C.ink });
+        // The trunnion ring round its belly, hot coral, riveted; a lighter band round its nose.
+        for (const [z, r, col, w] of [[axle, 0.5, C.coralD, 5], [axle, 0.5, C.coral, 2.6], [2.1, 0.31, C.steelDD, 3]] as const) {
+          const b = f.p(vx, vy, z), [rx, ry] = f.ell(r);
+          ink(ctx, ellipsePts(b[0], b[1], rx, ry, s + 32, 0, 40).filter(([, py]) => py >= b[1] - 0.5).sort((p, q) => p[0] - q[0]), { w, color: col, shade: false, taper: 0, seed: s + 32 });
+        }
+        for (const a of [0.35, 0.95, 1.55, 2.15, 2.75]) {
+          const b = f.p(vx, vy, axle), [rx, ry] = f.ell(0.5);
+          rivet(ctx, b[0] + Math.cos(a) * rx, b[1] + Math.sin(a) * ry, 1.5, C.brassL);
+        }
+        // The melt in its mouth, and the embers it throws while it blows.
+        const m = f.p(vx, vy, CONVERTER[CONVERTER.length - 1]![0]), [mx, my] = f.ell(mouth * 0.8);
+        flat(ctx, ellipsePts(m[0], m[1] + my * 0.2, mx, my, s + 33, 0.02, 20), C.ledWarm);
+        flat(ctx, ellipsePts(m[0] - mx * 0.15, m[1] + my * 0.2, mx * 0.45, my * 0.4, s + 34, 0.02, 16), C.glowPeach);
+        light(ctx, m[0], m[1] - 2, 4, C.ledWarm);
+        if (!isUnlit(ctx)) for (let k = 0; k < 7; k++) {
+          const a = -Math.PI / 2 + (k - 3) * 0.32, r0 = 3 + (k % 3), r1 = r0 + 5 + ((k * 7) % 5);
+          ink(ctx, [[m[0] + Math.cos(a) * r0, m[1] - 3 + Math.sin(a) * r0], [m[0] + Math.cos(a) * r1, m[1] - 3 + Math.sin(a) * r1]], { w: 1.4, color: k % 2 ? C.warn : C.glowPeach, shade: false, taper: 0.6, jitter: 0, seed: s + 40 + k });
+        }
+      });
+      // Steel bars by the outlet, three on two, cooling.
+      sc.add(f.depth(1.2, 0.22), () => {
+        for (const [i, [y, z]] of ([[0.13, SZ], [0.24, SZ], [0.35, SZ], [0.185, SZ + 0.1], [0.295, SZ + 0.1]] as const).entries()) {
+          box(ctx, f, 0.94, y - 0.045, 1.44, y + 0.045, z, z + 0.1, mix(C.steelL, C.steel, 0.4), s + 50 + i, { outline: 1.1, shadow: i === 0 });
+        }
+      });
+      sc.run();
+    },
+  },
+  brickworks: {
+    head: 2.45,
+    draw(ctx, f, s) {
+      // A brickworks: over its two intakes the sand hopper and the water tank; between them and the
+      // outlet the brick press, its ram over the moulds; beside it the little tunnel kiln in brick
+      // under a vaulted roof, spy-holes glowing, its stack on its roof; a pallet of fresh bricks.
+      slab(ctx, f, C.steel, 0.05, SZ, s);
+      const sc = new Scene();
+      sc.add(f.depth(0.5, 1.52), () => {
+        const mouth = frustumIso(ctx, f, 0.14, 1.2, 0.86, 1.88, SZ, 1.3, -0.08, { top: C.steelL, left: MINER, right: mix(MINER, C.ink, 0.38) }, s + 1, { open: C.ink });
+        sandHeap(ctx, mouth, s + 2);
+      });
+      sc.add(f.depth(BW.tank[0], BW.tank[1]), () => {
+        const [tx, ty, r, z] = BW.tank;
+        latheIso(ctx, f, tx, ty, [[SZ, r], [z - 0.08, r], [z, r - 0.06], [z + 0.04, r - 0.06]], BW.water, s + 3, { top: C.steelL });
+        const [gx, gy] = facingDir(f, 0.4, 0.92);
+        ink(ctx, [f.p(tx + gx * (r + 0.01), ty + gy * (r + 0.01), SZ + 0.12), f.p(tx + gx * (r + 0.01), ty + gy * (r + 0.01), z - 0.14)], { w: 3.4, color: C.steelDD, shade: false, taper: 0, jitter: 0, seed: s + 4 });
+        ink(ctx, [f.p(tx + gx * (r + 0.01), ty + gy * (r + 0.01), SZ + 0.14), f.p(tx + gx * (r + 0.01), ty + gy * (r + 0.01), z * 0.62)], { w: 1.8, color: C.led, shade: false, taper: 0, jitter: 0, seed: s + 5 });
+      });
+      sc.add(f.depth(0.95, 1.05), () => pipeIso(ctx, f, [[BW.tank[0] - 0.2, BW.tank[1] - 0.12, 0.62], [0.85, 1.0, 0.62], [0.72, 0.86, 0.62]], 3.2, C.steelL, s + 6));
+      // The press: a violet bed, the ram on its cylinder, the crosshead over it.
+      sc.add(f.depth(0.5, 0.84), () => {
+        const bed = box(ctx, f, 0.2, 0.6, 0.8, 1.1, SZ, 0.72, C.violet, s + 10);
+        faceHazard(ctx, f, bed, 'L', 0.05, 0.95, 0.62, 0.7, s + 11);
+        faceLeds(ctx, f, bed, 'R', 0.5, 0.25, 0.75, 2, [C.ledGreen, C.led], 1.5);
+        cylinder(ctx, f, 0.5, 0.85, 0.11, 0.72, 1.38, C.steelL, s + 12, { top: C.brassL, rings: 2 });
+        box(ctx, f, 0.26, 0.72, 0.74, 0.98, 1.38, 1.56, mix(C.violet, '#ffffff', 0.12), s + 13, { outline: 1.5 });
+      });
+      // The tunnel kiln and its stack.
+      sc.add(f.depth(1.48, 0.62), () => {
+        const k = box(ctx, f, 1.08, 0.12, 1.88, 1.1, SZ, 0.92, { top: C.steel, left: BRICK, right: mix(BRICK, C.ink, 0.35) }, s + 20);
+        brickwork(ctx, f, k, 'L', SZ, 0.92, s + 21);
+        brickwork(ctx, f, k, 'R', SZ, 0.92, s + 22);
+        for (const u of [0.3, 0.7]) { spyHole(ctx, f, k, 'L', u, 0.6); spyHole(ctx, f, k, 'R', u, 0.6); }
+        vaultIso(ctx, f, 1.12, 0.16, 1.84, 1.06, 0.92, 1.12, C.steel, 4, 'y', s + 23);
+        stackIso(ctx, f, 1.66, 0.88, 0.11, 2.3, s + 24, C.ledWarm, 1.12);
+      });
+      // A pallet of fresh bricks by the outlet.
+      sc.add(f.depth(0.5, 0.28), () => {
+        box(ctx, f, 0.16, 0.08, 0.84, 0.5, SZ, SZ + 0.06, mix(C.mesa, C.peachD, 0.4), s + 30, { outline: 1.2 });
+        const st = box(ctx, f, 0.2, 0.12, 0.8, 0.46, SZ + 0.06, 0.66, { top: mix(BRICK, '#ffffff', 0.18), left: BRICK, right: mix(BRICK, C.ink, 0.35) }, s + 31, { outline: 1.5 });
+        brickwork(ctx, f, st, 'L', SZ + 0.06, 0.66, s + 32);
+        brickwork(ctx, f, st, 'R', SZ + 0.06, 0.66, s + 33);
       });
       sc.run();
     },
@@ -5602,7 +5606,7 @@ const seedOf = (id: string): number => (id.length * 131 + id.charCodeAt(0) * 17)
  */
 function bodyWithPorts(ctx: Ctx, f: IsoFrame, id: BuildingId, def: BuildingDef, recipe: Recipe, seed: number, lv = 1): void {
   // The incinerator's in-ports are its box's own ribbon mouths (as a routing block's): no nozzles on top.
-  const ports = (def.kind === 'sink' ? [] : def.ports).filter((p) => portDrawn(def, p, lv)).map((p) => ({ p, d: f.dir(sideIndex[p.side]) }));
+  const ports = (def.kind === 'sink' ? [] : def.ports).map((p) => ({ p, d: f.dir(sideIndex[p.side]) }));
   for (const { p, d } of ports) if (d === 0 || d === 3) portIso(ctx, f, p.x, p.y, sideIndex[p.side], p.io, SZ, seed + p.x * 5 + p.y);
   if (recipe.moving) recipe.moving.body(ctx, f, seed);
   else recipe.draw?.(ctx, f, seed, lv);
@@ -5711,5 +5715,3 @@ export const artLevels = (id: BuildingId): number => (id === 'hearth' ? BAL.hear
 /** The look a building of `id` wears in a base whose Heart stands at `hearthLevel`. */
 export const artLevelOf = (id: BuildingId, hearthLevel: number): number => Math.max(1, Math.min(artLevels(id), hearthLevel));
 
-/** Is a port's nozzle drawn at look `lv`? All are, but the Heart's data outlet before the level that mounts it (D86): a bare corner. */
-export const portDrawn = (def: BuildingDef, p: PortDef, lv: number): boolean => def.kind !== 'hearth' || p.io !== 'out' || lv >= BAL.hearthDataLevel;

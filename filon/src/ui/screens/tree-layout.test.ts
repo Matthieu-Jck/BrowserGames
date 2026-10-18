@@ -3,10 +3,10 @@
 // between lanes), put the Synthesis right of all of Tier 1 so every family's last Tier 1 node joins
 // it on one bus, keep the tier bands apart (Tier 1 and Tier 2 further, an ink rule between them:
 // D118), and light a selected node's chain without spilling through the gates. Also the launch
-// dialog's estimates (D118): the tokens a flow buys, the minutes a node's data takes.
+// dialog's estimates (D118, D122): the tokens a flow buys, the bank's tokens first.
 import { describe, it, expect } from 'vitest';
 import { RESEARCH, TIER1_WHOLE } from '@/content/research';
-import { boughtEstimate, dataMinutes } from '../launch-dialog';
+import { bankFirst, boughtEstimate } from '../launch-dialog';
 import { ZOOM_FLOOR, ZOOM_MAX, chainOf, elbowPath, fitZoom, treeLayout, zoomLevel } from './research';
 
 /** The straight legs of a route (its corners' curves cut to their ends: they stay within the gap). */
@@ -62,7 +62,8 @@ describe('the tech tree’s layout (D107)', () => {
     const synth = at.get(TIER1_WHOLE)!;
     for (const [id, r] of Object.entries(RESEARCH)) if (r.tier === 1 && id !== TIER1_WHOLE) expect(at.get(id)!.x + at.get(id)!.w, id).toBeLessThan(synth.x);
     const into = L.links.filter((l) => l.to === TIER1_WHOLE && l.kind === 'cross');
-    expect(into.map((l) => l.from).sort()).toEqual(['an_relay', 'cm_floor', 'dn_wiremill', 'en2', 'ex_fastdrill', 'xp_guard']);
+    // Extraction's last Tier 1 node (the Brickworks, D123) reaches it through the Steelworks, which needs its bricks: no link of its own.
+    expect(into.map((l) => l.from).sort()).toEqual(['an_data', 'cm_floor', 'dn_wiremill', 'en2', 'xp_guard']);
     // One bus: every route turns at the same x, left of the Synthesis.
     const turns = new Set(into.map((l) => legs(l.d).find(([x1, , x2]) => x1 === x2)![0]));
     expect(turns.size).toBe(1);
@@ -113,8 +114,8 @@ describe('the tech tree’s layout (D107)', () => {
   });
 });
 
-describe('the launch dialog’s estimates (D118)', () => {
-  it('the tokens a flow buys: until they are in, the servers’ share first, in the order projects started', () => {
+describe('the launch dialog’s estimates (D118, D122)', () => {
+  it('the tokens a flow buys: until they are in, the free flows first, in the order projects started', () => {
     // No server: 1 000 a minute buys all 2 500 (1 000, 1 000, then the last 500).
     expect(boughtEstimate(0, [], [], { tokens: 2500, buy: 1000 })).toBe(2500);
     // Servers at 600 a minute, all for it: 1 000 the first minute, the last 300 the second.
@@ -126,17 +127,9 @@ describe('the launch dialog’s estimates (D118)', () => {
     expect(boughtEstimate(0, [], [], { tokens: 100, buy: 0 })).toBe(0);
   });
 
-  it('the minutes a node’s data takes: what the lab lacks over the base’s production, whole minutes', () => {
-    const r = dataMinutes(
-      [{ item: 1, mu: 30_000 }, { item: 2, mu: 5000 }, { item: 3, mu: 8000 }, { item: 4, mu: 1000 }],
-      (i) => (i === 1 ? 6000 : i === 2 ? 5000 : 0),
-      (i) => (i === 1 ? 4 : i === 3 ? 0 : null),
-    );
-    expect(r).toEqual([
-      { item: 1, left: 24, min: 6 }, // 24 missing at 4 a minute
-      { item: 2, left: 0, min: 0 }, // already in the lab
-      { item: 3, left: 8, min: Infinity }, // nothing makes it
-      { item: 4, left: 1, min: null }, // not measured yet
-    ]);
+  it('the bank pays first, the oldest project first, each to its need (D122)', () => {
+    expect(bankFirst([1000, 3000, 500], 2500)).toEqual([0, 1500, 500]);
+    expect(bankFirst([1000, 0, 500], 0)).toEqual([1000, 0, 500]);
+    expect(bankFirst([200], 10_000)).toEqual([0]);
   });
 });

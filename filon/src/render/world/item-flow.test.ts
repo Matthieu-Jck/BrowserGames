@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 import { testSim, line } from '@/sim/testkit';
 import { opposite, type Ent, type Rot } from '@/sim/types';
 import { tileIndex } from '@/sim/world/grid';
+import { spanTile } from '@/sim/flow/chain';
 import type { Sim } from '@/sim/state';
 import { HUMP_Z, buildPieces, piecePoint, makePiece, overJunction, pieceAt } from './item-flow';
 import { junctionHump } from '../art/recipes/buildings';
@@ -65,24 +66,26 @@ describe('ribbon paths', () => {
     const { sim } = junctionLayout();
     const pieces = buildPieces(sim, beltPiece, 20);
     const P = { x: 0, y: 0, z: 0, o: 0 };
-    // The north–south line (south, into (512, 503)): flat on its own tile, then up onto the bridge,
-    // at the crown mid-junction, on the art's own profile all the way across.
-    const over = pieces.get(tileIndex(512, 502))!;
-    pieceAt(over, 0.25, P); expect(P.z).toBe(0);
-    pieceAt(over, 0.75, P); expect(P.y).toBeCloseTo(503.5, 9); expect(P.z).toBeCloseTo(HUMP_Z, 9);
-    for (let k = 0; k <= 10; k++) { pieceAt(over, 0.5 + k / 20, P); expect(P.z).toBeCloseTo(HUMP_Z * junctionHump(k / 10), 9); }
+    // The north–south line (south, into (512, 503)): flat on its own tile, then its cell over the
+    // junction (D121: a tile of its own, `spanTile`) rides the bridge — up, at the crown mid-junction,
+    // on the art's own profile all the way across.
+    const before = pieces.get(tileIndex(512, 502))!;
+    pieceAt(before, 0.5, P); expect(P.z).toBe(0); expect(P.y).toBeCloseTo(502.5, 9);
+    const over = pieces.get(spanTile(tileIndex(512, 503), S))!;
+    pieceAt(over, 0.5, P); expect(P.y).toBeCloseTo(503.5, 9); expect(P.z).toBeCloseTo(HUMP_Z, 9);
+    for (let k = 0; k <= 10; k++) { pieceAt(over, k / 10, P); expect(P.z).toBeCloseTo(HUMP_Z * junctionHump(k / 10), 9); }
     // Drawn over the bridge from a little before it to a little after it (the next ribbon's start).
-    pieceAt(over, 0.2, P); expect(P.o).toBe(0);
-    pieceAt(over, 0.4, P); expect(P.o).toBe(1);
-    pieceAt(over, 1, P); expect(P.o).toBe(1); expect(P.z).toBe(0);
+    pieceAt(before, 0.4, P); expect(P.o).toBe(0);
+    pieceAt(before, 0.8, P); expect(P.o).toBe(1);
+    pieceAt(over, 0, P); expect(P.o).toBe(1); pieceAt(over, 1, P); expect(P.o).toBe(1); expect(P.z).toBe(0);
     const past = pieces.get(tileIndex(512, 504))!;
     pieceAt(past, 0.1, P); expect(P.o).toBe(1); expect(P.z).toBe(0);
     pieceAt(past, 0.6, P); expect(P.o).toBe(0);
     // The other way (north, into (512, 520)) alike.
-    const back = pieces.get(tileIndex(512, 521))!;
-    pieceAt(back, 0.75, P); expect(P.y).toBeCloseTo(520.5, 9); expect(P.z).toBeCloseTo(HUMP_Z, 9); expect(P.o).toBe(1);
+    const back = pieces.get(spanTile(tileIndex(512, 520), N))!;
+    pieceAt(back, 0.5, P); expect(P.y).toBeCloseTo(520.5, 9); expect(P.z).toBeCloseTo(HUMP_Z, 9); expect(P.o).toBe(1);
     // The east–west lines run under both: flat, never drawn over.
-    for (const t of [tileIndex(511, 503), tileIndex(513, 520)]) {
+    for (const t of [tileIndex(511, 503), spanTile(tileIndex(512, 503), E), tileIndex(513, 520), spanTile(tileIndex(512, 520), W)]) {
       for (let k = 0; k <= 10; k++) { pieceAt(pieces.get(t)!, k / 10, P); expect(P.z).toBe(0); expect(P.o).toBe(0); }
     }
     expect([N, E, S, W].map(overJunction)).toEqual([true, false, true, false]);

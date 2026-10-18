@@ -10,7 +10,7 @@ import { CENTER, WORLD } from '@/sim/constants';
 import { packRuns } from '@/sim/flow/chain';
 import { MapGen } from '@/sim/world/mapgen';
 import { SAVE_VERSION, type SaveData } from '@/sim/serialize';
-import { CORE_REVEAL_V17, PLANS_RETIRED, RESEARCH_RENAMED, RESEARCH_RETIRED, RETIRED_DRIFTER, TIER1_V17, TIER2_UP_V10 } from '@/content/retired';
+import { CORE_REVEAL_V17, PLANS_RETIRED, RESEARCH_RENAMED, RESEARCH_RETIRED, RETIRED_DRIFTER, RETIRED_ITEM_TOKENS, TIER1_TOKENS_V19, TIER1_V17, TIER2_UP_V10 } from '@/content/retired';
 
 /** A step from version v to v + 1 (input: a parsed save of version v). */
 export type Migration = (d: Record<string, unknown>) => Record<string, unknown>;
@@ -458,7 +458,67 @@ export function researchFlows(d: Record<string, unknown>): Record<string, unknow
   return { ...d, ...(d.projects ? { projects } : {}), ...(tokens ? { tokens: kept } : {}) };
 }
 
-export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsToTowers, 6: researchToTokens, 7: researchAtBase, 8: parcelsResized, 9: labsToThree, 10: expertiseArc, 11: electricSmelting, 12: coreData, 13: tierOneWhole, 14: docksRetired, 15: steamPlan, 16: beaconsRetired, 17: researchFlows };
+/**
+ * 18 → 19, no data (D122; owner, 2026-10-17: « on va enlever le principe de la data. Le laboratoire
+ * n'a plus besoin d'entrée, et on n'a plus besoin de générer de la data »): research runs on tokens
+ * at every tier and resources paid at launch. A project under way counts the data it had paid as
+ * tokens delivered, at `RETIRED_ITEM_TOKENS` (by the save's own item table): a Tier 1 one, which took
+ * no tokens, now needs Tier 1's (`TIER1_TOKENS_V19`); a Tier 2+ one keeps those it started with; what
+ * its data passes its need goes to the bank (`tokens.bank`), generous; it owes no resources (`cost`,
+ * `paid` emptied: it was launched before they were asked). A project from before tokens keeps its
+ * share of time and takes its data's tokens as delivered when the load rebases it (`tokIn`). The Data
+ * Relay node (`RESEARCH_RETIRED[19]`) is forgotten: dropped from `done`, a project of it cancelled —
+ * its data banked —, its queue entry gone. The data makers' fractions (`dataAcc`) go. The data held
+ * anywhere else, and the data collectors, relays and test benches, are the remap's: the items' ids
+ * are gone from the content, so it banks them (sim/save-remap.ts), and the buildings' ids too, so it
+ * takes them down and refunds them at `RETIRED_COSTS`. A reconversion, and a project that pays no data
+ * (in today's shape already), are left as they are.
+ */
+export function dataRetired(d: Record<string, unknown>): Record<string, unknown> {
+  const { dataAcc: _dataAcc, ...rest } = d;
+  const gone = new Set(RESEARCH_RETIRED[19] ?? []);
+  const items = (d.content as { items?: string[] } | undefined)?.items ?? (ITEM_IDS as readonly string[]);
+  const stock = [...((d.stock as number[] | undefined) ?? [])];
+  // What a project had paid: its data as tokens; anything else (none in a real save 18) back to the Heart.
+  const worth = (p: { cost?: number[]; paid?: number[] }): number => {
+    let t = 0;
+    (p.paid ?? []).forEach((mu, i) => {
+      const it = p.cost?.[2 * i] ?? -1, per = RETIRED_ITEM_TOKENS[items[it] ?? ''];
+      if (per) t += Math.floor((mu * per) / 1000);
+      else if (it >= 0 && mu > 0) stock[it] = (stock[it] ?? 0) + mu;
+    });
+    return t;
+  };
+  type Old = { id: string; cost?: number[]; paid?: number[]; tokens?: number; tokIn?: number };
+  let bank = 0;
+  const projects: Old[] = [];
+  const paysData = (p: Old): boolean => (p.cost ?? []).some((v, i) => i % 2 === 0 && RETIRED_ITEM_TOKENS[items[v] ?? ''] !== undefined);
+  for (const p of (d.projects as Old[] | undefined) ?? []) {
+    // A reconversion; a project already in today's shape (tokens, no data: only a save forged from today's).
+    if (p.id.startsWith('respec:') || (p.tokens !== undefined && !paysData(p) && !gone.has(p.id))) { projects.push(p); continue; }
+    const got = worth(p);
+    if (gone.has(p.id)) { bank += got; continue; }
+    const t1 = TIER1_TOKENS_V19[p.id];
+    if (p.tokens === undefined && t1 === undefined) { projects.push({ ...p, cost: [], paid: [], tokIn: got }); continue; } // the load rebases it
+    const tokens = p.tokens && p.tokens > 0 ? p.tokens : t1 ?? 0;
+    const tokIn = (p.tokIn ?? 0) + got;
+    bank += Math.max(0, tokIn - tokens);
+    projects.push({ ...p, cost: [], paid: [], tokens, tokIn: Math.min(tokens, tokIn) });
+  }
+  const done = (d.done as string[] | undefined) ?? [];
+  const queue = (d.labQueue as Array<[number, string]> | undefined) ?? [];
+  const tokens = d.tokens as { bank?: number } | undefined;
+  return {
+    ...rest,
+    stock,
+    done: done.filter((id) => !gone.has(id)),
+    ...(d.projects ? { projects } : {}),
+    ...(d.labQueue ? { labQueue: queue.filter(([, id]) => !gone.has(id)) } : {}),
+    ...(tokens || bank ? { tokens: { serverAcc: 0, held: false, plan: false, ...tokens, ...(bank || tokens?.bank ? { bank: (tokens?.bank ?? 0) + bank } : {}) } } : {}),
+  };
+}
+
+export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsToTowers, 6: researchToTokens, 7: researchAtBase, 8: parcelsResized, 9: labsToThree, 10: expertiseArc, 11: electricSmelting, 12: coreData, 13: tierOneWhole, 14: docksRetired, 15: steamPlan, 16: beaconsRetired, 17: researchFlows, 18: dataRetired };
 
 export class SaveTooNew extends Error {
   constructor(readonly version: number) { super(`save version ${version} is newer than this build (${SAVE_VERSION})`); }

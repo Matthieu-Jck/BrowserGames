@@ -18,7 +18,7 @@ export const oreBlockOf = (g: Grid): number => g.source.oreBlock ?? 1;
 /** Does building `def` turned `rot` mine deposits with a footprint of whole `B` × `B` blocks? */
 export function blockDrill(def: number, rot: Rot, B: number): boolean {
   const d = buildingDef(def).drill;
-  if (B <= 1 || !d || d.ground || d.anywhere || d.face) return false;
+  if (B <= 1 || !d || d.ground || d.face) return false;
   const [w, h] = footprint(def, rot);
   return w % B === 0 && h % B === 0;
 }

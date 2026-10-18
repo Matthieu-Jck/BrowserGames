@@ -200,15 +200,16 @@ describe('migrations', () => {
     expect(back.stock[plates]).toBeGreaterThanOrEqual(sim.stock[plates]! + 8_000 * pylons.length); // 8 plates each back
   });
 
-  it('9 → 10 (D84): the 2×2 research labs come down, refunded with the files they held and the data their project had paid', () => {
+  it('9 → 10 (D84): the 2×2 research labs come down, refunded with what their project had paid', () => {
     const { sim } = foundScenario('tutorial', { playerSeed: 1, near: WORLD_EPOCH0 + 1000, name: 'Essai' });
     const labs = [...sim.ents.sorted()].filter((e) => BUILDING_IDS[e.def] === 'observatory');
     expect(labs.length).toBeGreaterThan(0);
     const ids = new Set(labs.map((e) => e.id));
     const project = sim.projects.find((p) => ids.has(p.lab));
     expect(project, 'the tutorial base runs Mechanics in its lab').toBeTruthy();
-    const df = itemIdx('journal_1'), plates = itemIdx('iron_plate');
-    const paid = project!.cost.reduce((a, c, k) => (c.item === df ? a + project!.paid[k]! : a), 0);
+    const plates = itemIdx('iron_plate');
+    // What it paid at launch (D122: its resources; its data until then), handed back.
+    const paid = project!.cost.reduce((a, c, k) => (c.item === plates ? a + project!.paid[k]! : a), 0);
     expect(paid).toBeGreaterThan(0);
     const d = { ...JSON.parse(JSON.stringify(serialize(sim))), v: 9 };
     const { data, from } = migrate(d);
@@ -221,11 +222,10 @@ describe('migrations', () => {
     expect([...back.ents.sorted()].some((e) => BUILDING_IDS[e.def] === 'observatory')).toBe(false);
     expect(back.projects.some((p) => ids.has(p.lab))).toBe(false);
     for (const l of labs) expect(back.linksOf(l.id)).toEqual([]);
-    expect(back.stock[plates]).toBeGreaterThanOrEqual(sim.stock[plates]! + 30_000 * labs.length); // 30 plates each back
-    expect(back.stock[df]).toBeGreaterThanOrEqual(sim.stock[df]! + paid); // its project's data, not lost
+    expect(back.stock[plates]).toBeGreaterThanOrEqual(sim.stock[plates]! + 30_000 * labs.length + paid); // 30 plates each back, and what its project had paid
   });
 
-  it('7 → 8 (D72): a project started under the spread penalty is rebased on its table cost, its progress kept (D118: as data and tokens in, no time)', () => {
+  it('7 → 8 (D72): a project started under the spread penalty is rebased on its table cost, its progress kept (D118: as tokens in, no time; D122: no resources owed)', () => {
     const base = effectiveCost('en_bigwind');
     const d = { ...JSON.parse(JSON.stringify(data)), v: 7 };
     // Started at ×2 by what the claim owned elsewhere; a quarter of its (doubled) time has run.
@@ -237,11 +237,10 @@ describe('migrations', () => {
     const { data: m } = migrate(d);
     const back = deserialize(remapSave(m).data, sim.grid.source);
     const p = back.projects.find((q) => q.id === 'en_bigwind')!;
-    expect(p.cost).toEqual(base.cost);
-    expect(p.paid).toEqual(base.cost.map((c) => c.mu / 4)); // the lesser of its time and its data, a quarter, of the new data
+    expect(p.cost).toEqual([]); // launched before resources were asked (D122): none owed
     expect([p.dur, p.el]).toEqual([0, 0]); // no minimum time any more (D118)
     expect(p.tokens).toBe(base.tokens);
-    expect(p.tokIn).toBe(base.tokens / 4); // what it already did, taken as delivered
+    expect(p.tokIn).toBe(base.tokens / 4); // what it already did — a quarter of its time —, taken as delivered
     expect(back.projects.find((q) => q.id === 'respec:en')).toMatchObject({ dur: 600, el: 1000, notes: 50 });
   });
 

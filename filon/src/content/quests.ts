@@ -23,7 +23,7 @@
 // Two rules from 2026-10-12 still shape it: the Heart only takes in (D34) — every machine is fed by
 // its own lines —, and everything beyond the starting kit is unlocked in the tech tree (D33). The
 // tree no longer offers every plan at once (D101): each quest `reveals` the few plans it is about
-// (`plan:<id>`), and « Données d'arpentage » opens the rest (`plans`), a goal the player works
+// (`plan:<id>`), and « Le laboratoire » (id `field_journal`) opens the rest (`plans`), a goal the player works
 // through at their own pace before the lab (D71).
 //
 // Pure data, four parts per quest: objectives (read by the engine, src/sim/systems/quests.ts),
@@ -146,7 +146,6 @@ export type GuideSpot =
   | { readonly between: string } // halfway between the Heart and the cirque deposit of an item: where a machine fed from it goes
   | { readonly hearth: true }
   | { readonly intake: true }    // a free input of the Heart, the nearest to the newest producer: where its ribbon must end
-  | { readonly outlet: true }    // just outside the Heart's data outlet (D86): where the Survey Data ribbon starts
   | { readonly beyond: true }    // past the Crown (D45: closed, no pass)
   | { readonly entity: string }  // the first built building of a kind
   | { readonly newest: string }  // the newest built building of a kind
@@ -246,8 +245,6 @@ const KILNS = ['kiln', 'kiln_compact'] as const;
 const NEAR_HEART = { hearth: true } as const;
 /** Where an output ribbon must end: a free input of the Heart (its teal nozzles). */
 const INTAKE = { intake: true } as const;
-/** Where the Survey Data ribbon starts: the Heart's data outlet, its south-east corner (D86, D101). */
-const OUTLET = { outlet: true } as const;
 /** « Tenir la nuit »'s measure: its turbine hints pass by once it holds (D101). */
 const NIGHT_HOLDS = { k: 'night', pct: 80 } as const;
 /** « Le Cœur grandit »'s measure: its hints for what is short pass by once the Core is raised. */
@@ -643,13 +640,13 @@ export const QUESTS = {
   // Owner, 2026-10-16: « there should be a quest in the tutorial where you upgrade it ». A player
   // action paid in what the base makes by now (BAL.hearthUpgrades[0]: plates, glass, copper wire),
   // one click on the Core's card (the logged `hearthUp`). The level grows the Core's power (its core
-  // and its panel, BAL.hearthCoreKw/hearthSolarKw) and mounts its data outlet (D86), whose Survey
-  // Data feeds the first lab in « Données d'arpentage ».
+  // and its panel, BAL.hearthCoreKw/hearthSolarKw) and mounts its compute bay (D122: D86's data
+  // outlet's corner), whose tokens run the first lab in « Le laboratoire ».
   core_upgrade: {
     name: { fr: 'Le Cœur grandit', en: 'The Core Grows' },
     desc: {
-      fr: 'Votre Cœur peut monter d’un niveau : un noyau plus fort, un panneau plus grand, un entrepôt plus vaste, et une sortie de données sur son coin sud-est. Il se paie en plaques, en verre et en fil de cuivre, ce que votre base fait déjà. Réunissez-les au Cœur, puis montez-le.',
-      en: 'Your Core can go up a level: a stronger core, a larger panel, a bigger store, and a data outlet on its south-east corner. It is paid in plates, glass and copper wire, what your base already makes. Gather them in the Core, then raise it.',
+      fr: 'Votre Cœur peut monter d’un niveau : un noyau plus fort, un panneau plus grand, un entrepôt plus vaste, et une baie de calcul sur son coin sud-est, dont les tokens d’IA feront tourner vos recherches. Il se paie en plaques, en verre et en fil de cuivre, ce que votre base fait déjà. Réunissez-les au Cœur, puis montez-le.',
+      en: 'Your Core can go up a level: a stronger core, a larger panel, a bigger store, and a compute bay on its south-east corner, whose AI tokens will run your research. It is paid in plates, glass and copper wire, what your base already makes. Gather them in the Core, then raise it.',
     },
     objectives: [CORE_2],
     reward: { credits: 100 },
@@ -681,23 +678,23 @@ export const QUESTS = {
     ],
   },
 
-  // ── 8 ── goal: every plan, then the lab on the Core's Survey Data (D71, D101) ──
+  // ── 8 ── goal: every plan, then the lab on the Core's compute (D71, D101, D122) ──
   // The research lab is the gate between the plans and research (owner, 2026-10-14). The plans are
   // a goal at the player's own pace (D101: a calm count, no arrow down the tree). The first lab runs
-  // on the Core's own data (owner, 2026-10-16: « The quest where you start researching could use the
-  // core's data production rather than a data collector, which could be unlocked later »): a ribbon
-  // from its outlet; the data collector comes with « Traitement des données » (an_data, Tier 1).
-  // Research is only started here: no wait (D101), and no tokens to pay before the servers (D105).
+  // on the Core's compute (D122: its tokens from level 2, no ribbon — it ran on the Core's Survey Data
+  // before, by a ribbon from its outlet): the lab placed, powered, Mechanics launched — its resources
+  // paid from the Core, its tokens in within minutes. The id stays `field_journal` (« Données
+  // d'arpentage » until D122): saves hold it.
   field_journal: {
-    name: { fr: 'Données d’arpentage', en: 'Survey Data' },
+    name: { fr: 'Le laboratoire', en: 'The Research Lab' },
     reveals: ['plans', 'brush'],
     desc: {
-      fr: 'Quand tous les plans sont pris, le laboratoire de recherche s’ouvre. Il se nourrit de données d’arpentage, et votre Cœur en fait depuis son niveau 2, à sa sortie de données. Prenez les plans à votre rythme, posez le laboratoire, menez-lui un ruban depuis la sortie de données du Cœur, et lancez la Mécanique.',
-      en: 'Once every plan is taken, the research lab opens. It feeds on Survey Data, and your Core makes it from its level 2 on, at its data outlet. Take the plans at your own pace, place the lab, run it a ribbon from the Core’s data outlet, and start Mechanics.',
+      fr: 'Quand tous les plans sont pris, le laboratoire de recherche s’ouvre. Il ne prend rien par ruban : une recherche se paie au Cœur quand vous la lancez, quelques ressources, puis avance au rythme des tokens d’IA qu’elle reçoit — ceux de la baie de calcul du Cœur, ou un flux acheté à CrierBelt. Prenez les plans à votre rythme, posez le laboratoire, reliez-le au réseau et lancez la Mécanique.',
+      en: 'Once every plan is taken, the research lab opens. It takes nothing by ribbon: a research is paid from the Core when you launch it, a few resources, then moves at the pace of the AI tokens it receives — the Core’s compute bay’s, or a flow bought from CrierBelt. Take the plans at your own pace, place the lab, wire it into the grid and launch Mechanics.',
     },
     objectives: [
       { k: 'unlocked', ids: PLAN_IDS, label: { fr: 'Plans pris', en: 'Plans taken' } },
-      { k: 'feeds', item: 'journal_1', to: ['observatory'], from: ['hearth'], n: 1, label: { fr: 'Les données du Cœur jusqu’au laboratoire', en: 'The Core’s data to the lab' } },
+      { k: 'powered', defs: ['observatory'], n: 1, label: { fr: 'Le laboratoire sous tension', en: 'The lab powered' } },
       { k: 'research', id: 'tr1' },
     ],
     // 600 (D90; 300 at D87, 100 before): the next objective buys the quartz vein's parcel, 450–575 ◉,
@@ -715,8 +712,8 @@ export const QUESTS = {
         done: { k: 'unlocked', ids: ['observatory'] },
       },
       {
-        hint: { fr: 'Le laboratoire près du coin sud-est du Cœur, où est sa sortie de données (onglet Recherche).', en: 'The lab near the Core’s south-east corner, where its data outlet is (Research tab).' },
-        target: { k: 'build', def: 'observatory', at: OUTLET },
+        hint: { fr: 'Le laboratoire près du Cœur (onglet Recherche) : aucun ruban ne le nourrit.', en: 'The lab near the Core (Research tab): no ribbon feeds it.' },
+        target: { k: 'build', def: 'observatory', at: NEAR_HEART },
         done: { k: 'build', defs: ['observatory'], n: 1 },
       },
       {
@@ -725,12 +722,7 @@ export const QUESTS = {
         done: { k: 'powered', defs: ['observatory'], n: 1 },
       },
       {
-        hint: { fr: 'Un ruban de la sortie de données du Cœur (son coin sud-est) jusqu’à une entrée du laboratoire.', en: 'A ribbon from the Core’s data outlet (its south-east corner) to one of the lab’s inputs.' },
-        target: { k: 'build', def: 'ribbon', at: OUTLET },
-        done: { k: 'feeds', item: 'journal_1', to: ['observatory'], from: ['hearth'], n: 1 },
-      },
-      {
-        hint: { fr: 'Dans l’arbre (T), lance la Mécanique : le laboratoire la mène sur les données du Cœur.', en: 'In the tree (T), start Mechanics: the lab runs it on the Core’s data.' },
+        hint: { fr: 'Dans l’arbre (T), lance la Mécanique : ses plaques et son fil se paient au Cœur, et le calcul du Cœur lui donne ses tokens en quelques minutes.', en: 'In the tree (T), launch Mechanics: its plates and wire are paid from the Core, and the Core’s compute gives it its tokens within minutes.' },
         target: { k: 'research', id: 'tr1' },
         done: { k: 'research', id: 'tr1' },
       },
@@ -792,14 +784,15 @@ export const QUESTS = {
 
   // ── 10 ── goal: two of the parts the Core's level 3 is paid in (D90, after D93) ─
   // From the tutorial into the end of Tier 1 (playtest 2026-10-16: once the quartz came, nothing named
-  // the next goal). Level 3 is paid in gears, circuits and quartz oscillators; the gears wait for
-  // Mechanics' press (started in « Données d'arpentage », it is learnt in its own time), so the
+  // the next goal). Level 3 is paid in gears, circuits and quartz oscillators (and, since D123, in the
+  // bricks, steel and copper plates of Tier 1's new works — named in the text, not asked here); the gears wait for
+  // Mechanics' press (started in « Le laboratoire », it is learnt in its own time), so the
   // tutorial ends on the two lines it can build at once (D101: no wait but building time).
   synth_parts: {
     name: { fr: 'Les pièces de la Synthèse', en: 'Parts for the Synthesis' },
     desc: {
-      fr: 'Le Tier 1 se referme sur la Synthèse : elle demande tout le Tier 1, puis le niveau 3 du Cœur se paie en engrenages, circuits et oscillateurs à quartz. Ce niveau porte l’Archive des expertises ; deux expertises ouvrent le Tier 2. Les engrenages viendront de la presse, quand la Mécanique sera apprise ; montez dès maintenant les lignes des circuits et des oscillateurs, jusqu’au Cœur.',
-      en: 'Tier 1 closes on the Synthesis: it asks for all of Tier 1, then the Core’s level 3 is paid in gears, circuits and quartz oscillators. That level mounts the Expertise Archive; two expertises open Tier 2. The gears will come from the press once Mechanics is learnt; set up the circuit and oscillator lines now, into the Core.',
+      fr: 'Le Tier 1 se referme sur la Synthèse : elle demande tout le Tier 1, puis le niveau 3 du Cœur se paie en engrenages, circuits et oscillateurs à quartz, et dans les nouveaux matériaux du Tier 1 : briques, acier, plaques de cuivre. Ce niveau porte l’Archive des expertises ; deux expertises ouvrent le Tier 2. Les engrenages viendront de la presse, quand la Mécanique sera apprise ; montez dès maintenant les lignes des circuits et des oscillateurs, jusqu’au Cœur.',
+      en: 'Tier 1 closes on the Synthesis: it asks for all of Tier 1, then the Core’s level 3 is paid in gears, circuits and quartz oscillators, and in Tier 1’s new materials: bricks, steel, copper plates. That level mounts the Expertise Archive; two expertises open Tier 2. The gears will come from the press once Mechanics is learnt; set up the circuit and oscillator lines now, into the Core.',
     },
     objectives: [
       { k: 'feeds', item: 'oscillator', to: ['hearth'], n: 1, label: { fr: 'Oscillateurs jusqu’au Cœur', en: 'Oscillators to the Core' } },

@@ -5,7 +5,7 @@ import { PLAN_IDS, PLANS } from '@/content/research';
 import { recipeOf } from '../cfg';
 import { replay, type Command } from '../commands';
 import { EPOCH } from '../constants';
-import { connect, join, placeFed, powerLine, type Feed } from '../dev';
+import { join, placeFed, powerLine, type Feed } from '../dev';
 import { catchUp } from '../offline/catchup';
 import { deserialize, serialize } from '../serialize';
 import { heldIn, Sim } from '../state';
@@ -283,10 +283,10 @@ function play(sim: Sim, last: QuestId = 'synth_parts'): Record<string, number> {
   until(sim, 'core_upgrade', QUEST_CHECK_TICKS);
   if (stop('core_upgrade')) return ids;
 
-  // 8 — goal: Survey Data (D71, D101). Every plan left, each as soon as the Hearth can pay for it,
-  // then the research lab's (the gate); the lab south-east of the Hearth, wired, one ribbon from the
-  // Core's data outlet into it (no data collector: it comes later, with « Traitement des données »);
-  // Mechanics starts (no tokens before the servers, D105).
+  // 8 — goal: « Le laboratoire » (D71, D101, D122). Every plan left, each as soon as the Hearth can
+  // pay for it, then the research lab's (the gate); the lab south-east of the Hearth, wired — no
+  // ribbon feeds it —; Mechanics launched, its plates and wire paid from the Core, its tokens the
+  // Core's compute's.
   hint('field_journal', 0);
   const take = (p: string): void => {
     for (let t = 0; t < 30 * EPOCH && !sim.done.has(p) && !sim.unlockPlan(p).ok; t += EPOCH) sim.run(EPOCH);
@@ -297,13 +297,12 @@ function play(sim: Sim, last: QuestId = 'synth_parts'): Record<string, number> {
   take('observatory');
   expect(sim.done.has('ex_quartz')).toBe(true); // the Face Cutter: a plan among the others (D101)
   hint('field_journal', 2);
-  place('observatory', 'observatory', 518, 516); // 3×3 (D84), south-east of the Hearth: inputs south at (518..520, 518)
+  place('observatory', 'observatory', 518, 516); // 3×3 (D84), south-east of the Hearth
   hint('field_journal', 3);
   powerLine(sim, ids.observatory!);
   hint('field_journal', 4);
-  expect(connect(sim, sim.hearthId, ids.observatory!), 'a ribbon from the Core\'s data outlet into the lab').toBeGreaterThan(0);
-  hint('field_journal', 5);
-  expect(sim.startResearch('tr1').ok).toBe(true);
+  for (let t = 0; t < 30 * EPOCH && !sim.startResearch('tr1').ok; t += EPOCH) sim.run(EPOCH); // its resources in the Core (D122)
+  expect(sim.projects.map((p) => p.id).concat([...sim.done])).toContain('tr1');
   hint('field_journal', -1);
   until(sim, 'field_journal', 8 * EPOCH);
   if (stop('field_journal')) return ids;
@@ -428,18 +427,15 @@ describe('quests', () => {
     expect(sim.trade.boughtTotal[itemIdx('copper_ore')]).toBeGreaterThanOrEqual(10_000);
   }, 60_000);
 
-  it('« Le Cœur grandit »: the player raises the Core with plates, glass and wire, no research; its outlet then feeds the lab (D101)', () => {
+  it('« Le Cœur grandit »: the player raises the Core with plates, glass and wire, no research; its compute then runs the lab (D101, D122)', () => {
     const sim = testSim(undefined, { plans: false });
     for (const id of QUEST_IDS.slice(0, idx('core_upgrade'))) expect(sim.completeQuest(id, true), id).toBe(true);
     expect(currentQuest(sim)?.id).toBe('core_upgrade');
     expect(sim.hearthLevel).toBe(1);
     learnPlans(sim);
-    // A lab and a ribbon from the Core's data outlet, before the level: the outlet hands nothing out.
+    // A lab before the level: the Core has no compute bay yet (D122).
     const lab = sim.place('observatory', 518, 516, 0).id!;
-    expect(connect(sim, sim.hearthId, lab)).toBeGreaterThan(0);
-    const fromCore = { k: 'feeds', item: 'journal_1', to: ['observatory'], from: ['hearth'], n: 1 } as const;
-    sim.ensureCompiled();
-    expect(objectiveProgress(sim, fromCore).met).toBe(false);
+    expect(sim.coreComputeRate()).toBe(0);
     // What is short, one hint at a time, the copper wire first; the Core's card is the target.
     const set = (it: string, n: number): void => { sim.stock[itemIdx(it)] = n * 1000; }; // outside commands
     set('copper_wire', 10); set('glass', 10); set('iron_plate', 10);
@@ -459,16 +455,13 @@ describe('quests', () => {
     expect(hintNow(sim)).toEqual(['core_upgrade', -1]);
     sim.run(QUEST_CHECK_TICKS);
     expect(sim.quests.done).toContain('core_upgrade');
-    // Level 2: the Core makes Survey Data (2 a minute) and its outlet hands it to the lab, which
-    // runs Mechanics on it (« Données d'arpentage »).
-    sim.ensureCompiled();
-    expect(objectiveProgress(sim, fromCore).met).toBe(true);
+    // Level 2: its compute bay gives research 1 000 tokens a minute, and the lab runs Mechanics on
+    // them (« Le laboratoire »): two minutes, no ribbon.
+    expect(sim.coreComputeRate()).toBe(1000);
     powerLine(sim, lab);
     expect(sim.startResearch('tr1').ok).toBe(true);
-    const J = itemIdx('journal_1'), made0 = sim.produced[J]!;
     sim.run(3 * EPOCH);
-    expect(sim.produced[J]! - made0).toBe(3 * 2000);
-    expect(sim.stock[J]!).toBeLessThan(sim.produced[J]!); // handed out, into the lab
+    expect(sim.done.has('tr1')).toBe(true);
   });
 
   it('« Tenir la nuit » reads the Core\'s grid without the sun, at any hour (D101)', () => {

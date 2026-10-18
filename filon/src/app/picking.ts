@@ -176,8 +176,8 @@ export class Picker {
   }
 
   /**
-   * The Core's corner piece under a screen point (D86: the data outlet, the Archive, the grid
-   * station; null: none, or not mounted at its level): in plan its corner tile, in iso its volume —
+   * The Core's corner piece under a screen point (D86: the compute bay, the Archive, the grid
+   * station, the uplink; null: none, or not mounted at its level): in plan its corner tile, in iso its volume —
    * a box round the piece's centre up to its height. The Archive opens the Expertise window (D93).
    */
   heartPieceAt(sx: number, sy: number): HeartPiece | null {

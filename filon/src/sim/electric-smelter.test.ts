@@ -13,7 +13,7 @@ import { WORLD_SEED } from '@/content/world';
 import { LocalMarketService } from '@/market/service';
 import { electricSmelting, migrate } from '@/persist/migrate';
 import { recipeOf } from './cfg';
-import { line, steadyPower, stockedSilo, testSim, wire } from './testkit';
+import { grantCost, line, steadyPower, stockedSilo, testSim, wire } from './testkit';
 import type { Sim } from './state';
 
 /** The Electric Smelting learnt (and `more` nodes), outside commands: engine tests start with the plans only. */
@@ -27,6 +27,7 @@ function learn(sim: Sim, ...more: string[]): void {
  * `item` below it feeding its back input, its output west and south into the Hearth's north input.
  */
 function furnaceLine(sim: Sim, def: string, recipe: string, item: string): number {
+  grantCost(sim, def as never); // its price today (D123: copper plates and bricks)
   const k = sim.place(def, 512, 503, 0);
   if (!k.ok) throw new Error(`${def}: ${k.reason}`);
   expect(sim.setRecipe(k.id!, recipe)).toBe(true);
@@ -74,7 +75,6 @@ describe('the electric smelter (D106)', () => {
     const sim = testSim();
     steadyPower(sim);
     learn(sim, 'dn_arc');
-    sim.grant('ceramic', 20); sim.grant('gear', 10); sim.grant('circuit', 6); sim.grant('pace_bell', 2);
     furnaceLine(sim, 'arc_furnace', 'arc_plate', 'iron_ore');
     expect(perMin(sim, 'iron_plate', 10)).toBeCloseTo(20, 1);
   });
@@ -82,6 +82,7 @@ describe('the electric smelter (D106)', () => {
   it('makes nothing off the grid; its recipes are its and the arc furnace\'s, at the smelter\'s pace', () => {
     const sim = testSim();
     learn(sim);
+    grantCost(sim, 'electric_smelter');
     const k = sim.place('electric_smelter', 512, 503, 0);
     expect(k.ok, k.reason).toBe(true);
     sim.setRecipe(k.id!, 'arc_plate');
@@ -91,21 +92,22 @@ describe('the electric smelter (D106)', () => {
     sim.run(6000); // never wired: no grid, no plate
     expect(sim.produced[itemIdx('iron_plate')]).toBe(0);
     // The coal recipes are the kilns' alone, the power ones its and the arc furnace's.
-    expect(recipesFor(buildingIdx('electric_smelter')).map((r) => r.id).sort()).toEqual(['arc_glass', 'arc_plate']);
+    expect(recipesFor(buildingIdx('electric_smelter')).map((r) => r.id).sort()).toEqual(['arc_copper', 'arc_glass', 'arc_plate']); // copper plates too since D123
     expect(RECIPES.arc_plate.seconds).toBe(RECIPES.iron_plate.seconds);
   });
 
-  it('two recipes to choose from: a new one waits for the player (D83); Tier 1, before the arc furnace', () => {
+  it('its recipes to choose from: a new one waits for the player (D83); Tier 1, before the arc furnace', () => {
     const sim = testSim();
     learn(sim);
+    grantCost(sim, 'electric_smelter');
     const k = sim.place('electric_smelter', 520, 520, 0);
     expect(k.ok, k.reason).toBe(true);
     expect(recipeOf(sim.ents.get(k.id!)!.cfg)).toBe(0);
     expect(sim.setRecipe(k.id!, 'arc_glass')).toBe(true);
     expect(recipeOf(sim.ents.get(k.id!)!.cfg)).toBe(recipeIdx('arc_glass') + 1);
-    // The node: Tier 1 of Machines, after the compact machines; the arc furnace's node hangs from it.
+    // The node: Tier 1 of Machines, after the steel mill (D123); the arc furnace's node hangs from it.
     expect(RESEARCH.dn_esmelt.tier).toBe(1);
-    expect(RESEARCH.dn_esmelt.prereq).toContain('dn3');
+    expect(RESEARCH.dn_esmelt.prereq).toContain('dn_steel'); // after the steel mill since D123
     const closure = (id: string): string[] => [id, ...treePrereq(id).flatMap(closure)];
     expect(closure('dn_arc')).toContain('dn_esmelt');
     expect(RECIPES.arc_plate.unlock).toBe('dn_esmelt');

@@ -20,19 +20,21 @@
 // lanes, never across a card; a node the player selects lights its whole chain — what it needs, what
 // needs it — and fades the rest until another is selected, the empty tree clicked or Esc pressed
 // (`chainOf`; D111: the mouse over a card only raises it). A research card shows what it unlocks
-// first (buildings, recipes' items, a glyph for a feature), then its kinds of data (one more each
-// tier, D71: Survey Data, Mechanics Data, atlases, codices) and, from Tier 2, its AI tokens and their
-// price at CrierBelt now. No time anywhere (D118: a research takes as long as its data takes to reach
-// the lab and its tokens to come in). The header adds research's strip: slots, labs, the last
-// minute's token bill, the purse-in-the-red warning, the Compute Plan's switch and the Research
+// first (buildings, recipes' items, a glyph for a feature), then its resources (D122: paid from the
+// Core at launch, as a plan's — a chip each, coral while the Core lacks it) and its AI tokens with
+// their price at CrierBelt now, at every tier. No data (D122: « on va enlever le principe de la
+// data »), no time (D118: a research takes as long as its tokens take to come in). The header adds
+// research's strip: slots, labs, the last minute's token bill (the Core's compute, the servers, the
+// bank, the flow bought), the purse-in-the-red warning, the Compute Plan's switch and the Research
 // Queue (each lab's queued node, ✕ to clear it).
 // The detail pane gives the whole picture: what a node unlocks (a plain line per feature), its
-// cost, its progress (each kind of data paid, its tokens in, the flows that bring them and the
-// flow bought, which the player can change), the action (start, cancel, queue in a lab). « Lancer »
-// starts a Tier 1 node at once; from Tier 2 it opens the launch dialog (../launch-dialog.ts, D118:
-// how many tokens a minute to buy from CrierBelt, what it costs, when it would be done). The
-// reconversion's button is gone (D107: « retire le bouton reconvert de l'arbre »); a save's
-// reconversion under way still runs out in the HUD.
+// cost (its resources with what the Core holds, its tokens), its progress (its tokens in, the flows
+// that bring them — free, banked, bought — and the flow bought, which the player can change; a
+// coral line while its lab has no power), the action (start, cancel, queue in a lab). « Lancer »
+// opens the launch dialog at every tier (../launch-dialog.ts, D118, D122: the resources it takes,
+// the free flow it gets, how many tokens a minute to buy from CrierBelt, what it costs, when it would
+// be done). The reconversion's button is gone (D107: « retire le bouton reconvert de l'arbre »); a
+// save's reconversion under way still runs out in the HUD.
 // The layout is computed once from content (`treeLayout`); the 4 Hz refresh writes states, costs
 // and progress — the nodes' states and a project's state derived in ../tree-state.ts, which the
 // HUD's chips read too. The sim decides; this only shows and asks (`unlockPlan`, `startResearch`,
@@ -44,7 +46,7 @@ import '../styles/research.css';
 import { BAL } from '@/content/balance';
 import { ESSENTIAL, RESERVED } from '@/content/reserve';
 import {
-  FAMILIES, FAMILY_IDS, PLAN_IDS, PLAN_PATHS, SCIENCE, TIER1_WHOLE, TIER_GATE, buildingsUnlockedBy, familyName, isPlan, isResearch, nodeName,
+  FAMILIES, FAMILY_IDS, PLAN_IDS, PLAN_PATHS, TIER1_WHOLE, TIER_GATE, buildingsUnlockedBy, familyName, isPlan, isResearch, nodeName,
   pathPlans, planDef, researchNode, treePrereq,
 } from '@/content/research';
 import { RECIPES } from '@/content/recipes';
@@ -66,6 +68,7 @@ import { nodeState, planState, projectTiming, readyPlans, researchState, type Re
 import { planOffered } from '@/sim/systems/quests';
 import { tierTwoOpen } from '@/sim/systems/expertise';
 import { archiveGlyph } from './expertise';
+import { mark as kitMark } from '../inspector/kit';
 
 export interface ResearchHost {
   sim(): Sim;
@@ -73,11 +76,6 @@ export interface ResearchHost {
   notify(kind: 'good' | 'bad' | 'info' | 'warn', text: string): void;
   /** The node the tutorial's guide is after (null: none): the tree opens on it. */
   focus?(): string | null;
-  /**
-   * The base's production of an item now, items a minute (the statistics' last ten minutes), for the
-   * launch dialog's estimate of when a node's data would be in; null while not measured yet.
-   */
-  dataRate?(item: number): number | null;
 }
 
 type Loc = 'fr' | 'en';
@@ -96,7 +94,7 @@ const BAND_TOP = 4, BAND_BOTTOM = 7;
 /** The research lab's gate (D71): its card, and the room left of it where the paths' links converge. */
 const GATE_W = 220, GATE_GAP = 96;
 
-// Research's geometry (D69, D107): wide cards (three lines: name; data; tokens from Tier 2), tier
+// Research's geometry (D69, D107): wide cards (three lines: name; resources; tokens, D122), tier
 // bands of sub-columns with a gutter between bands, lanes far enough apart for each tier's family
 // name on their edge and for the links' channels. Links never cross a card: they turn in the gaps
 // between sub-columns and run along the gaps between lanes (`route`). The rows close again after
@@ -119,8 +117,8 @@ const TIER_PAD = 26;
 const TIER_GUTTER = 22;
 /**
  * Between Tier 1 and Tier 2 (D118; owner, 2026-10-17: « il doit être séparé du Tier 1 clairement »):
- * wider, a strong ink rule down its middle — Tier 1 is data alone, Tier 2 on waits for the Core's
- * level and takes AI tokens.
+ * wider, a strong ink rule down its middle — Tier 2 on waits for the Core's level 3 and its tokens
+ * grow a hundredfold.
  */
 const TIER_SPLIT = 58;
 /** A tier band's head: « Tier 2 · Cœur niveau 3 » over « Ouvert par … ». */
@@ -524,7 +522,7 @@ function childrenOf(id: string): readonly string[] {
 
 /** A glyph drawn in code for what has no building or item: the analytics readouts (D41), the market's ◉, the land (D60), research's features (D70). */
 type Glyph = 'telemetry' | 'ledger' | 'power' | 'gauge' | 'coin' | 'land'
-  | 'floor' | 'plan' | 'express' | 'rental' | 'queue' | 'forecast' | 'resale' | 'crossing' | 'far';
+  | 'floor' | 'plan' | 'express' | 'rental' | 'queue' | 'forecast' | 'resale' | 'crossing' | 'far' | 'token';
 type Icon = { b: string } | { i: string } | { g: Glyph };
 
 /** What stands for an effect on the tree: the building or item it improves, or a glyph (one or two icons). */
@@ -547,8 +545,8 @@ const EFFECT_ICON: Readonly<Record<string, Icon | readonly Icon[]>> = {
   serverRental: [{ g: 'rental' }, { b: 'server' }],
   deliveryDelay: { b: 'trade_post' }, orders: { b: 'trade_post' }, tradeL2: { b: 'trade_post' }, tradeL3: { b: 'trade_post' },
   post2: { b: 'trade_post' }, post3: { b: 'trade_post' }, crierHouse: { b: 'trade_post' },
-  // Research itself: a slot, the queue, the Core's data (D68).
-  slots: { b: 'observatory' }, researchQueue: [{ g: 'queue' }, { b: 'observatory' }], heartData: [{ b: 'hearth' }, { i: 'journal_1' }],
+  // Research itself: a slot, the queue, the Core's compute (D122).
+  slots: { b: 'observatory' }, researchQueue: [{ g: 'queue' }, { b: 'observatory' }], coreCompute: [{ b: 'hearth' }, { g: 'token' }],
   // The analytics path's readouts (D41), by their flags.
   telemetry: { g: 'telemetry' }, statistics: { g: 'ledger' }, power_log: { g: 'power' }, diagnostics: { g: 'gauge' },
 };
@@ -559,8 +557,8 @@ const heartLevelOf = (id: string): number => BAL.hearthUpgrades.findIndex((u) =>
 const startBuildings = (): string[] => BUILDING_IDS.filter((b) => buildingDef(buildingIdx(b)).unlock === 'start');
 /** An effect's key: its flag, `slots`, or its target. */
 const effectKey = (ef: Effect): string => (ef.k === 'flag' ? ef.flag : ef.k === 'slots' ? 'slots' : ef.k === 'unlock' ? '' : ef.target);
-/** How much an effect adds, in the player's units (data files a minute for the Core's data; tiles, orders, slots). */
-const effectAmount = (ef: Effect): number => (ef.k === 'slots' ? ef.add : ef.k === 'add' ? (ef.target === 'heartData' ? ef.v / 1000 : ef.v) : 0);
+/** How much an effect adds, in the player's units (tokens a minute for the Core's compute; tiles, orders, slots). */
+const effectAmount = (ef: Effect): number => (ef.k === 'slots' ? ef.add : ef.k === 'add' ? ef.v : 0);
 
 /** The icons of what a node unlocks, most telling first (buildings, recipes' items, the Heart, effects); three at most. */
 function iconsOf(id: string): Icon[] {
@@ -585,7 +583,8 @@ function iconsOf(id: string): Icon[] {
  * ribbon through the neighbour's parcels; far — a parcel away from the claim's, a dashed way to it.
  * Research's features (D70): a price line held by a coral floor; a token stamped ½ (the Compute
  * Plan); a crate with speed lines (express freight); a server rack and a coin (rental); three
- * queued slabs, the first running; a price line going on dashed past « now » (forecast).
+ * queued slabs, the first running; a price line going on dashed past « now » (forecast); a token
+ * with rays (the Core's compute, D122).
  */
 function glyph(kind: Exclude<Glyph, 'coin'>, size: number): HTMLCanvasElement {
   const c = document.createElement('canvas');
@@ -673,6 +672,12 @@ function glyph(kind: Exclude<Glyph, 'coin'>, size: number): HTMLCanvasElement {
     line([[7, 27], [33, 27]], C.coralD, 2.2, [3, 2.4]);
     line([[8, 11], [13, 16], [17, 13], [22, 24.5], [32, 24.5]], C.turqD, 2.4);
     coin(29, 12.5, 4.6);
+  } else if (kind === 'token') {
+    // A token with three rays: compute given (the Core's, D122).
+    token(20, 21, 10);
+    line([[20, 5.5], [20, 8.5]], C.lilacD, 2);
+    line([[8.5, 9.5], [10.6, 11.6]], C.lilacD, 2);
+    line([[31.5, 9.5], [29.4, 11.6]], C.lilacD, 2);
   } else if (kind === 'plan') {
     // A token stamped ½: half the price.
     token(16, 20, 9.5);
@@ -778,7 +783,7 @@ function featureText(key: string, amount: number): { label: string; what: string
 }
 
 /** What the expertises leave of each family's research (D93): the research costs follow it. */
-const famSig = (sim: Sim): string => FAMILY_IDS.map((f) => { const m = sim.mods.fam[f]; return `${m.time},${m.tokens},${m.data}`; }).join(';');
+const famSig = (sim: Sim): string => FAMILY_IDS.map((f) => { const m = sim.mods.fam[f]; return `${m.time},${m.tokens},${m.resources}`; }).join(';');
 
 /** A research node's tier (1 for anything else). */
 const tierOf = (id: string): ResearchTier => researchNode(id)?.tier ?? 1;
@@ -795,9 +800,9 @@ interface NodeView {
   spot: Spot;
   node: HTMLElement;
   cost: HTMLElement;
-  /** Plans: the cost chips (their item and amount), to mark the ones the Heart lacks. */
+  /** The cost chips (a plan's materials, a research's resources: their item and amount), to mark the ones the Heart lacks. */
   chips: Array<{ item: number; mu: number; node: HTMLElement }>;
-  /** Research: its tokens and their price (from Tier 2, D118), the queue's tag. */
+  /** Research: its tokens and their price (every tier, D122), the queue's tag. */
   tok: HTMLElement | null;
   qtag: HTMLElement | null;
   bar: HTMLElement | null;
@@ -862,7 +867,12 @@ export class ResearchScreen {
   private readonly labsText = el('span');
   private readonly labsEl: HTMLElement;
   private readonly billEl: HTMLElement;
-  private readonly bill: Record<'label' | 'used' | 'own' | 'bought' | 'cents' | 'rental', HTMLElement>;
+  private readonly bill: Record<'label' | 'used' | 'free' | 'bank' | 'bought' | 'cents' | 'rental', HTMLElement>;
+  /** The bill's bank chip, shown only while the bank counts (an older save's data, D122). */
+  private readonly bankChip: HTMLElement;
+  /** The Core's look at its level, on the bill's compute chip (redrawn when the level changes). */
+  private readonly coreIcon = el('span.rs-bcore');
+  private coreIconLv = 0;
   private readonly heldEl = el('span.rs-held', { hidden: '' });
   private readonly planEl = el<'button'>('button.rs-plan', { type: 'button', hidden: '', onclick: () => this.togglePlan() });
   /** The Compute Plan's comparison beside its switch (D102): what the tokens bought would cost an hour without it and with it, its fee in. */
@@ -924,15 +934,19 @@ export class ResearchScreen {
     // A window resized (or the pane folded under the tree, D96): the whole tree's fit moves.
     if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => { if (this.root.isConnected) this.setZoom(this.zoom); }).observe(this.view);
     this.labsEl = el('span.rs-labs', {}, [buildingIcon(atlas, 'observatory', 18), this.labsText]);
-    this.launch = new LaunchDialog(atlas, { sim: () => host.sim(), dataRate: (item) => host.dataRate?.(item) ?? null, launch: (id, buy) => this.begin(id, buy) });
+    this.launch = new LaunchDialog(atlas, { sim: () => host.sim(), launch: (id, buy) => this.begin(id, buy) });
     this.bill = {
-      label: el('small'), used: el('span.v'), own: el('span.v'), bought: el('span.v'), cents: el('span.rs-bcost'), rental: el('span.rs-brent'),
+      label: el('small'), used: el('span.v'), free: el('span.v'), bank: el('span.v'), bought: el('span.v'), cents: el('span.rs-bcost'), rental: el('span.rs-brent'),
     };
+    // The last minute's tokens (D122): used = free (the Core's compute and the servers, under the
+    // Core's look) + the bank (while it holds tokens) + bought; each part in words in the tooltip.
+    this.bankChip = el('span.rs-bchip', { 'data-k': 'bank' }, [kitMark('store'), this.bill.bank]);
     this.billEl = el('span.rs-bill', { hidden: '' }, [
       this.bill.label,
       el('span.rs-bchip', { 'data-k': 'used' }, [mark('token'), this.bill.used]),
       el('span.rs-beq', {}, '='),
-      el('span.rs-bchip', { 'data-k': 'own' }, [buildingIcon(atlas, 'server', 16), this.bill.own]),
+      el('span.rs-bchip', { 'data-k': 'free' }, [this.coreIcon, this.bill.free]),
+      this.bankChip,
       el('span.rs-bchip', { 'data-k': 'bought' }, [inkGlyph('crier'), this.bill.bought]),
       this.bill.cents, this.bill.rental,
     ]);
@@ -1048,13 +1062,11 @@ export class ResearchScreen {
     this.paintPins();
   }
 
-  /** Research's legend, in its own marks: the kinds of data (one more each tier, D71), AI tokens from Tier 2 (D118: no time). */
+  /** Research's legend, in its own marks (D122): the resources it takes from the Core at launch, its AI tokens (D118: no time). */
   private researchLegend(): HTMLElement {
-    const L = locale();
-    const kinds = SCIENCE.map(([it], k) => el('span.rs-kind', { title: `${t('tree.rs.tier', { n: k + 1 })} · ${itemDef(itemIdx(it)).name[L]}` }, [itemIcon(this.atlas, itemIdx(it), 16)]));
     return el('span.tr-legend.rs-legend', {}, [
-      el('span', { title: t('tree.legend.data.tip') }, [...kinds, t('tree.legend.data')]),
-      el('span', { title: t('tree.legend.tokens.tip') }, [mark('token'), t('tree.legend.tokens.from')]),
+      el('span', { title: t('tree.legend.res.tip') }, [buildingIcon(this.atlas, 'hearth', 16, 2), itemIcon(this.atlas, itemIdx('gear'), 16), t('tree.legend.res')]),
+      el('span', { title: t('tree.legend.tokens.tip') }, [mark('token'), t('tree.legend.tokens')]),
     ]);
   }
 
@@ -1147,10 +1159,10 @@ export class ResearchScreen {
       unlock = el<'button'>('button.btn.primary.tr-unlock', { type: 'button', 'data-unlock': s.id, onclick: (e: Event) => { e.stopPropagation(); this.unlock(s.id); } }, t('tree.unlock'));
       lines = [el('span.tr-line', {}, [cost, unlock])];
     } else if (res) {
-      // What it unlocks first (its icons, left), then its name and one chip per kind of data (D71:
-      // one kind a tier); from Tier 2 a third line, its tokens and their price at CrierBelt now
-      // (D118: Tier 1 takes data alone, no time anywhere).
-      tok = tierOf(s.id) >= 2 ? el('span.tr-tokbox') : null;
+      // What it unlocks first (its icons, left), then its name, a chip per resource it takes from the
+      // Core at launch, and a third line, its tokens and their price at CrierBelt now (D122: tokens
+      // at every tier, no data; D118: no time anywhere).
+      tok = el('span.tr-tokbox');
       bar = el('span.tr-bar');
       qtag = el('span.tr-qtag');
       lines = [el('span.tr-rline', {}, [cost]), tok ? el('span.tr-rfoot', {}, [tok]) : null].filter((x): x is HTMLElement => !!x);
@@ -1177,17 +1189,19 @@ export class ResearchScreen {
   }
 
   /**
-   * A research node's costs (what the expertises leave of its table's, D93): a chip per kind of data;
-   * from Tier 2 its AI tokens and their price at CrierBelt now (D118).
+   * A research node's costs (what the expertises leave of its table's, D93): a chip per resource it
+   * takes from the Core at launch (D122), and its AI tokens with their price at CrierBelt now.
    */
   private fillCosts(v: NodeView, sim: Sim): void {
     const id = v.spot.id;
     const L = locale();
     const e = effectiveCost(id, sim.mods);
-    v.cost.replaceChildren(
-      // Compact from a thousand (« 5,8 k »): a Tier 4 card holds four kinds; the detail pane has them whole.
-      ...e.cost.map((c) => el('span.tr-chip', { 'data-k': 'data', title: `${num(c.mu / 1000)} ${itemDef(c.item).name[L]}` }, [itemIcon(this.atlas, c.item, 14), shortNum(c.mu / 1000)])),
-    );
+    // Compact from a thousand (« 1,2 k »); the detail pane has them whole, with what the Core holds.
+    v.chips = e.cost.map((c) => ({
+      item: c.item, mu: c.mu,
+      node: el('span.tr-chip', { 'data-k': 'res', title: `${num(c.mu / 1000)} ${itemDef(c.item).name[L]}` }, [itemIcon(this.atlas, c.item, 14), shortNum(c.mu / 1000)]),
+    }));
+    v.cost.replaceChildren(...v.chips.map((c) => c.node));
     v.tok?.replaceChildren(
       el('span.tr-chip', { 'data-k': 'tok', title: t('tree.rs.tok.tip', { v: num(e.tokens) }) }, [mark('token'), tokShort(e.tokens)]),
       el('span.tr-oc', { title: t('tree.rs.oc.tip', { p: oc(sim.tokenPriceK(), false, 0) }) }, ocApprox(tokenCents(sim, e.tokens))),
@@ -1493,12 +1507,13 @@ export class ResearchScreen {
   }
 
   /**
-   * « Lancer » (D118): a Tier 1 node starts at once (the guide's and the smoke's path); from Tier 2
-   * the launch dialog asks how many tokens a minute to buy from CrierBelt, and starts it from there.
+   * « Lancer » (D118, D122): the launch dialog, at every tier — the resources it takes from the Core,
+   * the free flow it gets, how many tokens a minute to buy from CrierBelt (often none at Tier 1) —
+   * starts it from there. A node that cannot start says why.
    */
   private start(id: string): void {
     const sim = this.host.sim();
-    if (tierOf(id) >= 2 && !sim.researchBlock(id) && effectiveCost(id, sim.mods).tokens > 0) {
+    if (!sim.researchBlock(id)) {
       const ic = iconsOf(id)[0];
       this.launch.open(id, ic ? this.icon(ic, 44) : null);
       return;
@@ -1510,10 +1525,28 @@ export class ResearchScreen {
   private begin(id: string, buy: number): void {
     const sim = this.host.sim();
     const r = sim.startResearch(id, 0, buy);
-    if (!r.ok && r.reason) this.host.notify('bad', r.reason === 'prereq' ? t('research.block.prereq', { list: this.missing(sim, id) })
-      : r.reason === 'core' ? t('tree.rs.coreNeed', { n: coreLevelFor(tierOf(id)) }) : t(`research.block.${r.reason}` as MsgKey));
+    if (!r.ok && r.reason) this.host.notify('bad', this.blockText(sim, id, r.reason));
     this.detailSig = '';
     this.refresh();
+  }
+
+  /** A research node's resources short in the Core (D122), milli-items by item: what it costs beyond the stock. */
+  private resShort(sim: Sim, id: string): Array<{ item: number; mu: number }> {
+    return effectiveCost(id, sim.mods).cost.filter((c) => sim.stock[c.item]! < c.mu).map((c) => ({ item: c.item, mu: c.mu - sim.stock[c.item]! }));
+  }
+
+  /** What its resources would leave CrierBelt's restart reserve short of (D36, D122), milli-items by item. */
+  private resReserve(sim: Sim, id: string): Array<{ item: number; mu: number }> {
+    return sim.reserveShort(effectiveCost(id, sim.mods).cost);
+  }
+
+  /** Why a research node cannot start, in words: what is missing, the Core's level, what is short (D122)… */
+  private blockText(sim: Sim, id: string, block: string): string {
+    if (block === 'prereq') return t('research.block.prereq', { list: this.missing(sim, id) });
+    if (block === 'core') return t('tree.rs.coreNeed', { n: coreLevelFor(tierOf(id)) });
+    if (block === 'unaffordable') return t('research.block.unaffordable.list', { list: this.shortList(this.resShort(sim, id)) });
+    if (block === 'reserve') return t('tree.reserved', { list: this.shortList(this.resReserve(sim, id)) });
+    return t(`research.block.${block}` as MsgKey);
   }
 
   private cancel(id: string): void {
@@ -1558,7 +1591,7 @@ export class ResearchScreen {
       const missing = this.missing(sim, id);
       if (missing) return core ? `${t('tree.needs', { list: missing })} · ${core}` : t('tree.needs', { list: missing });
       const block = sim.researchBlock(id);
-      return core || (block ? t(`research.block.${block}` as MsgKey) : t('research.start'));
+      return core || (block ? this.blockText(sim, id, block) : t('research.start'));
     }
     if (isPlan(id)) {
       if (st !== 'poor') return st === 'done' ? t('tree.unlocked') : t('tree.ready');
@@ -1568,20 +1601,19 @@ export class ResearchScreen {
     if (st === 'done') return t('research.done');
     if (st === 'active') return this.eta(sim, id) ?? t('research.active');
     const block = sim.researchBlock(id);
-    return block ? t(`research.block.${block}` as MsgKey) : t('research.start');
+    return block ? this.blockText(sim, id, block) : t('research.start');
   }
 
   /**
-   * A running project's end (`projectTiming`, as the HUD's chip; D118: no time of its own): what it
-   * waits for — power for its lab, its data, a token flow (none reaches it; held while the purse is
-   * in the red) — or when its tokens will be in at these flows. Null when nothing can be said.
+   * A running project's end (`projectTiming`, as the HUD's chip; D118, D122: its tokens, no time of
+   * its own): what it waits for — power for its lab, a token flow (none reaches it; held while the
+   * purse is in the red) — or when its tokens will be in at these flows. Null when nothing can be said.
    */
   private eta(sim: Sim, id: string): string | null {
     const p = sim.projects.find((q) => q.id === id);
     if (!p) return null;
     const tm = projectTiming(sim, p);
     if (tm.waiting === 'power') return t('research.waitPower');
-    if (tm.waiting === 'data') return t('research.waiting');
     if (tm.waiting === 'tokens') return tm.held ? t('tree.rs.held') : t('research.waitTokens');
     return Number.isFinite(tm.left) ? t('research.eta', { d: duration(tm.left) }) : null;
   }
@@ -1639,6 +1671,8 @@ export class ResearchScreen {
       } else if (v.spot.kind === 'research') {
         if (costsChanged) this.fillCosts(v, sim);
         const proj = sim.projects.find((p) => p.id === id);
+        // Its resources (D122): coral while the Core lacks one (paid once launched: none marked then).
+        for (const c of v.chips) setAttr(c.node, 'data-poor', st !== 'done' && !proj && sim.stock[c.item]! < c.mu ? '' : null);
         v.bar!.style.width = proj ? `${projectPermille(proj) / 10}%` : st === 'done' ? '100%' : '0%';
         setAttr(v.node, 'data-held', proj && projectTiming(sim, proj).held ? '' : null);
         const q = queued.get(id);
@@ -1662,8 +1696,9 @@ export class ResearchScreen {
 
   /**
    * Research's strip in the header (D68–D70): the slots as pips, the labs (free of all), the last
-   * minute's token bill (used = from the claim's servers + bought at CrierBelt, for so many ◉), the
-   * purse-in-the-red warning, the Compute Plan's switch, the Research Queue's labs.
+   * minute's token bill (D122: used = free — the Core's compute and the claim's servers — + the bank +
+   * bought at CrierBelt, for so many ◉), the purse-in-the-red warning, the Compute Plan's switch, the
+   * Research Queue's labs.
    */
   private refreshStrip(sim: Sim, L: Loc): void {
     const used = sim.projects.length, max = sim.mods.slots;
@@ -1683,16 +1718,25 @@ export class ResearchScreen {
     const showBill = st.totalUsed > 0 || sim.projects.some((p) => (p.tokens ?? 0) > 0);
     this.billEl.hidden = !showBill;
     if (showBill) {
+      if (this.coreIconLv !== sim.hearthLevel) {
+        this.coreIconLv = sim.hearthLevel;
+        this.coreIcon.replaceChildren(...[buildingIcon(this.atlas, 'hearth', 16, sim.hearthLevel)].filter((n): n is HTMLCanvasElement => !!n));
+      }
       setText(this.bill.label, t('tree.rs.bill'));
       setText(this.bill.used, tokShort(st.used));
-      setText(this.bill.own, tokShort(st.fromServers));
+      setText(this.bill.free, tokShort(st.fromCore + st.fromServers));
+      setText(this.bill.bank, tokShort(st.fromBank));
       setText(this.bill.bought, tokShort(st.bought));
+      this.bankChip.hidden = st.fromBank <= 0 && sim.tokenBank <= 0;
       setText(this.bill.cents, st.cents > 0 ? oc(-st.cents, false, 2) : oc(0, false, 0));
       setAttr(this.bill.cents, 'data-tone', st.cents > 0 ? 'bad' : null);
       setText(this.bill.rental, st.rental > 0 ? oc(st.rental, true, 2) : '');
-      const lost = Math.max(0, st.supply - st.fromServers);
-      setAttr(this.billEl, 'title', t('tree.rs.bill.tip', { used: tokShort(st.used), own: tokShort(st.fromServers), bought: tokShort(st.bought), cost: oc(st.cents), lost: tokShort(lost) })
-        + (st.rental > 0 ? ` ${t('tree.rs.bill.rental', { v: oc(st.rental) })}` : ''));
+      // What nobody needed is lost (D122: the Core's share first, then the servers', which Server Rental can sell).
+      const lost = Math.max(0, st.core - st.fromCore) + Math.max(0, st.supply - st.fromServers);
+      setAttr(this.billEl, 'title', t('tree.rs.bill.tip', {
+        used: tokShort(st.used), core: tokShort(st.fromCore), own: tokShort(st.fromServers), bank: tokShort(st.fromBank),
+        bought: tokShort(st.bought), cost: oc(st.cents), lost: tokShort(lost),
+      }) + (st.rental > 0 ? ` ${t('tree.rs.bill.rental', { v: oc(st.rental) })}` : ''));
     }
 
     this.heldEl.hidden = !sim.researchHeld;
@@ -1891,7 +1935,9 @@ export class ResearchScreen {
   /**
    * Research: the Core below the tier's level (D118: its look at that level — said even when a
    * prerequisite is missing too, as nothing else in the pane says it), two expertises to choose, the
-   * slots full, no idle lab, the purse in the red (a missing prerequisite alone: none, its ✗ says it).
+   * slots full, no idle lab, its resources held back by CrierBelt's restart reserve (D122, as a
+   * plan's), the purse in the red. A missing prerequisite alone: none, its ✗ says it; a resource
+   * short: none, its coral line in the cost says it (D111).
    */
   private researchWhy(sim: Sim, id: string, block: string): HTMLElement | null {
     const tier = tierOf(id);
@@ -1899,7 +1945,8 @@ export class ResearchScreen {
       const lvl = coreLevelFor(tier);
       return this.whyLine('core', buildingIcon(this.atlas, 'hearth', 18, lvl), t('tree.rs.coreNeed', { n: lvl }));
     }
-    if (block === 'prereq') return null;
+    if (block === 'prereq' || block === 'unaffordable') return null;
+    if (block === 'reserve') return this.whyLine('reserve', inkGlyph('crier'), t('tree.reserved', { list: this.shortList(this.resReserve(sim, id)) }));
     const icon = block === 'expertise' ? archiveGlyph()
       : block === 'no_lab' ? buildingIcon(this.atlas, 'observatory', 16)
         : block === 'slots' ? el('span.rs-whypips', {}, [el('i.rs-pip', { 'data-on': '' }), el('i.rs-pip', { 'data-on': '' })])
@@ -1975,7 +2022,7 @@ export class ResearchScreen {
       el('p.rs-desc', {}, r.desc[L]),
       rows.length ? el('h4.lettering', {}, t('tree.unlocks')) : null,
       rows.length ? el('ul.tr-unlocks', {}, rows) : null,
-      ...this.costPart(sim, id),
+      ...this.costPart(sim, id, st !== 'done' && !proj),
       this.prereqList(sim, id, L),
       proj ? this.progressPart(sim, proj) : null,
       el('footer.rs-actions', {}, [
@@ -1990,29 +2037,28 @@ export class ResearchScreen {
   }
 
   /**
-   * A research node's cost (D68, D69, D118): its data files and, from Tier 2, its AI tokens and what
-   * they would cost at CrierBelt now — the table's, whatever else the claim owns (D72), less what an
-   * expertise takes off (D93). No time: a research lasts as long as its data and tokens take to come.
+   * A research node's cost (D68, D69, D118, D122): its resources — one item a line with what the Core
+   * holds, coral when short (live until it is launched: paid then) — and its AI tokens with what they
+   * would cost at CrierBelt now; the table's, whatever else the claim owns (D72), less what an
+   * expertise takes off (D93). No data, no time: a research lasts as long as its tokens take to come.
    */
-  private costPart(sim: Sim, id: string): HTMLElement[] {
+  private costPart(sim: Sim, id: string, live: boolean): HTMLElement[] {
     const e = effectiveCost(id, sim.mods);
-    const lines = el('ul.tr-costs.rs-rcosts', {}, [
-      ...e.cost.map((c) => el('li', {}, [el('b', {}, num(c.mu / 1000)), itemMention(c.item)])),
-      tierOf(id) >= 2
-        ? el('li', { 'data-k': 'tok', title: t('tree.rs.oc.tip', { p: oc(sim.tokenPriceK(), false, 0) }) }, [
-          el('b', {}, num(e.tokens)), el('span.rs-cl', {}, [mark('token'), t('tree.legend.tokens')]),
-          el('small.rs-price', {}, t('tree.rs.price', { v: ocApprox(tokenCents(sim, e.tokens)) })),
-        ])
-        : null,
-    ]);
-    return [el('h4.lettering.rs-costhead', {}, [t('research.cost')]), lines];
+    const res = this.costList(e.cost, live);
+    res.classList.add('rs-rcosts');
+    res.append(el('li', { 'data-k': 'tok', title: t('tree.rs.oc.tip', { p: oc(sim.tokenPriceK(), false, 0) }) }, [
+      el('b', {}, num(e.tokens)), el('span.rs-cl', {}, [mark('token'), t('tree.legend.tokens')]),
+      el('small.rs-price', {}, t('tree.rs.price', { v: ocApprox(tokenCents(sim, e.tokens)) })),
+    ]));
+    return [el('h4.lettering.rs-costhead', {}, [t('research.cost')]), res, e.cost.length ? el('small.tr-paid', {}, t('tree.rs.paid')) : null].filter((x): x is HTMLElement => !!x);
   }
 
   /**
-   * A running project (D68, D118): the data files paid of each cost and, from Tier 2, its tokens in of
-   * those it needs — a bar each —; the tokens a minute it gets now from the claim's servers and from
-   * CrierBelt, their ◉ a minute (held while the purse is in the red); the flow it buys, − / + on the
-   * launch dialog's ladder (`setTokenBuy`), while it still needs tokens; its end, or what it waits for.
+   * A running project (D68, D118, D122): its tokens in of those it needs, a bar; the tokens a minute
+   * it gets now — free (the Core's compute and the servers), from the bank, bought from CrierBelt —
+   * and their ◉ a minute (the bought flow held while the purse is in the red); a coral line while its
+   * lab has no power (it takes no tokens then); the flow it buys, − / + on the launch dialog's ladder
+   * (`setTokenBuy`), while it still needs tokens; its end, or what it waits for.
    */
   private progressPart(sim: Sim, p: Project): HTMLElement {
     const bar = (): { root: HTMLElement; fill: HTMLElement } => { const fill = el('span'); return { root: el('span.rs-pbar', {}, fill), fill }; };
@@ -2028,44 +2074,54 @@ export class ResearchScreen {
         setText(txt, text);
       });
     };
-    p.cost.forEach((c, i) => row([itemIcon(this.atlas, c.item, 16) ?? '', itemDef(c.item).name[locale()]], (_s, q) => [q.paid[i]!, q.cost[i]!.mu, `${shortNum(Math.floor(q.paid[i]! / 1000), 10_000)} / ${shortNum(q.cost[i]!.mu / 1000, 10_000)}`], 'data'));
     const usesTokens = (p.tokens ?? 0) > 0;
     if (usesTokens) row([mark('token'), t('tree.rs.prog.tokens')], (_s, q) => [q.tokIn ?? 0, q.tokens ?? 0, `${tokShort(q.tokIn ?? 0)} / ${tokShort(q.tokens ?? 0)}`], 'tok');
-    // Its tokens now (D102, D118): the servers' share and the flow bought, a minute; their ◉ a minute — icons, the words on hover.
+    // Its tokens now (D102, D118, D122): free, banked and bought, a minute; their ◉ a minute — icons, the words on hover.
     let now: HTMLElement | null = null;
     if (usesTokens) {
-      const srv = el('b'), bought = el('b'), cents = el('b');
+      const free = el('b'), bank = el('b'), bought = el('b'), cents = el('b');
+      const coreIcon = el('span.rs-bcore');
+      const bankChip = el('span.rs-tk', { 'data-k': 'bank' }, [kitMark('store'), bank]);
       now = el('div.rs-toknow', {}, [
-        el('span.rs-tk', { 'data-k': 'servers' }, [buildingIcon(this.atlas, 'server', 16), srv]),
+        el('span.rs-tk', { 'data-k': 'free' }, [coreIcon, free]),
+        bankChip,
         el('span.rs-tk', { 'data-k': 'bought' }, [inkGlyph('crier'), bought]),
         el('span.rs-tk', { 'data-k': 'cents' }, [el('span.coin-w', {}, '◉'), cents]),
       ]);
       const nowEl = now;
+      let lv = 0;
       this.detailLive.push((s) => {
         const q = s.projects.find((x) => x.id === p.id);
         if (!q) return;
+        if (lv !== s.hearthLevel) { lv = s.hearthLevel; coreIcon.replaceChildren(...[buildingIcon(this.atlas, 'hearth', 16, lv)].filter((n): n is HTMLCanvasElement => !!n)); }
         const tm = projectTiming(s, q), me = tokenFacts(s).projects.get(p.id);
         const c = Math.round(me?.centsPerMin ?? 0);
-        setText(srv, t('hud.perMin', { v: tokShort(tm.servers) }));
+        setText(free, t('hud.perMin', { v: tokShort(tm.free) }));
+        setText(bank, t('hud.perMin', { v: tokShort(tm.bank) }));
+        bankChip.hidden = tm.bank <= 0 && s.tokenBank <= 0;
         setText(bought, tm.held ? t('tree.rs.toknow.held') : t('hud.perMin', { v: tokShort(tm.bought) }));
         setText(cents, t('hud.perMin', { v: ocNum(c, false, c < 100 ? 2 : 0) }));
         setAttr(nowEl, 'data-held', tm.held ? '' : null);
         setAttr(nowEl, 'data-in', tokensLeft(q) <= 0 ? '' : null);
-        setAttr(nowEl, 'title', t('tree.rs.toknow.tip', { s: tokShort(tm.servers), b: tokShort(tm.bought), c: oc(c, false, 2) }));
+        setAttr(nowEl, 'title', t('tree.rs.toknow.tip', { f: tokShort(tm.free), k: tokShort(tm.bank), b: tokShort(tm.bought), c: oc(c, false, 2) }));
       });
     }
+    // Its lab without power (D122): it takes no tokens until it has some.
+    const power = el('div.rs-heldnote.rs-powernote', { hidden: '', 'data-rs-power': '' }, [inkGlyph('noPower'), el('span', {}, t('tree.rs.noPower'))]);
     const flow = usesTokens ? this.flowControl(sim, p) : null;
     const eta = el('div.rs-live');
     const held = el('div.rs-heldnote', { hidden: '' }, t('tree.rs.held'));
     this.detailLive.push((s) => {
       const q = s.projects.find((x) => x.id === p.id);
+      const tm = q ? projectTiming(s, q) : null;
       const pct = q ? t('research.progress', { v: Math.floor(projectPermille(q) / 10) }) : '';
       const end = q ? this.eta(s, p.id) : null;
       setText(eta, end ? `${pct} · ${end}` : pct);
-      held.hidden = !(q && projectTiming(s, q).held);
+      held.hidden = !tm?.held;
       setAttr(held, 'title', t('tree.rs.held.tip', { v: oc(s.credits) }));
+      power.hidden = tm?.waiting !== 'power';
     });
-    return el('section.rs-prog', {}, [el('h4.lettering', {}, t('tree.rs.progress')), ...rows, now, flow, eta, held]);
+    return el('section.rs-prog', {}, [el('h4.lettering', {}, t('tree.rs.progress')), ...rows, now, power, flow, eta, held]);
   }
 
   /**

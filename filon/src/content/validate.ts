@@ -2,8 +2,8 @@
 // must fail loudly: an unreachable item, a research loop, a recipe whose cycle does not
 // divide the engine's 1 200-tick period (the offline catch-up needs it), a port off its
 // building's edge. It also pins the design's intentional scarcities: the cirque's « tired
-// vein » cannot feed one electronics workshop, an atlas needs two different unique resources and
-// a codex five — so every colony must trade. Machines are specialised: none offers more than
+// vein » cannot feed one electronics workshop, a resonator needs two different unique resources and
+// a nacre lattice two more — so every colony must trade. Machines are specialised: none offers more than
 // `MAX_RECIPES` recipes (D70); every research node unlocks a building, a recipe or a feature,
 // never a bare multiplier (D70). The unlock tree (D33) is one DAG over
 // plans and research: no loop, every node reachable from the start, every building with it. And
@@ -27,11 +27,10 @@ import type { BuildingDef, ItemDef, PlanDef, RecipeDef, ResearchDef, ResearchTie
 
 const CYCLE_LCM = 1200;
 
-/** Items mined straight from the land (deposits, unique biomes, digging, pumping, the cliff faces' veins, D87), and those collectors make from power alone (data files, D68). */
+/** Items mined straight from the land (deposits, unique biomes, digging, pumping, the cliff faces' veins, D87). */
 export const RAW: readonly string[] = [
   'iron_ore', 'sand', 'coal', 'copper_ore', 'salt', 'stone', 'water', ...Object.values(UNIQUE_BIOMES).map((u) => u.item),
   ...(Object.entries(ITEMS) as Array<[string, ItemDef]>).filter(([, it]) => it.face).map(([id]) => id),
-  ...new Set((Object.values(BUILDINGS) as BuildingDef[]).flatMap((b) => (b.drill?.anywhere ? [b.drill.anywhere] : []))),
 ];
 
 const recipes = Object.entries(RECIPES) as Array<[string, RecipeDef]>;
@@ -57,17 +56,11 @@ export function reachableItems(): Set<string> {
 
 /**
  * The items a base can make knowing these tree nodes (and the starting kit): what comes from the
- * land — but for what a building makes from power alone (the data collectors), which needs that
- * building — and the outputs of the recipes known, run by a machine known, from inputs it can make.
+ * land and the outputs of the recipes known, run by a machine known, from inputs it can make.
  */
 export function makeableWith(known: ReadonlySet<string>): Set<string> {
   const has = (unlock: string): boolean => unlock === 'start' || known.has(unlock);
-  const fromPower = new Map<string, boolean>();
-  for (const [, b] of buildings) if (b.drill?.anywhere) fromPower.set(b.drill.anywhere, (fromPower.get(b.drill.anywhere) ?? false) || has(b.unlock));
-  // The Core's own Survey Data (D101): from the level that mounts its data outlet, if that level is open.
-  const outletLevel = BAL.hearthUpgrades[BAL.hearthDataLevel - 2];
-  if (BAL.hearthDataBase > 0 && outletLevel && has(outletLevel.unlock)) fromPower.set('journal_1', true);
-  const have = new Set(RAW.filter((it) => fromPower.get(it) ?? true));
+  const have = new Set(RAW);
   for (let changed = true; changed;) {
     changed = false;
     for (const [, r] of recipes) {
@@ -171,12 +164,11 @@ export function validateContent(): string[] {
     if (CYCLE_LCM % ticks !== 0) errs.push(`recipe ${id}: ${ticks} ticks do not divide ${CYCLE_LCM}`);
   }
 
-  // The neighbouring bases' kits (D110): known buildings, and their ribbons carry known items.
+  // The neighbouring bases' kits (D110): known buildings, power for each (their chains: sim/neighbour-chain.test.ts).
   for (const [pid, k] of Object.entries(NEIGHBOUR_KITS)) {
-    for (const b of [NEIGHBOUR_PAD, NEIGHBOUR_MAST, k.extract, k.store, ...k.makers, ...k.power, ...k.extra]) if (!(b in BUILDINGS)) errs.push(`neighbour kit ${pid}: unknown building ${b}`);
-    if (!k.carries.length || !k.power.length) errs.push(`neighbour kit ${pid}: carries nothing, or has no power`);
+    for (const b of [NEIGHBOUR_PAD, NEIGHBOUR_MAST, ...k.power, ...k.extra]) if (!(b in BUILDINGS)) errs.push(`neighbour kit ${pid}: unknown building ${b}`);
+    if (!k.power.length) errs.push(`neighbour kit ${pid}: has no power`);
     if (!(BUILDINGS[NEIGHBOUR_MAST] as BuildingDef).pole) errs.push(`neighbour kit: ${NEIGHBOUR_MAST} carries no wires`);
-    for (const it of k.carries) if (!items.has(it)) errs.push(`neighbour kit ${pid}: unknown item ${it}`);
   }
 
   // Buildings: unlocks, costs, ports on the footprint's edge.
@@ -229,15 +221,15 @@ export function validateContent(): string[] {
   // The plans' paths (D41): one theme each, one entry each, the analytics flags.
   errs.push(...pathProblems());
 
-  // Every item can be made; every science item research asks for, and every plan's cost, can be made.
+  // Every item can be made; every resource research asks for, and every plan's cost, can be made.
   const reach = reachableItems();
   for (const it of items) if (!reach.has(it)) errs.push(`item ${it}: cannot be produced`);
   for (const [id, r] of research) for (const [it] of r.cost) if (!reach.has(it)) errs.push(`research ${id}: ${it} cannot be produced`);
   for (const [id, p] of plans) for (const [it] of p.cost) if (!reach.has(it)) errs.push(`plan ${id}: ${it} cannot be produced`);
-  // …and in time (D71): a plan only costs what the plans alone let a base make — every plan is
-  // taken before the research lab's, and nothing research brings can be in hand by then; a
-  // research node only costs what its prerequisites and the plans let a base make (Tier 2's
-  // Mechanics Data needs the test bench Mechanics brings; Atlas Lore cannot ask for atlases).
+  // …and in time (D71, D122): a plan only costs what the plans alone let a base make — every plan
+  // is taken before the research lab's, and nothing research brings can be in hand by then; a
+  // research node's resources only what its prerequisites and the plans let a base make (gears
+  // after Mechanics' press, ceramic after Ceramics, lenses after Optics) — made, not only bought.
   const planIds = new Set(plans.map(([id]) => id));
   const withPlans = makeableWith(planIds);
   for (const [id, p] of plans) for (const [it] of p.cost) if (reach.has(it) && !withPlans.has(it)) errs.push(`plan ${id}: ${it} cannot be made with the plans alone`);
@@ -267,11 +259,11 @@ export function validateContent(): string[] {
   else for (const id of t1) if (!whole.prereq.includes(id)) errs.push(`research ${TIER1_WHOLE}: does not need ${id} (Tier 1 is completed whole)`);
   if (TIER_GATE[2] !== TIER1_WHOLE) errs.push(`Tier 2 must open with ${TIER1_WHOLE}`);
   errs.push(...expertiseProblems(FAMILY_IDS));
-  // Tier 1 is data alone, Tier 2 and up data and tokens, with no minimum time (D118): a node's
-  // `minutes` is only the pace the launch dialog aims at, so Tier 1 has none.
+  // Every node takes tokens and has a pace, with no minimum time (D118, D122: tokens at every tier):
+  // `minutes` is only the pace the launch dialog aims at. Its resources are whole and positive.
   for (const [id, r] of research) {
-    if (r.tier === 1 && (r.tokens !== 0 || r.minutes !== 0)) errs.push(`research ${id}: a Tier 1 node takes no tokens and no time (D118)`);
-    if (r.tier >= 2 && (r.tokens <= 0 || r.minutes <= 0)) errs.push(`research ${id}: a Tier ${r.tier} node needs tokens and a pace (D118)`);
+    if (r.tokens <= 0 || r.minutes <= 0) errs.push(`research ${id}: a node needs tokens and a pace (D122)`);
+    for (const [it, n] of r.cost) if (!(Number.isInteger(n) && n > 0)) errs.push(`research ${id}: resource ${it} must be a positive whole number`);
   }
   // Each tier waits for the Core's level (D118): a level the player can raise, behind the trunk node
   // that opens the tier, never lower than the tier before's; Tier 2's is the Archive's (D93).
@@ -287,8 +279,8 @@ export function validateContent(): string[] {
 
   // Designed scarcity and the need to trade.
   if (tiredVeinPerMin() * 2 >= wirePerElectronicsWorkshop()) errs.push('the tired vein must not feed one electronics workshop');
-  if (uniquesNeeded('atlas').size < 2) errs.push('an atlas must need ≥ 2 distinct uniques');
-  if (uniquesNeeded('codex').size !== 5) errs.push('a codex must need 5 distinct uniques');
+  if (uniquesNeeded('resonator').size < 2) errs.push('a resonator must need ≥ 2 distinct uniques');
+  if (uniquesNeeded('nacre_lattice').size < 2) errs.push('a nacre lattice must need ≥ 2 distinct uniques');
 
   // Nothing unusable (D107): what a node unlocks — buildings, recipes, a Heart level, a feature —
   // works with what the base can extract, make or buy by then, in the order the tree imposes.

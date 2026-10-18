@@ -11,7 +11,7 @@ import type { MarketSave } from '@/market/types';
 import { Sim, newTokenStats, type TokenStats } from './state';
 import { effectiveCost, projectPermille, type Project } from './research/runtime';
 import { RESEARCH_GONE } from '@/content/retired';
-import { BUILDING_KIND, hasResearch, itemDef, itemIdx } from '@/content/registry';
+import { BUILDING_KIND, hasResearch, itemIdx } from '@/content/registry';
 import { modulesOf, withModules } from './cfg';
 import type { ImportOrder, PostActivity, Shipment, TradeLine } from './trade';
 import { loadQuests, saveQuests, type QuestSave } from './systems/quests';
@@ -22,7 +22,7 @@ import type { Rot } from './types';
 import { forTiles } from './entities';
 import { contentTable, remapSave, type ContentTable } from './save-remap';
 import { tileIndex } from './world/grid';
-import { packRuns } from './flow/chain';
+import { isSpanTile, packRuns, type Chain } from './flow/chain';
 import { neighboursGiveWay } from './systems/land';
 
 /**
@@ -52,8 +52,13 @@ import { neighboursGiveWay } from './systems/land';
  * delivered (`tokIn`) and the flow bought for it (`buy`); a project under way loses its minimum time,
  * a Tier 1 one its tokens, a Tier 2+ one counts what it had used as delivered; the tokens used and
  * not yet billed (`tokens.use`) are forgiven.
+ * 19: no data (D122): research on tokens at every tier and resources paid at launch — a project under
+ * way counts the data it had paid as tokens delivered (a Tier 1 one needs its tokens now) and owes no
+ * resources; the Data Relay node forgotten; the data makers' fractions (`dataAcc`) dropped; the data
+ * items a save holds anywhere turned into banked tokens by the remap (`tokens.bank`); a project
+ * carries its lab's power over the minute (`lit`, optional).
  */
-export const SAVE_VERSION = 18;
+export const SAVE_VERSION = 19;
 
 export interface SaveData {
   v: number;
@@ -70,6 +75,11 @@ export interface SaveData {
   hearthLevel: number;
   hearthId: number;
   nextId: number;
+  /**
+   * The first entity id placed under today's building prices (D123, sim/refund.ts). Absent: a save
+   * from before D123, every entity of which paid the old prices — its floor is its `nextId`.
+   */
+  costFloor?: number;
   /** The content table the indices below refer to (D47; absent: written by this very content). */
   content?: ContentTable;
   /** Packed: id, def, x, y, rot, cfg, builtAt per entity. */
@@ -99,12 +109,18 @@ export interface SaveData {
   produced: number[];
   consumed: number[];
   /** Research in progress (start order), archive notes, reconversion state. */
-  /** Research under way: `dur` and `el` a reconversion's wait (0 for research since D118); `tokens` needed, `tokIn` delivered, `buy` the flow bought a minute (D118). */
-  projects?: Array<{ id: string; lab: number; cost: number[]; paid: number[]; dur: number; el: number; notes?: number; tokens?: number; tokIn?: number; buy?: number }>;
-  /** AI tokens (D68, D118): the servers' output since the boundary, the bought flows held, the Compute Plan, the minute's statistics. */
-  tokens?: { serverAcc: number; held: boolean; plan: boolean; stats?: TokenStats };
-  /** The data makers' carried fractions, by entity (the Heart, autonomous labs). */
-  dataAcc?: Array<[number, number]>;
+  /**
+   * Research under way: `cost` its resources paid at launch (D122; item, mu), `dur` and `el` a
+   * reconversion's wait (0 for research since D118); `tokens` needed, `tokIn` delivered, `buy` the
+   * flow bought a minute (D118); `lit` its lab's power over the minute so far (D122; absent: 0).
+   */
+  projects?: Array<{ id: string; lab: number; cost: number[]; paid: number[]; dur: number; el: number; notes?: number; tokens?: number; tokIn?: number; buy?: number; lit?: number }>;
+  /**
+   * AI tokens (D68, D118): the servers' output since the boundary, the bought flows held, the
+   * Compute Plan, the minute's statistics, and the tokens banked from an older save's data (D122:
+   * `bank`; absent: none).
+   */
+  tokens?: { serverAcc: number; held: boolean; plan: boolean; stats?: TokenStats; bank?: number };
   /** The Research Queue: each lab's next node. */
   labQueue?: Array<[number, string]>;
   notes?: number;
@@ -173,7 +189,7 @@ export function serialize(sim: Sim): SaveData {
     worldSeed: sim.worldSeed, playerSeed: sim.playerSeed, foundingEpoch: sim.foundingEpoch, colonyName: sim.colonyName,
     ...(sim.grid.source.mapV !== undefined ? { mapV: sim.grid.source.mapV } : {}),
     ...(sim.emblem ? { emblem: { ...sim.emblem } } : {}),
-    tick: sim.tick, credits: sim.credits, hearthLevel: sim.hearthLevel, hearthId: sim.hearthId, nextId: sim.ents.nextId,
+    tick: sim.tick, credits: sim.credits, hearthLevel: sim.hearthLevel, hearthId: sim.hearthId, nextId: sim.ents.nextId, costFloor: sim.costFloor,
     content: contentTable(),
     ents, portItems,
     stock: Array.from(sim.stock),
@@ -198,9 +214,9 @@ export function serialize(sim: Sim): SaveData {
       id: p.id, lab: p.lab, cost: p.cost.flatMap((c) => [c.item, c.mu]), paid: [...p.paid], dur: p.dur, el: p.el,
       ...(p.notes !== undefined ? { notes: p.notes } : {}),
       ...(p.tokens !== undefined ? { tokens: p.tokens, tokIn: p.tokIn ?? 0, ...(p.buy ? { buy: p.buy } : {}) } : {}),
+      ...(p.lit ? { lit: p.lit } : {}),
     })),
-    tokens: { serverAcc: sim.serverAcc, held: sim.researchHeld, plan: sim.tokenPlan, stats: { ...sim.tokenStats } },
-    dataAcc: [...sim.dataAcc].sort((a, b) => a[0] - b[0]),
+    tokens: { serverAcc: sim.serverAcc, held: sim.researchHeld, plan: sim.tokenPlan, stats: { ...sim.tokenStats }, ...(sim.tokenBank ? { bank: sim.tokenBank } : {}) },
     labQueue: [...sim.labQueue].sort((a, b) => a[0] - b[0]),
     notes: sim.notes,
     respecs: sim.respecs,
@@ -256,6 +272,7 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
     forTiles(e, (x, y) => { sim.grid.occ[tileIndex(x, y)] = e.id; });
   }
   sim.ents.nextId = Math.max(sim.ents.nextId, d.nextId);
+  sim.costFloor = d.costFloor ?? d.nextId; // D123: a save from before refunds every building it holds at its old price
   sim.stock.set(d.stock.slice(0, N_ITEMS));
   for (const [id, st] of d.stores) sim.stores.set(id, Float64Array.from(st));
   for (const [id, v] of d.acc) sim.accEnergy.set(id, v);
@@ -277,9 +294,14 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
   sim.notes = d.notes ?? 0;
   sim.respecs = d.respecs ?? 0;
   sim.lastRespec = d.lastRespec ?? -1;
+  if (d.tokens) {
+    sim.serverAcc = d.tokens.serverAcc; sim.researchHeld = d.tokens.held; sim.tokenPlan = d.tokens.plan;
+    sim.tokenStats = { ...newTokenStats(), ...(d.tokens.stats ?? {}) };
+    sim.tokenBank = d.tokens.bank ?? 0;
+  }
   for (const p of d.projects ?? []) {
     if (RESEARCH_GONE.has(p.id)) {
-      // A node taken out of the tree (D119): the data it had paid goes back to the Heart.
+      // A node taken out of the tree (D119): what it had paid goes back to the Heart.
       p.paid.forEach((mu, i) => { const it = p.cost[2 * i] ?? -1; if (it >= 0 && it < N_ITEMS) sim.stock[it]! += mu; });
       continue;
     }
@@ -288,33 +310,30 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
     const proj: Project = {
       id: p.id, lab: p.lab, cost, paid: [...p.paid], dur: p.dur, el: p.el, ...(p.notes !== undefined ? { notes: p.notes } : {}),
       ...(p.tokens !== undefined ? { tokens: p.tokens, tokIn: p.tokIn ?? 0, ...(p.buy ? { buy: p.buy } : {}) } : {}),
+      ...(p.lit ? { lit: p.lit } : {}),
     };
     if (p.id.startsWith('respec:') || p.tokens !== undefined) { sim.projects.push(proj); continue; }
-    // A project from before AI tokens (D68), or started under the spread penalty (D72: the
-    // v7 → v8 migration strips its tokens to bring it here): rebased on the node's cost today,
-    // its progress kept — the lesser of its data paid and its time run, as a share of the new data,
-    // and of the new tokens taken as delivered (D118: no time any more). A node gone: dropped.
+    // A project from before AI tokens (D68), or started under the spread penalty (D72: the v7 → v8
+    // migration strips its tokens to bring it here): rebased on the node's tokens today, its share
+    // of time run taken as delivered (D118: no time any more), plus the tokens its data was worth
+    // (D122's step leaves them in `tokIn`); no resources owed. What passes its need is banked. A node gone: dropped.
+    // What it still holds as paid (items today's content knows: the remap banked the data) goes back to the Heart.
+    p.paid.forEach((mu, i) => { const it = p.cost[2 * i] ?? -1; if (it >= 0 && it < N_ITEMS && mu > 0) sim.stock[it]! += mu; });
     if (!hasResearch(p.id)) continue;
-    const share = projectPermille(proj);
     const now = effectiveCost(p.id);
-    sim.projects.push({
-      id: p.id, lab: p.lab, cost: now.cost, paid: now.cost.map((c) => Math.floor((c.mu * share) / 1000)), dur: 0, el: 0,
-      tokens: now.tokens, tokIn: Math.floor((now.tokens * share) / 1000),
-    });
+    const got = Math.floor((now.tokens * projectPermille(proj)) / 1000) + (p.tokIn ?? 0);
+    sim.projects.push({ id: p.id, lab: p.lab, cost: [], paid: [], dur: 0, el: 0, tokens: now.tokens, tokIn: Math.min(now.tokens, got) });
+    sim.tokenBank += Math.max(0, got - now.tokens);
   }
-  if (d.tokens) {
-    sim.serverAcc = d.tokens.serverAcc; sim.researchHeld = d.tokens.held; sim.tokenPlan = d.tokens.plan;
-    sim.tokenStats = { ...newTokenStats(), ...(d.tokens.stats ?? {}) };
-  }
-  for (const [id, v] of d.dataAcc ?? []) sim.dataAcc.set(id, v);
   for (const [lab, id] of d.labQueue ?? []) if (hasResearch(id)) sim.labQueue.set(lab, id);
-  // A lab's store holds data only (the science items, D71): anything else an older lab held goes
-  // to the Heart — nothing vanishes.
+  // A lab holds nothing since D122 (its data went with the data, banked by the remap): anything an
+  // older lab's store still held goes to the Heart, and the store goes — nothing vanishes.
   for (let i = 0; i < d.ents.length; i += 7) {
     if (BUILDING_KIND[d.ents[i + 1]!] !== 'lab') continue;
     const st = sim.stores.get(d.ents[i]!);
     if (!st) continue;
-    for (let it = 0; it < st.length; it++) if (itemDef(it).kind !== 'science' && st[it]! > 0) { sim.refund(it, st[it]!); st[it] = 0; }
+    for (let it = 0; it < st.length; it++) if (st[it]! > 0) sim.refund(it, st[it]!);
+    sim.stores.delete(d.ents[i]!);
   }
   // Speed modules are gone (D81): those an older save had fitted in machines go back to the Heart,
   // as the item they were made as (now the servomotor, the same id), and the machine runs at its own pace.
@@ -368,9 +387,22 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
   const ribbons = new Map(d.chains.map((c) => [chainKey(c.tier, c.head, c.len), c]));
   // What finds no place goes to the Heart rather than vanish (past its cap if need be).
   const toHeart = (it: number, mu: number): void => { if (it >= 0 && it < N_ITEMS) sim.stock[it]! += mu; };
+  // A save from before D121 knew no cells over a line's leaps (skybridges, junctions): such a line
+  // is found by its world tiles — its tier, its last world tile, their count — and its items go back
+  // on those very tiles, the cells over the leaps empty.
+  const legacy = (c: Chain): { key: string; at: number[] } | null => {
+    const at: number[] = [];
+    c.tiles.forEach((t, i) => { if (!isSpanTile(t)) at.push(i); });
+    return at.length === c.tiles.length ? null : { key: chainKey(c.tier, c.lastTile, at.length), at };
+  };
   for (const c of sim.graph.chains) {
-    const key = chainKey(c.tier, c.tiles[c.tiles.length - 1]!, c.tiles.length);
-    const s = ribbons.get(key);
+    let key = chainKey(c.tier, c.tiles[c.tiles.length - 1]!, c.tiles.length);
+    let s = ribbons.get(key);
+    let at: number[] | null = null; // the cells the saved ones go to (null: one for one)
+    if (!s) {
+      const old = legacy(c);
+      if (old) { key = old.key; s = ribbons.get(key); at = old.at; }
+    }
     if (!s) continue;
     ribbons.delete(key);
     if (c.fluid) {
@@ -385,10 +417,14 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
       for (const v of s.cells ?? []) if (v > 0) toHeart(v - 1, 1000);
       continue;
     }
-    const cells = s.cells ?? packRuns(s.runs ?? [], c.length, toHeart);
+    const cells = s.cells ?? packRuns(s.runs ?? [], at ? at.length : c.length, toHeart);
     c.cells.fill(0);
     c.content = 0;
-    cells.forEach((v, i) => { if (v > 0 && v - 1 < N_ITEMS) c.place(i, v - 1); });
+    cells.forEach((v, i) => {
+      if (!(v > 0 && v - 1 < N_ITEMS)) return;
+      const j = at ? at[i] : i;
+      if (j === undefined) toHeart(v - 1, 1000); else c.place(j, v - 1);
+    });
     if (s.stage && s.stage[1] > 0) { c.stageItem = s.stage[0]; c.stageMu = s.stage[1]; c.content += s.stage[1]; }
     if (c.raidPosts.length) c.raidHeld = s.raid ?? 0;
   }

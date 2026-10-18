@@ -75,7 +75,7 @@ export class LogisticsPanel {
     if (!ls.length) return;
     const i = (this.cursor.get(k) ?? 0) % ls.length;
     this.cursor.set(k, i + 1);
-    const v = ls[i]!.chain.tiles[ls[i]!.chain.tiles.length - 1]!;
+    const v = ls[i]!.chain.lastTile;
     this.host.goTo((v & 1023) + 0.5, (v >> 10) + 0.5);
   }
 

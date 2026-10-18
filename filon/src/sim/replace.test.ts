@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import { BUILDING_IDS, itemIdx, recipeIdx } from '@/content/registry';
 import { filterOf, recipeOf } from './cfg';
 import { replay } from './commands';
-import { testSim, drillToHearth, line, stockedSilo, wire, IRON, SAND } from './testkit';
+import { grantCost, testSim, drillToHearth, line, stockedSilo, wire, IRON, SAND } from './testkit';
 import type { Sim } from './state';
 import type { Rot } from './types';
 
@@ -131,6 +131,7 @@ describe('replacement', () => {
     const sim = testSim();
     unlock(sim, 'tr3', 'tr4', 'ex5');
     for (const [it, n] of [['ceramic', 100], ['thermal_core', 10], ['gear', 30]] as const) sim.grant(it, n);
+    grantCost(sim, 'pylon'); grantCost(sim, 'deep_bore'); // their prices today (D123)
     const mast = sim.place('mast', 520, 520, 0);
     expect(sim.place('pylon', 520, 520, 0)).toMatchObject({ ok: true, replaces: [mast.id] });
     const drill = sim.place('drill', 509, 499, 0);

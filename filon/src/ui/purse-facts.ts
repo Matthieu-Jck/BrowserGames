@@ -14,8 +14,9 @@
 // been seen): every recurring flow's actual cents over those minutes, an hour. The lines break it
 // down — each trade post's sales by item and its standing orders (from the trade ledger, over the
 // same minutes; any cents the ledger no longer holds go to a last « other trade » line), the AI
-// tokens with their rate and the share the claim's servers covered, the Compute Plan's fee, the
-// servers' rental, the leases' rent — and they add up to the headline exactly. One-offs (a spot
+// tokens bought with their rate and the share research got free (D122: the Core's compute, the
+// servers, the bank), the Compute Plan's fee, the servers' rental, the leases' rent — and they add
+// up to the headline exactly. One-offs (a spot
 // trade, a parcel bought or sold, a reorientation, a reward, a grant) are the window's actual
 // cents, told apart: never in the headline.
 import { PURSE_KINDS, RECURRING, type PurseKind, type PurseLog } from '@/sim/purse';
@@ -68,8 +69,8 @@ export interface FlowLine {
   readonly perMin?: number;
   /** A standing order's cost a minute at today's price, if it buys its full rate (centi-◉). */
   readonly liveCost?: number;
-  /** Tokens: the share the claim's servers covered, ‰. */
-  readonly servers?: number;
+  /** Tokens: the share of research's tokens that came free (the Core's compute, the servers, the bank; D122), ‰. */
+  readonly free?: number;
   /** Rent: the leases now. */
   readonly parcels?: readonly number[];
 }
@@ -132,10 +133,10 @@ export function purseSummary(sim: Sim, h: PurseHistory): PurseSummary {
   const rest = d('sales') + d('orders') - traded;
   if (rest) lines.push({ kind: 'trade', perHour: hourly(rest) });
   // The token flow bought for research (D118): its tokens a minute, and the share of all research's
-  // tokens the claim's servers gave meanwhile (their chip).
+  // tokens that came free meanwhile — the Core's compute, the servers, the bank (D122; its chip).
   if (d('tokens')) {
     const used = now.used - from.used, bought = now.bought - from.bought;
-    lines.push({ kind: 'tokens', perHour: hourly(d('tokens')), perMin: bought / minutes, servers: used > 0 ? Math.round(((used - bought) * 1000) / used) : 0 });
+    lines.push({ kind: 'tokens', perHour: hourly(d('tokens')), perMin: bought / minutes, free: used > 0 ? Math.round(((used - bought) * 1000) / used) : 0 });
   }
   if (d('fee')) lines.push({ kind: 'fee', perHour: hourly(d('fee')) });
   if (d('rental')) lines.push({ kind: 'rental', perHour: hourly(d('rental')) });

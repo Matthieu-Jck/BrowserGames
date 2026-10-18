@@ -10,14 +10,16 @@ import type { RecipeDef } from './types';
 /** No machine offers more recipes than this (D70). */
 export const MAX_RECIPES = 3;
 
+/** Iron plates, glass and copper plates (D123) on coal: the smelter and the compact smelter. */
 const KILNS = ['kiln', 'kiln_compact'] as const;
 /**
- * Plates and glass from power, without coal: the electric smelter at the smelter's pace (Tier 1,
+ * Plates, glass and copper plates (D123) from power, without coal: the electric smelter at the smelter's pace (Tier 1,
  * D106), the arc furnace twice as fast (Mechanics, D70).
  */
 const ARC = ['electric_smelter', 'arc_furnace'] as const;
+/** Copper wire, and cable twisted of it (D123): the wire mill and the twin wire mill. */
 const WIRE = ['wire_mill', 'wire_mill_double'] as const;
-/** Gears: the press and its forging press. */
+/** Gears, and pipes from steel (D123): the press and its forging press. */
 const PRESSES = ['press', 'forge_press'] as const;
 /** Circuits, servomotors and robot arms (D81): the electronics workshop, the etcher, the chip fab. */
 const ELECTRONICS = ['workshop', 'etcher', 'chip_fab'] as const;
@@ -25,9 +27,7 @@ const ELECTRONICS = ['workshop', 'etcher', 'chip_fab'] as const;
 const ASSEMBLY = ['great_workshop', 'great_workshop_compact', 'tower_workshop'] as const;
 /** Lenses and nacre lattices. */
 const OPTICS = ['optics_workshop'] as const;
-/** Mechanics Data: the base load-tests its own parts and records the results (D71). */
-const TEST = ['test_bench'] as const;
-/** Resin canvas, atlases and codices: the works Verrière's scholars pay most for. */
+/** Resin canvas (the atlases and codices it compiled went with the data, D122). */
 const SCRIPTORIUM = ['scriptorium'] as const;
 
 export const RECIPES = {
@@ -48,12 +48,6 @@ export const RECIPES = {
   gear: {
     name: { fr: 'Engrenage', en: 'Gear' }, machines: PRESSES, seconds: 5,
     ins: [['iron_plate', 3]], outs: [['gear', 1]], unlock: 'tr1',
-  },
-  journal_2: {
-    // No ceramic (unlike before D68): Tier 2 research needs it, and ceramic is a Tier 2 unlock.
-    // One circuit and one quartz oscillator since D87 (two circuits before): the oscillator clocks the load tests.
-    name: { fr: 'Données mécaniques', en: 'Mechanics Data' }, machines: TEST, seconds: 20,
-    ins: [['gear', 2], ['circuit', 1], ['oscillator', 1]], outs: [['journal_2', 1]], unlock: 'tr1',
   },
   circuit: {
     name: { fr: 'Circuit imprimé', en: 'Circuit Board' }, machines: ELECTRONICS, seconds: 6,
@@ -95,10 +89,6 @@ export const RECIPES = {
     name: { fr: 'Cœur thermique', en: 'Thermal Core' }, machines: ASSEMBLY, seconds: 15,
     ins: [['embersalt', 2], ['ceramic', 2], ['circuit', 1]], outs: [['thermal_core', 1]], unlock: 'tr6',
   },
-  atlas: {
-    name: { fr: 'Atlas', en: 'Atlas' }, machines: SCRIPTORIUM, seconds: 30,
-    ins: [['lens', 1], ['thermal_core', 1], ['circuit', 2]], outs: [['atlas', 1]], unlock: 'tr6',
-  },
   resonator: {
     name: { fr: 'Résonateur', en: 'Resonator' }, machines: ASSEMBLY, seconds: 30,
     ins: [['singing_quartz', 2], ['thermal_core', 1], ['circuit', 2]], outs: [['resonator', 1]], unlock: 'tr8',
@@ -106,10 +96,6 @@ export const RECIPES = {
   nacre_lattice: {
     name: { fr: 'Treillis de nacre', en: 'Nacre Lattice' }, machines: OPTICS, seconds: 20,
     ins: [['fossil_nacre', 3], ['lens', 1]], outs: [['nacre_lattice', 1]], unlock: 'tr8',
-  },
-  codex: {
-    name: { fr: 'Codex', en: 'Codex' }, machines: SCRIPTORIUM, seconds: 60,
-    ins: [['resonator', 1], ['nacre_lattice', 1], ['lumen_moss', 4]], outs: [['codex', 1]], unlock: 'tr8',
   },
   // ── appended (D70): the sifter and the arc furnace ─────────────────────────
   // The sifter sorts the stone excavators bring up: sand, or the odd ore it hides.
@@ -138,11 +124,47 @@ export const RECIPES = {
     ins: [['sand', 3]], outs: [['glass', 1]], unlock: 'dn_esmelt',
   },
   // ── appended (D87): the quartz workshop's one recipe ──────────────────────
-  // A blade cut from the face cutter's quartz, mounted on two copper leads: what Mechanics Data
-  // and the servers need. Its one machine has no other recipe: it starts on it (D83).
+  // A blade cut from the face cutter's quartz, mounted on two copper leads: what the servers and
+  // some research need (D122). Its one machine has no other recipe: it starts on it (D83).
   oscillator: {
     name: { fr: 'Oscillateur à quartz', en: 'Quartz Oscillator' }, machines: ['quartz_workshop'], seconds: 6,
     ins: [['quartz', 1], ['copper_wire', 2]], outs: [['oscillator', 1]], unlock: 'ex_quartz',
+  },
+  // ── appended (D123): more to make of the basic resources ─────────────────
+  // Copper smelts like iron, a copper ore and a coal a plate, at the smelters' pace (their third
+  // recipe) — or on power in the electric smelter and the arc furnace (theirs). Copper plates are
+  // the metal of what runs on power; the wire mill's wire stays what circuits are etched from.
+  copper_plate: {
+    name: { fr: 'Plaque de cuivre', en: 'Copper Plate' }, machines: KILNS, seconds: 6,
+    ins: [['copper_ore', 1], ['coal', 1]], outs: [['copper_plate', 1]], unlock: 'dn_copper',
+  },
+  arc_copper: {
+    name: { fr: 'Plaque de cuivre (électrique)', en: 'Copper Plate (electric)' }, machines: ARC, seconds: 6,
+    ins: [['copper_ore', 1]], outs: [['copper_plate', 1]], unlock: 'dn_esmelt',
+  },
+  // Steel: two iron plates and a coal, blown in the steel mill. 12 s: 10 plates a minute in, what one
+  // smelter gives — one smelter feeds one mill (as one drill pair feeds one smelter, D97).
+  steel: {
+    name: { fr: 'Acier', en: 'Steel' }, machines: ['steel_mill'], seconds: 12,
+    ins: [['iron_plate', 2], ['coal', 1]], outs: [['steel', 1]], unlock: 'dn_steel',
+  },
+  // Bricks: wet sand pressed and baked, a sand and two waters a brick. 4 s: 15 sand a minute, one
+  // sand collector's, and 30 water, half a pump's — the second use of water in Tier 1 (D114).
+  brick: {
+    name: { fr: 'Brique', en: 'Brick' }, machines: ['brickworks'], seconds: 4,
+    ins: [['sand', 1], ['water', 2]], outs: [['brick', 1]], unlock: 'ex_brick',
+  },
+  // Pipes: a steel bar rolled into two lengths of tube at the press, its second recipe. 12 s: one
+  // steel mill's 5 steel a minute make 10 pipes.
+  pipe: {
+    name: { fr: 'Tuyau', en: 'Pipe' }, machines: PRESSES, seconds: 12,
+    ins: [['steel', 1]], outs: [['pipe', 2]], unlock: 'dn_steel',
+  },
+  // Cable: three copper wires twisted and sheathed at the wire mill, its second recipe. 6 s: 30
+  // wires a minute, three quarters of a wire mill's 40.
+  cable: {
+    name: { fr: 'Câble', en: 'Cable' }, machines: WIRE, seconds: 6,
+    ins: [['copper_wire', 3]], outs: [['cable', 1]], unlock: 'dn_wiremill',
   },
 } as const satisfies Record<string, RecipeDef>;
 

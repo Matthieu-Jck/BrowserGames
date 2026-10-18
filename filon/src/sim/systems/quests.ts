@@ -119,17 +119,16 @@ export function outputItem(sim: Sim, id: number): number {
 
 /**
  * Built, awake buildings that put out `item` (drills on its deposit, machines on a recipe making it,
- * trade posts whose exit hands it out: their cargo, D62; the Core its Survey Data, once its level
- * mounts the outlet: D86, D101), in id order. A post counts so a land without a quartz vein (maps
+ * trade posts whose exit hands it out: their cargo, D62), in id order (the Core gave its Survey
+ * Data until D122: it gives nothing now). A post counts so a land without a quartz vein (maps
  * 1–2, D87) feeds « Les pièces de la Synthèse »'s quartz workshop with the quartz it buys (D90).
  */
 export function producersOf(sim: Sim, item: number, only?: readonly string[]): number[] {
   const out: number[] = [];
   const want = only ? new Set(only.map((d) => buildingIdx(d))) : null;
-  const data = item === itemIdx('journal_1') && sim.heartDataRate() > 0;
   for (const e of sim.ents.sorted()) {
     if (e.builtAt !== 0 || sim.isDormant(e) || (want && !want.has(e.def))) continue;
-    if (outputItem(sim, e.id) === item || (BUILDING_KIND[e.def] === 'trade' && cargoOf(sim, e.id).includes(item)) || (data && e.id === sim.hearthId)) out.push(e.id);
+    if (outputItem(sim, e.id) === item || (BUILDING_KIND[e.def] === 'trade' && cargoOf(sim, e.id).includes(item))) out.push(e.id);
   }
   return out;
 }

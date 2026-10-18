@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { itemIdx } from '@/content/registry';
+import { RESEARCH } from '@/content/research';
 import { Sim } from './state';
-import { testSource, line, steadyPower, wire, learnPlans } from './testkit';
+import { grantCost, testSource, line, steadyPower, wire, learnPlans } from './testkit';
 import { T } from './types';
 import { tileIndex } from './world/grid';
 import { parcelAt } from './world/land';
@@ -25,6 +26,7 @@ function spaceSim(done: string[] = ['tr1', 'tr2']): Sim {
   for (const id of done) sim.done.add(id);
   learnPlans(sim); // every plan of the tree (D33): this tests digging and filling, not unlocks
   for (const [it, n] of [['iron_plate', 2000], ['gear', 400], ['circuit', 300], ['ceramic', 300], ['glass', 200], ['copper_wire', 200]] as const) sim.grant(it, n);
+  for (const def of ['excavator', 'heavy_excavator', 'backfiller', 'server'] as const) grantCost(sim, def, 6); // their prices today (D123)
   return sim;
 }
 
@@ -193,9 +195,8 @@ describe('space', () => {
       expect(connect(sim, ex.id!, sim.hearthId)).toBeGreaterThan(0);
       expect(sim.designate([tileIndex(530, 511)])).toBe(1); // obsidian: needs Basalt Bits (ex4)
       sim.ensureCompiled();
-      // A Tier 2 node: Survey Data and Mechanics Data (D71).
-      sim.stores.get(lab.id!)![itemIdx('journal_1')] = 400 * 1000;
-      sim.stores.get(lab.id!)![itemIdx('journal_2')] = 400 * 1000;
+      // A Tier 2 node: its resources from the Core at launch (D122).
+      for (const [it, n] of RESEARCH.ex4.cost) sim.grant(it, n);
       expect(sim.startResearch('ex4', 0, 30_000).ok).toBe(true); // its 300 000 tokens over ten minutes
       return sim;
     };

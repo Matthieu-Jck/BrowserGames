@@ -67,6 +67,13 @@ export const RETIRED_COSTS: Readonly<Record<string, ReadonlyArray<readonly [stri
   // lifted (`explored` is the save's); their plans are dropped and refunded by save v17 (`PLANS_RETIRED`).
   beacon: [['iron_plate', 5], ['glass', 2]],
   unloader: [['iron_plate', 2], ['copper_wire', 1]],
+  // The data's makers (D122; owner, 2026-10-17: « on va enlever le principe de la data… on n'a plus
+  // besoin de générer de la data »): refunded at cost; a test bench's buffers go to the Heart (its
+  // gears, circuits and oscillators) and the data any of them held turns into tokens for research
+  // (`RETIRED_ITEM_TOKENS`); their wires and outlets' items are dropped. Their ids were not reused.
+  data_collector: [['iron_plate', 10], ['glass', 4], ['copper_wire', 6]],
+  test_bench: [['iron_plate', 20], ['glass', 6], ['copper_wire', 8]],
+  data_relay: [['circuit', 10], ['glass', 10], ['iron_plate', 30]],
 };
 
 /**
@@ -78,6 +85,27 @@ export const RETIRED_NAMES: Readonly<Record<string, Loc>> = {
   big_dock: { fr: 'Grand embarcadère', en: 'Great Skydock' },
   beacon: { fr: "Balise d'arpentage", en: 'Survey Beacon' },
   unloader: { fr: 'Déchargeur', en: 'Unloader' },
+  data_collector: { fr: 'Collecteur de données', en: 'Data Collector' },
+  test_bench: { fr: 'Banc d’essai', en: 'Test Bench' },
+  data_relay: { fr: 'Relais de données', en: 'Data Relay' },
+};
+
+/**
+ * The items retired with research's data (D122), and the AI tokens each one held is worth when a
+ * save still holds some — in the Core, a store, a lab, on a ribbon, in a buffer or on its way from
+ * the Crier: the remap (sim/save-remap.ts) banks them for research (`tokens.bank`, delivered to the
+ * projects at each minute's end before any bought flow) instead of losing them, and the absence
+ * report says so. Generous on purpose: each at its value at the Crier, in CrierBelt's tokens (10 ◉
+ * the thousand) — Survey Data 11 ◉, Mechanics Data 59, an atlas 188, a codex 1 014. Frozen.
+ */
+export const RETIRED_ITEM_TOKENS: Readonly<Record<string, number>> = { journal_1: 1_100, journal_2: 5_900, atlas: 18_800, codex: 101_400 };
+
+/** What a retired data item was called, for the absence report (the item table no longer names it). */
+export const RETIRED_ITEM_NAMES: Readonly<Record<string, Loc>> = {
+  journal_1: { fr: 'Données d’arpentage', en: 'Survey Data' },
+  journal_2: { fr: 'Données mécaniques', en: 'Mechanics Data' },
+  atlas: { fr: 'Atlas', en: 'Atlas' },
+  codex: { fr: 'Codex', en: 'Codex' },
 };
 
 /** What one drifter cost a skydock (`BAL.drifterCost` until D108), refunded to the Heart for every drifter a save held. */
@@ -96,7 +124,19 @@ export const RETIRED_DRIFTER: ReadonlyArray<readonly [string, number]> = [['resi
  */
 export const RESEARCH_GONE: ReadonlySet<string> = new Set(['xp_resell']);
 
-export const RESEARCH_RETIRED: Readonly<Record<number, readonly string[]>> = { 15: ['xp_bigdock'] };
+/**
+ * … 19 (D122): the Data Relay (`an_relay`), whose one unlock, the data relay, went with the data.
+ */
+export const RESEARCH_RETIRED: Readonly<Record<number, readonly string[]>> = { 15: ['xp_bigdock'], 19: ['an_relay'] };
+
+/**
+ * The Tier 1 nodes' tokens at D122, frozen for its save step (`dataRetired`): a Tier 1 project under
+ * way in a save 18 took no tokens; it now needs these, its paid data counted as delivered.
+ */
+export const TIER1_TOKENS_V19: Readonly<Record<string, number>> = {
+  tr1: 2_000, en_pitch: 2_000, ex_fastdrill: 2_000, dn3: 2_000, cm_post2: 2_000, an_data: 2_000, xp_swift: 2_000,
+  en2: 5_000, dn_esmelt: 5_000, dn_wiremill: 5_000, cm_floor: 5_000, xp_bigsilo: 5_000, xp_guard: 5_000, tr_synth: 10_000,
+};
 
 /**
  * Plans taken out of the tree, by the save version whose step drops them, with what each cost: a

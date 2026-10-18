@@ -26,10 +26,10 @@ describe('content invariants', () => {
     expect(wirePerElectronicsWorkshop()).toBe(30);
   });
 
-  it('an atlas needs two different uniques, a codex five', () => {
-    expect(uniquesNeeded('atlas').size).toBe(2);
-    expect(uniquesNeeded('codex').size).toBe(5);
-    expect(uniquesNeeded('journal_1').size).toBe(0);
+  it('a resonator and a nacre lattice each need two different uniques (the atlas and codex went with the data, D122)', () => {
+    expect(uniquesNeeded('resonator').size).toBe(2);
+    expect(uniquesNeeded('nacre_lattice').size).toBe(2);
+    expect(uniquesNeeded('oscillator').size).toBe(0);
   });
 
   it('one unlock tree (D33): the starting kit is the drill, the ribbon and the pole; everything else is in the tree', () => {
@@ -156,9 +156,17 @@ describe('nothing unusable (D107)', () => {
     expect(RESEARCH[TIER1_WHOLE].prereq).not.toContain('cm2');
   });
 
-  it('research is short early and long late (D107): the pace by tier — none at Tier 1, which takes no tokens either (D118)', () => {
-    const band: Record<number, [number, number]> = { 1: [0, 0], 2: [8, 30], 3: [60, 360], 4: [480, 1440] };
-    for (const r of Object.values(RESEARCH)) expect(r.tokens === 0, r.name.en).toBe(r.tier === 1);
+  it('research is short early and long late (D107): the pace by tier; tokens at every tier, few at Tier 1 (D122)', () => {
+    const band: Record<number, [number, number]> = { 1: [1, 10], 2: [8, 30], 3: [60, 360], 4: [480, 1440] };
+    for (const r of Object.values(RESEARCH)) expect(r.tokens > 0 && (r.tier > 1 || r.tokens <= 10_000), r.name.en).toBe(true);
+    // Tier 1 on the Core's compute alone (D122): a node in minutes from its level 2.
+    for (const r of Object.values(RESEARCH)) if (r.tier === 1) expect(r.tokens / BAL.coreCompute[1]!, r.name.en).toBeLessThanOrEqual(10);
+    // Its resources (D122): one to three kinds, whole, never a data item (gone), made before it.
+    for (const [id, r] of Object.entries(RESEARCH)) {
+      expect(r.cost.length, id).toBeGreaterThanOrEqual(1);
+      expect(r.cost.length, id).toBeLessThanOrEqual(3);
+      for (const [it] of r.cost) expect(it in ITEMS, `${id}: ${it}`).toBe(true);
+    }
     for (const [d, c] of Object.entries(DEPTH_COST)) {
       const [lo, hi] = band[tierOfDepth(Number(d))]!;
       expect(c.minutes, `depth ${d}`).toBeGreaterThanOrEqual(lo);

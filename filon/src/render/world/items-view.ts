@@ -10,9 +10,14 @@
 //   page; the particle lists rebuilt only when the count changes): those passing under a junction
 //   vanish under its bridge and show through its tunnel (owner, 2026-10-13: "a little bridge, with
 //   items going under it in one direction, and over it in another"); an item riding a junction's
-//   deck or a skybridge (flagged by the model, `o`) on `itemsOver`, over the buildings. The
+//   deck (flagged by the model, `o` = `OVER.junction`) on `itemsOver`, over the buildings. The
 //   junctions' passages — the under line's ribbon through each tunnel — are laid by `JunctionsView`
 //   (junctions-view.ts), which this view owns and rebuilds with its pieces.
+// - **On a skybridge's span** (`OVER.sky`: its ramps, its deck, the ribbons' stretch at its ends): in
+//   iso among the volumes, just after the span's piece it rides (belt-lift.ts `spanZ`), so a building
+//   in front of the deck hides what waits on it as it hides the deck (D121; owner, 2026-10-17: « quand
+//   la file est pleine, les objets devraient pouvoir patienter sur le pont »); in plan in a box on
+//   the plan layer over every plan sprite, the deck's among them (`PLAN_Z.spans`).
 // - **Above the floor, in an elevator's shaft, or on an incinerator's tile** (owner, 2026-10-14:
 //   "the copper is above the building that is in front… the traction ribbon sometimes makes items
 //   disappear when they're oriented opposite to the camera"), in iso: as pooled Sprites inside the
@@ -47,7 +52,7 @@ import { IB_PX, ibKey, type Atlas } from '../art/atlas';
 import { DECK_Z, beltPiece } from './buildings-view';
 import { BeltLift, type Placed } from './belt-lift';
 import { LH } from '../iso';
-import { buildPieces } from './item-flow';
+import { OVER, buildPieces } from './item-flow';
 import { CellFlow, type FlowItem } from './cell-flow';
 import { JunctionsView } from './junctions-view';
 import { PLAN_Z } from './stand';
@@ -181,6 +186,9 @@ export class ItemsView {
   private readonly sorted: Sorted | null;
   private readonly planned: Group | null;
   private readonly planBox: Container | null;
+  /** Plan: the items riding a skybridge's span, over the plan buildings and the deck (iso: among the volumes, `sorted`). */
+  private readonly spanPlan: Group | null;
+  private readonly spanBox: Container | null;
   private planP: Lin | null = null;
   readonly flow = new CellFlow();
   /** The height of the land under the items (rock tops, traction lifts), and their depth keys. */
@@ -216,9 +224,15 @@ export class ItemsView {
       this.planBox.zIndex = PLAN_Z.items;
       lifted.plan.addChild(this.planBox);
       this.planned = new Group(this.planBox);
+      this.spanBox = new Container({ label: 'items:span' });
+      this.spanBox.zIndex = PLAN_Z.spans;
+      lifted.plan.addChild(this.spanBox);
+      this.spanPlan = new Group(this.spanBox);
     } else {
       this.planBox = null;
       this.planned = null;
+      this.spanBox = null;
+      this.spanPlan = null;
     }
   }
 
@@ -239,6 +253,7 @@ export class ItemsView {
     this.under.begin();
     this.over.begin();
     this.planned?.begin();
+    this.spanPlan?.begin();
     const [vx0, vy0, vx1, vy1] = view;
     const iso = 1 - t;
     // Items grow a little when zoomed out so they stay legible; hidden when tiny.
@@ -252,6 +267,7 @@ export class ItemsView {
       this.planP = P;
       const I = invert(P);
       this.planBox.setFromMatrix(new Matrix(I.a, I.b, I.c, I.d, 0, 0));
+      this.spanBox?.setFromMatrix(new Matrix(I.a, I.b, I.c, I.d, 0, 0));
     }
     if (this.debugOn) this.dbg = [];
     this.seen.clear();
@@ -269,9 +285,16 @@ export class ItemsView {
       const x = P.a * at.x + P.c * at.y, y = P.b * at.x + P.d * at.y;
       // In iso the sticker stands a little proud of the belt, and rides decks, bridges and the land at their height.
       const h = 3 + k.z + lv * LH;
-      // Over the decks (a junction's bridge, a skybridge): over every building, in both views.
-      const z = k.o || !this.sorted ? NaN : this.lift.itemZ(at.x, at.y, lv, lifted, k.d);
-      if (k.o) this.over.add(fr.page, tex, x, y - h * iso, scale);
+      // Over a junction's bridge: over every building, in both views. Over a skybridge's span (D121: a backed-up line waits on its deck; owner, 2026-10-17: « les objets
+      // devraient pouvoir patienter sur le pont »): among the volumes just after the piece it rides, so
+      // what stands in front of the deck hides it with the deck; in plan over the plan sprites, the deck's among them.
+      const span = k.o === OVER.sky && this.sorted ? this.lift.spanZ(at.x, at.y) : NaN;
+      const onSpan = !Number.isNaN(span);
+      const z = onSpan ? span : k.o || !this.sorted ? NaN : this.lift.itemZ(at.x, at.y, lv, lifted, k.d);
+      if (onSpan) {
+        sorted?.add(tex, ISO_LIN.a * at.x + ISO_LIN.c * at.y, ISO_LIN.b * at.x + ISO_LIN.d * at.y - h, span, 1, 1);
+        if (planned) this.spanPlan!.add(fr.page, tex, x, y - (3 + k.z) * iso, scale);
+      } else if (k.o) this.over.add(fr.page, tex, x, y - h * iso, scale);
       else if (Number.isNaN(z)) this.under.add(fr.page, tex, x, y - h * iso, scale);
       else {
         // Among the volumes at its iso px (M carries it with its ribbon); in plan flat, as the plan copies of the ribbons on rock.
@@ -279,7 +302,7 @@ export class ItemsView {
         if (planned) (lifted ? planned : this.under).add(fr.page, tex, x, y - (lifted ? 3 + k.z : h) * iso, scale);
       }
       n++;
-      if (this.debugOn) this.dbg.push({ id: n, x: k.x, y: k.y, z: k.z + lv * LH, item: k.item, over: !!k.o, sorted: z });
+      if (this.debugOn) this.dbg.push({ id: n, x: k.x, y: k.y, z: k.z + lv * LH, item: k.item, over: !!k.o && !onSpan, sorted: z });
       if (watch) {
         const tile = Math.floor(k.y) * 1024 + Math.floor(k.x);
         if (watch.has(tile)) {
@@ -294,6 +317,7 @@ export class ItemsView {
     this.under.flush();
     this.over.flush();
     this.planned?.flush();
+    this.spanPlan?.flush();
     if (this.sorted) {
       if (!sorted) this.sorted.begin(P, scale); // the volumes are gone: nothing among them
       this.sorted.end();

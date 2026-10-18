@@ -47,6 +47,7 @@ import { itemPx } from './items-view';
 import type { LightsView } from './lights-view';
 import { buildingZ } from './stand';
 import type { WiresView } from './wires-view';
+import { goodAt, goodsOn } from './neighbour-goods';
 import { wireAnchor, wireEnds } from './wire-geom';
 
 /** The ghost entities' ids: out of the claim's range, 64 a base (its hub parcel's), under the buildings view's ranks. */
@@ -57,6 +58,8 @@ const MARGIN = PARCEL + (PARCEL >> 1);
 const WASH = 0.62;
 /** A tarp's hem round a footprint (tiles). */
 const HEM = 0.35;
+/** The lines a base draws (and its goods ride), at most. */
+const MAX_LINES = 20;
 /** The goods on their ribbons: tiles between two, tiles a second. */
 const ITEM_GAP = 1.6, ITEM_SPEED = 1.1;
 /** The buildings that smoke (their furnaces' chimneys), and a plume's puffs. */
@@ -85,7 +88,7 @@ interface Laid {
   box: readonly [number, number, number, number];
   sprites: Sprite[];
   shown: boolean;
-  ribbons: Array<{ tiles: Int32Array; item: number; len: number; phase: number }>;
+  ribbons: Array<{ tiles: Int32Array; items: readonly number[]; len: number; phase: number }>;
   smokers: Array<{ x: number; y: number; z: number; phase: number }>;
   pad: { x: number; y: number; w: number; h: number; rot: Ent['rot'] } | null;
   name: Sprite | null;
@@ -128,6 +131,34 @@ export class NeighboursView {
     d.layers.status.addChild(this.names);
   }
 
+  /**
+   * The goods of a base in the view now (smoke, shots): how many, how many on a tile that is not one
+   * of its lines' (should be none), how many on a stretch of line the buildings view does not show
+   * though it is in the view (none: a stretch in view is never culled).
+   */
+  audit(hub: number, seconds = this.lastSeconds): { goods: number; offTile: number; undrawn: number } {
+    const L = this.laid.get(hub);
+    let goods = 0, offTile = 0, undrawn = 0;
+    if (!L) return { goods, offTile, undrawn };
+    for (const r of L.ribbons) {
+      const tiles = new Set<number>();
+      for (let i = 0; i < r.tiles.length; i += 3) tiles.add(r.tiles[i + 1]! * WORLD + r.tiles[i]!);
+      const n = goodsOn(r.len, ITEM_GAP);
+      for (let k = 0; k < n; k++) {
+        const g = goodAt(r.tiles, r.phase, k, n, seconds, ITEM_SPEED)!;
+        const [vx0, vy0, vx1, vy1] = this.lastView;
+        if (g.x < vx0 || g.x > vx1 || g.y < vy0 || g.y > vy1) continue;
+        const t = Math.floor(g.y) * WORLD + Math.floor(g.x);
+        goods++;
+        if (!tiles.has(t)) offTile++;
+        else if (!this.d.buildings.foreignRibbonShown(hub, t)) undrawn++;
+      }
+    }
+    return { goods, offTile, undrawn };
+  }
+  private lastSeconds = 0;
+  private lastView: readonly [number, number, number, number] = [0, 0, 0, 0];
+
   /** Bases laid, drones sent off their pads (smoke, shots). */
   get count(): number { return this.laid.size; }
   launches = 0;
@@ -151,6 +182,8 @@ export class NeighboursView {
       }
       this.sheet.flush();
     }
+    this.lastSeconds = seconds;
+    this.lastView = view;
     this.animate(view, P, t, zoom, seconds, epoch);
   }
 
@@ -182,7 +215,9 @@ export class NeighboursView {
     const coreAt = L.core >= 0 ? { x: all[L.core]!.x + CORE.n / 2, y: all[L.core]!.y + CORE.n / 2, z: coreWireZ(top) } : null;
     // The strong wash: their colour, sun-faded, multiplied into the claim's art.
     const tint = num(mix('#ffffff', mix(colours.field, C.peachD, 0.45), WASH));
-    this.d.buildings.layForeign(h.hub, ents, L.ribbons.slice(0, 20).map((r) => r.tiles), tint, L.flag ? { x: L.flag[0], y: L.flag[1], emblem } : null);
+    // Its lines: the very list the goods ride (`Laid.ribbons`), drawn stretch by stretch.
+    const lines = L.ribbons.slice(0, MAX_LINES);
+    this.d.buildings.layForeign(h.hub, ents, lines.map((r) => r.tiles), tint, L.flag ? { x: L.flag[0], y: L.flag[1], emblem } : null);
     // Its lanterns at night: its tents' doors, its banner poles' tips.
     const lanterns = [
       ...(coreAt ? [{ x: coreAt.x + 0.72, y: coreAt.y + 0.72, z: 0.75 }, { ...coreAt }] : []),
@@ -241,7 +276,7 @@ export class NeighboursView {
     const [hx, hy] = parcelCentre(h.hub);
     this.laid.set(h.hub, {
       hub: h.hub, box: [bx0, by0, bx1, by1], sprites, shown: true, colours,
-      ribbons: L.ribbons.map((r, j) => ({ tiles: r.tiles, item: r.item, len: r.tiles.length / 3, phase: (hash32(h.hub, j, 0x90d5) % 1000) / 1000 })),
+      ribbons: lines.map((r, j) => ({ tiles: r.tiles, items: r.items.length ? r.items : [r.item], len: r.tiles.length / 3, phase: (hash32(h.hub, j, 0x90d5) % 1000) / 1000 })),
       smokers, pad: p0 ? { x: p0.x, y: p0.y, w: pw, h: ph, rot: p0.rot } : null,
       name: null, nameAt: [hx + 0.5, hy - 2.5], nameText: '',
     });
@@ -292,17 +327,20 @@ export class NeighboursView {
       // views have their own: the Terrain view labels the base under its emblem).
       this.placeName(L, on && zoom < NAME_ZOOM && t < 0.5, P, iso, zoom);
       if (!on) continue;
-      // The goods riding its ribbons, a loop on the game's clock.
+      // The goods riding its ribbons, a loop on the game's clock (neighbour-goods.ts `goodAt`): each
+      // between two consecutive tiles of its line, and drawn only where that line is (its stretch on
+      // screen, `foreignRibbonShown`) — never on bare sand. A line carrying several goods (the store's
+      // to the pad, the pad's to its depot) carries them in turn.
       if (showGoods) for (const r of L.ribbons) {
-        const tex = this.itemTex(r.item);
-        if (!tex || r.len < 2) continue;
-        const n = Math.max(1, Math.floor(r.len / ITEM_GAP));
+        const n = goodsOn(r.len, ITEM_GAP);
+        if (!n) continue;
         for (let k = 0; k < n; k++) {
-          const s = (((seconds * ITEM_SPEED) / r.len + r.phase + k / n) % 1) * (r.len - 1);
-          const i = Math.floor(s), f = s - i;
-          const ax = r.tiles[i * 3]! + 0.5, ay = r.tiles[i * 3 + 1]! + 0.5, bx = r.tiles[(i + 1) * 3]! + 0.5, by = r.tiles[(i + 1) * 3 + 1]! + 0.5;
-          const x = ax + (bx - ax) * f, y = ay + (by - ay) * f;
+          const tex = this.itemTex(r.items[k % r.items.length]!);
+          if (!tex) continue;
+          const g = goodAt(r.tiles, r.phase, k, n, seconds, ITEM_SPEED)!;
+          const { x, y } = g, t = r.tiles[g.tile * 3 + 1]! * WORLD + r.tiles[g.tile * 3]!;
           if (x < vx0 - 1 || x > vx1 + 1 || y < vy0 - 1 || y > vy1 + 1) continue;
+          if (!this.d.buildings.foreignRibbonShown(L.hub, t)) continue;
           const sp = this.goodsSprite(ng++, tex);
           sp.position.set(P.a * x + P.c * y, P.b * x + P.d * y - 3 * iso);
           sp.scale.set(iscale);

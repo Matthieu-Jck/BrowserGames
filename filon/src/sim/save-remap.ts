@@ -9,13 +9,14 @@
 // What no longer exists does not vanish silently (ARCHITECTURE invariant 4): a building whose id
 // is gone comes down, refunded at its recorded cost (`RETIRED_COSTS`), its store and buffers
 // handed to the Heart; a machine whose recipe changed or is gone is cleared, its buffers handed to
-// the Heart; what is held of an item whose id is gone is counted in the note the player is shown.
+// the Heart; what is held of an item whose id is gone is counted in the note the player is shown —
+// or, for research's retired data (D122, `RETIRED_ITEM_TOKENS`), banked as tokens for research.
 //
 // `FIELDS` declares every SaveData field, typed against SaveData: a new field does not compile
 // until it says whether it holds indices — the guard that keeps this file complete.
 import { BUILDINGS } from '@/content/buildings';
 import { BUILDING_IDS, CRECIPES, ITEM_IDS, RECIPE_IDS, recipesFor, type CRecipe } from '@/content/registry';
-import { RENAMED, RETIRED_COSTS } from '@/content/retired';
+import { RENAMED, RETIRED_COSTS, RETIRED_ITEM_TOKENS } from '@/content/retired';
 import type { BuildingDef } from '@/content/types';
 import { filterOf, recipeOf, withFilter, withRecipe } from './cfg';
 import type { SaveData } from './serialize';
@@ -37,11 +38,15 @@ export interface RemapNote {
   lost: Array<{ id: string; mu: number }>;
   /** Recipes changed or gone: their machines were cleared, buffers to the Heart. */
   reset: string[];
+  /** Retired items turned into tokens banked for research (D122: the data), the milli-items held and the tokens they made. Absent: none. */
+  converted?: Array<{ id: string; mu: number; tokens: number }>;
 }
 
 export interface Retired {
   renamed: { items: Readonly<Record<string, string>>; buildings: Readonly<Record<string, string>>; recipes: Readonly<Record<string, string>> };
   costs: Readonly<Record<string, ReadonlyArray<readonly [string, number]>>>;
+  /** Items gone whose holdings become research tokens (D122): tokens per item. */
+  tokens?: Readonly<Record<string, number>>;
 }
 
 /** 'index': holds content indices (re-pointed); 'refs': entity ids only (filtered when a building comes down); 'plain': neither. */
@@ -53,8 +58,8 @@ export const FIELDS: { readonly [K in keyof Required<SaveData>]: Kind } = {
   credits: 'plain', hearthLevel: 'plain', hearthId: 'plain', nextId: 'plain', content: 'plain',
   ents: 'index', portItems: 'index', stock: 'index', stores: 'index', acc: 'refs', links: 'refs',
   done: 'plain', terrainDiff: 'plain', levelDiff: 'plain', oreDiff: 'index', land: 'plain', explored: 'plain',
-  nodes: 'index', chains: 'index', produced: 'index', consumed: 'index', projects: 'index', tokens: 'plain', dataAcc: 'refs', labQueue: 'refs',
-  notes: 'plain', respecs: 'plain', lastRespec: 'plain', designated: 'plain', jobs: 'refs',
+  nodes: 'index', chains: 'index', produced: 'index', consumed: 'index', projects: 'index', tokens: 'plain', labQueue: 'refs',
+  costFloor: 'plain', notes: 'plain', respecs: 'plain', lastRespec: 'plain', designated: 'plain', jobs: 'refs',
   market: 'plain', trade: 'index', quests: 'plain', value: 'plain', expertise: 'plain',
   gleaners: 'index',
 };
@@ -98,7 +103,7 @@ const kindOf = (id: string | undefined): BuildingDef | undefined =>
  * written against `to` (or without a table: written before D47 by this very content) comes back
  * as it is.
  */
-export function remapSave(d: SaveData, to: ContentTable = contentTable(), retired: Retired = { renamed: RENAMED, costs: RETIRED_COSTS }): { data: SaveData; note: RemapNote | null } {
+export function remapSave(d: SaveData, to: ContentTable = contentTable(), retired: Retired = { renamed: RENAMED, costs: RETIRED_COSTS, tokens: RETIRED_ITEM_TOKENS }): { data: SaveData; note: RemapNote | null } {
   const from = d.content;
   if (!from) return { data: { ...d, content: to }, note: null };
   if (sameTable(from, to)) return { data: d, note: null };
@@ -113,10 +118,13 @@ export function remapSave(d: SaveData, to: ContentTable = contentTable(), retire
   const NT = to.items.length;
   const item = (i: number): number => (i < 0 ? -1 : IM[i] ?? -1);
   const lost = new Map<string, number>();
+  // Research's retired data (D122): what is held of it anywhere is banked as tokens, not lost.
+  const converted = new Map<string, number>();
   const lose = (i: number, mu: number): void => {
     if (mu <= 0) return;
     const id = from.items[i] ?? `#${i}`;
-    lost.set(id, (lost.get(id) ?? 0) + mu);
+    const into = retired.tokens?.[id] ? converted : lost;
+    into.set(id, (into.get(id) ?? 0) + mu);
   };
   /** Milli-items handed to the Heart (to-indices): stores and buffers of what came down, refunds. */
   const refund = new Array<number>(NT).fill(0);
@@ -275,6 +283,9 @@ export function remapSave(d: SaveData, to: ContentTable = contentTable(), retire
   };
 
   for (let j = 0; j < NT; j++) stock[j]! += refund[j]!;
+  // Whole tokens for the data banked (D122), at the frozen rate per item (a part of an item counts its part).
+  const conv = [...converted].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([id, mu]) => ({ id, mu, tokens: Math.floor((mu * (retired.tokens?.[id] ?? 0)) / 1000) }));
+  const banked = conv.reduce((s, c) => s + c.tokens, 0);
   const data: SaveData = {
     ...d,
     content: to,
@@ -294,7 +305,7 @@ export function remapSave(d: SaveData, to: ContentTable = contentTable(), retire
     consumed: dense(d.consumed, false),
     projects,
     jobs: (d.jobs ?? []).filter((j) => alive(j.ent)),
-    ...(d.dataAcc ? { dataAcc: d.dataAcc.filter(([id]) => alive(id)) } : {}),
+    ...(banked > 0 ? { tokens: { serverAcc: 0, held: false, plan: false, ...d.tokens, bank: (d.tokens?.bank ?? 0) + banked } } : {}),
     ...(d.labQueue ? { labQueue: d.labQueue.filter(([id]) => alive(id)) } : {}),
     ...(trade ? { trade } : {}),
     // The Gleaners' counts (D103): per item, re-pointed like the statistics.
@@ -304,7 +315,8 @@ export function remapSave(d: SaveData, to: ContentTable = contentTable(), retire
     removed: [...removed].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([id, r]) => ({ id, ...r })),
     lost: [...lost].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([id, mu]) => ({ id, mu })),
     reset: [...reset].sort(),
+    ...(conv.length ? { converted: conv } : {}),
   };
-  const empty = !note.removed.length && !note.lost.length && !note.reset.length;
+  const empty = !note.removed.length && !note.lost.length && !note.reset.length && !conv.length;
   return { data, note: empty ? null : note };
 }

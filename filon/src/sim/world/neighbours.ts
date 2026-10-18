@@ -33,21 +33,35 @@ import { BAL } from '@/content/balance';
 import type { BuildingId } from '@/content/buildings';
 import { COLONY_PROFILES, COLONY_PROFILE_IDS, type ColonyProfile, type ColonyProfileId } from '@/content/colonies';
 import { NEIGHBOUR_CAIRN_STEP, NEIGHBOUR_CORE, NEIGHBOUR_KITS, NEIGHBOUR_MAST, NEIGHBOUR_PAD, NEIGHBOUR_TENT } from '@/content/neighbours';
-import { BUILDING_KIND, buildingDef, buildingIdx, itemDef, itemIdx } from '@/content/registry';
+import { BUILDING_IDS, BUILDING_KIND, ITEM_IDS, buildingDef, buildingIdx, itemDef, itemIdx } from '@/content/registry';
+import { RECIPES } from '@/content/recipes';
+import type { RecipeDef } from '@/content/types';
 import { isqrt } from '@/core/fixed';
 import { hash32 } from '@/core/hash';
 import { WORLD } from '../constants';
-import { footprint } from '../entities';
+import { footprint, worldPorts, type WorldPort } from '../entities';
 import { gap2, linkable } from '../power/links';
-import { DX, DY, isFloor, type Rot } from '../types';
+import { DX, DY, isFloor, opposite, T, type Rot } from '../types';
 import { inWorld, tileIndex, type Grid } from './grid';
+import { planChain, type Stage } from './neighbour-chain';
 import { HOME_COL, PARCEL, PARCEL_COLS, parcelAt, parcelCentre, parcelRect, ringOf, type Land } from './land';
 
-/** A building of a neighbouring base: what it is, where it stands (its footprint's top-left tile), how it is turned. */
-export interface NStruct { readonly def: number; readonly x: number; readonly y: number; readonly rot: Rot }
+/** What a building is to its base: its Core, its trade post, its store, an extractor, a maker, its power, a mast, something beside. */
+export type NRole = 'core' | 'post' | 'store' | 'depot' | 'extract' | 'make' | 'power' | 'mast' | 'extra';
 
-/** A ribbon line of a neighbouring base: its tiles in the order items ride (x, y, rot each), what it carries. */
-export interface NRibbon { readonly tiles: Int32Array; readonly item: number }
+/**
+ * A building of a neighbouring base: what it is, where it stands (its footprint's top-left tile), how
+ * it is turned; its role, the recipe it runs (a maker), what it puts out or holds (item indices).
+ */
+export interface NStruct { readonly def: number; readonly x: number; readonly y: number; readonly rot: Rot; readonly role?: NRole; readonly recipe?: string; readonly items?: readonly number[] }
+
+/**
+ * A ribbon line of a neighbouring base: its tiles in the order items ride (x, y, rot each), what it
+ * carries (`item`, and `items` when it carries several: the store's lines), from which struct's outlet
+ * to which struct's intake (`port`: that intake's port index) — or joining, from its side, a line that
+ * goes there.
+ */
+export interface NRibbon { readonly tiles: Int32Array; readonly item: number; readonly items: readonly number[]; readonly from: number; readonly to: number; readonly port: number }
 
 /**
  * A neighbouring base's buildings (its masts among them), ribbons and wires (struct indices, the
@@ -56,6 +70,8 @@ export interface NRibbon { readonly tiles: Int32Array; readonly item: number }
  */
 export interface NLayout {
   readonly structs: readonly NStruct[];
+  /** The goods it sells at its trade post (item indices). */
+  readonly products: readonly number[];
   /** Its Core among `structs` (laid as `NEIGHBOUR_CORE`'s footprint; the render draws its own); −1: none. */
   readonly core: number;
   readonly ribbons: readonly NRibbon[];
@@ -67,7 +83,7 @@ export interface NLayout {
   readonly tiles: ReadonlySet<number>;
 }
 
-const EMPTY_LAYOUT: NLayout = { structs: [], core: -1, ribbons: [], wires: [], flag: null, banners: [], tents: [], cairns: [], tiles: new Set() };
+const EMPTY_LAYOUT: NLayout = { structs: [], core: -1, products: [], ribbons: [], wires: [], flag: null, banners: [], tents: [], cairns: [], tiles: new Set() };
 
 /** A neighbouring base's land: its colony (the Crier's, by index), its trade, its parcels (the hub's first). */
 export interface Holding {
@@ -83,6 +99,9 @@ const PROFILE_OF: readonly ColonyProfileId[] = COLONY_PROFILE_IDS.flatMap((pid) 
 /** Every colony (the sister claims' draw, maps 1–3). */
 const COLONIES = PROFILE_OF.length;
 
+/** Where a base's Core may stand round a parcel's middle when its hub's middle is a pocket (`lay`). */
+const CORE_TRIES: ReadonlyArray<readonly [number, number]> = [[0, 0], [-6, 0], [6, 0], [0, -6], [0, 6], [-6, -6], [6, -6], [-6, 6], [6, 6]];
+
 /** Salts of the draws. */
 const SALT = { block: 0xb10c, grow: 0x6a0e, perm: 0x9e7a, rot: 0x7a0e, scatter: 0x1a4d } as const;
 
@@ -93,8 +112,18 @@ const SPIRAL: ReadonlyArray<readonly [number, number]> = (() => {
   return out.sort((a, b) => a[0] * a[0] + a[1] * a[1] - (b[0] * b[0] + b[1] * b[1]) || a[1] - b[1] || a[0] - b[0]);
 })();
 
+/** The same round a farther anchor (a drill looks for its ore up to here). */
+const SPIRAL_FAR: ReadonlyArray<readonly [number, number]> = (() => {
+  const R = PARCEL + (PARCEL >> 1), out: Array<[number, number]> = [];
+  for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) if (dx * dx + dy * dy <= R * R) out.push([dx, dy]);
+  return out.sort((a, b) => a[0] * a[0] + a[1] * a[1] - (b[0] * b[0] + b[1] * b[1]) || a[1] - b[1] || a[0] - b[0]);
+})();
+
+/** The rotation whose front faces (dx, dy) — one axis (N 0, E 1, S 2, W 3: content `PortDef`'s rot-0 front faces N). */
+const dirOf = (dx: number, dy: number): Rot => (dy < 0 ? 0 : dx > 0 ? 1 : dy > 0 ? 2 : 3) as Rot;
+
 /** The longest ribbon a base lays (tiles). */
-const RIBBON_MAX = 72;
+const RIBBON_MAX = 96;
 
 const floorDiv = (a: number, b: number): number => Math.floor(a / b);
 const mod = (a: number, n: number): number => ((a % n) + n) % n;
@@ -104,10 +133,10 @@ const sideBySide = (p: number, q: number): boolean => {
   return (Math.abs(p - q) === 1 && Math.floor(p / PARCEL_COLS) === Math.floor(q / PARCEL_COLS)) || (Math.abs(p - q) === PARCEL_COLS && pc === qc);
 };
 
-/** Does a drill of this def want a deposit under it (not a sand or data collector, not a face cutter)? */
+/** Does a drill of this def want a deposit under it (not a sand collector, not a face cutter)? */
 const wantsOre = (def: number): boolean => {
   const d = buildingDef(def).drill;
-  return BUILDING_KIND[def] === 'drill' && !!d && !d.ground && !d.anywhere && !d.face;
+  return BUILDING_KIND[def] === 'drill' && !!d && !d.ground && !d.face;
 };
 
 export class Neighbours {
@@ -138,8 +167,40 @@ export class Neighbours {
   /** A base's buildings and ribbons (laid out on first need). */
   layout(h: Holding): NLayout {
     let L = this.layouts.get(h.hub);
-    if (!L) { L = this.lay(h); this.layouts.set(h.hub, L); }
+    if (!L) { L = this.layChecked(h); this.layouts.set(h.hub, L); }
     return L;
+  }
+
+  /**
+   * A base laid out until it checks (`neighbourProblems`): each try again with the pad on the Core's
+   * other side, then with the bought goods' lines laid first; then a raw good whose extractor or line could not be laid is given up and the chain
+   * planned again without it; then fewer copies of its chain; one product only, as many copies again
+   * then fewer; at last its plainest
+   * chain (glass from sand…). None checks: the best try, what still does not check taken away (`prune`)
+   * — the fewest problems left, then the most machines.
+   */
+  private layChecked(h: Holding): NLayout {
+    const ban = new Set<string>();
+    let products = 2, copies = 4, side = 1, early = false;
+    let best: NLayout = EMPTY_LAYOUT, bestScore = -Infinity;
+    for (let k = 0; k < 48; k++) {
+      const { layout: L, raws, unplaced } = this.lay(h, ban, products, copies, side, early);
+      const probs = neighbourProblems(this.grid, L);
+      if (!probs.length && !unplaced.length) return L;
+      const P = prune(L, this.grid);
+      const score = -1000 * neighbourProblems(this.grid, P).length + 10 * P.products.length + P.structs.filter((q) => q.role === 'make' || q.role === 'extract').length;
+      if (score > bestScore) { best = P; bestScore = score; }
+      // A line or a piece that found no way: the pad (and the depot after it) on the Core's other side,
+      // then the bought goods' lines laid before the chain's, on either side.
+      if (side > 0) { side = -1; continue; }
+      side = 1;
+      if (!early) { early = true; continue; }
+      early = false;
+      let gave = false;
+      for (const it of [...unplaced, ...probs.map((q) => q.item ?? '')]) if (it && it !== 'sand' && raws.has(it) && !ban.has(it)) { ban.add(it); gave = true; }
+      if (!gave) { if (copies > 1) copies--; else if (products > 1) { products = 1; copies = 4; } else if (!ban.has('*')) ban.add('*'); else break; }
+    }
+    return best;
   }
 
   /** Does a neighbouring base's building, ribbon or flag stand on tile (x, y)? */
@@ -234,6 +295,7 @@ export class Neighbours {
       if (!front.length) break;
       parcels.push(front[hash32(this.land.seed, parcels[0]!, k, SALT.grow) % front.length]!);
     }
+    if (parcels.length < N.size[0]!) return; // a real base, two parcels at least (owner: « c'est tout petit »)
     const colony = this.perm[mod(bx * 7 + by * 3, this.perm.length)]!;
     this.add({ hub: parcels[0]!, colony, profile: PROFILE_OF[colony]!, parcels });
   }
@@ -256,8 +318,9 @@ export class Neighbours {
    * Core), the masts and wires of its own grid from the Core (the claim's rule of reach: a mast at one end, its
    * range and slots), and the cairns along its outer edge.
    */
-  private lay(h: Holding): NLayout {
+  private lay(h: Holding, ban: ReadonlySet<string> = new Set(), maxProducts = 2, copies = 4, side = 1, importsFirst = true): { layout: NLayout; raws: ReadonlySet<string>; unplaced: string[] } {
     const kit = NEIGHBOUR_KITS[h.profile];
+    const unplaced: string[] = [];
     // An older base's lease or grant on its land: that part of the base is not there.
     const parcels = h.parcels.filter((p) => !this.land.holds(p));
     const allowed = new Set(parcels);
@@ -274,21 +337,24 @@ export class Neighbours {
     // The floor the pad stands on, joined to it (4-neighbours, on the base's parcels): every other
     // building stands there, so a ribbon can always find its way between them.
     const region = new Set<number>();
-    const fits = (w: number, hh: number, x: number, y: number, p: number, ore: boolean, joined: boolean): boolean => {
+    const fits = (w: number, hh: number, x: number, y: number, p: number, ore: boolean, joined: boolean, bare = false): boolean => {
       const r = parcelRect(p);
       if (x < r.x0 + 1 || y < r.y0 + 1 || x + w > r.x1 - 1 || y + hh > r.y1 - 1) return false;
       for (let ty = y; ty < y + hh; ty++) for (let tx = x; tx < x + w; tx++) {
         const t = tileIndex(tx, ty);
         if (room.has(t) || solid.has(t) || !open(tx, ty) || (joined && region.size && !region.has(t))) return false;
         if (ore) { const o = made(tx, ty).ore; if (o < 0 || itemDef(o).face) return false; }
+        if (bare) { const m = made(tx, ty); if (m.ore >= 0 || m.terrain !== T.Sand) return false; } // a sand collector: on bare sand
       }
       return true;
     };
     /** The nearest place on parcel p round (ax, ay) where a w × hh footprint fits, its room claimed; null: none. */
-    const spot = (w: number, hh: number, p: number, ax: number, ay: number, ore = false, joined = true): [number, number] | null => {
-      for (const [dx, dy] of SPIRAL) {
+    const spot = (w: number, hh: number, p: number, ax: number, ay: number, ore = false, joined = true, bare = false, wide = false, ports?: { def: number; rot: Rot }): [number, number] | null => {
+      for (const [dx, dy] of wide ? SPIRAL_FAR : SPIRAL) {
         const x = ax + dx - (w >> 1), y = ay + dy - (hh >> 1);
-        if (!fits(w, hh, x, y, p, ore, joined)) continue;
+        if (!fits(w, hh, x, y, p, ore, joined, bare)) continue;
+        // Every port before open floor (of the pad's floor): a line can leave it or come in.
+        if (ports && worldPorts({ def: ports.def, x, y, rot: ports.rot }).some((q) => !free(q.fx, q.fy) || (joined && region.size && !region.has(tileIndex(q.fx, q.fy))))) continue;
         for (let ty = y - 1; ty <= y + hh; ty++) for (let tx = x - 1; tx <= x + w; tx++) room.add(tileIndex(tx, ty));
         for (let ty = y; ty < y + hh; ty++) for (let tx = x; tx < x + w; tx++) solid.add(tileIndex(tx, ty));
         return [x, y];
@@ -299,77 +365,235 @@ export class Neighbours {
      * A building on one of `ps` (in order) round (ax, ay); a drill wants a deposit, else a sand
      * collector stands in; `joined`: on the pad's floor (the chain's pieces). Its index, or −1.
      */
-    const put = (id: BuildingId, ps: readonly number[], ax: number, ay: number, salt: number, joined = true): number => {
-      let def = buildingIdx(id);
-      if (wantsOre(def)) {
-        for (const p of ps) {
-          const at = spot(...footprint(def, 0), p, ax, ay, true, joined);
-          if (at) { structs.push({ def, x: at[0], y: at[1], rot: 0 }); return structs.length - 1; }
-        }
-        def = buildingIdx('sand_collector');
-      }
-      const rot = (BUILDING_KIND[def] === 'machine' ? hash32(this.land.seed, h.hub, salt, SALT.rot) % 4 : 0) as Rot;
-      for (const p of ps) {
-        const at = spot(...footprint(def, rot), p, ax, ay, false, joined);
+    const put = (id: BuildingId, ps: readonly number[], ax: number, ay: number, salt: number, joined = true, turn?: Rot, wide = false): number => {
+      const def = buildingIdx(id);
+      const rot = (turn ?? (BUILDING_KIND[def] === 'machine' ? hash32(this.land.seed, h.hub, salt, SALT.rot) % 4 : 0)) as Rot;
+      const bare = !!buildingDef(def).drill?.ground;
+      // The parcel it is aimed at first (the flow crosses parcels), then the others in order.
+      const pa = inWorld(ax, ay) ? parcelAt(ax, ay) : -1;
+      for (const p of ps.includes(pa) ? [pa, ...ps.filter((q) => q !== pa)] : ps) {
+        const at = spot(...footprint(def, rot), p, ax, ay, false, joined, bare, wide, { def, rot });
         if (at) { structs.push({ def, x: at[0], y: at[1], rot }); return structs.length - 1; }
       }
       return -1;
     };
-    if (!parcels.length) return EMPTY_LAYOUT;
-    const hub = parcels[0]!, [hx, hy] = parcelCentre(hub), others = parcels.slice(1);
-    // The side of the hub towards the other parcels (north when it stands alone).
-    const [ox, oy] = others.length ? parcelCentre(others[0]!) : [hx, hy - 1];
-    const sx = Math.sign(ox - hx), sy = Math.sign(oy - hy);
-    const hubFirst = [hub, ...others], othersFirst = others.length ? [...others, hub] : [hub];
-    // 1. Its Core in the hub's middle and the floor it stands on; CrierBelt's lift pad set beside
-    // it, away from the other parcels; the store beside it the other way.
-    const core = put(NEIGHBOUR_CORE, [hub], hx, hy, 0);
-    if (core >= 0) {
-      const s = structs[core]!, q: number[] = [tileIndex(s.x, s.y)];
-      region.add(q[0]!);
+    /** A drill on a deposit of `ore` (all its tiles), the nearest round (ax, ay) on the base's floor, turned by `turn(x, y)`; −1: none. */
+    const putOn = (id: BuildingId, ore: number, ps: readonly number[], ax: number, ay: number, turn: (x: number, y: number) => Rot): number => {
+      const def = buildingIdx(id), [w, hh] = footprint(def, 0);
+      for (const [dx, dy] of SPIRAL_FAR) for (const p of ps) {
+        const x = ax + dx - (w >> 1), y = ay + dy - (hh >> 1);
+        if (parcelAt(x, y) !== p || !fits(w, hh, x, y, p, true, true)) continue;
+        let all = true;
+        for (let ty = y; ty < y + hh && all; ty++) for (let tx = x; tx < x + w && all; tx++) all = made(tx, ty).ore === ore;
+        const rot = turn(x + w / 2, y + hh / 2);
+        if (!all || worldPorts({ def, x, y, rot }).some((q) => !free(q.fx, q.fy) || !region.has(tileIndex(q.fx, q.fy)))) continue;
+        for (let ty = y - 1; ty <= y + hh; ty++) for (let tx = x - 1; tx <= x + w; tx++) room.add(tileIndex(tx, ty));
+        for (let ty = y; ty < y + hh; ty++) for (let tx = x; tx < x + w; tx++) solid.add(tileIndex(tx, ty));
+        structs.push({ def, x, y, rot });
+        return structs.length - 1;
+      }
+      return -1;
+    };
+    /** What each struct is to the base: its role, its recipe, what it puts out or holds. */
+    const meta = new Map<number, { role: NRole; recipe?: string; items?: readonly string[] }>();
+    if (!parcels.length) return { layout: EMPTY_LAYOUT, raws: new Set(), unplaced };
+    // 1. Its Core in the hub's middle, and the floor it stands on: every piece of its chain stands there,
+    // so a ribbon can always find its way between them. A middle on a pocket of floor too small for a
+    // base (less than `BAL.land.neighbours.pocket` tiles joined to it): the spot of its parcels, round
+    // their middles, with the most.
+    const flood = (x0: number, y0: number, into: Set<number>): number => {
+      const q: number[] = [tileIndex(x0, y0)];
+      into.add(q[0]!);
       for (let k = 0; k < q.length; k++) {
         const t = q[k]!, x = t % WORLD, y = (t - x) / WORLD;
         for (let d = 0; d < 4; d++) {
           const nx = x + DX[d]!, ny = y + DY[d]!, n = tileIndex(nx, ny);
-          if (region.has(n) || !open(nx, ny)) continue;
-          region.add(n);
+          if (into.has(n) || !open(nx, ny)) continue;
+          into.add(n);
           q.push(n);
         }
       }
-    }
-    put(NEIGHBOUR_PAD, hubFirst, hx - sx * 5, hy - (sy || -1) * 5, 1);
-    const store = put(kit.store, hubFirst, hx - sy * 4, hy + sx * 4, 2);
-    // 2. Its makers round the hub, towards the other parcels.
-    const makers = kit.makers.map((id, j) => put(id, hubFirst, hx + sx * 6, hy + sy * 6, 10 + j)).filter((i) => i >= 0);
-    // 3. Its extractors out on the other parcels, round their middles (towards the hub).
-    const extract: number[] = [];
-    for (let i = 0; i < kit.extractN; i++) {
-      const p = othersFirst[i % othersFirst.length]!, [cx, cy] = parcelCentre(p);
-      const k = put(kit.extract, [p, ...othersFirst.filter((q) => q !== p)], cx - Math.sign(cx - hx) * 3, cy - Math.sign(cy - hy) * 3, 20 + i);
-      if (k >= 0) extract.push(k);
-    }
-    // 4. The ribbons the goods ride, carrying what each stage hands on — laid before anything else
-    // stands in their way.
-    const ribbons: NRibbon[] = [];
-    const lay = (a: number, b: number, item: string | number): void => {
-      if (a < 0 || b < 0) return;
-      const r = this.ribbon(structs[a]!, structs[b]!, open, solid);
-      if (r) ribbons.push({ tiles: r, item: typeof item === 'number' ? item : itemIdx(item) });
+      return into.size;
     };
-    const stage = (j: number): string => kit.carries[Math.min(j, kit.carries.length - 1)]!;
-    const head = makers.length ? makers[0]! : store;
-    for (const e of extract) {
-      const s = structs[e]!, o = made(s.x, s.y).ore;
-      lay(e, head, wantsOre(s.def) && o >= 0 ? o : stage(0));
+    const [cw0, ch0] = footprint(buildingIdx(NEIGHBOUR_CORE), 0);
+    const floorAt = (p: number, ax: number, ay: number): number => (fits(cw0, ch0, ax - (cw0 >> 1), ay - (ch0 >> 1), p, false, false) ? flood(ax - (cw0 >> 1), ay - (ch0 >> 1), new Set()) : -1);
+    let hub = parcels[0]!, [hx, hy] = parcelCentre(hub);
+    let most = floorAt(hub, hx, hy);
+    if (most < BAL.land.neighbours.pocket) for (const p of parcels) for (const [dx, dy] of CORE_TRIES) {
+      const [cx, cy] = parcelCentre(p), n = floorAt(p, cx + dx, cy + dy);
+      if (n > most) { most = n; hub = p; hx = cx + dx; hy = cy + dy; }
     }
-    makers.forEach((m, j) => lay(m, j + 1 < makers.length ? makers[j + 1]! : store, stage(j + 1)));
-    lay(store, core, stage(kit.carries.length - 1)); // into the Core: what it holds leaves from the pad beside it
-    // 5. Its power and extras on the hub's far side; its covered depots by the Core.
-    const power = kit.power.map((id, j) => put(id, hubFirst, hx - sx * 6 + sy * 3, hy - sy * 6 + sx * 3, 30 + j, false)).filter((i) => i >= 0);
-    kit.extra.forEach((id, j) => put(id, hubFirst, hx + sx * 4 - sy * 5, hy + sy * 4 + sx * 5, 40 + j, false));
+    const others = parcels.filter((p) => p !== hub);
+    // The way its goods flow: from its other parcels (upstream) to the Core's (north when it stands alone).
+    const [ox, oy] = others.length ? parcelCentre(others[0]!) : [hx, hy - 1];
+    const sx = Math.sign(ox - hx), sy = Math.sign(oy - hy);
+    const ux = Math.abs(ox - hx) >= Math.abs(oy - hy) ? sx : 0, uy = ux ? 0 : sy || -1; // upstream, on one axis
+    const down = dirOf(-ux, -uy); // the way its goods leave: to the pad
+    const hubFirst = [hub, ...others], othersFirst = others.length ? [...others, hub] : [hub];
+    // Its intakes (its back) towards the pad's side, where its store stands.
+    const core = put(NEIGHBOUR_CORE, [hub], hx, hy, 0, true, dirOf(-uy * side, -ux * side));
+    if (core >= 0) {
+      flood(structs[core]!.x, structs[core]!.y, region);
+      meta.set(core, { role: 'core' });
+    }
+    // 2. What its land gives it: sand everywhere, each ore with room for a drill on it on that floor.
+    // Sand where that floor has room for its collectors: `BAL.land.neighbours.sand` places of 2 × 2 bare sand.
+    const raws = new Set<string>();
+    const bare = (x: number, y: number): boolean => { const m = made(x, y); return m.ore < 0 && m.terrain === T.Sand && region.has(tileIndex(x, y)); };
+    let sandSpots = 0;
+    for (const t of region) {
+      const x = t % WORLD, y = (t - x) / WORLD;
+      if ((x & 1) || (y & 1)) continue; // one place in four tiles: 2 × 2 places that do not overlap
+      if (bare(x, y) && bare(x + 1, y) && bare(x, y + 1) && bare(x + 1, y + 1)) sandSpots++;
+    }
+    if (sandSpots >= BAL.land.neighbours.sand) raws.add('sand');
+    for (const p of parcels) {
+      const r = parcelRect(p);
+      for (let y = r.y0 + 1; y < r.y1 - 2; y++) for (let x = r.x0 + 1; x < r.x1 - 2; x++) {
+        const o = made(x, y).ore;
+        if (o < 0 || itemDef(o).face || raws.has(ITEM_IDS[o]!)) continue;
+        if ([[1, 0], [0, 1], [1, 1]].every(([dx, dy]) => made(x + dx!, y + dy!).ore === o) && [[0, 0], [1, 0], [0, 1], [1, 1]].every(([dx, dy]) => region.has(tileIndex(x + dx!, y + dy!)))) raws.add(ITEM_IDS[o]!);
+      }
+    }
+    // 3. What it makes (world/neighbour-chain.ts): its trade's goods, back-chained to that land (less
+    // what an earlier try could not lay: `layChecked`).
+    for (const b of ban) raws.delete(b);
+    if (ban.has('*')) for (const r of [...raws]) if (r !== 'sand') raws.delete(r);
+    const chain = planChain(h.profile, raws, maxProducts, ban.has('*'), copies);
+    // 4. CrierBelt's trade post downstream of the Core, its back (its intake) upstream; the silo before
+    // its intake, its front (its outlets) towards it.
+    // Beside the Core (across the flow), so the chain comes in from upstream with nothing in its way.
+    const L7 = 7 * side; // across the flow: the pad's side of the Core (the other on a retry)
+    const post = put(NEIGHBOUR_PAD, hubFirst, hx - ux * 2 + uy * L7, hy - uy * 2 + ux * L7, 1, true, down, true);
+    if (post >= 0) meta.set(post, { role: 'post', items: chain.products });
+    const postIn = post >= 0 ? worldPorts(structs[post]!).find((q) => q.io === 'in') : undefined;
+    // Its outlets side by side across the flow: one before the pad's intake, the other on the Core's side.
+    const csx = -uy * side, csy = -ux * side;
+    const store = put('silo', hubFirst, (postIn?.fx ?? hx) + ux * 2 + Math.max(0, csx), (postIn?.fy ?? hy) + uy * 2 + Math.max(0, csy), 2, true, down);
+    if (store >= 0) meta.set(store, { role: 'store', items: chain.products });
+    // 5. Its chain, consumers first: each stage upstream of what it feeds, its front (its outlet) towards
+    // it; an extractor on its own ground (a drill on its ore, anywhere on the base's floor).
+    const at = new Map<number, number>(); // stage → struct
+    const feeds = new Map<number, number>(); // stage → the stage it feeds (−1: the store)
+    for (const st of chain.stages) for (const i of st.ins) feeds.set(i.from, st.id);
+    for (const st of chain.stages) if (!feeds.has(st.id)) feeds.set(st.id, -1);
+    const centreOf = (k: number): [number, number] => { const q = structs[k]!, [w, hh] = footprint(q.def, q.rot); return [q.x + w / 2, q.y + hh / 2]; };
+    const towards = (x: number, y: number, k: number): Rot => { const [cx, cy] = centreOf(k); return Math.abs(cx - x) >= Math.abs(cy - y) ? dirOf(Math.sign(cx - x) || 1, 0) : dirOf(0, Math.sign(cy - y) || 1); };
+    const missed: Stage[] = [];
+    for (const st of [...chain.stages].reverse()) {
+      if (st.role === 'import' || !st.building) continue;
+      const to = feeds.get(st.id)!, target = to < 0 ? store : at.get(to) ?? -1;
+      if (target < 0) continue;
+      const sibs = chain.stages.filter((o) => feeds.get(o.id) === to && o.role !== 'import'), k = sibs.findIndex((o) => o.id === st.id);
+      const [tx, ty] = centreOf(target), lat = (k - (sibs.length - 1) / 2) * 4, far = st.role === 'extract' ? 9 : 6;
+      const ax = Math.round(tx + ux * far + uy * lat), ay = Math.round(ty + uy * far + ux * lat);
+      const idx = st.role === 'extract' && wantsOre(buildingIdx(st.building))
+        ? putOn(st.building, itemIdx(st.item), othersFirst, ax, ay, (x, y) => towards(x, y, target))
+        : put(st.building, st.role === 'extract' ? othersFirst : hubFirst, ax, ay, 10 + st.id, true, towards(ax, ay, target));
+      if (idx < 0) { missed.push(st); continue; }
+      at.set(st.id, idx);
+      meta.set(idx, { role: st.role === 'extract' ? 'extract' : 'make', recipe: st.recipe ?? undefined, items: [st.item] });
+    }
+    // An extractor that found no ground is given up when another of its kind feeds the same machine.
+    for (const st of missed) if (st.role !== 'extract' || !chain.stages.some((o) => o.role === 'extract' && o.item === st.item && feeds.get(o.id) === feeds.get(st.id) && at.has(o.id))) unplaced.push(st.item);
+    // What it buys for two machines or three (its chain laid again, or two goods bought) leaves the pad's
+    // one outlet for a depot upstream of them (a silo, a great silo for three), its front (its outlets) towards them.
+    // More than three: two depots, the first feeding two of them and the second (the rest).
+    const bought = chain.stages.filter((st) => st.role === 'import');
+    const boughtItems = [...new Set(bought.map((st) => st.item))];
+    const groups = bought.length > 3 ? [bought.slice(0, 2), bought.slice(2)] : [bought];
+    const depots: number[] = []; // per group
+    const viaDepot = new Map<number, [number, number]>(); // import stage → [depot, its outlet]
+    const onward: number[] = []; // a depot's outlet into the next
+    if (post >= 0 && bought.length > 1 && bought.every((st) => at.has(feeds.get(st.id)!))) {
+      for (const [g, grp] of groups.entries()) {
+        const users = grp.map((st) => at.get(feeds.get(st.id)!)!);
+        const cx = users.reduce((s2, k) => s2 + centreOf(k)[0], 0) / users.length, cy = users.reduce((s2, k) => s2 + centreOf(k)[1], 0) / users.length;
+        const outs = grp.length + (g < groups.length - 1 ? 1 : 0);
+        // Upstream of machines that take nothing else; beside them (away from the pad) when another
+        // input comes up the chain's own line, which the depot would stand across.
+        const alone = users.every((k) => (RECIPES[(meta.get(k)?.recipe ?? '') as keyof typeof RECIPES] as RecipeDef | undefined)?.ins.length === 1);
+        const [ax2, ay2] = alone ? [cx + ux * 5, cy + uy * 5] : [cx - uy * 6 * side, cy - ux * 6 * side];
+        const d = put(outs > 2 ? 'big_silo' : 'silo', hubFirst, Math.round(ax2), Math.round(ay2), 3 + g, true, alone ? down : dirOf(uy * side, ux * side));
+        if (d < 0) { unplaced.push(grp[0]!.item); break; }
+        depots.push(d);
+        meta.set(d, { role: 'depot', items: boughtItems });
+      }
+      // Each outlet to what stands across from it, in the same order along the depot's front (the
+      // next depot among them): no two of its lines cross.
+      if (depots.length === groups.length) for (const [g, grp] of groups.entries()) {
+        const d = depots[g]!, outs = worldPorts(structs[d]!).filter((q) => q.io === 'out');
+        const along = (x: number, y: number): number => ((outs[0]!.dir & 1) ? y : x);
+        const order = outs.map((q, i) => [along(q.fx, q.fy), i] as const).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map((o) => o[1]);
+        const targets: Array<{ st: Stage | null; at: [number, number] }> = grp.map((st) => ({ st, at: centreOf(at.get(feeds.get(st.id)!)!) }));
+        if (g < groups.length - 1) targets.push({ st: null, at: centreOf(depots[g + 1]!) });
+        targets.sort((a, b) => along(...a.at) - along(...b.at) || (a.st?.id ?? 1e9) - (b.st?.id ?? 1e9));
+        targets.forEach((tg, j) => { if (tg.st) viaDepot.set(tg.st.id, [d, order[j]!]); else onward[g] = order[j]!; });
+      }
+    }
+    // 6. The ribbons, port to port, nearest the pad first: the silo into the pad and into the Core,
+    // then each stage into what it feeds (a second producer of one input joins the first's line from
+    // its side); a bought input leaves the pad's outlet. Every port's outside tile is kept for its own line.
+    const ribbons: NRibbon[] = [];
+    const edges: Array<{ from: number; outPort: number; to: number; inPort: number; items: string[] }> = [];
+    // The silo's outlet before the pad's intake runs into it, the other into the Core: their lines never cross.
+    const storeOuts = store >= 0 ? worldPorts(structs[store]!).filter((q) => q.io === 'out') : [];
+    const gapTo = (q: WorldPort | undefined): number => (q && postIn ? Math.abs(q.fx - postIn.fx) + Math.abs(q.fy - postIn.fy) : 0);
+    const toCore = storeOuts.length > 1 && gapTo(storeOuts[0]) <= gapTo(storeOuts[1]) ? 1 : 0;
+    if (store >= 0 && post >= 0) edges.push({ from: store, outPort: 1 - toCore, to: post, inPort: 0, items: [...chain.products] });
+    const inPortOf = new Map<number, Map<string, number>>(); // struct → item → its in-port (in order)
+    for (const st of [...chain.stages].reverse()) {
+      const to = feeds.get(st.id)!, target = to < 0 ? store : at.get(to) ?? -1;
+      const from = st.role === 'import' ? viaDepot.get(st.id)?.[0] ?? post : at.get(st.id) ?? -1;
+      if (target < 0 || from < 0) continue;
+      const ins = worldPorts(structs[target]!).filter((q) => q.io === 'in');
+      let byItem = inPortOf.get(target);
+      if (!byItem) inPortOf.set(target, (byItem = new Map()));
+      if (!byItem.has(st.item)) byItem.set(st.item, Math.min(byItem.size, ins.length - 1));
+      edges.push({ from, outPort: viaDepot.get(st.id)?.[1] ?? 0, to: target, inPort: byItem.get(st.item)!, items: [st.item] });
+    }
+    // The pad's outlet round to the depot (the first's last outlet to the second), then the silo's second
+    // outlet into the Core, last: their lines keep out of the chain's way.
+    if (viaDepot.size) {
+      edges.push({ from: post, outPort: 0, to: depots[0]!, inPort: 0, items: boughtItems });
+      if (depots.length > 1) edges.push({ from: depots[0]!, outPort: onward[0]!, to: depots[1]!, inPort: 0, items: boughtItems });
+    }
+    if (store >= 0 && core >= 0) edges.push({ from: store, outPort: toCore, to: core, inPort: -1, items: [...chain.products] });
+    // Laid in this order: the store's two short lines (into the pad, across to the Core), the bought
+    // goods' (the pad's outlet the long way round to the depots or the machine that takes them: laid
+    // after the chain's, they found their way closed), then the chain's.
+    if (importsFirst) {
+      const rank = (e: (typeof edges)[number]): number => (e.to === post || e.to === core ? 0 : e.from === post || depots.includes(e.from) || depots.includes(e.to) ? 1 : 2);
+      const order = edges.map((e, i) => [rank(e), i, e] as const).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+      edges.splice(0, edges.length, ...order.map((o) => o[2]));
+    }
+    const keep = new Set<number>();
+    const portTile = (k: number, io: 'in' | 'out', n: number): WorldPort | undefined => worldPorts(structs[k]!).filter((q) => q.io === io)[n];
+    for (const e of edges) {
+      const o = portTile(e.from, 'out', e.outPort);
+      if (o) keep.add(tileIndex(o.fx, o.fy));
+      const i = e.inPort >= 0 ? portTile(e.to, 'in', e.inPort) : undefined;
+      if (i) keep.add(tileIndex(i.fx, i.fy));
+    }
+    for (const e of edges) {
+      const o = portTile(e.from, 'out', e.outPort);
+      if (!o || !e.items.length) continue;
+      // Into the Core: its nearest intake, else the next.
+      const intakes = e.inPort >= 0 ? [portTile(e.to, 'in', e.inPort)] : worldPorts(structs[e.to]!).filter((q) => q.io === 'in').sort((a, b) => Math.abs(a.fx - o.fx) + Math.abs(a.fy - o.fy) - (Math.abs(b.fx - o.fx) + Math.abs(b.fy - o.fy)) || a.idx - b.idx);
+      for (const i of intakes) {
+        if (!i) continue;
+        const joins = ribbons.filter((r) => r.to === e.to && r.port === i.idx);
+        const tl = this.line(o, i, joins, open, solid, keep);
+        if (tl) { ribbons.push({ tiles: tl, item: itemIdx(e.items[0]!), items: e.items.map(itemIdx), from: e.from, to: e.to, port: i.idx }); break; }
+      }
+    }
+    // 7. Its power and extras on the hub's far side; its covered depots by the Core.
+    const power = kit.power.map((id, j) => put(id, hubFirst, hx + uy * L7 - ux * 2, hy + ux * L7 - uy * 2, 30 + j, false)).filter((i) => i >= 0);
+    for (const k of power) meta.set(k, { role: 'power' });
+    kit.extra.forEach((id, j) => { const k = put(id, hubFirst, hx - uy * L7, hy - ux * L7, 40 + j, false); if (k >= 0) meta.set(k, { role: 'extra' }); });
     const tents: Array<[number, number]> = [];
     for (let j = 0; j < kit.tents; j++) {
-      const at = spot(NEIGHBOUR_TENT, NEIGHBOUR_TENT, hub, hx + sy * 6, hy - sx * 6, false, false);
+      const at = spot(NEIGHBOUR_TENT, NEIGHBOUR_TENT, hub, hx - uy * 6 * side + ux * 3, hy - ux * 6 * side + uy * 3, false, false);
       if (at) tents.push(at);
     }
     // A parcel still bare (its floor cut off from the pad's by the land): a turbine on the base's grid, else a depot.
@@ -377,11 +601,11 @@ export class Neighbours {
       if (structs.some((s) => parcelAt(s.x, s.y) === p) || tents.some(([x, y]) => parcelAt(x, y) === p)) continue;
       const [cx, cy] = parcelCentre(p);
       const k = put('wind_flower', [p], cx, cy, 50, false);
-      if (k >= 0) { power.push(k); continue; }
+      if (k >= 0) { power.push(k); meta.set(k, { role: 'power' }); continue; }
       const at = spot(NEIGHBOUR_TENT, NEIGHBOUR_TENT, p, cx, cy, false, false);
       if (at) tents.push(at);
     }
-    // 6. The flag and two banner poles round the pad's corners.
+    // 8. The flag and two banner poles round its Core.
     let flag: [number, number] | null = null;
     const banners: Array<[number, number]> = [];
     if (core >= 0) {
@@ -401,7 +625,7 @@ export class Neighbours {
         else banners.push([x, y]);
       }
     }
-    // 7. Its grid: every building that takes part in power, wired from its Core through masts.
+    // 9. Its grid: every building that takes part in power, wired from its Core through masts.
     const wires = this.wire(structs, core >= 0 ? core : power[0] ?? -1, solid, free);
     // 8. The cairns along its outer edge, a gap between each two.
     const cairns: Array<[number, number]> = [];
@@ -420,7 +644,9 @@ export class Neighbours {
         cairns.push([x, y]);
       }
     }
-    return { structs, core, ribbons, wires, flag, banners, tents, cairns, tiles: solid };
+    for (const [k, m] of meta) structs[k] = { ...structs[k]!, role: m.role, ...(m.recipe ? { recipe: m.recipe } : {}), ...(m.items ? { items: m.items.map(itemIdx) } : {}) };
+    for (let k = 0; k < structs.length; k++) if (!structs[k]!.role) structs[k] = { ...structs[k]!, role: structs[k]!.def === buildingIdx(NEIGHBOUR_MAST) ? 'mast' : 'extra' };
+    return { layout: { structs, core, products: chain.products.map(itemIdx), ribbons, wires, flag, banners, tents, cairns, tiles: solid }, raws, unplaced };
   }
 
   /**
@@ -488,35 +714,38 @@ export class Neighbours {
   }
 
   /**
-   * A ribbon from building a to building b over open, free tiles (breadth-first, N E S W, from the
-   * tiles beside a in order): x, y, rot per tile, each turned to the next, the last into b; its
-   * tiles marked taken. Null when no way of at most `RIBBON_MAX` tiles exists.
+   * A ribbon from an outlet to an intake over open, free tiles (breadth-first, N E S W): from the
+   * tile the outlet faces to the tile the intake faces, its last tile turned into the intake — or,
+   * when `joins` already go there, onto the side of one of their tiles (never head on, never from
+   * behind its own feeder), so two producers of one input share one line. The outside tiles of the
+   * other ports are kept clear (`keep`). x, y, rot per tile, each turned to the next; its tiles taken.
+   * Null when no way of at most `RIBBON_MAX` tiles exists.
    */
-  private ribbon(a: NStruct, b: NStruct, open: (x: number, y: number) => boolean, solid: Set<number>): Int32Array | null {
-    const side = (s: NStruct): number[] => {
-      const [w, h] = footprint(s.def, s.rot), out: number[] = [];
-      for (let x = s.x; x < s.x + w; x++) out.push(tileIndex(x, s.y - 1), tileIndex(x, s.y + h));
-      for (let y = s.y; y < s.y + h; y++) out.push(tileIndex(s.x - 1, y), tileIndex(s.x + w, y));
-      return out.filter((t) => { const x = t % WORLD; return open(x, (t - x) / WORLD) && !solid.has(t); });
-    };
-    const [bw, bh] = footprint(b.def, b.rot);
-    const inB = (x: number, y: number): boolean => x >= b.x && y >= b.y && x < b.x + bw && y < b.y + bh;
-    const ends = new Set(side(b));
-    const from = new Map<number, number>();
-    const depth = new Map<number, number>();
-    const queue: number[] = [];
-    for (const t of side(a)) if (!from.has(t)) { from.set(t, -1); depth.set(t, 1); queue.push(t); }
-    let end = -1;
+  private line(o: WorldPort, i: WorldPort, joins: readonly NRibbon[], open: (x: number, y: number) => boolean, solid: Set<number>, keep: ReadonlySet<number>): Int32Array | null {
+    const start = tileIndex(o.fx, o.fy), goal = tileIndex(i.fx, i.fy);
+    const ok = (t: number): boolean => { const x = t % WORLD; return open(x, (t - x) / WORLD) && !solid.has(t) && (!keep.has(t) || t === start || t === goal); };
+    if (!ok(start)) return null;
+    // Where a join may land: a joined line's tiles, each with its own way (the new line enters it from a side).
+    const onto = new Map<number, number>();
+    for (const r of joins) for (let k = 0; k < r.tiles.length; k += 3) onto.set(tileIndex(r.tiles[k]!, r.tiles[k + 1]!), r.tiles[k + 2]!);
+    const from = new Map<number, number>(), depth = new Map<number, number>();
+    const queue = [start];
+    from.set(start, -1); depth.set(start, 1);
+    let end = -1, into = -1; // the last tile, and the way it turns (into the intake, or onto a joined line)
     for (let q = 0; q < queue.length && end < 0; q++) {
-      const t = queue[q]!;
-      if (ends.has(t)) { end = t; break; }
-      const d = depth.get(t)!;
-      if (d >= RIBBON_MAX) continue;
-      const x = t % WORLD, y = (t - x) / WORLD;
-      for (let r = 0; r < 4; r++) {
-        const nx = x + DX[r]!, ny = y + DY[r]!, n = tileIndex(nx, ny);
-        if (from.has(n) || !open(nx, ny) || solid.has(n)) continue;
-        from.set(n, t); depth.set(n, d + 1); queue.push(n);
+      const t = queue[q]!, x = t % WORLD, y = (t - x) / WORLD;
+      if (t === goal) { end = t; into = opposite(i.dir); break; }
+      for (let d = 0; d < 4 && joins.length; d++) {
+        const n = tileIndex(x + DX[d]!, y + DY[d]!), way = onto.get(n);
+        if (way !== undefined && (way & 1) !== (d & 1)) { end = t; into = d; break; } // onto its side
+      }
+      if (end >= 0) break;
+      const dd = depth.get(t)!;
+      if (dd >= RIBBON_MAX) continue;
+      for (let d = 0; d < 4; d++) {
+        const nx = x + DX[d]!, ny = y + DY[d]!, n = tileIndex(nx, ny);
+        if (from.has(n) || !ok(n)) continue;
+        from.set(n, t); depth.set(n, dd + 1); queue.push(n);
       }
     }
     if (end < 0) return null;
@@ -524,16 +753,124 @@ export class Neighbours {
     for (let t = end; t >= 0; t = from.get(t)!) path.push(t);
     path.reverse();
     const out = new Int32Array(path.length * 3);
-    path.forEach((t, i) => {
+    path.forEach((t, k) => {
       const x = t % WORLD, y = (t - x) / WORLD;
-      let rot = 0;
-      if (i + 1 < path.length) {
-        const n = path[i + 1]!, nx = n % WORLD, ny = (n - nx) / WORLD;
+      let rot = into;
+      if (k + 1 < path.length) {
+        const n = path[k + 1]!, nx = n % WORLD, ny = (n - nx) / WORLD;
         for (let r = 0; r < 4; r++) if (x + DX[r]! === nx && y + DY[r]! === ny) rot = r;
-      } else for (let r = 0; r < 4; r++) if (inB(x + DX[r]!, y + DY[r]!)) { rot = r; break; }
-      out[i * 3] = x; out[i * 3 + 1] = y; out[i * 3 + 2] = rot;
+      }
+      out[k * 3] = x; out[k * 3 + 1] = y; out[k * 3 + 2] = rot;
       solid.add(t);
     });
     return out;
   }
+}
+
+/**
+ * What a base's layout gets wrong against the content and its own geometry (empty: nothing) — the
+ * owner's « du charbon rentre dans des fileuses… rien n'est jamais envoyé par trade post »:
+ * - a maker whose building cannot run its recipe, that does not put out what it claims, that misses
+ *   one of its recipe's inputs, is fed something its recipe does not take, or sends its goods nowhere;
+ * - an extractor not on its own ground (a drill off its ore, a collector off bare sand), or idle;
+ * - a ribbon that does not leave its producer's outlet, carries what its producer does not put out, or
+ *   ends neither in its consumer's intake (turned into it) nor on the side of a line going there;
+ * - nothing reaching the trade post, or a good it sells never reaching the store before it.
+ * Each problem names the item it is about, when there is one (the retry gives that raw good up).
+ */
+const NO_POST = 'nothing goes to the trade post';
+
+export function neighbourProblems(grid: Grid, L: NLayout): Array<{ what: string; item?: string }> {
+  const out: Array<{ what: string; item?: string }> = [];
+  const name = (k: number): string => `${BUILDING_IDS[L.structs[k]!.def]}#${k}`;
+  const into = (k: number): NRibbon[] => L.ribbons.filter((r) => r.to === k);
+  const from = (k: number): NRibbon[] => L.ribbons.filter((r) => r.from === k);
+  L.structs.forEach((s, k) => {
+    if (s.role === 'make') {
+      const r = RECIPES[s.recipe as keyof typeof RECIPES] as RecipeDef | undefined, item = ITEM_IDS[s.items?.[0] ?? -1];
+      if (!r) { out.push({ what: `${name(k)}: no recipe ${s.recipe}` }); return; }
+      if (!r.machines.includes(BUILDING_IDS[s.def]!)) out.push({ what: `${name(k)} cannot run ${s.recipe}` });
+      if (!item || !r.outs.some(([o]) => o === item)) out.push({ what: `${name(k)}: ${s.recipe} does not make ${item}` });
+      for (const [n] of r.ins) if (!into(k).some((rb) => rb.items.includes(itemIdx(n)))) out.push({ what: `${name(k)} (${s.recipe}) gets no ${n}`, item: n });
+      for (const rb of into(k)) for (const it of rb.items) if (!r.ins.some(([n]) => n === ITEM_IDS[it])) out.push({ what: `${name(k)} (${s.recipe}) fed ${ITEM_IDS[it]}, which it does not take` });
+      if (!from(k).length) out.push({ what: `${name(k)} (${s.recipe}) sends its ${item} nowhere`, item });
+    } else if (s.role === 'depot') {
+      // What it hands out comes from the pad (or the depot before it): a depot fed by nothing feeds out of thin air.
+      if (!into(k).length) out.push({ what: `${name(k)} (a depot) gets nothing from the trade post` });
+      if (!from(k).length) out.push({ what: `${name(k)} (a depot) feeds nothing` });
+    } else if (s.role === 'extract') {
+      const item = s.items?.[0] ?? -1, [w, h] = footprint(s.def, s.rot), d = buildingDef(s.def).drill;
+      for (let y = s.y; y < s.y + h; y++) for (let x = s.x; x < s.x + w; x++) {
+        const m = grid.made0(x, y);
+        if (d?.ground ? m.ore >= 0 || m.terrain !== T.Sand : m.ore !== item) { out.push({ what: `${name(k)} is not on its ${ITEM_IDS[item]}`, item: ITEM_IDS[item] }); y = s.y + h; break; }
+      }
+      if (!from(k).length) out.push({ what: `${name(k)} sends its ${ITEM_IDS[item]} nowhere`, item: ITEM_IDS[item] });
+    }
+  });
+  for (const rb of L.ribbons) {
+    const a = L.structs[rb.from], b = L.structs[rb.to];
+    if (!a || !b) { out.push({ what: 'a ribbon between nothing' }); continue; }
+    if (!worldPorts(a).some((q) => q.io === 'out' && q.fx === rb.tiles[0] && q.fy === rb.tiles[1])) out.push({ what: `a ribbon from ${name(rb.from)} leaves no outlet` });
+    if ((a.role === 'make' || a.role === 'extract') && !rb.items.every((it) => a.items?.includes(it))) out.push({ what: `a ribbon from ${name(rb.from)} carries what it does not put out` });
+    const n = rb.tiles.length - 3, x = rb.tiles[n]!, y = rb.tiles[n + 1]!, rot = rb.tiles[n + 2]! as Rot;
+    const intake = worldPorts(b).some((q) => q.io === 'in' && q.idx === rb.port && q.fx === x && q.fy === y && opposite(q.dir) === rot);
+    if (!intake) {
+      const ax = x + DX[rot]!, ay = y + DY[rot]!;
+      const onto = L.ribbons.some((o) => o !== rb && o.to === rb.to && o.port === rb.port && Array.from({ length: o.tiles.length / 3 }, (_, k) => k).some((k) => o.tiles[k * 3] === ax && o.tiles[k * 3 + 1] === ay && (o.tiles[k * 3 + 2]! & 1) !== (rot & 1)));
+      if (!onto) out.push({ what: `a ribbon from ${name(rb.from)} to ${name(rb.to)} ends nowhere`, item: ITEM_IDS[rb.item] });
+    }
+  }
+  if (L.structs.length && !L.ribbons.some((rb) => L.structs[rb.to]?.role === 'post')) out.push({ what: NO_POST });
+  if (L.core >= 0 && L.products.length && !L.ribbons.some((rb) => rb.to === L.core)) out.push({ what: 'nothing goes into its Core' });
+  for (const p of L.products) if (!L.ribbons.some((rb) => L.structs[rb.to]?.role === 'store' && rb.items.includes(p))) out.push({ what: `its ${ITEM_IDS[p]} never reaches its store`, item: ITEM_IDS[p] });
+  return out;
+}
+
+/**
+ * A layout that still does not check, made to stand to reason: a maker missing an input or sending
+ * nowhere, an extractor off its ground or idle, taken away with their lines, again until nothing else
+ * goes; then a mast left at the end of a wire to nothing (it led to what went); what it sold and no
+ * longer reaches its store is no longer sold. A base keeps its Core, store, pad and power, never a
+ * machine that cannot run.
+ */
+function prune(L: NLayout, grid: Grid): NLayout {
+  let cur = L;
+  for (let k = 0; k < 8; k++) {
+    const bad = new Set<number>();
+    for (const q of neighbourProblems(grid, cur)) {
+      const m = /#(\d+)/.exec(q.what);
+      const i = m ? Number(m[1]) : -1;
+      if (i >= 0 && (cur.structs[i]?.role === 'make' || cur.structs[i]?.role === 'extract')) bad.add(i);
+    }
+    if (!bad.size) break;
+    cur = without(cur, bad);
+  }
+  for (let k = 0; k < 64; k++) {
+    const deg = new Map<number, number>();
+    for (const [a, b] of cur.wires) { deg.set(a, (deg.get(a) ?? 0) + 1); deg.set(b, (deg.get(b) ?? 0) + 1); }
+    const bad = new Set<number>();
+    cur.structs.forEach((q, i) => { if (q.role === 'mast' && (deg.get(i) ?? 0) <= 1) bad.add(i); });
+    if (!bad.size) break;
+    cur = without(cur, bad);
+  }
+  return { ...cur, products: cur.products.filter((p) => cur.ribbons.some((rb) => cur.structs[rb.to]?.role === 'store' && rb.items.includes(p) && cur.structs[rb.from]?.role !== 'store')) };
+}
+
+/** A layout less some of its structures, with their lines and wires; the rest renumbered. */
+function without(cur: NLayout, bad: ReadonlySet<number>): NLayout {
+  const keep = cur.structs.map((_, i) => !bad.has(i));
+  const remap = new Map<number, number>();
+  cur.structs.forEach((_, i) => { if (keep[i]) remap.set(i, remap.size); });
+  const tiles = new Set(cur.tiles);
+  for (const i of bad) { const s = cur.structs[i]!, [w, h] = footprint(s.def, s.rot); for (let y = s.y; y < s.y + h; y++) for (let x = s.x; x < s.x + w; x++) tiles.delete(tileIndex(x, y)); }
+  const ribbons = cur.ribbons.filter((r) => keep[r.from] && keep[r.to]);
+  for (const r of cur.ribbons) if (!(keep[r.from] && keep[r.to])) for (let k = 0; k < r.tiles.length; k += 3) tiles.delete(tileIndex(r.tiles[k]!, r.tiles[k + 1]!));
+  return {
+    ...cur,
+    structs: cur.structs.filter((_, i) => keep[i]),
+    core: cur.core >= 0 ? remap.get(cur.core) ?? -1 : -1,
+    ribbons: ribbons.map((r) => ({ ...r, from: remap.get(r.from)!, to: remap.get(r.to)! })),
+    wires: cur.wires.filter(([a, b]) => keep[a] && keep[b]).map(([a, b]) => [remap.get(a)!, remap.get(b)!] as [number, number]),
+    tiles,
+  };
 }

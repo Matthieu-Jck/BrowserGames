@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { drillToHearth, line, testSim, wire } from '../testkit';
+import { drillToHearth, grantCost, line, testSim, wire } from '../testkit';
 import type { Sim } from '../state';
 import { forecast, gridReports, idleCount, needsNoPower, powerMarks } from './power';
 import { buildingIdx } from '@/content/registry';
@@ -59,6 +59,7 @@ describe('readouts (D88): what the specialised views show, read from the sim and
     const sim = testSim();
     sim.done.add('tr3'); sim.rebuildDerived(); // the accumulator (research, granted outside the commands)
     for (const [it, n] of [['iron_plate', 200], ['glass', 40], ['copper_wire', 60], ['ceramic', 20], ['empty_cell', 10], ['circuit', 10]] as const) sim.grant(it, n);
+    grantCost(sim, 'accumulator'); // its price today (D123)
     const drill = drillToHearth(sim);
     const turbine = sim.place('wind_flower', 517, 516, 0), acc = sim.place('accumulator', 504, 516, 0), loose = sim.place('drill', 512, 522, 2), pole = sim.place('mast', 520, 512, 0);
     for (const r of [turbine, acc, loose, pole]) expect(r.ok, r.reason).toBe(true);

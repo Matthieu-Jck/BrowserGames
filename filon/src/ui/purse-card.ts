@@ -8,9 +8,10 @@
 //   · a section per trade post: each item it sold (its icon, « 12/min », a bar, « +8,4 k ◉/h »,
 //     after CrierBelt's fee) and each standing order (« 30/min », its cost now at today's price);
 //     « other trade » when the ledger no longer holds a minute's lines;
-//   · « Recherche »: the AI tokens — « 1 600/min · 13 ◉/min » and the share the claim's servers
-//     covered as a server chip (a line of words on first sight, then the icons alone) —, the
-//     Compute Plan's fee, the servers' rental; « Terres »: the leases' rent;
+//   · « Recherche »: the AI tokens bought — « 1 600/min · 13 ◉/min » and the share research got
+//     free (D122: the Core's compute, the servers, the bank) as a chip with the Core's look (a line
+//     of words on first sight, then the icons alone) —, the Compute Plan's fee, the servers' rental;
+//     « Terres »: the leases' rent;
 //   · the same minutes' one-offs apart, in a muted line: never in the headline;
 //   · « Ouvrir la Criée ».
 // Every line's ◉/h adds up to the headline. A click on a line goes where it is managed
@@ -132,7 +133,8 @@ export class PurseCard {
   /** A line: icon, name over its detail, a bar, the ◉/h; a button to where it is managed. */
   private line(f: FlowLine): Line {
     const fill = el('i.purse-fill'), value = el('b.purse-v'), detail = el('small.purse-detail');
-    const chip = f.kind === 'tokens' ? el('span.purse-chip', {}, [buildingIcon(this.atlas, 'server', 14), el('b')]) : null;
+    // The free share (D122): the Core's compute, the servers and the bank, under the Core's look.
+    const chip = f.kind === 'tokens' ? el('span.purse-chip', { 'data-purse-free': '' }, [buildingIcon(this.atlas, 'hearth', 14, this.host.sim().hearthLevel), el('b')]) : null;
     const node = el<'button'>('button.purse-line', { type: 'button', 'data-flow': f.kind, 'data-sign': f.perHour > 0 ? '+' : '-', onclick: () => this.host.go(f) }, [
       el('span.purse-icon', {}, this.icon(f)),
       el('span.purse-label', {}, [el('span.purse-name', {}, flowName(f)), el('span.purse-sub', {}, [detail, chip])]),
@@ -189,8 +191,8 @@ export class PurseCard {
         : '';
       setText(l.detail, detail);
       if (l.chip) {
-        setText(l.chip.querySelector('b')!, `${Math.round((f.servers ?? 0) / 10)} %`);
-        setAttr(l.chip, 'title', t('purse.tokens.servers', { p: Math.round((f.servers ?? 0) / 10) }));
+        setText(l.chip.querySelector('b')!, `${Math.round((f.free ?? 0) / 10)} %`);
+        setAttr(l.chip, 'title', t('purse.tokens.free', { p: Math.round((f.free ?? 0) / 10) }));
       }
       setAttr(l.node, 'title', f.kind === 'order' && f.liveCost !== undefined ? `${t('purse.order.tip', { v: oc(f.liveCost * 60, false, 0) })} · ${t('purse.go')}` : t('purse.go'));
     });

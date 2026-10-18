@@ -1,32 +1,47 @@
 // colony.ts — inspector panels of the base itself, laid out by the kit (D89): the Heart (at the top
-// its level as steps and its data outlet; then its stock as icons and amounts, and the next level:
-// what it mounts on a corner, D86, and what it costs — the upgrade itself is the foot's action; from
-// level 3 its Archive: the two expertises in place, D93, and « Ouvrir l'Archive » in the foot) and
+// its level as steps and its compute — D122: the AI tokens a minute its compute bay gives research,
+// from level 2 —; then its stock as icons and amounts, and the next level: what it mounts on a
+// corner, D86, what it adds to the compute, and what it costs — the upgrade itself is the foot's
+// action; from level 3 its Archive: the two expertises in place, D93, and « Ouvrir l'Archive » in
+// the foot) and
 // the landscapers (an excavator's / backfiller's job and its time left, or the marks in reach; the
 // stone it holds).
 import { BAL } from '@/content/balance';
 import { itemIdx } from '@/content/registry';
 import { nodeName } from '@/content/research';
 import { el, setText } from '@/core/dom';
-import { duration } from '@/i18n/format';
+import { duration, num } from '@/i18n/format';
 import { locale, t, tr } from '@/i18n/i18n';
 import { footprint } from '@/sim/entities';
-import { itemMention } from '../mention';
+import type { Sim } from '@/sim/state';
 import { expertiseDef } from '@/content/expertises';
 import { archiveOpen, rankOf } from '@/sim/systems/expertise';
 import { archiveGlyph, effectFigure, effectLabel, expertiseIcon, romanRank } from '../screens/expertise';
-import { costChips, equation, fmt, heldList, itemRow, itemTerm, mark, progressBar, section, type Panel, type PanelCtx } from './kit';
+import { costChips, fmt, heldList, itemRow, mark, progressBar, section, type Panel, type PanelCtx } from './kit';
 
-/** The Heart's level as steps (one inked per level reached), and its data outlet once mounted (D68, D86). */
+/** The level that mounts the Core's compute bay (D122: the first with a compute of its own, `BAL.coreCompute`). */
+const COMPUTE_LEVEL = BAL.coreCompute.findIndex((v) => v > 0) + 1;
+
+/** The Core's compute at a level, tokens a minute, as `Sim.coreComputeRate` reckons it (its research and expertise in). */
+function computeAt(sim: Sim, level: number): number {
+  const base = BAL.coreCompute[Math.min(BAL.coreCompute.length, level) - 1] ?? 0;
+  return base > 0 ? Math.floor(((base + sim.mods.coreCompute) * sim.mods.tokenRate) / 1000) : 0;
+}
+
+/** The Heart's level as steps (one inked per level reached), and its compute once mounted (D122: « Calcul du Cœur »). */
 export const hearthHero = ({ sim }: PanelCtx): HTMLElement => {
   const lv = sim.hearthLevel, max = BAL.hearthUpgrades.length + 1;
   const steps = el('span.insp-steps', { title: t('insp.hearth.levelOf', { n: lv, max }) }, Array.from({ length: max }, (_, i) => el('i', { 'data-on': i < lv ? '' : null })));
   const parts: HTMLElement[] = [el('div.insp-hero-line', {}, [mark('level'), el('b.insp-hero-name.lettering', {}, t('insp.hearth.level', { n: lv })), steps])];
-  // Its data outlet (D68): the Survey Data a minute it makes and hands out, from the level that
-  // mounts the outlet (D86; D101: research or not, the first lab runs on it). Before, the next
-  // level's section says which level mounts it.
-  const rate = sim.heartDataRate();
-  if (rate > 0) parts.push(equation([], [itemTerm(itemIdx('journal_1'), fmt(rate / 1000, 0))], t('insp.unit.perMin')));
+  // Its compute (D122): the AI tokens a minute it gives research, no power, no ribbon, from the
+  // level that mounts its compute bay (D86's south-east corner). Before, the next level's section
+  // says which level mounts it.
+  const rate = sim.coreComputeRate();
+  if (rate > 0) {
+    parts.push(el('div.insp-hero-line.insp-compute', { 'data-core-compute': '', title: t('insp.hearth.compute.tip') }, [
+      mark('token'), el('span', {}, t('insp.hearth.compute')), el('b', {}, t('insp.hearth.compute.v', { n: num(rate) })),
+    ]));
+  }
   return el('div.insp-hero', { 'data-hero': 'hearth' }, parts);
 };
 
@@ -58,8 +73,11 @@ export const hearthPanel: Panel = ({ sim, host, live, action, atlas }) => {
   const ok = sim.unlocked(up.unlock);
   const locked = t('insp.hearth.locked', { res: nodeName(up.unlock)[locale()] });
   out.push(section({ sec: 'level', title: t('insp.hearth.nextLevel', { n: lv + 1 }), icon: mark('level') }, [
-    // What the next level mounts on its corner (D86): the data outlet, shown by the file it hands out.
-    lv + 1 === BAL.hearthDataLevel ? el('p.insp-note', {}, [itemMention(itemIdx('journal_1'), { name: false }), ' ', t('insp.hearth.adds', { n: lv + 1 })]) : null,
+    // What the next level mounts on its corner (D86): the compute bay (D122), shown by the token it
+    // computes; past it, what the next level adds to the compute.
+    lv + 1 === COMPUTE_LEVEL ? el('p.insp-note', { 'data-core-compute-next': '' }, [mark('token'), ' ', t('insp.hearth.computeAt', { n: lv + 1, v: num(computeAt(sim, lv + 1)) })])
+      : lv + 1 > COMPUTE_LEVEL && computeAt(sim, lv + 1) > computeAt(sim, lv)
+        ? el('p.insp-note', { 'data-core-compute-next': '' }, [mark('token'), ' ', t('insp.hearth.computeNext', { n: lv + 1, v: num(computeAt(sim, lv + 1)) })]) : null,
     // …the Archive of the expertises (D93), shown by its mark.
     lv + 1 === BAL.expertise.level ? el('p.insp-note', {}, [archiveGlyph(), ' ', t('insp.hearth.archiveAt', { n: lv + 1 })]) : null,
     costChips(sim, up.cost),

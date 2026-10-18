@@ -11,7 +11,7 @@ import { makeStore } from '@/core/store';
 import { num } from '@/i18n/format';
 import { locale, t } from '@/i18n/i18n';
 import type { Atlas } from '@/render/art/atlas';
-import { GLEANER_H, GLEANER_HAND, GLEANER_W, drawGleaner } from '@/render/art/recipes/gleaners';
+import { GLEANER_H, GLEANER_HAND, GLEANER_W, RISEN_LIFT, drawGleanerRisen } from '@/render/art/recipes/gleaners';
 import type { Sim } from '@/sim/state';
 import { buildingIcon, itemIcon } from './build-bar';
 import { itemRef } from './mention';
@@ -33,7 +33,7 @@ const CHIPS = 6;
 const prefs = makeStore<{ version: 1; met: string[] }>('filon.gleaners.v1', 1, () => ({ version: 1, met: [] }));
 const baseKey = (sim: Sim): string => `${sim.playerSeed}:${sim.foundingEpoch}`;
 
-/** A Gleaner, drawn (carrying something, or gliding). */
+/** A Gleaner, risen out of the sand to its shoulders (carrying something up, or not). */
 function figure(carry: boolean): HTMLCanvasElement {
   const cv = document.createElement('canvas');
   cv.width = GLEANER_W * 2; cv.height = GLEANER_H * 2;
@@ -41,12 +41,12 @@ function figure(carry: boolean): HTMLCanvasElement {
   const g = cv.getContext('2d')!;
   g.scale(2, 2);
   g.lineJoin = 'round'; g.lineCap = 'round';
-  drawGleaner(g, 1, carry);
+  drawGleanerRisen(g, carry);
   if (carry) {
     // What it took, a small glint over its hand.
     const [hx, hy] = GLEANER_HAND;
     g.fillStyle = 'rgba(255, 246, 210, 0.9)';
-    g.beginPath(); g.arc(hx, hy, 3.4, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.arc(hx, hy + RISEN_LIFT, 3.4, 0, Math.PI * 2); g.fill();
   }
   return cv;
 }

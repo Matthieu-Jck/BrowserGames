@@ -2,8 +2,8 @@
 // its ore, where the ore lies (open ground, a vein under rock, a cliff face, water), what one tile
 // of it gives and the whole deposit, and the machines that work it, each unlocked or not. Read
 // from the engine and the content tables, never written by hand: the extractors are the buildings
-// whose `drill` (or kind) fits the place — a drill for a deposit (`drill` with neither `ground`,
-// `anywhere` nor `face`), the excavators then the drills for a vein still under rock, a face
+// whose `drill` (or kind) fits the place — a drill for a deposit (`drill` with neither `ground`
+// nor `face`), the excavators then the drills for a vein still under rock, a face
 // cutter for a face ore (`drill.face`, D87), a pump for water. Plain sand gets no card: it is the
 // ground everywhere (D38), and a card on every tile would be noise. Pure (no DOM): tested in node
 // (deposit-facts.test.ts).
@@ -40,7 +40,7 @@ export interface DepositFacts {
 const defs = (pick: (d: BuildingDef) => boolean): string[] => BUILDING_IDS.filter((id) => pick(buildingDef(buildingIdx(id))));
 
 /** The extractors by place, from the content tables. */
-export const DRILLS = defs((d) => d.kind === 'drill' && !!d.drill && !d.drill.ground && !d.drill.anywhere && !d.drill.face);
+export const DRILLS = defs((d) => d.kind === 'drill' && !!d.drill && !d.drill.ground && !d.drill.face);
 export const CUTTERS = defs((d) => d.kind === 'drill' && d.drill?.face === true);
 export const DIGGERS = defs((d) => d.kind === 'excavator');
 export const PUMPS = defs((d) => d.kind === 'pump');

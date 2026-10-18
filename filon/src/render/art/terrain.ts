@@ -636,7 +636,15 @@ export function columnLook(d: PaintData, lv: Uint8Array, o: number): { cls: numb
   if (isRiverT(t)) {
     const code = d.biome[o]! - RIVER_BIOME, flow = code >= 0 && code < 8 ? code : 0;
     const next = o + FLOW_DY[flow]! * WIN + FLOW_DX[flow]!, fall = Math.max(0, L - (lv[next] ?? 0));
-    return { cls, top: { kind: 'river', wet, deep: 0, flow, fall }, vein: false };
+    // The streams pouring into it from higher up (D115): their falls land on it, its side there no bank.
+    let from = 0;
+    for (let j = -1; j <= 1; j++) {
+      for (let i = -1; i <= 1; i++) {
+        const n = o + j * WIN + i, c = (d.biome[n] ?? 0) - RIVER_BIOME;
+        if ((i || j) && isRiverT(d.terrain[n] ?? T.Sand) && (lv[n] ?? 0) > L && c >= 0 && c < 8 && FLOW_DX[c] === -i && FLOW_DY[c] === -j) from |= 1 << (3 * (j + 1) + i + 1);
+      }
+    }
+    return { cls, top: { kind: 'river', wet, deep: 0, flow, fall, ...(from ? { from } : {}) }, vein: false };
   }
   if (isWaterT(t)) return { cls, top: { kind: 'water', wet, deep, run }, vein: false };
   if (!isRockT(t)) return { cls, top: { kind: 'ground', wet, deep }, vein: false };

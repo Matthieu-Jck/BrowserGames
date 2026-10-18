@@ -3,6 +3,7 @@
 // runs only once a wire joins it to a grid with supply — `wire` strings them in tests (the
 // testkit deposits all lie within the Hearth's 8-tile reach). The Hearth has no outputs
 // (D34): a line that must start from a stock starts from a `stockedSilo`.
+import { BUILDINGS } from '@/content/buildings';
 import { itemIdx } from '@/content/registry';
 import { PLAN_IDS } from '@/content/research';
 import { ReservoirNode } from './flow/nodes';
@@ -48,6 +49,14 @@ export function learnPlans(sim: Sim): void {
   sim.rebuildDerived();
 }
 
+/**
+ * A building's price granted `n` times, outside commands: a test that places what it tests pays
+ * whatever it costs today (D123 changed many prices), never a price copied into the test.
+ */
+export function grantCost(sim: Sim, def: keyof typeof BUILDINGS, n = 1): void {
+  for (const [it, q] of BUILDINGS[def].cost as ReadonlyArray<readonly [string, number]>) sim.grant(it, q * n);
+}
+
 /** Straight ribbon from (x, y) moving in direction rot for n tiles. */
 export function line(x: number, y: number, rot: Rot, n: number): Array<[number, number, Rot]> {
   const dx = [0, 1, 0, -1][rot]!, dy = [-1, 0, 1, 0][rot]!;
@@ -74,7 +83,7 @@ export function wire(sim: Sim, to: number | readonly number[], from = sim.hearth
 export function steadyPower(sim: Sim): number {
   sim.done.add('en5');
   sim.rebuildDerived();
-  sim.grant('ceramic', 20); sim.grant('thermal_core', 4); sim.grant('circuit', 10);
+  for (const [it, q] of BUILDINGS.fumarole_tap.cost) sim.grant(it, q); // its price, whatever it is (D123 added pipes)
   const t = sim.place('fumarole_tap', TEST_VENT.x, TEST_VENT.y, 0);
   if (!t.ok) throw new Error(`fumarole tap: ${t.reason}`);
   wire(sim, t.id!);

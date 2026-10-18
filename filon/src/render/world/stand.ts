@@ -53,6 +53,18 @@ export const buildingZ = (x: number, y: number, w: number, h: number): number =>
 export const standZ = (x: number, y: number, w: number, h: number, reach: number): number => 8 * (x + w - 1 + y + h - 1 + reach) + 0.5;
 
 /**
+ * A skybridge span's pieces among the volumes (buildings-view `addDecks`): a ramp on its end's tile
+ * just after that end (it lies over the footing, the end's gantry drawn over itself), a deck square
+ * just after whatever stands on its tile, at the pair's level. The items riding the span sort just
+ * after the piece they are over (belt-lift.ts `spanZ`), so what stands in front hides them with it.
+ */
+export const SPAN_DZ = 0.25;
+/** A deck square's key on (x, y), the pair `level` levels up. */
+export const deckSquareZ = (x: number, y: number, level: number): number => (level > 0 ? standZ(x, y, 1, 1, 0) : buildingZ(x, y, 1, 1)) + SPAN_DZ;
+/** A ramp's key, on its end's tile. */
+export const rampZ = (end: Pick<Ent, 'def' | 'x' | 'y' | 'rot'>): number => depthKey(end) + SPAN_DZ;
+
+/**
  * Plan: the hint of a building's height — a short ink shadow on the map, down-right of it as the
  * art's shadows fall, longer the higher it stands. Its offset (tiles, along x and y alike).
  */
@@ -81,9 +93,10 @@ export const liftZ = (lowX: number, lowY: number): number => 8 * (lowX + lowY) +
 /**
  * The plan layer's bands (`plan` is sorted too; a building's sprites at 0, in the order laid): the
  * plan copies of ribbons on rock (and of junctions' passages), the elevators' marks over them, the
- * items riding them over those (items-view.ts) — all under the plan buildings, as on the floor.
+ * items riding them over those (items-view.ts) — all under the plan buildings, as on the floor —
+ * and the items riding a skybridge's span over every plan sprite, its deck's among them (`spans`).
  */
-export const PLAN_Z = { belt: -2, mark: -1.5, items: -1 } as const;
+export const PLAN_Z = { belt: -2, mark: -1.5, items: -1, spans: 1 } as const;
 
 /** The level a building of `def` would stand at, its rotated footprint's origin at (x, y): the build ghost's lift. */
 export function standLevel(land: ReliefLand, def: number, x: number, y: number, rot: Rot): number {

@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 import { WORLD_EPOCH0 } from './constants';
 import { powerLine } from './dev';
 import { Sim } from './state';
-import { learnPlans } from './testkit';
+import { grantCost, learnPlans } from './testkit';
 import { T } from './types';
 import { FlatSource, tileIndex } from './world/grid';
 import { parcelAt } from './world/land';
@@ -22,6 +22,7 @@ function mountainSim(): Sim {
   sim.done.add('tr4'); // the pylon (research, granted outside the commands)
   sim.rebuildDerived();
   sim.grant('iron_plate', 500); sim.grant('glass', 100); sim.grant('copper_wire', 200); sim.grant('ceramic', 20);
+  grantCost(sim, 'pylon', 5); // its price today (D123: steel and cable)
   return sim;
 }
 

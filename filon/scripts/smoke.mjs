@@ -504,26 +504,37 @@ await step('sound: the first click unlocked it; the score follows the clock; cue
   await FL(() => window.FL.menu(false));
 });
 
-await step('research (D118): Mechanics, Tier 1, starts from the screen with no dialog, its HUD chip a data bar and no token bar; it ends as soon as its data is in the lab; a notice lands', async () => {
+await step('research (D122): Mechanics, Tier 1, opens the launch dialog — its resources from the Core, its tokens, the free flow; launched, its HUD chip a token bar (no data); it ends once its tokens are in; a notice lands', async () => {
   await FL(() => window.FL.lookAt(512, 512, 1));
-  await FL(() => window.FL.pause()); // the lab's data comes after the chip is read
+  await FL(() => window.FL.pause()); // the tokens come at a minute's end, after the chip is read
+  // Its 30 plates and 10 copper wire in the Core, the restart reserve kept (D36): a sandbox grant.
+  await FL(() => { window.FL.app.sim.grant('iron_plate', 200); window.FL.app.sim.grant('copper_wire', 60); });
   await page.keyboard.press('t');
   await page.waitForSelector('[data-screen="research"][data-open]', { timeout: 2000 });
   await page.click('.rs-card[data-id="tr1"]');
   await page.click('.rs-detail .btn.primary');
-  assert(!(await page.$('[data-launch]:not([hidden])')), 'a Tier 1 node opened the launch dialog');
+  await page.waitForSelector('[data-launch]:not([hidden])', { timeout: 2000 });
+  const dlg = await page.evaluate(() => ({
+    res: document.querySelector('[data-launch-res]')?.textContent ?? '',
+    eta: document.querySelector('[data-launch-eta]')?.textContent ?? '',
+    data: /donn[ée]es d|survey data/i.test(document.querySelector('[data-launch]')?.textContent ?? ''),
+  }));
+  assert(dlg.res && dlg.eta && !dlg.data, `Tier 1's launch dialog: ${JSON.stringify(dlg)}`);
+  await page.waitForTimeout(400); // its fade in
+  await page.screenshot({ path: shot('smoke-d122-launch.png') });
+  await page.click('[data-launch-go]');
   const r = await FL(() => window.FL.research());
   assert(r.projects?.some((p) => p.id === 'tr1'), `tr1 not running: ${JSON.stringify(r)}`);
   await page.keyboard.press('Escape');
   await page.waitForSelector('.hud-rs[data-id="tr1"]', { timeout: 2000 });
   const chip = await page.evaluate(() => {
     const c = document.querySelector('.hud-rs[data-id="tr1"]');
-    return { data: !!c?.querySelector('.hud-rs-row[data-k="data"]:not([hidden])'), tok: !!c?.querySelector('.hud-rs-row[data-k="tok"]:not([hidden])'), eta: c?.querySelector('.hud-rs-eta')?.textContent ?? '' };
+    return { data: !!c?.querySelector('.hud-rs-row[data-k="data"]'), tok: !!c?.querySelector('.hud-rs-row[data-k="tok"]:not([hidden])'), eta: c?.querySelector('.hud-rs-eta')?.textContent ?? '' };
   });
-  assert(chip.data && !chip.tok, `Tier 1's chip: ${JSON.stringify(chip)}`);
-  assert(await FL(() => window.FL.feedLab('journal_1', 40)), 'no research lab to feed');
+  assert(!chip.data && chip.tok, `Tier 1's chip: ${JSON.stringify(chip)}`);
+  // Its tokens: banked for it (a sandbox hook, D122), given at the next minute's end while its lab has power.
+  await FL(() => window.FL.bankTokens(2000));
   await FL(() => window.FL.resume());
-  // Its data in the lab: done at once (no minimum time); the grid's power follows the real clock, so tick on a little if a calm browns the lab out.
   for (let i = 0; i < 12; i++) {
     await FL(() => window.FL.tick(60));
     if ((await FL(() => window.FL.research())).done?.includes('tr1')) break;
@@ -534,13 +545,13 @@ await step('research (D118): Mechanics, Tier 1, starts from the screen with no d
   await page.screenshot({ path: shot('smoke-m4.png') });
 });
 
-await step('research (D118): Tier 2 locked until the Core\'s level 3; then a Tier 2 node opens the launch dialog — tokens, a bought flow and its cost — and runs on two bars', async () => {
+await step('research (D118, D122): Tier 2 locked until the Core\'s level 3; then a Tier 2 node opens the launch dialog — its resources, tokens, a bought flow and its cost — and runs on a token bar', async () => {
   // A sandbox rig (outside commands): Tier 1 whole, every node of Tier 2 and up set aside (a tier a
   // claim holds a node of stays open to it), two expertises chosen, the purse full; all of it, and the
   // Core's level, put back after — whatever happens.
   const rig = await FL(() => {
     const sim = window.FL.app.sim;
-    const t1 = ['tr1', 'tr_synth', 'en_pitch', 'en2', 'ex_fastdrill', 'dn3', 'dn_esmelt', 'dn_wiremill', 'cm_post2', 'cm_floor', 'an_data', 'an_relay', 'xp_swift', 'xp_bigsilo', 'xp_guard'];
+    const t1 = window.FL.tierNodes(1);
     const added = t1.filter((id) => !sim.done.has(id));
     for (const id of added) sim.done.add(id);
     const aside = [...sim.done].filter((id) => window.FL.researchTier(id) >= 2);
@@ -551,6 +562,7 @@ await step('research (D118): Tier 2 locked until the Core\'s level 3; then a Tie
     sim.hearthLevel = 2;
     sim.rebuildDerived();
     sim.grantCredits(5_000_000);
+    for (const it of ['gear', 'iron_plate', 'steel', 'brick', 'pipe', 'glass']) sim.grant(it, 200); // Earthworks' resources, whatever they are (D122, D123)
     return { added, aside, slots, level, credits, core: sim.researchBlock('tr2') };
   });
   try {
@@ -574,6 +586,9 @@ await step('research (D118): Tier 2 locked until the Core\'s level 3; then a Tie
       flow: !!document.querySelector('[data-launch-flow]'),
     }));
     assert(dlg.flow && dlg.cost && dlg.eta, `the launch dialog: ${JSON.stringify(dlg)}`);
+    // The Core's compute covers Earthworks' pace (D122: its default flow is none): buy one on top, two steps up the ladder.
+    await page.click('[data-launch-step="plus"]');
+    await page.click('[data-launch-step="plus"]');
     await page.click('[data-launch-go]');
     const p = await FL(() => window.FL.app.sim.projects.find((q) => q.id === 'tr2'));
     assert(p && p.tokens > 0 && p.buy > 0, `tr2 launched with a bought flow: ${JSON.stringify(p)}`);
@@ -694,7 +709,7 @@ await step('space: mark rock with the brush, an excavator digs six tiles (stone,
     const sim = window.FL.app.sim;
     for (const id of ['tr1', 'tr2', 'tr3', 'tr4', 'tr6']) sim.done.add(id);
     sim.rebuildDerived();
-    for (const [it, n] of [['iron_plate', 4000], ['gear', 800], ['circuit', 400], ['ceramic', 400], ['lens', 40], ['resin_canvas', 60], ['thermal_core', 40]]) sim.grant(it, n);
+    for (const [it, n] of [['iron_plate', 4000], ['gear', 800], ['circuit', 400], ['ceramic', 400], ['lens', 40], ['resin_canvas', 60], ['thermal_core', 40], ['steel', 200], ['brick', 200], ['pipe', 100], ['cable', 100], ['copper_plate', 100]]) sim.grant(it, n); // D123: the excavator is built of steel
     if (!sim.upgradeHearth().ok) return { err: 'hearth upgrade' };
     // The nearest rock to the Hearth, and an excavator on the claim's land facing it.
     let best = null;
@@ -875,6 +890,10 @@ await step('neighbouring bases (D110): a base stands on a neighbour\'s land, by 
   // A working base (D110, owner: « il n'y a rien qui marche, même pas de câble électrique »): its own grid's wires drawn, never the claim's.
   const grid = await FL((hub) => ({ wires: window.FL.app.wires.foreignCount, laid: window.FL.app.neighbours.count, on: window.FL.app.wires.hasForeign(hub) }), nb.hub);
   assert(grid.on && grid.wires > 0 && grid.laid >= 1, `no grid drawn for the base: ${JSON.stringify(grid)}`);
+  // Its goods ride its drawn lines (owner: « a ribbon from a PNJ base disappears »): none in the view off a line's tile, none on a stretch not drawn.
+  await page.waitForTimeout(300);
+  const goods = await FL((hub) => window.FL.app.neighbours.audit(hub), nb.hub);
+  assert(goods.goods > 0 && goods.offTile === 0 && goods.undrawn === 0, `goods off the drawn lines: ${JSON.stringify(goods)}`);
   // Its land refuses a mast; with Neighbour Treaties its open land takes one, its buildings never.
   const placed = await FL(([x, y]) => window.FL.place('mast', x, y, 0), nb.at);
   assert(!placed.ok && placed.reason === 'neighbour_land', `a mast went on its land: ${JSON.stringify(placed)}`);

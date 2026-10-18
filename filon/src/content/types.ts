@@ -7,14 +7,16 @@ export type Tier = 1 | 2 | 3 | 4;
 export type Side = 'N' | 'E' | 'S' | 'W';
 
 export type ItemKind =
-  | 'ore' | 'fuel' | 'fluid' | 'material' | 'part' | 'science' | 'unique' | 'energy' | 'rubble';
+  | 'ore' | 'fuel' | 'fluid' | 'material' | 'part' | 'unique' | 'energy' | 'rubble';
 
 /** Glyph shapes the art pipeline knows how to ink (render/art/recipes/items.ts). */
 export type Glyph =
   | 'pebble' | 'grain' | 'coal' | 'copper' | 'crystal' | 'rubble' | 'drop' | 'salt' | 'plate' | 'pane'
-  | 'coil' | 'journal' | 'gear' | 'servo' | 'arm' | 'chip' | 'tile' | 'cell' | 'cellCharged' | 'journal2' | 'shard'
-  | 'resin' | 'ember' | 'lens' | 'canvas' | 'core' | 'atlas' | 'moss' | 'nacre' | 'quartz' | 'resonator'
-  | 'lattice' | 'codex' | 'oscillator';
+  | 'coil' | 'gear' | 'servo' | 'arm' | 'chip' | 'tile' | 'cell' | 'cellCharged' | 'shard'
+  | 'resin' | 'ember' | 'lens' | 'canvas' | 'core' | 'moss' | 'nacre' | 'quartz' | 'resonator'
+  | 'lattice' | 'oscillator'
+  // D123: steel's bar, the brick, the pipe, the cable (copper plate is a plate, in copper).
+  | 'ingot' | 'brick' | 'pipe' | 'cable';
 
 export interface ItemDef {
   readonly name: Loc;
@@ -62,7 +64,7 @@ export type BuildingKind =
   | 'hearth' | 'drill' | 'belt' | 'fork' | 'crossing' | 'bridge' | 'pole'
   | 'machine' | 'lab' | 'generator' | 'wind' | 'solar' | 'geothermal' | 'storage' | 'trade'
   | 'excavator' | 'pump' | 'conduit' | 'accumulator' | 'backfiller' | 'sink'
-  // Mints AI tokens from power (D68): research uses them as it runs, its own servers' first.
+  // Mints AI tokens from power (D68): research uses them as they come, the oldest project first.
   | 'server'
   // A fence (D103): no node, no power; it stands in the Gleaners' way (sim/world/reach.ts).
   | 'fence';
@@ -99,6 +101,8 @@ export interface WindCurve { readonly cutIn: number; readonly rated: number; rea
 export interface BuildingDef {
   readonly name: Loc;
   readonly kind: BuildingKind;
+  /** Overrides the kind's height class (D124): true = a skybridge may pass over it. Absent: its kind's (`FLAT_KINDS`), tall by default. */
+  readonly flat?: boolean;
   readonly category: BuildCategory;
   readonly w: number;
   readonly h: number;
@@ -155,20 +159,20 @@ export interface BuildingDef {
    * An extractor (kind `drill`): `perMin` at most. A drill mines the deposit under it (bounded by its
    * tiles' caps); with `ground`, it collects that item off the bare ground instead — every tile of
    * its footprint plain sand, no deposit — at a steady `perMin` (the sand collector: sand is the
-   * desert floor itself, owner 2026-10-12). With `anywhere`, it makes that item out of nothing but
-   * power, on any ground (the data collectors, D68). With `face` (the face cutter, D87), it stands
+   * desert floor itself, owner 2026-10-12). With `face` (the face cutter, D87), it stands
    * on the floor beside a wall and works the face ore (`ItemDef.face`) of the rock tiles its back
    * touches, each at its tile's cap. A pump's `perMin` is its water a minute.
    */
-  readonly drill?: { readonly perMin: number; readonly capMult?: number; readonly ground?: string; readonly anywhere?: string; readonly face?: boolean };
+  readonly drill?: { readonly perMin: number; readonly capMult?: number; readonly ground?: string; readonly face?: boolean };
   /** A machine's crafting speed, ‰ of the recipe's own (the upgraded machines of the tree, D70). */
   readonly speed?: number;
-  /** A server (kind `server`): AI tokens a minute at full power (D68). */
+  /**
+   * AI tokens a minute at full power (D68): a server's (kind `server`), or a lab that computes its
+   * own (the autonomous lab, D122) — either way into the claim's pool, the oldest project first.
+   */
   readonly server?: { readonly tokensPerMin: number };
   /** An excavator's reach (tiles from its footprint) and digging speed (‰). */
   readonly excavator?: { readonly reach: number; readonly speed: number };
-  /** A research lab that makes its own data files (kind `lab`): files a minute at full power (D70). */
-  readonly lab?: { readonly dataPerMin: number };
   readonly storageCap?: number;
   /**
    * The fog it lifts for good when placed (D117), in tiles from its footprint's centre. Omitted: every
@@ -200,17 +204,20 @@ export interface ResearchDef {
   readonly branch: 'trunk' | FamilyId;
   /** Its speciality within the family from Tier 3 on (a key of the family's `specs`); none before the split. */
   readonly spec?: string;
-  /** Its tier (D69): the column it stands in, and the kinds of data it uses (D71). */
+  /** Its tier (D69): the column it stands in, and the Core's level it waits for (D118). */
   readonly tier: ResearchTier;
   /** Depth: the cost band (`DEPTH_COST`; 9 = a keystone ★); trunk nodes use their order. */
   readonly depth: number;
   /** Tree nodes it needs: research ids, or a plan id (the family roots need the lab's plan). */
   readonly prereq: readonly string[];
-  /** Items it uses up as it runs (data files), whole items. */
+  /**
+   * The resources it asks for (D122): paid from the Core's stock when it is launched, as a plan is,
+   * whole items — what it unlocks hints at them (an electric smelter's node asks for wire and plates).
+   */
   readonly cost: ReadonlyArray<readonly [string, number]>;
-  /** AI tokens it needs (D68, D118): none at Tier 1; from Tier 2 delivered as a flow — the claim's servers', then one bought from CrierBelt. */
+  /** AI tokens it needs (D68, D122: at every tier), delivered as a flow — the Core's compute, the claim's servers, one bought from CrierBelt. */
   readonly tokens: number;
-  /** The pace its tier runs at (minutes, D118: no minimum time): what the launch dialog aims its default token flow at; 0 at Tier 1. */
+  /** The pace its tier runs at (minutes, D118: no minimum time): what the launch dialog aims its default token flow at. */
   readonly minutes: number;
   readonly effects: readonly Effect[];
 }
@@ -257,8 +264,8 @@ export type ModTarget =
   | 'landPrice' | 'landRent' | 'landGrowth' | 'farLand' | 'remoteBeltCost' | 'remoteBuildDelay'
   | 'pylonLink' | 'ring3Caps'
   | 'bridgeSpan' | 'orders' | 'excavatedSpeed' | 'gustVariance'
-  // Data files a minute out of the Heart's data outlet (D68), ×1000.
-  | 'heartData'
-  // The expertises' own (D93, ‰): the drills' and cutters' rate (and their deposit's cap); the data
-  // makers' (the Core's outlet, the data collectors, the autonomous labs).
-  | 'drillRate' | 'dataRate';
+  // Tokens a minute the Core's compute gives research on top of its level's (D122), whole tokens.
+  | 'coreCompute'
+  // The expertises' own (D93, ‰): the drills' and cutters' rate (and their deposit's cap); the
+  // claim's own tokens (D122: the Core's compute, the servers, the autonomous labs).
+  | 'drillRate' | 'tokenRate';

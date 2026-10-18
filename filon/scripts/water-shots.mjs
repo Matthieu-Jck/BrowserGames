@@ -54,8 +54,9 @@ const spots = await page.evaluate(() => {
   const sp = g.source.spring ?? g.source.tarn;
   // The spring's falls: a few tiles down its stream from the summit (map 4, D115), or the tarn; the
   // whole summit (its plateau and basin, the falls, the ledge, the pool), seen from further off;
-  // the basin up close.
-  const out = { spring: sp ? (g.source.spring ? [sp.x, sp.y + 5] : [sp.x, sp.y]) : null, summit: g.source.spring ? [sp.x, sp.y + 7] : null, basin: g.source.spring ? [sp.x, sp.y] : null, stream: null, broad: null, confluence: null, fall: null, lake: null, sea: null };
+  // the basin up close; the foot of the ledge's fall, where the stream comes down the Crown's last
+  // terraces into its pool (owner, 2026-10-17: « the visuals are still a little bit broken »).
+  const out = { spring: sp ? (g.source.spring ? [sp.x, sp.y + 5] : [sp.x, sp.y]) : null, summit: g.source.spring ? [sp.x, sp.y + 7] : null, basin: g.source.spring ? [sp.x, sp.y] : null, foot: g.source.spring ? [sp.x, sp.y + 11] : null, stream: null, broad: null, confluence: null, fall: null, lake: null, sea: null };
   for (let r = 40; r < 440 && Object.values(out).some((v) => !v); r += 1) {
     for (let a = 0; a < 720; a++) {
       const x = Math.round(C + r * Math.cos((a * Math.PI) / 360)), y = Math.round(C + r * Math.sin((a * Math.PI) / 360));
@@ -88,7 +89,7 @@ console.log('spots', JSON.stringify(spots));
 const ZOOMS = { near: 3, mid: 1.2 };
 const clip = { x: 300, y: 200, width: 600, height: 400 };
 // The summit whole: further off, the whole window.
-const WIDE = { summit: { zooms: { far: 0.85 }, clip: undefined } };
+const WIDE = { summit: { zooms: { far: 0.85 }, clip: undefined }, foot: { zooms: { near: 1.6, mid: 1.0 }, clip: { x: 300, y: 150, width: 600, height: 500 } } };
 for (const [name, at] of Object.entries(spots)) {
   if (!at || (ONLY && !ONLY.includes(name))) continue;
   for (const time of ['noon', 'night']) {

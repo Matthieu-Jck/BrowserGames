@@ -8,11 +8,13 @@
 //     one recipe it can run, and a generator its fuel (and a steam boiler its water, D114);
 //   · a recipe it unlocks has a machine the base can build and every input usable;
 //   · a Heart level it gives can be paid for;
+//   · a research node's resources (D122: paid from the Core at its launch) can be had before it —
+//     extracted, made or bought with what its prerequisites and the plans give;
 //   · a feature it turns on (a flag, an addition, a research slot) has what it acts on: the
 //     excavator for digging bits, a server for the token plans (D105: no token is billed before),
 //     the pylon for a longer reach (`FEATURE_NEEDS`, which names every feature the tree uses).
 // An item is USABLE when it is extractable (a machine known that mines, collects or digs it — the
-// land's common deposits, the bare ground's sand, water, the Core's own Survey Data), made (a
+// land's common deposits, the bare ground's sand, water), made (a
 // recipe known, on a machine the base can build, from usable inputs) or buyable (traded at the
 // Crier — a depth, a colony that supplies it — with a trade post the base can build). What only
 // some maps hold — the T3/T4 uniques, the quartz of a cliff face (map 3's vein; maps 1–2 have none)
@@ -49,8 +51,8 @@ export const FEATURE_NEEDS: Readonly<Record<string, readonly string[]>> = {
   tokenPlan: ['server', 'cooled_server', 'supercomputer'], serverRental: ['server', 'cooled_server', 'supercomputer'],
   // Research itself: a lab.
   researchQueue: ['observatory'], slots: ['observatory'],
-  // The Core's data outlet (its level 2, the player's from the start, D101).
-  heartData: [],
+  // The Core's compute (D122: its level 2, the player's from the start, D101): it needs nothing built.
+  coreCompute: [],
   // Reaches: the skybridge's span, the pylon's link.
   bridgeSpan: ['skybridge'], pylonLink: ['pylon'],
 };
@@ -75,7 +77,6 @@ function extracts(b: BuildingDef): string[] {
   if (b.kind === 'excavator') return ['stone']; // its rubble
   const d = b.drill;
   if (!d) return [];
-  if (d.anywhere) return [d.anywhere];
   if (d.ground) return [d.ground];
   if (d.face) return []; // a cliff face's ore: not on every map
   return [...DEPOSIT_ITEMS].filter((it) => !mapSpecific(it));
@@ -102,9 +103,6 @@ export function usableWith(known: ReadonlySet<string>): { items: Set<string>; bu
   const has = (unlock: string): boolean => unlock === 'start' || known.has(unlock);
   const stock = new Set(Object.keys(BAL.startStock));
   const U = new Set<string>(), Bs = new Set<string>();
-  // The Core's own Survey Data (D101): its outlet from the level that mounts it, if that level is open.
-  const outlet = BAL.hearthUpgrades[BAL.hearthDataLevel - 2];
-  if (BAL.hearthDataBase > 0 && outlet && has(outlet.unlock)) U.add('journal_1');
   for (let grew = true; grew;) {
     grew = false;
     const add = (it: string): void => { if (!U.has(it)) { U.add(it); grew = true; } };
@@ -151,6 +149,13 @@ export function nodeUnusable(id: string): string[] {
     const unpaid = up.unlock === id ? lacks(up.cost) : [];
     if (unpaid.length) errs.push(`${name}: the Core's level ${i + 2} cannot be paid for by then (${unpaid.join(', ')})`);
   });
+  // Its resources (D122), paid when it is launched: what the base can have before it, the node itself not yet known.
+  const r = researchNode(id);
+  if (r?.cost.length) {
+    const before = usableWith(new Set([...known].filter((n) => n !== id))).items;
+    const short = r.cost.map(([it]) => it).filter((it) => !before.has(it));
+    if (short.length) errs.push(`${name}: its resources cannot be had before it (${short.join(', ')})`);
+  }
   for (const ef of planDef(id)?.effects ?? researchNode(id)?.effects ?? []) {
     const key = featureKey(ef);
     if (!key) continue;

@@ -14,7 +14,7 @@ import type { PerfStats } from '@/render/perf-overlay';
 import { gradeAt, MOMENTS, phaseAt } from '@/render/daynight';
 import { temperatureAt } from '@/sim/world/climate';
 import { buildDemo, connect, powerLine, learnPlans } from '@/sim/dev';
-import { BUILDING_IDS, ITEM_IDS } from '@/content/registry';
+import { BUILDING_IDS, ITEM_IDS, RESEARCH_IDS } from '@/content/registry';
 import { QUEST_IDS } from '@/content/quests';
 import { isResearch, researchNode } from '@/content/research';
 import { projectPermille } from '@/sim/research/runtime';
@@ -92,8 +92,10 @@ export interface FilonDebug {
   workLook(id?: number): { watched: number; off: number; baked: number; waiting: number; lit?: boolean };
   /** Item index of an item id. */
   itemIndex(id: string): number;
-  /** Sandbox: drop science straight into the first observatory's store. */
-  feedLab(item: string, n: number): boolean;
+  /** The content's ids by index (buildings, items): what the sim's numbers name, for scripts. */
+  ids(): { buildings: readonly string[]; items: readonly string[] };
+  /** Sandbox: bank `n` tokens for research (D122: what an older save's data became), given to the projects at the next minute's end. */
+  bankTokens(n: number): number;
   /** Perf rig: a serpentine of ribbons (rows × cols) from (x, y), materials granted. */
   ribbonField(x: number, y: number, rows: number, cols: number): number;
   /** Perf rig: pack every ribbon with an item (ignores conservation — sandbox only). */
@@ -134,6 +136,8 @@ export interface FilonDebug {
   research(id?: string): { ok: boolean; reason: string | null; projects?: Array<{ id: string; permille: number }>; done?: string[] };
   /** A research node's tier (D118: Tiers 2–4 wait for the Core's levels 3–5); 0 for anything else. */
   researchTier(id: string): number;
+  /** The research nodes of a tier, in the table's order (a smoke rig opens Tier 2 with Tier 1 whole). */
+  tierNodes(tier: number): string[];
   /**
    * The tech tree (D33): unlock a plan through commands — its cost granted first, so the stock is
    * unchanged, and its missing prerequisites with it; no id: every plan. A research id is learnt
@@ -191,6 +195,8 @@ export interface FilonDebug {
     figures: number; arriving: number; waiting: number; reaching: number; grabbing: number; carrying: number; tapping: number; prowling: number;
     /** The takes shown so far (D112): foreseen with their token gone from the belt, a token still on the belt, foreseen otherwise, not foreseen at all, first shown late (off screen, or ticks jumped). */
     paired: number; onBelt: number; unforeseen: number; unseen: number; late: number;
+    /** Of the Gleaners shown, how many travel under the sand (a bulge and its furrow) and how many are risen out of it. */
+    under: number; risen: number;
     /** The next posts' turns on the exposed lines from now on (tile, tick), soonest first. */
     next: Array<{ x: number; y: number; tick: number }>;
     /** The next raids (D112), soonest first: when each starts and its posts (tiles), middle post first for aiming. */
@@ -331,15 +337,8 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
     wires: () => app.wires.count,
     workLook: (id) => ({ ...app.buildings.workLook(), ...(id === undefined ? {} : { lit: app.buildings.work.isLit(id) }) }),
     itemIndex: (id) => ITEM_IDS.indexOf(id as never),
-    feedLab: (item, n) => {
-      const sim = app.sim;
-      sim.ensureCompiled();
-      const lab = sim.ents.sorted().find((e) => BUILDING_IDS[e.def] === 'observatory' && e.builtAt === 0);
-      const st = lab ? sim.stores.get(lab.id) : undefined;
-      if (!st) return false;
-      st[ITEM_IDS.indexOf(item as never)] = (st[ITEM_IDS.indexOf(item as never)] ?? 0) + n * 1000;
-      return true;
-    },
+    ids: () => ({ buildings: [...BUILDING_IDS], items: [...ITEM_IDS] }),
+    bankTokens: (n) => (app.sim.tokenBank += Math.max(0, Math.floor(n))),
     ribbonField: (x, y, rows, cols) => {
       // Sandbox rig: lift the fog over the field, grant the plates, lay a dense serpentine
       // (rows one tile apart, U-turns at the ends). Where the land steps (D77: a ribbon never
@@ -457,6 +456,7 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
       return { ok: true, reason: null, projects: app.sim.projects.map((p) => ({ id: p.id, permille: projectPermille(p) })), done: [...app.sim.done] };
     },
     researchTier: (id) => researchNode(id)?.tier ?? 0,
+    tierNodes: (tier) => RESEARCH_IDS.filter((id) => researchNode(id)?.tier === tier),
     archetype: () => {
       const src = app.sim.grid.source as unknown as { archetype?: string; secondary?: string };
       return `${src.archetype ?? '?'}/${src.secondary ?? '?'}`;
@@ -525,6 +525,7 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
         figures: app.gleaners.shown, arriving: app.gleaners.arriving, waiting: app.gleaners.waiting, reaching: app.gleaners.reaching,
         grabbing: app.gleaners.grabbing, carrying: app.gleaners.carrying, tapping: app.gleaners.tapping, prowling: app.gleaners.prowling,
         paired: app.gleaners.paired, onBelt: app.gleaners.onBelt, unforeseen: app.gleaners.unforeseen, unseen: app.gleaners.unseen, late: app.gleaners.late,
+        under: app.gleaners.under, risen: app.gleaners.risen,
         // The next raids' posts (D112): each post's turn (the raid's start + its stagger).
         next: sim.graph.chains.flatMap((c) => Array.from(c.raidPosts, (cell, p) => {
           const t = sim.tick - (sim.tick % GLEAN_WINDOW) + c.raidAt + p * RAID_STAGGER;

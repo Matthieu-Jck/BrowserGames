@@ -7,8 +7,8 @@
 //     falls (top-left) and one darker tone on the far side — and at most one small glint;
 //   · a bold, distinct silhouette per item, so it still reads at 16 px in the HUD and at ~22 px
 //     on a teal ribbon (the atlas bakes it at 2× and, for ribbons, on a paper halo: atlas.ts).
-// Families share a silhouette and differ by colour and mark: the data cartridges (survey,
-// mechanics, atlas), the cells (empty / charged), the drops (water, resin), the gems.
+// Families share a silhouette and differ by colour and mark: the cells (empty / charged), the
+// drops (water, resin), the gems. (The data cartridges and the codex went with the data, D122.)
 // Nothing is random: the same glyph bakes to the same pixels on every machine.
 import { ITEMS, type ItemId } from '@/content/items';
 import type { Glyph, ItemDef } from '@/content/types';
@@ -173,39 +173,6 @@ function cube(ctx: Ctx, x: number, y: number, e: number, col: string): void {
   line(ctx, [W, S, E]);
   line(ctx, [S, Sd]);
   stroke(ctx, poly([N, E, Ed, Sd, Wd, W]));
-}
-
-/**
- * A data cartridge (science is data the base sends up): a shell with a clipped corner, a paper
- * label carrying the kind's mark, gold contacts at the foot. The kinds differ by shell colour
- * first (it carries at 16 px), by mark second.
- */
-function cartridge(ctx: Ctx, col: string, mark: () => void): void {
-  const shell: Shape = (k) => {
-    k.moveTo(8.5, 3.5);
-    k.lineTo(21, 3.5);
-    k.lineTo(25.5, 8);
-    k.lineTo(25.5, 26.5);
-    k.arcTo(25.5, 28.5, 23.5, 28.5, 2);
-    k.lineTo(8.5, 28.5);
-    k.arcTo(6.5, 28.5, 6.5, 26.5, 2);
-    k.lineTo(6.5, 5.5);
-    k.arcTo(6.5, 3.5, 8.5, 3.5, 2);
-    k.closePath();
-  };
-  fill(ctx, shell, col);
-  rim(ctx, shell, -1.4, -1.9, lo(col, 0.3));
-  rim(ctx, shell, 1.1, 1.3, hi(col, 0.4));
-  const label = rrect(9.5, 7, 13, 11.5, 1.2);
-  fill(ctx, label, C.paper);
-  stroke(ctx, label, LINE);
-  mark();
-  for (let i = 0; i < 4; i++) {
-    const pin = rrect(9.6 + i * 3.4, 22.5, 2.2, 4.2, 0.6);
-    fill(ctx, pin, C.brassL);
-    stroke(ctx, pin, 0.7);
-  }
-  stroke(ctx, shell);
 }
 
 /** A cylindrical cell standing up: a steel + cap, lit down its left side, shaded down its right. */
@@ -475,17 +442,6 @@ const GLYPHS: Record<Glyph, G> = {
       stroke(ctx, f);
     }
   },
-  journal: (ctx, col) => {
-    // Survey data: a cartridge whose label shows a mountain.
-    cartridge(ctx, col, () => fill(ctx, poly([[11, 17], [14.5, 10.5], [16.5, 13.5], [18, 11.5], [21, 17]]), C.turqD));
-  },
-  journal2: (ctx, col) => {
-    // Mechanics data: the cartridge, lilac, its label showing a gear.
-    cartridge(ctx, col, () => {
-      fill(ctx, cog(16, 12.75, 6, 4.4, 3.2, 0.26, 0.4, -Math.PI / 2), C.ink);
-      fill(ctx, circle(16, 12.75, 1.2), C.paper);
-    });
-  },
   gear: (ctx, col) => {
     // Gear: a clean cog, eight teeth, a raised hub and its axle hole.
     const s = cog(c, c, 8, 13.5, 10, 0.135, 0.24, 0);
@@ -638,13 +594,6 @@ const GLYPHS: Record<Glyph, G> = {
     fill(ctx, circle(c - 3, c - 3, 2.8), C.glowPeach);
     ring(0, Math.PI);
   },
-  atlas: (ctx, col) => {
-    // Atlas: the cartridge, teal, its label showing a compass star.
-    cartridge(ctx, col, () => {
-      fill(ctx, star(16, 12.75, 4.6, 0.3), C.ink);
-      fill(ctx, poly([[16, 8.15], [17.4, 11.35], [14.6, 11.35]]), C.coral);
-    });
-  },
   moss: (ctx, col) => {
     // Lumen moss: a clump of round tufts, back to front, with three specks of light.
     for (const [x, y, r] of [[11, 13.5, 5.5], [19.5, 10.5, 6.5], [25, 16.5, 4.8], [8, 20.5, 5.5], [16.5, 20, 7], [24.5, 23, 4.8]] as const) {
@@ -732,26 +681,91 @@ const GLYPHS: Record<Glyph, G> = {
     }
     stroke(ctx, hex);
   },
-  codex: (ctx, col) => {
-    // Codex: a thick tome — dark cover, gold corners and emblem, its pages showing.
-    const pages = rrect(9, 7, 18.5, 21.5, 1.2);
-    fill(ctx, pages, C.paper);
-    stroke(ctx, pages);
-    const cover = rrect(5.5, 4, 19, 22.5, 2);
-    part(ctx, cover, col, { d: 1.4, l: 1.2, lit: 0.25 });
-    fill(ctx, rrect(5.5, 4, 3.6, 22.5, 0), lo(col, 0.3));
-    line(ctx, [[9.1, 4.8], [9.1, 25.7]], LINE);
-    for (const y of [8, 22.5]) line(ctx, [[6.2, y], [8.5, y]], 1.4, C.brassL);
-    for (const [x0, y0, sx, sy] of [[24.5, 4, -1, 1], [24.5, 26.5, -1, -1]] as const) {
-      const tri = poly([[x0, y0], [x0 + sx * 4.5, y0], [x0, y0 + sy * 4.5]]);
-      fill(ctx, tri, C.brass);
-      stroke(ctx, tri, LINE);
-    }
-    const emblem = poly([[16.8, 10], [21, 15.25], [16.8, 20.5], [12.6, 15.25]]);
-    fill(ctx, emblem, C.brassL);
-    stroke(ctx, emblem, LINE);
-    fill(ctx, circle(16.8, 15.25, 1.4), col);
-    stroke(ctx, cover);
+  // ── D123: what the basic resources make one step further ────────────────
+  ingot: (ctx, col) => {
+    // Steel: a cast bar seen from above its front corner — its battered sides, its lit top with the
+    // mill's stamp, a glint on the near edge. Heavier and bluer than the iron plate.
+    const fl: P = [4, 25], fr: P = [22, 25], br: P = [28, 21], tbr: P = [25, 12], tbl: P = [13, 12], tfl: P = [7, 16], tfr: P = [19, 16];
+    const S = poly([fl, fr, br, tbr, tbl, tfl]);
+    fill(ctx, S, col);
+    fill(ctx, poly([tfl, tfr, tbr, tbl]), hi(col, 0.5));
+    fill(ctx, poly([fr, br, tbr, tfr]), lo(col, 0.32));
+    fill(ctx, poly([[6.5, 24], [9, 24], [9.8, 17.5], [8.2, 17.5]]), hi(col, 0.2));
+    line(ctx, [tfl, tfr, fr]);
+    line(ctx, [tfr, tbr]);
+    const stamp = poly([[13.2, 13.4], [19.6, 13.4], [21.2, 14.6], [14.8, 14.6]]);
+    fill(ctx, stamp, lo(col, 0.35));
+    stroke(ctx, S);
+    glint(ctx, 10, 17.2, 1.3);
+  },
+  brick: (ctx, col) => {
+    // Brick: two bricks in a running bond, the upper one set half a brick along on a pale bed of
+    // mortar — lit tops, shaded ends, a few dark grains of fired sand on their faces.
+    const mortar = mix(C.paper, col, 0.25);
+    const one = (dx: number, dy: number): void => {
+      const f0: P = [2 + dx, 28 + dy], f1: P = [20 + dx, 28 + dy], t0: P = [2 + dx, 22 + dy], t1: P = [20 + dx, 22 + dy];
+      const b1: P = [26 + dx, 18 + dy], b0: P = [8 + dx, 18 + dy], e1: P = [26 + dx, 24 + dy];
+      const S = poly([f0, f1, e1, b1, b0, t0]);
+      fill(ctx, S, col);
+      fill(ctx, poly([t0, t1, b1, b0]), hi(col, 0.38));
+      fill(ctx, poly([f1, e1, b1, t1]), lo(col, 0.3));
+      for (const [x, y] of [[6, 25], [11.5, 26.2], [16, 24.6]] as const) fill(ctx, circle(x + dx, y + dy, 0.6), lo(col, 0.55));
+      line(ctx, [t0, t1, f1]);
+      line(ctx, [t1, b1]);
+      stroke(ctx, S);
+    };
+    one(0, 0);
+    // The mortar bed on the lower brick's top, under where the upper one sits.
+    fill(ctx, poly([[6, 22], [20, 22], [26, 18], [12, 18]]), mortar);
+    one(4, -6);
+  },
+  pipe: (ctx, col) => {
+    // Pipe: a length of steel tube lying aslant, lit along its top, a flange at its near end and
+    // the dark bore open towards the light.
+    ctx.save();
+    ctx.translate(c, c);
+    ctx.rotate(-0.5);
+    ctx.translate(-c, -c);
+    const body: Shape = (k) => {
+      k.moveTo(24, 10.5);
+      k.lineTo(5.5, 10.5);
+      k.ellipse(5.5, 16, 2.6, 5.5, 0, -Math.PI / 2, Math.PI / 2, true);
+      k.lineTo(24, 21.5);
+      k.closePath();
+    };
+    fill(ctx, body, col);
+    inside(ctx, body, () => {
+      fill(ctx, rrect(0, 12, 32, 2.2, 0), hi(col, 0.5));
+      fill(ctx, rrect(0, 18.6, 32, 4, 0), lo(col, 0.3));
+    });
+    line(ctx, [[9.5, 10.8], [9.5, 21.2]], LINE, lo(col, 0.45));
+    stroke(ctx, body);
+    const flange = oval(24.5, 16, 3.6, 7.2);
+    fill(ctx, flange, hi(col, 0.22));
+    rim(ctx, flange, -0.8, -1, lo(col, 0.25));
+    stroke(ctx, flange);
+    for (const a of [0.9, 2.2, 4.1, 5.4]) fill(ctx, circle(24.5 + Math.cos(a) * 2.6, 16 + Math.sin(a) * 5.6, 0.55), C.ink);
+    const bore = oval(24.5, 16, 2, 4.3);
+    fill(ctx, bore, lo(col, 0.72));
+    stroke(ctx, bore, LINE);
+    ctx.restore();
+  },
+  cable: (ctx, col) => {
+    // Cable: a hank of thick sheathed cable, two turns and a tail, its cut end showing the copper
+    // strands inside — not the bare wire's spool.
+    const rope = (draw: (k: Ctx) => void): void => {
+      stroke(ctx, draw, 6.6, C.ink);
+      stroke(ctx, draw, 4.2, col);
+      stroke(ctx, draw, 1.1, hi(col, 0.45));
+    };
+    rope((k) => { k.moveTo(22.6, 13); k.ellipse(13.5, 13, 9.1, 8.2, 0, 0, Math.PI * 1.85); });
+    rope((k) => { k.moveTo(19, 14.5); k.ellipse(13.5, 14.5, 5.5, 4.8, 0, 0, Math.PI * 1.7); });
+    rope((k) => { k.moveTo(22.6, 13); k.bezierCurveTo(23.4, 19, 24, 22, 26.6, 25.4); });
+    const end = circle(26.8, 25.6, 3.3);
+    fill(ctx, end, col);
+    stroke(ctx, end);
+    fill(ctx, circle(26.8, 25.6, 2.1), COPPER);
+    for (const a of [0.3, 2.4, 4.5]) fill(ctx, circle(26.8 + Math.cos(a) * 1.05, 25.6 + Math.sin(a) * 1.05, 0.55), lo(COPPER, 0.4));
   },
 };
 

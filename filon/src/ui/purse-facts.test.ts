@@ -61,12 +61,12 @@ describe('the purse\'s figure', () => {
     expect(s.total).toBe(now.credits - from.credits - 50_000 - 7_000);
     expect(lineSum(s)).toBe(s.total);
     expect(s.oneOffs).toEqual([{ kind: 'spotSell', cents: 7_000 }, { kind: 'grant', cents: 50_000 }]);
-    // The lines: the plates sold (3 a minute), the order (one minute in three), the token flow bought with the servers' share.
+    // The lines: the plates sold (3 a minute), the order (one minute in three), the token flow bought with the free share.
     const sale = s.lines.find((l) => l.kind === 'sale')!;
     expect(sale).toMatchObject({ item: plate, post: 9, perHour: 1200 * 60, perMin: 3 });
     expect(s.lines.find((l) => l.kind === 'order')).toMatchObject({ order: 4, item: glass, perHour: -2500 * 20, perMin: 1 });
-    // The bought flow's tokens a minute (D118), the servers' share of all research's tokens on its chip.
-    expect(s.lines.find((l) => l.kind === 'tokens')).toMatchObject({ perHour: -40 * 60, perMin: 1200, servers: 250 });
+    // The bought flow's tokens a minute (D118), the free share of all research's tokens on its chip (D122: the Core's compute, the servers).
+    expect(s.lines.find((l) => l.kind === 'tokens')).toMatchObject({ perHour: -40 * 60, perMin: 1200, free: 250 });
     expect(s.lines.find((l) => l.kind === 'rent')!.perHour).toBe(-900);
     expect(s.drain).toMatchObject({ kind: 'order' });
     expect(s.spark.length).toBe(91);

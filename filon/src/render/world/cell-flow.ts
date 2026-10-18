@@ -23,7 +23,7 @@
 // draws or decides — an item gliding in from the tile before, one taken through a routing block
 // by the next line — so a base of thousands of lines walks the few on screen.
 import { MU, WORLD } from '@/sim/constants';
-import { VIA_BEHIND, type Chain } from '@/sim/flow/chain';
+import { VIA_BEHIND, tileUnder, type Chain } from '@/sim/flow/chain';
 import { ForkNode } from '@/sim/flow/nodes';
 import type { Sim } from '@/sim/state';
 import { footprint } from '@/sim/entities';
@@ -31,7 +31,7 @@ import { DX, DY } from '@/sim/types';
 import { lengthOf, pieceAt, type Piece, type Pt } from './item-flow';
 import { PIT_WAY, pitPath } from './pits';
 
-/** One item to draw: its item, where (tile coords) and how high (iso px), whether over the bridges, how far it has fallen into a pit (0…1). */
+/** One item to draw: its item, where (tile coords) and how high (iso px), what bridge it is drawn over (item-flow.ts `OVER`, or 0), how far it has fallen into a pit (0…1). */
 export interface FlowItem { item: number; x: number; y: number; z: number; o: number; d: number }
 
 /** Where along a tile's piece its centre lies (a leap's start tile: half a tile into its way). */
@@ -272,7 +272,7 @@ export class CellFlow {
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       const add = (x: number, y: number): void => { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; };
       for (let i = 0; i < c.length; i++) {
-        const t = c.tiles[i]!, x = t % WORLD, y = (t - x) / WORLD;
+        const t = c.tiles[i]!, u = tileUnder(t), x = u % WORLD, y = (u - x) / WORLD; // a cell over a leap: the tile it passes over (D121)
         add(x, y);
         add(x + 1, y + 1);
         const p = this.pieces.get(t);

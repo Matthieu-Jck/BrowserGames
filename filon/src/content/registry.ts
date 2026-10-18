@@ -4,7 +4,7 @@
 import { BAL } from './balance';
 import { ITEMS } from './items';
 import { RECIPES } from './recipes';
-import { BUILDINGS } from './buildings';
+import { BUILDINGS, FLAT_KINDS } from './buildings';
 import { RESEARCH } from './research';
 import type { BuildingDef, BuildingKind, ItemDef, RecipeDef, ResearchDef } from './types';
 
@@ -93,6 +93,8 @@ export function costOf(building: number): Array<{ item: number; mu: number }> {
 
 /** Content-wide lookup tables built once. */
 export const BUILDING_KIND: readonly BuildingKind[] = BUILDING_IDS.map((id) => (BUILDINGS[id] as BuildingDef).kind);
+/** Height class (D124): may a skybridge pass over this building? */
+export const BUILDING_FLAT: readonly boolean[] = BUILDING_IDS.map((id) => { const b = BUILDINGS[id] as BuildingDef; return b.flat ?? FLAT_KINDS.has(b.kind); });
 
 /** Is a building id a ribbon-like line (ribbons, conduits) — laid by dragging, drawn as belt pieces? (What may replace what: `replaceGroup`.) */
 export const isBeltDef = (def: string): boolean => {

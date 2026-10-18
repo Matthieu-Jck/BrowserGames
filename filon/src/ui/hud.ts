@@ -55,7 +55,7 @@ import { makeStore } from '@/core/store';
 /** More ticks than this between two one-second samples: a catch-up ran (play runs `TPS` a second). */
 const CATCH_UP_TICKS = 3 * TPS;
 /** Items shown first when held (the early chain), then anything else in stock. */
-const ORDER = ['iron_ore', 'iron_plate', 'sand', 'glass', 'coal', 'copper_ore', 'copper_wire', 'journal_1', 'journal_2', 'gear', 'circuit', 'ceramic', 'stone', 'salt'];
+const ORDER = ['iron_ore', 'iron_plate', 'sand', 'glass', 'coal', 'copper_ore', 'copper_wire', 'gear', 'circuit', 'ceramic', 'stone', 'salt'];
 /** Whether this viewer left the Stock panel open (D96): a convenience of this browser's, never the colony's. */
 const stockPref = makeStore<{ version: 1; open: boolean }>('filon.stock.v1', 1, () => ({ version: 1, open: false }));
 
@@ -359,9 +359,9 @@ export class Hud {
   }
 
   /**
-   * The tech tree's chip (the way into the tree, D33), then one chip per project: two small bars — its
-   * data in, its tokens in (Tier 2 and up; D118: no time) —, the name, what it waits for or when its
-   * tokens will be in, and the tokens a minute it gets.
+   * The tech tree's chip (the way into the tree, D33), then one chip per project: its token bar (D122:
+   * tokens alone, no data; D118: no time; a save's reconversion: its time), the name, what it waits
+   * for — its lab's power, its tokens — or when they will be in, and the tokens a minute it gets.
    */
   private refreshResearch(sim: Sim): void {
     const L = locale();
@@ -372,9 +372,9 @@ export class Hud {
         const name = p.id.startsWith('respec:')
           ? t('research.respecName', { branch: t(`research.branch.${p.id.slice(7)}` as MsgKey) })
           : (RESEARCH[p.id as ResearchId] as ResearchDef).name[L];
-        const bar = (k: 'data' | 'tok'): HTMLElement => el('span.hud-rs-row', { 'data-k': k }, [mark(k === 'data' ? 'data' : 'token'), el('span.hud-rs-bar', { 'data-k': k }, [el('i')])]);
+        const bar = el('span.hud-rs-row', { 'data-k': 'tok' }, [mark('token'), el('span.hud-rs-bar', { 'data-k': 'tok' }, [el('i')])]);
         return el('button.hud-rs.cartouche', { 'data-id': p.id }, [
-          el('span.hud-rs-bars', {}, [bar('data'), bar('tok')]),
+          el('span.hud-rs-bars', {}, [bar]),
           el('span.hud-rs-name.lettering', {}, name), el('span.hud-rs-eta'), el('span.hud-rs-tok', {}, [mark('token'), el('b')]),
         ]);
       });
@@ -411,23 +411,21 @@ export class Hud {
       const chip = this.research.querySelector(`[data-id="${p.id}"]`) as HTMLElement | null;
       const tm = timings.get(p.id);
       if (!chip || !tm) continue;
-      // Its state as the tree says it (tree-state.ts, D118): its data and its tokens as two bars (Tier
-      // 1, data alone: one), what it waits for, when its tokens will be in; held, its bought flow.
-      const bars = chip.querySelectorAll<HTMLElement>('.hud-rs-bar');
-      bars[0]!.style.setProperty('--p', `${tm.data / 10}%`);
-      bars[1]!.style.setProperty('--p', `${tm.tokens / 10}%`);
-      setAttr(chip.querySelector('.hud-rs-row[data-k="tok"]')!, 'hidden', tm.usesTokens ? null : '');
+      // Its state as the tree says it (tree-state.ts, D118, D122): its tokens as one bar (a save's
+      // reconversion: its time), what it waits for, when its tokens will be in; held, its bought flow.
+      chip.querySelector<HTMLElement>('.hud-rs-bar')!.style.setProperty('--p', `${(tm.usesTokens ? tm.tokens : tm.permille) / 10}%`);
       setAttr(chip, 'data-held', tm.held ? '' : null);
-      // Its tokens now (D102): a minute on the chip — the servers' share and its bought flow —, their ◉ a minute in its tooltip.
+      setAttr(chip, 'data-wait', tm.waiting);
+      // Its tokens now (D102): a minute on the chip — free, banked, bought —, their ◉ a minute in its tooltip.
       const tk = tokens.projects.get(p.id);
       const tok = chip.querySelector('.hud-rs-tok') as HTMLElement;
       setAttr(tok, 'hidden', tk && tk.perMin > 0 ? null : '');
       if (tk) setText(tok.querySelector('b')!, t('hud.perMin', { v: compact(Math.round(tk.perMin)) }));
-      const tokTip = tk && tk.perMin > 0 ? t('hud.rs.tok.tip', { n: compact(Math.round(tk.perMin)), s: compact(tk.servers), b: compact(tk.bought), c: oc(Math.round(tk.centsPerMin), false, 2) }) : null;
-      const dataTip = t('hud.rs.data.tip', { p: Math.floor(tm.data / 10) });
+      const tokTip = tk && tk.perMin > 0 ? t('hud.rs.tok.tip', { n: compact(Math.round(tk.perMin)), f: compact(tk.free + tk.bank), b: compact(tk.bought), c: oc(Math.round(tk.centsPerMin), false, 2) }) : null;
       const tokBarTip = tm.usesTokens ? t('hud.rs.tokbar.tip', { got: compact(p.tokIn ?? 0), of: compact(p.tokens ?? 0) }) : null;
-      setAttr(chip, 'title', [tm.held ? heldTip : null, dataTip, tokBarTip, tokTip].filter(Boolean).join('\n'));
-      const eta = tm.held ? t('hud.rs.held') : tm.waiting === 'power' ? t('research.waitPower') : tm.waiting === 'data' ? t('research.waiting')
+      const powerTip = tm.waiting === 'power' ? t('tree.rs.noPower') : null;
+      setAttr(chip, 'title', [tm.held ? heldTip : null, powerTip, tokBarTip, tokTip].filter(Boolean).join('\n'));
+      const eta = tm.held ? t('hud.rs.held') : tm.waiting === 'power' ? t('research.waitPower')
         : tm.waiting === 'tokens' ? t('research.waitTokens') : Number.isFinite(tm.left) ? duration(tm.left) : '—';
       setText(chip.querySelector('.hud-rs-eta')!, eta);
     }

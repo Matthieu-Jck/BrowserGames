@@ -85,11 +85,12 @@ import { SHADOW_DX, SHADOW_DY, seamClip, shadowLook, shadowMap } from './cast-sh
 import { spinSeed, windTurns, workTurns } from './moving-parts';
 import { OFF_TINT, WorkLook, looksAtWork } from './work-look';
 import { ISO_K, PLAN_K, skyFrames } from './sky-decks';
-import { PLAN_Z, beltZ, buildingZ, computeStands, liftOf, liftZ, riseOffset, standOf, standZ, type Stand } from './stand';
+import { PLAN_Z, SPAN_DZ, beltZ, buildingZ, computeStands, deckSquareZ, liftOf, liftZ, rampZ, riseOffset, standOf, type Stand } from './stand';
 import { PIT_ISO_K, PIT_PLAN_K, PIT_Z, flameFrames, flameLevel, flicker, pitFire, pitFrames, planFlameFrame } from './pits';
 import { LIFT_ISO_K, LIFT_PLAN_K, fallFrames, fallOfConduit, liftFrames, liftOfBelt, type Fall, type Lift } from './traction-lifts';
 import { FLAG, FLAG_K, flagFrames, type FlagFrames } from './heart-flag';
 import { defaultEmblem, emblemKey, type Emblem } from '@/content/emblem';
+import { ribbonRuns } from './neighbour-goods';
 
 /** The shadows' colour: ink with a little lilac (Moebius shadows are cool on the warm sand); also the plan's hint of height. */
 export const SHADOW_TINT = num(mix(C.ink, C.lilacD, 0.3));
@@ -327,6 +328,8 @@ export class BuildingsView {
   lastUpdate = { laid: 0, removed: 0, entities: 0 };
   /** The neighbouring bases laid (D110), by key (their hub parcel), and their flags; bumped when they are all dropped (another colony). */
   private readonly foreign = new Map<number, Rec[]>();
+  /** Each neighbouring base's ribbon tiles and the record that draws each (its goods ride only on a drawn one). */
+  private readonly foreignRibbons = new Map<number, Map<number, Rec>>();
   private foreignFlags: Array<{ s: Sprite; frames: FlagFrames; k: number }> = [];
   foreignEpoch = 0;
 
@@ -518,6 +521,7 @@ export class BuildingsView {
     if (foreign) {
       for (const rs of this.foreign.values()) all.push(...rs);
       this.foreign.clear();
+      this.foreignRibbons.clear();
       this.foreignFlags = [];
       this.foreignEpoch++;
     }
@@ -882,13 +886,13 @@ export class BuildingsView {
   private addDecks(sim: Sim): void {
     if (!sim.graph) return;
     const r = this.cur!;
-    const lay = (piece: SkyPiece, x: number, y: number, rot: Rot, level: number, key: number, ent: number): void => {
+    const lay = (piece: SkyPiece, x: number, y: number, rot: Rot, level: number, z: number, ent: number): void => {
       const fr = skyFrames(piece, rot, SHADOW_DX, SHADOW_DY);
       const [wx, wy] = tileToIso(x, y, level);
       const iso = new Sprite(fr.iso.tex);
       iso.scale.set(ISO_K);
       iso.position.set(wx - fr.iso.ox * ISO_K, wy - fr.iso.oy * ISO_K);
-      this.lay(iso, this.objectLayer, key + 0.25);
+      this.lay(iso, this.objectLayer, z);
       const plan = new Sprite(fr.plan.tex);
       plan.scale.set(PLAN_K);
       plan.position.set(x - fr.plan.ox * PLAN_K, y - fr.plan.oy * PLAN_K);
@@ -900,12 +904,12 @@ export class BuildingsView {
       if (level > 0) {
         // On the rock top, as a lifted building's shadow: among the volumes, just under the span.
         sh.visible = false;
-        this.lay(sh, this.objectLayer, key - 0.3);
+        this.lay(sh, this.objectLayer, z - SPAN_DZ - 0.3);
         r.liftShadows.push({ s: sh, a: 1, ent });
       } else this.lay(sh, this.shadowRoot, 0);
       r.shadows.push({ s: sh, x: wx - fr.shadow.ox, y: wy - fr.shadow.oy, cx, cy });
     };
-    const keyOf = (o: Ent): number => standOf(o)?.z ?? buildingZ(o.x, o.y, 1, 1);
+    // The pieces' keys (stand.ts, which the items riding them read too: belt-lift.ts `spanZ`).
     for (const [t, g] of sim.graph.jumps) {
       const x = t % WORLD, y = (t - x) / WORLD;
       const e = sim.entityAt(x, y);
@@ -914,13 +918,13 @@ export class BuildingsView {
       const far = sim.entityAt(gx, gy);
       if (!far || BUILDING_KIND[far.def] !== 'bridge' || far.rot !== e.rot) continue; // past junctions, no leap
       const lv = liftOf(e);
-      lay('up', x, y, e.rot, lv, keyOf(e), e.id);
+      lay('up', x, y, e.rot, lv, rampZ(e), e.id);
       const n = Math.max(Math.abs(gx - x), Math.abs(gy - y)) - 1;
       for (let k = 1; k <= n; k++) {
         const tx = x + DX[e.rot]! * k, ty = y + DY[e.rot]! * k;
-        lay('deck', tx, ty, e.rot, lv, lv > 0 ? standZ(tx, ty, 1, 1, 0) : buildingZ(tx, ty, 1, 1), e.id);
+        lay('deck', tx, ty, e.rot, lv, deckSquareZ(tx, ty, lv), e.id);
       }
-      lay('down', gx, gy, far.rot, liftOf(far), keyOf(far), far.id);
+      lay('down', gx, gy, far.rot, liftOf(far), rampZ(far), far.id);
     }
   }
 
@@ -1045,6 +1049,12 @@ export class BuildingsView {
   /** Is this neighbouring base laid (D110)? */
   hasForeign(key: number): boolean { return this.foreign.has(key); }
 
+  /** Is a ribbon of that neighbouring base drawn on tile t, and on screen (not culled)? (Its goods ride only there.) */
+  foreignRibbonShown(key: number, t: number): boolean {
+    const r = this.foreignRibbons.get(key)?.get(t);
+    return !!r && !r.culled;
+  }
+
   /**
    * Lay a neighbouring base (D110): its buildings (ghost entities, ids out of the claim's range, a
    * tint), its ribbons (x, y, rot per tile in the order items ride: a tile turning from the one before
@@ -1060,20 +1070,44 @@ export class BuildingsView {
       this.adopt(r);
       recs.push(r);
     }
-    const tex = { s: this.atlas.textures.get(beltKey('ribbon', false)), c: this.atlas.textures.get(beltKey('ribbon', true)) };
+    const tex = { s: this.atlas.textures.get(beltKey('ribbon', false)), c: this.atlas.textures.get(beltKey('ribbon', true)), inlet: this.atlas.textures.get(inletKey('ribbon')) };
+    const drawn = new Map<number, Rec>();
+    // Where a line ends on another's side (a junction, world/neighbours.ts), that tile is fed from
+    // there: its rail opens (an inlet), as on the claim's lines (`addBelt`).
+    const rotAt = new Map<number, Rot>(), fed = new Map<number, number>();
+    for (const tl of ribbons) for (let i = 0; i < tl.length; i += 3) rotAt.set(tl[i + 1]! * WORLD + tl[i]!, tl[i + 2]! as Rot);
+    for (const tl of ribbons) {
+      if (tl.length < 3) continue;
+      const n = tl.length - 3, rot = tl[n + 2]! as Rot, ax = tl[n]! + DX[rot]!, ay = tl[n + 1]! + DY[rot]!, at = rotAt.get(ay * WORLD + ax);
+      if (at !== undefined && (at & 1) !== (rot & 1)) fed.set(ay * WORLD + ax, (fed.get(ay * WORLD + ax) ?? 0) | (1 << opposite(rot)));
+    }
     ribbons.forEach((tl, j) => {
       if (!tex.s || !tex.c || tl.length < 3) return;
-      const r = (this.cur = newRec('', ents.length ? ents[0]!.id + 40 + j : 0, (ents.length ? ents[0]!.id + 40 + j : 0) * 16, this.bucketOf(tl[0]!, tl[1]!)));
-      for (let i = 0; i < tl.length; i += 3) {
-        const x = tl[i]!, y = tl[i + 1]!, rot = tl[i + 2]! as Rot, enter = (i ? tl[i - 1]! : rot) as Rot;
-        // A bend where the line turns (the buildings view's `beltPiece`, read from the line itself).
-        if (enter !== rot) this.beltSprite(tex.c, x, y, enter, rot === ((enter + 3) & 3), 0);
-        else this.beltSprite(tex.s, x, y, rot, false, 0);
+      const id = ents.length ? ents[0]!.id + 40 + j : 0;
+      // A record per stretch in one culling square (neighbour-goods.ts `ribbonRuns`): a long line
+      // shows wherever it crosses the view, never culled whole with its first tile's square.
+      for (const run of ribbonRuns(tl, (x, y) => this.bucketOf(x, y))) {
+        const r = (this.cur = newRec('', id, id * 16, run.bucket));
+        for (let t = run.from; t < run.to; t++) {
+          const i = t * 3, x = tl[i]!, y = tl[i + 1]!, rot = tl[i + 2]! as Rot, enter = (i ? tl[i - 1]! : rot) as Rot;
+          // A bend where the line turns (the buildings view's `beltPiece`, read from the line itself).
+          if (enter !== rot) this.beltSprite(tex.c, x, y, enter, rot === ((enter + 3) & 3), 0);
+          else {
+            this.beltSprite(tex.s, x, y, rot, false, 0);
+            const f = fed.get(y * WORLD + x) ?? 0;
+            if (f && tex.inlet) {
+              if (f & (1 << ((rot + 3) & 3))) this.beltSprite(tex.inlet, x, y, rot, false, 0);
+              if (f & (1 << ((rot + 1) & 3))) this.beltSprite(tex.inlet, x, y, rot, true, 0);
+            }
+          }
+          drawn.set(y * WORLD + x, r);
+        }
+        for (const s of r.sprites) s.tint = tint;
+        this.adopt(r);
+        recs.push(r);
       }
-      for (const s of r.sprites) s.tint = tint;
-      this.adopt(r);
-      recs.push(r);
     });
+    this.foreignRibbons.set(key, drawn);
     if (flag) {
       const frames = flagFrames(flag.emblem), f0 = frames.iso[0]!;
       const r = (this.cur = newRec('', ents.length ? ents[0]!.id + 39 : 0, (ents.length ? ents[0]!.id + 39 : 0) * 16, this.bucketOf(flag.x, flag.y)));

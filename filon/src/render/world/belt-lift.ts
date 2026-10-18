@@ -32,19 +32,27 @@
 // than it rides and holds no building (else its centre's tile: a higher column in front still
 // hides it). An item over an incinerator's tile, or overhanging one, is the pit's. An item on the
 // floor elsewhere is drawn with the ribbons, under every volume (NaN).
+//
+// An item riding a skybridge's span (flagged `OVER.sky` by the motion model, item-flow.ts: up its
+// start, over each square of its deck, down its far end, and the ribbons' last and first stretch at
+// its ends) sorts just after the span's piece it is over (`spanZ`: stand.ts `rampZ`, `deckSquareZ`),
+// by its front-most point when that is on the span too — so the deck square in front never clips
+// it, and whatever stands in front of the deck hides it with the deck (owner, 2026-10-17: « quand la
+// file est pleine, les objets devraient pouvoir patienter sur le pont »: a backed-up line waits there, D121).
 import { BUILDING_KIND } from '@/content/registry';
 import { WORLD } from '@/sim/constants';
 import { DX, DY, type Ent } from '@/sim/types';
 import { LIFT } from '../art/recipes/lifts';
 import { STEP_LEVELS, tileTop, type ReliefLand } from '../relief';
 import { PIT_Z } from './pits';
-import { beltZ, depthKey, flat, liftZ } from './stand';
+import { beltZ, deckSquareZ, depthKey, flat, liftOf, liftZ, rampZ } from './stand';
 import { liftOfBelt, type Lift } from './traction-lifts';
 
-/** What the lift reads of a colony (a Sim): its land and occupancy, its buildings. */
+/** What the lift reads of a colony (a Sim): its land and occupancy, its buildings, its lines' leaps (`graph.jumps`, for the skybridges' spans). */
 export interface LiftWorld {
   readonly grid: ReliefLand & { readonly occ: Int32Array };
   readonly ents: { readonly map: ReadonlyMap<number, Ent>; get(id: number): Ent | undefined };
+  readonly graph?: { readonly jumps: ReadonlyMap<number, number> } | null;
 }
 
 /** Where an item is drawn: tile coords (on the plane), its height (relief levels), and whether it is in an elevator's shaft. */
@@ -67,7 +75,7 @@ export const SLIDE = 0.2;
 /** How far an item reaches from its centre towards the viewer, along x and along y (tiles): its glyph is about a third of a tile across. */
 export const ITEM_REACH = 0.16;
 /** An item's key above its host tile's (see the header): on a ribbon, on an elevator, under a building it goes into. */
-export const ITEM_DZ = { belt: 0.05, lift: 0.03, under: -0.02 } as const;
+export const ITEM_DZ = { belt: 0.05, lift: 0.03, under: -0.02, span: 0.02 } as const;
 
 /** What a tile is to the items that ride over it: its top, its key for them, and whether they may overhang it (no building on it), or it is a pit. */
 interface Host { top: number; z: number; open: boolean; pit: boolean }
@@ -86,6 +94,8 @@ export class BeltLift {
   private hosts = new Map<number, Host>();
   /** The tiles round each incinerator (an item there may overhang its pit): the only floor tiles whose items sort among the volumes. */
   private nearPit = new Set<number>();
+  /** The skybridges' spans: each tile a piece lies on (its ends' ramps, its deck's squares), and that piece's key. */
+  private spans = new Map<number, number>();
   private last = NaN;
 
   /** Re-read the traction steps (after structural changes, or another colony); cars keep their height; the hosts start afresh (after the buildings view's stands). */
@@ -96,7 +106,18 @@ export class BeltLift {
     this.slides.clear();
     this.hosts.clear();
     this.nearPit.clear();
+    this.spans.clear();
     const occupant = (x: number, y: number): number => world.ents.get(world.grid.occ[y * WORLD + x]!)?.def ?? -1;
+    const bridgeAt = (t: number): Ent | undefined => { const e = world.ents.get(world.grid.occ[t]!); return e && BUILDING_KIND[e.def] === 'bridge' ? e : undefined; };
+    // The spans, as the buildings view lays them (`addDecks`): a pair whose start leaps to the next end ahead, the same way.
+    for (const [t, g] of world.graph?.jumps ?? []) {
+      const e = bridgeAt(t), far = bridgeAt(g);
+      if (!e || !far || far.rot !== e.rot) continue;
+      const lv = liftOf(e), d = e.rot;
+      this.spans.set(t, rampZ(e));
+      this.spans.set(g, rampZ(far));
+      for (let x = e.x + DX[d]!, y = e.y + DY[d]!, k = 0; k < 64 && y * WORLD + x !== g; k++, x += DX[d]!, y += DY[d]!) this.spans.set(y * WORLD + x, deckSquareZ(x, y, lv));
+    }
     for (const e of world.ents.map.values()) {
       if (BUILDING_KIND[e.def] === 'sink') for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) this.nearPit.add((e.y + j) * WORLD + e.x + i);
       const l = liftOfBelt(world.grid, occupant, e);
@@ -167,6 +188,27 @@ export class BeltLift {
   /** The height of the car on low tile (x, y) above that tile's top (levels); 0 when there is none. */
   carAt(x: number, y: number): number {
     return this.cars.get(y * WORLD + x)?.z ?? 0;
+  }
+
+  /**
+   * The depth key among the volumes of an item riding a skybridge's span at (x, y) (tile coords;
+   * flagged `OVER.sky` by the motion model, item-flow.ts): just after the piece under it, or under
+   * its front-most point when that is the span's too and in front; on the ribbon by an end (the
+   * last or first stretch drawn over the bridge), just after that end's ramp across the nearer edge.
+   * NaN when no span is there (the items view then draws it over the buildings, as a junction's).
+   */
+  spanZ(x: number, y: number): number {
+    if (!this.spans.size) return NaN;
+    const tx = Math.floor(x), ty = Math.floor(y);
+    const own = this.spans.get(ty * WORLD + tx);
+    if (own !== undefined) {
+      const front = this.spans.get(Math.floor(y + ITEM_REACH) * WORLD + Math.floor(x + ITEM_REACH));
+      return (front !== undefined && front > own ? front : own) + ITEM_DZ.span;
+    }
+    const nx = x - tx < 0.5 ? tx - 1 : tx + 1, ny = y - ty < 0.5 ? ty - 1 : ty + 1;
+    const a = this.spans.get(ty * WORLD + nx), b = this.spans.get(ny * WORLD + tx);
+    const k = a === undefined ? b : b === undefined ? a : Math.max(a, b);
+    return k === undefined ? NaN : k + ITEM_DZ.span;
   }
 
   /** What tile (tx, ty) is to the items over it (see the header). */

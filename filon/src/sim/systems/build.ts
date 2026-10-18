@@ -9,11 +9,12 @@
 // modules) to the Hearth. Ribbon drags are planned as a whole in belt-plan.ts
 // (`planBelts`, D73). Also: the Hearth's levels.
 import { BAL } from '@/content/balance';
-import { BUILDING_KIND, BUILDING_REVEAL, CRECIPES, N_ITEMS, buildingDef, buildingIdx, costOf, itemIdx, recipesFor } from '@/content/registry';
+import { BUILDING_FLAT, BUILDING_KIND, BUILDING_REVEAL, CRECIPES, N_ITEMS, buildingDef, buildingIdx, costOf, itemIdx, recipesFor } from '@/content/registry';
 import { filterOf, recipeOf, withFilter } from '../cfg';
 import { footprint, forTiles, worldPorts } from '../entities';
 import { faceRot, faceTiles, isFaceOre } from '../face';
 import { refundNode } from '../graph/compile';
+import { refundCost } from '../refund';
 import { inWorld, tileIndex } from '../world/grid';
 import { parcelAt } from '../world/land';
 import { CENTER } from '../constants';
@@ -37,7 +38,9 @@ export type PlaceReason =
   /** A face cutter whose back meets no face ore: it stands at the foot of a quartz wall, its back to the rock (D87). */
   | 'needs_face'
   /** A chasm or a river under the footprint (D94): nothing stands there nor fills it; a skybridge pair leaps it (a ribbon drag plans one). */
-  | 'chasm' | 'river';
+  | 'chasm' | 'river'
+  /** A skybridge's span would cross a tall building, or a tall building would stand under a bridge's span: the bridge is low, so in the isometric view it cuts through it (D124). */
+  | 'bridge_over_tall';
 
 export type Cost = Array<{ item: number; mu: number }>;
 
@@ -90,7 +93,7 @@ function refundOf(sim: Sim, ids: readonly number[], item: number): number {
   let mu = 0;
   for (const id of ids) {
     const o = sim.ents.get(id);
-    if (o) for (const c of costOf(o.def)) if (c.item === item) mu += c.mu;
+    if (o) for (const c of refundCost(sim.costFloor, o)) if (c.item === item) mu += c.mu;
   }
   return mu;
 }
@@ -161,7 +164,7 @@ export function canPlace(sim: Sim, defId: string, x: number, y: number, rot: Rot
   // A drill wants a deposit; a ground collector bare sand under every tile (sand is the floor); a
   // face cutter a face ore in the wall behind it (D87: on the floor beside the wall, never on it).
   if (b.drill?.face) { if (!faceTiles(sim.grid, def, x, y, rot).length) return fail('needs_face'); }
-  else if (b.kind === 'drill' && !b.drill?.anywhere && (b.drill?.ground ? !bare : !deposit)) return fail(b.drill?.ground ? 'needs_sand' : 'needs_deposit');
+  else if (b.kind === 'drill' && (b.drill?.ground ? !bare : !deposit)) return fail(b.drill?.ground ? 'needs_sand' : 'needs_deposit');
   if (b.kind === 'pump' && !water && !touchesWater(sim, x, y, w, h, level)) return fail('needs_water');
   if (b.kind === 'geothermal' && !vent) return fail('needs_vent');
   // On the mountains, the whole footprint or none of it (no building astride a cliff, D44).
@@ -188,6 +191,7 @@ export function canPlace(sim: Sim, defId: string, x: number, y: number, rot: Rot
   if (step) return fail(step);
   if (b.lift && liftCrowded(sim, def, x, y, rot)) return fail('lift_room');
   if (b.kind === 'crossing' && junctionNear(sim, x, y)) return fail('junction_chain');
+  if (bridgeOverTall(sim, def, x, y, rot, w, h)) return fail('bridge_over_tall');
   replaces.sort((a, c) => a - c);
   // What it replaces is refunded before the new building is paid: it counts towards the cost.
   if (!affordable(sim, cost, replaces)) return { ok: false, reason: 'unaffordable', cost, delay: 0, replaces };
@@ -252,6 +256,71 @@ function liftCrowded(sim: Sim, def: number, x: number, y: number, rot: Rot): boo
   for (let d = 0; d < 4; d++) {
     const n = beltAt(x + DX[d]!, y + DY[d]!);
     if (n && n.x + DX[n.rot]! === x && n.y + DY[n.rot]! === y && stepAt(sim, n.def, n.x, n.y, n.rot)) return true;
+  }
+  return false;
+}
+
+/** Does a tall building (D124) stand on tile (x, y)? */
+export function tallAt(sim: Sim, x: number, y: number): boolean {
+  if (!inWorld(x, y)) return false;
+  const o = sim.ents.get(sim.grid.occ[tileIndex(x, y)]!);
+  return !!o && !BUILDING_FLAT[o.def];
+}
+
+/**
+ * The skybridge standing `k` tiles `d`-ward of the first bridge ahead of (x, y) — i.e. the partner a
+ * bridge at (x, y) facing `d` leaps to (compile.ts: the first bridge of its direction on its level
+ * within `4 + mods.bridgeSpan`) — as the distance in tiles, or 0 when there is none.
+ */
+function partnerAhead(sim: Sim, x: number, y: number, d: Rot): number {
+  const span = 4 + sim.mods.bridgeSpan, lv = sim.grid.level(x, y);
+  for (let k = 1; k <= span; k++) {
+    const bx = x + DX[d]! * k, by = y + DY[d]! * k;
+    if (!inWorld(bx, by)) return 0;
+    const o = sim.ents.get(sim.grid.occ[tileIndex(bx, by)]!);
+    if (o && BUILDING_KIND[o.def] === 'bridge' && o.rot === d && sim.grid.level(bx, by) === lv) return k;
+  }
+  return 0;
+}
+
+/**
+ * Height rule (owner, 2026-10-17, D124: « empêcher de placer un bridge par-dessus une machine, à
+ * moins que cette machine soit vraiment plate »): a skybridge pair never leaps a tall building,
+ * and a tall building never goes under a pair's span. A bridge placed at (x, y) pairs with the
+ * bridge ahead of it and with the one behind it, so both spans are read; a tall footprint is
+ * refused when any of its tiles lies strictly between two paired bridges, on any of the four ways.
+ * Placements only: a pair standing over a machine from before the rule stays (saves are sacred).
+ */
+function bridgeOverTall(sim: Sim, def: number, x: number, y: number, rot: Rot, w: number, h: number): boolean {
+  if (BUILDING_KIND[def] === 'bridge') {
+    const span = 4 + sim.mods.bridgeSpan, lv = sim.grid.level(x, y);
+    const k = partnerAhead(sim, x, y, rot);
+    for (let i = 1; i < k; i++) if (tallAt(sim, x + DX[rot]! * i, y + DY[rot]! * i)) return true;
+    for (let back = 1; back <= span; back++) {
+      const bx = x - DX[rot]! * back, by = y - DY[rot]! * back;
+      if (!inWorld(bx, by)) break;
+      const o = sim.ents.get(sim.grid.occ[tileIndex(bx, by)]!);
+      if (!o || BUILDING_KIND[o.def] !== 'bridge' || o.rot !== rot || sim.grid.level(bx, by) !== lv) continue;
+      for (let i = 1; i < back; i++) if (tallAt(sim, bx + DX[rot]! * i, by + DY[rot]! * i)) return true;
+      break; // the nearest one behind is the one that now pairs with this bridge
+    }
+    return false;
+  }
+  if (BUILDING_FLAT[def]) return false;
+  const span = 4 + sim.mods.bridgeSpan;
+  for (let ty = y; ty < y + h; ty++) {
+    for (let tx = x; tx < x + w; tx++) {
+      for (let d = 0; d < 4; d++) {
+        for (let back = 1; back <= span; back++) {
+          const bx = tx - DX[d]! * back, by = ty - DY[d]! * back;
+          if (!inWorld(bx, by)) break;
+          const o = sim.ents.get(sim.grid.occ[tileIndex(bx, by)]!);
+          if (!o || BUILDING_KIND[o.def] !== 'bridge' || o.rot !== d) continue;
+          const k = partnerAhead(sim, bx, by, d);
+          if (k > back) return true; // its partner lies beyond the tile: the tile is under the leap
+        }
+      }
+    }
   }
   return false;
 }
@@ -480,8 +549,8 @@ export function removeEntity(sim: Sim, id: number, silent: boolean): void {
   const st = sim.stores.get(id);
   if (st) { for (let i = 0; i < N_ITEMS; i++) if (st[i]! > 0) sim.refund(i, st[i]!); sim.stores.delete(id); }
   sim.accEnergy.delete(id);
-  // Full refund of the construction cost.
-  for (const c of costOf(e.def)) sim.refund(c.item, c.mu);
+  // Full refund of the construction cost: what it was paid (its price before D123 if it stood then).
+  for (const c of refundCost(sim.costFloor, e)) sim.refund(c.item, c.mu);
   vacate(sim, e);
   sim.ents.remove(id);
   sim.dirty = true;

@@ -1,7 +1,7 @@
 // buildings.ts — every building. Footprint w×h and ports are given for rot 0 (front = N);
 // the engine rotates them. kw = draw while working, idleKw = draw while idle. replaceGroup =
 // what it may be placed over (buildings of the same group wholly inside its footprint).
-import type { BuildingDef, PortDef } from './types';
+import type { BuildingDef, BuildingKind, PortDef } from './types';
 
 const P = (x: number, y: number, side: PortDef['side'], io: PortDef['io']): PortDef => ({ x, y, side, io });
 
@@ -9,7 +9,7 @@ export const BUILDINGS = {
   // ── colony ────────────────────────────────────────────────────────────────
   hearth: {
     name: { fr: 'Cœur', en: 'Core' },
-    desc: { fr: 'Le cœur de ta base : il reçoit sans jamais rendre son stock, qui paie tes constructions. Son noyau isotopique donne l’essentiel de son électricité, jour et nuit, son panneau solaire un peu plus en plein soleil, et les deux grandissent à chaque niveau ; il tend 6 fils jusqu’à 8 tuiles et, dès son niveau 2, sa sortie de données donne des données d’arpentage pour la recherche.', en: 'The heart of your base: it takes and never gives back its stock, which pays for your construction. Its isotope reactor gives most of its power, day and night, its solar panel a little more in full sun, and both grow with each level; it holds 6 wires up to 8 tiles long and, from its level 2, its data outlet hands out Survey Data for research.' },
+    desc: { fr: 'Le cœur de ta base : il reçoit sans jamais rendre son stock, qui paie tes constructions. Son noyau isotopique donne l’essentiel de son électricité, jour et nuit, son panneau solaire un peu plus en plein soleil, et les deux grandissent à chaque niveau ; il tend 6 fils jusqu’à 8 tuiles et, dès son niveau 2, sa baie de calcul donne des tokens d’IA à tes recherches.', en: 'The heart of your base: it takes and never gives back its stock, which pays for your construction. Its isotope reactor gives most of its power, day and night, its solar panel a little more in full sun, and both grow with each level; it holds 6 wires up to 8 tiles long and, from its level 2, its compute bay gives AI tokens to your research.' },
     kind: 'hearth', category: 'colony', w: 5, h: 5, needsZone: false, cost: [], unlock: 'never',
     ports: [
       // Inputs only: the Heart takes, it never gives (owner, 2026-10-12) — machines are fed by
@@ -18,10 +18,9 @@ export const BUILDINGS = {
       P(1, 4, 'S', 'in'), P(2, 4, 'S', 'in'), P(3, 4, 'S', 'in'),
       P(4, 1, 'E', 'in'), P(4, 2, 'E', 'in'), P(4, 3, 'E', 'in'),
       P(0, 1, 'W', 'in'), P(0, 2, 'W', 'in'), P(0, 3, 'W', 'in'), // three a side, all round (owner, 2026-10-12)
-      // Its one outlet (D68): the Survey Data it makes from its level 2 (D101: `BAL.hearthDataBase`,
-      // plus what the Analytics research has it process, mods.heartData) — never its stock, which it
-      // still never gives. Level 2 mounts it on this corner (D86): the port stands before, handing out nothing.
-      P(4, 4, 'S', 'out'),
+      // Its data outlet (D68, D86) went with the data (D122): the Core gives nothing at all now. Its
+      // south-east corner mounts the compute bay at level 2 instead, whose tokens reach research
+      // without a ribbon (`BAL.coreCompute`).
     ],
     // gen.kw: the built-in solar panel's peak (BAL.hearthSolarKw and hearthCoreKw win, by level: D25, D101). A link point of 6 wires.
     gen: { kw: 240 }, pole: { range: 8, slots: 6, climb: 1 }, storageCap: 5000,
@@ -38,14 +37,14 @@ export const BUILDINGS = {
     name: { fr: 'Foreuse profonde', en: 'Deep Bore' },
     desc: { fr: 'Une foreuse 3×3 : jusqu’à 45/min, et chaque tuile de gisement rend 1,5× son plafond. Se pose par-dessus une foreuse, qu’elle remplace.', en: 'A 3×3 drill: up to 45/min, and each deposit tile yields 1.5× its cap. Can be placed over a drill, replacing it.' },
     kind: 'drill', replaceGroup: 'drill', category: 'extraction', w: 3, h: 3, needsZone: true, unlock: 'ex5', kw: 400, idleKw: 40,
-    cost: [['ceramic', 30], ['thermal_core', 4], ['gear', 10]],
+    cost: [['steel', 30], ['pipe', 10], ['thermal_core', 4], ['gear', 10]],
     ports: [P(0, 0, 'N', 'out'), P(2, 0, 'N', 'out')], drill: { perMin: 45, capMult: 1500 },
   },
   excavator: {
     name: { fr: 'Excavatrice', en: 'Excavator' },
     desc: { fr: 'Creuse la roche marquée avec Aménager à 3 tuiles d’elle au plus, et sans marque à portée exploite la roche voisine en carrière, sans l’entamer. La pierre sort à l’arrière, le minerai enfoui file au Cœur.', en: 'Digs the rock you mark with Landscape up to 3 tiles from it, and with no mark in reach quarries the rock beside it without wearing it away. Stone leaves at the back; ore buried in the rock goes to the Core.' },
     kind: 'excavator', category: 'extraction', w: 3, h: 3, needsZone: true, unlock: 'tr2', kw: 240, idleKw: 24,
-    cost: [['iron_plate', 30], ['gear', 10], ['circuit', 4]], ports: [P(1, 2, 'S', 'out')], excavator: { reach: 3, speed: 1000 },
+    cost: [['steel', 12], ['iron_plate', 10], ['gear', 10], ['circuit', 4]], ports: [P(1, 2, 'S', 'out')], excavator: { reach: 3, speed: 1000 },
   },
   pump: {
     name: { fr: 'Pompe à eau', en: 'Water Pump' },
@@ -58,7 +57,7 @@ export const BUILDINGS = {
     name: { fr: 'Remblayeuse', en: 'Backfiller' },
     desc: { fr: 'Comble l’eau et les salines marquées avec Aménager, jusqu’à 8 tuiles d’elle, avec la pierre qu’un ruban lui apporte : du terrain gagné.', en: 'Fills the water and salt flats you mark with Landscape, up to 8 tiles away, with stone brought in by ribbon: reclaimed land.' },
     kind: 'backfiller', category: 'extraction', w: 2, h: 2, needsZone: true, unlock: 'ex3', kw: 150, idleKw: 15,
-    cost: [['iron_plate', 20], ['gear', 10], ['ceramic', 10]], ports: [P(0, 1, 'S', 'in')],
+    cost: [['steel', 10], ['gear', 10], ['ceramic', 10]], ports: [P(0, 1, 'S', 'in')],
   },
 
   // ── logistics ─────────────────────────────────────────────────────────────
@@ -171,7 +170,7 @@ export const BUILDINGS = {
     name: { fr: 'Fonderie électrique', en: 'Electric Smelter' },
     desc: { fr: 'Fond le minerai de fer en plaques et le sable en verre à l’électricité, sans charbon, au rythme de la fonderie. Elle tire beaucoup sur le réseau : prévois l’énergie avant de l’allumer.', en: 'Smelts iron ore into plates and sand into glass with power, no coal, at the smelter’s pace. It draws heavily on the grid: plan the power before you switch it on.' },
     kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'dn_esmelt', crafts: true, kw: 300, idleKw: 15,
-    cost: [['iron_plate', 25], ['copper_wire', 10], ['glass', 4]], ports: [P(0, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
+    cost: [['iron_plate', 15], ['copper_plate', 10], ['brick', 10], ['glass', 4]], ports: [P(0, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
   },
   wire_mill: {
     name: { fr: 'Tréfileuse', en: 'Wire Mill' },
@@ -189,14 +188,14 @@ export const BUILDINGS = {
     name: { fr: 'Atelier d’assemblage', en: 'Assembly Workshop' },
     desc: { fr: 'Assemble les pièces lourdes avec trois entrées : batteries vides, cœurs thermiques et, plus tard, résonateurs.', en: 'Assembles heavy parts from three inputs: empty batteries, thermal cores and, later, resonators.' },
     kind: 'machine', category: 'production', w: 3, h: 3, needsZone: true, unlock: 'tr3', crafts: true, kw: 240, idleKw: 24,
-    cost: [['iron_plate', 40], ['gear', 10], ['circuit', 10]],
+    cost: [['steel', 20], ['brick', 20], ['gear', 10], ['circuit', 10]],
     ports: [P(0, 2, 'S', 'in'), P(1, 2, 'S', 'in'), P(2, 2, 'S', 'in'), P(1, 0, 'N', 'out')],
   },
   great_workshop_compact: {
     name: { fr: 'Atelier d’assemblage compact', en: 'Compact Assembly Workshop' },
     desc: { fr: 'L’atelier d’assemblage sur 2×2, avec deux entrées à l’arrière et une sur le côté. Mêmes recettes.', en: 'The assembly workshop on 2×2, with two inputs at the back and one on the side. Same recipes.' },
     kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'dn_compact', crafts: true, kw: 240, idleKw: 24,
-    cost: [['iron_plate', 40], ['gear', 12], ['circuit', 8], ['pace_bell', 2]],
+    cost: [['steel', 20], ['gear', 12], ['circuit', 8], ['pace_bell', 2]],
     ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(0, 1, 'W', 'in'), P(1, 0, 'N', 'out')],
   },
   tower_workshop: {
@@ -210,15 +209,16 @@ export const BUILDINGS = {
     name: { fr: 'Four à céramique', en: 'Ceramic Oven' },
     desc: { fr: 'Cuit la pierre et l’eau en céramique. La pierre vient des excavatrices, l’eau des pompes par conduit.', en: 'Fires stone and water into ceramic. Stone comes from excavators, water from pumps by conduit.' },
     kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, onRock: true, unlock: 'tr3', crafts: true, kw: 120, idleKw: 12, // onRock: a mountain-top ceramic works by the tarn (D63)
-    cost: [['iron_plate', 25], ['gear', 6]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
+    cost: [['brick', 20], ['pipe', 6], ['gear', 4]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
   },
   observatory: {
     // The Research Lab (D68); its id stays `observatory` (saves, the plan, the unlock tree).
     name: { fr: 'Laboratoire de recherche', en: 'Research Lab' },
-    desc: { fr: 'Mène une recherche à la fois, lancée dans l’arbre des techniques (T) : elle se termine dès que ses données (d’arpentage, puis mécaniques, atlas et codex selon le tier) sont arrivées par ruban. À partir du Tier 2, il lui faut aussi des tokens d’IA, ceux de tes serveurs d’abord, puis le flux que tu achètes à CrierBelt.', en: 'Runs one research project at a time, started in the tech tree (T): it is done as soon as its data (Survey Data, then Mechanics Data, atlases and codices by tier) has arrived by ribbon. From Tier 2 it also needs AI tokens, your own servers’ first, then the flow you buy from CrierBelt.' },
-    // 3×3 since D84 (owner, 2026-10-15: "the research lab should be 3x3"): an intake along its whole back.
+    desc: { fr: 'Mène une recherche à la fois, lancée dans l’arbre des techniques (T) : ses ressources se paient au Cœur au lancement, et elle se termine dès que ses tokens d’IA sont arrivés — ceux du calcul du Cœur et de tes serveurs, puis le flux que tu achètes à CrierBelt. Il lui faut de l’électricité ; aucun ruban.', en: 'Runs one research project at a time, started in the tech tree (T): its resources are paid from the Core at launch, and it is done as soon as its AI tokens have arrived — the Core’s compute and your servers’, then the flow you buy from CrierBelt. It needs power; no ribbon.' },
+    // 3×3 since D84 (owner, 2026-10-15: "the research lab should be 3x3"). No input since D122
+    // (owner, 2026-10-17: « le laboratoire n'a plus besoin d'entrée »): research takes no data.
     kind: 'lab', category: 'research', w: 3, h: 3, needsZone: true, unlock: 'observatory', kw: 150, idleKw: 15,
-    cost: [['iron_plate', 30], ['glass', 20], ['copper_wire', 10]], ports: [P(0, 2, 'S', 'in'), P(1, 2, 'S', 'in'), P(2, 2, 'S', 'in')],
+    cost: [['iron_plate', 30], ['glass', 20], ['copper_wire', 10]], ports: [],
   },
 
   // ── energy ────────────────────────────────────────────────────────────────
@@ -233,7 +233,7 @@ export const BUILDINGS = {
     desc: { fr: 'Un grand pylône de 2×2 qui porte loin : 4 fils jusqu’à 40 tuiles (60 avec Pylônes renforcés), qui montent ou descendent de 3 gradins et passent 3 gradins de relief, jamais une montagne. Dissipe le brouillard sur 40 tuiles alentour.', en: 'A big 2×2 pylon that carries far: 4 wires up to 40 tiles long (60 with Reinforced Pylons), climbing or coming down 3 terraces and clearing a 3-terrace rise, never a mountain. It lifts the fog 40 tiles around it.' },
     kind: 'pole', replaceGroup: 'power', category: 'energy', w: 2, h: 2, needsZone: false, onRock: true, unlock: 'tr4', // 2×2 and twice as tall since D75 (owner, 2026-10-14)
     // It lifts the fog as far as its wires reach (D117: the survey beacon's 40 tiles), so a pylon line walks it back.
-    cost: [['iron_plate', 20], ['copper_wire', 10], ['ceramic', 4]], ports: [], reveal: 40, pole: { range: 40, slots: 4, climb: 3, tall: true }, // three terraces up or down, three above the land: never over a mountain (D78)
+    cost: [['steel', 10], ['cable', 8], ['ceramic', 4]], ports: [], reveal: 40, pole: { range: 40, slots: 4, climb: 3, tall: true }, // three terraces up or down, three above the land: never over a mountain (D78)
   },
   brazier: {
     name: { fr: 'Générateur à charbon', en: 'Coal Generator' },
@@ -272,19 +272,19 @@ export const BUILDINGS = {
     name: { fr: 'Accumulateur', en: 'Accumulator' },
     desc: { fr: 'La batterie du réseau : se remplit des surplus et les rend quand la demande dépasse la production. 1 200 kW·min, 300 kW au plus.', en: 'The grid’s battery: fills up with surplus power and gives it back when demand outruns supply. 1,200 kW·min, 300 kW at most.' },
     kind: 'accumulator', category: 'energy', w: 2, h: 2, needsZone: true, unlock: 'tr3',
-    cost: [['ceramic', 10], ['empty_cell', 4], ['circuit', 6]], ports: [], accumulator: { kwMin: 1200, kw: 300 },
+    cost: [['ceramic', 10], ['empty_cell', 4], ['circuit', 4], ['cable', 4]], ports: [], accumulator: { kwMin: 1200, kw: 300 },
   },
   cell_charger: {
     name: { fr: 'Chargeur', en: 'Battery Charger' },
     desc: { fr: 'Charge une batterie vide en 2 minutes à 300 kW : de l’énergie en boîte, à vendre à la Criée.', en: 'Charges an empty battery in 2 minutes at 300 kW: boxed energy to sell at the Crier Ring.' },
     kind: 'machine', category: 'energy', w: 2, h: 2, needsZone: true, unlock: 'en4', crafts: true, kw: 300, idleKw: 10,
-    cost: [['ceramic', 10], ['circuit', 6]], ports: [P(0, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
+    cost: [['ceramic', 10], ['circuit', 6], ['copper_plate', 8]], ports: [P(0, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
   },
   fumarole_tap: {
     name: { fr: 'Centrale géothermique', en: 'Geothermal Plant' },
     desc: { fr: 'Géothermie : 1,5 MW jour et nuit, sans combustible. Se pose uniquement sur un évent.', en: 'Geothermal: 1.5 MW day and night, no fuel. Only stands on a vent.' },
     kind: 'geothermal', category: 'energy', w: 3, h: 3, needsZone: true, unlock: 'en5',
-    cost: [['ceramic', 20], ['thermal_core', 4], ['circuit', 10]], ports: [], gen: { kw: 1500 },
+    cost: [['ceramic', 20], ['thermal_core', 4], ['circuit', 10], ['pipe', 16]], ports: [], gen: { kw: 1500 },
   },
   sunheart: {
     name: { fr: 'Cœur-Soleil', en: 'Sunheart' },
@@ -324,28 +324,16 @@ export const BUILDINGS = {
     cost: [['iron_plate', 3]], ports: [P(0, 0, 'N', 'in'), P(0, 0, 'E', 'in'), P(0, 0, 'S', 'in'), P(0, 0, 'W', 'in')],
   },
   // ── appended: research (D68) and the tree's machines (D70) ──────────────
-  // Research runs on data and AI tokens: data collectors make Survey Data from power alone,
-  // servers supply the tokens. Every research node unlocks a machine or a feature (owner,
-  // 2026-10-14: not just a boost): the upgraded machines below are those unlocks.
-  data_collector: {
-    name: { fr: 'Collecteur de données', en: 'Data Collector' },
-    desc: { fr: 'Capte et compile des données sur la planète : 2 données d’arpentage par minute, n’importe où, de l’électricité seule. Elles sortent à l’avant, pour les laboratoires.', en: 'Picks up and compiles data about the planet: 2 Survey Data a minute, anywhere, from power alone. They leave at the front, for the labs.' },
-    kind: 'drill', category: 'research', w: 2, h: 2, needsZone: true, unlock: 'an_data', kw: 120, idleKw: 12, // D101: after the lab, from « Traitement des données »
-    cost: [['iron_plate', 10], ['glass', 4], ['copper_wire', 6]], ports: [P(0, 0, 'N', 'out')], drill: { perMin: 2, anywhere: 'journal_1' },
-  },
+  // Research runs on AI tokens and, at launch, resources from the Core (D122: the data collector,
+  // the test bench and the data relay are retired, content/retired.ts). Servers supply tokens.
+  // Every research node unlocks a machine or a feature (owner, 2026-10-14: not just a boost): the
+  // upgraded machines below are those unlocks.
   server: {
     name: { fr: 'Serveur', en: 'Server' },
     desc: { fr: 'Calcule pour tes recherches : 2 000 tokens d’IA par minute pour 400 kW, aux recherches dans l’ordre où elles ont été lancées. Ce qu’aucune n’utilise dans la minute est perdu.', en: 'Computes for your research: 2,000 AI tokens a minute for 400 kW, to the research projects in the order they started. What none uses within the minute is lost.' },
     kind: 'server', category: 'research', w: 2, h: 2, needsZone: true, unlock: 'an_servers', kw: 400, idleKw: 40,
     // Its clocks are quartz oscillators since D87 (a server built before gives them back too when taken down: nothing vanishes).
-    cost: [['circuit', 10], ['iron_plate', 20], ['copper_wire', 10], ['oscillator', 4]], ports: [], server: { tokensPerMin: 2000 },
-  },
-  test_bench: {
-    name: { fr: 'Banc d’essai', en: 'Test Bench' },
-    desc: { fr: 'Éprouve engrenages et circuits sous charge, au rythme d’un oscillateur à quartz, et en tire des données mécaniques : deux engrenages, un circuit et un oscillateur pour une. Trois entrées.', en: 'Puts gears and circuits through load tests, clocked by a quartz oscillator, and records Mechanics Data: two gears, a circuit and an oscillator each. Three inputs.' },
-    kind: 'machine', category: 'research', w: 2, h: 2, needsZone: true, unlock: 'tr1', crafts: true, kw: 90, idleKw: 9,
-    // A third input on its side since D87 (the oscillator), appended: the others keep their indices.
-    cost: [['iron_plate', 20], ['glass', 6], ['copper_wire', 8]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(1, 0, 'N', 'out'), P(0, 1, 'W', 'in')],
+    cost: [['circuit', 10], ['steel', 8], ['cable', 6], ['oscillator', 4]], ports: [], server: { tokensPerMin: 2000 },
   },
   press: {
     name: { fr: 'Presse', en: 'Press' },
@@ -362,9 +350,9 @@ export const BUILDINGS = {
   },
   scriptorium: {
     name: { fr: 'Scriptorium', en: 'Scriptorium' },
-    desc: { fr: 'Tisse la toile de résine et compile atlas et codex, les ouvrages que les savants de Verrière paient le plus cher.', en: 'Weaves resin canvas and compiles atlases and codices, the works Verrière’s scholars pay most for.' },
+    desc: { fr: 'Tisse la toile de résine, de la résine céleste sur une trame de fil de cuivre : la Guilde des dirigeables la paie cher.', en: 'Weaves resin canvas, sky resin on a weft of copper wire: the Drifter Guild pays well for it.' },
     kind: 'machine', category: 'production', w: 3, h: 3, needsZone: true, unlock: 'tr6', crafts: true, kw: 200, idleKw: 20,
-    cost: [['iron_plate', 40], ['circuit', 10], ['gear', 10]],
+    cost: [['steel', 16], ['circuit', 10], ['gear', 10]],
     ports: [P(0, 2, 'S', 'in'), P(1, 2, 'S', 'in'), P(2, 2, 'S', 'in'), P(1, 0, 'N', 'out')],
   },
   pitch_turbine: {
@@ -377,25 +365,25 @@ export const BUILDINGS = {
     name: { fr: 'Accumulateur lourd', en: 'Heavy Accumulator' },
     desc: { fr: 'Une batterie de réseau plus grosse : 4 000 kW·min, 800 kW au plus.', en: 'A bigger grid battery: 4,000 kW·min, 800 kW at most.' },
     kind: 'accumulator', category: 'energy', w: 2, h: 2, needsZone: true, unlock: 'en_heavyacc',
-    cost: [['ceramic', 20], ['empty_cell', 10], ['circuit', 10]], ports: [], accumulator: { kwMin: 4000, kw: 800 },
+    cost: [['ceramic', 20], ['empty_cell', 10], ['circuit', 8], ['cable', 10]], ports: [], accumulator: { kwMin: 4000, kw: 800 },
   },
   solar_farm: {
     name: { fr: 'Ferme solaire', en: 'Solar Farm' },
     desc: { fr: 'Un champ de panneaux sur 3×3 : 600 kW en plein soleil, rien la nuit.', en: 'A 3×3 field of panels: 600 kW in full sun, nothing at night.' },
     kind: 'solar', category: 'energy', w: 3, h: 3, needsZone: true, unlock: 'en_solarfarm',
-    cost: [['iron_plate', 20], ['glass', 40], ['copper_wire', 12], ['circuit', 4]], ports: [], gen: { kw: 600 },
+    cost: [['steel', 10], ['glass', 40], ['cable', 8], ['circuit', 4]], ports: [], gen: { kw: 600 },
   },
   big_turbine: {
     name: { fr: 'Grande éolienne', en: 'Great Turbine' },
     desc: { fr: 'Une éolienne de 3×3 : jusqu’à 1 200 kW. Plus haute, elle prend le vent plus tôt ; sur une crête dégagée, elle donne le plus.', en: 'A 3×3 wind turbine: up to 1,200 kW. Taller, it catches the wind sooner; on an open ridge it gives most.' },
     kind: 'wind', replaceGroup: 'wind', category: 'energy', w: 3, h: 3, needsZone: true, onRock: true, unlock: 'en_bigwind',
-    cost: [['iron_plate', 40], ['gear', 12], ['copper_wire', 20], ['ceramic', 10]], ports: [], gen: { kw: 1200, wind: { cutIn: 350, rated: 1300, cutOut: 4200 } }, // D95
+    cost: [['steel', 30], ['gear', 12], ['cable', 16], ['ceramic', 10]], ports: [], gen: { kw: 1200, wind: { cutIn: 350, rated: 1300, cutOut: 4200 } }, // D95
   },
   cell_generator: {
     name: { fr: 'Générateur à batteries', en: 'Battery Generator' },
     desc: { fr: 'Brûle les batteries chargées : 600 kW, une batterie par minute à plein régime. Il ne brûle que ce que le réseau demande.', en: 'Burns charged batteries: 600 kW, one battery a minute at full output. It burns only what the grid asks for.' },
     kind: 'generator', category: 'energy', w: 2, h: 2, needsZone: true, unlock: 'en_cellgen',
-    cost: [['iron_plate', 20], ['ceramic', 10], ['circuit', 6]], ports: [P(0, 1, 'S', 'in')],
+    cost: [['steel', 10], ['ceramic', 10], ['circuit', 6], ['cable', 6]], ports: [P(0, 1, 'S', 'in')],
     gen: { kw: 600, fuel: 'charged_cell', fuelPerMin: 1 },
   },
   solar_tower: {
@@ -408,7 +396,7 @@ export const BUILDINGS = {
     name: { fr: 'Tamiseur', en: 'Sifter' },
     desc: { fr: 'Tamise la pierre des excavatrices : du sable, ou le minerai de fer ou de cuivre qu’elle cache. Choisis la recette dans l’inspecteur.', en: 'Sifts the excavators’ stone: sand, or the iron or copper ore it hides. Pick the recipe in the inspector.' },
     kind: 'machine', category: 'extraction', w: 2, h: 2, needsZone: true, unlock: 'ex_sifter', crafts: true, kw: 90, idleKw: 9,
-    cost: [['iron_plate', 20], ['glass', 4]], ports: [P(0, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
+    cost: [['steel', 6], ['iron_plate', 10], ['glass', 4]], ports: [P(0, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
   },
   fast_drill: {
     name: { fr: 'Foreuse rapide', en: 'Fast Drill' },
@@ -420,25 +408,25 @@ export const BUILDINGS = {
     name: { fr: 'Pompe haute pression', en: 'High-Pressure Pump' },
     desc: { fr: 'Au bord de l’eau, pompe 240 eau/min dans un conduit.', en: 'At the water’s edge, pumps 240 water/min into a conduit.' },
     kind: 'pump', category: 'extraction', w: 2, h: 2, needsZone: true, onRock: true, unlock: 'ex_hppump', kw: 120, idleKw: 12,
-    cost: [['ceramic', 10], ['gear', 6], ['iron_plate', 15]], ports: [P(0, 0, 'N', 'out')], drill: { perMin: 240 },
+    cost: [['pipe', 12], ['steel', 6], ['gear', 6]], ports: [P(0, 0, 'N', 'out')], drill: { perMin: 240 },
   },
   heavy_excavator: {
     name: { fr: 'Excavatrice lourde', en: 'Heavy Excavator' },
     desc: { fr: 'Creuse deux fois plus vite que l’excavatrice, jusqu’à 6 tuiles d’elle. La pierre sort à l’arrière.', en: 'Digs twice as fast as the excavator, up to 6 tiles away. Stone leaves at the back.' },
     kind: 'excavator', category: 'extraction', w: 3, h: 3, needsZone: true, unlock: 'ex_heavyexc', kw: 480, idleKw: 48,
-    cost: [['iron_plate', 40], ['gear', 16], ['circuit', 8], ['ceramic', 10]], ports: [P(1, 2, 'S', 'out')], excavator: { reach: 6, speed: 2000 },
+    cost: [['steel', 30], ['gear', 16], ['circuit', 8], ['ceramic', 10]], ports: [P(1, 2, 'S', 'out')], excavator: { reach: 6, speed: 2000 },
   },
   giant_drill: {
     name: { fr: 'Foreuse géante', en: 'Giant Drill' },
     desc: { fr: 'Une foreuse 4×4 : jusqu’à 90/min, et chaque tuile de gisement rend deux fois son plafond. Posée sur des foreuses, elle les remplace.', en: 'A 4×4 drill: up to 90/min, and each deposit tile yields twice its cap. Placed over drills, it replaces them.' },
     kind: 'drill', replaceGroup: 'drill', category: 'extraction', w: 4, h: 4, needsZone: true, unlock: 'ex_giant', kw: 900, idleKw: 90,
-    cost: [['thermal_core', 8], ['gear', 30], ['ceramic', 40]], ports: [P(1, 0, 'N', 'out'), P(2, 0, 'N', 'out')], drill: { perMin: 90, capMult: 2000 },
+    cost: [['steel', 60], ['thermal_core', 8], ['gear', 30], ['ceramic', 20]], ports: [P(1, 0, 'N', 'out'), P(2, 0, 'N', 'out')], drill: { perMin: 90, capMult: 2000 },
   },
   wire_mill_double: {
     name: { fr: 'Tréfileuse double', en: 'Twin Wire Mill' },
     desc: { fr: 'Deux filières : le fil de cuivre deux fois plus vite que la tréfileuse.', en: 'Two dies: copper wire twice as fast as the wire mill.' },
     kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'dn_wiremill', crafts: true, kw: 120, idleKw: 12, speed: 2000,
-    cost: [['iron_plate', 25], ['glass', 6], ['copper_wire', 6]], ports: [P(0, 1, 'S', 'in'), P(1, 0, 'N', 'out')],
+    cost: [['steel', 6], ['copper_plate', 6], ['glass', 4]], ports: [P(0, 1, 'S', 'in'), P(1, 0, 'N', 'out')],
   },
   etcher: {
     name: { fr: 'Graveuse', en: 'Etcher' },
@@ -456,25 +444,19 @@ export const BUILDINGS = {
     name: { fr: 'Presse à forger', en: 'Forging Press' },
     desc: { fr: 'Les engrenages trois fois plus vite que la presse.', en: 'Gears three times as fast as the press.' },
     kind: 'machine', category: 'production', w: 3, h: 3, needsZone: true, unlock: 'dn_forge', crafts: true, kw: 300, idleKw: 30, speed: 3000,
-    cost: [['iron_plate', 60], ['gear', 20], ['pace_bell', 4]], ports: [P(1, 2, 'S', 'in'), P(1, 0, 'N', 'out')],
+    cost: [['steel', 40], ['gear', 20], ['pace_bell', 4]], ports: [P(1, 2, 'S', 'in'), P(1, 0, 'N', 'out')],
   },
   arc_furnace: {
     name: { fr: 'Fonderie à arc', en: 'Arc Furnace' },
     desc: { fr: 'Fond le minerai de fer en plaques et le sable en verre à l’électricité, sans charbon, deux fois plus vite que la fonderie.', en: 'Smelts iron ore into plates and sand into glass with power, no coal, twice as fast as the smelter.' },
     kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'dn_arc', crafts: true, kw: 400, idleKw: 40, speed: 2000,
-    cost: [['ceramic', 20], ['gear', 10], ['circuit', 6], ['pace_bell', 2]], ports: [P(0, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
-  },
-  data_relay: {
-    name: { fr: 'Relais de données', en: 'Data Relay' },
-    desc: { fr: 'Un collecteur de données en grand : 6 données d’arpentage par minute, n’importe où.', en: 'A data collector writ large: 6 Survey Data a minute, anywhere.' },
-    kind: 'drill', category: 'research', w: 3, h: 3, needsZone: true, unlock: 'an_relay', kw: 300, idleKw: 30,
-    cost: [['circuit', 10], ['glass', 10], ['iron_plate', 30]], ports: [P(1, 0, 'N', 'out')], drill: { perMin: 6, anywhere: 'journal_1' },
+    cost: [['brick', 20], ['copper_plate', 20], ['circuit', 6], ['pace_bell', 2]], ports: [P(0, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
   },
   cooled_server: {
     name: { fr: 'Serveur refroidi', en: 'Cooled Server' },
     desc: { fr: 'Des baies de serveurs dans leur bain de refroidissement : 6 000 tokens d’IA par minute pour 800 kW.', en: 'Server racks in their cooling bath: 6,000 AI tokens a minute for 800 kW.' },
     kind: 'server', category: 'research', w: 3, h: 3, needsZone: true, unlock: 'an_cooled', kw: 800, idleKw: 80,
-    cost: [['circuit', 30], ['ceramic', 20], ['gear', 10]], ports: [], server: { tokensPerMin: 6000 },
+    cost: [['circuit', 30], ['pipe', 16], ['cable', 10], ['ceramic', 10]], ports: [], server: { tokensPerMin: 6000 },
   },
   supercomputer: {
     name: { fr: 'Supercalculateur', en: 'Supercomputer' },
@@ -484,9 +466,11 @@ export const BUILDINGS = {
   },
   auto_lab: {
     name: { fr: 'Laboratoire autonome', en: 'Autonomous Lab' },
-    desc: { fr: 'Un laboratoire de recherche qui produit lui-même 3 données d’arpentage par minute ; ses entrées en prennent d’autres.', en: 'A research lab that makes 3 Survey Data a minute itself; its inputs take more.' },
+    desc: { fr: 'Un laboratoire de recherche qui calcule aussi : 5 000 tokens d’IA par minute, aux recherches dans l’ordre où elles ont été lancées, comme un serveur.', en: 'A research lab that also computes: 5,000 AI tokens a minute, to the research projects in the order they started, like a server.' },
+    // D122: it made its own Survey Data (3 a minute) and took more by two inputs; now its cabinets
+    // compute, into the claim's pool like a server's — while it is powered, a project or not.
     kind: 'lab', category: 'research', w: 3, h: 3, needsZone: true, unlock: 'an_autolab', kw: 400, idleKw: 40,
-    cost: [['circuit', 40], ['lens', 10], ['ceramic', 30]], ports: [P(0, 2, 'S', 'in'), P(2, 2, 'S', 'in')], lab: { dataPerMin: 3 },
+    cost: [['circuit', 40], ['lens', 10], ['ceramic', 30]], ports: [], server: { tokensPerMin: 5000 },
   },
   big_silo: {
     name: { fr: 'Grand silo', en: 'Great Silo' },
@@ -507,7 +491,7 @@ export const BUILDINGS = {
   },
   quartz_workshop: {
     name: { fr: 'Atelier de quartz', en: 'Quartz Workshop' },
-    desc: { fr: 'Taille le quartz en lames et les monte sur deux fils de cuivre : des oscillateurs à quartz, pour les données mécaniques et les serveurs. Deux entrées à l’arrière.', en: 'Cuts quartz into blades and mounts each on two copper wires: quartz oscillators, for Mechanics Data and the servers. Two inputs at the back.' },
+    desc: { fr: 'Taille le quartz en lames et les monte sur deux fils de cuivre : des oscillateurs à quartz, pour les serveurs et la recherche. Deux entrées à l’arrière.', en: 'Cuts quartz into blades and mounts each on two copper wires: quartz oscillators, for the servers and research. Two inputs at the back.' },
     kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'ex_quartz', crafts: true, kw: 60, idleKw: 6,
     cost: [['iron_plate', 15], ['glass', 4], ['copper_wire', 4]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
   },
@@ -541,6 +525,33 @@ export const BUILDINGS = {
     kind: 'belt', camo: true, replaceGroup: 'transport', category: 'logistics', w: 1, h: 1, needsZone: false, onRock: true, unlock: 'xp_camo',
     cost: [['iron_plate', 1], ['sand', 2]], ports: [], belt: { ticksPerTile: 9, perMin: 40 },
   },
+  // ── appended (D123): the steel mill and the brickworks ────────────────────
+  // Two Tier 1 works that take the basic resources one step further (owner, 2026-10-17: « on a vite
+  // fait le tour des ressources de base »). The brickworks first: sand off the ground and water from
+  // a pump (water's second use in Tier 1, D114), pressed and baked on power. Then the steel mill,
+  // lined with its bricks: iron plates and coal blown into steel, on power — the frame of the
+  // heavy machines, and the press's pipes. Each its one recipe (it starts on it, D83).
+  brickworks: {
+    name: { fr: 'Briqueterie', en: 'Brickworks' },
+    desc: { fr: 'Moule le sable mouillé en briques et les cuit : un sable et deux eaux par brique. Le sable arrive par ruban, l’eau des pompes par conduit.', en: 'Moulds wet sand into bricks and bakes them: a sand and two waters a brick. Sand comes by ribbon, water from pumps by conduit.' },
+    // onRock: by the Crown's tarn too, like the ceramic oven (D63), where the water is.
+    kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, onRock: true, unlock: 'ex_brick', crafts: true, kw: 90, idleKw: 9,
+    cost: [['iron_plate', 20], ['glass', 4], ['copper_wire', 4]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
+  },
+  steel_mill: {
+    name: { fr: 'Aciérie', en: 'Steel Mill' },
+    desc: { fr: 'Souffle deux plaques de fer et un charbon en un acier, dans un convertisseur garni de briques. Une fonderie suffit à la nourrir.', en: 'Blows two iron plates and a coal into one steel, in a brick-lined converter. One smelter is enough to feed it.' },
+    kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'dn_steel', crafts: true, kw: 150, idleKw: 15,
+    cost: [['iron_plate', 20], ['brick', 20], ['copper_plate', 4]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
+  },
 } as const satisfies Record<string, BuildingDef>;
 
 export type BuildingId = keyof typeof BUILDINGS;
+
+/**
+ * Height class (D124): the kinds drawn low enough for a skybridge to pass over without cutting
+ * through them in the isometric view — line pieces and fences. Everything else is tall (a machine,
+ * drill, store, generator, turbine, lab, server, post, mast or the Core), and so is any new kind
+ * until it is listed here; a def may override its kind with `flat`.
+ */
+export const FLAT_KINDS: ReadonlySet<BuildingKind> = new Set<BuildingKind>(['belt', 'fork', 'crossing', 'bridge', 'conduit', 'fence']);

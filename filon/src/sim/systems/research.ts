@@ -2,37 +2,35 @@
 // command, paid from the Heart's stock (no lab, no time; never lost — a reconversion only
 // touches research), never out of CrierBelt's restart reserve (D36, systems/reserve.ts: a plan
 // must leave the base able to rebuild its production). Research: starting a node in an idle
-// research lab (one project per lab, slots from the Mods), cancelling it (the data it paid stays
-// in its lab), queueing the next one (the Research Queue feature), and the online tick: each
-// project pays its data under the allowance of runtime.ts, so the offline catch-up can drive the
-// same projects as pseudo-flows (docs/offline.md). Reconverting a family is retired (D107: its
-// button left the tree); a save's reconversion under way (`respec:<family>`, no lab) still runs
-// out and pays its archive notes, which the next projects spend; its family's buildings stand
-// dormant until relearnt (`isDormant`).
+// research lab (one project per lab, slots from the Mods), its resources paid from the Core at
+// once as a plan's are (D122, under the same reserve), cancelling it (its resources handed back),
+// queueing the next one (the Research Queue feature), and the online tick. Reconverting a family is
+// retired (D107: its button left the tree); a save's reconversion under way (`respec:<family>`, no
+// lab) still runs out and pays its archive notes, which the next projects spend; its family's
+// buildings stand dormant until relearnt (`isDormant`).
 //
-// D118 (owner, 2026-10-17): research has no minimum time. A project takes its data as it reaches the
-// lab; Tier 1 needs nothing else. Each tier waits for the Core's level (`BAL.tierCoreLevel`: Tier 2
-// at 3, then 4, 5), raised by the player. From Tier 2 a node also needs a number of AI tokens (D68:
-// never owned), delivered as a flow at each minute's end (`tokenEpoch`, online and offline alike):
-// the claim's servers' output of the minute, to the projects in the order they started (the oldest
-// first; what nobody needs is lost, like power, or rented back with Server Rental), then each
-// project's own flow bought from CrierBelt (`buy`, chosen at its launch, changed by `tokenBuy`),
-// which stops by itself once the project has its tokens. A purse in the red holds the bought flows
-// until it is back above zero; data and the servers' tokens go on. Data files also come out of the
-// Heart (the Analytics research) and out of the autonomous labs: steady sim-level inflows into a
-// store (`dataTick`), exact offline.
+// D118, D122 (owner, 2026-10-17: « on va enlever le principe de la data. Le laboratoire n'a plus
+// besoin d'entrée… La monnaie pour débloquer les recherches sera uniquement les tokens »): research
+// has no minimum time and no data. Each tier waits for the Core's level (`BAL.tierCoreLevel`: Tier 2
+// at 3, then 4, 5), raised by the player. Every node needs a number of AI tokens (D68: never owned),
+// delivered as a flow at each minute's end (`tokenEpoch`, online and offline alike) to the projects
+// whose lab had power in the minute, in the order they started (the oldest first): the Core's compute
+// (`Sim.coreComputeRate`, from its level 2, no power, no ribbon) and the claim's servers' output of
+// the minute — what nobody needs is lost, like power, or rented back with Server Rental —, then the
+// tokens banked from an older save's data (`tokenBank`), then each project's own flow bought from
+// CrierBelt (`buy`, chosen at its launch, changed by `tokenBuy`), which stops by itself once the
+// project has its tokens. A purse in the red holds the bought flows until it is back above zero; the
+// free flows go on.
 import { book } from '../purse';
 import { BAL } from '@/content/balance';
 import { BUILDING_KIND, buildingDef, hasResearch, itemIdx, toMu } from '@/content/registry';
 import { planDef, researchNode } from '@/content/research';
-import { ReservoirNode } from '../flow/nodes';
 import {
-  advanceProject, applyNotes, def as researchDef, effectiveCost, owedItems, prereqsMet, projectDone,
+  advanceProject, applyNotes, def as researchDef, effectiveCost, prereqsMet, projectDone,
   tokensLeft, type Project, type StartBlock,
 } from '../research/runtime';
 import type { Ent } from '../types';
 import { EPOCH } from '../constants';
-import { LAB_CAP } from '../graph/compile';
 import type { Sim } from '../state';
 import { reserveShort } from './reserve';
 import { tierTwoOpen } from './expertise';
@@ -84,10 +82,10 @@ export function isDormant(sim: Sim, e: Ent): boolean {
   return u !== 'start' && u !== 'never' && !sim.unlocked(u);
 }
 
-/** The labs with a project and what each takes in (the data still owed). */
-export function labAccepts(sim: Sim): Map<number, Set<number>> {
-  const m = new Map<number, Set<number>>();
-  for (const p of sim.projects) if (p.lab) m.set(p.lab, new Set(owedItems(p)));
+/** The labs with a project (D122: they take nothing in; a busy lab draws its full power, an idle one its lights). */
+export function busyLabs(sim: Sim): Set<number> {
+  const m = new Set<number>();
+  for (const p of sim.projects) if (p.lab) m.add(p.lab);
   return m;
 }
 
@@ -124,15 +122,24 @@ export function researchBlock(sim: Sim, id: string): StartBlock | null {
   if (tier >= 2 && !tierTwoOpen(sim)) return 'expertise';
   if (sim.projects.length >= sim.mods.slots) return 'slots';
   if (!idleLabs(sim).length) return 'no_lab';
-  // A node that takes tokens may buy them: not from a purse in the red (Tier 1's data costs nothing).
-  if (tier >= 2 && sim.credits < 0) return 'debt';
+  // Its resources (D122), paid from the Core at launch as a plan's are, and under the same reserve (D36).
+  const { cost } = effectiveCost(id, sim.mods);
+  if (!cost.every((c) => sim.stock[c.item]! >= c.mu)) return 'unaffordable';
+  if (reserveShort(sim, cost).length) return 'reserve';
   return null;
 }
 
-/** A project for a node, in a lab, buying `buy` tokens a minute (no checks). */
+/**
+ * A project for a node, in a lab, buying `buy` tokens a minute (no checks but the caller's): its
+ * resources leave the Core's stock now (D122) — counted as used, like a recipe's inputs.
+ */
 function openProject(sim: Sim, id: string, lab: number, buy = 0): Project {
   const { cost, tokens } = effectiveCost(id, sim.mods); // the expertises in place take their share off (D93)
-  const p: Project = { id, lab, cost, paid: cost.map(() => 0), dur: 0, el: 0, tokens, tokIn: 0, buy: tokens > 0 ? Math.min(buy, tokens) : 0 };
+  for (const c of cost) {
+    sim.stock[c.item] = sim.stock[c.item]! - c.mu;
+    sim.consumed[c.item] = sim.consumed[c.item]! + c.mu;
+  }
+  const p: Project = { id, lab, cost, paid: cost.map((c) => c.mu), dur: 0, el: 0, tokens, tokIn: 0, buy: Math.min(buy, tokens), lit: 0 };
   sim.notes -= applyNotes(p, sim.notes);
   sim.projects.push(p);
   sim.dirty = true;
@@ -144,12 +151,14 @@ const validBuy = (n: number): boolean => Number.isInteger(n) && n >= 0;
 
 /**
  * Start a research node in a lab (the first idle one by default), buying `buy` tokens a minute from
- * CrierBelt for it while it needs them (D118: the launch dialog's choice; ignored at Tier 1).
+ * CrierBelt for it while it needs them (D118: the launch dialog's choice, at every tier since D122).
+ * A flow cannot be bought from a purse in the red (`debt`); the free flows need no purse.
  */
 export function startResearch(sim: Sim, id: string, lab = 0, buy = 0): { ok: boolean; reason: StartBlock | null } {
   const block = researchBlock(sim, id);
   if (block) return { ok: false, reason: block };
   if (!validBuy(buy)) return { ok: false, reason: 'unknown' };
+  if (buy > 0 && sim.credits < 0) return { ok: false, reason: 'debt' };
   const labs = idleLabs(sim);
   const at = lab && labs.includes(lab) ? lab : labs[0]!;
   const p = openProject(sim, id, at, buy);
@@ -172,22 +181,14 @@ export function setTokenBuy(sim: Sim, id: string, perMin: number): boolean {
 }
 
 /**
- * Stop a project: the data files it already paid stay in its lab (for the next project; the Heart
- * takes them if the lab has no room). The tokens delivered to it are spent: compute is paid as it goes.
+ * Stop a project: the resources it paid at launch go back to the Core (D122: nothing vanishes). The
+ * tokens delivered to it are spent: compute is paid as it goes.
  */
 export function cancelResearch(sim: Sim, id: string): boolean {
   const i = sim.projects.findIndex((p) => p.id === id);
   if (i < 0 || id.startsWith('respec:')) return false;
   const p = sim.projects[i]!;
-  const st = sim.stores.get(p.lab);
-  p.cost.forEach((c, j) => {
-    const mu = p.paid[j]!;
-    if (mu <= 0) return;
-    const room = st ? Math.max(0, LAB_CAP - st[c.item]!) : 0;
-    const keep = Math.min(mu, room);
-    if (st && keep > 0) st[c.item] = st[c.item]! + keep;
-    if (mu > keep) sim.refund(c.item, mu - keep);
-  });
+  p.cost.forEach((c, j) => { const mu = p.paid[j]!; if (mu > 0) sim.refund(c.item, mu); });
   sim.projects.splice(i, 1);
   sim.log.push({ tick: sim.tick, cmd: { k: 'cancelResearch', id } });
   sim.dirty = true;
@@ -218,8 +219,23 @@ export function queueResearch(sim: Sim, lab: number, id: string | null): boolean
   return true;
 }
 
-/** Labs free with a queued node that can start now: start it (part of finishing a project, not a command). */
-function startQueued(sim: Sim): void {
+/**
+ * A lab free with a queued node that could start now (D122: a queued node waits for its resources
+ * in the Core too, so the minute's end looks again, not only a project's end).
+ */
+export function queuedReady(sim: Sim): boolean {
+  if (!sim.mods.flags.has('researchQueue') || !sim.labQueue.size) return false;
+  const idle = new Set(idleLabs(sim));
+  for (const [lab, id] of sim.labQueue) if (idle.has(lab) && researchBlock(sim, id) === null) return true;
+  return false;
+}
+
+/**
+ * Labs free with a queued node that can start now: start it (part of finishing a project, and of
+ * each minute's end since D122 — not a command: a replay meets the same starts). Its resources leave
+ * the Core then.
+ */
+export function startQueued(sim: Sim): void {
   if (!sim.mods.flags.has('researchQueue') || !sim.labQueue.size) return;
   const idle = new Set(idleLabs(sim));
   for (const [lab, id] of [...sim.labQueue].sort((a, b) => a[0] - b[0])) {
@@ -234,17 +250,10 @@ function startQueued(sim: Sim): void {
   }
 }
 
-/** The observatory store a project draws from (null for a reconversion or a missing node). */
-export function projectStock(sim: Sim, p: Project): Float64Array | null {
-  if (!p.lab) return null;
-  const n = sim.graph?.nodeByEnt.get(p.lab);
-  return n instanceof ReservoirNode ? n.stock : null;
-}
-
 /**
- * Power satisfaction (‰) of a project's lab: it takes its data only while powered (reconversions
- * have no lab and always run). A purse in the red no longer holds research itself (D118): only the
- * tokens bought for it (`tokenEpoch`).
+ * Power satisfaction (‰) of a project's lab: it takes its tokens only in a minute its lab had power
+ * (D122: `lit`; reconversions have no lab and always run). A purse in the red no longer holds
+ * research itself (D118): only the tokens bought for it (`tokenEpoch`).
  */
 export function projectSat(sim: Sim, p: Project, satOf: (net: number) => number): number {
   if (!p.lab) return 1000;
@@ -252,22 +261,25 @@ export function projectSat(sim: Sim, p: Project, satOf: (net: number) => number)
   return n && n.net >= 0 ? satOf(n.net) : 0;
 }
 
-/** Online: every project takes the data in its lab; the servers' output and the data generators run. */
+/**
+ * The labs' power over `ticks` (online one tick, offline a segment): each project's `lit` (‰·ticks,
+ * the same sum either way, like the servers' output), and a reconversion's time.
+ */
+export function labTick(sim: Sim, ticks: number, satOfProject: (p: Project) => number): void {
+  for (const p of sim.projects) {
+    if (!p.lab) { advanceProject(p, ticks, 1000); continue; }
+    const sat = satOfProject(p);
+    if (sat > 0) p.lit = (p.lit ?? 0) + sat * ticks;
+  }
+}
+
+/** Online: the servers' output and the labs' power, a tick; a reconversion that has run its time ends. */
 export function researchTick(sim: Sim): void {
   const satOf = (n: number): number => sim.ctx.sat[n]!;
   serverTick(sim, 1, satOf);
-  dataTick(sim, 1, (p) => projectSat(sim, p, satOf));
   if (!sim.projects.length) return;
-  let finished = false, owedChanged = false;
-  for (const p of sim.projects) {
-    const owed = owedItems(p).length;
-    const paid = advanceProject(p, projectStock(sim, p), 1, projectSat(sim, p, satOf));
-    paid.forEach((mu, i) => { if (mu > 0) sim.consumed[p.cost[i]!.item] = sim.consumed[p.cost[i]!.item]! + mu; });
-    if (owedItems(p).length !== owed) owedChanged = true;
-    if (projectDone(p)) finished = true;
-  }
-  if (finished) finishProjects(sim);
-  else if (owedChanged) sim.dirty = true; // a lab stops accepting data it no longer owes
+  labTick(sim, 1, (p) => projectSat(sim, p, satOf));
+  if (sim.projects.some(projectDone)) finishProjects(sim);
 }
 
 // ── AI tokens (D68, D118: a flow delivered at each minute's end) ────────────
@@ -283,12 +295,15 @@ export function serverTick(sim: Sim, ticks: number, satOf: (net: number) => numb
   }
 }
 
-/** Tokens a minute the servers make at their grids' satisfaction (the catch-up's rate, the HUD). */
+/** Tokens a minute the servers (and autonomous labs) make at their grids' satisfaction (the catch-up's rate, the HUD). */
 export function serverRate(sim: Sim, satOf: (net: number) => number): number {
   let t = 0;
   for (const s of sim.graph?.servers ?? []) t += Math.floor((s.tpm * satOf(s.net)) / 1000);
   return t;
 }
+
+/** Tokens a minute research gets free now (D122): the Core's compute and the servers at their power. */
+export const freeRate = (sim: Sim, satOf: (net: number) => number): number => sim.coreComputeRate() + serverRate(sim, satOf);
 
 /** CrierBelt's price for 1 000 tokens now (centi-◉): its list price, halved under the Compute Plan. */
 export function tokenPriceK(sim: Sim): number {
@@ -296,37 +311,46 @@ export function tokenPriceK(sim: Sim): number {
 }
 
 /**
- * The minute boundary's tokens (D118; online from step, offline from the catch-up — the same call,
- * after the trade and the leases): the claim's servers' output of the minute goes to the projects
- * that need tokens in the order they started (the oldest first, each to its need); then each
- * project's bought flow tops it up, at most what it still needs (a flow stops by itself once the
- * project has its tokens), paid to CrierBelt from the purse — none while the purse is in the red.
- * The servers' output nobody needed is lost, or sold back with Server Rental; the Compute Plan's fee
- * each hour. A project whose tokens are now in may be done: the caller finishes it (`projectDone`).
- * Returns whether the bought flows' hold changed.
+ * The minute boundary's tokens (D118, D122; online from step, offline from the catch-up — the same
+ * call, after the trade and the leases). The free pool — the Core's compute (its rate now) first,
+ * then the servers' output of the minute — goes to the projects that need tokens and whose lab had
+ * power in the minute (`lit`), in the order they started (the oldest first, each to its need); then
+ * the bank (an older save's data, D122) tops each up; then each project's bought flow, at most what
+ * it still needs (a flow stops by itself once the project has its tokens), paid to CrierBelt from
+ * the purse — none while the purse is in the red. What nobody needed is lost — the servers' share
+ * sold back with Server Rental; the Compute Plan's fee each hour. A project whose tokens are now in
+ * is done: the caller finishes it (`projectDone`). Returns whether the bought flows' hold changed.
  */
 export function tokenEpoch(sim: Sim): boolean {
-  const supply = Math.floor(sim.serverAcc / TOKEN_UNIT);
+  const servers = Math.floor(sim.serverAcc / TOKEN_UNIT);
   sim.serverAcc = 0;
+  const core = sim.coreComputeRate(), supply = core + servers;
   const hold = sim.credits < 0;
-  let left = supply, bought = 0;
+  let left = supply, bought = 0, banked = 0;
   for (const p of sim.projects) {
+    const lit = !p.lab || (p.lit ?? 0) > 0;
+    p.lit = 0;
     let need = tokensLeft(p);
-    if (need <= 0) continue;
+    if (need <= 0 || !lit) continue;
     const s = Math.min(need, left);
     left -= s;
     need -= s;
+    const k = Math.min(need, sim.tokenBank);
+    sim.tokenBank -= k;
+    need -= k;
     const b = hold ? 0 : Math.min(p.buy ?? 0, need);
-    p.tokIn = (p.tokIn ?? 0) + s + b;
+    p.tokIn = (p.tokIn ?? 0) + s + k + b;
     bought += b;
+    banked += k;
   }
-  const fromServers = supply - left, used = fromServers + bought;
+  const free = supply - left, fromCore = Math.min(core, free), fromServers = free - fromCore, used = free + banked + bought;
   const cents = Math.ceil((bought * tokenPriceK(sim)) / 1000);
   sim.credits -= cents;
   book(sim, 'tokens', -cents);
   let rental = 0;
-  if (sim.mods.flags.has('serverRental') && left > 0) {
-    rental = Math.floor((left * BAL.tokenCentsPerK * BAL.serverRental) / 1e6);
+  const idle = servers - fromServers; // the Core's compute is used first: what is left of the pool is the servers'
+  if (sim.mods.flags.has('serverRental') && idle > 0) {
+    rental = Math.floor((idle * BAL.tokenCentsPerK * BAL.serverRental) / 1e6);
     sim.credits += rental;
     book(sim, 'rental', rental);
   }
@@ -337,7 +361,7 @@ export function tokenEpoch(sim: Sim): boolean {
     book(sim, 'fee', -fee);
   }
   const st = sim.tokenStats;
-  st.used = used; st.fromServers = fromServers; st.bought = bought; st.cents = cents; st.supply = supply; st.rental = rental;
+  st.used = used; st.fromCore = fromCore; st.fromServers = fromServers; st.fromBank = banked; st.bought = bought; st.cents = cents; st.supply = servers; st.core = core; st.rental = rental;
   st.totalUsed += used; st.totalBought += bought; st.totalCents += cents + fee - rental;
   const held = sim.credits < 0;
   if (held === sim.researchHeld) return false;
@@ -346,35 +370,47 @@ export function tokenEpoch(sim: Sim): boolean {
   return true;
 }
 
+/** Is a project's lab powered now (a reconversion has none and always runs)? */
+const litNow = (sim: Sim, p: Project, satOf: (net: number) => number): boolean => projectSat(sim, p, satOf) > 0;
+
 /**
- * What each running project gets a minute now (D118), as the next boundary would deliver it at this
- * power: its share of the servers' rate (in the order of start, each to its need) and its bought
- * flow (at most what it still needs; none while the purse is in the red). Read-only: the HUD, the
+ * What each running project gets at the next boundary at this power (D118, D122): its share of the
+ * free flows (the Core's compute and the servers, in the order of start, each to its need), the
+ * bank's tokens it would take, and its bought flow (at most what it still needs; none while the
+ * purse is in the red). A project whose lab has no power now gets nothing. Read-only: the HUD, the
  * tree, the launch dialog.
  */
-export function tokenFlows(sim: Sim, satOf: (net: number) => number): Map<string, { servers: number; bought: number }> {
-  const out = new Map<string, { servers: number; bought: number }>();
-  let left = serverRate(sim, satOf);
+export function tokenFlows(sim: Sim, satOf: (net: number) => number): Map<string, { free: number; bank: number; bought: number }> {
+  const out = new Map<string, { free: number; bank: number; bought: number }>();
+  let left = freeRate(sim, satOf), bank = sim.tokenBank;
   const hold = sim.credits < 0;
   for (const p of sim.projects) {
     const need = tokensLeft(p);
+    if (!litNow(sim, p, satOf)) { out.set(p.id, { free: 0, bank: 0, bought: 0 }); continue; }
     const s = Math.min(need, left);
     left -= s;
-    out.set(p.id, { servers: s, bought: hold ? 0 : Math.min(p.buy ?? 0, need - s) });
+    const k = Math.min(need - s, bank);
+    bank -= k;
+    out.set(p.id, { free: s, bank: k, bought: hold ? 0 : Math.min(p.buy ?? 0, need - s - k) });
   }
   return out;
 }
 
 /**
  * Minutes until each running project has its tokens at this power and these flows (D118: whole
- * minutes, the servers going to the oldest project first, a finished one's share passing on);
- * Infinity for one no flow reaches, 0 for one that needs none. Read-only, for the tree and the HUD.
+ * minutes, the free flows going to the oldest project first, a finished one's share passing on, the
+ * bank's tokens at the first boundary); Infinity for one no flow reaches (or whose lab has no power),
+ * 0 for one that needs none. Read-only, for the tree and the HUD.
  */
 export function tokenEtas(sim: Sim, satOf: (net: number) => number, extra?: { tokens: number; buy: number }): number[] {
-  const rate = serverRate(sim, satOf), hold = sim.credits < 0;
-  const need = sim.projects.map((p) => tokensLeft(p)), buy = sim.projects.map((p) => (hold ? 0 : p.buy ?? 0));
-  if (extra) { need.push(extra.tokens); buy.push(hold ? 0 : extra.buy); }
-  const eta = need.map((n) => (n > 0 ? Infinity : 0));
+  const rate = freeRate(sim, satOf), hold = sim.credits < 0;
+  const lit = sim.projects.map((p) => litNow(sim, p, satOf));
+  const need = sim.projects.map((p, i) => (lit[i] ? tokensLeft(p) : 0)), buy = sim.projects.map((p) => (hold ? 0 : p.buy ?? 0));
+  if (extra) { need.push(extra.tokens); buy.push(hold ? 0 : extra.buy); lit.push(true); }
+  const eta = need.map((n, i) => (!lit[i] ? Infinity : n > 0 ? Infinity : 0));
+  // The bank pays at the first boundary, oldest first: what it covers is in then.
+  let bank = sim.tokenBank;
+  need.forEach((n, i) => { const k = Math.min(n, bank); bank -= k; need[i] = n - k; if (k > 0 && need[i] === 0) eta[i] = 1; });
   // From one project's end to the next: each stretch at fixed shares, its last minute stepped exactly.
   for (let t = 0, guard = 0; need.some((n, i) => n > 0 && eta[i] === Infinity) && guard < 64; guard++) {
     let left = rate;
@@ -392,7 +428,7 @@ export function tokenEtas(sim: Sim, satOf: (net: number) => number, extra?: { to
       need[i] = n - s - Math.min(buy[i]!, n - s);
     });
     t += 1;
-    need.forEach((n, i) => { if (n <= 0 && eta[i] === Infinity) eta[i] = t; });
+    need.forEach((n, i) => { if (n <= 0 && eta[i] === Infinity && lit[i]) eta[i] = Math.max(t, 1); });
   }
   return eta;
 }
@@ -417,17 +453,19 @@ export const flowStepAtLeast = (n: number): number => (n <= 0 ? 0 : tokenFlowSte
 
 /**
  * The flow the launch dialog proposes for a node (D118: « enough to finish in a sensible time given
- * the servers »): its tokens over its tier's pace (`minutes`, `effectiveCost`'s `aim`), less the
- * servers' rate it would get now — all of it unless a running project still takes it, as they go in
- * order of start —, up to the ladder's next step. 0 at Tier 1, or when the servers suffice.
+ * the servers »): its tokens over its tier's pace (`minutes`, `effectiveCost`'s `aim`), less the free
+ * rate it would get now — the Core's compute and the servers, all of it unless a running project
+ * still takes it, as they go in order of start; and the bank's tokens likewise (D122) —, up to the
+ * ladder's next step. 0 when the free flows suffice: at Tier 1, the Core's compute alone (D122).
  */
 export function tokenBuyDefault(sim: Sim, id: string, satOf: (net: number) => number = (n) => sim.netPower[n]?.sat ?? 0): number {
-  if (!hasResearch(id) || researchDef(id).tier < 2) return 0;
+  if (!hasResearch(id)) return 0;
   const e = effectiveCost(id, sim.mods);
   if (e.tokens <= 0) return 0;
   const minutes = Math.max(1, Math.ceil(e.aim / EPOCH));
-  const free = sim.projects.some((p) => tokensLeft(p) > 0) ? 0 : serverRate(sim, satOf);
-  return flowStepAtLeast(Math.ceil(e.tokens / minutes) - free);
+  const busy = sim.projects.some((p) => tokensLeft(p) > 0);
+  const free = busy ? 0 : freeRate(sim, satOf), bank = busy ? 0 : sim.tokenBank;
+  return flowStepAtLeast(Math.ceil(Math.max(0, e.tokens - bank) / minutes) - free);
 }
 
 /** Subscribe to (or leave) CrierBelt's Compute Plan (cm_plan): tokens at a share of the price, for a fee each hour. Logged. */
@@ -438,46 +476,6 @@ export function setTokenPlan(sim: Sim, on: boolean): boolean {
   sim.log.push({ tick: sim.tick, cmd: { k: 'tokenPlan', on } });
   return true;
 }
-
-// ── data files out of the Heart and the autonomous labs (D68, D70) ──────────
-
-/** The data makers now: the Heart (Analytics, from the level that mounts its outlet, D86; no power needed), and every autonomous lab whose project still owes data (at its power). */
-export function dataMakers(sim: Sim, satOfProject: (p: Project) => number): Array<{ ent: number; stock: Float64Array; rate: number; sat: number; cap?: number }> {
-  const out: Array<{ ent: number; stock: Float64Array; rate: number; sat: number; cap?: number }> = [];
-  const heart = sim.heartDataRate();
-  const data = DATA_IDX();
-  // The Core makes its files into its own stock up to its data cap (D118: `BAL.hearthDataCap`).
-  if (heart > 0 && sim.hearthId) out.push({ ent: sim.hearthId, stock: sim.stock, rate: heart, sat: 1000, cap: sim.hearthCapOf(data) });
-  for (const p of sim.projects) {
-    if (!p.lab || !owedItems(p).includes(data)) continue;
-    const e = sim.ents.get(p.lab);
-    const per = e ? buildingDef(e.def).lab?.dataPerMin ?? 0 : 0;
-    const st = sim.stores.get(p.lab);
-    if (per > 0 && st) out.push({ ent: p.lab, stock: st, rate: Math.floor((per * 1000 * sim.mods.dataRate) / 1000), sat: satOfProject(p) });
-  }
-  return out;
-}
-
-/**
- * The data makers over `ticks`: whole milli-items, the remainder carried (path-independent: the same
- * online and over a catch-up segment). The Core makes no more than its data cap has room for (D118):
- * what it would make past it is not made — the level only rises while it makes more than leaves, so
- * capping at a segment's end is capping along the way, the same as tick by tick.
- */
-export function dataTick(sim: Sim, ticks: number, satOfProject: (p: Project) => number): void {
-  const data = DATA_IDX();
-  for (const m of dataMakers(sim, satOfProject)) {
-    if (m.sat <= 0) continue;
-    const w = (sim.dataAcc.get(m.ent) ?? 0) + m.rate * m.sat * ticks;
-    const whole = Math.floor(w / TOKEN_UNIT);
-    sim.dataAcc.set(m.ent, w - whole * TOKEN_UNIT);
-    const made = m.cap === undefined ? whole : Math.min(whole, Math.max(0, Math.floor(m.cap - m.stock[data]!)));
-    if (made <= 0) continue;
-    m.stock[data] = m.stock[data]! + made;
-    sim.produced[data] = sim.produced[data]! + made;
-  }
-}
-const DATA_IDX = (): number => itemIdx('journal_1');
 
 /** Apply every finished project (shared by the online tick and the catch-up). */
 export function finishProjects(sim: Sim): string[] {

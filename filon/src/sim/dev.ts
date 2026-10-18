@@ -462,12 +462,7 @@ export function buildDemo(sim: Sim, opt: { kiln?: readonly [number, number, Rot]
   if (ids.kiln) sim.setRecipe(ids.kiln, 'iron_plate');
   place('workshop', 'workshop', ...at(-9, -4), 0);
   if (ids.workshop) sim.setRecipe(ids.workshop, 'circuit');
-  place('observatory', 'observatory', ...at(-12, 3), 0);
-  // Its data files (D68): a data collector a few tiles south of the lab, facing it (it stands
-  // anywhere, no deposit), its ribbon into one of the lab's south inlets.
-  for (let d = 3; d < 8 && !ids.collector; d++) for (const dx of [0, -1, 1, -2, 2]) {
-    if (!ids.collector && freeSpot(sim, 'data_collector', CENTER - 12 + dx, CENTER + 3 + d, 0)) place('collector', 'data_collector', CENTER - 12 + dx, CENTER + 3 + d, 0);
-  }
+  place('observatory', 'observatory', ...at(-12, 3), 0); // fed by nothing (D122: research on tokens)
   place('silo', 'silo', ...at(9, -9), 0);
   // The trade post against the Hearth's south side, turned half round (its entrance against the
   // Heart, its exit opening south, D62): it sells from the Hearth's stock.

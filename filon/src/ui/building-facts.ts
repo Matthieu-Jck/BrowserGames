@@ -12,7 +12,7 @@
 // yet researched are left out, and so are locked buildings in the « replaces » list.
 import { BAL } from '@/content/balance';
 import {
-  BUILDING_IDS, ITEM_IDS, buildingDef, buildingIdx, costOf, itemDef, itemIdx, recipeDef, recipesFor, revealOf,
+  BUILDING_IDS, buildingDef, buildingIdx, costOf, itemIdx, recipeDef, recipesFor, revealOf,
 } from '@/content/registry';
 import { nodeName } from '@/content/research';
 import type { BuildingDef, ItemDef, Side } from '@/content/types';
@@ -21,7 +21,6 @@ import { ITEMS } from '@/content/items';
 import { num, rate } from '@/i18n/format';
 import { locale, t, type MsgKey } from '@/i18n/i18n';
 import { EPOCH, TPS } from '@/sim/constants';
-import { LAB_CAP } from '@/sim/graph/compile';
 import { climbOf, isLinkPoint, linkPoint, linkable } from '@/sim/power/links';
 import type { Mods } from '@/sim/research/modifiers';
 import type { Sim } from '@/sim/state';
@@ -171,11 +170,6 @@ function kindRows(def: number, b: BuildingDef, m: Readonly<Mods>): FactRow[] {
     case 'drill': {
       const d = b.drill;
       if (!d) break;
-      // A data collector or relay makes its item out of power alone, anywhere (D71): no deposit, a fixed rate.
-      if (d.anywhere) {
-        add('makes', t('card.makes'), t('card.makes.power', { rate: rate(d.perMin) }), items([d.anywhere]));
-        break;
-      }
       if (d.ground) add('mines', t('card.mines'), t('card.mines.ground'), items([d.ground]));
       else if (d.face) add('mines', t('card.mines'), t('card.mines.face'), items(FACE_ORES)); // D87: the wall behind it
       else add('mines', t('card.mines'), t('card.mines.deposit'), items(COMMON_DEPOSITS.map(([it]) => it)));
@@ -204,10 +198,10 @@ function kindRows(def: number, b: BuildingDef, m: Readonly<Mods>): FactRow[] {
       if (b.storageCap) add('store', t('card.store'), t('card.store.single', { n: num(b.storageCap) }));
       break;
     case 'lab':
-      add('takes', t('card.takes'), t('card.lab.takes'), ITEM_IDS.map((_, i) => i).filter((i) => itemDef(i).kind === 'science'));
-      // The autonomous lab makes Survey Data for its own project (systems/research.ts).
-      if (b.lab) add('makes', t('card.makes'), t('card.lab.makes', { rate: rate(b.lab.dataPerMin) }), items(['journal_1']));
-      add('store', t('card.store'), t('card.store.each', { n: num(LAB_CAP / 1000) }));
+      // D122: a lab takes nothing in and holds no store — one project at a time, on its tokens, while
+      // it has power. The autonomous lab also computes, into the claim's pool like a server.
+      add('runs', t('card.lab.runs'), t('card.lab.runs.v'));
+      if (b.server) add('tokens', t('card.tokens'), t('card.server.v', { v: t('unit.ktokens', { v: num(b.server.tokensPerMin / 1000) }) }));
       break;
     case 'generator': {
       const g = b.gen;
@@ -256,7 +250,7 @@ function kindRows(def: number, b: BuildingDef, m: Readonly<Mods>): FactRow[] {
 function placeRow(b: BuildingDef, m: Readonly<Mods>): FactRow | null {
   if (b.kind === 'hearth') return null;
   const parts: string[] = [];
-  if (b.kind === 'drill' && !b.drill?.anywhere) parts.push(t(b.drill?.ground ? 'card.place.sand' : b.drill?.face ? 'card.place.face' : 'card.place.deposit'));
+  if (b.kind === 'drill') parts.push(t(b.drill?.ground ? 'card.place.sand' : b.drill?.face ? 'card.place.face' : 'card.place.deposit'));
   if (b.kind === 'pump') parts.push(t('card.place.water'));
   if (b.kind === 'geothermal') parts.push(t('card.place.vent'));
   if (b.kind === 'belt' || b.kind === 'conduit') parts.push(t('card.place.remote', { m: num((BAL.remoteBeltCostMult * m.remoteBeltCost) / 1000) }));

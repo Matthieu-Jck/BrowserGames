@@ -50,7 +50,7 @@ Then grep for an existing comparable kind (`grep -rn "'excavator'" src`) and che
 
 ## 5. Add a research node or a branch effect
 
-1. [src/content/research.ts](../src/content/research.ts): `node(branch, depth, [fr, en], [descFr, descEn], effects)`. Depth gives the base cost and duration from the plan's table; prerequisites follow the branch and the trunk gates.
+1. [src/content/research.ts](../src/content/research.ts): `node(family, spec, depth, after, [fr, en], [descFr, descEn], res, effects, also)`. Depth gives its tokens and pace (`DEPTH_COST`); `res` is its resources, one to three kinds of whole items paid from the Core at launch (D122: no data), which its prerequisites and the plans must let the base make (`validateContent` says so otherwise); prerequisites follow the lineage (`after`), the tier's gate and `also` ([content.md](content.md#add-a-research-node-or-an-effect)).
 2. Effects: `add(stat, n)`, `mul(stat, ‰)`, `flag(name)`. A new stat or flag is declared in `Mods` ([sim/research/modifiers.ts](../src/sim/research/modifiers.ts)): the stat list, the defaults in `computeMods`, any clamp at the end. Engine code reads `sim.mods.<stat>` or `sim.mods.flags.has(name)`, never the research ids.
 3. A unlock: buildings and recipes name the node in `unlock`. A building whose node a save no longer holds (a reconversion from before D107) stands **dormant** automatically (`isDormant`).
 4. `modsKey` (part of the catch-up's regime cache key) covers every stat, so a new stat needs nothing more there; check it if you add a non-numeric effect.
@@ -74,7 +74,8 @@ Examples: digging, trading, the land's leases, the Gleaners' nights. The engine 
 5. **Commands**: a variant in `Command` and a case in `exec` ([commands.ts](../src/sim/commands.ts)). The exhaustive switch reminds you.
 6. **Offline**: pick the pattern ([offline.md](offline.md)).
    - It moves items between reservoirs at a known rate → a **pseudo-flow**: add its rates to `labOut` / `pIn` in `labFlows()`, advance it in `advance()`, and add its completions to `nextEvent()`.
-   - Its progress pays out over time → use an **allowance** (`⌊total · elapsed / duration⌋`), so the result is path-independent ([space.ts](../src/sim/space.ts) `advanceJob`, research `advanceProject`).
+   - Its progress pays out over time → use an **allowance** (`⌊total · elapsed / duration⌋`), so the result is path-independent ([space.ts](../src/sim/space.ts) `advanceJob`, a save's reconversion through `advanceProject`).
+   - It needs power during a minute and settles at its end → sum `sat × ticks` into a saved field online per tick and offline per segment, and read it at the boundary (the servers' `serverAcc`, a project's `lit`: `serverTick`, `labTick`, D122).
    - It happens at epoch boundaries (market settlement, a lease's hour) → run the same function in the online tick and in the catch-up loop at `now % EPOCH === 0` (`tradeEpoch`, `landEpoch`). If it can change the graph there (a lease lapsing puts buildings to sleep), materialize the groups before calling it, as `lapsing` lets the catch-up do.
    - It changes the graph (unlocks, idle → busy) → materialize, recompile, `setup()`, as the existing branches do.
 7. **Save** (§8) and **hash**: add the fields to `Sim.hash()`; save → load must give the same hash.

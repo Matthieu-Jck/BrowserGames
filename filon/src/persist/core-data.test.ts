@@ -2,9 +2,12 @@
 // so the data collector comes later (« Traitement des données », `an_data`) and the Face Cutter is a
 // plan, no longer a research. A save from before keeps what it had: its collectors stand and it may
 // build more, a Face Cutter under way is its plan taken, and the data that project had paid goes
-// back to the Heart.
+// back to the Heart. Since D122 the chain goes on: the collectors come down refunded (retired), and
+// the data is banked as tokens for research.
 import { describe, it, expect } from 'vitest';
+import { RETIRED_COSTS } from '@/content/retired';
 import { itemIdx } from '@/content/registry';
+import { remapSave } from '@/sim/save-remap';
 import { deserialize, serialize, type SaveData } from '@/sim/serialize';
 import { testSim } from '@/sim/testkit';
 import { coreData, migrate } from './migrate';
@@ -30,27 +33,32 @@ describe('save 12 → 13 (D101): the data collector after « Traitement des donn
     expect(coreData({ v: 12, done: ['an_data', 'observatory'], labQueue: [[7, 'ex_quartz']] }).done).toEqual(['an_data', 'ex_quartz', 'observatory']);
   });
 
-  it('through the chain and the load: the collector stands and works, the Face Cutter is taken, the data paid is in the Heart', () => {
+  it('through the chain and the load: the Face Cutter is taken, an_data held; since D122 the collector comes down refunded and the data paid is banked as tokens', () => {
     const sim = testSim();
-    // A lab and a collector of save 12 (the collector came with the lab's plan then).
-    sim.done.add('an_data');
-    sim.rebuildDerived();
     const lab = sim.place('observatory', 503, 512, 0);
-    const col = sim.place('data_collector', 504, 518, 0);
-    expect(lab.ok && col.ok, `${lab.reason} ${col.reason}`).toBe(true);
-    const J = itemIdx('journal_1');
+    expect(lab.ok, lab.reason).toBe(true);
     const data = JSON.parse(JSON.stringify(serialize(sim))) as SaveData;
+    // A collector and Survey Data of save 12: gone from today's content, so the forged save's own table names them.
+    const J = data.content!.items.length, C = data.content!.buildings.length;
+    data.content!.items.push('journal_1');
+    data.content!.buildings.push('data_collector');
+    const col = data.nextId++;
+    data.ents.push(col, C, 504, 518, 0, 0, 0);
     data.v = 12;
     data.done = data.done.filter((id) => id !== 'an_data' && id !== 'ex_quartz');
     data.projects = [{ id: 'ex_quartz', lab: lab.id!, cost: [J, 30_000], paid: [12_000], dur: 3000, el: 600, tokens: 9000, tokUsed: 1800 }] as unknown as SaveData['projects']; // save 12's shape
-    const j0 = data.stock[J]!;
+    const plates0 = sim.stock[itemIdx('iron_plate')]!;
     const m = migrate(data);
     expect(m.from).toBe(12);
-    const back = deserialize(m.data, sim.grid.source);
-    expect(back.ents.get(col.id!)).toBeDefined();
+    const r = remapSave(m.data);
+    expect(r.note?.removed).toEqual([{ id: 'data_collector', n: 1, refunded: true }]);
+    expect(r.note?.converted).toEqual([{ id: 'journal_1', mu: 12_000, tokens: 13_200 }]);
+    const back = deserialize(r.data, sim.grid.source);
+    expect(back.ents.get(col)).toBeUndefined();
     expect(back.done.has('an_data')).toBe(true);
     expect(back.unlocked('ex_quartz')).toBe(true); // the plan
     expect(back.projects).toEqual([]);
-    expect(back.stock[J]! - j0).toBe(12_000);
+    expect(back.tokenBank).toBe(13_200); // its 12 Survey Data, at 1 100 tokens each (D122)
+    expect(back.stock[itemIdx('iron_plate')]! - plates0).toBe(RETIRED_COSTS.data_collector!.find(([it]) => it === 'iron_plate')![1] * 1000);
   });
 });

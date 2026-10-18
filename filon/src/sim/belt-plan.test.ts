@@ -2,10 +2,11 @@
 // two lines side by side leaps them with a bridge pair, and so it does water or a building in its
 // way; a step takes a traction ribbon, never two in a row; what no bridge reaches stays refused.
 import { describe, it, expect } from 'vitest';
-import { BUILDING_IDS } from '@/content/registry';
+import { BUILDING_FLAT, BUILDING_IDS, buildingIdx } from '@/content/registry';
+import { deserialize, serialize } from './serialize';
 import { WORLD_EPOCH0 } from './constants';
 import { Sim } from './state';
-import { learnPlans, line, testSim } from './testkit';
+import { learnPlans, line, testSim, testSource } from './testkit';
 import { T, type Rot } from './types';
 import { FlatSource, tileIndex } from './world/grid';
 
@@ -84,10 +85,11 @@ describe('a ribbon drag planned as a whole (D73)', () => {
     expect(plan(long, 'ribbon', EAST).slice(3, 10)).toEqual(['skybridge', 'leapt', 'leapt', 'leapt', 'leapt', 'leapt', 'skybridge']);
   });
 
-  it('a building in the way is leapt too; a bridge is never fed from its side at the drag’s corner', () => {
+  it('a flat building in the way is leapt too; a bridge is never fed from its side at the drag’s corner', () => {
     const sim = testSim();
     sim.grant('iron_plate', 20);
-    expect(sim.place('mast', 525, 528, 0).ok).toBe(true);
+    sim.done.add('xp_guard'); // the fence: flat, a bridge may pass over it (D124)
+    expect(sim.place('fence', 525, 528, 0).ok).toBe(true);
     expect(plan(sim, 'ribbon', EAST).slice(3, 8)).toEqual(['ribbon', 'skybridge', 'leapt', 'skybridge', 'ribbon']);
     // Down x 524 then east along y 528: the tile before the mast is the corner, entered from the north.
     const corner: Array<[number, number, Rot]> = [[524, 525, 2], [524, 526, 2], [524, 527, 2], [524, 528, 1], [525, 528, 1], [526, 528, 1], [527, 528, 1]];
@@ -97,5 +99,45 @@ describe('a ribbon drag planned as a whole (D73)', () => {
   it('a step takes a traction ribbon by itself; two steps in a row leave the second refused (D65)', () => {
     const sim = groundSim([{ x: 525, y: 527, w: 1, h: 3, t: T.Rock1, level: 1 }, { x: 526, y: 527, w: 5, h: 3, t: T.Rock2, level: 2 }]);
     expect(plan(sim, 'ribbon', EAST).slice(3, 7)).toEqual(['ribbon', 'traction_ribbon', 'lift_room', 'ribbon']);
+  });
+
+  it('a tall building is never leapt (D124): the drag stops at it, the tile says why; a bridge pair and a machine refuse each other both ways', () => {
+    const sim = testSim();
+    sim.grant('iron_plate', 20);
+    expect(sim.place('mast', 525, 528, 0).ok).toBe(true);
+    expect(plan(sim, 'ribbon', EAST).slice(3, 8)).toEqual(['ribbon', 'ribbon', 'bridge_over_tall', 'ribbon', 'ribbon']);
+    // A bridge pair over open ground, then a tall building under its span, and the reverse.
+    const two = testSim();
+    two.grant('iron_plate', 20);
+    expect(two.place('skybridge', 522, 530, 1).ok).toBe(true);
+    expect(two.place('mast', 524, 530, 0).reason).toBe('ok'); // no partner yet: nothing to cross
+    const fresh = testSim();
+    fresh.grant('iron_plate', 20);
+    expect(fresh.place('skybridge', 522, 530, 1).ok).toBe(true);
+    expect(fresh.place('skybridge', 526, 530, 1).ok).toBe(true);
+    expect(fresh.canPlace('mast', 524, 530, 0).reason).toBe('bridge_over_tall');
+    expect(fresh.canPlace('ribbon', 524, 530, 1).ok).toBe(true); // flat: fine
+    const under = testSim();
+    under.grant('iron_plate', 20);
+    expect(under.place('mast', 524, 530, 0).ok).toBe(true);
+    expect(under.place('skybridge', 522, 530, 1).ok).toBe(true);
+    expect(under.canPlace('skybridge', 526, 530, 1).reason).toBe('bridge_over_tall');
+    expect(under.canPlace('skybridge', 526, 531, 1).ok).toBe(true);
+  });
+
+  it('a pair standing over a machine from before the rule loads unchanged, and keeps its leap', () => {
+    const sim = testSim();
+    sim.grant('iron_plate', 20);
+    // An old save's layout: no command can build it now, so the mast is flat for the placing only.
+    const mast = buildingIdx('mast');
+    const was = BUILDING_FLAT[mast]!;
+    (BUILDING_FLAT as boolean[])[mast] = true;
+    expect(sim.place('mast', 524, 530, 0).ok).toBe(true);
+    expect(sim.place('skybridge', 522, 530, 1).ok).toBe(true);
+    expect(sim.place('skybridge', 526, 530, 1).ok).toBe(true);
+    (BUILDING_FLAT as boolean[])[mast] = was;
+    const back = deserialize(JSON.parse(JSON.stringify(serialize(sim))), testSource());
+    expect([522, 524, 526].map((x) => defAt(back, x, 530))).toEqual(['skybridge', 'mast', 'skybridge']);
+    expect(back.canPlace('mast', 524, 531, 0).ok).toBe(true); // elsewhere, as before
   });
 });

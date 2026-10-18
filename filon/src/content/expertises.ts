@@ -7,9 +7,9 @@
 //     ranks (I–III) whose thresholds the feat must reach — kept up, it climbs; a rank once earned
 //     stays.
 //   · Each IMPROVES one family: its production (a multiplier on a number the engine already reads
-//     through the Mods: generators' output, drills' rate, machines' pace, data made, deliveries'
-//     delay, land's price) or its research (the time, the AI tokens or the data a node of that
-//     family takes). The percentages of the game live here only (D70, D72): the tree unlocks what
+//     through the Mods: generators' output, drills' rate, machines' pace, the claim's own tokens,
+//     deliveries' delay, land's price) or its research (the AI tokens or the resources a node of that
+//     family takes; « time » is its tokens since D118, research taking no time). The percentages of the game live here only (D70, D72): the tree unlocks what
 //     can be built, the expertises how well it is done.
 //   · Two per family, one of each kind, each with a feat of its own: two picked are always two
 //     ways of earning. The claim holds two at a time (`BAL.expertise.slots`); changing one is a
@@ -30,15 +30,19 @@ import type { FamilyId, Loc, ModTarget } from './types';
  * · `made`: materials and parts made (plates, glass, wire, gears, circuits…);
  * · `machines`: crafting machines standing;
  * · `sold` / `bought`: ocelles earned by sales and spent on purchases at the Crier, lifetime (◉);
- * · `data`: data items made (every kind);
+ * · `research`: research nodes learnt (D122: data items made until the data went);
  * · `tokens`: AI tokens research used, lifetime;
  * · `parcels`: parcels bought (held for good);
  * · `ribbons`: ribbon tiles laid (standing).
  */
-export type FeatKind = 'grid' | 'capacity' | 'mined' | 'dug' | 'made' | 'machines' | 'sold' | 'bought' | 'data' | 'tokens' | 'parcels' | 'ribbons';
+export type FeatKind = 'grid' | 'capacity' | 'mined' | 'dug' | 'made' | 'machines' | 'sold' | 'bought' | 'research' | 'tokens' | 'parcels' | 'ribbons';
 
-/** What a research expertise lowers in its family's nodes: the minimum time, the AI tokens, the data (every kind). */
-export type ResearchAspect = 'time' | 'tokens' | 'data';
+/**
+ * What a research expertise lowers in its family's nodes: its time — research has none since D118,
+ * so its AI tokens, which the time follows —, its AI tokens, or its resources (D122: the data until
+ * the data went), paid at launch.
+ */
+export type ResearchAspect = 'time' | 'tokens' | 'resources';
 
 /**
  * What an expertise improves: a production number (one or more `Mods` targets, each multiplied
@@ -76,14 +80,14 @@ const SAVING = [850, 750, 650] as const;
  * then the research one. Thresholds are set so a claim that completes Tier 1 has earned rank I of
  * several when the window opens (measured on the debug bases, 2026-10-16: the tutorial's base has
  * about 2 000 kW standing, 300 ribbon tiles, a parcel, 1 600 ◉ of sales after its first hour) — one
- * of them by Tier 1 itself, whose nodes use about 530 data (Archiving); Tier 1 takes no tokens since
- * D118, so Inference's first rank (250 000) comes with Tier 2's first nodes — and rank III asks for a
- * long-grown base.
+ * of them by Tier 1 itself, whose fourteen nodes earn Archiving's first rank (12 learnt; D122: it
+ * counted data made before); Tier 1's tokens are few (about 60 000), so Inference's first rank
+ * (250 000) comes with Tier 2's first nodes — and rank III asks for a long-grown base.
  */
 export const EXPERTISES = {
   // ── Energy ───────────────────────────────────────────────────────────────
   steady_grid: { name: L('Réseau tenu', 'Steady Grid'), family: 'en', feat: 'grid', ranks: [120, 1440, 10_080], effect: { k: 'mod', targets: ['genOut'] }, permille: BOOST, icon: 'glyph:power' },
-  power_eng: { name: L('Génie électrique', 'Power Engineering'), family: 'en', feat: 'capacity', ranks: [1_500, 6_000, 25_000], effect: { k: 'research', aspect: 'data' }, permille: SAVING, icon: 'building:wind_flower' },
+  power_eng: { name: L('Génie électrique', 'Power Engineering'), family: 'en', feat: 'capacity', ranks: [1_500, 6_000, 25_000], effect: { k: 'research', aspect: 'resources' }, permille: SAVING, icon: 'building:wind_flower' },
   // ── Extraction ───────────────────────────────────────────────────────────
   ore_cutting: { name: L('Abattage', 'Ore Cutting'), family: 'ex', feat: 'mined', ranks: [10_000, 150_000, 1_500_000], effect: { k: 'mod', targets: ['drillRate'] }, permille: BOOST, icon: 'item:iron_ore' },
   geology: { name: L('Géologie', 'Geology'), family: 'ex', feat: 'dug', ranks: [10, 100, 1_000], effect: { k: 'research', aspect: 'time' }, permille: SAVING, icon: 'building:excavator' },
@@ -94,11 +98,13 @@ export const EXPERTISES = {
   procurement: { name: L('Approvisionnement', 'Procurement'), family: 'cm', feat: 'bought', ranks: [1_000, 15_000, 150_000], effect: { k: 'mod', targets: ['deliveryDelay'] }, permille: SAVING, icon: 'glyph:crier' },
   trading: { name: L('Négoce', 'Trading'), family: 'cm', feat: 'sold', ranks: [3_000, 30_000, 300_000], effect: { k: 'research', aspect: 'tokens' }, permille: SAVING, icon: 'coin' },
   // ── Analytics ────────────────────────────────────────────────────────────
-  archiving: { name: L('Archivage', 'Archiving'), family: 'an', feat: 'data', ranks: [500, 5_000, 50_000], effect: { k: 'mod', targets: ['dataRate'] }, permille: BOOST, icon: 'item:journal_1' },
+  // D122: earned by research learnt (data made until then), it raises the claim's own tokens — the
+  // Core's compute, the servers, the autonomous labs (the data makers before).
+  archiving: { name: L('Archivage', 'Archiving'), family: 'an', feat: 'research', ranks: [12, 30, 55], effect: { k: 'mod', targets: ['tokenRate'] }, permille: BOOST, icon: 'building:observatory' },
   inference: { name: L('Inférence', 'Inference'), family: 'an', feat: 'tokens', ranks: [250_000, 3_000_000, 30_000_000], effect: { k: 'research', aspect: 'tokens' }, permille: SAVING, icon: 'mark:token' },
   // ── Expansion ────────────────────────────────────────────────────────────
   estate: { name: L('Domaine', 'Estate'), family: 'xp', feat: 'parcels', ranks: [1, 4, 12], effect: { k: 'mod', targets: ['landPrice'] }, permille: [900, 850, 800], icon: 'glyph:parcel' },
-  haulage: { name: L('Convoyage', 'Haulage'), family: 'xp', feat: 'ribbons', ranks: [300, 1_500, 6_000], effect: { k: 'research', aspect: 'data' }, permille: SAVING, icon: 'building:ribbon' },
+  haulage: { name: L('Convoyage', 'Haulage'), family: 'xp', feat: 'ribbons', ranks: [300, 1_500, 6_000], effect: { k: 'research', aspect: 'resources' }, permille: SAVING, icon: 'building:ribbon' },
 } as const satisfies Record<string, ExpertiseDef>;
 
 export type ExpertiseId = keyof typeof EXPERTISES;

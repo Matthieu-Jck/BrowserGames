@@ -4,20 +4,20 @@
 // floor after each step, so every engine computes the same values. Multipliers are permille; "add"
 // values are plain integers. The tree unlocks machines and features, not boosts (D70): the
 // percentages are the expertises' alone — a production number (`mod`), or a family's research
-// (`fam`: its nodes' time, tokens and data, ‰, read by `effectiveCost` when a project starts).
+// (`fam`: its nodes' time, tokens and resources, ‰, read by `effectiveCost` when a project starts).
 import { BAL } from '@/content/balance';
 import { effectAt, expertiseDef } from '@/content/expertises';
 import { FAMILY_IDS, PLAN_IDS, PLANS, RESEARCH, type ResearchId } from '@/content/research';
 import { RESEARCH_IDS } from '@/content/registry';
 import type { Effect, FamilyId, ModTarget, PlanDef, ResearchDef } from '@/content/types';
 
-/** A family's research as the expertises leave it (‰ of the table's): its nodes' minimum time, AI tokens, data. */
-export interface FamilyMods { time: number; tokens: number; data: number }
+/** A family's research as the expertises leave it (‰ of the table's): its nodes' time (D118: their tokens), AI tokens, resources (D122). */
+export interface FamilyMods { time: number; tokens: number; resources: number }
 
 export type Mods = Record<ModTarget, number> & { flags: ReadonlySet<string>; slots: number; fam: Readonly<Record<FamilyId, FamilyMods>> };
 
 const ADDITIVE: ReadonlySet<ModTarget> = new Set<ModTarget>([
-  'landGrowth', 'pylonLink', 'bridgeSpan', 'orders', 'tradeFee', 'heartData',
+  'landGrowth', 'pylonLink', 'bridgeSpan', 'orders', 'tradeFee', 'coreCompute',
 ]);
 
 export function baseMods(): Mods {
@@ -26,12 +26,12 @@ export function baseMods(): Mods {
     'digSpeed', 'rubbleYield', 'embeddedOre', 'windOut', 'solarOut', 'geoOut', 'accCap', 'accRate',
     'genOut', 'craftSpeed', 'tradeFee', 'deliveryDelay', 'slippage', 'landPrice', 'landRent', 'landGrowth', 'farLand',
     'remoteBeltCost', 'remoteBuildDelay', 'pylonLink', 'ring3Caps',
-    'bridgeSpan', 'orders', 'excavatedSpeed', 'gustVariance', 'heartData', 'drillRate', 'dataRate',
+    'bridgeSpan', 'orders', 'excavatedSpeed', 'gustVariance', 'coreCompute', 'drillRate', 'tokenRate',
   ];
   for (const t of targets) m[t] = ADDITIVE.has(t) ? 0 : 1000;
   m.tradeFee = BAL.tradeFee; // nothing lowers it (D64)
   m.landGrowth = BAL.land.growth;
-  const fam = Object.fromEntries(FAMILY_IDS.map((f) => [f, { time: 1000, tokens: 1000, data: 1000 }])) as Record<FamilyId, FamilyMods>;
+  const fam = Object.fromEntries(FAMILY_IDS.map((f) => [f, { time: 1000, tokens: 1000, resources: 1000 }])) as Record<FamilyId, FamilyMods>;
   return { ...(m as Record<ModTarget, number>), flags: new Set<string>(), slots: 1, fam };
 }
 
@@ -75,6 +75,6 @@ export function modsKey(m: Mods): string {
   const parts: string[] = [];
   for (const [k, v] of Object.entries(m)) if (typeof v === 'number') parts.push(`${k}=${v}`);
   parts.push([...m.flags].sort().join(','));
-  for (const f of FAMILY_IDS) parts.push(`${f}=${m.fam[f].time},${m.fam[f].tokens},${m.fam[f].data}`);
+  for (const f of FAMILY_IDS) parts.push(`${f}=${m.fam[f].time},${m.fam[f].tokens},${m.fam[f].resources}`);
   return parts.join(';');
 }

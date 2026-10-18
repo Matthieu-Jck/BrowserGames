@@ -2,7 +2,7 @@
 // « n'affiche plus cette barre de ressource en haut à gauche par défaut, il faut que le joueur
 // clique sur un bouton Stock pour le voir »). The HUD's bar of five stocks and its « +n » drawer
 // gave way to a crate and the word; a click opens this panel with every item the Heart holds, in
-// the kit's sections by kind (stock-facts.ts: raw, materials, parts, data, rare finds): each item's
+// the kit's sections by kind (stock-facts.ts: raw, materials, parts, rare finds): each item's
 // icon, name, amount and — with the telemetry (D41) — what came into the Heart over the last
 // minute (D79). An item the base lacks is marked (stock-facts.ts `shortages`): ran out in coral,
 // short in peach, the shortfall as « −12 » and what it is for in its tooltip.
@@ -14,9 +14,7 @@
 // head, with what the next level holds, and each row's thin gauge fills toward it — amber near the
 // top, coral and « plein » at it, where the Heart takes no more and what comes to it waits on the
 // ribbons (owner, 2026-10-17: « il faut expliquer au joueur que le core ne peut contenir que X de
-// chaque item au maximum »). Data holds at most `BAL.hearthDataCap` (200) whatever the level (D118:
-// « pour la data, le cœur ne devrait pouvoir stocker que 200 max »): its rows fill toward that, and
-// a line under the Données section says it.
+// chaque item au maximum »). One cap for every item (D122: the data's own cap went with the data).
 import { BAL } from '@/content/balance';
 import { ITEM_IDS, itemIdx } from '@/content/registry';
 import { nodeName } from '@/content/research';
@@ -118,7 +116,6 @@ export class StockPanel {
         for (const i of mine) setText(this.row(i).node.querySelector('.stk-name')!, itemName(i));
         return section({ sec: `stock-${g.id}`, title: () => t(`stock.group.${g.id}` as MsgKey), icon: itemIcon(this.atlas, itemIdx(g.icon), 20), aside: String(mine.length) }, [
           el('div.stk-list', {}, mine.map((i) => this.row(i).node)),
-          g.id === 'data' ? el('p.insp-note.stk-datacap', { 'data-stock-datacap': '' }, t('stock.dataCap', { n: num(BAL.hearthDataCap) })) : null,
         ]);
       });
       this.body.replaceChildren(...sections.filter((n): n is HTMLElement => !!n));
@@ -130,6 +127,7 @@ export class StockPanel {
     setAttr(this.cap, 'title', t('stock.capTip'));
     setText(this.empty, items.length ? '' : t('stock.empty'));
     setAttr(this.empty, 'hidden', items.length ? '' : null);
+    const capI = sim.hearthCap();
     for (const i of items) {
       const r = this.row(i);
       setText(r.val, compact(Math.floor(sim.stock[i]! / 1000)));
@@ -140,8 +138,7 @@ export class StockPanel {
       setAttr(r.node, 'title', d !== null ? t('hud.stock.tipRate', { item: itemName(i), n, rate: t('hud.perMin', { v: dv || '0' }) }) : t('hud.stock.tip', { item: itemName(i), n }));
       const lack = lacks.get(i);
       setAttr(r.node, 'data-lack', lack ? (lack.out ? 'out' : 'short') : null);
-      // Its share of what the Heart can hold of it (data: 200, D118): near the top, full (the Heart takes no more of it).
-      const capI = sim.hearthCapOf(i);
+      // Its share of what the Heart can hold of it: near the top, full (the Heart takes no more of it).
       const share = Math.min(1000, Math.floor((sim.stock[i]! * 1000) / Math.max(1, capI)));
       const full = share >= 1000;
       r.fill.style.width = `${share / 10}%`;

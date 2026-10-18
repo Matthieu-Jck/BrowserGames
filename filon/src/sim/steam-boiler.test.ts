@@ -12,7 +12,7 @@ import { WORLD_EPOCH0 } from './constants';
 import { GeneratorNode } from './flow/nodes';
 import { catchUp } from './offline/catchup';
 import { Sim } from './state';
-import { learnPlans, stockedSilo, testSource, wire } from './testkit';
+import { grantCost, learnPlans, stockedSilo, testSource, wire } from './testkit';
 import { St, T } from './types';
 import { FlatSource, tileIndex } from './world/grid';
 
@@ -49,7 +49,7 @@ function boilerBase(servers: number, coal = 2000, conduit = true): { sim: Sim; b
     sim.done.add('an_servers');
     sim.rebuildDerived();
     for (const [x, y] of [[506, 517], [503, 517], [506, 520]].slice(0, servers)) {
-      sim.grant('circuit', 10); sim.grant('iron_plate', 20); sim.grant('copper_wire', 10); sim.grant('oscillator', 4);
+      grantCost(sim, 'server');
       const s = sim.place('server', x!, y!, 0);
       if (!s.ok) throw new Error(`server: ${s.reason}`);
       wire(sim, s.id!);

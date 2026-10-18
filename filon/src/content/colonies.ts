@@ -33,51 +33,52 @@ export const UNIQUE_WEIGHT = 3;
 export const COLONY_PROFILES = {
   mining: {
     name: { fr: 'Camp minier', en: 'Mining Camp' }, count: 7, bands: ['near'], growth: 0.01,
-    supplies: [['iron_ore', 3], ['copper_ore', 3], ['stone', 3], ['journal_1', 1], ['quartz', 1]], // quartz (D87): what a land without its vein buys
-    needs: [['coal', 3], ['circuit', 3], ['charged_cell', 3], ['gear', 1], ['thermal_core', 1], ['robot_arm', 1]],
+    supplies: [['iron_ore', 3], ['copper_ore', 3], ['stone', 3], ['quartz', 1], ['brick', 1]], // quartz (D87): what a land without its vein buys (Survey Data went with the data, D122)
+    needs: [['coal', 3], ['circuit', 3], ['charged_cell', 3], ['steel', 3], ['gear', 1], ['pipe', 1], ['thermal_core', 1], ['robot_arm', 1]], // D123: steel for rails and props, pipes for the shafts' pumps
     uniques: [],
   },
   foundry: {
     name: { fr: 'Fonderie', en: 'Foundry' }, count: 6, bands: ['near', 'medium'], growth: 0.015,
-    supplies: [['iron_plate', 3], ['gear', 3], ['glass', 1], ['copper_wire', 1], ['oscillator', 1]],
-    needs: [['iron_ore', 3], ['sand', 3], ['copper_ore', 3], ['coal', 3], ['ceramic', 3], ['embersalt', 1], ['pace_bell', 1]],
+    supplies: [['iron_plate', 3], ['gear', 3], ['glass', 1], ['copper_wire', 1], ['oscillator', 1], ['copper_plate', 1], ['steel', 1], ['pipe', 1], ['cable', 1]], // D123: a foundry sells a little of everything metal
+    needs: [['iron_ore', 3], ['sand', 3], ['copper_ore', 3], ['coal', 3], ['ceramic', 3], ['brick', 1], ['embersalt', 1], ['pace_bell', 1]],
     uniques: [],
   },
   glasshouse: {
     name: { fr: 'Serre', en: 'Glasshouse' }, count: 6, bands: ['medium'], growth: 0.01,
-    supplies: [['coal', 3], ['sand', 3], ['lens', 1]],
-    needs: [['glass', 3], ['ceramic', 3], ['charged_cell', 3], ['empty_cell', 1], ['quartz', 1]],
+    supplies: [['coal', 3], ['sand', 3], ['brick', 3], ['lens', 1]], // D123: sand and water, the desert's bricks
+    needs: [['glass', 3], ['ceramic', 3], ['charged_cell', 3], ['pipe', 3], ['empty_cell', 1], ['quartz', 1], ['copper_plate', 1]], // D123: the glasshouses' irrigation
     uniques: ['sporeglass', 'lumen_moss'],
   },
   wind: {
     name: { fr: 'Citadelle du vent', en: 'Wind Citadel' }, count: 5, bands: ['medium'], growth: 0.015,
     supplies: [['charged_cell', 3], ['empty_cell', 3]],
-    needs: [['circuit', 3], ['ceramic', 3], ['salt', 3], ['copper_wire', 1], ['resin_canvas', 1], ['thermal_core', 1], ['singing_quartz', 1], ['resonator', 1], ['oscillator', 1]],
+    needs: [['circuit', 3], ['ceramic', 3], ['salt', 3], ['cable', 3], ['copper_plate', 3], ['copper_wire', 1], ['resin_canvas', 1], ['thermal_core', 1], ['singing_quartz', 1], ['resonator', 1], ['oscillator', 1]], // D123: their turbines' cable and windings
     uniques: ['sky_resin'],
   },
   saltport: {
     name: { fr: 'Port du sel', en: 'Salt Port' }, count: 5, bands: ['medium', 'far'], growth: 0.01,
     supplies: [['salt', 3], ['nacre_lattice', 1]],
     // Lighthouse bulbs: why Port-Écume can run short of glass (the scripted first trade).
-    needs: [['stone', 3], ['iron_plate', 3], ['gear', 3], ['glass', 1], ['sky_resin', 1], ['resin_canvas', 1]],
+    needs: [['stone', 3], ['iron_plate', 3], ['gear', 3], ['brick', 3], ['glass', 1], ['steel', 1], ['sky_resin', 1], ['resin_canvas', 1]], // D123: harbour walls in brick
     uniques: ['fossil_nacre'],
   },
   ember: {
     name: { fr: 'Forge de braise', en: 'Ember Forge' }, count: 5, bands: ['far'], growth: 0.02,
-    supplies: [['thermal_core', 3], ['ceramic', 1], ['pace_bell', 1], ['robot_arm', 1]],
-    needs: [['circuit', 3], ['glass', 3], ['journal_2', 1], ['fossil_nacre', 1]],
+    supplies: [['thermal_core', 3], ['steel', 3], ['ceramic', 1], ['pipe', 1], ['pace_bell', 1], ['robot_arm', 1]], // D123: the Ember Forges' steel
+    needs: [['circuit', 3], ['glass', 3], ['oscillator', 1], ['fossil_nacre', 1]], // oscillators where Mechanics Data was (D122)
     uniques: ['embersalt'],
   },
   scholar: {
     name: { fr: 'Flèche savante', en: 'Scholar Spire' }, count: 4, bands: ['far'], growth: 0.025,
-    supplies: [['circuit', 1], ['journal_2', 1], ['resonator', 1]],
-    needs: [['atlas', 3], ['codex', 3], ['lens', 3], ['journal_1', 1], ['sporeglass', 1], ['lumen_moss', 1]],
+    // Its atlases, codices and data went with the data (D122): it reads through lenses and lattices now.
+    supplies: [['circuit', 1], ['oscillator', 1], ['resonator', 1]],
+    needs: [['lens', 3], ['nacre_lattice', 3], ['cable', 1], ['thermal_core', 1], ['sporeglass', 1], ['lumen_moss', 1]],
     uniques: ['singing_quartz'],
   },
   drifter: {
     name: { fr: 'Guilde des dirigeables', en: 'Drifter Guild' }, count: 2, bands: ['veryFar'], growth: 0.01,
-    supplies: [['resin_canvas', 3], ['atlas', 1], ['codex', 1]],
-    needs: [['lens', 3], ['ceramic', 3], ['sporeglass', 1], ['nacre_lattice', 1]],
+    supplies: [['resin_canvas', 3], ['nacre_lattice', 1]], // atlases and codices until D122
+    needs: [['lens', 3], ['ceramic', 3], ['cable', 1], ['steel', 1], ['sporeglass', 1], ['nacre_lattice', 1]],
     uniques: ['sky_resin'],
   },
 } as const satisfies Record<ColonyProfileId, ColonyProfile>;

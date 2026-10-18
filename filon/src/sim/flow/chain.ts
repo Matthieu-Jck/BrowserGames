@@ -37,8 +37,9 @@ import { GLEANER_TASTE } from '@/content/gleaners';
 import { N_ITEMS, itemDef, itemIdx } from '@/content/registry';
 import { hash32, type StateHasher } from '@/core/hash';
 import { ceilDiv } from '@/core/fixed';
-import { MU } from '../constants';
+import { MU, WORLD } from '../constants';
 import { FNode, type TickCtx } from './node';
+import type { Rot } from '../types';
 
 export interface Run { item: number; mu: number; from: number; to: number }
 
@@ -131,6 +132,21 @@ export function packRuns(runs: readonly number[], len: number, rest: (item: numb
   return cells;
 }
 
+/**
+ * Cells over a leap (D121, owner, 2026-10-17: « la vitesse sur le bridge, la junction, est plus
+ * rapide que sur les tapis d'entrée et de sortie »): a line leaping a skybridge's gap or passing
+ * through junctions has a cell for every tile it passes over, so an item takes a tile's step over
+ * each, as on the ribbons — the leap's real length in time, its throughput the line's. They are
+ * coded past the world's tiles, by the way the line goes (two lines cross a junction, one each
+ * way): `SPAN_TILE` × (1 + way) + the tile under them. They come after the tile that leaps, in
+ * its chain (compile.ts).
+ */
+export const SPAN_TILE = WORLD * WORLD;
+export const spanTile = (tile: number, way: Rot): number => SPAN_TILE * (1 + way) + tile;
+export const isSpanTile = (t: number): boolean => t >= SPAN_TILE;
+/** The world's tile a cell is over: its own, or the one a span cell passes over. */
+export const tileUnder = (t: number): number => t % SPAN_TILE;
+
 /** How cells say where their item came from (`via`): a tile behind on this chain, or nothing known (a restored state). */
 export const VIA_BEHIND = -2, VIA_NONE = -1;
 
@@ -203,6 +219,13 @@ export class Chain extends FNode {
   readonly thrMu: number;
 
   get length(): number { return this.tiles.length; }
+
+  /** Its last world tile: the head's, or the one that leaps before the cells over its leap (D121: `isSpanTile`). */
+  get lastTile(): number {
+    let i = this.tiles.length - 1;
+    while (i > 0 && isSpanTile(this.tiles[i]!)) i--;
+    return this.tiles[i]!;
+  }
 
   /** Ticks between this ribbon's steps (on average) and the period of their pattern. */
   get stepTicks(): number { return TPM / this.perMin; }

@@ -3,12 +3,13 @@
 // the sim and never changing it: the renderer draws a building that does not work switched off
 // (render/world/work-look.ts), and the debug bases are checked for buildings that stay off (D85:
 // scenarios.ts `settle`, scenarios.test.ts). Rules per kind:
-// - machines: crafting, powered (`Ok` / `LowPower`); drills, sand and data collectors, pumps:
-//   extracting, powered; fuel generators: burning (dispatched, fuelled); research labs: a project
-//   whose clock runs; servers, wind turbines, solar panels, geothermal plants: on a grid (a server
-//   on a powered one).
+// - machines: crafting, powered (`Ok` / `LowPower`); drills, sand collectors, pumps: extracting,
+//   powered; fuel generators: burning (dispatched, fuelled); research labs: a project on a powered
+//   grid (D122: it takes its tokens there), an autonomous lab also whenever it computes (a powered
+//   grid, project or not); servers, wind turbines, solar panels, geothermal plants: on a grid (a
+//   server on a powered one).
 // - A *passing* stop — inputs late (`Starved`), output backed up (`Blocked`), a generator not
-//   called on (`Idle`) or waiting for fuel, a lab whose time is done waiting for data — is 'pause';
+//   called on (`Idle`) or waiting for fuel — is 'pause';
 //   a hard stop — no recipe, no power, no grid, dormant, still being built — 'off'.
 // - Logistics, the Heart and the excavator and backfiller (to be redesigned) are always 'on'.
 // Beside the three states, one nuance (D91): `weakGrid` — a consumer at work on a grid under 100 %
@@ -16,7 +17,7 @@
 // and the switched-off look read the three states only); the inspector says « Au ralenti » in
 // amber and the Production view counts it among the waiting, both with the Électricité view's
 // half-bolt.
-import { BUILDING_KIND } from '@/content/registry';
+import { BUILDING_KIND, buildingDef } from '@/content/registry';
 import type { BuildingKind } from '@/content/types';
 import { DrillNode, GeneratorNode, MachineNode } from '../flow/nodes';
 import { projectSat } from './research';
@@ -68,8 +69,10 @@ export function workOf(sim: Sim, e: Ent): Work {
     }
     case 'lab': {
       const p = sim.projects.find((q) => q.lab === e.id);
+      // An autonomous lab computes like a server, project or not (D122).
+      if (!p && buildingDef(e.def).server) { const net = g.netOfEnt.get(e.id); return net !== undefined && sat(net) > 0 ? 'on' : 'off'; }
       if (!p || projectSat(sim, p, sat) <= 0) return 'off';
-      return 'on'; // powered with a project: it takes its data as it comes, its tokens at the minute (D118)
+      return 'on'; // powered with a project: its tokens come at the minute's end (D118, D122)
     }
     case 'server': {
       const net = g.netOfEnt.get(e.id);

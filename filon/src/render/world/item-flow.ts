@@ -14,6 +14,7 @@ import { BUILDING_KIND } from '@/content/registry';
 import { DX, DY, type Ent, type Rot } from '@/sim/types';
 import { tileIndex } from '@/sim/world/grid';
 import { WORLD } from '@/sim/constants';
+import { spanTile } from '@/sim/flow/chain';
 import { JUNCTION, junctionHump } from '../art/recipes/buildings';
 import { LH } from '../iso';
 
@@ -38,7 +39,8 @@ const OVER_M = 0.35;
  * around the tile corner (a bend: pivot (px, py), from angle a0 by da), or through a routing
  * block's centre (mx, my). Height (iso px) goes from z0 to z1 over the first `zr` of the way.
  * Over junctions (`hn` of them, side by side between s = h0 and h1) it rides each bridge's hump,
- * `hz` px at the crown; between s = o0 and o1 it is drawn over the bridges (empty when o0 > o1).
+ * `hz` px at the crown; between s = o0 and o1 it is drawn over the bridges (empty when o0 > o1):
+ * `ov` says which (`OVER`).
  */
 export interface Piece {
   bend: boolean;
@@ -48,16 +50,23 @@ export interface Piece {
   px: number; py: number; a0: number; da: number;
   mx: number; my: number; via: boolean;
   h0: number; h1: number; hn: number; hz: number;
-  o0: number; o1: number;
+  o0: number; o1: number; ov: number;
 }
 
-/** A point on a path (tile coords, height px; `o`: 1 on a junction's deck, drawn over the bridge). */
+/**
+ * What an item is drawn over (`Pt.o`): a junction's bridge (over the buildings, items-view.ts), or a
+ * skybridge's span — its ramps, its deck and the ribbons' stretch at its ends — (among the volumes,
+ * just after the span's piece it rides: belt-lift.ts `spanZ`); 0: neither.
+ */
+export const OVER = { junction: 1, sky: 2 } as const;
+
+/** A point on a path (tile coords, height px; `o`: drawn over a bridge, `OVER`, or 0). */
 export interface Pt { x: number; y: number; z: number; o: number }
 
 const edge = (x: number, y: number, d: Rot, sign: number): [number, number] => [x + 0.5 + DX[d]! * 0.5 * sign, y + 0.5 + DY[d]! * 0.5 * sign];
 
 /** No junction on the way: no hump, never drawn over. */
-const FLAT = { h0: 0, h1: 1, hn: 0, hz: 0, o0: 2, o1: -1 } as const;
+const FLAT = { h0: 0, h1: 1, hn: 0, hz: 0, o0: 2, o1: -1, ov: 0 } as const;
 
 /** A tile's piece: straight from the `enter` side's edge to the `exit` edge, or a bend when they differ. */
 export function makePiece(x: number, y: number, enter: Rot, exit: Rot, z0 = 0, z1 = 0, zr = 1, to?: [number, number]): Piece {
@@ -82,9 +91,10 @@ export function viaPiece(ax: number, ay: number, mx: number, my: number, bx: num
   return { bend: false, x: Math.floor(mx), y: Math.floor(my), enter: 0, exit: 0, ax, ay, bx, by, z0: 0, z1: 0, zr: 1, px: 0, py: 0, a0: 0, da: 0, mx, my, via: true, ...FLAT };
 }
 
-/** Widen the stretch of a piece drawn over the bridges to [s0, s1] (one span: their hull). */
-function drawOver(p: Piece, s0: number, s1: number): void {
+/** Widen the stretch of a piece drawn over the bridges to [s0, s1] (one span: their hull), over a junction or a skybridge (`OVER`; a piece by both: the skybridge's). */
+function drawOver(p: Piece, s0: number, s1: number, over: number = OVER.junction): void {
   if (p.o0 > p.o1) { p.o0 = s0; p.o1 = s1; } else { p.o0 = Math.min(p.o0, s0); p.o1 = Math.max(p.o1, s1); }
+  if (over > p.ov) p.ov = over;
 }
 
 /**
@@ -114,7 +124,7 @@ export function pieceAt(p: Piece, s: number, out: Pt): Pt {
     const v = ((s - p.h0) / (p.h1 - p.h0)) * p.hn;
     if (v > 0 && v < p.hn) out.z += p.hz * junctionHump(v - Math.floor(v));
   }
-  out.o = s >= p.o0 && s <= p.o1 ? 1 : 0;
+  out.o = s >= p.o0 && s <= p.o1 ? p.ov : 0;
   if (p.via) {
     if (s < 0.5) { const f = s * 2; out.x = p.ax + (p.mx - p.ax) * f; out.y = p.ay + (p.my - p.ay) * f; }
     else { const f = s * 2 - 1; out.x = p.mx + (p.bx - p.mx) * f; out.y = p.my + (p.by - p.my) * f; }
@@ -163,21 +173,30 @@ function pastBridge(sim: Sim, p: Piece, landing: ReadonlySet<number>): void {
   const sky = bx >= 0 && by >= 0 && bx < WORLD && by < WORLD && landing.has(tileIndex(bx, by)) && sim.entityAt(bx, by)?.rot === d;
   if (!sky && !(overJunction(d) && junctionAt(sim, bx, by))) return;
   const len = lengthOf(p);
-  if (len > 0) drawOver(p, 0, Math.min(1, OVER_M / len));
+  if (len > 0) drawOver(p, 0, Math.min(1, OVER_M / len), sky ? OVER.sky : OVER.junction);
 }
 
 /**
- * Every ribbon tile's piece. A tile in `graph.jumps` leaps on to the entry edge of the tile it
- * hands to: a skybridge's far end (rising to `deckZ` on the start, coming down on the far end:
- * the whole way drawn over the bridge, as are the last OVER_M before it and the first after it),
- * or past junctions — over their bridges (the north–south line: a hump `humpZ` px high on each)
- * or under them (the east–west line: flat, drawn beneath them).
+ * Every ribbon tile's piece, and the pieces of the cells a line has over a leap (D121, the engine's
+ * span cells: flow/chain.ts `spanTile`) — a tile each, so an item crosses each at its line's pace. A
+ * skybridge's start rises to `deckZ` across its own tile, each tile of the gap is a stretch of deck at
+ * `deckZ`, the far end comes down (the whole way drawn over the bridge, as are the last OVER_M before
+ * it and the first after it); a line passing junctions rides over each one's bridge (the
+ * north–south line: a hump `humpZ` px high, drawn over the bridge) or under it (the east–west line:
+ * flat, drawn beneath).
  */
 export function buildPieces(sim: Sim, beltPiece: BeltPieceFn, deckZ: number, humpZ = HUMP_Z): Map<number, Piece> {
   const pieces = new Map<number, Piece>();
   sim.ensureCompiled();
   const jumps = sim.graph?.jumps ?? new Map<number, number>();
   const { starts, landing } = skyLeaps(sim);
+  /** The last OVER_M of a piece drawn over the bridges when the tile ahead is a skybridge's start going the same way. */
+  const intoStart = (piece: Piece, x: number, y: number, d: Rot): void => {
+    const ax = x + DX[d]!, ay = y + DY[d]!;
+    if (ax < 0 || ay < 0 || ax >= WORLD || ay >= WORLD || !starts.has(tileIndex(ax, ay)) || sim.entityAt(ax, ay)?.rot !== d) return;
+    const len = lengthOf(piece);
+    if (len > 0) drawOver(piece, Math.max(0, 1 - OVER_M / len), 1, OVER.sky);
+  };
   for (const e of sim.ents.map.values()) {
     const k = BUILDING_KIND[e.def];
     if (k !== 'belt' && k !== 'conduit' && k !== 'bridge') continue;
@@ -185,32 +204,33 @@ export function buildPieces(sim: Sim, beltPiece: BeltPieceFn, deckZ: number, hum
     const bridge = k === 'bridge';
     const p = bridge ? { corner: false, rot: e.rot } : beltPiece(sim, e);
     const enter = p.corner ? p.rot : e.rot;
+    const d = e.rot;
     const to = jumps.get(t);
     const leap = starts.has(t);
-    let zr = 1, at: [number, number] | undefined, n = 0;
-    if (to !== undefined) {
-      const gx = to % WORLD, gy = (to - gx) / WORLD;
-      at = edge(gx, gy, e.rot, -1);
-      n = Math.abs(gx - e.x) + Math.abs(gy - e.y) - 1;
-      zr = 1 / (n + 1);
+    const piece = makePiece(e.x, e.y, enter, d, landing.has(t) ? deckZ : 0, leap ? deckZ : 0, 1);
+    // A skybridge: up its start, down its far end, all over the buildings.
+    if (leap || landing.has(t)) drawOver(piece, 0, 1, OVER.sky);
+    // Before junctions on the over axis: drawn over them from OVER_M before the first.
+    else if (to !== undefined && overJunction(d)) {
+      const len = lengthOf(piece);
+      if (len > 0) drawOver(piece, Math.max(0, 1 - OVER_M / len), 1);
     }
-    const piece = makePiece(e.x, e.y, enter, e.rot, landing.has(t) ? deckZ : 0, leap ? deckZ : 0, zr, at);
-    // Past junctions (not a skybridge's leap over them): over their bridges, or under them.
-    if (n > 0 && !leap && overJunction(e.rot)) {
-      const [jx, jy] = edge(e.x, e.y, e.rot, 1);
-      rideOver(piece, along(e.rot, piece.ax, piece.ay), along(e.rot, piece.bx, piece.by), along(e.rot, jx, jy), n, humpZ);
-    }
-    // A skybridge: up its start, across, down its far end, all over the buildings; and the last
-    // stretch into a start (the next tile, or past junctions).
-    if (leap || landing.has(t)) drawOver(piece, 0, 1);
-    const nx = e.x + DX[e.rot]!, ny = e.y + DY[e.rot]!;
-    const ahead = to ?? (nx >= 0 && ny >= 0 && nx < WORLD && ny < WORLD ? tileIndex(nx, ny) : -1);
-    if (!leap && starts.has(ahead)) {
-      const ax = ahead % WORLD, len = lengthOf(piece);
-      if (sim.entityAt(ax, (ahead - ax) / WORLD)?.rot === e.rot && len > 0) drawOver(piece, Math.max(0, 1 - OVER_M / len), 1);
-    }
+    if (!leap) intoStart(piece, e.x, e.y, d);
     pastBridge(sim, piece, landing);
     pieces.set(t, piece);
+    if (to === undefined) continue;
+    // The tiles it passes over: the gap under a skybridge's deck, or the junctions.
+    const gx = to % WORLD, gy = (to - gx) / WORLD;
+    let x = e.x + DX[d]!, y = e.y + DY[d]!;
+    for (let n = 0; n < 64 && (x !== gx || y !== gy); n++, x += DX[d]!, y += DY[d]!) {
+      const sp = makePiece(x, y, d, d, leap ? deckZ : 0, leap ? deckZ : 0, 1);
+      if (leap) drawOver(sp, 0, 1, OVER.sky);
+      else {
+        if (overJunction(d)) rideOver(sp, along(d, sp.ax, sp.ay), along(d, sp.bx, sp.by), along(d, sp.ax, sp.ay), 1, humpZ);
+        intoStart(sp, x, y, d);
+      }
+      pieces.set(spanTile(tileIndex(x, y), d), sp);
+    }
   }
   return pieces;
 }

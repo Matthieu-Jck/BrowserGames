@@ -7,7 +7,7 @@
 //     the rock top into a ceramic oven, its stone climbing from excavators digging the Crown's
 //     inner foot, its ceramic down the terraces on traction ribbons into the Core, which builds with it;
 //   - the Fabrique on the guaranteed copper field past the Crown (`FABRIQUE`): a deep bore, wire,
-//     circuits, gears, servomotors in an etcher, Mechanics Data into a second research lab, round a
+//     circuits, gears, servomotors in an etcher, a second research lab (D122: fed by nothing), round a
 //     second trade post that buys glass and plates and sells the rest; its power on a pylon line
 //     over the Crown;
 //   - the Ember Fields mine (when the land has that tier-3 site, out at r 180–280): a deep bore on
@@ -37,6 +37,7 @@ import { isWater, opposite, T, type Ent, type Rot } from './types';
 import { inWorld, tileIndex } from './world/grid';
 import { parcelAt } from './world/land';
 import { MapGen } from './world/mapgen';
+import { isSpanTile } from './flow/chain';
 
 /**
  * The Fabrique: the advanced industry on the guaranteed copper field past the Crown (every land
@@ -52,8 +53,8 @@ import { MapGen } from './world/mapgen';
  *   bus (row 2) whose routers drop it, across the copper bus on junctions, into the circuit
  *   workshops' other inputs (C, c); each mill hands its wire straight into its workshop below;
  * - the gears and the circuits down to the etcher (T: servomotors, three times as fast as an
- *   electronics workshop), what it leaves of them onto the sell line; a data collector (J, D68)
- *   hands its files straight down into the research lab O.
+ *   electronics workshop), what it leaves of them onto the sell line; below, the research lab O,
+ *   fed by no line (D122: the data collector J that filled it went with the data).
  * Until D108 a skydock (D) stood on its right, the potteries' ceramic and the Ember Fields'
  * embersalt flown into it, and a great workshop (K) made thermal cores of them with the circuits:
  * both went with the drifters, and with them the sell line's second spill row.
@@ -79,9 +80,9 @@ export const FABRIQUE: PlanSpec = {
     '↑     vv',
     '↑     vv',
     '↑     vv',
-    '↑    TTT  JJ',
-    '↑    TTT  JJ',
-    '↑    TTT   v',
+    '↑    TTT',
+    '↑    TTT',
+    '↑    TTT',
     '↑     v  OOO',
     '↑     v  OOO',
     '↑     v  OOO',
@@ -96,7 +97,6 @@ export const FABRIQUE: PlanSpec = {
     c: { role: 'circuits2', def: 'workshop', recipe: 'circuit' },
     G: { role: 'gears2', def: 'press', recipe: 'gear' },
     T: { role: 'bells', def: 'etcher', recipe: 'pace_bell' },
-    J: { role: 'data2', def: 'data_collector' },
     O: { role: 'observatory2', def: 'observatory' },
     I: { role: 'sorter2', def: 'inverted_sorter', filter: 'iron_plate' },
     R: { def: 'router' },
@@ -415,7 +415,7 @@ function intoHeart(sim: Sim): Map<number, Rot> {
   const goals = inlets(sim, sim.hearthId);
   for (const c of g.chains) {
     if (c.fluid || !g.hearth || !c.outE.some((e) => g.nodes[g.eDst[e]!] === g.hearth)) continue;
-    const tiles: BeltTiles = Array.from(c.tiles, (t) => { const x = t % 1024, y = (t - x) / 1024; return [x, y, sim.entityAt(x, y)?.rot ?? 0] as const; });
+    const tiles: BeltTiles = Array.from(c.tiles.filter((t) => !isSpanTile(t)), (t) => { const x = t % 1024, y = (t - x) / 1024; return [x, y, sim.entityAt(x, y)?.rot ?? 0] as const; });
     for (const [t, r] of sideGoals(sim, tiles)) if (!goals.has(t)) goals.set(t, r);
   }
   return goals;
@@ -527,7 +527,7 @@ export function fabrique(b: Builder): boolean {
   for (const [item, n] of Object.entries(FABRIQUE_BUY)) if (typeof sim.addImport(post, item, n, ask(item)) !== 'number') b.skip(`import:${item}`);
   // Power: a pylon line over the Crown to the post, then masts to the rest.
   wireFar(b, 'post2');
-  b.wire('boreCu', 'mill2', 'mill3', 'circuits', 'circuits2', 'gears2', 'bells', 'data2', 'observatory2');
+  b.wire('boreCu', 'mill2', 'mill3', 'circuits', 'circuits2', 'gears2', 'bells', 'observatory2');
   return true;
 }
 

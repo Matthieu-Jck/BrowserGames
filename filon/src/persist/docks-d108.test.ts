@@ -2,7 +2,8 @@
 // Great Skydocks (retired ids: the remap takes them down, refunds them at `RETIRED_COSTS` and hands
 // what they held docked to the Heart), drifters (the step refunds each at `RETIRED_DRIFTER`), freight
 // routes (dropped: a route's carry was never taken from a dock) and the Great Skydock's node (forgotten,
-// a project of it cancelled, its paid data back to the Heart). Played on forged saves: a small base and
+// a project of it cancelled, its paid data back to the Heart — banked as tokens since D122, the data
+// gone from the content). Played on forged saves: a small base and
 // the debug bases on maps 3 and 4 (the owner's base stands on one of them), each made a version-14 save
 // holding docks, drifters and a route the way the late base held them. The check that nothing but the
 // docks is lost: the loaded base, with the refunds taken back out of the Heart, has the very hash of the
@@ -57,10 +58,11 @@ function forge(sim: Sim, docks: Dock[], routeItem = 'iron_plate', lab?: number):
     nextRouteId: ids.length >= 2 ? 2 : 1,
   };
   if (lab !== undefined) {
-    const J = itemIdx('journal_1');
+    // Survey Data, gone from today's content (D122): the forged save's own table names it.
+    const J = content.items.length;
+    content.items.push('journal_1');
     forged.done = [...d.done, 'xp_bigdock'].sort();
     forged.projects = [...(d.projects ?? []), { id: 'xp_bigdock', lab, cost: [J, 90_000], paid: [33_000], dur: 6000, el: 1200, tokens: 9000, tokUsed: 1800 }];
-    owe('journal_1', 33_000);
   }
   return { data: forged, owed };
 }
@@ -129,6 +131,10 @@ describe('save 14 → 15 (D108): no skydocks, no drifters', () => {
     expect(back.done.has('xp_bigdock')).toBe(false);
     expect(back.projects.some((p) => p.id === 'xp_bigdock')).toBe(false);
     for (const [id] of (data.fleet as Array<[number, number]>)) expect(back.ents.get(id)).toBeUndefined();
+    // Its 33 Survey Data handed back by the step, then banked as tokens by the remap (D122: 1 100 each).
+    expect(note?.converted).toEqual([{ id: 'journal_1', mu: 33_000, tokens: 36_300 }]);
+    expect(back.tokenBank).toBe(36_300);
+    back.tokenBank = 0;
     sameButDocks(back, cleanOf(sim), owed);
     // It saves at today's version and loads again unchanged.
     const again = deserialize(JSON.parse(JSON.stringify(serialize(back))) as SaveData, sim.grid.source);

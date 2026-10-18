@@ -2,16 +2,21 @@
 // people themselves, their lantern eyes' glow, the glass hood over a glazed ribbon, and the fence.
 //
 // - **A Gleaner** (`drawGleaner`; owner, 2026-10-17: « un style amélioré … pas de jambes si c'est
-//   trop compliqué à animer »): no legs — a hunched hooded cloak that floats a hand's breadth over
-//   the sand and tapers behind into a tail like a blown flame, trailing two wisps of mist (four
-//   frames: the tail and the wisps wave), a lumpy sack on its back, a deep hood bent low in front of the hunch with a long tip blown back, two lantern
+//   trop compliqué à animer », then « j'aimerais qu'ils rampent dedans [le sable] plutôt »): no legs —
+//   a hunched hooded cloak tapering below into a tail like a blown flame (what stays under the sand:
+//   the views show it cut at the sand line, `GLEANER_CUT` waiting, `GLEANER_PEEK` peeking, the heap
+//   it pushes up hiding the cut, `drawSandCollar`), wisps of sand off it (four frames), a lumpy sack
+//   on its back, a deep hood bent low in front of the hunch with a long tip blown back, two lantern
 //   eyes in the hood's dark, and a thin arm with three long fingers. It glides, carries (the arm
 //   raised, holding up what it took: the views draw the item at `GLEANER_HAND`) or reaches (leant
 //   in, armless: the views draw its long arm, `drawGleanerArm`, from `GLEANER_SHOULDER_REACH` out
 //   to the ribbon, as long as it needs). A moonlit rim on the hood and the hunch gives it a shape
-//   at night. Drawn facing right; the ground under it (its shadow, `drawGleanerShadow`) at
-//   `GLEANER_GROUND`. The eyes are bright in the picture; their halo is a separate soft glow
+//   at night. Drawn facing right, its axis at `GLEANER_GROUND`'s x. The eyes are bright in the picture; their halo is a separate soft glow
 //   (`drawEyeGlow`) the views lay on the additive lights layer, so the night never dims it.
+// - **Under the sand** (`drawFurrow`, `drawBulge`, `drawGrain`): what the views lay flat on the
+//   ground in tile units while one travels under it — the bulge it pushes along (a lumpy mound of
+//   sand, cracks running out from its top) and the furrow behind it (a ridge of broken clods, closing
+//   as it settles), seen from above along +x; the grains it throws up.
 // - **The glass hood** (`drawGlassCover`): what covers a glazed ribbon, laid by the views over the
 //   items it carries — a pale translucent sheet over the band and its rails, two white glints, a
 //   rib every quarter tile and an inked rim. A straight piece moving north, and the corner (the
@@ -48,6 +53,8 @@ export const GLEANER_SHOULDER_REACH: Pt = leant([BX + 7, HY - 20]);
 export const GLEANER_HAND: Pt = [BX + 19, HY - 35];
 /** The middle of its body (px): the halo's centre. */
 export const GLEANER_HEART: Pt = [BX - 1, HY - 20];
+/** The sand line (canvas y) when it waits half-buried (head, shoulders, the sack and the arm out), and when only its eyes break the surface. */
+export const GLEANER_CUT = 36, GLEANER_PEEK = 26;
 
 /** How it floats: gliding (arm hanging), carrying (arm up, holding), reaching (leant in, its long arm drawn apart). */
 export type GleanerPose = 'glide' | 'carry' | 'reach';
@@ -153,19 +160,122 @@ export function drawGleanerArm(ctx: Ctx, seed = 9): void {
   for (const [i, [fx, fy]] of fingers.entries()) ink(ctx, [[53, 8], [(53 + fx) / 2 + 0.5, (8 + fy) / 2], [fx, fy]], { w: 1.3, color: LIMB, shade: false, taper: 0.7, jitter: 0, seed: seed + 3 + i });
 }
 
-/** Its shadow on the sand (32 × 16 px): soft, dark, under where it floats. */
-export function drawGleanerShadow(ctx: Ctx): void {
+const SAND = mix(C.sand, C.dune, 0.45);
+const SAND_L = mix(C.sand, C.salt, 0.35);
+const SAND_D = mix(C.dune, C.mesa, 0.55);
+const TROUGH = mix(C.mesa, C.inkSoft, 0.45);
+/** The sand heap's canvas (px): where a Gleaner breaks the surface; the sand line at `COLLAR_Y`. */
+export const COLLAR_W = 44, COLLAR_H = 18, COLLAR_Y = 7;
+
+/**
+ * The heap of sand a Gleaner pushes up where it breaks the surface, laid over the cut of its body at
+ * the sand line (`COLLAR_Y`): a ragged crest a little above the line, piled highest where its
+ * shoulders came through, sand running down its face, its foot shaded and fading into the floor.
+ */
+export function drawSandCollar(ctx: Ctx, seed = 3): void {
+  const cx = COLLAR_W / 2, y = COLLAR_Y;
+  // A ragged crest, piled highest at either side where the shoulders broke through, then the foot
+  // curving down in front of it (its back is hidden behind the body).
+  const crest: Pt[] = [
+    [cx - 21, y + 3.5], [cx - 18, y + 0.5], [cx - 14.5, y - 2.8], [cx - 10, y - 3.6], [cx - 6, y - 1.2],
+    [cx - 1, y - 0.4], [cx + 4, y - 1], [cx + 9, y - 3.8], [cx + 14, y - 3], [cx + 18, y + 0.2], [cx + 21, y + 3.5],
+  ];
+  const foot: Pt[] = [];
+  for (let i = 0; i <= 12; i++) {
+    const a = (i / 12) * Math.PI;
+    foot.push([cx + Math.cos(a) * 21, y + 3.5 + Math.sin(a) * 6.5 + Math.sin(i * 2.1 + seed) * 0.4]);
+  }
+  const heap = [...crest, ...foot];
+  flat(ctx, heap, SAND);
+  // Shaded low down and on the flank away from the light; the crest lit.
+  flat(ctx, [[cx - 20, y + 5], [cx + 20, y + 5], ...foot.slice(1, 12)], SAND_D, 0.45);
+  ink(ctx, crest.slice(1, 10), { w: 2.2, color: SAND_L, alpha: 0.9, shade: false, taper: 0.3, jitter: 0, seed: seed + 1 });
+  // Sand running down its face from the crest, and loose grains at its foot.
+  for (let i = 0; i < 6; i++) {
+    const x = cx - 14 + i * 5.6 + Math.sin(i * 1.7 + seed) * 1.2, top = y - 1.5 + Math.abs(i - 2.5) * 0.6;
+    ink(ctx, [[x, top], [x - 0.4, top + 3], [x + 0.3, top + 6 + (i % 3)]], { w: 0.9, color: i % 2 ? SAND_D : SAND_L, alpha: 0.75, shade: false, taper: 0.5, jitter: 0.2, seed: seed + 3 + i });
+  }
+  for (let i = 0; i < 8; i++) {
+    const gx = cx - 18 + i * 5 + Math.sin(i * 2.3 + seed) * 1.5, gy = y + 8 + ((i * 3) % 4);
+    flat(ctx, ellipsePts(gx, gy, 0.8, 0.6, seed + 10 + i, 0, 6), SAND_D, 0.8);
+  }
+  // The crest inked; the foot left to fade into the floor.
+  ink(ctx, crest, { w: 1.2, color: C.inkSoft, alpha: 0.8, shade: false, taper: 0.25, jitter: 0.2, seed: seed + 20 });
+}
+
+/** A furrow's canvas (px; laid flat, about 0.6 × 0.37 tile): a short stretch of the ridge of broken sand left behind one. */
+export const FURROW_W = 64, FURROW_H = 40;
+/**
+ * A stretch of furrow seen from above, along +x: the sand it ploughed up, a ridge of broken clods
+ * about as wide as the mound that made it — lit on their tops, shaded under, cracks between them,
+ * ragged at the edges, uninked (the marks overlap along the way: an inked edge would saw), no line down
+ * the middle: it closes up as it settles, narrower with age.
+ */
+export function drawFurrow(ctx: Ctx, seed = 5): void {
+  const h = FURROW_H / 2;
+  // Its body: a ragged band, shaded on the far side.
+  const band: Pt[] = [];
+  for (let i = 0; i <= 10; i++) band.push([1 + i * 6.2, h - 11 + Math.sin(i * 2.1 + seed) * 2.2]);
+  for (let i = 10; i >= 0; i--) band.push([1 + i * 6.2, h + 11 + Math.sin(i * 1.7 + seed + 1) * 2.2]);
+  flat(ctx, band, SAND_D, 0.8);
+  // Clods, overlapping, lit on top; cracks between them.
+  for (let i = 0; i < 9; i++) {
+    const x = 5 + i * 6.8 + Math.sin(i * 3.1 + seed) * 1.5, y = h + Math.sin(i * 2.3 + seed) * 4.5, rx = 4.5 + ((i * 7) % 3), ry = 3.6 + ((i * 5) % 3) * 0.6;
+    flat(ctx, ellipsePts(x, y + 1, rx, ry, seed + 10 + i, 0.25, 12), TROUGH, 0.5);
+    flat(ctx, ellipsePts(x, y, rx, ry, seed + 20 + i, 0.25, 12), SAND);
+    flat(ctx, ellipsePts(x - 1, y - 1.2, rx * 0.55, ry * 0.45, seed + 30 + i, 0.2, 10), SAND_L, 0.9);
+  }
+  for (let i = 0; i < 5; i++) {
+    const x = 9 + i * 12;
+    ink(ctx, [[x, h - 7], [x + 1.5, h - 1], [x - 0.5, h + 6]], { w: 0.9, color: C.inkSoft, alpha: 0.55, shade: false, taper: 0.5, jitter: 0.4, seed: seed + 40 + i });
+  }
+}
+
+/** A bulge's canvas (px; laid flat, 0.82 tile long): the mound one pushes along under the sand, heading +x. */
+export const BULGE_W = 48, BULGE_H = 40;
+/**
+ * The bulge seen from above: a lumpy mound of sand, longer than wide, heaved up highest at its front
+ * where it ploughs on — lit on its crest, shaded on its far flank, cracks running out from its top,
+ * clods breaking off its edge.
+ */
+export function drawBulge(ctx: Ctx, seed = 8): void {
+  const cx = BULGE_W / 2, cy = BULGE_H / 2;
+  flat(ctx, ellipsePts(cx + 1, cy + 2, 21, 15, seed, 0.3, 28), TROUGH, 0.6);
+  const mound = ellipsePts(cx, cy, 20, 14, seed + 1, 0.3, 28);
+  flat(ctx, mound, SAND);
+  flat(ctx, ellipsePts(cx + 4, cy - 3, 12, 7, seed + 2, 0.3, 20), SAND_L, 0.95);
+  flat(ctx, ellipsePts(cx - 6, cy + 6, 11, 5, seed + 3, 0.3, 16), SAND_D, 0.55);
+  // Cracks running out from its top, where the sand gives over it.
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 + 0.3, r0 = 3, r1 = 11 + (i % 2) * 4;
+    ink(ctx, [[cx + 4 + Math.cos(a) * r0, cy - 2 + Math.sin(a) * r0 * 0.7], [cx + 4 + Math.cos(a) * r1, cy - 2 + Math.sin(a) * r1 * 0.7]], { w: 1, color: C.inkSoft, alpha: 0.65, shade: false, taper: 0.5, jitter: 0.5, seed: seed + 4 + i });
+  }
+  // Clods breaking off its front edge.
+  for (let i = 0; i < 4; i++) flat(ctx, ellipsePts(cx + 18 + (i % 2) * 3, cy - 8 + i * 5, 2.2, 1.8, seed + 12 + i, 0.3, 8), SAND_L, 0.9);
+  ink(ctx, mound.slice(0, 16), { w: 1.2, color: C.inkSoft, alpha: 0.6, shade: false, taper: 0.3, jitter: 0.3, seed: seed + 9 });
+}
+
+/** A grain of sand thrown up (8 px): a speck, lit on one side. */
+export function drawGrain(ctx: Ctx): void {
+  flat(ctx, ellipsePts(4, 4, 2.4, 2, 1, 0.2, 8), SAND_D);
+  flat(ctx, ellipsePts(3.4, 3.4, 1.3, 1, 2, 0.2, 8), SAND_L);
+}
+
+/** How far down the cards draw a risen Gleaner (px): its sand line ten px over the canvas's foot. */
+export const RISEN_LIFT = GLEANER_H - GLEANER_CUT - 10;
+/** For the cards: a Gleaner as one meets it, risen to the shoulders out of its heap of sand (`carry`: holding something up, at `GLEANER_HAND` + `RISEN_LIFT`). */
+export function drawGleanerRisen(ctx: Ctx, carry: boolean): void {
+  const lift = RISEN_LIFT;
   ctx.save();
-  ctx.translate(16, 8);
-  ctx.scale(1, 0.48);
-  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 15);
-  g.addColorStop(0, 'rgba(20, 16, 40, 0.6)');
-  g.addColorStop(0.6, 'rgba(20, 16, 40, 0.3)');
-  g.addColorStop(1, 'rgba(20, 16, 40, 0)');
-  ctx.fillStyle = g;
+  ctx.translate(0, lift);
   ctx.beginPath();
-  ctx.arc(0, 0, 15, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.rect(0, -lift, GLEANER_W, GLEANER_CUT + lift);
+  ctx.clip();
+  drawGleaner(ctx, 1, carry);
+  ctx.restore();
+  ctx.save();
+  ctx.translate(BX - COLLAR_W / 2, GLEANER_CUT + lift - COLLAR_Y);
+  drawSandCollar(ctx);
   ctx.restore();
 }
 

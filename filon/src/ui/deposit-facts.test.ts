@@ -12,7 +12,7 @@ describe('the deposit card\'s facts (D99)', () => {
   it('reads the extractors from the content tables, by place', () => {
     expect(DRILLS).toContain('drill');
     expect(DRILLS).toContain('deep_bore');
-    for (const not of ['face_cutter', 'sand_collector', 'data_collector', 'pump', 'excavator']) expect(DRILLS).not.toContain(not);
+    for (const not of ['face_cutter', 'sand_collector', 'pump', 'excavator']) expect(DRILLS).not.toContain(not);
     expect(CUTTERS).toEqual(['face_cutter']);
     expect(PUMPS).toContain('pump');
     expect(DIGGERS).toContain('excavator');

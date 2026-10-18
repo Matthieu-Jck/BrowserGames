@@ -149,10 +149,10 @@ describe('the expertises (D93)', () => {
     expect(sim.mods.fam.dn.time).toBe(EXPERTISES.methods.permille[0]);
     // A research expertise: its family's nodes started now take its share off; the trunk's and other
     // families' do not. Research has no time since D118: one of research time takes its share off
-    // what the time follows, the data and the tokens.
+    // what the time follows, the tokens (D122: its resources are another aspect's).
     const table = effectiveCost('dn4'), now = effectiveCost('dn4', sim.mods), p = EXPERTISES.methods.permille[0];
     expect(now.tokens).toBe(Math.floor((table.tokens * p) / 1000));
-    expect(now.cost.map((c) => c.mu)).toEqual(table.cost.map((c) => Math.ceil((c.mu / 1000) * p / 1000) * 1000));
+    expect(now.cost).toEqual(table.cost);
     expect(now.aim).toBe(table.aim);
     expect(effectiveCost('tr1', sim.mods)).toEqual(effectiveCost('tr1'));
     expect(effectiveCost('en_pitch', sim.mods)).toEqual(effectiveCost('en_pitch'));
@@ -217,7 +217,8 @@ describe('the expertises (D93)', () => {
     expect(on.mods.drillRate).toBe(EXPERTISES.ore_cutting.permille[1]);
     expect(off.expertise).toEqual(on.expertise);
     expect(off.mods.drillRate).toBe(on.mods.drillRate);
-    expect(off.mods.dataRate).toBe(on.mods.dataRate);
+    expect(off.mods.tokenRate).toBe(on.mods.tokenRate);
+    expect(on.mods.tokenRate).toBe(EXPERTISES.archiving.permille[0]); // Archiving raises the claim's own tokens (D122)
     expect(off.stock[itemIdx('iron_ore')]).toBe(on.stock[itemIdx('iron_ore')]);
     expect(off.hash()).toBe(on.hash());
   });

@@ -13,6 +13,7 @@
 import { BUILDING_IDS, BUILDING_KIND, buildingDef, buildingIdx, costOf, isDragDef } from '@/content/registry';
 import { footprint, forTiles } from '@/sim/entities';
 import { oreSnap } from '@/sim/ore-blocks';
+import { refundCost } from '@/sim/refund';
 import { landReason } from '@/sim/systems/belt-plan';
 import type { PlaceCheck, PlaceReason, Sim } from '@/sim/state';
 import { isRock, T, type Rot } from '@/sim/types';
@@ -283,7 +284,7 @@ export class Tools {
         const e = sim.ents.get(id);
         if (!e) continue;
         if (c.ok) out.doomed.push(id);
-        for (const k of costOf(e.def)) out.cost.set(k.item, (out.cost.get(k.item) ?? 0) - k.mu);
+        for (const k of refundCost(sim.costFloor, e)) out.cost.set(k.item, (out.cost.get(k.item) ?? 0) - k.mu);
       }
     };
     if (s.k === 'build') {
