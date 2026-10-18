@@ -176,6 +176,10 @@ export const BAL = {
 
   // ── market (see market/) ─────────────────────────────────────────────────
   tradeFee: 200, // ‰ CrierBelt takes on every trade: it holds the Ring's monopoly, and nothing lowers it (owner, 2026-10-14, D64)
+  // ‰ it takes on a sale straight from the Core's stock (the Crier's « Au comptant »): twice a post's, so goods go
+  // to the post by ribbon (D126; owner, 2026-10-18: « le tradepost a une taxe de 20 %, mais la vente directe
+  // d'objets depuis le cœur 40 %, pour encourager l'acheminement vers le tradepost »).
+  coreSellFee: 400,
   tradeThroughput: [120, 240, 480], // items/min
   liftDelayMin: [3, 2, 1], // minutes from a purchase to the lift-off, by trade-post level (D113: was 10, 6, 3)
   tradeOrders: 2,           // standing import orders (Standing Orders: +4)

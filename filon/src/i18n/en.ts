@@ -503,7 +503,7 @@ export const en: Dict = {
   'crier.spot.buy': 'Buy',
   'crier.spot.unit': '{unit} each · average price ×{factor}',
   'crier.spot.shock': 'then {pct} on the price',
-  'crier.spot.fromHearth': 'taken from the Core’s stock',
+  'crier.spot.fromHearth': 'taken from the Core’s stock · 40% tax (20% through a trade post)',
   'crier.spot.deliver': 'delivered to trade post #{n} in ≈ {d}',
   'crier.spot.help': 'A large amount at once moves the price: the average falls (or rises) with the quantity, and the price keeps the mark for a few hours.',
   'crier.spot.sold': 'Sold: {n} × {item} for {cents}',

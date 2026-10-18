@@ -505,7 +505,7 @@ export const fr = {
   'crier.spot.buy': 'Acheter',
   'crier.spot.unit': '{unit} l’unité · prix moyen ×{factor}',
   'crier.spot.shock': 'puis {pct} sur le cours',
-  'crier.spot.fromHearth': 'pris dans le stock du Cœur',
+  'crier.spot.fromHearth': 'pris dans le stock du Cœur · taxe 40 % (20 % en passant par un comptoir)',
   'crier.spot.deliver': 'livré au comptoir n°{n} dans ≈ {d}',
   'crier.spot.help': 'Une grosse quantité d’un coup fait glisser le prix : la moyenne baisse (ou monte) avec la quantité, et le cours en garde la trace quelques heures.',
   'crier.spot.sold': 'Vendu : {n} × {item} pour {cents}',

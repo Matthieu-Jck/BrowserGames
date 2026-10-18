@@ -150,6 +150,8 @@ export function importItems(sim: Sim): Map<number, readonly number[]> {
 
 /** The fee (‰) on every trade: CrierBelt's cut (D64: a monopoly's, and nothing lowers it). */
 const fee = (sim: Sim): number => sim.mods.tradeFee;
+/** A spot trade's fee: a sale from the Core's stock pays `BAL.coreSellFee` (never less than a post's), a purchase the post's (D126). */
+const spotFee = (sim: Sim, side: SpotSide): number => (side === 'sell' ? Math.max(fee(sim), BAL.coreSellFee) : fee(sim));
 const line = (sim: Sim, l: Omit<TradeLine, 'epoch'>): void => {
   // Every line is a change of the purse by its cents (D102: the purse's journal, sim/purse.ts).
   book(sim, l.kind === 'export' ? 'sales' : l.kind === 'import' ? 'orders' : l.kind, l.cents);
@@ -279,7 +281,7 @@ export function cancelImport(sim: Sim, id: number): boolean {
 export function quoteSpot(sim: Sim, item: number, side: SpotSide, n: number): { ok: boolean; cents: number; unitCents: number; factor: number; shock: number } {
   if (!tradable(item) || n <= 0) return { ok: false, cents: 0, unitCents: 0, factor: 0, shock: 1 };
   const q = sim.market.quote(item, side, n * 1000, sim.mods.slippage);
-  const cents = afterFee(q.totalCents, side, fee(sim));
+  const cents = afterFee(q.totalCents, side, spotFee(sim, side));
   return { ok: q.ok, cents, unitCents: Math.round(cents / n), factor: q.factor, shock: q.shock };
 }
 
@@ -306,7 +308,7 @@ export function spotTrade(sim: Sim, item: string, side: SpotSide, n: number): { 
   if (side === 'buy' && mu > containerMu(sim)) return { refused: 'container' };
   if (side === 'buy' && containerFull(sim, post)) return { refused: 'full' };
   const q = sim.market.book(it, side, mu, sim.mods.slippage);
-  const cents = afterFee(q.totalCents, side, fee(sim));
+  const cents = afterFee(q.totalCents, side, spotFee(sim, side));
   if (side === 'sell') {
     sim.stock[it] = sim.stock[it]! - mu;
     sim.credits += cents;

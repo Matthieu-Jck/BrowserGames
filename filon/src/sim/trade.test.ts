@@ -38,6 +38,19 @@ function exitToHearth(sim: Sim): void {
 }
 
 describe('trade posts', () => {
+  it('a sale straight from the Core\'s stock pays CrierBelt 40 %, a post\'s sale 20 % (D126)', () => {
+    const { sim } = postSim();
+    sim.stock[PLATE()] = 200_000;
+    const q = sim.quoteSpot(PLATE(), 'sell', 10);
+    const gross = sim.market.quote(PLATE(), 'sell', 10_000, sim.mods.slippage).totalCents;
+    expect(BAL.coreSellFee).toBe(400);
+    expect(q.cents).toBe(afterFee(gross, 'sell', BAL.coreSellFee));
+    expect(q.cents).toBeLessThan(afterFee(gross, 'sell', BAL.tradeFee));
+    // A purchase keeps the post's fee.
+    const b = sim.quoteSpot(PLATE(), 'buy', 10);
+    expect(b.cents).toBe(afterFee(sim.market.quote(PLATE(), 'buy', 10_000, sim.mods.slippage).totalCents, 'buy', BAL.tradeFee));
+  });
+
   it('a post sells whatever its entrance brought at the epoch’s bid, CrierBelt taking a fifth; never the Hearth’s stock (D64)', () => {
     const { sim, post } = postSim();
     sim.ensureCompiled();
