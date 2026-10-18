@@ -5,9 +5,11 @@
 // DOM (artboard, icons) — pixel-identical to the game. Buildings with a moving part
 // (recipes/moving.ts) also get their body alone and the part's phases, cropped to one cell
 // size and packed together as one sheet — the same page, so stepping through them never
-// breaks a batch.
+// breaks a batch. A water drinker (D142) also gets, per rotation, its look with the pipework on
+// each of its other entrances (`wetKey`; art/pipe-ports.ts), the steam boiler's flywheel shared
+// with its own look; and the conduit's coupling at a port is a ribbon piece (`COUPLING_KEY`).
 import { CanvasSource, Rectangle, Texture } from 'pixi.js';
-import { BUILDING_IDS, ITEM_IDS, isBeltDef } from '@/content/registry';
+import { BUILDING_IDS, ITEM_IDS, buildingDef, buildingIdx, isBeltDef } from '@/content/registry';
 import type { BuildingId } from '@/content/buildings';
 import type { ItemId } from '@/content/items';
 import type { Rot } from '@/sim/types';
@@ -18,6 +20,7 @@ import { MOVING } from './recipes/moving';
 import { drawItem, GLYPH } from './recipes/items';
 import { BELT_PX, BELT_TIERS, drawCamoVent, drawCorner, drawDeck, drawInlet, drawStraight, type BeltTier } from './recipes/belts';
 import { C } from './tokens';
+import { drawCoupling, wetAlternatives } from './pipe-ports';
 import { drawIcon, ICON, ICON_IDS } from './recipes/icons';
 
 export const PAGE = 2048;
@@ -75,6 +78,10 @@ export const inletKey = (tier: string): string => `belt:${tier}:inlet`;
 /** The camouflaged ribbon's vent tile (D109): a straight piece with a seam and a glint, on the odd tile. */
 export const CAMO_VENT_KEY = 'belt:camo_ribbon:vent';
 export const DECK_KEY = 'belt:deck';
+/** A water drinker's look (`bKey` / `btKey`) with its pipework on entrance `i` (a port index) instead of its own (D142). */
+export const wetKey = (key: string, i: number): string => `${key}~w${i}`;
+/** A conduit's end coupled to a port (D142, pipe-ports.ts `drawCoupling`): the joint at the piece's top edge, turned to the port's side. */
+export const COUPLING_KEY = 'belt:conduit:coupling';
 /** The body alone of a building sprite (`bKey` / `btKey`) whose moving part is drawn apart. */
 export const bodyKey = (key: string): string => `${key}/body`;
 /** Phase k of the moving part of a building sprite (`bKey` / `btKey`), anchored like the sprite. */
@@ -139,7 +146,20 @@ export function bakeAtlas(): Atlas {
   const t0 = performance.now();
   const pieces: Piece[] = [];
   const moving = new Map<string, MovingFrames>();
+  /** Frames that are another's (a variant's moving part: its own look's phases), set once packed. */
+  const aliases: Array<[string, string]> = [];
   const make = (w: number, h: number): { ctx: Ctx; canvas: unknown } => canvasOf(w, h) as unknown as { ctx: Ctx; canvas: unknown };
+  /** A water drinker's variants of sprite `key` (D142): its look, its body alone, its part's phases shared with `key`'s. */
+  const wetLooks = (id: string, key: string, k: number, ox: number, oy: number, look: (wet: number) => unknown, body: ((wet: number) => unknown) | null, mv: MovingFrames | undefined): void => {
+    for (const wet of wetAlternatives(buildingDef(buildingIdx(id)))) {
+      const wk = wetKey(key, wet);
+      pieces.push({ key: wk, canvas: look(wet) as HTMLCanvasElement, ox, oy, k });
+      if (!body || !mv) continue;
+      pieces.push({ key: bodyKey(wk), canvas: body(wet) as HTMLCanvasElement, ox, oy, k });
+      moving.set(wk, mv);
+      for (let i = 0; i < mv.n; i++) aliases.push([partKey(wk, i), partKey(key, i)]);
+    }
+  };
   for (const id of BUILDING_IDS) {
     if (isBeltDef(id)) continue; // ribbons and conduits are drawn as belt pieces
     const rots: Rot[] = needsRotations(id as BuildingId) ? [0, 1, 2, 3] : [0];
@@ -159,6 +179,8 @@ export function bakeAtlas(): Atlas {
         pieces.push(partSheet(bKey(id, rot), mv.parts as HTMLCanvasElement[], frame.ox, frame.oy, 0.5));
         moving.set(bKey(id, rot), { n: spec!.frames, over: mv.over });
       }
+      wetLooks(id, bKey(id, rot), 0.5, frame.ox, frame.oy, (wet) => drawBuilding(id as BuildingId, rot, make, 1, wet).canvas,
+        spec ? (wet) => drawBuildingMoving(id as BuildingId, rot, 0, make, wet)!.body : null, moving.get(bKey(id, rot)));
     }
   }
   for (const id of BUILDING_IDS) {
@@ -178,6 +200,8 @@ export function bakeAtlas(): Atlas {
         pieces.push(partSheet(btKey(id, rot), mv.parts as HTMLCanvasElement[], TOP_MARGIN, TOP_MARGIN, 1 / TOP_PX));
         moving.set(btKey(id, rot), { n: spec!.frames, over: true });
       }
+      wetLooks(id, btKey(id, rot), 1 / TOP_PX, TOP_MARGIN, TOP_MARGIN, (wet) => drawBuildingTop(id as BuildingId, rot, make, 1, wet).canvas,
+        spec ? (wet) => drawBuildingTopMoving(id as BuildingId, rot, 0, make, wet)!.body : null, moving.get(btKey(id, rot)));
     }
   }
   for (const id of ITEM_IDS) {
@@ -207,6 +231,11 @@ export function bakeAtlas(): Atlas {
     const { canvas, ctx } = canvasOf(BELT_PX, BELT_PX);
     drawDeck(ctx, 11);
     pieces.push({ key: DECK_KEY, canvas, ox: BELT_PX / 2, oy: BELT_PX / 2, k: 1 / BELT_PX });
+  }
+  {
+    const { canvas, ctx } = canvasOf(BELT_PX, BELT_PX);
+    drawCoupling(ctx, 13, BELT_PX);
+    pieces.push({ key: COUPLING_KEY, canvas, ox: BELT_PX / 2, oy: BELT_PX / 2, k: 1 / BELT_PX });
   }
   for (const id of ICON_IDS) {
     const { canvas, ctx } = canvasOf(ICON, ICON);
@@ -243,6 +272,7 @@ export function bakeAtlas(): Atlas {
     x += w + PAD;
     rowH = Math.max(rowH, h);
   }
+  for (const [a, b] of aliases) { const fr = frames.get(b); if (fr) frames.set(a, fr); }
 
   const sources = pages.map((c) => new CanvasSource({ resource: c, autoGenerateMipmaps: true, scaleMode: 'linear' }));
   const textures = new Map<string, Texture>();

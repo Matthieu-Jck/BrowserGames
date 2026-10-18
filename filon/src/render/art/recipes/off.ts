@@ -11,12 +11,13 @@ import { drawBuildingTop, drawBuildingTopMoving } from './buildings-top';
 
 /**
  * Draw a building switched off into `ctx` (a canvas of its sprite's size, w × h): its iso or plan
- * picture, or with `body` a moving building's body alone (its part is drawn apart, moving.ts).
+ * picture, or with `body` a moving building's body alone (its part is drawn apart, moving.ts);
+ * `wet`: a water drinker's pipework on that entrance rather than its own (D142, art/pipe-ports.ts).
  */
-export function drawOff(ctx: CanvasRenderingContext2D, id: BuildingId, rot: Rot, iso: boolean, body: boolean, w: number, h: number): void {
+export function drawOff(ctx: CanvasRenderingContext2D, id: BuildingId, rot: Rot, iso: boolean, body: boolean, w: number, h: number, wet = -1): void {
   const make = (): { ctx: Ctx; canvas: unknown } => ({ ctx: unlitCtx(ctx), canvas: ctx.canvas });
-  if (iso) { if (body) drawBuildingMoving(id, rot, 0, make); else drawBuilding(id, rot, make); }
-  else if (body) drawBuildingTopMoving(id, rot, 0, make);
-  else drawBuildingTop(id, rot, make);
+  if (iso) { if (body) drawBuildingMoving(id, rot, 0, make, wet); else drawBuilding(id, rot, make, 1, wet); }
+  else if (body) drawBuildingTopMoving(id, rot, 0, make, wet);
+  else drawBuildingTop(id, rot, make, 1, wet);
   switchOff(ctx, Math.ceil(w), Math.ceil(h));
 }

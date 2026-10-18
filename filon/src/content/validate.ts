@@ -3,7 +3,8 @@
 // divide the engine's 1 200-tick period (the offline catch-up needs it) nor a ribbon's steps,
 // a lift slower than a plain ribbon (D141), a port off its
 // building's edge, a machine with fewer entrances than the kinds of input a recipe of its takes
-// (D140, `entranceProblems`). It also pins the design's intentional scarcities: the cirque's « tired
+// (D140, `entranceProblems`), a water port where no water goes or a water drinker without one (D142,
+// `fluidPortProblems`). It also pins the design's intentional scarcities: the cirque's « tired
 // vein » cannot feed one electronics workshop, a resonator needs two different unique resources and
 // a nacre lattice two more — so every colony must trade. Machines are specialised: none offers more than
 // `MAX_RECIPES` recipes (D70); every research node unlocks a building, a recipe or a feature,
@@ -66,6 +67,41 @@ export function entranceProblems(
     }
     const n = b.ports.filter((p) => p.io === 'in').length;
     if (n < most) errs.push(`building ${id}: ${n} entrance${n === 1 ? '' : 's'}, but recipe ${which} takes ${most} kinds of input (one entrance a kind, D140)`);
+  }
+  return errs;
+}
+
+/**
+ * Water ports (D142): a building's `fluid` ports are where its water goes, drawn as pipework. A
+ * building that gives a fluid (a pump; a recipe putting one out) has every outlet fluid; one that
+ * drinks (a fuel generator with water — the steam boiler —, a machine a recipe of which takes a
+ * fluid) has exactly one fluid entrance, its water's, and a dry one for each other kind of input
+ * (D140's count less the water: the boiler's coal, the bricks' sand); no other building has a fluid
+ * port. The tables are arguments so a test can hand it a building marked wrong.
+ */
+export function fluidPortProblems(
+  bs: ReadonlyArray<readonly [string, BuildingDef]> = buildings,
+  rs: ReadonlyArray<readonly [string, RecipeDef]> = recipes,
+): string[] {
+  const errs: string[] = [];
+  const fluid = (it: string): boolean => (ITEMS as Record<string, ItemDef>)[it]?.kind === 'fluid';
+  for (const [id, b] of bs) {
+    let gives = b.kind === 'pump', drinks = !!b.gen?.water, dry = b.gen?.fuel ? 1 : 0;
+    for (const [, r] of rs) {
+      if (!r.machines.includes(id)) continue;
+      const kinds = [...new Set(r.ins.map(([it]) => it))];
+      const wet = kinds.filter(fluid).length;
+      if (wet) drinks = true;
+      if (r.outs.some(([o]) => fluid(o))) gives = true;
+      dry = Math.max(dry, kinds.length - wet);
+    }
+    const ins = b.ports.filter((p) => p.io === 'in'), outs = b.ports.filter((p) => p.io === 'out');
+    const wetIn = ins.filter((p) => p.fluid).length, dryIn = ins.length - wetIn;
+    if (gives && outs.some((p) => !p.fluid)) errs.push(`building ${id}: gives a fluid through an outlet not marked fluid (D142)`);
+    if (!gives && outs.some((p) => p.fluid)) errs.push(`building ${id}: a fluid outlet, but it gives no fluid (D142)`);
+    if (drinks && wetIn !== 1) errs.push(`building ${id}: drinks water through ${wetIn} water entrances (one, D142)`);
+    if (drinks && dryIn < dry) errs.push(`building ${id}: ${dryIn} dry entrance${dryIn === 1 ? '' : 's'} for ${dry} other kinds of input (D140, D142)`);
+    if (!drinks && wetIn) errs.push(`building ${id}: a water entrance, but it drinks no fluid (D142)`);
   }
   return errs;
 }
@@ -288,6 +324,8 @@ export function validateContent(): string[] {
   }
   // …and an entrance for each kind of input its recipes take (D140).
   errs.push(...entranceProblems());
+  // …and its water ports where its water goes (D142).
+  errs.push(...fluidPortProblems());
 
   // The unlock tree (D33): plans and research form one DAG — known prerequisites and costs, no
   // loop, every node reachable from the roots; plan ids never shadow research ids; every plan

@@ -12,6 +12,7 @@ import type { Grid } from '../world/grid';
 import type { Ent } from '../types';
 import { testSim, line, stockedSilo, IRON } from '../testkit';
 import { catchUp } from './catchup';
+import { serialize } from '../serialize';
 import type { Sim } from '../state';
 
 /** A kiln fed by a silo of `ore` iron ore and one of `coal` coal, its plates into the Core (as catchup.test.ts's `kilnLine`). */
@@ -69,6 +70,32 @@ describe('a young base catches up fast (D138)', () => {
     expect(lockOf(off, silos.ore)).toBe(-1);
     // The coal silo, still holding coal, keeps its lock both ways.
     expect(lockOf(off, silos.coal)).toBe(lockOf(on, silos.coal));
+  });
+
+  it('a post\'s exit with two purchases, one cancelled, hands out whole items offline too: no part left staged', () => {
+    // A throttled store's virtual pool grows by parts of an item a tick; it handed one out half
+    // made, and the ribbon held it staged for good (found by the D139 session on the starter's slag).
+    const make = (): { sim: Sim; b: number } => {
+      const sim = testSim();
+      sim.grantCredits(1_000_000);
+      const r = sim.place('trade_post', 515, 510, 0);
+      if (!r.ok) throw new Error(`post ${r.reason}`);
+      sim.placeBelts('ribbon', [[517, 509, 3], [516, 509, 3], [515, 509, 3], [514, 509, 3], [513, 509, 3], [512, 509, 2]]);
+      sim.addImport(r.id!, 'iron_plate', 10, 1_000_000);
+      const b = sim.addImport(r.id!, 'sand', 2, 1_000_000) as number;
+      sim.run(3030);
+      sim.cancelImport(b);
+      return { sim, b };
+    };
+    const on = make().sim, off = make().sim;
+    on.run(36000);
+    catchUp(off, 36000, { noDirect: true });
+    const chains = (serialize(off) as unknown as { chains?: Array<{ stage?: number[] }> }).chains ?? [];
+    expect(chains.every((c) => !c.stage || c.stage.length === 0)).toBe(true);
+    const plate = itemIdx('iron_plate');
+    const total = (s: Sim): number => s.totalHeld(plate);
+    expect(total(off)).toBe(total(on)); // none made or lost
+    expect(Math.abs(off.stock[plate]! - on.stock[plate]!)).toBeLessThanOrEqual(2000); // D62: two purchases, within two items
   });
 
   it('an empty silo a line fills during an absence is locked to that line\'s item, both ways', () => {

@@ -22,6 +22,7 @@ import {
 import { pvPanel } from '../solar';
 import { UNLIT, isUnlit } from '../unlit';
 import { CHARGER_BUSHING, HEART_MASTS, KIT_K, POLE, PYLON, kitDrawn, onArm, terminalProbe, terminalsOf, turnsArt } from '../terminals';
+import { pipeAt, pipePortTop } from '../pipe-ports';
 import { BIG_ROTOR, BORE, CUTTER, PITCH_ROTOR, SAND_WHEEL, TURBINE, boreLeg, boreSquare, bucketFull, vaneAt, type HRotor } from './moving';
 import { QZ, crystal } from '../rock';
 import {
@@ -3010,26 +3011,27 @@ const seedOf = (id: string): number => (id.length * 131 + id.charCodeAt(0) * 17)
  * A plan sprite's body: the recipe (or a moving building's body), the ports over it, and its
  * power terminals of the generic kit (art/terminals.ts), last, where the wires end.
  */
-function bodyTop(ctx: Ctx, f: Frame, id: BuildingId, def: BuildingDef, seed: number, lv = 1): void {
+function bodyTop(ctx: Ctx, f: Frame, id: BuildingId, def: BuildingDef, seed: number, lv = 1, wet = -1): void {
   const m = MOVING_TOP[id];
   if (m) m.body(ctx, f, seed);
   else (R[id] ?? fallback)(ctx, f, seed, lv);
   // The incinerator's in-ports are its plate's own ribbon mouths (as a routing block's): no nozzles.
-  if (def.kind !== 'sink') for (const p of def.ports) port(ctx, f, p.x, p.y, sideIndex[p.side], p.io, seed + p.x * 5 + p.y);
+  // A water port is pipework, a valve's wheel and no chevron (D142, art/pipe-ports.ts): the content's, or entrance `wet`.
+  if (def.kind !== 'sink') def.ports.forEach((p, i) => (pipeAt(def, i, wet) ? pipePortTop : port)(ctx, f, p.x, p.y, sideIndex[p.side], p.io, seed + p.x * 5 + p.y));
   for (const [i, t] of terminalsOf(id).entries()) if (kitDrawn(t)) terminalTop(ctx, f, t, seed + 900 + i * 7, KIT_K);
 }
 
 /**
  * Draw a plan-view building sprite (body + ports) for one rotation into a fresh canvas, at its
  * look's level `lv`; a building with a moving part gets it at phase 0, over the body as the world
- * draws it.
+ * draws it. `wet`: the entrance a water drinker's pipework is drawn on, when not its own (D142).
  */
-export function drawBuildingTop(id: BuildingId, rot: Rot, make: (w: number, h: number) => { ctx: Ctx; canvas: unknown }, lv = 1): { canvas: unknown; frame: Frame } {
+export function drawBuildingTop(id: BuildingId, rot: Rot, make: (w: number, h: number) => { ctx: Ctx; canvas: unknown }, lv = 1, wet = -1): { canvas: unknown; frame: Frame } {
   const def = BUILDINGS[id] as BuildingDef;
   const f = new Frame(TOP_PX, TOP_MARGIN, def.w, def.h, rot);
   const { ctx, canvas } = make(f.W, f.H);
   const seed = seedOf(id);
-  bodyTop(ctx, f, id, def, seed, lv);
+  bodyTop(ctx, f, id, def, seed, lv, wet);
   MOVING_TOP[id]?.part(ctx, f, seed, 0);
   return { canvas, frame: f };
 }
@@ -3039,14 +3041,14 @@ export function drawBuildingTop(id: BuildingId, rot: Rot, make: (w: number, h: n
  * ports) and its part at `frames` phases of one period, each a canvas the size of the whole
  * sprite. In plan the part is always over the body. Null for a building without one.
  */
-export function drawBuildingTopMoving(id: BuildingId, rot: Rot, frames: number, make: (w: number, h: number) => { ctx: Ctx; canvas: unknown }): { body: unknown; parts: unknown[]; frame: Frame } | null {
+export function drawBuildingTopMoving(id: BuildingId, rot: Rot, frames: number, make: (w: number, h: number) => { ctx: Ctx; canvas: unknown }, wet = -1): { body: unknown; parts: unknown[]; frame: Frame } | null {
   const m = MOVING_TOP[id];
   if (!m) return null;
   const def = BUILDINGS[id] as BuildingDef;
   const f = new Frame(TOP_PX, TOP_MARGIN, def.w, def.h, rot);
   const seed = seedOf(id);
   const b = make(f.W, f.H);
-  bodyTop(b.ctx, f, id, def, seed);
+  bodyTop(b.ctx, f, id, def, seed, 1, wet);
   const parts = Array.from({ length: frames }, (_, k) => {
     const p = make(f.W, f.H);
     m.part(p.ctx, f, seed, k / frames);

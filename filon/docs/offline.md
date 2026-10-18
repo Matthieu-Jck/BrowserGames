@@ -64,7 +64,7 @@ During a warm-up the group's boundary reservoirs are put in **virtual mode** (`V
 | State | Online meaning | Virtual behaviour |
 |---|---|---|
 | `V_NORMAL` | between the bounds | offers `portRate`, accepts everything: identical to the real reservoir |
-| `V_EMPTY` | nearly empty | offers only a small pool refilled at the group's **throttle** rate (its share of the item's total inflow); the pool starts at the true remaining stock |
+| `V_EMPTY` | nearly empty | offers only a small pool refilled at the group's **throttle** rate (its share of the item's total inflow); the pool starts at the true remaining stock. Fed, it hands out an item once it holds all of it, as the real store, which gains whole items, would (D138: a post's exit took half an item from the trickle and held it staged for good); unfed, its true remainder, a part included |
 | `V_FULL` | nearly full | accepts only into a room pool refilled at the group's share of the item's total outflow; the pool starts at the true remaining room |
 
 Pools refill once per tick (`vTick`, mu per epoch with a carry) and never bank more than a few ticks of throughput (`portRate·4 + 4000` mu). They are hashed, so a throttled group still finds an exact period.

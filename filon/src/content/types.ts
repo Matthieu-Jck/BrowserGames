@@ -72,6 +72,14 @@ export interface PortDef {
   /** Edge of that tile the port opens on (unrotated; rot 0 = front faces N). */
   readonly side: Side;
   readonly io: 'in' | 'out';
+  /**
+   * A water port (D142): a pump's outlet, a water drinker's water entrance — drawn as pipework (a
+   * flanged stub with its sight glass and a valve), where a conduit couples on. Validated
+   * (validate.ts `fluidPortProblems`); the engine does not read it: either entrance of a drinker
+   * still takes water (D114), so no base changes, and the art moves the pipework to the entrance
+   * the water really comes in by (render/art/pipe-ports.ts `wetEntrance`).
+   */
+  readonly fluid?: true;
 }
 
 export type BuildingKind =

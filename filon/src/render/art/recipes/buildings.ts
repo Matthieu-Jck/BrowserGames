@@ -33,6 +33,7 @@ import {
   latheIso, pipeIso, portIso, prismIso, slab, sphereIso, spireIso, terminalIso, trussIso, vaultIso, wheelIso, type Face, type Faces, type RRect,
 } from '../iso-shapes';
 import { CHARGER_BUSHING, HEART_MASTS, INSULATOR, KIT_K, POLE, PYLON, kitDrawn, onArm, terminalProbe, terminalsOf, turnsArt } from '../terminals';
+import { pipeAt, pipePortIso } from '../pipe-ports';
 import { BIG_ROTOR, BORE, CUTTER, PITCH_ROTOR, SAND_WHEEL, TURBINE, boreLeg, boreSquare, bucketFull, vaneAt, type HRotor } from './moving';
 import { QZ, crystal } from '../rock';
 
@@ -6080,22 +6081,25 @@ const seedOf = (id: string): number => (id.length * 131 + id.charCodeAt(0) * 17)
  * and its power terminals of the generic kit (art/terminals.ts: a service mast on a roof), last,
  * so a wire always meets one in sight. Poles, the Heart and the charger draw their own.
  */
-function bodyWithPorts(ctx: Ctx, f: IsoFrame, id: BuildingId, def: BuildingDef, recipe: Recipe, seed: number, lv = 1): void {
+function bodyWithPorts(ctx: Ctx, f: IsoFrame, id: BuildingId, def: BuildingDef, recipe: Recipe, seed: number, lv = 1, wet = -1): void {
   // The incinerator's in-ports are its box's own ribbon mouths (as a routing block's): no nozzles on top.
-  const ports = (def.kind === 'sink' ? [] : def.ports).map((p) => ({ p, d: f.dir(sideIndex[p.side]) }));
-  for (const { p, d } of ports) if (d === 0 || d === 3) portIso(ctx, f, p.x, p.y, sideIndex[p.side], p.io, SZ, seed + p.x * 5 + p.y);
+  // A water port is pipework (D142, art/pipe-ports.ts): the content's, or entrance `wet` when the water comes in there.
+  const ports = (def.kind === 'sink' ? [] : def.ports).map((p, i) => ({ p, d: f.dir(sideIndex[p.side]), pipe: pipeAt(def, i, wet) }));
+  const draw = ({ p, pipe }: (typeof ports)[number]): void => (pipe ? pipePortIso : portIso)(ctx, f, p.x, p.y, sideIndex[p.side], p.io, SZ, seed + p.x * 5 + p.y);
+  for (const q of ports) if (q.d === 0 || q.d === 3) draw(q);
   if (recipe.moving) recipe.moving.body(ctx, f, seed);
   else recipe.draw?.(ctx, f, seed, lv);
-  for (const { p, d } of ports) if (d === 1 || d === 2) portIso(ctx, f, p.x, p.y, sideIndex[p.side], p.io, SZ, seed + p.x * 5 + p.y);
+  for (const q of ports) if (q.d === 1 || q.d === 2) draw(q);
   for (const [i, t] of terminalsOf(id).entries()) if (kitDrawn(t)) terminalIso(ctx, f, t, seed + 900 + i * 7, KIT_K);
 }
 
 /**
  * Draw a building sprite (body + ports) for one rotation into a fresh canvas, at its look's level
  * `lv` (`artLevels`). A building with a moving part gets it at phase 0, under or over the body
- * exactly as the world stacks the two sprites (`drawBuildingMoving`).
+ * exactly as the world stacks the two sprites (`drawBuildingMoving`). `wet`: the entrance a water
+ * drinker's pipework is drawn on, when not its own (D142, art/pipe-ports.ts `wetEntrance`).
  */
-export function drawBuilding(id: BuildingId, rot: Rot, make: (w: number, h: number) => { ctx: Ctx; canvas: unknown }, lv = 1): { canvas: unknown; frame: IsoFrame } {
+export function drawBuilding(id: BuildingId, rot: Rot, make: (w: number, h: number) => { ctx: Ctx; canvas: unknown }, lv = 1, wet = -1): { canvas: unknown; frame: IsoFrame } {
   const def = BUILDINGS[id] as BuildingDef;
   const recipe = R[id] ?? fallback;
   const f = new IsoFrame(def.w, def.h, rot, recipe.head);
@@ -6103,7 +6107,7 @@ export function drawBuilding(id: BuildingId, rot: Rot, make: (w: number, h: numb
   const seed = seedOf(id);
   const m = recipe.moving, over = !!m && m.over(f);
   if (m && !over) m.part(ctx, f, seed, 0);
-  bodyWithPorts(ctx, f, id, def, recipe, seed, lv);
+  bodyWithPorts(ctx, f, id, def, recipe, seed, lv, wet);
   if (m && over) m.part(ctx, f, seed, 0);
   return { canvas, frame: f };
 }
@@ -6114,14 +6118,14 @@ export function drawBuilding(id: BuildingId, rot: Rot, make: (w: number, h: numb
  * sprite (same anchor); `over`: the part is drawn over the body in this rotation. Null for a
  * building without one.
  */
-export function drawBuildingMoving(id: BuildingId, rot: Rot, frames: number, make: (w: number, h: number) => { ctx: Ctx; canvas: unknown }): { body: unknown; parts: unknown[]; over: boolean; frame: IsoFrame } | null {
+export function drawBuildingMoving(id: BuildingId, rot: Rot, frames: number, make: (w: number, h: number) => { ctx: Ctx; canvas: unknown }, wet = -1): { body: unknown; parts: unknown[]; over: boolean; frame: IsoFrame } | null {
   const recipe = R[id], m = recipe?.moving;
   if (!recipe || !m) return null;
   const def = BUILDINGS[id] as BuildingDef;
   const f = new IsoFrame(def.w, def.h, rot, recipe.head);
   const seed = seedOf(id);
   const b = make(f.W, f.H);
-  bodyWithPorts(b.ctx, f, id, def, recipe, seed);
+  bodyWithPorts(b.ctx, f, id, def, recipe, seed, 1, wet);
   const parts = Array.from({ length: frames }, (_, k) => {
     const p = make(f.W, f.H);
     m.part(p.ctx, f, seed, k / frames);

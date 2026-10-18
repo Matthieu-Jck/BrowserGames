@@ -76,7 +76,7 @@ import { footprint } from '@/sim/entities';
 import { tileIndex } from '@/sim/world/grid';
 import { TPS, WORLD } from '@/sim/constants';
 import { turbineWind, weatherAt, type Producer } from '@/sim/power/network';
-import { CAMO_VENT_KEY, bKey, bodyKey, btKey, beltKey, iKey, inletKey, partKey, type Atlas } from '../art/atlas';
+import { CAMO_VENT_KEY, COUPLING_KEY, bKey, bodyKey, btKey, beltKey, iKey, inletKey, partKey, wetKey, type Atlas } from '../art/atlas';
 import { DynAtlas, type DynFrame } from '../art/dyn-atlas';
 import { BELT_PX, BELT_TIERS, type BeltTier } from '../art/recipes/belts';
 import { SKY, artLevelOf, drawBuildingShadow, isoHead, shadowFrameOf, type SkyPiece } from '../art/recipes/buildings';
@@ -97,6 +97,7 @@ import { LIFT_ISO_K, LIFT_PLAN_K, fallFrames, fallOfConduit, liftFrames, liftOfB
 import { FLAG, FLAG_K, flagFrames, type FlagFrames } from './heart-flag';
 import { defaultEmblem, emblemKey, type Emblem } from '@/content/emblem';
 import { ribbonRuns } from './neighbour-goods';
+import { couplingSides, wetEntranceOf } from './water-ports';
 
 /** The shadows' colour (world/cast-shadows.ts): also the plan's hint of height. */
 export { SHADOW_TINT };
@@ -201,8 +202,8 @@ interface Look {
   ent: number;
   id: BuildingId;
   dormant: boolean;
-  /** Its body sprites (iso, plan): their atlas key lit, the art's rotation, whether the key is a moving building's body. */
-  views: Array<{ s: Sprite; key: string; iso: boolean; rot: Rot; body: boolean }>;
+  /** Its body sprites (iso, plan): their atlas key lit, the art's rotation, whether the key is a moving building's body, the entrance its pipework is on (D142; −1: its own). */
+  views: Array<{ s: Sprite; key: string; iso: boolean; rot: Rot; body: boolean; wet: number }>;
   parts: Sprite[];
   /** Switched off (as applied); waiting for an unlit picture to be baked; its sprites gone (re-drawn or removed). */
   off: boolean;
@@ -493,8 +494,9 @@ export class BuildingsView {
   /**
    * What an entity's sprites are drawn from: if any of it changes, the entity is re-drawn. A
    * building: its kind, place and turn, built or not, dormant or not, where it stands, the look it
-   * wears (the Heart's level), the item it shows (sorters). A ribbon: its kind, place,
-   * its piece (bend, turn, mirror), its inlets, its tile's height and its elevator.
+   * wears (the Heart's level), the item it shows (sorters), the entrance a water drinker's
+   * pipework is on (D142). A ribbon: its kind, place, its piece (bend, turn, mirror), its inlets,
+   * its tile's height and its elevator; a conduit, the ports it couples to.
    */
   private sigOf(sim: Sim, e: Ent, st: Stand | undefined): string {
     const kind = BUILDING_KIND[e.def]!;
@@ -502,12 +504,12 @@ export class BuildingsView {
       const p = beltPiece(sim, e);
       const fed = p.corner ? 0 : (sim.graph?.feedDirs.get(tileIndex(e.x, e.y)) ?? 0) & ((1 << ((e.rot + 3) & 3)) | (1 << ((e.rot + 1) & 3)));
       const l = this.liftOf(sim, e), fl = this.fallOf(sim, e);
-      return `r${e.def},${e.x},${e.y},${e.rot},${+p.corner}${p.rot}${+p.mirror},${fed},${tileTop(sim.grid, e.x, e.y)}${l?.shaft ? `,${l.rot}${+l.up},${l.x},${l.y},${l.low}` : ''}${fl ? `,f${fl.low},${fl.h}` : ''}`;
+      return `r${e.def},${e.x},${e.y},${e.rot},${+p.corner}${p.rot}${+p.mirror},${fed},${tileTop(sim.grid, e.x, e.y)}${l?.shaft ? `,${l.rot}${+l.up},${l.x},${l.y},${l.low}` : ''}${fl ? `,f${fl.low},${fl.h}` : ''}${kind === 'conduit' ? `,c${couplingSides(sim, e)}` : ''}`;
     }
     const id = BUILDING_IDS[e.def]! as BuildingId;
     const logic = buildingDef(e.def).logic;
     const item = logic === 'sorter' || logic === 'inverted' ? filterOf(e.cfg, 0) : -1;
-    return `b${e.def},${e.x},${e.y},${e.rot},${+(e.builtAt !== 0)}${+sim.isDormant(e)},${st ? `${st.level},${st.z}` : ''},${artLevelOf(id, this.heartLv)},${item}`;
+    return `b${e.def},${e.x},${e.y},${e.rot},${+(e.builtAt !== 0)}${+sim.isDormant(e)},${st ? `${st.level},${st.z}` : ''},${artLevelOf(id, this.heartLv)},${item},${wetEntranceOf(sim, e)}`;
   }
 
   private liftOf(sim: Sim, e: Ent): Lift | null {
@@ -726,7 +728,7 @@ export class BuildingsView {
     const base = L.dormant ? DORMANT_TINT : 0xffffff;
     let waits = false;
     for (const v of L.views) {
-      const tex = off ? this.unlit(v.key, L.id, v.iso, v.rot, v.body) : this.atlas.textures.get(v.key) ?? null;
+      const tex = off ? this.unlit(v.key, L.id, v.iso, v.rot, v.body, v.wet) : this.atlas.textures.get(v.key) ?? null;
       if (tex) { if (v.s.texture !== tex) v.s.texture = tex; v.s.tint = base; }
       else { v.s.tint = L.dormant ? DORMANT_TINT : OFF_TINT; waits = true; }
     }
@@ -738,12 +740,12 @@ export class BuildingsView {
    * A building's unlit picture for an atlas key (its whole frame, the same anchor: a texture swap),
    * baked the first time (recipes/off.ts `drawOff`). Null when this frame's baking budget is spent.
    */
-  private unlit(key: string, id: BuildingId, iso: boolean, rot: Rot, body: boolean): Texture | null {
+  private unlit(key: string, id: BuildingId, iso: boolean, rot: Rot, body: boolean, wet = -1): Texture | null {
     const got = this.offSheet.get(key);
     if (got) return got.tex;
     const fr = this.atlas.frames.get(key);
     if (!fr || this.offSheet.spent > OFF_BAKE_MS) return null;
-    return this.offSheet.add(key, fr.w, fr.h, fr.ox, fr.oy, (ctx) => drawOff(ctx, id, rot, iso, body, fr.w, fr.h)).tex;
+    return this.offSheet.add(key, fr.w, fr.h, fr.ox, fr.oy, (ctx) => drawOff(ctx, id, rot, iso, body, fr.w, fr.h, wet)).tex;
   }
 
   /** Watched buildings, how many look switched off, how many unlit pictures are baked (debug, smoke). */
@@ -1364,10 +1366,14 @@ export class BuildingsView {
     // The iso volume (on the rock top it stands on); a moving part apart, just over or under its body.
     // `lv`: the look it wears — the Heart's grows with its level (D86), every other building has one.
     const lv = artLevelOf(id as BuildingId, this.heartLv);
-    const isoKey = this.atlas.frames.has(bKey(id, e.rot, lv)) ? bKey(id, e.rot, lv) : bKey(id, 0, lv);
+    // A water drinker watered by another entrance than its own wears that variant (D142, water-ports.ts).
+    const wet = foreign === undefined && this.of ? wetEntranceOf(this.of, e) : -1;
+    const isoBase = this.atlas.frames.has(bKey(id, e.rot, lv)) ? bKey(id, e.rot, lv) : bKey(id, 0, lv);
+    const isoKey = wet >= 0 && this.atlas.frames.has(wetKey(isoBase, wet)) ? wetKey(isoBase, wet) : isoBase;
     const [wx, wy] = tileToIso(e.x, e.y, st?.level ?? 0);
     const isoMv = this.atlas.moving.get(isoKey);
-    const artRot = isoKey === bKey(id, e.rot, lv) ? e.rot : 0;
+    const artRot = isoBase === bKey(id, e.rot, lv) ? e.rot : 0;
+    const isoWet = isoKey === isoBase ? -1 : wet;
     const pit = BUILDING_KIND[e.def] === 'sink', jct = BUILDING_KIND[e.def] === 'crossing';
     this.addShadow(e, id as BuildingId, artRot, pending ? 0.35 : 1, st, lv);
     const look: Look | null = foreign === undefined && looksAtWork(e.def) ? { ent: e.id, id: id as BuildingId, dormant, views: [], parts: [], off: false, waits: false, dead: false } : null;
@@ -1376,19 +1382,20 @@ export class BuildingsView {
     else {
       const key = isoMv ? bodyKey(isoKey) : isoKey;
       const s = this.place(key, this.objectLayer, wx, wy, alpha, tint, z);
-      if (s && look) look.views.push({ s, key, iso: true, rot: artRot, body: !!isoMv });
+      if (s && look) look.views.push({ s, key, iso: true, rot: artRot, body: !!isoMv, wet: isoWet });
     }
     if (isoMv) {
       const s = this.place(partKey(isoKey, 0), this.objectLayer, wx, wy, alpha, tint, z + (isoMv.over ? 0.2 : -0.2));
       if (s) parts.push({ s, tex: this.phases(isoKey, isoMv.n) });
     }
     // The plan sprite (flat; above the floor, over its hint of height); a moving part over it.
-    const topKey = this.atlas.frames.has(btKey(id, e.rot, lv)) ? btKey(id, e.rot, lv) : btKey(id, 0, lv);
+    const topBase = this.atlas.frames.has(btKey(id, e.rot, lv)) ? btKey(id, e.rot, lv) : btKey(id, 0, lv);
+    const topKey = wet >= 0 && this.atlas.frames.has(wetKey(topBase, wet)) ? wetKey(topBase, wet) : topBase;
     const topMv = this.atlas.moving.get(topKey);
     if (st) this.riseHint(topMv ? bodyKey(topKey) : topKey, e.x, e.y, st.level, alpha);
     const planKey = topMv ? bodyKey(topKey) : topKey;
     const plan = this.place(planKey, this.planLayer, e.x, e.y, alpha, tint, 0);
-    if (plan && look) look.views.push({ s: plan, key: planKey, iso: false, rot: topKey === btKey(id, e.rot, lv) ? e.rot : 0, body: !!topMv });
+    if (plan && look) look.views.push({ s: plan, key: planKey, iso: false, rot: topBase === btKey(id, e.rot, lv) ? e.rot : 0, body: !!topMv, wet: topKey === topBase ? -1 : wet });
     if (pit) this.addPitGlow(e);
     if (topMv) {
       const s = this.place(partKey(topKey, 0), this.planLayer, e.x, e.y, alpha, tint, 0);
@@ -1466,14 +1473,25 @@ export class BuildingsView {
     this.beltSprite(tex, e.x, e.y, p.rot, p.mirror, lv);
     this.addLift(sim, e);
     this.addFall(sim, e);
-    if (p.corner) return;
+    // A conduit's end at a port (D142): a bolted coupling at that edge, over its piece (and its inlet, below).
+    const couple = tier === 'conduit' ? couplingSides(sim, e) : 0;
+    const coupling = couple ? this.atlas.textures.get(COUPLING_KEY) : undefined;
+    if (p.corner) { this.couple(coupling, couple, e, lv); return; }
     // A straight piece fed from a side (a merging line, a router, a machine's outlet): open the
     // rail there so the connection reads. The inlet art comes in from the left; mirror for the right.
     const fed = sim.graph?.feedDirs.get(tileIndex(e.x, e.y)) ?? 0;
     const inlet = this.atlas.textures.get(inletKey(tier));
-    if (!fed || !inlet) return;
-    const left = ((e.rot + 3) & 3) as Rot, right = ((e.rot + 1) & 3) as Rot;
-    if (fed & (1 << left)) this.beltSprite(inlet, e.x, e.y, e.rot, false, lv);
-    if (fed & (1 << right)) this.beltSprite(inlet, e.x, e.y, e.rot, true, lv);
+    if (fed && inlet) {
+      const left = ((e.rot + 3) & 3) as Rot, right = ((e.rot + 1) & 3) as Rot;
+      if (fed & (1 << left)) this.beltSprite(inlet, e.x, e.y, e.rot, false, lv);
+      if (fed & (1 << right)) this.beltSprite(inlet, e.x, e.y, e.rot, true, lv);
+    }
+    this.couple(coupling, couple, e, lv);
+  }
+
+  /** The coupling piece at each edge of `mask` (bit `1 << side`), turned to face it: drawn for the north edge. */
+  private couple(tex: Texture | undefined, mask: number, e: Ent, lv: number): void {
+    if (!tex) return;
+    for (let s = 0; s < 4; s++) if (mask & (1 << s)) this.beltSprite(tex, e.x, e.y, s as Rot, false, lv);
   }
 }

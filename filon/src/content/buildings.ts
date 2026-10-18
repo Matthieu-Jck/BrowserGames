@@ -4,6 +4,8 @@
 import type { BuildingDef, BuildingKind, PortDef } from './types';
 
 const P = (x: number, y: number, side: PortDef['side'], io: PortDef['io']): PortDef => ({ x, y, side, io });
+/** A water port (D142): a pump's outlet, a water drinker's water entrance — pipework where a conduit couples on. */
+const PW = (x: number, y: number, side: PortDef['side'], io: PortDef['io']): PortDef => ({ x, y, side, io, fluid: true });
 
 export const BUILDINGS = {
   // ── colony ────────────────────────────────────────────────────────────────
@@ -51,7 +53,7 @@ export const BUILDINGS = {
     desc: { fr: 'Au bord de l’eau, pompe 60 eau/min dans un conduit, pour les chaudières et les fours à céramique. L’eau ne voyage pas sur les rubans.', en: 'At the water’s edge, pumps 60 water/min into a conduit, for boilers and ceramic ovens. Water does not ride ribbons.' },
     // Tier 1 since D114 (the Steam plan: water's first use is the steam boiler); onRock: by the tarn up on the Crown (D63)
     kind: 'pump', category: 'extraction', w: 1, h: 1, needsZone: true, onRock: true, unlock: 'steam', kw: 30, idleKw: 3,
-    cost: [['iron_plate', 5], ['glass', 2]], ports: [P(0, 0, 'N', 'out')], drill: { perMin: 60 },
+    cost: [['iron_plate', 5], ['glass', 2]], ports: [PW(0, 0, 'N', 'out')], drill: { perMin: 60 },
   },
   backfiller: {
     name: { fr: 'Remblayeuse', en: 'Backfiller' },
@@ -217,7 +219,7 @@ export const BUILDINGS = {
     name: { fr: 'Four à céramique', en: 'Ceramic Oven' },
     desc: { fr: 'Cuit la pierre et l’eau en céramique. La pierre vient des excavatrices, l’eau des pompes par conduit.', en: 'Fires stone and water into ceramic. Stone comes from excavators, water from pumps by conduit.' },
     kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, onRock: true, unlock: 'tr3', crafts: true, kw: 120, idleKw: 12, // onRock: a mountain-top ceramic works by the tarn (D63)
-    cost: [['brick', 20], ['pipe', 6], ['gear', 4]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
+    cost: [['brick', 20], ['pipe', 6], ['gear', 4]], ports: [P(0, 1, 'S', 'in'), PW(1, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
   },
   observatory: {
     // The Research Lab (D68); its id stays `observatory` (saves, the plan, the unlock tree).
@@ -261,7 +263,7 @@ export const BUILDINGS = {
     name: { fr: 'Chaudière à vapeur', en: 'Steam Boiler' },
     desc: { fr: 'Change le charbon et l’eau en vapeur, et la vapeur en électricité : 600 kW pour 8 charbon et 30 eau par minute, deux fois et demie ce que le charbon donne au générateur. Elle ne brûle que ce que le réseau demande.', en: 'Turns coal and water into steam, and steam into power: 600 kW for 8 coal and 30 water a minute, two and a half times what coal gives in the generator. It burns only what the grid asks for.' },
     kind: 'generator', category: 'energy', w: 3, h: 2, needsZone: true, onRock: true, unlock: 'steam',
-    cost: [['iron_plate', 30], ['glass', 6], ['copper_wire', 6]], ports: [P(0, 1, 'S', 'in'), P(2, 1, 'S', 'in')],
+    cost: [['iron_plate', 30], ['glass', 6], ['copper_wire', 6]], ports: [P(0, 1, 'S', 'in'), PW(2, 1, 'S', 'in')], // the water intake on the right (D142)
     gen: { kw: 600, fuel: 'coal', fuelPerMin: 8, water: 30 },
   },
   wind_flower: {
@@ -416,7 +418,7 @@ export const BUILDINGS = {
     name: { fr: 'Pompe haute pression', en: 'High-Pressure Pump' },
     desc: { fr: 'Au bord de l’eau, pompe 240 eau/min dans un conduit.', en: 'At the water’s edge, pumps 240 water/min into a conduit.' },
     kind: 'pump', category: 'extraction', w: 2, h: 2, needsZone: true, onRock: true, unlock: 'ex_hppump', kw: 120, idleKw: 12,
-    cost: [['pipe', 12], ['steel', 6], ['gear', 6]], ports: [P(0, 0, 'N', 'out')], drill: { perMin: 240 },
+    cost: [['pipe', 12], ['steel', 6], ['gear', 6]], ports: [PW(0, 0, 'N', 'out')], drill: { perMin: 240 },
   },
   heavy_excavator: {
     name: { fr: 'Excavatrice lourde', en: 'Heavy Excavator' },
@@ -548,7 +550,7 @@ export const BUILDINGS = {
     desc: { fr: 'Moule le sable mouillé en briques et les cuit : un sable et deux eaux par brique, ou deux scories et une eau. Le sable ou les scories arrivent par ruban, l’eau des pompes par conduit.', en: 'Moulds wet sand into bricks and bakes them: a sand and two waters a brick, or two slag and a water. Sand or slag comes by ribbon, water from pumps by conduit.' },
     // onRock: by the Crown's tarn too, like the ceramic oven (D63), where the water is.
     kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, onRock: true, unlock: 'ex_brick', crafts: true, kw: 90, idleKw: 9,
-    cost: [['iron_plate', 20], ['glass', 4], ['copper_wire', 4]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
+    cost: [['iron_plate', 20], ['glass', 4], ['copper_wire', 4]], ports: [P(0, 1, 'S', 'in'), PW(1, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
   },
   steel_mill: {
     name: { fr: 'Aciérie', en: 'Steel Mill' },

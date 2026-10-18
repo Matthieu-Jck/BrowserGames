@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { categoryProblems, entranceProblems, reachableItems, reachableNodes, rootPlans, startBuildings, tiredVeinPerMin, uniquesNeeded, validateContent, wirePerElectronicsWorkshop } from './validate';
+import { categoryProblems, entranceProblems, fluidPortProblems, reachableItems, reachableNodes, rootPlans, startBuildings, tiredVeinPerMin, uniquesNeeded, validateContent, wirePerElectronicsWorkshop } from './validate';
 import { ITEMS } from './items';
 import { RECIPES } from './recipes';
 import { BAL } from './balance';
@@ -36,6 +36,37 @@ describe('content invariants', () => {
     expect(entranceProblems([['chip_fab', short]], [['circuit', twoWires]])).toEqual([]);
     // A building no recipe names is not a machine: no entrance asked of it.
     expect(entranceProblems([['silo', BUILDINGS.silo as BuildingDef]], [['circuit', RECIPES.circuit as RecipeDef]])).toEqual([]);
+  });
+
+  it('water ports (D142): a pump gives by a fluid outlet, each water drinker has one water entrance and a dry one a kind besides', () => {
+    expect(fluidPortProblems()).toEqual([]);
+    const wet = (id: keyof typeof BUILDINGS): string[] => (BUILDINGS[id] as BuildingDef).ports.filter((p) => p.fluid).map((p) => `${p.x},${p.y},${p.side},${p.io}`);
+    expect(wet('pump')).toEqual(['0,0,N,out']);
+    expect(wet('hp_pump')).toEqual(['0,0,N,out']);
+    expect(wet('steam_boiler')).toEqual(['2,1,S,in']); // the water intake on the right; the coal on the left
+    expect(wet('brickworks')).toEqual(['1,1,S,in']);
+    expect(wet('ceramic_oven')).toEqual(['1,1,S,in']);
+    // No other building has one: a ribbon-fed machine's ports are all dry.
+    for (const [id, b] of Object.entries(BUILDINGS) as Array<[string, BuildingDef]>) {
+      if (['pump', 'hp_pump', 'steam_boiler', 'brickworks', 'ceramic_oven'].includes(id)) continue;
+      expect(b.ports.some((p) => p.fluid), id).toBe(false);
+    }
+    // Marked wrong, each fails by name.
+    const of = (id: keyof typeof BUILDINGS): BuildingDef => BUILDINGS[id] as BuildingDef;
+    const dry = (b: BuildingDef): BuildingDef => ({ ...b, ports: b.ports.map(({ fluid: _f, ...p }) => p) });
+    const brick = RECIPES.brick as RecipeDef;
+    expect(fluidPortProblems([['pump', dry(of('pump'))]], [])).toEqual(['building pump: gives a fluid through an outlet not marked fluid (D142)']);
+    expect(fluidPortProblems([['brickworks', dry(of('brickworks'))]], [['brick', brick]])).toEqual(['building brickworks: drinks water through 0 water entrances (one, D142)']);
+    expect(fluidPortProblems([['steam_boiler', dry(of('steam_boiler'))]], [])).toEqual(['building steam_boiler: drinks water through 0 water entrances (one, D142)']);
+    const allWet: BuildingDef = { ...of('brickworks'), ports: of('brickworks').ports.map((p) => ({ ...p, fluid: true as const })) };
+    expect(fluidPortProblems([['brickworks', allWet]], [['brick', brick]])).toEqual([
+      'building brickworks: a fluid outlet, but it gives no fluid (D142)',
+      'building brickworks: drinks water through 2 water entrances (one, D142)',
+      'building brickworks: 0 dry entrances for 1 other kinds of input (D140, D142)',
+    ]);
+    // A water entrance on a machine no fluid goes into: the smelter's (the kiln).
+    const kiln: BuildingDef = { ...of('kiln'), ports: of('kiln').ports.map((p, i) => (i === 0 ? { ...p, fluid: true as const } : p)) };
+    expect(fluidPortProblems([['kiln', kiln]], [])).toEqual(['building kiln: a water entrance, but it drinks no fluid (D142)']);
   });
 
   it('the tired vein cannot feed a single mechanics workshop: copper must be imported', () => {

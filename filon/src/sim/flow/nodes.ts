@@ -384,9 +384,18 @@ export class ReservoirNode extends FNode {
     return it >= 0 ? [it] : [];
   }
 
-  /** What it can hand out of an item now (mu): its stock, or a virtual reservoir's pool. */
+  /**
+   * What it can hand out of an item now (mu): its stock, or a virtual reservoir's pool. A pool
+   * refilled by a throttle grows by parts of an item a tick, where the real store gains whole ones
+   * (a delivery, a line's items): it hands out an item once it holds all of it, as the store would
+   * (D138: a post's exit took half an item and held it staged for good). Unfed, the pool is the
+   * store's true remainder, handed out as the store would, a part included.
+   */
   private availOf(it: number): number {
-    return !this.virtual ? this.stock[it]! : this.vState[it] === V_EMPTY ? this.vPool[it]! : MU;
+    if (!this.virtual) return this.stock[it]!;
+    if (this.vState[it] !== V_EMPTY) return MU;
+    const pool = this.vPool[it]!;
+    return pool < MU && this.vRate[it]! > 0 ? 0 : pool;
   }
 
   override offer(e: number, port: number, ctx: TickCtx): void {
