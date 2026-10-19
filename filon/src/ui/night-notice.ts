@@ -7,8 +7,9 @@
 // D143 took the generator out of the game), two figures
 // (the sun's share now, what the night would leave) —, one sentence, the Électricité view's button
 // (P) and « Compris ». Once per base (remembered in localStorage); it waits under a full screen or
-// while a side panel stands where it goes (top right); it goes by itself at nightfall, the night
-// itself saying the rest, or as soon as the base holds the night. Reads the sim, never changes it.
+// while a side panel stands where it goes (top right); it stays until it is read (« Compris » or the
+// view's button; until 2026-10-19 it went by itself at nightfall, often unread), or goes as soon as
+// the base holds the night. Reads the sim, never changes it.
 import { DAY_EPOCHS, EPOCH, SOLAR } from '@/sim/constants';
 import { el, setAttr, setText } from '@/core/dom';
 import { makeStore } from '@/core/store';
@@ -86,11 +87,12 @@ export class NightNotice {
     const key = baseKey(sim);
     if (this.on && this.on !== key) this.on = null; // another base was loaded
     const phase = (((sim.absEpoch() % DAY_EPOCHS) + DAY_EPOCHS) % DAY_EPOCHS) * EPOCH + (sim.tick % EPOCH);
-    const night = SOLAR[Math.floor(phase / EPOCH)] === 0;
     if (this.on) {
-      // Nightfall says the rest; a base that now holds the night needs it no more.
+      // It stays until it is read (« Compris », or the Électricité view): nightfall no longer takes
+      // it away (owner, 2026-10-19: « the notifications shouldn't go away so fast, i couldn't read the
+      // stuff about the core's solar panels »). A base that now holds the night needs it no more.
       const held = (nightCover(sim)?.pct ?? 0) >= HOLDS;
-      if (night || (held && !this.forced)) this.close();
+      if (held && !this.forced) this.close();
       else this.paint(sim);
       return;
     }
