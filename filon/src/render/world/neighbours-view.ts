@@ -64,7 +64,7 @@ const MAX_LINES = 20;
 /** The goods on their ribbons: tiles between two, tiles a second. */
 const ITEM_GAP = 1.6, ITEM_SPEED = 1.1;
 /** The buildings that smoke (their furnaces' chimneys), and a plume's puffs. */
-const SMOKERS: ReadonlySet<BuildingId> = new Set(['kiln', 'arc_furnace', 'brazier', 'ceramic_oven', 'forge_press', 'steam_boiler'] as BuildingId[]);
+const SMOKERS: ReadonlySet<BuildingId> = new Set(['kiln', 'arc_furnace', 'ceramic_oven', 'forge_press', 'steam_boiler'] as BuildingId[]);
 const PUFFS = 5, PUFF_LIFE = 3.2;
 /** Their name over the base: shown from this zoom out, its height on screen (px). */
 const NAME_ZOOM = 1.05, NAME_PX = 36;

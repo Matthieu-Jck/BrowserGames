@@ -1,5 +1,5 @@
 // scenario-steam.ts — « La vapeur » in the debug bases (D114: water's first use, from Tier 1), as a
-// player answers it after « La verrerie »: the Steam plan (after the coal generator's), a pump at
+// player answers it after « La verrerie »: the Steam plan (after the turbine's, D143), a pump at
 // the water nearest the Core (readouts/water.ts: on any level — map 4's spring pool at the floor's
 // edge, D115; the tarn up on the Crown on maps 2–3, whose water pours down the terraces in its
 // conduit, D114; map 1's lake), on that water's far shore from the Core and the boiler beyond it
@@ -51,7 +51,7 @@ const ROLES = ['boiler', 'boilerPump', 'coalB'] as const;
 
 /** 5 · « La vapeur »: a pump at the water, the boiler below it fed by a conduit, its coal led in, wired; the quest met. */
 export function steamPower(b: Builder): void {
-  b.plan('wind_flower', 'brazier', 'steam');
+  b.plan('wind_flower', 'steam');
   const sim = b.sim;
   b.affordAll(['steam_boiler', 1], ['pump', 1], ['conduit', 40], ['drill', 1]);
   let done = false;

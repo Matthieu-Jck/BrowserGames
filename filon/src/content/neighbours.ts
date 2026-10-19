@@ -97,12 +97,12 @@ export const NEIGHBOUR_TRADE_OTHER = { fr: 'Atelier', en: 'Workshop' } as const;
 export const NEIGHBOUR_KITS: Readonly<Record<ColonyProfileId, NeighbourKit>> = {
   mining: { power: ['wind_flower', 'wind_flower'], extra: [], tents: 2 },
   // A foundry and an ember forge smelt: an incinerator beside the hub, where their slag goes (D125, for the look).
-  foundry: { power: ['brazier', 'wind_flower'], extra: ['incinerator'], tents: 1 },
+  foundry: { power: ['steam_boiler', 'wind_flower'], extra: ['incinerator'], tents: 1 },
   glasshouse: { power: ['solar_farm', 'sun_bulb'], extra: [], tents: 1 },
   // A wind citadel: turbines for its chargers, an accumulator beside.
   wind: { power: ['big_turbine', 'pitch_turbine', 'wind_flower'], extra: ['accumulator'], tents: 1 },
   saltport: { power: ['wind_flower', 'wind_flower'], extra: [], tents: 2 },
-  ember: { power: ['brazier', 'brazier'], extra: ['incinerator'], tents: 1 },
+  ember: { power: ['steam_boiler', 'wind_flower'], extra: ['incinerator'], tents: 1 },
   // A scholar spire, its servers beside.
   scholar: { power: ['solar_farm', 'wind_flower'], extra: ['server'], tents: 1 },
   drifter: { power: ['wind_flower', 'wind_flower'], extra: [], tents: 2 },

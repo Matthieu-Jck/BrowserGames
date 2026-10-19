@@ -88,7 +88,7 @@ describe('work look', () => {
 
   it('watches the production kinds only: never logistics, the Heart or the excavator', () => {
     const watched = BUILDING_IDS.filter((_, i) => looksAtWork(i));
-    for (const id of ['kiln', 'wire_mill', 'drill', 'sand_collector', 'auto_lab', 'pump', 'brazier', 'observatory', 'server', 'wind_flower', 'sun_bulb', 'fumarole_tap']) expect(watched, id).toContain(id);
+    for (const id of ['kiln', 'wire_mill', 'drill', 'sand_collector', 'auto_lab', 'pump', 'steam_boiler', 'observatory', 'server', 'wind_flower', 'sun_bulb', 'fumarole_tap']) expect(watched, id).toContain(id);
     for (const id of ['ribbon', 'router', 'silo', 'hearth', 'trade_post', 'mast', 'excavator', 'incinerator']) expect(watched, id).not.toContain(id);
   });
 });

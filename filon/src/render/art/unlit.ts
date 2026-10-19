@@ -11,7 +11,7 @@
 // - `switchOff` then greys the pixels (towards their luminance) and darkens them a little, with a
 //   touch of the night's lilac so a stopped machine stays in the palette rather than going dead grey.
 // - What is not a lamp but goes out with the machine — a fire basket's flames, a cooling tower's
-//   steam — the recipe leaves out itself when `isUnlit(ctx)` (the brazier, the fumarole tap).
+//   steam — the recipe leaves out itself when `isUnlit(ctx)` (the steam boiler's plume, the fumarole tap).
 // No Pixi here: the buildings view bakes the result on demand into its own sheet.
 import type { Ctx } from './ink';
 import { C, mix } from './tokens';

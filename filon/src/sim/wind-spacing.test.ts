@@ -34,8 +34,9 @@ describe('wind turbines a turbine’s room apart (D132)', () => {
     expect(p.replaces).toEqual([a.id]);
   });
 
-  it('their ratings below D116’s: a wind turbine 130 kW, the pitch-control turbine 180 kW', () => {
-    expect(BUILDINGS.wind_flower.gen.kw).toBe(130);
-    expect(BUILDINGS.pitch_turbine.gen.kw).toBe(180);
+  it('their ratings below D132’s (D143): a wind turbine 100 kW, the pitch-control turbine 140 kW', () => {
+    // D132 had them at 130 and 180; the owner, 2026-10-19: « wind turbines should give 100 kW (140kW for the improved one) ».
+    expect(BUILDINGS.wind_flower.gen.kw).toBe(100);
+    expect(BUILDINGS.pitch_turbine.gen.kw).toBe(140);
   });
 });

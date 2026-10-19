@@ -85,12 +85,12 @@ for (const lang of LANGS) {
     await whole(page, shot('grown-whole'));
     const t2 = await page.evaluate(() => ({
       head: document.querySelector('.tr-tierhead[data-tier="2"]')?.hasAttribute('data-locked'),
-      band: document.querySelector('.tr-tiercol[data-tier="2"]')?.hasAttribute('data-locked'),
-      text: document.querySelector('.tr-tierhead[data-tier="2"] .tr-tiertitle')?.textContent,
+      band: document.querySelector('.tr-zone[data-tier="2"]')?.hasAttribute('data-locked'), // D144: its column (the tier bands until then)
+      text: document.querySelector('.tr-tierhead[data-tier="2"]')?.textContent,
     }));
     check(t2.head && t2.band, `Tier 2 padlocked below Core level 3 (${t2.text})`);
     // The rule between Tier 1 and Tier 2, in the middle of the view.
-    await page.evaluate(() => document.querySelector('.tr-tierrule')?.scrollIntoView({ block: 'start', inline: 'center' }));
+    await page.evaluate(() => document.querySelector('.tr-wall[data-strong]')?.scrollIntoView({ block: 'start', inline: 'center' }));
     await page.mouse.move(5, 5);
     await page.waitForTimeout(300);
     await page.screenshot({ path: shot('grown-boundary') });
@@ -131,8 +131,9 @@ for (const lang of LANGS) {
     await page.screenshot({ path: shot('grown-t2-detail') });
     await page.click('[data-tree-zoom="fit"]');
     await page.waitForTimeout(400);
-    const pin = await page.evaluate(() => document.querySelector('.tr-pin[data-kind="tier"][data-tier="2"]')?.hasAttribute('data-locked'));
-    check(pin, 'the pinned Tier 2 name padlocked');
+    // D144: the pins went; the rail’s Tier 2 head stays at reading size, padlocked.
+    const pin = await page.evaluate(() => document.querySelector('.tr-rail .tr-tierhead[data-tier="2"]')?.hasAttribute('data-locked'));
+    check(pin, 'the rail’s Tier 2 head padlocked');
     await page.screenshot({ path: shot('grown-fit') });
     await context.close();
   }

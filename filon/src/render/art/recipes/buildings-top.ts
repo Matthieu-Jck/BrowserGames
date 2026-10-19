@@ -20,7 +20,7 @@ import {
   ledStrip, light, petals, pipe, plinth, port, rectPts as rr, rivet, spire, stack, tankTop, terminalTop, vault,
 } from '../shapes';
 import { pvPanel } from '../solar';
-import { UNLIT, isUnlit } from '../unlit';
+import { isUnlit } from '../unlit';
 import { CHARGER_BUSHING, HEART_MASTS, KIT_K, POLE, PYLON, kitDrawn, onArm, terminalProbe, terminalsOf, turnsArt } from '../terminals';
 import { pipeAt, pipePortTop } from '../pipe-ports';
 import { BIG_ROTOR, BORE, CUTTER, PITCH_ROTOR, SAND_WHEEL, TURBINE, boreLeg, boreSquare, bucketFull, vaneAt, type HRotor } from './moving';
@@ -2112,29 +2112,6 @@ const R: Partial<Record<BuildingId, Recipe>> = {
   mast: poleTop,
   fence: fenceTop, // D103: recipes/gleaners.ts
   pylon: pylonTop,
-  brazier(ctx, f, s) {
-    // A fire-tube boiler from above: the firebox under its boiler drum, and at the front the
-    // coal generator — a fire basket crowning the stack, flames licking out.
-    plinth(ctx, f, C.steel, 0.07, s);
-    const fb = rr(f, 0.14, 0.88, 0.86, 1.86, 0.04);
-    castShadow(ctx, fb, f.l(0.1), 0.3);
-    shape(ctx, fb, C.steelD, { w: 1.8, seed: s + 1 });
-    grille(ctx, rr(f, 0.2, 1.62, 0.8, 1.8, 0.02), 3, s + 2);
-    drumTop(ctx, rr(f, 0.28, 0.98, 0.72, 1.76, 0.06), (f.rot & 1) === 0 ? 'y' : 'x', C.steelL, s + 3, 3, f.l(0.12));
-    pipe(ctx, [f.p(0.5, 0.95), f.p(0.5, 0.65)], f.l(0.06), C.brass, s + 4);
-    const c = f.p(0.5, 0.45);
-    const basket = ellipsePts(c[0], c[1], f.l(0.33), f.l(0.33), s + 5, 0.003, 32);
-    castShadow(ctx, basket, f.l(0.36), 0.28);
-    shape(ctx, basket, C.steelD, { w: 1.8, seed: s + 5 });
-    const cold = isUnlit(ctx); // switched off (D83): cold coals, no flames
-    flat(ctx, ellipsePts(c[0], c[1], f.l(0.25), f.l(0.25), s + 6, 0.02, 28), cold ? UNLIT : C.warn);
-    if (cold) return;
-    for (let i = 0; i < 7; i++) {
-      const a = (i / 7) * Math.PI * 2 + 0.3, r0 = f.l(0.08), r1 = f.l(0.24 + (i % 2) * 0.06);
-      shape(ctx, [[c[0] + Math.cos(a - 0.3) * r0, c[1] + Math.sin(a - 0.3) * r0], [c[0] + Math.cos(a) * r1, c[1] + Math.sin(a) * r1], [c[0] + Math.cos(a + 0.3) * r0, c[1] + Math.sin(a + 0.3) * r0]], i % 2 ? C.coral : C.glowPeach, { w: 1, shade: false, seed: s + 7 + i });
-    }
-    light(ctx, c[0], c[1], f.l(0.1), C.ledWarm);
-  },
   sun_bulb(ctx, f, s) {
     // A dish concentrator from above: the faceted mirror bowl on its pedestal, three struts
     // holding the glowing receiver — the bulb — at its focus; the control box.

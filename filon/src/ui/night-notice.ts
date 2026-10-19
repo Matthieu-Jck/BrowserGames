@@ -3,7 +3,8 @@
 // night »). About one game hour (1.5 game minutes) before a sunset, while the sun is a real share of
 // the Core's grid (`SOLAR_SHARE` % of what it has now) and the grid would not hold the night
 // (`nightCover`, sim/readouts/night.ts, under « Tenir la nuit »'s 80 %): a card shown, not told — the
-// sun going down behind the Crown, the turbine and the coal generator that answer it, two figures
+// sun going down behind the Crown, the turbines that answer it (a turbine and a coal generator until
+// D143 took the generator out of the game), two figures
 // (the sun's share now, what the night would leave) —, one sentence, the Électricité view's button
 // (P) and « Compris ». Once per base (remembered in localStorage); it waits under a full screen or
 // while a side panel stands where it goes (top right); it goes by itself at nightfall, the night
@@ -59,7 +60,7 @@ export class NightNotice {
     this.viewBtn = el<'button'>('button.btn.nn-view', { type: 'button', 'data-night-view': '', onclick: () => { this.host.openPowerView(); this.close(); } });
     txt(this.viewBtn, () => t('night.view'));
     this.root = el('aside.nnotice.cartouche', { 'data-screen': 'night', hidden: true }, [
-      el('div.nn-art', {}, [sunset(), el('span.nn-arrow', {}, '→'), buildingIcon(atlas, 'wind_flower', 34), buildingIcon(atlas, 'brazier', 30)]),
+      el('div.nn-art', {}, [sunset(), el('span.nn-arrow', {}, '→'), buildingIcon(atlas, 'wind_flower', 44), buildingIcon(atlas, 'wind_flower', 44)]),
       el('div.nn-body', {}, [
         txt(el('h3.nn-title.lettering'), () => t('night.title')),
         txt(el('p.nn-text'), () => t('night.text')),

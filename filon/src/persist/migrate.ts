@@ -550,7 +550,28 @@ export function assemblyBench(d: Record<string, unknown>): Record<string, unknow
   return { ...d, done: [...done, 'assembly_bench'].sort() };
 }
 
-export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsToTowers, 6: researchToTokens, 7: researchAtBase, 8: parcelsResized, 9: labsToThree, 10: expertiseArc, 11: electricSmelting, 12: coreData, 13: tierOneWhole, 14: docksRetired, 15: steamPlan, 16: beaconsRetired, 17: researchFlows, 18: dataRetired, 19: quartzWorkshop, 20: assemblyBench };
+/**
+ * 21 → 22, no coal generator (D143; owner, 2026-10-19: « coal incinerator, delete it »): its plan
+ * (`PLANS_RETIRED[22]`), held, is dropped from `done` and its cost handed back to the Heart, by the
+ * save's own item table, as D117's step did; Steam Power, which hung from it, hangs from the
+ * turbine's plan now, which every claim that took it holds. The generators themselves are the
+ * remap's: their id is gone from the content, so it takes them down, refunds them at
+ * `RETIRED_COSTS`, hands the coal in their box to the Heart (`RETIRED_FUEL`) and drops their wires
+ * (sim/save-remap.ts) — nothing vanishes, and the report lists them. Ids frozen here.
+ */
+export function coalRetired(d: Record<string, unknown>): Record<string, unknown> {
+  const gone = PLANS_RETIRED[22] ?? {};
+  const done = (d.done as string[] | undefined) ?? [];
+  if (!done.some((id) => id in gone)) return d;
+  const items = (d.content as { items?: string[] } | undefined)?.items ?? (ITEM_IDS as readonly string[]);
+  const stock = [...((d.stock as number[] | undefined) ?? [])];
+  for (const id of done) {
+    for (const [it, q] of gone[id] ?? []) { const i = items.indexOf(it); if (i >= 0) stock[i] = (stock[i] ?? 0) + q * 1000; }
+  }
+  return { ...d, stock, done: done.filter((id) => !(id in gone)) };
+}
+
+export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsToTowers, 6: researchToTokens, 7: researchAtBase, 8: parcelsResized, 9: labsToThree, 10: expertiseArc, 11: electricSmelting, 12: coreData, 13: tierOneWhole, 14: docksRetired, 15: steamPlan, 16: beaconsRetired, 17: researchFlows, 18: dataRetired, 19: quartzWorkshop, 20: assemblyBench, 21: coalRetired };
 
 export class SaveTooNew extends Error {
   constructor(readonly version: number) { super(`save version ${version} is newer than this build (${SAVE_VERSION})`); }

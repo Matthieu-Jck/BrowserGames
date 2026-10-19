@@ -221,7 +221,7 @@ function play(sim: Sim, last: QuestId = 'synth_parts'): Record<string, number> {
   // the boiler and the pump wired pole by pole (the coal drill too).
   hint('steam_power', 0);
   expect(sim.place('pump', 504, 494, 0).reason).toBe('locked'); // not before its plan
-  unlock('wind_flower', 'brazier'); // its plan's prerequisites: the night was held by the steady tap here, not by them
+  unlock('wind_flower'); // its plan's prerequisite (D143: the coal generator's until then): the night was held by the steady tap here, not by turbines
   hint('steam_power', 0);
   unlock('steam');
   hint('steam_power', 1);
@@ -419,7 +419,7 @@ describe('quests', () => {
     // One logged completion per quest, in order, none forced; one quest event each.
     expect(logged(sim, 'quest')).toEqual(QUEST_IDS.map((id) => ({ k: 'quest', id })));
     // The tree: every plan the tutorial asked for, unlocked through the logged command.
-    const first = ['kiln', 'sand_collector', 'router', 'wind_flower', 'brazier', 'steam', 'telemetry', 'trade_post', 'wire_mill', 'sorter', 'incinerator'];
+    const first = ['kiln', 'sand_collector', 'router', 'wind_flower', 'steam', 'telemetry', 'trade_post', 'wire_mill', 'sorter', 'incinerator'];
     expect(logged(sim, 'unlockPlan').map((c) => (c as { id: string }).id)).toEqual([
       ...first, ...PLAN_IDS.filter((p) => ![...first, 'observatory'].includes(p)), 'observatory',
     ]);
@@ -637,7 +637,7 @@ describe('quests', () => {
     }
     expect(sim.quests.done).toEqual(QUEST_IDS);
     // The kits are the buildings' own costs; « La Criée » pays copper wire, no Core level (D101: the player raises it).
-    expect(rewardItems(QUESTS.first_wind.reward).map((c) => [ITEM_IDS[c.item], c.mu / 1000])).toEqual([['iron_plate', 20], ['copper_wire', 4]]);
+    expect(rewardItems(QUESTS.first_wind.reward).map((c) => [ITEM_IDS[c.item], c.mu / 1000])).toEqual([['iron_plate', 10], ['glass', 4], ['copper_wire', 6]]); // a turbine's (D143)
     expect(rewardItems(QUESTS.crier_trade.reward).map((c) => [ITEM_IDS[c.item], c.mu / 1000])).toEqual([['copper_wire', 40]]);
     expect(sim.hearthLevel).toBe(1); // forced through, not one level granted
     // The register's title « Le quartz de la paroi » grants, whatever completed it.

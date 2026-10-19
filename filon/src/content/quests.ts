@@ -130,7 +130,7 @@ export interface QuestReward {
   readonly items?: ReadonlyArray<readonly [string, number]>;
   /** Ocelles (◉). */
   readonly credits?: number;
-  /** The materials of one building (its construction cost), e.g. « 1 générateur à charbon ». */
+  /** The materials of one building (its construction cost), e.g. « 1 éolienne ». */
   readonly kit?: string;
   /** The materials of a Hearth level (2–4, from BAL.hearthUpgrades). */
   readonly hearthLevel?: number;
@@ -366,16 +366,21 @@ export const QUESTS = {
   // that the core has solar panels that will stop producing electricity at night »): the night
   // notice (ui/night-notice.ts) says it before the first sunset, this quest asks for the answer.
   // Its isotope core gives most of its power, day and night (BAL.hearthCoreKw: two drills' worth at
-  // level 1), so the night is about the player's own machines: three drills outgrow it.
+  // level 1), so the night is about the player's own machines: three drills outgrow it. The wind
+  // alone answers it since D143 retired the coal generator (owner, 2026-10-19: « coal incinerator,
+  // delete it »): one thing to learn in the first hour, the turbine the night does not stop; the
+  // steam boiler, the coal-fired plant now, comes two quests on with its pump and conduit (« La
+  // vapeur »), and the brief says so. Solar with storage is Tier 1 research and Tier 2's accumulators.
   first_wind: {
     name: { fr: 'Tenir la nuit', en: 'Through the Night' },
-    reveals: ['plan:wind_flower', 'plan:brazier'],
+    reveals: ['plan:wind_flower'],
     desc: {
-      fr: 'Le noyau du Cœur donne jour et nuit, assez pour deux foreuses ; son panneau, lui, s’éteint au soir. Vos machines demandent déjà plus. Le Souffle ne tombe pas le soir, et il porte en hauteur, sur la Couronne. Un générateur à charbon tient aussi, tant qu’on le nourrit. Préparez vos machines à passer la nuit.',
-      en: 'The Core’s core gives day and night, enough for two drills; its panel goes dark at dusk. Your machines already ask for more. The Sough does not drop at dusk, and it blows up high, on the Crown. A coal generator holds too, as long as it is fed. Get your machines ready for the night.',
+      fr: 'Le noyau du Cœur donne jour et nuit, assez pour deux foreuses ; son panneau, lui, s’éteint au soir. Vos machines demandent déjà plus. Le Souffle ne tombe pas le soir, et il porte en hauteur, sur la Couronne : des éoliennes bien exposées y tiendront la nuit. Plus tard, une chaudière à vapeur la tiendra aussi, avec votre charbon et de l’eau. Préparez vos machines à passer la nuit.',
+      en: 'The Core’s core gives day and night, enough for two drills; its panel goes dark at dusk. Your machines already ask for more. The Sough does not drop at dusk, and it blows up high, on the Crown: well-exposed turbines there will hold the night. Later, a steam boiler will hold it too, with your coal and some water. Get your machines ready for the night.',
     },
     objectives: [NIGHT_HOLDS],
-    reward: { kit: 'brazier' },
+    // One more turbine's materials (D143: the coal generator's until it left the game): the base grows, and a turbine gives 100 kW at most.
+    reward: { kit: 'wind_flower' },
     hints: [
       {
         hint: { fr: 'L’Éolienne est dans l’arbre (T), voie Énergie.', en: 'The Wind Turbine is in the tree (T), on the Energy path.' },
@@ -488,9 +493,9 @@ export const QUESTS = {
 
   // ── 5 ── goal: steam (D114: water's first use, from Tier 1) ──────────────────
   // Owner, 2026-10-17: « Il faudrait que l'eau serve assez tôt dans le jeu, dès le Tier 1 ». The
-  // cirque's coal is short (D97: a drill pair a smelter); a boiler gets two and a half times the
-  // power of the coal generator out of it, day and night, with water from a pump by conduit. Where
-  // the water is, the guide's arrow shows (`water`: the nearest pump spot from the Core, on any
+  // cirque's coal is short (D97: a drill pair a smelter); a boiler turns it into steady power, 700 kW
+  // for 8 coal a minute (D143: the one coal-fired plant since the coal generator left the game), day
+  // and night, with water from a pump by conduit. Where the water is, the guide's arrow shows (`water`: the nearest pump spot from the Core, on any
   // level: map 4's spring pool at the floor's edge, D115; the tarn up on the Crown on maps 2–3); a
   // conduit's water pours down the terraces one at a time (D114: never up), so a boiler may stand
   // below the water it drinks.
@@ -498,8 +503,8 @@ export const QUESTS = {
     name: { fr: 'La vapeur', en: 'Steam Power' },
     reveals: ['plan:steam'],
     desc: {
-      fr: 'Votre charbon est rare, et un générateur n’en tire pas grand-chose. Une chaudière à vapeur en tire deux fois et demie plus d’électricité, de jour comme de nuit, pourvu qu’on lui donne de l’eau. Une pompe au bord de l’eau, un conduit jusqu’à la chaudière — l’eau y descend les gradins, mais ne les monte jamais —, son charbon par ruban, et le tout relié au réseau.',
-      en: 'Your coal is scarce, and a generator gets little out of it. A steam boiler gets two and a half times the power out of it, by day and by night, as long as it has water. A pump at the water’s edge, a conduit to the boiler — water comes down the terraces in it, but never climbs them —, its coal by ribbon, and all of it wired into the grid.',
+      fr: 'Le vent faiblit parfois, et votre base grandit. Une chaudière à vapeur tire de votre charbon une électricité sûre, de jour comme de nuit : 700 kW pour 8 charbon par minute, pourvu qu’on lui donne de l’eau. Une pompe au bord de l’eau, un conduit jusqu’à la chaudière — l’eau y descend les gradins, mais ne les monte jamais —, son charbon par ruban, et le tout relié au réseau.',
+      en: 'The wind drops at times, and your base is growing. A steam boiler turns your coal into steady power, by day and by night: 700 kW for 8 coal a minute, as long as it has water. A pump at the water’s edge, a conduit to the boiler — water comes down the terraces in it, but never climbs them —, its coal by ribbon, and all of it wired into the grid.',
     },
     objectives: [
       { k: 'feeds', item: 'water', to: ['steam_boiler'], n: 1, label: { fr: 'L’eau jusqu’à la chaudière', en: 'Water to the boiler' } },
@@ -509,9 +514,9 @@ export const QUESTS = {
     reward: { items: [['iron_plate', 30], ['glass', 10]] },
     hints: [
       {
-        // After the coal generator's plan (the same coal, more power), itself after the turbine's: the arrow takes the first not taken.
-        hint: { fr: 'Le plan Vapeur est dans l’arbre (T), voie Énergie, après le Générateur à charbon : la chaudière, la pompe et le conduit.', en: 'The Steam Power plan is in the tree (T), on the Energy path, after the Coal Generator: the boiler, the pump and the conduit.' },
-        target: { k: 'unlock', ids: ['wind_flower', 'brazier', 'steam'] },
+        // After the turbine's plan (D143: it hung from the coal generator's until that went): the arrow takes the first not taken.
+        hint: { fr: 'Le plan Vapeur est dans l’arbre (T), voie Énergie, après l’Éolienne : la chaudière, la pompe et le conduit.', en: 'The Steam Power plan is in the tree (T), on the Energy path, after the Wind Turbine: the boiler, the pump and the conduit.' },
+        target: { k: 'unlock', ids: ['wind_flower', 'steam'] },
         done: { k: 'unlocked', ids: ['steam'] },
       },
       {

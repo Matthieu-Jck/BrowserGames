@@ -1,7 +1,7 @@
 // fx.ts — the art of light and weather (no Pixi, no DOM: pure Canvas2D like the other recipes).
 // The base is automated — nobody lives there (owner, 2026-10-11) — so every light at night is
 // a machine's: LEDs and status beacons, work lamps, landing lights, the Heart's uplink beacon;
-// amber only where a machine runs hot (kilns, coal generators), cold cyan and white everywhere else.
+// amber only where a machine runs hot (kilns, steam boilers), cold cyan and white everywhere else.
 //
 // 1. **What the art bakes in.** Building sprites carry their lights (LED cores, furnace mouths,
 //    landing rings, gauges: opaque fills in an LED token) and their solar cells (fills in `PV`,
@@ -225,7 +225,7 @@ export function planArt(id: BuildingId, rot: Rot, lv = 1): SpriteArt {
 // ── 2. night rigs: what a machine adds at night, from its kind and footprint ─────
 
 /** Machines that run hot: their lights and work lamps are amber; every other light is cold. */
-export const HOT: ReadonlySet<BuildingId> = new Set<BuildingId>(['kiln', 'kiln_compact', 'brazier', 'steam_boiler', 'ceramic_oven', 'sunheart', 'fumarole_tap', 'arc_furnace', 'forge_press', 'steel_mill', 'brickworks', 'assembly_bench']); // D123: the converter's melt, the brick kiln; D129: the bench's tungsten work lamp (the electronics workshop's LEDs stay cold)
+export const HOT: ReadonlySet<BuildingId> = new Set<BuildingId>(['kiln', 'kiln_compact', 'steam_boiler', 'ceramic_oven', 'sunheart', 'fumarole_tap', 'arc_furnace', 'forge_press', 'steel_mill', 'brickworks', 'assembly_bench']); // D123: the converter's melt, the brick kiln; D129: the bench's tungsten work lamp (the electronics workshop's LEDs stay cold)
 
 export interface NightRig {
   /** A pool of work-lamp light on the ground round the footprint: radius (tiles), strength; amber when hot. */

@@ -1,14 +1,17 @@
-/* research.css — the research half of the tech tree (D68–D70; ui/screens/research.ts, which
-   imports it): the research lab's gate between the two blocks (D71), the tier bands and their heads, each
-   tier's categories (D128: a block each in its theme's colour, its header — name, count, the pills of
-   its gates —, the gates' dashed lines across the gutters), the links (their kinds; a hovered node's chain lit, the rest
-   faded, D107), the research nodes (what they unlock, their resources and tokens — D122 —, the
-   queue's tag), the header's research strip (slots, labs, the token bill, the purse-in-the-red
-   warning, the Compute Plan, the queue), the detail pane's research parts (the running project's
-   token row, its flows now and the flow it buys) and the launch dialog (D118, ../launch-dialog.ts).
-   D118 also: each tier band's head names the Core's level it needs, padlocked and the band hatched
-   below it, and a strong ink rule parts Tier 1 from Tier 2. The plans' half and the shared tree
-   rules stay in screens.css. */
+/* research.css — the tech tree's presentation (D144; ui/screens/research.ts, which imports it): a
+   swimlane matrix read left to right (./screens/tree-layout.ts). The stage — the view, the rails
+   frozen round it (the stages' heads along the top: a tier's bar, its Core level, its key, Tier 2's
+   expertises; the lanes' names down the left), the tools under it (the tier navigator and its window,
+   the available-now filter, the zoom bar of D111) —; the canvas — the plans' wash, the tiers' columns
+   (hatched while the Core is below their level, D118), the themes' lanes, the walls before Tier 2 … 4
+   (the one before Tier 2 the strongest) and their locks, the cells of each category (D128) and plan
+   path with their headers, the links and the category gates' arrows —; the cards (a badge per state,
+   the path's numbers, a running project's fill, the pillars of the Heart and the lab), how they
+   simplify as the zoom shrinks, a node's chain and the filter dimming the rest; the cards' legend; the
+   header's research strip (slots, labs, the token bill, the purse-in-the-red warning, the Compute Plan,
+   the queue); the detail pane's research parts (the path to a node, the running project's token row,
+   its flows now and the flow it buys) and the launch dialog (D118, ../launch-dialog.ts). The shared
+   card rules stay in screens.css; this overrides them under .tree. */
 
 /* The research themes' colours (--path, D128: the families' until then): each category takes its theme's. */
 [data-lane='en'] { --path: #d9a21c; }
@@ -27,24 +30,8 @@
 .tr-mark .m-shackle { fill: none; stroke: var(--c-ink-soft); stroke-width: 1.6; }
 .tr-mark .m-body { fill: var(--c-coral); stroke: var(--c-ink); stroke-width: 1.2; }
 
-/* The research block's legend, in its own marks. */
-.rs-legend { gap: 12px; }
-.rs-legend > span { display: inline-flex; align-items: center; gap: 4px; }
-.rs-legend canvas { width: 16px; height: 16px; display: block; }
 
-/* ── the research lab's gate (D71): its own column between the plans and research ── */
-.tr-gatecap {
-  position: absolute; display: flex; align-items: center; justify-content: center; gap: 8px; height: 40px;
-  border-bottom: 2px dashed var(--path); color: var(--c-ink);
-}
-.tr-gatecap .tr-lanename { font-size: 19px; }
-.tr-gatecap .tr-pathcount { align-self: center; margin: 0; cursor: help; }
-.tr-gatecap[data-full] .tr-pathcount::after { content: ' ✓'; }
-.tree .tr-node[data-lane='gate'] {
-  border-width: 2.5px; box-shadow: 3px 3px 0 var(--c-ink), 0 0 0 5px color-mix(in srgb, var(--c-lilac-l) 55%, transparent);
-  background: color-mix(in srgb, var(--c-lilac-l) 22%, var(--c-paper));
-}
-.tree .tr-node[data-lane='gate'][data-state='done'] { background: #d8f1ec; }
+/* The research lab's gate (D71): its plans counted path by path in the detail pane. */
 .rs-gpaths { margin: 4px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; }
 .rs-gpath { display: grid; grid-template-columns: 96px 1fr 38px; align-items: center; gap: 6px; font-size: 12.5px; }
 .rs-gname { font-weight: 600; border-left: 4px solid var(--path); padding-left: 6px; }
@@ -53,181 +40,478 @@
 .rs-gpath[data-full] small { color: var(--c-turq-d); font-weight: 700; }
 .rs-gate .rs-qnote { margin-top: 6px; }
 
-/* ── tier bands (D107): each tier a band of its own, a gutter of paper between them, its head on top ── */
-.tr-tiercol {
-  position: absolute; border: 1.5px solid rgba(30, 27, 46, 0.16); border-radius: 14px 14px 10px 10px;
-  background: rgba(255, 252, 246, 0.55);
+/* ── D144: the stage — the rails frozen round the view, as a spreadsheet's panes; the tools under it ── */
+.tree .tr-stage {
+  position: relative; flex: 1; min-width: 0; min-height: 0;
+  display: grid; grid-template-columns: 30px minmax(0, 1fr); grid-template-rows: 52px minmax(0, 1fr) auto;
+  grid-template-areas: 'corner rail' 'lanes view' 'tools tools';
+  border: 2px solid var(--c-ink); border-radius: var(--radius-ink); box-shadow: var(--shadow-ink);
+  background: #fcf5ea; overflow: hidden;
 }
-.tr-tiercol[data-tier='2'] { background: rgba(157, 140, 201, 0.10); }
-.tr-tiercol[data-tier='3'] { background: rgba(157, 140, 201, 0.16); }
-.tr-tiercol[data-tier='4'] { background: rgba(106, 90, 134, 0.16); }
-/* A band whose Core level is not reached (D118): hatched in ink over its tint, its edge dashed. */
-.tr-tiercol[data-locked] {
-  border-style: dashed; border-color: rgba(30, 27, 46, 0.32);
-  background-image: repeating-linear-gradient(135deg, rgba(30, 27, 46, 0.075) 0 2px, transparent 2px 11px);
+.tree .tr-corner { grid-area: corner; background: var(--c-paper-d); border-right: 2px solid var(--c-ink); border-bottom: 2px solid var(--c-ink); }
+.tree .tr-rail { grid-area: rail; position: relative; overflow: hidden; background: #f7ead8; border-bottom: 2px solid var(--c-ink); }
+.tree .tr-lanerail { grid-area: lanes; position: relative; overflow: hidden; background: #f7ead8; border-right: 2px solid var(--c-ink); }
+.tree .tr-railin { position: absolute; inset: 0; }
+.tree .tr-view { grid-area: view; border: none; border-radius: 0; box-shadow: none; min-height: 0; }
+.tree .tr-tools {
+  grid-area: tools; display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+  border-top: 2px solid var(--c-ink); background: var(--c-paper);
 }
-.tr-tierhead {
-  position: absolute; z-index: 1; display: flex; flex-direction: column; justify-content: center; gap: 3px;
-  padding: 4px 14px 2px; border-bottom: 2px solid rgba(30, 27, 46, 0.18); border-radius: 14px 14px 0 0;
-  background: color-mix(in srgb, var(--c-lilac-l) 26%, rgba(255, 252, 246, 0.9));
+
+/* The stages' heads (D144): a tier's name and bar; from Tier 2 the Core's level it needs, the node that
+   keys its wall and Tier 2's expertises (D93, D118). Long, shorter, its name alone as it narrows (`data-w`). */
+.tree .tr-tierhead, .tree .tr-colhead {
+  position: absolute; left: 0; top: 0; bottom: 0; box-sizing: border-box; padding: 4px 10px;
+  display: flex; flex-direction: column; justify-content: center; gap: 4px; overflow: hidden; white-space: nowrap;
+  border-left: 1.5px solid rgba(30, 27, 46, 0.2);
 }
-.tr-tierhead[data-locked] {
-  border-bottom-style: dashed;
-  background: repeating-linear-gradient(135deg, rgba(30, 27, 46, 0.06) 0 2px, transparent 2px 9px), color-mix(in srgb, var(--c-paper-d) 70%, rgba(255, 252, 246, 0.9));
-}
-/* « Tier 2 · Cœur niveau 3 » (D118), then « Ouvert par … ». */
-.tr-tiertitle { display: flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; }
-.tr-tiername { font-size: 27px; line-height: 1; color: var(--c-ink-soft); }
-.tr-tierdot { font-size: 22px; line-height: 1; color: var(--c-ink-soft); }
-.tr-tierhead[data-open] .tr-tiername { color: var(--c-ink); }
-.tr-tierhead[data-on] .tr-tiername { text-decoration: underline 3px var(--c-turq); text-underline-offset: 4px; }
-/* The Core's level a tier needs: the Core's look at that level; padlocked, coral, while below it; ✓ once there. */
-.tr-core {
-  display: inline-flex; align-items: center; gap: 5px; padding: 0 10px 0 6px; height: 28px; cursor: help;
-  font: 700 13px/1 var(--f-body); color: var(--c-ink);
+.tree .tr-colhead[data-zone='plans'] { background: rgba(242, 198, 160, 0.28); }
+.tree .tr-colhead[data-zone='lab'] { background: color-mix(in srgb, var(--c-lilac-l) 26%, transparent); }
+.tree .tr-tierhead { background: color-mix(in srgb, var(--c-lilac-l) 18%, transparent); }
+.tree .tr-tierhead[data-locked] { background: repeating-linear-gradient(135deg, rgba(30, 27, 46, 0.07) 0 2px, transparent 2px 9px), var(--c-paper-d); }
+.tree .tr-th1 { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tree .tr-th2 { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--c-ink-soft); }
+.tree .tr-tiername { font-size: 22px; line-height: 1; color: var(--c-ink-soft); }
+.tree .tr-tierhead[data-open] .tr-tiername, .tree .tr-colhead .tr-tiername { color: var(--c-ink); }
+.tree .tr-tierhead[data-on] .tr-tiername { text-decoration: underline 3px var(--c-turq); text-underline-offset: 4px; }
+.tree .tr-hbar { flex: 0 1 84px; min-width: 24px; height: 7px; border: 1.5px solid var(--c-ink); border-radius: 4px; background: var(--c-paper); overflow: hidden; }
+.tree .tr-hbar > i { display: block; height: 100%; width: 0; background: var(--c-turq); }
+.tree .tr-hcount { font: 700 11.5px/1 var(--f-body); color: var(--c-ink-soft); font-variant-numeric: tabular-nums; }
+.tree .tr-tierhead[data-w='m'] .tr-gate-exp span { display: none; }
+.tree .tr-tierhead[data-w='s'] .tr-th1 .tr-hbar, .tree .tr-tierhead[data-w='s'] .tr-hcount,
+.tree .tr-tierhead[data-w='s'] .tr-gate, .tree .tr-tierhead[data-w='s'] .tr-gate-exp, .tree .tr-tierhead[data-w='s'] .tr-th2 > small { display: none; }
+.tree .tr-tierhead[data-w='s'] .tr-tiername { font-size: 17px; }
+.tree .tr-colhead[data-w='s'] .tr-th2, .tree .tr-colhead[data-w='s'] .tr-hbar, .tree .tr-colhead[data-w='s'] .tr-hcount { display: none; }
+.tree .tr-colhead[data-w='s'] .tr-tiername { font-size: 16px; }
+.tree :is(.tr-tierhead, .tr-colhead)[data-w='xs'] > * { display: none; }
+.tree .tr-th2 { overflow: hidden; text-overflow: ellipsis; }
+/* The Core's level a tier needs (D118): the Core's look at that level; padlocked, coral, while below it; ✓ once there. */
+.tree .tr-core {
+  display: inline-flex; align-items: center; gap: 4px; padding: 0 8px 0 5px; height: 22px; cursor: help; flex: none;
+  font: 700 12px/1 var(--f-body); color: var(--c-ink);
   border: 1.5px solid var(--c-turq-d); border-radius: 999px; background: color-mix(in srgb, var(--c-turq-l) 45%, var(--c-paper));
 }
-.tr-core canvas { width: 24px; height: 24px; display: block; }
-.tr-core .tr-mark { display: none; width: 15px; height: 15px; }
-.tr-core .tr-gatecheck { display: inline; }
-.tr-tierhead[data-locked] .tr-core { border: 2px dashed var(--c-coral-d); background: var(--c-paper); color: var(--c-coral-d); }
-.tr-tierhead[data-locked] .tr-core .tr-mark { display: inline-block; }
-.tr-tierhead[data-locked] .tr-core .tr-gatecheck { display: none; }
-.tr-tierhead[data-locked] .tr-core canvas { filter: grayscale(0.6); opacity: 0.8; }
-.tr-opens { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--c-ink-soft); white-space: nowrap; }
-.tr-gate {
-  display: inline-flex; align-items: center; gap: 4px; min-width: 0; padding: 1px 8px 1px 5px; cursor: pointer;
-  font: 600 12px/16px var(--f-body); color: var(--c-ink); white-space: nowrap;
+.tree .tr-core canvas { width: 20px; height: 20px; display: block; }
+.tree .tr-core .tr-mark { display: none; width: 13px; height: 13px; }
+.tree .tr-core .tr-gatecheck { display: inline; }
+.tree .tr-coreshort { display: none; }
+.tree .tr-tierhead:is([data-w='m'], [data-w='s']) .tr-corelong { display: none; }
+.tree .tr-tierhead:is([data-w='m'], [data-w='s']) .tr-coreshort { display: inline; }
+.tree .tr-tierhead[data-locked] .tr-core { border: 2px dashed var(--c-coral-d); background: var(--c-paper); color: var(--c-coral-d); }
+.tree .tr-tierhead[data-locked] .tr-core .tr-mark { display: inline-block; }
+.tree .tr-tierhead[data-locked] .tr-core .tr-gatecheck { display: none; }
+.tree .tr-tierhead[data-locked] .tr-core canvas { filter: grayscale(0.6); opacity: 0.8; }
+.tree .tr-gate {
+  display: inline-flex; align-items: center; gap: 4px; min-width: 0; padding: 0 8px 0 5px; height: 22px; cursor: pointer; flex: 0 1 auto;
+  font: 600 12px/1 var(--f-body); color: var(--c-ink); white-space: nowrap; overflow: hidden;
   border: 1.5px dashed var(--c-coral-d); border-radius: 999px; background: var(--c-paper);
 }
-.tr-gate:hover { background: var(--c-peach-l); }
+.tree .tr-gate:hover { background: var(--c-peach-l); }
+.tree .tr-gate .tr-mark { width: 13px; height: 13px; flex: none; }
+.tree .tr-gname { overflow: hidden; text-overflow: ellipsis; }
 .tr-gatecheck { display: none; color: var(--c-turq-d); font-weight: 700; }
-.tr-tierhead[data-open] .tr-gate { border-style: solid; border-color: var(--c-turq-d); background: color-mix(in srgb, var(--c-turq-l) 45%, var(--c-paper)); }
-.tr-tierhead[data-open] .tr-gate .tr-mark { display: none; }
-.tr-tierhead[data-open] .tr-gate .tr-gatecheck { display: inline; }
-/* The selected node opens this tier: its gate pill lights up. */
-.tr-tierhead[data-opens] .tr-gate { outline: 3px solid var(--c-turq); outline-offset: 1px; animation: tr-opens 1.4s ease-in-out infinite; }
-@keyframes tr-opens { 50% { outline-color: rgba(63, 184, 175, 0.35); } }
-/* Tier 1 | Tier 2 (D118): a strong ink rule down the wider gap — a thick stroke and a thin one beside
-   it, a padlock on a disc at its head while Tier 2's Core level is not reached. Its width holds on
-   screen whatever the zoom. */
-.tr-tierrule {
-  position: absolute; width: 0; pointer-events: none;
-  border-left: max(4px, calc(2.6px / var(--tz, 1))) solid var(--c-ink); border-radius: 3px; transform: translateX(-50%);
+/* Its key done (Tier 1: the lab's plan): solid, ✓. */
+.tree :is(.tr-tierhead[data-keyed], .tr-tierhead[data-tier='1'][data-open]) .tr-gate { border-style: solid; border-color: var(--c-turq-d); background: color-mix(in srgb, var(--c-turq-l) 45%, var(--c-paper)); }
+.tree :is(.tr-tierhead[data-keyed], .tr-tierhead[data-tier='1'][data-open]) .tr-gate .tr-mark { display: none; }
+.tree :is(.tr-tierhead[data-keyed], .tr-tierhead[data-tier='1'][data-open]) .tr-gate .tr-gatecheck { display: inline; }
+.tree .tr-gate-exp { display: inline-flex; align-items: center; gap: 3px; flex: none; }
+.tree .tr-gate-exp .glyph, .tree .tr-gate-exp svg { width: 16px; height: 16px; }
+
+/* The lanes' names down the left (D144): the theme's colour, its name written up the band; its colour alone where the band is thin. */
+.tree .tr-lanelabel {
+  position: absolute; left: 0; top: 0; width: 100%; box-sizing: border-box; display: grid; place-items: center; overflow: hidden;
+  border-left: 6px solid var(--path); background: color-mix(in srgb, var(--path) 16%, #f7ead8);
+  border-bottom: 1px solid rgba(30, 27, 46, 0.15);
 }
-.tr-tierrule::after {
-  content: ''; position: absolute; top: 0; bottom: 0; left: max(5px, calc(4px / var(--tz, 1)));
+.tree .tr-lanelabel span {
+  writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; font-size: 15px; line-height: 1;
+  color: color-mix(in srgb, var(--path) 50%, var(--c-ink));
+}
+.tree .tr-lanelabel[data-h='m'] span { font-size: 11px; }
+.tree .tr-lanelabel[data-h='s'] span { display: none; }
+
+/* The tier navigator (D144): a one-line map of the stages — each its name, count, bar and padlock, a dot
+   while something there can start — and the view's window over it; a click or a drag goes there. */
+.tree .tr-nav {
+  position: relative; flex: 1; min-width: 0; height: 32px; display: flex; cursor: pointer; touch-action: none; user-select: none;
+  border: 1.5px solid var(--c-ink); border-radius: 8px; overflow: hidden; background: var(--c-paper);
+}
+.tree .tr-navseg {
+  flex-basis: 0; min-width: 0; position: relative; display: flex; flex-direction: column; justify-content: center; gap: 3px;
+  padding: 0 7px; box-sizing: border-box; overflow: hidden; border-left: 1.5px solid rgba(30, 27, 46, 0.35);
+}
+.tree .tr-navseg:first-child { border-left: none; background: rgba(242, 198, 160, 0.22); }
+.tree .tr-navseg[data-locked] { background: repeating-linear-gradient(135deg, rgba(30, 27, 46, 0.08) 0 2px, transparent 2px 8px); }
+.tree .tr-navname { display: flex; align-items: center; gap: 4px; font: 700 11.5px/1 var(--f-body); white-space: nowrap; min-width: 0; }
+.tree .tr-navname small { font-weight: 600; color: var(--c-ink-soft); font-variant-numeric: tabular-nums; }
+.tree .tr-navname .tr-mark { display: none; width: 11px; height: 11px; flex: none; }
+.tree .tr-navseg[data-locked] .tr-navname .tr-mark { display: inline-block; }
+.tree .tr-navseg[data-full] .tr-navname small::after { content: ' ✓'; color: var(--c-turq-d); }
+.tree .tr-navbar { height: 4px; border-radius: 2px; background: rgba(30, 27, 46, 0.12); overflow: hidden; }
+.tree .tr-navbar > i { display: block; height: 100%; width: 0; background: var(--c-turq); }
+.tree .tr-navdot { position: absolute; right: 4px; top: 4px; width: 8px; height: 8px; border-radius: 50%; background: var(--c-warn); border: 1.2px solid var(--c-ink); display: none; }
+.tree .tr-navseg[data-ready] .tr-navdot { display: block; }
+.tree .tr-navwin {
+  position: absolute; top: 0; bottom: 0; box-sizing: border-box; pointer-events: none;
+  border: 2.5px solid var(--c-coral-d); border-radius: 6px; background: rgba(232, 115, 90, 0.08);
+}
+/* The available-now filter (D144): ▶ and how many can start now; lit amber while some can; on, pressed. */
+.tree .tr-filter {
+  flex: none; display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 11px 0 7px; cursor: pointer;
+  border: 1.5px solid var(--c-ink); border-radius: 8px; background: var(--c-paper); font: 700 15px/1 var(--f-body); color: var(--c-ink);
+}
+.tree .tr-playglyph { width: 18px; height: 18px; display: block; }
+.tree .tr-playglyph circle { fill: none; stroke: var(--c-ink); stroke-width: 1.5; }
+.tree .tr-playglyph path { fill: var(--c-ink-soft); }
+.tree .tr-filter[data-some] { background: color-mix(in srgb, var(--c-warn) 28%, var(--c-paper)); }
+.tree .tr-filter[data-some] .tr-playglyph circle { fill: var(--c-warn); }
+.tree .tr-filter[data-some] .tr-playglyph path { fill: var(--c-ink); }
+.tree .tr-filter[aria-pressed='true'] { background: var(--c-warn); box-shadow: inset 0 0 0 2px var(--c-ink); }
+.tree .tr-filter:hover { filter: brightness(1.04); }
+/* The zoom bar (D111), at the tools' right end. */
+.tree .tr-zoom { display: flex; align-items: center; gap: 3px; flex: none; }
+.tr-zbtn {
+  min-width: 32px; height: 32px; padding: 0 6px; display: grid; place-items: center; cursor: pointer;
+  border: 1.5px solid var(--c-ink); border-radius: 8px; background: var(--c-paper); color: var(--c-ink);
+  font: 700 19px/1 var(--f-body);
+}
+.tr-zbtn:hover:not([disabled]) { background: var(--c-peach-l); }
+.tr-zbtn[disabled] { opacity: 0.38; cursor: default; }
+.tr-zpct { min-width: 58px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.tr-fitglyph { width: 17px; height: 17px; fill: none; stroke: var(--c-ink); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+@media (pointer: coarse) { .tr-zbtn, .tree .tr-filter { min-width: 44px; height: 44px; } .tr-zpct { min-width: 60px; } .tree .tr-nav { height: 44px; } }
+
+/* The cards' legend (D144), in the header: a swatch per state, as the cards draw it. */
+.tree .tr-states { display: inline-flex; align-items: center; gap: 11px; font-size: 12px; color: var(--c-ink-soft); }
+.tree .tr-lg { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.tree .tr-lgsw {
+  display: inline-grid; place-items: center; width: 22px; height: 15px; box-sizing: border-box; font: 700 9px/1 var(--f-body); font-style: normal;
+  border: 1.5px solid var(--c-ink); border-radius: 4px; background: var(--c-paper);
+}
+.tree .tr-lgsw[data-state='done'] { background: color-mix(in srgb, var(--c-turq-l) 55%, var(--c-paper)); color: var(--c-turq-d); }
+.tree .tr-lgsw[data-state='ready'] { background: #fffdf8; box-shadow: 0 0 0 2px var(--c-warn); color: #a85f18; }
+.tree .tr-lgsw[data-state='active'] { background: linear-gradient(90deg, var(--c-lilac-l) 55%, #f7f2fc 55%); }
+.tree .tr-lgsw[data-state='locked'] { background: var(--c-paper-d); border-color: rgba(30, 27, 46, 0.45); }
+.tree .tr-lgsw[data-state='core'] { background: repeating-linear-gradient(135deg, rgba(30, 27, 46, 0.12) 0 2px, transparent 2px 5px), var(--c-paper-d); border-color: rgba(30, 27, 46, 0.45); }
+.tree .tr-lgsw .tr-mark { width: 10px; height: 10px; }
+.tree .tr-lgsw canvas { width: 13px; height: 13px; display: block; }
+
+/* ── the canvas (D144): the plans' wash, the tiers' columns, the lanes, the walls ── */
+.tree .tr-zone, .tree .tr-band, .tree .tr-wall { position: absolute; pointer-events: none; }
+.tree .tr-zone[data-zone='plans'] { background: rgba(242, 198, 160, 0.16); border-radius: 18px; }
+.tree .tr-zone[data-tier] { background: rgba(157, 140, 201, 0.06); }
+.tree .tr-zone[data-tier='3'], .tree .tr-zone[data-tier='4'] { background: rgba(157, 140, 201, 0.1); }
+/* A tier whose Core level is not reached (D118): its column hatched in ink. */
+.tree .tr-zone[data-locked] { background-image: repeating-linear-gradient(135deg, rgba(30, 27, 46, 0.06) 0 2px, transparent 2px 12px); }
+.tree .tr-band {
+  border-radius: 14px; background: color-mix(in srgb, var(--path) 7%, transparent);
+  border: 1.5px solid color-mix(in srgb, var(--path) 20%, transparent);
+}
+/* A wall before a tier (D118, D144): paper and an ink rule down its middle — Tier 1 | Tier 2 wider, a
+   thick rule and a thin one; hatched coral while the Core is below the tier's level. Its rules hold
+   their width on screen whatever the zoom. */
+.tree .tr-wall { background: color-mix(in srgb, var(--c-paper-d) 75%, transparent); border-left: 1.5px dashed rgba(30, 27, 46, 0.22); border-right: 1.5px dashed rgba(30, 27, 46, 0.22); }
+.tree .tr-wall::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 50%; transform: translateX(-50%);
+  border-left: max(2px, calc(1.6px / var(--tz, 1))) solid rgba(30, 27, 46, 0.45);
+}
+.tree .tr-wall[data-strong]::after { border-left: max(4px, calc(3px / var(--tz, 1))) solid var(--c-ink); }
+.tree .tr-wall[data-strong]::before {
+  content: ''; position: absolute; top: 0; bottom: 0; left: calc(50% + max(6px, calc(5px / var(--tz, 1))));
   border-left: max(1.5px, calc(1.2px / var(--tz, 1))) solid var(--c-ink); opacity: 0.55;
 }
-.tr-rulecap {
-  position: absolute; top: 14px; left: 0; width: 24px; height: 24px; transform: translateX(calc(-50% - 2px));
-  display: grid; place-items: center; border: 2px solid var(--c-ink); border-radius: 50%; background: var(--c-paper);
+.tree .tr-wall[data-locked] { background: repeating-linear-gradient(135deg, rgba(196, 83, 60, 0.12) 0 3px, transparent 3px 11px), color-mix(in srgb, var(--c-paper-d) 75%, transparent); }
+/* The wall's lock (D118, D144): the Core's look at the level the tier waits for, its level; padlocked
+   and dashed coral below it, ✓ and turquoise once there. The line from its key ends on it. */
+.tree .tr-key {
+  position: absolute; z-index: 3; display: grid; place-items: center; padding: 0; cursor: pointer; box-sizing: border-box;
+  border: 2.5px dashed var(--c-coral-d); border-radius: 50%; background: var(--c-paper); box-shadow: 2px 2px 0 var(--c-ink);
 }
-.tr-rulecap .tr-mark { display: none; width: 14px; height: 14px; }
-.tr-tierrule[data-locked] .tr-rulecap { border-color: var(--c-coral-d); }
-.tr-tierrule[data-locked] .tr-rulecap .tr-mark { display: block; }
-.tr-canvas[data-zoom] .tr-rulecap { display: none; }
+.tree .tr-key canvas { width: 30px; height: 30px; display: block; filter: grayscale(0.5); }
+.tree .tr-keylv {
+  position: absolute; right: -7px; top: -7px; min-width: 18px; height: 18px; box-sizing: border-box; padding: 0 4px; display: grid; place-items: center;
+  border-radius: 9px; background: var(--c-ink); color: var(--c-paper); font: 700 11px/1 var(--f-body);
+}
+.tree .tr-keymark {
+  position: absolute; left: -7px; bottom: -6px; width: 20px; height: 20px; box-sizing: border-box; display: grid; place-items: center;
+  border-radius: 50%; background: var(--c-paper); border: 1.5px solid var(--c-ink);
+}
+.tree .tr-keymark .tr-mark { width: 12px; height: 12px; }
+.tree .tr-key[data-open] { border: 2.5px solid var(--c-turq-d); background: color-mix(in srgb, var(--c-turq-l) 45%, var(--c-paper)); }
+.tree .tr-key[data-open] canvas { filter: none; }
+.tree .tr-key[data-open] .tr-mark { display: none; }
+.tree .tr-key[data-open] .tr-gatecheck { display: inline; }
+.tree .tr-key:hover { transform: scale(1.06); }
 
-/* ── the categories (D128): a block each, in its theme's colour, its header on top ── */
-.tr-cat {
-  position: absolute; border: 1.5px solid color-mix(in srgb, var(--path) 42%, transparent); border-radius: 12px;
-  background: color-mix(in srgb, var(--path) 7%, rgba(255, 252, 246, 0.5));
+/* ── the cells (D128, D144): a category's or a plan path's box in its theme's colour, its header on top ── */
+.tree .tr-cat {
+  position: absolute; pointer-events: none; border-radius: 12px;
+  border: 1.5px solid color-mix(in srgb, var(--path) 34%, transparent);
+  background: color-mix(in srgb, var(--path) 6%, rgba(255, 252, 246, 0.62));
 }
-/* A gate not finished: the block hatched, its edge dashed — what it holds waits. */
-.tr-cat[data-locked] {
-  border-style: dashed;
-  background-image: repeating-linear-gradient(135deg, rgba(30, 27, 46, 0.05) 0 2px, transparent 2px 10px);
+.tree .tr-cat[data-locked] { border-style: dashed; background-image: repeating-linear-gradient(135deg, rgba(30, 27, 46, 0.045) 0 2px, transparent 2px 10px); }
+.tree .tr-cathead, .tree .tr-cathead.tr-lane {
+  position: absolute; z-index: 2; display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 7px;
+  padding: 0 10px; box-sizing: border-box; cursor: pointer; white-space: nowrap; overflow: hidden;
+  border: none; border-radius: 12px 12px 0 0; background: none;
 }
-.tr-cathead {
-  position: absolute; z-index: 2; display: flex; flex-direction: column; gap: 2px; padding: 3px 10px 0;
-  pointer-events: none; box-sizing: border-box;
-}
-.tr-catline { display: flex; align-items: baseline; gap: 8px; min-width: 0; white-space: nowrap; }
-.tr-catname {
-  font-size: 18px; line-height: 21px; padding: 0 6px; border-radius: 6px; cursor: help; pointer-events: auto;
-  color: color-mix(in srgb, var(--path) 55%, var(--c-ink)); background: color-mix(in srgb, var(--path) 10%, var(--c-paper));
-}
-.tr-catcount { font: 700 11.5px/1 var(--f-body); color: var(--c-ink-soft); font-variant-numeric: tabular-nums; }
-.tr-cathead[data-full] .tr-catcount { color: var(--c-turq-d); }
-.tr-cathead[data-full] .tr-catcount::after { content: ' ✓'; }
-.tr-cathead[data-on] .tr-catname { text-decoration: underline 3px var(--c-turq); text-underline-offset: 3px; }
-/* Its gates: « après » and a pill each — padlocked, coral, with how far the gate is; ✓ once finished. */
-.tr-catgates { display: flex; align-items: center; gap: 5px; min-width: 0; white-space: nowrap; overflow: hidden; }
-.tr-catopens { font-size: 11px; color: var(--c-ink-soft); }
-.tr-catgate {
-  display: inline-flex; align-items: center; gap: 3px; height: 18px; padding: 0 7px 0 4px; cursor: pointer; pointer-events: auto;
-  font: 600 11.5px/16px var(--f-body); color: var(--c-coral-d);
-  border: 1.5px dashed var(--c-coral-d); border-radius: 999px; background: var(--c-paper);
-}
-.tr-catgate .tr-mark { width: 13px; height: 13px; }
-.tr-catgate small { font-weight: 700; color: var(--c-ink-soft); font-variant-numeric: tabular-nums; }
-.tr-catgate:hover { background: var(--c-peach-l); }
-.tr-catgate[data-met] {
-  color: var(--c-ink); border-style: solid; border-color: color-mix(in srgb, var(--path) 70%, var(--c-ink));
-  background: color-mix(in srgb, var(--path) 14%, var(--c-paper));
-}
-.tr-catgate[data-met] .tr-mark { display: none; }
-.tr-catgate[data-met] .tr-gatecheck { display: inline; }
-/* The gates across the gutters: dashed in coral while the gate is not finished, inked once it is. */
-.tree .tr-gatelink { fill: none; stroke: var(--c-coral-d); stroke-width: 1.6; stroke-dasharray: 5 5; opacity: 0.75; }
+.tree .tr-cathead:hover .tr-catname { text-decoration: underline 1.5px; text-underline-offset: 3px; }
+.tree .tr-catname { font-size: 17px; line-height: 20px; color: color-mix(in srgb, var(--path) 58%, var(--c-ink)); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tree .tr-catbar { flex: none; width: 46px; height: 6px; border: 1.2px solid color-mix(in srgb, var(--path) 70%, var(--c-ink)); border-radius: 3px; background: var(--c-paper); overflow: hidden; }
+.tree .tr-catbar > i { display: block; height: 100%; width: 0; background: var(--path); }
+.tree .tr-catcount { flex: none; font: 700 11px/1 var(--f-body); color: var(--c-ink-soft); font-variant-numeric: tabular-nums; }
+.tree .tr-cathead[data-full] .tr-catcount { color: var(--c-turq-d); }
+.tree .tr-cathead[data-full] .tr-catcount::after { content: ' ✓'; }
+.tree .tr-cathead .tr-mark { display: none; width: 14px; height: 14px; flex: none; }
+.tree .tr-cathead[data-locked] .tr-mark { display: inline-block; }
+.tree .tr-cathead[data-locked] .tr-catname { color: var(--c-ink-soft); }
+.tree .tr-cathead[data-on] .tr-catname { text-decoration: underline 3px var(--c-turq); text-underline-offset: 3px; }
+
+/* ── the links (D107, D144): inked once done, amber where they open the way, faint while locked ── */
+.tree .tr-link { stroke: var(--c-ink-soft); stroke-width: 2; opacity: 0.5; }
+.tree .tr-link[data-state='open'] { stroke: #d48a2c; stroke-width: 2.6; stroke-dasharray: none; opacity: 1; }
+.tree .tr-link[data-state='locked'] { stroke: var(--c-ink); stroke-dasharray: 2 6; opacity: 0.32; }
+.tree .tr-link[data-kind='cross'] { stroke-width: 1.5; }
+.tree .tr-link[data-kind='key'] { stroke-width: 3; }
+.tree .tr-link[data-kind='key'][data-state='locked'], .tree .tr-link[data-kind='key'][data-state='open'] { stroke: var(--c-coral-d); stroke-dasharray: 6 4; opacity: 0.85; }
+.tree .tr-link[data-hot] { opacity: 1; stroke-width: 3; }
+/* The category gates (D128): an arrow along a lane, across a wall — dashed coral until the gate is finished. */
+.tree .tr-gatelink { fill: none; stroke: var(--c-coral-d); stroke-width: 2.2; stroke-dasharray: 6 5; opacity: 0.7; }
 .tree .tr-gatelink[data-state='done'] { stroke: var(--c-ink-soft); stroke-dasharray: none; opacity: 0.55; }
+.tree .tr-gatehead { fill: var(--c-coral-d); opacity: 0.8; }
+.tree .tr-gatehead[data-state='done'] { fill: var(--c-ink-soft); opacity: 0.6; }
 
-/* Links from another category of the tier (the Steelworks' press and bricks, the Compute Plan's Server Room…): a finer line. */
-.tree .tr-link[data-kind='cross'] { stroke-width: 1.6; }
-
-/* A node's chain (D107): the node the player selected — what it needs and what needs it stay, the
-   rest fades back, its links thicken — until another is selected, the empty tree clicked or Esc. */
-.tr-canvas .tr-node, .tr-canvas .tr-link { transition: opacity 0.15s ease; }
-/* The mouse over a card only raises it (D111: a cue, no focus); zoomed out, a ring. */
-.tr-canvas .tr-node { transition: opacity 0.15s ease, transform 0.12s ease, box-shadow 0.12s ease; }
-.tr-canvas .tr-node:hover { transform: translateY(-2px); box-shadow: 3px 5px 0 var(--c-ink); }
-.tr-canvas[data-chain] .tr-node:not([data-chain]) { opacity: 0.2; }
-.tr-canvas[data-chain] .tr-node[data-chain] { opacity: 1; }
-.tr-canvas[data-chain] .tr-link:not([data-chain]) { opacity: 0.06; }
-.tr-canvas[data-chain] .tr-link[data-chain] { opacity: 1; stroke-width: 3.2; }
-.tr-canvas[data-chain] .tr-link[data-chain][data-state='locked'] { stroke: var(--c-coral-d); stroke-dasharray: 4 5; }
-.tr-canvas[data-chain] .tr-link[data-chain][data-state='open'] { stroke-dasharray: 8 4; }
-.tr-canvas[data-chain] .tr-node[data-chain='self'] { box-shadow: 3px 3px 0 var(--c-ink), 0 0 0 4px color-mix(in srgb, var(--c-turq) 55%, transparent); }
-.tr-canvas[data-chain] .tr-band, .tr-canvas[data-chain] .tr-cat:not([data-chain]), .tr-canvas[data-chain] .tr-cathead:not([data-chain]) { opacity: 0.45; }
-.tr-canvas[data-chain] .tr-gatelink:not([data-chain]) { opacity: 0.1; }
-.tr-canvas[data-chain] .tr-gatelink[data-chain] { opacity: 1; stroke-width: 2.6; }
-
-/* ── research nodes: a lilac pill, its spine in its lane's colour ── */
-.tree .tr-node[data-kind='research'] { background: #f4effb; border-radius: 18px; padding: 3px 9px 3px 13px; gap: 7px; }
-.tree .tr-node[data-kind='research']::before { left: 5px; background: var(--path, var(--c-lilac-d)); }
-.tree .tr-node[data-kind='research']:hover { background: #ebe3f8; }
-.tree .tr-node[data-kind='research'][data-state='done'] { background: #dcefee; }
-.tree .tr-node[data-kind='research'][data-state='active'] { background: #fff6c9; }
-.tree .tr-node[data-kind='research'][data-held] { background: #fde0d6; }
-.tree .tr-node[data-kind='research'][data-keystone] { border-width: 2.5px; box-shadow: 3px 3px 0 var(--c-ink); }
+/* ── the cards (D144): what they unlock, their name, their costs; a badge says their state ── */
+.tree .tr-node { padding: 4px 9px 4px 12px; gap: 7px; background: #fffaf3; }
+.tree .tr-node[data-kind='research'] { background: #f8f3fc; border-radius: 13px 10px 14px 11px / 11px 14px 10px 13px; }
+.tree .tr-node[data-kind='research']::before { left: 4px; background: var(--path, var(--c-lilac-d)); }
+.tree .tr-node .tr-icons { width: 40px; height: 40px; }
+.tree .tr-node .tr-icons > :first-child { width: 34px; height: 34px; }
+.tree .tr-node .tr-icons > :nth-child(n + 2) { width: 18px; height: 18px; }
+.tree .tr-node .tr-main { gap: 2px; }
+.tree .tr-node .tr-name { font-size: 14.5px; line-height: 17px; }
+.tree .tr-node[data-long] .tr-name { font-size: 13px; }
 .tree .tr-node[data-kind='research'][data-keystone] .tr-name::after { content: ' ★'; color: var(--c-warn); }
-.tree .tr-node[data-kind='research'] .tr-icons { width: 38px; height: 38px; }
-.tree .tr-node[data-kind='research'] .tr-icons > :first-child { width: 34px; height: 34px; }
-.tree .tr-node[data-kind='research'] .tr-icons > :nth-child(n + 2) { width: 19px; height: 19px; }
-.tree .tr-node[data-kind='research'] .tr-main { gap: 1px; }
-.tree .tr-node[data-kind='research'] .tr-name { font-size: 14.5px; line-height: 16px; }
-.tree .tr-node[data-kind='research'][data-long] .tr-name { font-size: 13px; }
-/* What it costs (D122): the resources paid from the Core at launch (coral while short), its tokens and their price at CrierBelt. */
-.tr-rcost { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; font-size: 11.5px; line-height: 16px; white-space: nowrap; }
-.tr-rcost .tr-chip { gap: 1px; }
-.tr-rcost .tr-chip canvas, .tr-rcost .tr-mark { width: 13px; height: 13px; }
-/* Its resources on one line, its tokens and their price on the next, at every tier (D122; D118: no time). */
-.tr-rline { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 11.5px; line-height: 16px; white-space: nowrap; }
-.tr-rline .tr-mark { width: 13px; height: 13px; }
-.tr-rfoot { display: flex; align-items: center; gap: 8px; font-size: 11.5px; line-height: 15px; color: var(--c-ink-soft); white-space: nowrap; }
-.tr-tokbox { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
-.tr-tokbox .tr-chip { color: var(--c-ink); }
-.tr-rfoot .tr-mark { width: 13px; height: 13px; }
-.tr-node[data-state='done'] .tr-rline, .tr-node[data-state='done'] .tr-tokbox { opacity: 0.55; }
-/* Queued in a lab (the Research Queue): a tag on its upper left edge, the lab's number. */
+.tree .tr-line { min-height: 18px; gap: 6px; }
+.tree .tr-rline { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11.5px; line-height: 16px; white-space: nowrap; overflow: hidden; }
+.tree .tr-rcost { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.tree .tr-rline .tr-chip { gap: 1px; }
+.tree .tr-rline .tr-chip canvas, .tree .tr-rline .tr-mark { width: 13px; height: 13px; }
+.tree .tr-tokbox { display: inline-flex; align-items: center; gap: 4px; min-width: 0; padding-left: 6px; border-left: 1px solid rgba(30, 27, 46, 0.2); }
+.tree .tr-tokbox .tr-chip { color: var(--c-lilac-d); }
+/* « Débloquer » at the end of a plan's costs (a tab off its lower edge while the cards are small). */
+.tree .tr-unlock { position: static; margin-left: auto; padding: 1px 8px; font: 700 11.5px/1.25 var(--f-body); box-shadow: 1.5px 1.5px 0 var(--c-ink); border-width: 1.5px; }
+/* The state badge (D144) on the upper right corner: ✓ done, ▶ ready (amber), its % while running, a
+   padlock while locked, the Core's look and level while its tier's level is not reached. */
+.tree .tr-badge {
+  position: absolute; right: -9px; top: -10px; z-index: 2; display: grid; place-items: center; box-sizing: border-box;
+  min-width: 22px; height: 22px; padding: 0 3px; border: 2px solid var(--c-ink); border-radius: 11px;
+  font: 700 11.5px/1 var(--f-body); background: var(--c-paper); color: var(--c-ink);
+}
+.tree .tr-badge > * { display: none; }
+.tree .tr-badge .tr-mark { width: 12px; height: 12px; display: block; }
+.tree .tr-b-core { align-items: center; gap: 1px; }
+.tree .tr-b-core canvas { width: 15px; height: 15px; display: block; }
+.tree .tr-b-core b { font-size: 10.5px; }
+.tree .tr-node[data-state='done'] .tr-badge { background: var(--c-turq-d); color: var(--c-paper); }
+.tree .tr-node[data-state='done'] .tr-b-ok { display: block; }
+.tree .tr-node:is([data-state='ready'], [data-state='poor'], [data-state='waiting']) .tr-b-go { display: block; font-size: 10px; padding-left: 1px; }
+.tree .tr-node[data-state='ready'] .tr-badge { background: var(--c-warn); }
+.tree .tr-node:is([data-state='poor'], [data-state='waiting']) .tr-badge { color: #a85f18; border-color: #a85f18; }
+.tree .tr-node[data-state='active'] .tr-badge { background: var(--c-lilac-d); color: var(--c-paper); min-width: 34px; }
+.tree .tr-node[data-state='active'] .tr-b-pct { display: block; }
+.tree .tr-node:is([data-state='locked'], [data-state='later']) .tr-badge { background: var(--c-paper-d); border-color: rgba(30, 27, 46, 0.55); }
+.tree .tr-node:is([data-state='locked'], [data-state='later']):not([data-core]) .tr-b-lock { display: block; }
+.tree .tr-node[data-core] .tr-badge { background: var(--c-paper); border: 2px dashed var(--c-coral-d); color: var(--c-coral-d); }
+.tree .tr-node[data-core] .tr-b-core { display: inline-flex; }
+.tree .tr-node[data-kind='root'] .tr-badge { display: none; }
+.tree .tr-node[data-just] .tr-badge { animation: tr-stamp 0.6s cubic-bezier(0.2, 1.6, 0.4, 1); }
+.tree .tr-stamp { display: none !important; }
+/* Its number on the path to the focused node (D144), on the upper left corner. */
+.tree .tr-step {
+  position: absolute; left: -9px; top: -10px; z-index: 3; display: none; place-items: center; box-sizing: border-box;
+  min-width: 22px; height: 22px; padding: 0 5px; border: 2px solid var(--c-ink); border-radius: 11px;
+  font: 700 11.5px/1 var(--f-body); background: var(--c-coral-d); color: var(--c-paper);
+}
+.tree .tr-node[data-step] .tr-step { display: grid; }
+/* States: done — washed in its colour, calm; ready — bright paper and an amber ring: what to do next;
+   short or waiting — a paler ring; running — its bar fills the card in lilac; locked — paper-dark, its
+   content faded; its tier's Core level not reached — hatched too. */
+.tree .tr-node[data-state='done'] { background: color-mix(in srgb, var(--path, var(--c-turq)) 15%, #fffaf3); }
+.tree .tr-node[data-state='done'] :is(.tr-cost, .tr-rline) { opacity: 0.5; }
+.tree .tr-node[data-state='ready'] { background: #fffef9; box-shadow: 2px 2px 0 var(--c-ink), 0 0 0 4px var(--c-warn); animation: tr-ready144 2.4s ease-in-out infinite; }
+@keyframes tr-ready144 { 50% { box-shadow: 2px 2px 0 var(--c-ink), 0 0 0 4px color-mix(in srgb, var(--c-warn) 45%, transparent); } }
+.tree .tr-node:is([data-state='poor'], [data-state='waiting']) { opacity: 1; background: #fffef9; box-shadow: 2px 2px 0 var(--c-ink), 0 0 0 3px color-mix(in srgb, var(--c-warn) 40%, transparent); }
+.tree .tr-node[data-state='active'] { background: #f8f3fc; }
+.tree .tr-node[data-state='locked'] { opacity: 1; background: var(--c-paper-d); border-style: solid; border-color: rgba(30, 27, 46, 0.5); box-shadow: none; }
+.tree .tr-node[data-state='locked'] > :is(.tr-icons, .tr-main), .tree .tr-node[data-state='locked'] .tr-pillin { opacity: 0.55; }
+.tree .tr-node[data-state='locked'] .tr-icons { filter: grayscale(0.45); }
+.tree .tr-node[data-core] { background: repeating-linear-gradient(135deg, rgba(30, 27, 46, 0.06) 0 2px, transparent 2px 9px), var(--c-paper-d); }
+.tree .tr-node[data-state='locked']:hover { opacity: 1; }
+.tree .tr-node[data-held] { background: #fde0d6; }
+/* A running project: its bar fills the card from the left, under its content. */
+.tree .tr-track { position: absolute; inset: 2px; height: auto; border-radius: 10px; background: none; overflow: hidden; pointer-events: none; }
+.tree .tr-bar { height: 100%; background: color-mix(in srgb, var(--c-lilac-l) 75%, transparent); }
+.tree .tr-node[data-held] .tr-bar { background: color-mix(in srgb, var(--c-coral) 45%, transparent); }
+.tree .tr-node > :is(.tr-icons, .tr-main) { position: relative; z-index: 1; }
+/* Queued in a lab (the Research Queue): a tag on its upper edge, the lab's number. */
 .tr-qtag {
-  position: absolute; left: 14px; top: -10px; display: none; align-items: center; gap: 3px; padding: 0 6px 0 4px;
+  position: absolute; left: 18px; top: -10px; z-index: 2; display: none; align-items: center; gap: 3px; padding: 0 6px 0 4px;
   font: 700 11px/16px var(--f-body); color: var(--c-paper); background: var(--c-lilac-d); border: 1.5px solid var(--c-ink); border-radius: 8px;
 }
 .tr-qtag::before { content: ''; width: 9px; height: 8px; background: linear-gradient(var(--c-paper) 0 2px, transparent 2px 3px, var(--c-paper) 3px 5px, transparent 5px 6px, var(--c-paper) 6px 8px); }
 .tr-node[data-queued] .tr-qtag { display: inline-flex; }
-.tree .tr-node[data-kind='research'] .tr-track { left: 16px; right: 16px; bottom: 2px; }
-.tr-node[data-held] .tr-bar { background: var(--c-coral-d); }
+
+/* The pillars (D71, D144): the Heart and the lab, as tall as the lanes, their content in their middle. */
+.tree .tr-node[data-pillar] {
+  flex-direction: column; justify-content: center; align-items: stretch; padding: 14px 10px;
+  border-width: 2.5px; border-radius: 22px 16px 24px 18px / 18px 24px 16px 22px; box-shadow: 3px 3px 0 var(--c-ink);
+}
+.tree .tr-node[data-pillar]::before { display: none; }
+.tree .tr-node[data-kind='root'][data-pillar] { background: color-mix(in srgb, var(--c-peach-l) 70%, #fffaf3); }
+.tree .tr-node[data-lane='gate'][data-pillar] { background: color-mix(in srgb, var(--c-lilac-l) 26%, #fffaf3); }
+.tree .tr-node[data-lane='gate'][data-pillar][data-state='done'] { background: color-mix(in srgb, var(--c-turq-l) 30%, #fffaf3); }
+.tree .tr-pillin { display: flex; flex-direction: column; align-items: center; gap: 9px; text-align: center; }
+.tree .tr-node[data-pillar] .tr-icons { width: 80px; height: 80px; }
+.tree .tr-node[data-pillar] .tr-icons > :first-child { width: 72px; height: 72px; }
+.tree .tr-node[data-pillar] .tr-name { font-size: 22px; line-height: 1.05; white-space: normal; }
+.tree .tr-pillsub { font-size: 12px; color: var(--c-ink-soft); }
+.tree .tr-kit { display: flex; gap: 6px; justify-content: center; }
+.tree .tr-kit canvas { width: 30px; height: 30px; display: block; }
+.tree .tr-pillcount { display: flex; flex-direction: column; align-items: stretch; gap: 4px; width: 100%; font: 700 12px/1.2 var(--f-body); color: var(--c-ink-soft); }
+.tree .tr-pillcount .tr-hbar { flex: none; width: 100%; }
+.tree .tr-node[data-pillar] .tr-line { flex-wrap: wrap; justify-content: center; }
+.tree .tr-node[data-pillar] .tr-unlock { margin: 0; }
+.tree .tr-node[data-pillar] .tr-badge { right: 8px; top: 8px; }
+
+/* ── a node's chain (D107), the filter (D144): the selected node's chain stays, the rest fades back ── */
+.tr-canvas .tr-node { transition: opacity 0.15s ease, transform 0.12s ease, box-shadow 0.12s ease; }
+.tr-canvas .tr-link, .tr-canvas .tr-gatelink, .tr-canvas .tr-cat, .tr-canvas .tr-cathead { transition: opacity 0.15s ease; }
+/* The mouse over a card only raises it (D111: a cue, no focus). */
+.tree .tr-canvas .tr-node:hover { transform: translateY(-2px); }
+.tr-canvas[data-chain] .tr-node:not([data-chain]) { opacity: 0.2; }
+.tr-canvas[data-chain] .tr-node[data-chain] { opacity: 1; }
+.tr-canvas[data-chain] .tr-node[data-chain] > :is(.tr-icons, .tr-main) { opacity: 1; }
+.tr-canvas[data-chain] .tr-link:not([data-chain]) { opacity: 0.06; }
+.tr-canvas[data-chain] .tr-link[data-chain] { opacity: 1; stroke-width: 3.2; }
+.tr-canvas[data-chain] .tr-link[data-chain][data-state='locked'] { stroke: var(--c-coral-d); stroke-dasharray: 5 5; }
+.tr-canvas[data-chain] .tr-node[data-chain='self'] { box-shadow: 3px 3px 0 var(--c-ink), 0 0 0 5px color-mix(in srgb, var(--c-turq) 60%, transparent); }
+.tr-canvas[data-chain] .tr-cat:not([data-chain]), .tr-canvas[data-chain] .tr-cathead:not([data-chain]) { opacity: 0.35; }
+.tr-canvas[data-chain] .tr-gatelink:not([data-chain]), .tr-canvas[data-chain] .tr-gatehead:not([data-chain]) { opacity: 0.08; }
+.tr-canvas[data-chain] .tr-gatelink[data-chain] { opacity: 1; stroke-width: 3; }
+.tr-canvas[data-chain] .tr-key:not([data-chain]) { opacity: 0.4; }
+.tr-canvas[data-filter] .tr-node:not(:is([data-state='ready'], [data-state='poor'], [data-state='waiting'], [data-state='active'], [data-pillar])) { opacity: 0.16; }
+.tr-canvas[data-filter] .tr-link:not([data-state='open']) { opacity: 0.08; }
+.tr-canvas[data-filter] .tr-gatelink, .tr-canvas[data-filter] .tr-gatehead { opacity: 0.12; }
+
+/* ── the zoom (D111): mid, a card is its icon and its name, larger, on two lines; far, a tile of its state's colour and its icon ── */
+.tr-canvas[data-zoom] .tr-main > :not(.tr-name), .tr-canvas[data-zoom] .tr-qtag { display: none; }
+.tree .tr-canvas[data-zoom] .tr-node:not([data-pillar]) .tr-name {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: normal; overflow: hidden;
+  font-size: clamp(14px, calc(12.5px / var(--tz)), 28px); line-height: 1;
+}
+.tree .tr-canvas[data-zoom='mid'] .tr-node .tr-icons { width: 46px; height: 46px; }
+.tree .tr-canvas[data-zoom='mid'] .tr-node .tr-icons > :first-child { width: 42px; height: 42px; }
+.tree .tr-canvas[data-zoom] .tr-node .tr-icons > :nth-child(n + 2) { display: none; }
+/* Mid, a ready plan keeps « Débloquer », a tab off its lower edge; the badges and numbers keep their size on screen. */
+.tree .tr-canvas[data-zoom='mid'] .tr-node:not([data-pillar]) .tr-main > .tr-line { display: contents; }
+.tree .tr-canvas[data-zoom='mid'] .tr-node:not([data-pillar]) .tr-cost { display: none; }
+.tree .tr-canvas[data-zoom='mid'] .tr-node:not([data-pillar]) .tr-unlock {
+  position: absolute; right: 8px; bottom: calc(-9px / var(--tz)); margin: 0;
+  font-size: calc(11px / var(--tz)); padding: 0 calc(6px / var(--tz)); border-width: calc(1.5px / var(--tz)); box-shadow: none;
+}
+.tree .tr-canvas[data-zoom] :is(.tr-badge, .tr-step) {
+  min-width: calc(20px / var(--tz)); height: calc(20px / var(--tz)); border-radius: calc(10px / var(--tz)); border-width: calc(1.6px / var(--tz));
+  font-size: calc(11px / var(--tz)); right: calc(-7px / var(--tz)); top: calc(-8px / var(--tz)); padding: 0 calc(3px / var(--tz));
+}
+.tree .tr-canvas[data-zoom] .tr-step { left: calc(-7px / var(--tz)); right: auto; }
+/* Mid, the badge sits astride the card's right edge, at its middle — where its links leave it, a port —
+   and the path's number astride its left edge: both off the cells' headers above the first row (the
+   gap's middle, where the links turn, stays clear). */
+.tree .tr-canvas[data-zoom='mid'] .tr-node:not([data-pillar]) :is(.tr-badge, .tr-step) { top: 50%; transform: translateY(-50%); }
+.tree .tr-canvas[data-zoom='mid'] .tr-node:not([data-pillar]) .tr-badge { right: calc(-9px / var(--tz)); }
+.tree .tr-canvas[data-zoom='mid'] .tr-node[data-state='active']:not([data-pillar]) .tr-badge { right: calc(-15px / var(--tz)); }
+.tree .tr-canvas[data-zoom='mid'] .tr-node:not([data-pillar]) .tr-step { left: calc(-10px / var(--tz)); }
+.tree .tr-canvas[data-zoom='mid'] .tr-node:not([data-pillar]) .tr-main { padding-right: calc(8px / var(--tz)); }
+.tree .tr-canvas[data-zoom='mid'] .tr-node[data-step]:not([data-pillar]) .tr-icons { margin-left: calc(6px / var(--tz)); }
+.tree .tr-canvas[data-zoom] .tr-node[data-state='active'] .tr-badge { min-width: calc(32px / var(--tz)); }
+.tree .tr-canvas[data-zoom] .tr-badge .tr-mark { width: calc(11px / var(--tz)); height: calc(11px / var(--tz)); }
+.tree .tr-canvas[data-zoom] .tr-b-core canvas { width: calc(14px / var(--tz)); height: calc(14px / var(--tz)); }
+.tree .tr-canvas[data-zoom] .tr-b-core b { font-size: calc(10px / var(--tz)); }
+.tree .tr-canvas[data-zoom] .tr-node[data-pillar] .tr-badge { right: 8px; top: 8px; }
+.tree .tr-canvas[data-zoom='far'] .tr-node:not([data-pillar]) { justify-content: center; padding: 2px; }
+.tree .tr-canvas[data-zoom='far'] .tr-node:not([data-pillar]) .tr-main, .tree .tr-canvas[data-zoom='far'] .tr-badge,
+.tree .tr-canvas[data-zoom='far'] .tr-unlock { display: none; }
+.tree .tr-canvas[data-zoom='far'] .tr-node:not([data-pillar]) .tr-icons { width: 50px; height: 50px; }
+.tree .tr-canvas[data-zoom='far'] .tr-node:not([data-pillar]) .tr-icons > :first-child { width: 48px; height: 48px; }
+.tree .tr-canvas[data-zoom='far'] .tr-node[data-state='done'] { background: color-mix(in srgb, var(--path, var(--c-turq)) 34%, #fffaf3); }
+.tree .tr-canvas[data-zoom='far'] .tr-node[data-state='ready'] { background: var(--c-warn); }
+.tree .tr-canvas[data-zoom='far'] .tr-node:is([data-state='poor'], [data-state='waiting']) { background: color-mix(in srgb, var(--c-warn) 40%, #fffef9); }
+.tree .tr-canvas[data-zoom='far'] .tr-node[data-state='active'] { background: var(--c-lilac-l); }
+.tree .tr-canvas[data-zoom] .tr-node { border-width: calc(1.6px / var(--tz)); box-shadow: none; }
+.tree .tr-canvas[data-zoom] .tr-node[data-state='ready'] { box-shadow: 0 0 0 calc(3px / var(--tz)) var(--c-warn); animation: none; }
+.tree .tr-canvas[data-zoom] .tr-node:is([data-state='poor'], [data-state='waiting']) { box-shadow: 0 0 0 calc(2.5px / var(--tz)) color-mix(in srgb, var(--c-warn) 45%, transparent); }
+.tree .tr-canvas[data-zoom] .tr-node[data-on] { outline-width: calc(3px / var(--tz)); outline-offset: calc(2px / var(--tz)); }
+.tree .tr-canvas[data-zoom] .tr-node:hover { box-shadow: 0 0 0 calc(3px / var(--tz)) var(--c-turq); }
+.tree .tr-canvas[data-zoom] .tr-node::before { width: calc(3px / var(--tz)); }
+.tree .tr-canvas[data-zoom][data-chain] .tr-node[data-chain='self'] { box-shadow: 0 0 0 calc(5px / var(--tz)) color-mix(in srgb, var(--c-turq) 60%, transparent); }
+.tree .tr-canvas[data-zoom] .tr-node[data-pillar] .tr-name { font-size: clamp(22px, calc(16px / var(--tz)), 56px); }
+.tree .tr-canvas[data-zoom] .tr-node[data-pillar] .tr-icons { width: clamp(80px, calc(56px / var(--tz)), 160px); height: clamp(80px, calc(56px / var(--tz)), 160px); }
+.tree .tr-canvas[data-zoom] .tr-node[data-pillar] .tr-icons > :first-child { width: 100%; height: 100%; }
+.tree .tr-canvas[data-zoom] .tr-pillsub, .tree .tr-canvas[data-zoom] .tr-pillcount { font-size: clamp(12px, calc(11px / var(--tz)), 30px); }
+.tree .tr-canvas[data-zoom] .tr-node[data-pillar] .tr-unlock { font-size: clamp(12px, calc(11px / var(--tz)), 30px); padding: 0 calc(6px / var(--tz)); border-width: calc(1.5px / var(--tz)); }
+.tree .tr-canvas[data-zoom] .tr-pillcount .tr-hbar { height: calc(7px / var(--tz)); border-width: calc(1.5px / var(--tz)); }
+/* The cells' heads and the walls' locks keep their size on screen. */
+.tree .tr-canvas[data-zoom] .tr-catname { font-size: clamp(17px, calc(13px / var(--tz)), 26px); line-height: 1; }
+.tree .tr-canvas[data-zoom] .tr-catbar { width: calc(40px / var(--tz)); height: calc(6px / var(--tz)); border-width: calc(1.2px / var(--tz)); max-width: 30%; }
+.tree .tr-canvas[data-zoom] .tr-catcount { font-size: clamp(11px, calc(10px / var(--tz)), 20px); }
+.tree .tr-canvas[data-zoom] .tr-cathead .tr-mark { width: calc(13px / var(--tz)); height: calc(13px / var(--tz)); max-width: 24px; max-height: 24px; }
+.tree .tr-canvas[data-zoom='far'] .tr-cathead { visibility: hidden; }
+.tree .tr-canvas[data-zoom] .tr-key { transform: scale(clamp(1, calc(0.7 / var(--tz)), 1.7)); }
+/* The links keep their width and their dashes on screen: crisp, never a hairline. */
+.tr-canvas[data-zoom] .tr-link { stroke-width: calc(1.6px / var(--tz)); }
+.tr-canvas[data-zoom] .tr-link[data-state='open'] { stroke-width: calc(2.2px / var(--tz)); }
+.tr-canvas[data-zoom] .tr-link[data-state='locked'] { stroke-dasharray: calc(2px / var(--tz)) calc(6px / var(--tz)); }
+.tr-canvas[data-zoom] .tr-gatelink { stroke-width: calc(1.8px / var(--tz)); stroke-dasharray: calc(6px / var(--tz)) calc(5px / var(--tz)); }
+.tr-canvas[data-zoom] .tr-gatelink[data-state='done'] { stroke-dasharray: none; }
+.tr-canvas[data-zoom] .tr-link[data-hot], .tr-canvas[data-zoom][data-chain] .tr-link[data-chain] { stroke-width: calc(3px / var(--tz)); }
+
+/* ── the detail pane's path to a node (D144): numbered as on the cards, the Core's levels in their places ── */
+.rs-path { margin-top: 2px; }
+.rs-steps { display: flex; flex-wrap: wrap; gap: 5px; }
+.rs-step {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 9px 2px 3px; cursor: pointer; box-sizing: border-box;
+  border: 1.5px solid var(--c-ink); border-left: 4px solid var(--path, var(--c-ink)); border-radius: 999px;
+  background: var(--c-paper); font: 600 12px/1.2 var(--f-body); color: var(--c-ink);
+}
+.rs-step:hover { background: var(--c-peach-l); }
+.rs-step canvas { width: 18px; height: 18px; display: block; flex: none; }
+.rs-step > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.rs-stepn {
+  flex: none; min-width: 18px; height: 18px; box-sizing: border-box; padding: 0 4px; display: grid; place-items: center;
+  border-radius: 9px; background: var(--c-coral-d); color: var(--c-paper); font: 700 11px/1 var(--f-body);
+}
+.rs-step[data-state='ready'] { box-shadow: 0 0 0 2px var(--c-warn); }
+.rs-step[data-state='active'] { background: color-mix(in srgb, var(--c-lilac-l) 50%, var(--c-paper)); }
+.rs-step:is([data-state='locked'], [data-state='later']) { background: var(--c-paper-d); }
+.rs-step:is([data-k='core'], [data-k='exp']) { cursor: help; padding-left: 6px; border-style: dashed; border-color: var(--c-coral-d); color: var(--c-coral-d); }
+.rs-step .glyph, .rs-step svg { width: 16px; height: 16px; flex: none; }
+.rs-more { align-self: center; color: var(--c-ink-soft); font-size: 12px; }
+
+/* A phone (D96): the legend waits for a wider window; the navigator takes a line of its own. */
+@media (max-width: 899px) { .tree .tr-states { display: none; } }
+/* A phone upright: the tools on one line (the zoom's figure waits: − and + say it), the rails a little
+   shorter, and the header's research strip without its words and the Compute Plan's comparison — the
+   tree gets the room. */
+@media (max-width: 559px) {
+  .tree .tr-tools { gap: 5px; padding: 4px 5px; }
+  .tree .tr-zpct { display: none; }
+  .tree .tr-navseg { padding: 0 4px; }
+  .tree .tr-navname { font-size: 10.5px; }
+  .tree .tr-navname small { display: none; }
+  .tree .tr-stage { grid-template-rows: 46px minmax(0, 1fr) auto; grid-template-columns: 26px minmax(0, 1fr); }
+  .tree .rs-plancmp, .tree .rs-bill > small, .tree .rs-slots > small { display: none; }
+}
 
 /* ── the header's research strip ── */
 .tree .rs-head { row-gap: 6px; align-items: center; }
@@ -331,87 +615,6 @@
 .rs-qnext { color: var(--c-lilac-d) !important; font-weight: 600; }
 .rs-qput { flex: none; font-size: 13px; padding: 2px 7px; }
 
-/* ── zoom (D111): the view on a stage, its zoom bar in a corner, the titles pinned over it ── */
-.tr-stage { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; }
-.tr-zoom { position: absolute; right: 12px; bottom: 12px; z-index: 4; display: flex; align-items: center; gap: 3px; padding: 4px; }
-.tr-zbtn {
-  min-width: 32px; height: 32px; padding: 0 6px; display: grid; place-items: center; cursor: pointer;
-  border: 1.5px solid var(--c-ink); border-radius: 8px; background: var(--c-paper); color: var(--c-ink);
-  font: 700 19px/1 var(--f-body);
-}
-.tr-zbtn:hover:not([disabled]) { background: var(--c-peach-l); }
-.tr-zbtn[disabled] { opacity: 0.38; cursor: default; }
-.tr-zpct { min-width: 58px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
-.tr-fitglyph { width: 17px; height: 17px; fill: none; stroke: var(--c-ink); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
-@media (pointer: coarse) { .tr-zbtn { min-width: 46px; height: 46px; } .tr-zpct { min-width: 64px; } }
-/* The tiers' and lanes' names, at reading size whatever the zoom, while the cards are small. */
-.tr-pins { position: absolute; inset: 0; z-index: 3; overflow: hidden; pointer-events: none; display: none; }
-.tr-pins[data-on] { display: block; }
-.tr-pin {
-  position: absolute; left: 0; top: 0; white-space: nowrap; padding: 1px 9px; border-radius: 999px;
-  font: 700 12.5px/18px var(--f-body); color: var(--c-ink);
-  background: color-mix(in srgb, var(--path, var(--c-lilac-l)) 22%, var(--c-paper));
-  border: 1.5px solid color-mix(in srgb, var(--path, var(--c-ink)) 75%, transparent); box-shadow: 1px 1px 0 rgba(30, 27, 46, 0.35);
-}
-.tr-pin[data-kind='tier'] {
-  display: inline-flex; align-items: center; gap: 5px; padding: 2px 12px; font-size: 13px; line-height: 22px;
-  background: var(--c-paper); border-color: var(--c-ink);
-}
-.tr-pin[data-kind='tier'] .lettering { font-size: 18px; }
-.tr-pin[data-kind='tier'] canvas { width: 20px; height: 20px; display: block; }
-.tr-pin[data-kind='tier'] .tr-mark { display: none; width: 15px; height: 15px; }
-/* A tier whose Core level is not reached (D118): its pin padlocked, coral, hatched. */
-.tr-pin[data-kind='tier'][data-locked] {
-  color: var(--c-coral-d); border: 2px dashed var(--c-coral-d);
-  background: repeating-linear-gradient(135deg, rgba(30, 27, 46, 0.06) 0 2px, transparent 2px 8px), var(--c-paper);
-}
-.tr-pin[data-kind='tier'][data-locked] .tr-mark { display: inline-block; }
-.tr-pin[data-kind='tier'][data-locked] canvas { filter: grayscale(0.6); }
-.tr-pinsub { display: inline-flex; align-items: center; gap: 4px; }
-.tr-pinshort { display: none; }
-/* The whole tree in view: the tier's name over its Core level, short, so the pin fits its narrow band. */
-.tr-pins[data-on='far'] .tr-pin[data-kind='tier'] { flex-direction: column; gap: 0; padding: 1px 8px 2px; line-height: 17px; border-radius: 12px; }
-.tr-pins[data-on='far'] .tr-pin[data-kind='tier'] .lettering { font-size: 15px; }
-.tr-pins[data-on='far'] .tr-pindot, .tr-pins[data-on='far'] .tr-pinlong { display: none; }
-.tr-pins[data-on='far'] .tr-pinsub { gap: 3px; font-size: 12px; }
-.tr-pins[data-on='far'] .tr-pin[data-kind='tier'] canvas { width: 16px; height: 16px; }
-.tr-pins[data-on='far'] .tr-pinshort { display: inline; }
-.tr-pin[hidden] { display: none; }
-/* At the whole tree's size the lanes are thin: smaller lane names, so neighbours both fit. */
-.tr-pins[data-on='far'] .tr-pin[data-kind='lane'] { padding: 0 7px; font-size: 11px; line-height: 15px; }
-/* A category's pin (D128): its name in its theme's colour, padlocked while a gate is unfinished. */
-.tr-pin[data-kind='cat'] {
-  display: inline-flex; align-items: center; gap: 3px; padding: 0 7px; font: 700 12px/17px var(--f-body); border-radius: 7px;
-  border-color: color-mix(in srgb, var(--path) 60%, var(--c-ink)); background: color-mix(in srgb, var(--path) 16%, var(--c-paper));
-}
-.tr-pin[data-kind='cat'] .tr-mark { display: none; width: 12px; height: 12px; }
-.tr-pin[data-kind='cat'][data-locked] .tr-mark { display: inline-block; }
-.tr-pins[data-on='far'] .tr-pin[data-kind='cat'] { font-size: 10.5px; line-height: 14px; padding: 0 5px; }
-/* Zoomed out: what the pins say is not drawn small on the canvas too. */
-.tr-canvas[data-zoom] .tr-lane > *, .tr-canvas[data-zoom] .tr-tierhead > *, .tr-canvas[data-zoom] .tr-cathead,
-.tr-canvas[data-zoom] .tr-blockhead, .tr-canvas[data-zoom] .tr-gatecap { visibility: hidden; }
-/* Mid: a card is its icon and its name, larger, on two lines; far: its icon alone (`zoomLevel`). */
-.tr-canvas[data-zoom] .tr-main > :not(.tr-name), .tr-canvas[data-zoom] .tr-unlock, .tr-canvas[data-zoom] .tr-qtag { display: none; }
-.tree .tr-canvas[data-zoom] .tr-node .tr-name {
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: normal; overflow: hidden;
-  font-size: clamp(15px, calc(10.5px / var(--tz)), 27px); line-height: 1.03;
-}
-.tree .tr-canvas[data-zoom='far'] .tr-node .tr-name { display: none; }
-.tr-canvas[data-zoom='far'] .tr-node { justify-content: center; padding: 2px; }
-.tree .tr-canvas[data-zoom='far'] .tr-node .tr-icons { width: 52px; height: 52px; }
-.tree .tr-canvas[data-zoom='far'] .tr-node .tr-icons > :first-child { width: 50px; height: 50px; }
-.tree .tr-canvas[data-zoom='far'] .tr-node .tr-icons > :nth-child(n + 2) { display: none; }
-.tr-canvas[data-zoom] .tr-node { border-width: calc(1.6px / var(--tz)); box-shadow: none; }
-.tr-canvas[data-zoom] .tr-node:hover { box-shadow: 0 0 0 calc(3px / var(--tz)) var(--c-turq); }
-.tr-canvas[data-zoom] .tr-node::before { width: calc(3px / var(--tz)); }
-/* The links keep their width and their dashes on screen: crisp, never a hairline. */
-.tr-canvas[data-zoom] .tr-link { stroke-width: calc(1.7px / var(--tz)); }
-.tr-canvas[data-zoom] .tr-link[data-state='open'] { stroke-dasharray: calc(7px / var(--tz)) calc(5px / var(--tz)); }
-.tr-canvas[data-zoom] .tr-link[data-state='locked'] { stroke-dasharray: calc(2px / var(--tz)) calc(6px / var(--tz)); }
-.tr-canvas[data-zoom] .tr-gatelink { stroke-width: calc(1.6px / var(--tz)); stroke-dasharray: calc(5px / var(--tz)) calc(5px / var(--tz)); }
-.tr-canvas[data-zoom] .tr-gatelink[data-state='done'] { stroke-dasharray: none; }
-.tr-canvas[data-zoom] .tr-link[data-hot], .tr-canvas[data-zoom][data-chain] .tr-link[data-chain] { stroke-width: calc(3px / var(--tz)); }
-
 /* ── the launch dialog (D118, ../launch-dialog.ts): over the tree, how many tokens a minute to buy ── */
 .ld-veil {
   position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; padding: 16px;
@@ -513,7 +716,7 @@
 
 /* Reduced motion: the warnings and highlights hold still. */
 @media (prefers-reduced-motion: reduce) {
-  .rs-held, .tr-tierhead[data-opens] .tr-gate, .ld { animation: none; }
+  .rs-held, .ld, .tree .tr-node[data-state='ready'] { animation: none; }
   .tr-canvas .tr-node, .tr-canvas .tr-link { transition: none; }
 }
 

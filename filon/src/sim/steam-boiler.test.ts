@@ -1,11 +1,12 @@
 // steam-boiler.test.ts — the steam boiler (D114): water's first use, in Tier 1. Coal and water into
-// power, 600 kW for 8 coal and 30 water a minute (two and a half times the coal generator's power
-// per coal), both drunk in proportion to what the grid asks; without water it gives nothing, on
-// standby it burns nothing; online and offline agree; the plan that brings it (with the pump and the
-// conduit, Ceramics' before) and the save step that keeps an older claim's pumps awake.
+// power, 700 kW for 8 coal and 30 water a minute (D143: 600 until then; the one coal-fired plant
+// since the coal generator left the game), both drunk in proportion to what the grid asks; without
+// water it gives nothing, on standby it burns nothing; online and offline agree; the plan that
+// brings it (with the pump and the conduit, Ceramics' before) and the save step that keeps an older
+// claim's pumps awake.
 import { describe, it, expect } from 'vitest';
 import { BUILDINGS } from '@/content/buildings';
-import { buildingIdx, itemIdx } from '@/content/registry';
+import { itemIdx } from '@/content/registry';
 import { buildingsUnlockedBy, PLANS, treePrereq } from '@/content/research';
 import { migrate, steamPlan } from '@/persist/migrate';
 import { WORLD_EPOCH0 } from './constants';
@@ -69,19 +70,21 @@ function rates(sim: Sim, min: number): { coal: number; water: number } {
 }
 
 describe('the steam boiler (D114)', () => {
-  it('two and a half times the coal generator’s power per coal; a pump feeds two', () => {
-    const g = BUILDINGS.steam_boiler.gen, c = BUILDINGS.brazier.gen;
-    expect(g.kw / g.fuelPerMin).toBe(2.5 * (c.kw / c.fuelPerMin));
+  it('700 kW for 8 coal and 30 water a minute, the one plant that burns coal (D143); a pump feeds two', () => {
+    const g = BUILDINGS.steam_boiler.gen;
+    expect([g.kw, g.fuelPerMin, g.water]).toEqual([700, 8, 30]);
+    // The coal generator is gone: no other building burns coal for power.
+    expect(Object.entries(BUILDINGS).filter(([, b]) => (b as { gen?: { fuel?: string } }).gen?.fuel === 'coal').map(([id]) => id)).toEqual(['steam_boiler']);
     expect(BUILDINGS.pump.drill.perMin).toBe(2 * g.water);
     // The card's sentence quotes the numbers that decide (content.md: keep `desc` in step).
     for (const n of [String(g.kw), String(g.fuelPerMin), String(g.water)]) expect(BUILDINGS.steam_boiler.desc.en).toContain(n);
   });
 
-  it('at full output: 600 kW for 8 coal and 30 water a minute', () => {
+  it('at full output: 700 kW for 8 coal and 30 water a minute', () => {
     const { sim, boiler } = boilerBase(3); // 1 230 kW asked: the Core and the boiler flat out
     const n = boilerOf(sim, boiler);
     expect(n.drinks).toBe(true);
-    expect(n.outKw).toBe(600);
+    expect(n.outKw).toBe(700);
     const net = sim.graph.netOfEnt.get(boiler)!;
     expect(sim.ctx.dispatch[net]).toBe(1000);
     expect(n.status).toBe(St.Ok);
@@ -89,7 +92,7 @@ describe('the steam boiler (D114)', () => {
     expect(r.coal).toBeCloseTo(8, 1);
     expect(r.water).toBeCloseTo(30, 1);
     // Its whole output counted on the grid's fuel side, as the Électricité view reads it.
-    expect(sim.netPower[net]!.fuel).toBe(600);
+    expect(sim.netPower[net]!.fuel).toBe(700);
   });
 
   it('drinks in proportion to what the grid asks, like its coal', () => {
@@ -187,8 +190,8 @@ describe('the steam boiler (D114)', () => {
     expect(sim.graph.chainByTile.get(tileIndex(522, 503))).toBe(sim.graph.chainByTile.get(tileIndex(522, 504))); // one line over the edge
   });
 
-  it('the Steam plan, after the coal generator, brings the boiler, the pump and the conduit (a plate a tile)', () => {
-    expect(treePrereq('steam')).toEqual(['brazier']);
+  it('the Steam plan, after the wind turbine (D143: the coal generator’s until then), brings the boiler, the pump and the conduit (a plate a tile)', () => {
+    expect(treePrereq('steam')).toEqual(['wind_flower']);
     expect(PLANS.steam.lane).toBe('energy');
     expect(buildingsUnlockedBy('steam').sort()).toEqual(['conduit', 'pump', 'steam_boiler']);
     expect(BUILDINGS.conduit.cost).toEqual([['iron_plate', 1]]);
@@ -196,7 +199,6 @@ describe('the steam boiler (D114)', () => {
     for (const id of ['pump', 'conduit', 'steam_boiler'] as const) {
       for (const [it] of BUILDINGS[id].cost) expect(['iron_plate', 'glass', 'copper_wire'], `${id}: ${it}`).toContain(it);
     }
-    expect(buildingIdx('steam_boiler')).toBeGreaterThan(buildingIdx('brazier'));
   });
 
   it('save 15 → 16: a claim past the lab’s plan holds the Steam plan; one before it does not', () => {

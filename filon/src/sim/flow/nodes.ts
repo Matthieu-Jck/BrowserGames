@@ -643,7 +643,7 @@ export class ForkNode extends FNode {
   }
 }
 
-// ── Fuel generator (coal generator, steam boiler, sunheart) ──────────────────────────
+// ── Fuel generator (steam boiler, battery generator, sunheart) ───────────────────────
 /**
  * Burns its fuel in proportion to its grid's dispatch (‰), with a carry. A steam boiler (D114)
  * has a second box, its water (`waterItem`, `waterEp` a minute at full output), drunk the same

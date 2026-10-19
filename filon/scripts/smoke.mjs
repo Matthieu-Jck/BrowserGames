@@ -112,7 +112,7 @@ await step('power: the demo base is fully wired to the Heart’s grid', async ()
     sim.ensureCompiled();
     const home = sim.graph.netOfEnt.get(sim.hearthId);
     const off = sim.ents.sorted()
-      .filter((e) => ['drill', 'assembly_bench', 'observatory', 'trade_post', 'brazier', 'wind_flower'].includes(window.FL.entityAt(e.x, e.y)?.def))
+      .filter((e) => ['drill', 'assembly_bench', 'observatory', 'trade_post', 'wind_flower'].includes(window.FL.entityAt(e.x, e.y)?.def))
       .filter((e) => sim.graph.netOfEnt.get(e.id) !== home)
       .map((e) => window.FL.entityAt(e.x, e.y)?.def);
     return { off, pairs: sim.links.size, wires: window.FL.wires() };
@@ -1429,7 +1429,7 @@ await step('weak grid (D91): the tutorial base by night, its turbines and accumu
   assert(r.ok, `tutorial base: ${JSON.stringify(r)}`);
   // Night, its panels asleep; the wind follows the real clock, so its turbines', accumulators' and
   // steam boiler's wires are cut (a rig; D114: the boiler alone would carry the night): the Core's
-  // isotope core and the brazier serve part of the demand.
+  // isotope core serves part of the demand (D143: no coal generator beside it any more).
   await FL(() => {
     window.FL.menu(false);
     window.FL.dayPhase('night');
@@ -1741,7 +1741,7 @@ await step('tree (D33): the HUD chip opens the tech tree; one click on a plan un
   // with its prerequisites (D107: the trade post first, so the telemetry too). The first plan still
   // to take, its prerequisites met (the Statistics' stays for the next step), is bought here.
   await FL(() => { window.FL.close(); window.FL.pause(); });
-  const id = await FL(() => ['telemetry', 'incinerator', 'traction', 'silo', 'sorter', 'junction', 'brazier', 'wire_mill', 'sand_collector']
+  const id = await FL(() => ['telemetry', 'incinerator', 'traction', 'silo', 'sorter', 'junction', 'wire_mill', 'sand_collector']
     .find((p) => !window.FL.app.sim.unlocked(p) && window.FL.app.sim.planBlock(p) === null) ?? null);
   assert(id, 'no plan left to take');
   const before = await FL((p) => ({ plates: window.FL.stocks().iron_plate ?? 0, on: window.FL.app.sim.unlocked(p) }), id);

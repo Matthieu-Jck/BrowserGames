@@ -1,43 +1,47 @@
-// research.ts — the tech tree screen (D33; T, or the HUD's tree chip): one tree, two kinds of
-// node. On the left the plans grow from the Heart's starting kit in five paths of one theme each
-// (D41, `PLAN_PATHS`: production, logistics, energy, analytics, trade; survey went, D117), each drawn as a
-// band of its own colour with its name, what it is for and how much of it is unlocked: a plan
-// unlocks with one click, paid from the Heart at once. A plan whose cost would eat into
-// CrierBelt's restart reserve (D36) reads « short of materials » with that reason, and the header
-// shows what the Heart's stock must keep while the buildings do not cover it.
-// Between the two blocks stands the GATE (D71): the research lab's plan, in its own column, which
-// needs every other plan — each path's last node links into it, a caption counts the plans taken.
-// On the right the research (D68–D70) reads in four TIER BANDS (Tier 1 … Tier 4), a gutter between
-// them — a strong ink rule and a wider gap between Tier 1 and Tier 2 (D118: « il doit être séparé du
-// Tier 1 clairement ») —, each headed by the Core's level it needs from Tier 2 (D118, « Tier 2 · Cœur
-// niveau 3 », the Core's look at that level, padlocked and the band hatched while the Core is below
-// it) and by what opens it (the lab's plan, then the node behind that level, standing in the band
-// before; Tier 2 also two expertises chosen at the Core's Archive, D93). Each band is a stack of its
-// own CATEGORIES (D128: the trunk and the families until then), named after what a base focused on
-// them does, in their theme's colour: a block each, its header naming it with how much of it is
-// learnt (« 2/4 ») and, from Tier 2, its gates — the categories of the tier before it waits for,
-// each a padlocked pill with its own count (« Commerce 1/2 »), ✓ once finished — and a dashed line
-// from each gate's block across the gutter to the block it opens, inked once the gate is finished.
-// Links run in right angles through the gaps between cards and categories, never across a card; a
-// node the player selects lights its whole chain — what it needs, what needs it, the categories it
-// waits for and those its own opens — and fades the rest until another is selected, the empty tree
-// clicked or Esc pressed
-// (`chainOf`; D111: the mouse over a card only raises it). A research card shows what it unlocks
-// first (buildings, recipes' items, a glyph for a feature), then its resources (D122: paid from the
-// Core at launch, as a plan's — a chip each, coral while the Core lacks it) and its AI tokens, at
-// every tier (D128: no price in ◉ — the launch dialog says what a bought flow costs). No data (D122: « on va enlever le principe de la
-// data »), no time (D118: a research takes as long as its tokens take to come in). The header adds
-// research's strip: slots, labs, the last minute's token bill (the Core's compute, the servers, the
-// bank, the flow bought), the purse-in-the-red warning, the Compute Plan's switch and the Research
-// Queue (each lab's queued node, ✕ to clear it).
+// research.ts — the tech tree screen (D33; T, or the HUD's tree chip): one tree, plans and research,
+// drawn since D144 as a SWIMLANE MATRIX read left to right (owner, 2026-10-19: « we need to rethink
+// how to present the tech tree. Right now it doesn't work visually and all. Let's take some
+// inspiration from the best tech trees there are »; the layout and its reasons: ./tree-layout.ts):
+//   · the six themes are lanes, top to bottom, each in its colour; the stages are columns, left to
+//     right — the Heart (a pillar: its kit), the PLANS (each path in its theme's lane, a plan
+//     unlocked with one click, paid from the Heart at once, D33), the research lab's plan (a pillar
+//     every plan leads into, D71), then Tier 1 … Tier 4, a WALL before each from Tier 2 whose lock is
+//     the Core's level that tier waits for (D118: its look at that level, padlocked while the Core is
+//     below it, the tier's column hatched), keyed by a line from the node that makes that level
+//     possible (Synthesis, Optics, Resonance), and Tier 2's two expertises (D93) said on its head;
+//   · a tier's categories (D128) are cells in their lane, a header each — its name, a bar of how much
+//     of it is learnt, a padlock while a category it waits for is unfinished —, the category gates
+//     arrows along the lanes across the walls (dashed until the gate is finished);
+//   · RAILS frozen round the view, as a spreadsheet's panes: the stages' heads along the top (their
+//     progress; a tier's Core level, its key, its expertises), the lanes' names down the left; under
+//     the view a TIER NAVIGATOR (a one-line map of the stages, each its progress and padlock, the
+//     view's window on it — a click or a drag takes the view there), the AVAILABLE-NOW filter (the
+//     count of what can start now; on, the rest dims — Factorio's « researchable only »), the zoom
+//     bar (D111);
+//   · each card says its state at a glance with a badge — ✓ done, ▶ ready (an amber ring: what to do
+//     next), the % of a running project (its bar filling the card), a padlock (a prerequisite, a
+//     category), the Core's look and level (its tier's level not reached) — and shows what it
+//     unlocks first (its icons), then its costs: a plan's materials and « Débloquer »; a research
+//     node's resources (D122: paid from the Core at launch, coral while the Core lacks one) and its AI
+//     tokens (no price in ◉, no data, no time: D118, D122, D128);
+//   · selecting a node (a click, a tap, Enter; D111: the mouse over a card only raises it) lights its
+//     chain (`chainOf`: what it needs and what needs it, through the gates no further), dims the
+//     rest, and numbers the PATH to it — every node it still waits for, in the order the tree reads
+//     (`pathTo`; Civilization VI's path to a goal) — until another is selected, the empty tree
+//     clicked or Esc pressed.
+// The zoom (D111) runs from the whole tree in the view to 125 %; the tree opens with every lane in
+// the view's height (`openZoom`), the stages scrolled through sideways, unless this viewer chose a
+// zoom; the cards simplify as they shrink (`zoomLevel`).
+// The header adds research's strip: slots, labs, the last minute's token bill (the Core's compute,
+// the servers, the bank, the flow bought), the purse-in-the-red warning, the Compute Plan's switch
+// and the Research Queue (each lab's queued node, ✕ to clear it); and the cards' legend.
 // The detail pane gives the whole picture: what a node unlocks (a plain line per feature), its
-// cost (its resources with what the Core holds, its tokens), its progress (its tokens in, the flows
-// that bring them — free, banked, bought — and the flow bought, which the player can change; a
+// cost (its resources with what the Core holds, its tokens), the path to it (numbered as on the
+// tree, the Core's levels and the expertises in their places), its progress (its tokens in, the
+// flows that bring them — free, banked, bought — and the flow bought, which the player can change; a
 // coral line while its lab has no power), the action (start, cancel, queue in a lab). « Lancer »
-// opens the launch dialog at every tier (../launch-dialog.ts, D118, D122: the resources it takes,
-// the free flow it gets, how many tokens a minute to buy from CrierBelt, what it costs, when it would
-// be done). The reconversion's button is gone (D107: « retire le bouton reconvert de l'arbre »); a
-// save's reconversion under way still runs out in the HUD.
+// opens the launch dialog at every tier (../launch-dialog.ts, D118, D122). The reconversion's
+// button is gone (D107); a save's reconversion under way still runs out in the HUD.
 // The layout is computed once from content (`treeLayout`); the 4 Hz refresh writes states, costs
 // and progress — the nodes' states and a project's state derived in ../tree-state.ts, which the
 // HUD's chips read too. The sim decides; this only shows and asks (`unlockPlan`, `startResearch`,
@@ -49,12 +53,12 @@ import '../styles/research.css';
 import { BAL } from '@/content/balance';
 import { ESSENTIAL, RESERVED } from '@/content/reserve';
 import {
-  CATEGORIES, PLAN_IDS, PLAN_PATHS, THEME_IDS, TIER_GATE, buildingsUnlockedBy, categoryDef, categoryDone, categoryName, categoryNodes,
-  categoryOpens, isPlan, isResearch, nodeName, pathPlans, planDef, researchNode, tierCategories, treePrereq, unmetGates,
+  CATEGORIES, PLAN_IDS, PLAN_PATHS, THEMES, THEME_IDS, TIER_GATE, buildingsUnlockedBy, categoryDef, categoryDone, categoryName, categoryNodes,
+  isPlan, isResearch, nodeName, pathPlans, planDef, researchNode, treePrereq, unmetGates,
 } from '@/content/research';
 import { RECIPES } from '@/content/recipes';
 import { BUILDING_IDS, BUILDING_KIND, RESEARCH_IDS, buildingDef, buildingIdx, itemDef, itemIdx, toMu } from '@/content/registry';
-import type { CategoryDef, Effect, PlanLane, RecipeDef, ResearchTier, ThemeId } from '@/content/types';
+import type { CategoryDef, Effect, PlanLane, RecipeDef, ResearchTier } from '@/content/types';
 import { el, setAttr, setText } from '@/core/dom';
 import { makeStore } from '@/core/store';
 import { locale, t, tr, type MsgKey } from '@/i18n/i18n';
@@ -73,6 +77,10 @@ import { planOffered } from '@/sim/systems/quests';
 import { tierTwoOpen } from '@/sim/systems/expertise';
 import { archiveGlyph } from './expertise';
 import { mark as kitMark } from '../inspector/kit';
+import {
+  CELL_HEAD, KEY_R, LAB_PLAN, ROOT, ZOOM_FLOOR, ZOOM_MAX, chainOf, fitZoom, openZoom, ownPrereq, pathTo, treeLayout, zoomLevel,
+  type Cell, type GateLink, type Link, type Spot, type Zone,
+} from './tree-layout';
 
 export interface ResearchHost {
   sim(): Sim;
@@ -84,455 +92,13 @@ export interface ResearchHost {
 
 type Loc = 'fr' | 'en';
 
-// ── layout ──────────────────────────────────────────────────────────────────
-
-/** The root: the Heart and its starting kit (not a node of the tree's tables). */
-export const ROOT = 'heart';
-
-// The plans' geometry (D33, D41): compact rows so the six paths fit a 900 px window.
-const NODE_W = 186, NODE_H = 56;
-const COL_W = 226, ROW_H = 66, LANE_GAP = 4;
-const LABEL_W = 124, PAD = 16, HEAD_H = 40, BLOCK_GAP = 44;
-/** A plan lane's band reaches this far above and below its rows (below: most of the « Débloquer » tab). */
-const BAND_TOP = 4, BAND_BOTTOM = 7;
-/** The research lab's gate (D71): its card, and the room left of it where the paths' links converge. */
-const GATE_W = 220, GATE_GAP = 96;
-
-// Research's geometry (D69, D107, D128): wide cards (three lines: name; resources; tokens, D122),
-// tier bands of sub-columns with a gutter between bands, each band a stack of its own categories
-// (D128), a header on each. Links never cross a card: they turn in the gaps between sub-columns and
-// run along the gaps between categories (`route`). The rows stay close (owner, 2026-10-17: « reduce
-// the space between each row of the research tree, this is too much », D111); the gaps between
-// sub-columns, where the links turn, as they were.
-const R_NODE_W = 276, R_NODE_H = 60;
-/** The gap between two sub-columns, where a link turns. */
-const R_GAP = 60;
-/** A sub-column: a node and its gap; a row: a node and 6 px. */
-const R_COL_W = R_NODE_W + R_GAP, R_ROW_H = R_NODE_H + 6;
-/** A category's header (D128): its name and count; and the line of its gates under it, when it has any. */
-const CAT_HEAD = 26, CAT_GATE = 22;
-/** Below a category's last row, inside its block. */
-const CAT_FOOT = 8;
-/** Between two categories of a tier: the paper shows through, and a channel links run along. */
-const CAT_GAP = 16;
-/** A category's block stands this far inside its tier band. */
-const CAT_INSET = 6;
-/** Inside a tier band, before its first node and after its last (room for a link turning into the first sub-column). */
-const TIER_PAD = 38;
-/** Between two tier bands: the paper shows through, and the category gates (D128) cross it. */
-const TIER_GUTTER = 40;
-/**
- * Between Tier 1 and Tier 2 (D118; owner, 2026-10-17: « il doit être séparé du Tier 1 clairement »):
- * wider, a strong ink rule down its middle — Tier 2 on waits for the Core's level 3 and its tokens
- * grow a hundredfold.
- */
-const TIER_SPLIT = 96;
-/** A tier band's head: « Tier 2 · Cœur niveau 3 » over « Ouvert par … ». */
-const TIER_HEAD_H = 58;
-/** A research band reaches this far below its last category. */
-const R_BAND = 5;
-/** How round a link's elbow is (px). */
-const ELBOW_R = 10;
-
 const TIERS: readonly ResearchTier[] = [1, 2, 3, 4];
-/** The plan research hangs from: no lab, no research (it opens Tier 1). */
-const LAB_PLAN = 'observatory';
 /** What opens a tier: the lab's plan for Tier 1, then the node behind the Core's level it waits for (`TIER_GATE`). */
 const gateOf = (tier: ResearchTier): string => TIER_GATE[tier] ?? LAB_PLAN;
-
-type Kind = 'root' | 'plan' | 'research';
-interface Spot { id: string; kind: Kind; lane: string; x: number; y: number; w: number; h: number }
-/** A plan path's lane: its label at (x, y), its band `w` wide to the block's right edge. */
-interface Lane { id: string; kind: 'plan'; x: number; y: number; w: number; h: number }
-interface Block { kind: 'plan' | 'research'; x: number; y: number; w: number; h: number }
-/**
- * A link and its route (`d`, an SVG path: elbows in the gaps, never across a card). Its kind: a
- * `line` within a lane or a category (a path, a category's chain), a `cross` link from another
- * category of the tier (the Steelworks' press and bricks, the Compute Plan's Server Room…). `path`:
- * a plan path's last node into the research lab's gate (inked once the whole path is taken).
- */
-interface Link { from: string; to: string; kind: 'line' | 'cross'; d: string; path?: PlanLane }
-/** A tier band of the research block: its head on top, its stripe down to the block's bottom. */
-interface TierCol { tier: ResearchTier; x: number; w: number; y: number; h: number }
-/** A category's block (D128): its tier's band, its header on top, its nodes in rows under it. */
-interface CatBlock { id: string; tier: ResearchTier; theme: ThemeId; gates: readonly string[]; x: number; y: number; w: number; h: number }
-/**
- * A category gate (D128): from the gate's block (its header's right end) to the block it opens (its
- * header's left end), across the gutter between their tiers, its turn at its own place in it.
- */
-interface GateLink { from: string; to: string; d: string }
-/** The research lab's gate (D71): its column between the two blocks, the card's top left. */
-interface GateCol { id: string; x: number; y: number }
-/** The ink rule between Tier 1 and Tier 2 (D118): its x, down from the heads' top to the block's bottom. */
-interface TierRule { x: number; y: number; h: number }
-export interface TreeLayout {
-  nodes: Spot[]; lanes: Lane[]; blocks: Block[]; links: Link[];
-  tiers: TierCol[]; cats: CatBlock[]; gates: GateLink[]; gate: GateCol | null; rule: TierRule | null;
-  w: number; h: number;
-}
-
-/** A node's lane: a plan's path, a research node's theme (D128: the colour of its category). */
+/** A node's colour: a plan's path, a research node's theme. */
 const laneOf = (id: string): string => planDef(id)?.lane ?? researchNode(id)?.theme ?? '';
 /** The research lab's plan (D71): the gate between the plans and research, needing every other plan. */
 const isGate = (id: string): boolean => planDef(id)?.lane === 'gate';
-
-/**
- * An SVG path through these points, each corner rounded (`ELBOW_R`, less where a leg is short);
- * points in a line are dropped.
- */
-export function elbowPath(pts: ReadonlyArray<readonly [number, number]>): string {
-  const p = pts.filter((q, i) => i === 0 || q[0] !== pts[i - 1]![0] || q[1] !== pts[i - 1]![1]);
-  if (p.length < 2) return '';
-  let d = `M${p[0]![0]} ${p[0]![1]}`;
-  for (let i = 1; i < p.length - 1; i++) {
-    const [ax, ay] = p[i - 1]!, [bx, by] = p[i]!, [cx, cy] = p[i + 1]!;
-    const r = Math.min(ELBOW_R, Math.abs(bx - ax + by - ay) / 2, Math.abs(cx - bx + cy - by) / 2);
-    const ix = bx - Math.sign(bx - ax) * r, iy = by - Math.sign(by - ay) * r;
-    const ox = bx + Math.sign(cx - bx) * r, oy = by + Math.sign(cy - by) * r;
-    d += ` L${ix} ${iy} Q${bx} ${by} ${ox} ${oy}`;
-  }
-  const last = p[p.length - 1]!;
-  return `${d} L${last[0]} ${last[1]}`;
-}
-
-/** Does a leg (axis-aligned, from (x1, y1) to (x2, y2)) run through a card other than its two ends'? */
-function blocked(pts: ReadonlyArray<readonly [number, number]>, cards: readonly Spot[], a: Spot, b: Spot): boolean {
-  for (let i = 1; i < pts.length; i++) {
-    const [x1, y1] = pts[i - 1]!, [x2, y2] = pts[i]!;
-    const lx = Math.min(x1, x2), hx = Math.max(x1, x2), ly = Math.min(y1, y2), hy = Math.max(y1, y2);
-    for (const s of cards) if (s !== a && s !== b && hx > s.x + 1 && lx < s.x + s.w - 1 && hy > s.y + 1 && ly < s.y + s.h - 1) return true;
-  }
-  return false;
-}
-
-/**
- * A link's route from a node's right edge to another's left edge, in right angles (D107), never
- * across a card: along the source's row to the gap left of the target, down or up that gap, into
- * the target. When that row has cards on the way, or the target does not stand right of the
- * source's gap, it goes round: out to the gap right of the source, along a channel between lanes
- * (`channels`, the nearest first that is clear), back down or up the gap left of the target.
- */
-function route(a: Spot, b: Spot, gap: number, channels: readonly number[], cards: readonly Spot[]): string {
-  const x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x, y2 = b.y + b.h / 2;
-  const xl = x2 - gap / 2, xr = x1 + gap / 2;
-  const straight: Array<[number, number]> = [[x1, y1], [xl, y1], [xl, y2], [x2, y2]];
-  if (x1 <= xl && !blocked(straight, cards, a, b)) return elbowPath(straight);
-  let round: Array<[number, number]> = [];
-  for (const c of channels) {
-    round = [[x1, y1], [xr, y1], [xr, c], [xl, c], [xl, y2], [x2, y2]];
-    if (!blocked(round, cards, a, b)) break;
-  }
-  return elbowPath(round.length ? round : straight);
-}
-
-/**
- * The plans' part (D33, D41): a node's column is its longest path from the root (a plan with no
- * prerequisite is column 1, the Heart column 0); within a path a node takes the free row of its
- * column nearest its in-path parents', so paths stay straight and rarely cross. The research
- * lab's plan (D71, lane `gate`, not a path) stands in its own column right of the block, level
- * with the Heart: each path's last node(s) — its plans in its last column — link into it, the
- * links joining one bus in the room left of it.
- */
-function planPart(): { nodes: Spot[]; lanes: Lane[]; links: Link[]; block: Block; gate: GateCol | null; right: number; bottom: number } {
-  const depth = new Map<string, number>();
-  const d = (id: string): number => {
-    const known = depth.get(id);
-    if (known !== undefined) return known;
-    const pre = treePrereq(id).filter((p) => !isGate(p));
-    const v = pre.length ? 1 + Math.max(...pre.map(d)) : 1;
-    depth.set(id, v);
-    return v;
-  };
-  const plans: readonly string[] = PLAN_IDS.filter((id) => !isGate(id));
-  const gates: readonly string[] = PLAN_IDS.filter(isGate);
-  const maxCol = Math.max(...plans.map(d));
-  const row = new Map<string, number>();
-  const laneRows = new Map<string, number>();
-  for (const lane of PLAN_PATHS) {
-    const mine = plans.filter((id) => laneOf(id) === lane).sort((a, b) => d(a) - d(b) || plans.indexOf(a) - plans.indexOf(b));
-    const taken = new Map<number, Set<number>>();
-    let rows = 1;
-    for (const id of mine) {
-      const parents = treePrereq(id).filter((p) => row.has(p) && laneOf(p) === lane);
-      const r = nearestFree(parents.length ? Math.round(parents.reduce((s, p) => s + row.get(p)!, 0) / parents.length) : 0, taken.get(d(id)) ?? new Set());
-      taken.set(d(id), (taken.get(d(id)) ?? new Set<number>()).add(r));
-      row.set(id, r);
-      rows = Math.max(rows, r + 1);
-    }
-    laneRows.set(lane, rows);
-  }
-  const top = PAD + HEAD_H;
-  const x0 = PAD + LABEL_W;
-  const w = (maxCol + 1) * COL_W - (COL_W - NODE_W);
-  const nodes: Spot[] = [], lanes: Lane[] = [];
-  let y = top;
-  for (const lane of PLAN_PATHS) {
-    const h = laneRows.get(lane)! * ROW_H - (ROW_H - NODE_H);
-    lanes.push({ id: lane, kind: 'plan', x: x0 - LABEL_W, y, w: LABEL_W + w, h });
-    for (const id of plans) if (laneOf(id) === lane) nodes.push({ id, kind: 'plan', lane, x: x0 + d(id) * COL_W, y: y + row.get(id)! * ROW_H, w: NODE_W, h: NODE_H });
-    y += h + LANE_GAP + (ROW_H - NODE_H);
-  }
-  const bottom = y - LANE_GAP - (ROW_H - NODE_H);
-  nodes.unshift({ id: ROOT, kind: 'root', lane: '', x: x0, y: Math.round((top + bottom) / 2 - NODE_H / 2), w: NODE_W, h: NODE_H });
-  const at = new Map(nodes.map((s) => [s.id, s]));
-  const right = x0 + w;
-  let gate: GateCol | null = null;
-  const gx = right + GATE_GAP;
-  gates.forEach((g, k) => {
-    const gy = Math.round((top + bottom) / 2 - NODE_H / 2) + k * ROW_H;
-    const spot: Spot = { id: g, kind: 'plan', lane: 'gate', x: gx, y: gy, w: GATE_W, h: NODE_H };
-    nodes.push(spot);
-    at.set(g, spot);
-    if (!gate) gate = { id: g, x: gx, y: gy };
-  });
-  // Plan links (a plan's column is right of its prerequisites': each turns in the gap left of it).
-  const plink = (from: string, to: string, path?: PlanLane): Link => {
-    const a = at.get(from)!, b = at.get(to)!;
-    const gap = path ? GATE_GAP : COL_W - NODE_W;
-    return { from, to, kind: from === ROOT || laneOf(from) === laneOf(to) ? 'line' : 'cross', d: route(a, b, gap, [], nodes), ...(path ? { path } : {}) };
-  };
-  const links: Link[] = [];
-  for (const id of plans) {
-    const pre = treePrereq(id);
-    if (!pre.length) links.push(plink(ROOT, id));
-    for (const p of pre) links.push(plink(p, id));
-  }
-  for (const g of gates) for (const lane of PLAN_PATHS) {
-    const mine = plans.filter((id) => laneOf(id) === lane);
-    const last = Math.max(...mine.map(d));
-    for (const id of mine) if (d(id) === last) links.push(plink(id, g, lane));
-  }
-  return {
-    nodes, lanes, links, gate, bottom,
-    block: { kind: 'plan', x: PAD - 6, y: PAD - 4, w: LABEL_W + w + 12, h: bottom - PAD + 12 },
-    right: gates.length ? gx + GATE_W : right,
-  };
-}
-
-/** The free row nearest `want` (upwards first on a tie). */
-function nearestFree(want: number, used: ReadonlySet<number>): number {
-  for (let k = 0; ; k++) {
-    if (want - k >= 0 && !used.has(want - k)) return want - k;
-    if (!used.has(want + k)) return want + k;
-  }
-}
-
-/**
- * What a node needs by name (D128): a plan's prerequisites; a research node's own — the node before it
- * in its category, what it takes from another category of its tier — and its tier's gate. Its
- * category's gates are apart: the tree draws them between the categories, not node to node.
- */
-export function ownPrereq(id: string): readonly string[] {
-  const r = researchNode(id);
-  if (!r) return treePrereq(id);
-  const g = TIER_GATE[r.tier];
-  return g && g !== id && !r.prereq.includes(g) ? [...r.prereq, g] : r.prereq;
-}
-
-/** Every tree node a node needs by name, theirs included (`ownPrereq`, all the way). */
-function closureOf(id: string, out = new Set<string>()): Set<string> {
-  for (const p of ownPrereq(id)) if (!out.has(p)) { out.add(p); closureOf(p, out); }
-  return out;
-}
-
-/**
- * Research's part (D69, D107, D128), from `x0`: the four tier bands, a gutter between them, each
- * band a stack of its own categories (`tierCategories`, top to bottom in the themes' order, so a gate
- * mostly stands level with what it opens). Within its category a node's sub-column is its chain of
- * prerequisites in the category; its row the free one nearest its parents' (the longest line keeps
- * the top row, a side node takes the next). A category's block holds its header — its name and
- * count, then its gates when it has any — over its rows. Tier 1 and Tier 2 stand further apart than
- * the other tiers, the rule between them (D118). The gates (D128) run from a block's header across
- * the gutter to the header of the block it opens, each turning at its own place in the gutter.
- */
-function researchPart(x0: number): { nodes: Spot[]; links: Link[]; tiers: TierCol[]; cats: CatBlock[]; gates: GateLink[]; rule: number; block: Block; right: number; bottom: number } {
-  const ids: readonly string[] = RESEARCH_IDS;
-  const R = (id: string) => researchNode(id)!;
-  const inCat = (id: string): string[] => R(id).prereq.filter((p) => researchNode(p)?.cat === R(id).cat);
-  const sub = new Map<string, number>();
-  const subOf = (id: string): number => {
-    const known = sub.get(id);
-    if (known !== undefined) return known;
-    const same = inCat(id);
-    const v = same.length ? 1 + Math.max(...same.map(subOf)) : 0;
-    sub.set(id, v);
-    return v;
-  };
-  const cols = new Map<ResearchTier, number>(TIERS.map((k) => [k, 1]));
-  for (const id of ids) cols.set(R(id).tier, Math.max(cols.get(R(id).tier)!, subOf(id) + 1));
-  const tierX = new Map<ResearchTier, number>(), tierW = new Map<ResearchTier, number>();
-  let x = x0 + 8, rule = 0;
-  for (const k of TIERS) {
-    const w = cols.get(k)! * R_COL_W - R_GAP + 2 * TIER_PAD;
-    tierX.set(k, x);
-    tierW.set(k, w);
-    // Tier 1 | Tier 2: the wider gap and its rule (D118).
-    if (k === 1) rule = x + w + TIER_SPLIT / 2;
-    x += w + (k === 1 ? TIER_SPLIT : TIER_GUTTER);
-  }
-  const right = x - TIER_GUTTER;
-
-  const top = PAD + HEAD_H;
-  const nodes: Spot[] = [], cats: CatBlock[] = [];
-  let bottom = top + TIER_HEAD_H;
-  for (const tier of TIERS) {
-    let y = top + TIER_HEAD_H + CAT_GAP;
-    for (const c of tierCategories(tier)) {
-      const mine = categoryNodes(c);
-      // Rows, column by column: the node with the most to come in its category first, nearest its parents.
-      const kids = (id: string): number => mine.filter((k) => inCat(k).includes(id)).reduce((s, k) => s + 1 + kids(k), 0);
-      const order = [...mine].sort((a, b) => subOf(a) - subOf(b) || kids(b) - kids(a) || mine.indexOf(a) - mine.indexOf(b));
-      const row = new Map<string, number>(), taken = new Map<number, Set<number>>();
-      let rows = 1;
-      for (const id of order) {
-        const parents = inCat(id).filter((p) => row.has(p));
-        const used = taken.get(subOf(id)) ?? new Set<number>();
-        const r = nearestFree(parents.length ? Math.round(parents.reduce((s, p) => s + row.get(p)!, 0) / parents.length) : 0, used);
-        taken.set(subOf(id), used.add(r));
-        row.set(id, r);
-        rows = Math.max(rows, r + 1);
-      }
-      const k: CategoryDef = CATEGORIES[c];
-      const head = CAT_HEAD + (k.gates.length ? CAT_GATE : 0);
-      const h = head + rows * R_ROW_H - (R_ROW_H - R_NODE_H) + CAT_FOOT;
-      cats.push({ id: c, tier, theme: k.theme, gates: k.gates, x: tierX.get(tier)! + CAT_INSET, y, w: tierW.get(tier)! - 2 * CAT_INSET, h });
-      for (const id of mine) nodes.push({ id, kind: 'research', lane: R(id).theme, x: tierX.get(tier)! + TIER_PAD + subOf(id) * R_COL_W, y: y + head + row.get(id)! * R_ROW_H, w: R_NODE_W, h: R_NODE_H });
-      y += h + CAT_GAP;
-    }
-    bottom = Math.max(bottom, y - CAT_GAP);
-  }
-  bottom += R_BAND + 4;
-  const blockOf = new Map(cats.map((b) => [b.id, b]));
-  // Node links (D107, D128): within a category, and from another category of the tier — only what
-  // the node does not already need through another of its prerequisites. The tiers' links are the
-  // categories' gates, drawn apart; the tier's gate is named by the tier's head.
-  const at = new Map(nodes.map((s) => [s.id, s]));
-  const links: Link[] = [];
-  for (const id of ids) {
-    const r = R(id);
-    const pre = r.prereq.filter(isResearch);
-    for (const p of pre) {
-      const kind: Link['kind'] = R(p).cat === r.cat ? 'line' : 'cross';
-      if (kind === 'cross' && pre.some((q) => q !== p && closureOf(q).has(p))) continue;
-      const a = at.get(p)!, b = at.get(id)!;
-      // Going round: the channel next to the target's category on the source's side first, then the
-      // one next to the source's, then any other of the tier (nearest the target first).
-      const cb = blockOf.get(r.cat)!, ca = blockOf.get(R(p).cat)!;
-      const above = (k: CatBlock): number => k.y - CAT_GAP / 2, below = (k: CatBlock): number => k.y + k.h + CAT_GAP / 2;
-      const first = a.y < b.y ? [above(cb), below(ca)] : [below(cb), above(ca)];
-      const rest = cats.filter((k) => k.tier === r.tier).flatMap((k) => [above(k), below(k)]).sort((u, v) => Math.abs(u - b.y) - Math.abs(v - b.y));
-      links.push({ from: p, to: id, kind, d: route(a, b, R_GAP, [...first, ...rest], nodes) });
-    }
-  }
-  // The categories' gates (D128): each across its gutter, the turns spread over it in the order of
-  // what they open, top to bottom, so two never share a leg.
-  const gates: GateLink[] = [];
-  for (const tier of TIERS.slice(1)) {
-    const into = cats.filter((k) => k.tier === tier).flatMap((k) => k.gates.map((g) => ({ g: blockOf.get(g)!, k })))
-      .sort((u, v) => u.k.y - v.k.y || u.g.y - v.g.y);
-    const gl = tierX.get((tier - 1) as ResearchTier)! + tierW.get((tier - 1) as ResearchTier)!, gr = tierX.get(tier)!;
-    into.forEach(({ g, k }, n) => {
-      const gx = Math.round(gl + ((gr - gl) * (n + 1)) / (into.length + 1));
-      const fy = g.y + CAT_HEAD / 2, ty = k.y + CAT_HEAD / 2;
-      gates.push({ from: g.id, to: k.id, d: elbowPath([[g.x + g.w, fy], [gx, fy], [gx, ty], [k.x, ty]]) });
-    });
-  }
-  return {
-    nodes, links, cats, gates, rule, right, bottom,
-    tiers: TIERS.map((k) => ({ tier: k, x: tierX.get(k)!, w: tierW.get(k)!, y: top, h: bottom - top })),
-    block: { kind: 'research', x: x0 - 6, y: PAD - 4, w: right - x0 + 12, h: bottom - PAD + 8 },
-  };
-}
-
-/** Where every node goes, from content alone: the plans' block, then research's right of it. */
-export function treeLayout(): TreeLayout {
-  const P = planPart();
-  const R = researchPart(P.right + BLOCK_GAP + 6);
-  return {
-    nodes: [...P.nodes, ...R.nodes], lanes: P.lanes, links: [...P.links, ...R.links],
-    blocks: [P.block, R.block], tiers: R.tiers, cats: R.cats, gates: R.gates, gate: P.gate,
-    rule: { x: R.rule, y: PAD + HEAD_H, h: R.bottom - PAD - HEAD_H },
-    w: R.right + PAD, h: Math.max(P.bottom, R.bottom) + PAD,
-  };
-}
-
-// ── zoom (D111) ─────────────────────────────────────────────────────────────
-
-/** The closest the tree zooms in: a little past its own size. */
-export const ZOOM_MAX = 1.25;
-/** The farthest it ever zooms out, whatever the window (the whole tree's fit is usually above). */
-export const ZOOM_FLOOR = 0.08;
-
-/** The zoom at which the whole tree fits a view of this size (never above its own size). */
-export function fitZoom(viewW: number, viewH: number, L: Pick<TreeLayout, 'w' | 'h'>): number {
-  return Math.max(ZOOM_FLOOR, Math.min(1, viewW / L.w, viewH / L.h));
-}
-
-/**
- * How much a card shows at a zoom: `near` all of it; `mid` its icon and its name, larger, on two
- * lines (what it costs is too small to read); `far` its icon alone (its name in its tooltip): the
- * tree reads as a map, its tiers and lanes named by the pinned titles.
- */
-export function zoomLevel(z: number): 'near' | 'mid' | 'far' {
-  return z >= 0.7 ? 'near' : z >= 0.36 ? 'mid' : 'far';
-}
-
-/**
- * A node's chain (D107, D128): what it needs and what needs it, all the way, but through the gates
- * no further. A gate it needs is in its chain, not what the gate needs: the lab's plan into Tier 1,
- * the node behind its tier's Core level, and the categories its own and its needs' wait for (their
- * nodes, and the gate between them: `cat:<gate>>cat:<category>`). What needs it: its children by
- * name, all the way, and the categories its category opens (their nodes, no further). Selecting a
- * node lights its chain and fades the rest.
- */
-export function chainOf(id: string): { nodes: Set<string>; links: Set<string> } {
-  const nodes = new Set<string>([id]), links = new Set<string>();
-  const gateFor = (p: string, child: string): boolean => {
-    const r = researchNode(child);
-    return !!r && (p === LAB_PLAN || (p === TIER_GATE[r.tier] && researchNode(p)?.cat !== r.cat));
-  };
-  const cats = (n: string): void => {
-    const c = researchNode(n)?.cat;
-    for (const g of categoryDef(c ?? '')?.gates ?? []) {
-      links.add(`cat:${g}>cat:${c}`);
-      for (const k of categoryNodes(g)) nodes.add(k);
-    }
-  };
-  const up = (n: string): void => {
-    cats(n);
-    for (const p of ownPrereq(n)) {
-      links.add(`${p}>${n}`);
-      if (nodes.has(p)) continue;
-      nodes.add(p);
-      if (!gateFor(p, n)) up(p);
-    }
-  };
-  const down = (n: string): void => {
-    for (const c of childrenOf(n)) {
-      if (gateFor(n, c)) continue;
-      links.add(`${n}>${c}`);
-      if (!nodes.has(c)) { nodes.add(c); down(c); }
-    }
-  };
-  up(id);
-  down(id);
-  const c = researchNode(id)?.cat;
-  if (c) for (const k of categoryOpens(c)) {
-    links.add(`cat:${c}>cat:${k}`);
-    for (const n of categoryNodes(k)) nodes.add(n);
-  }
-  return { nodes, links };
-}
-
-let CHILDREN: Map<string, string[]> | null = null;
-/** The tree nodes that need this one by name (plans and research: `ownPrereq`). */
-function childrenOf(id: string): readonly string[] {
-  if (!CHILDREN) {
-    CHILDREN = new Map();
-    for (const n of [...PLAN_IDS, ...RESEARCH_IDS]) for (const p of ownPrereq(n)) CHILDREN.set(p, [...(CHILDREN.get(p) ?? []), n]);
-  }
-  return CHILDREN.get(id) ?? [];
-}
 
 // ── what a node unlocks ─────────────────────────────────────────────────────
 
@@ -554,7 +120,7 @@ const EFFECT_ICON: Readonly<Record<string, Icon | readonly Icon[]>> = {
   craftSpeed: { i: 'gear' },
   windOut: { b: 'wind_flower' }, gustVariance: { b: 'wind_flower' }, stormHarvest: { b: 'wind_flower' }, solarOut: { b: 'sun_bulb' },
   accCap: { b: 'accumulator' }, accRate: { b: 'accumulator' }, geoOut: { b: 'fumarole_tap' },
-  deepHeat: { b: 'fumarole_tap' }, genOut: { b: 'brazier' },
+  deepHeat: { b: 'fumarole_tap' }, genOut: { b: 'steam_boiler' }, // the coal generator's until D143
   // Trade and tokens (D68, D70).
   tradeFee: { g: 'coin' }, slippage: { g: 'coin' }, forwards: { g: 'coin' }, charters: { g: 'coin' },
   forecast: { g: 'forecast' }, floorPrices: { g: 'floor' }, tokenPlan: { g: 'plan' }, expressFreight: { g: 'express' },
@@ -803,7 +369,6 @@ function labsOf(sim: Sim): Array<{ id: number; def: string; n: number }> {
 
 // ── the screen ──────────────────────────────────────────────────────────────
 
-
 interface NodeView {
   spot: Spot;
   node: HTMLElement;
@@ -815,16 +380,32 @@ interface NodeView {
   qtag: HTMLElement | null;
   bar: HTMLElement | null;
   unlock: HTMLButtonElement | null;
+  /** The state badge's figure: a running project's %. */
+  pct: HTMLElement;
+  /** Its number on the path to the focused node (D144); empty off it. */
+  step: HTMLElement;
 }
 
-/** A research lane's label and its count. */
-/** A category's block on the canvas (D128): its stripe, its header (name, count), a pill per gate. */
-interface CatView { block: CatBlock; box: HTMLElement; head: HTMLElement; count: HTMLElement; gates: Array<{ id: string; pill: HTMLElement; count: HTMLElement }> }
+/** A cell on the canvas (D128, D144): a category's or a plan path's box, its header (name, bar, count). */
+interface CellView { cell: Cell; box: HTMLElement; head: HTMLElement; count: HTMLElement; fill: HTMLElement }
 
-/** This viewer's zoom of the tree (D111), in this browser only. */
-const ZOOM_STORE = makeStore<{ version: number; zoom: number }>('filon.tree.zoom.v1', 1, () => ({ version: 1, zoom: 1 }));
+/**
+ * A tier on the canvas and its rail head (D118, D144): the head (its name, a bar of how much of it
+ * is learnt; from Tier 2 the Core's level it needs, the node that keys it, Tier 2's expertises), its
+ * column (hatched while the Core is below that level), the wall before it and the lock on the wall.
+ */
+interface TierView {
+  head: HTMLElement; count: HTMLElement; fill: HTMLElement;
+  core: HTMLElement | null; key: HTMLElement | null;
+  zone: HTMLElement; wall: HTMLElement | null; lock: HTMLElement | null;
+}
+
+/** This viewer's zoom of the tree (D111), in this browser only; 0: the tree's own choice (D144: every lane in view). */
+const ZOOM_STORE = makeStore<{ version: number; zoom: number }>('filon.tree.zoom.v2', 2, () => ({ version: 2, zoom: 0 }));
 /** One step of the buttons and keys. */
 const ZOOM_STEP = 1.25;
+/** The lanes' bands stand this far in from the canvas's edges. */
+const PAD_BAND = 6;
 
 /** « Tout voir »: four corners round a frame. */
 function fitGlyph(): SVGSVGElement {
@@ -838,40 +419,75 @@ function fitGlyph(): SVGSVGElement {
   return svg;
 }
 
+/** The filter's mark (D144): a play triangle in a ring — what can start now. */
+function playGlyph(): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('class', 'tr-playglyph');
+  svg.setAttribute('aria-hidden', 'true');
+  const ring = document.createElementNS(SVG_NS, 'circle');
+  ring.setAttribute('cx', '8'); ring.setAttribute('cy', '8'); ring.setAttribute('r', '6.6');
+  const tri = document.createElementNS(SVG_NS, 'path');
+  tri.setAttribute('d', 'M6.4 4.9L11.2 8L6.4 11.1Z');
+  svg.append(ring, tri);
+  return svg;
+}
+
+/** The SVG path of an arrowhead pointing right, its tip at (x, y). */
+const arrowHead = (x: number, y: number): string => `M${x - 9} ${y - 5.5} L${x} ${y} L${x - 9} ${y + 5.5} Z`;
+
+/** The end point of an SVG route (its last « L x y »). */
+function endOf(d: string): [number, number] {
+  const m = /L(-?[\d.]+) (-?[\d.]+)\s*$/.exec(d);
+  return m ? [Number(m[1]), Number(m[2])] : [0, 0];
+}
+
 export class ResearchScreen {
   readonly root: HTMLElement;
   private readonly layout = treeLayout();
   private readonly views = new Map<string, NodeView>();
   private readonly paths: Array<{ link: Link; path: SVGPathElement }> = [];
-  private readonly cats = new Map<string, CatView>();
-  /** The categories' gates on the canvas (D128). */
-  private readonly gatePaths: Array<{ link: GateLink; path: SVGPathElement }> = [];
-  /** The plan paths' labels (D41): the label (its tooltip) and its « n/of » unlocked. */
-  private readonly pathHeads = new Map<PlanLane, { label: HTMLElement; count: HTMLElement }>();
-  /**
-   * The tier bands: the head (what opens it, the selected node's tier), its gate's pill, the Core's
-   * level it needs (D118: its chip, null for Tier 1), its stripe and its pinned name — the last three
-   * padlocked and hatched while the Core is below that level.
-   */
-  private readonly tierHeads = new Map<ResearchTier, { head: HTMLElement; gate: HTMLElement; core: HTMLElement | null; col: HTMLElement; pin: HTMLElement | null }>();
-  /** The rule between Tier 1 and Tier 2 (D118). */
-  private tierRule: HTMLElement | null = null;
-  /** The launch dialog of a Tier 2+ node (D118): how many tokens a minute to buy. */
+  /** The categories' and plan paths' cells (D128, D144). */
+  private readonly cells = new Map<string, CellView>();
+  /** The categories' gates on the canvas (D128): the line and its arrowhead. */
+  private readonly gatePaths: Array<{ link: GateLink; path: SVGPathElement; head: SVGPathElement }> = [];
+  private readonly tiers = new Map<ResearchTier, TierView>();
+  /** The plans' rail head (how many are taken) and the lab's (how many of the plans it needs). */
+  private plansHead: { count: HTMLElement; fill: HTMLElement } | null = null;
+  /** The research lab's pillar (D71): its « n/N » plans taken and their bar. */
+  private gateHead: { count: HTMLElement; fill: HTMLElement } | null = null;
+  /** The launch dialog of a research node (D118): how many tokens a minute to buy. */
   private readonly launch: LaunchDialog;
-  /** The research lab's gate (D71): its caption and its « n/N » plans taken. */
-  private gateHead: { id: string; cap: HTMLElement; count: HTMLElement } | null = null;
   private readonly view: HTMLElement;
+  /** The rails (D144): the stages' heads over the view, the lanes' names left of it; their place in canvas px. */
+  private readonly rail = el('div.tr-rail');
+  private readonly laneRail = el('div.tr-lanerail', { 'aria-hidden': 'true' });
+  private railEls: Array<{ el: HTMLElement; x: number; w: number }> = [];
+  private laneEls: Array<{ el: HTMLElement; y: number; h: number }> = [];
+  private railFrame = 0;
+  /** The tier navigator (D144): a segment per stage, the view's window over them. */
+  private readonly nav: HTMLElement;
+  private readonly navWin = el('span.tr-navwin');
+  private navSegs: Array<{ id: Zone['id']; seg: HTMLElement; fill: HTMLElement; count: HTMLElement }> = [];
+  private navDrag = false;
+  /** The available-now filter (D144): its button, its count, whether it is on. */
+  private readonly filterBtn: HTMLButtonElement;
+  private readonly filterCount = el('b.tr-filtern');
+  private filterOn = false;
   /** The canvas (rebuilt with the language), whose `data-chain` fades what the focused node's chain leaves out. */
   private canvas: HTMLElement | null = null;
   /**
    * The node the player selected (owner, 2026-10-17: « il faut que le "focus" sur une tech se fasse
-   * quand le joueur sélectionne une tech, pas au hover »): its chain lit, the rest faded, until they
-   * select another, click the empty tree or press Esc. A click, a tap or Enter on a card; the tree's
-   * own choice on opening (its first plan to take, the guide's node) shows its detail, not a focus.
+   * quand le joueur sélectionne une tech, pas au hover »): its chain lit, the rest faded, the path to
+   * it numbered, until they select another, click the empty tree or press Esc. A click, a tap or
+   * Enter on a card; the tree's own choice on opening (its first plan to take, the guide's node)
+   * shows its detail, not a focus.
    */
   private focused: string | null = null;
   /** The node whose chain is painted (undefined: none painted since the canvas was built). */
   private chainFor: string | null | undefined = undefined;
+  /** What the path's numbers were painted for: the focus and how much is done. */
+  private stepSig = '';
   // The header: plans' restart reserve and research's strip (D68–D70).
   private readonly slotsEl = el('span.rs-slots');
   private slotsSig = '';
@@ -894,6 +510,8 @@ export class ResearchScreen {
   /** CrierBelt's restart reserve (D36): what the Heart's stock must keep, while the buildings do not cover it. */
   private readonly reserveEl = el('span.rs-reserve');
   private reserveSig = '';
+  /** The cards' legend (D144): a swatch per state. */
+  private readonly legendEl = el('span.tr-states');
   private readonly detail = el('aside.rs-detail.cartouche');
   private selected = '';
   /** What the research costs were computed for (null: not yet — a new base has nothing done, which is a signature too). */
@@ -901,35 +519,35 @@ export class ResearchScreen {
   /** The detail pane's live parts (costs held, progress, the labs' lines), run at each refresh. */
   private detailLive: Array<(sim: Sim) => void> = [];
   private detailSig = '';
-  /** A plan just unlocked: its node stamps « ✓ » for a moment. */
+  /** A plan just unlocked: its badge stamps « ✓ » for a moment. */
   private just: { id: string; until: number } | null = null;
   /** Dragging the canvas: where it started, and whether it moved (a drag is not a click). */
   private drag: { x: number; y: number; left: number; top: number; moved: boolean } | null = null;
   private dragged = false;
   /**
    * The zoom (D111; owner, 2026-10-17: « je veux pouvoir dézoomer dans le tech tree »): 1 its own
-   * size, down to the whole tree in the view (`fitZoom`), up to `ZOOM_MAX`; this viewer's last,
-   * kept in this browser (a convenience: `filon.tree.zoom.v1`).
+   * size, down to the whole tree in the view (`fitZoom`), up to `ZOOM_MAX`. This viewer's last
+   * choice is kept in this browser (a convenience: `filon.tree.zoom.v2`); until they choose, the tree
+   * opens with every lane in the view (D144: `openZoom`).
    */
-  private zoom = ZOOM_STORE.load().zoom;
+  private zoom = 1;
+  /** The paper above the canvas while it is shorter than the view (the whole tree in view): it stands in the middle. */
+  private offY = 0;
+  private chosenZoom = ZOOM_STORE.load().zoom;
   private zoomSave = 0;
   /** The fingers on the view (D96): two pinch the zoom about their middle. */
   private readonly fingers = new Map<number, { x: number; y: number }>();
   private pinch: { d0: number; z0: number } | null = null;
-  /** The corner's zoom bar: « − », the zoom (a click: 100 %), « + », « Tout voir ». */
+  /** The zoom bar: « − », the zoom (a click: 100 %), « + », « Tout voir ». */
   private readonly zoomPct = el<'button'>('button.tr-zbtn.tr-zpct', { type: 'button', 'data-tree-zoom': 'reset', onclick: () => this.setZoom(1) });
   private readonly zoomOut = el<'button'>('button.tr-zbtn', { type: 'button', 'data-tree-zoom': 'out', onclick: () => this.setZoom(this.zoom / ZOOM_STEP) }, '−');
   private readonly zoomIn = el<'button'>('button.tr-zbtn', { type: 'button', 'data-tree-zoom': 'in', onclick: () => this.setZoom(this.zoom * ZOOM_STEP) }, '+');
   private readonly zoomFit = el<'button'>('button.tr-zbtn.tr-zfit', { type: 'button', 'data-tree-zoom': 'fit', onclick: () => this.fit() }, [fitGlyph()]);
-  /** The tiers' and lanes' names pinned over the view while the cards are small (D111): always at reading size. */
-  private readonly pins = el('div.tr-pins', { 'aria-hidden': 'true' });
-  private pinEls: Array<{ el: HTMLElement; kind: 'tier' | 'lane' | 'cat'; x: number; y: number; w: number; h: number }> = [];
-  private pinFrame = 0;
 
   /** The language the canvas was built in: a switch rebuilds it (names and labels are written once). */
   private builtIn: Loc | null = null;
   private readonly title = el('h1.lettering');
-  private readonly dragHint = el('small.tr-drag');
+  private readonly stage: HTMLElement;
 
   constructor(private readonly atlas: Atlas, private readonly host: ResearchHost) {
     this.view = el('div.tr-view', {
@@ -938,12 +556,19 @@ export class ResearchScreen {
       onpointerup: (e: PointerEvent) => this.dragEnd(e),
       onpointercancel: (e: PointerEvent) => this.dragEnd(e),
       onwheel: (e: WheelEvent) => this.wheel(e),
-      onscroll: () => this.schedulePins(),
+      onscroll: () => this.scheduleRails(),
       // A click on the empty tree (not the end of a drag) lets the focus go.
       onclick: (e: MouseEvent) => { if (!this.dragged && !(e.target as Element).closest('.tr-node, button')) this.unfocus(); },
     });
     // A window resized (or the pane folded under the tree, D96): the whole tree's fit moves.
-    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => { if (this.root.isConnected) this.setZoom(this.zoom); }).observe(this.view);
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => { if (this.root.isConnected) this.setZoom(this.zoom, undefined, false); }).observe(this.view);
+    this.nav = el('div.tr-nav', {
+      onpointerdown: (e: PointerEvent) => { this.navDrag = true; this.nav.setPointerCapture(e.pointerId); this.navTo(e); },
+      onpointermove: (e: PointerEvent) => { if (this.navDrag) this.navTo(e); },
+      onpointerup: (e: PointerEvent) => { this.navDrag = false; if (this.nav.hasPointerCapture(e.pointerId)) this.nav.releasePointerCapture(e.pointerId); },
+      onpointercancel: () => { this.navDrag = false; },
+    });
+    this.filterBtn = el<'button'>('button.tr-filter', { type: 'button', 'data-tree-filter': '', 'aria-pressed': 'false', onclick: () => this.toggleFilter() }, [playGlyph(), this.filterCount]);
     this.labsEl = el('span.rs-labs', {}, [buildingIcon(atlas, 'observatory', 18), this.labsText]);
     this.launch = new LaunchDialog(atlas, { sim: () => host.sim(), launch: (id, buy) => this.begin(id, buy) });
     this.bill = {
@@ -961,81 +586,97 @@ export class ResearchScreen {
       el('span.rs-bchip', { 'data-k': 'bought' }, [inkGlyph('crier'), this.bill.bought]),
       this.bill.cents, this.bill.rental,
     ]);
+    // The stage (D144): the rails frozen round the view, as a spreadsheet's panes; the tools under it.
+    this.stage = el('div.tr-stage', {}, [
+      el('div.tr-corner'), this.rail, this.laneRail, this.view,
+      el('div.tr-tools', {}, [this.nav, this.filterBtn, el('div.tr-zoom', {}, [this.zoomOut, this.zoomPct, this.zoomIn, this.zoomFit])]),
+    ]);
     this.root = el('section.screen.research.tree', { 'data-screen': 'research' }, [
       el('header.rs-head', {}, [
         this.title,
         this.slotsEl, this.labsEl, this.billEl, this.heldEl, this.planEl, this.planCmp, this.qheadEl, this.notesEl, this.reserveEl,
-        this.dragHint,
+        this.legendEl,
         el('button.btn.rs-close', { onclick: () => host.close(), title: t('screen.close') }, '✕'),
       ]),
-      el('div.rs-body', {}, [
-        el('div.tr-stage', {}, [this.view, this.pins, el('div.tr-zoom.cartouche', {}, [this.zoomOut, this.zoomPct, this.zoomIn, this.zoomFit])]),
-        this.detail,
-      ]),
+      el('div.rs-body', {}, [this.stage, this.detail]),
       this.launch.root,
     ]);
     this.build();
   }
 
-  /** The canvas: blocks, tier columns, lanes, links, nodes — in the current language (rebuilt when it changes). */
+  /** The canvas: lanes, columns, walls, cells, links, cards — and the rails and navigator — in the current language (rebuilt when it changes). */
   private build(): void {
     const L = this.layout;
     const loc = locale();
     this.builtIn = loc;
     this.views.clear();
     this.paths.length = 0;
-    this.cats.clear();
+    this.cells.clear();
     this.gatePaths.length = 0;
-    this.pathHeads.clear();
-    this.tierHeads.clear();
+    this.tiers.clear();
     this.gateHead = null;
+    this.plansHead = null;
     this.costSig = null;
     this.detailSig = '';
     this.chainFor = undefined;
+    this.stepSig = '';
     setText(this.title, t('tree.title'));
-    setText(this.dragHint, t('tree.drag'));
+    setAttr(this.stage, 'title', null);
+    setAttr(this.view, 'title', t('tree.drag'));
     setAttr(this.zoomOut, 'title', t('tree.zoom.out'));
     setAttr(this.zoomIn, 'title', t('tree.zoom.in'));
     setAttr(this.zoomFit, 'title', t('tree.zoom.fit'));
     setAttr(this.zoomPct, 'title', t('tree.zoom.reset'));
+    setAttr(this.nav, 'title', t('tree.nav.tip'));
+    this.legendEl.replaceChildren(...this.legend());
     const canvas = el('div.tr-canvas', { style: `width:${L.w}px;height:${L.h}px` });
+    if (this.filterOn) setAttr(canvas, 'data-filter', 'now');
     this.canvas = canvas;
-    // Back to front: the two blocks, the tier columns, the lanes, the links, the nodes.
-    for (const b of L.blocks) {
-      canvas.append(el('div.tr-block', { 'data-kind': b.kind, style: `left:${b.x}px;top:${b.y}px;width:${b.w}px;height:${b.h}px` }, [
-        el('div.tr-blockhead', {}, b.kind === 'plan'
-          ? [el('h2.lettering', {}, t('tree.part.plans')), el('span.tr-legend', {}, [el('i.tr-swatch', { 'data-kind': 'plan' }), t('tree.legend.plan')])]
-          : [el('h2.lettering', {}, t('tree.part.research')), this.researchLegend()]),
-      ]));
+    const span = `top:${L.top}px;height:${L.bottom - L.top}px`;
+    // Back to front: the plans' wash and the tiers' columns, the lanes, the walls, the cells' boxes,
+    // the links, the cells' heads and the walls' locks, the cards.
+    const tierZone = new Map<ResearchTier, HTMLElement>();
+    for (const z of L.zones) {
+      if (z.id === 'plans') canvas.append(el('div.tr-zone', { 'data-zone': 'plans', style: `left:${z.x}px;width:${z.w}px;${span}` }));
+      else if (z.tier) {
+        const zone = el('div.tr-zone', { 'data-tier': String(z.tier), style: `left:${z.x}px;width:${z.w}px;${span}` });
+        tierZone.set(z.tier, zone);
+        canvas.append(zone);
+      }
     }
-    for (const col of L.tiers) canvas.append(...this.tierEls(col));
-    // Tier 1 | Tier 2 (D118): the strong ink rule down the wider gap between them.
-    this.tierRule = L.rule ? el('div.tr-tierrule', { style: `left:${L.rule.x}px;top:${L.rule.y}px;height:${L.rule.h}px` }, [el('span.tr-rulecap', {}, [mark('lock')])]) : null;
-    if (this.tierRule) canvas.append(this.tierRule);
-    // Each plan path's band (D41): its rows in its colour, from its first column to the block's right
-    // edge, after the Heart's column: the Heart stands apart, its links fan out.
-    for (const lane of L.lanes) {
-      const x = lane.x + LABEL_W + COL_W - 12;
-      canvas.append(el('div.tr-band', {
-        'data-kind': 'plan', 'data-lane': lane.id,
-        style: `left:${x}px;top:${lane.y - BAND_TOP}px;width:${lane.x + lane.w - x + 8}px;height:${lane.h + BAND_TOP + BAND_BOTTOM}px`,
-      }));
+    for (const b of L.lanes) canvas.append(el('div.tr-band', { 'data-lane': b.theme, style: `left:${PAD_BAND}px;top:${b.y}px;width:${L.w - 2 * PAD_BAND}px;height:${b.h}px` }));
+    const walls = new Map<ResearchTier, { wall: HTMLElement; lock: HTMLElement }>();
+    for (const w of L.walls) {
+      const lvl = coreLevelFor(w.tier);
+      const wall = el('div.tr-wall', { 'data-tier': String(w.tier), 'data-strong': w.strong ? '' : null, style: `left:${w.x}px;width:${w.w}px;${span}` });
+      const lock = el('button.tr-key', {
+        type: 'button', 'data-tier': String(w.tier), 'data-key': w.key,
+        style: `left:${w.kx - KEY_R}px;top:${w.ky - KEY_R}px;width:${2 * KEY_R}px;height:${2 * KEY_R}px`,
+        onclick: () => this.goTo(w.key),
+      }, [buildingIcon(this.atlas, 'hearth', 30, lvl), el('span.tr-keylv', {}, String(lvl)), el('span.tr-keymark', {}, [mark('lock'), el('span.tr-gatecheck', {}, '✓')])]);
+      walls.set(w.tier, { wall, lock });
+      canvas.append(wall);
     }
-    for (const lane of L.lanes) canvas.append(this.laneEl(lane));
-    // The categories' blocks (D128), in their theme's colour: behind the links; their headers over them.
     const heads: HTMLElement[] = [];
-    for (const k of L.cats) { const v = this.catEl(k); canvas.append(v.box); heads.push(v.head); }
+    // The plan paths' cells first, in the paths' order (D41), then the categories (D128).
+    const plansFirst = [...L.cells].sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'plan' ? -1 : 1)
+      || (a.kind === 'plan' ? PLAN_PATHS.indexOf(a.id as PlanLane) - PLAN_PATHS.indexOf(b.id as PlanLane) : 0));
+    for (const c of plansFirst) { const v = this.cellEl(c); canvas.append(v.box); heads.push(v.head); }
     const svg = document.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('class', 'tr-links');
     svg.setAttribute('width', String(L.w));
     svg.setAttribute('height', String(L.h));
-    // The gates first, under the nodes' links (D128): a dashed line across each gutter.
+    // The gates first, under the nodes' links (D128): an arrow along a lane, across a wall.
     for (const link of L.gates) {
       const path = document.createElementNS(SVG_NS, 'path');
       path.setAttribute('class', 'tr-gatelink');
       path.setAttribute('d', link.d);
-      svg.append(path);
-      this.gatePaths.push({ link, path });
+      const head = document.createElementNS(SVG_NS, 'path');
+      const [ex, ey] = endOf(link.d);
+      head.setAttribute('class', 'tr-gatehead');
+      head.setAttribute('d', arrowHead(ex, ey));
+      svg.append(path, head);
+      this.gatePaths.push({ link, path, head });
     }
     // Each link on its route (D107: right angles in the gaps, never across a card).
     for (const link of L.links) {
@@ -1048,102 +689,137 @@ export class ResearchScreen {
       this.paths.push({ link, path });
     }
     canvas.append(svg, ...heads);
+    for (const { lock } of walls.values()) canvas.append(lock);
     for (const s of L.nodes) canvas.append(this.nodeEl(s));
-    // The research lab's gate (D71): a caption over its card — every plan opens research — and how many are taken.
-    if (L.gate) {
-      const count = el('small.tr-pathcount');
-      const cap = el('div.tr-gatecap', { 'data-lane': 'gate', style: `left:${L.gate.x}px;top:${L.gate.y - 50}px;width:${GATE_W}px` }, [
-        el('span.tr-lanename.lettering', {}, t('tree.gate.caption')), count,
-      ]);
-      canvas.append(cap);
-      this.gateHead = { id: L.gate.id, cap, count };
-    }
-    this.buildPins();
+    this.buildRails(loc, tierZone, walls);
+    this.buildNav();
     const { scrollLeft, scrollTop } = this.view;
     this.view.replaceChildren(canvas);
     this.applyZoom();
     this.view.scrollLeft = scrollLeft;
     this.view.scrollTop = scrollTop;
-    this.paintPins();
+    this.paintRails();
   }
 
-  /** Research's legend, in its own marks (D122): the resources it takes from the Core at launch, its AI tokens (D118: no time). */
-  private researchLegend(): HTMLElement {
-    return el('span.tr-legend.rs-legend', {}, [
-      el('span', { title: t('tree.legend.res.tip') }, [buildingIcon(this.atlas, 'hearth', 16, 2), itemIcon(this.atlas, itemIdx('gear'), 16), t('tree.legend.res')]),
-      el('span', { title: t('tree.legend.tokens.tip') }, [mark('token'), t('tree.legend.tokens')]),
-    ]);
-  }
-
-  /**
-   * A tier band: its stripe and its head — « Tier 2 · Cœur niveau 3 » (D118: from Tier 2, the Core's
-   * level it needs, the Core's look at that level, padlocked while the Core is below it), and what
-   * opens it (a button to it; Tier 2 also two expertises, D93).
-   */
-  private tierEls(col: TierCol): HTMLElement[] {
-    const gate = gateOf(col.tier);
-    const lvl = coreLevelFor(col.tier);
-    const gateBtn = el('button.tr-gate', {
-      type: 'button', 'data-gate-id': gate, title: t('tree.rs.opens.tip', { name: nodeName(gate)[locale()] }),
-      onclick: () => { this.select(gate); this.views.get(gate)?.node.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' }); },
-    }, [mark('lock'), el('span.tr-gatecheck', {}, '✓'), nodeName(gate)[locale()]]);
-    const core = col.tier > 1
-      ? el('span.tr-core', { 'data-core': String(lvl) }, [mark('lock'), el('span.tr-gatecheck', {}, '✓'), buildingIcon(this.atlas, 'hearth', 24, lvl), el('span', {}, t('tree.heartLevel', { n: lvl }))])
-      : null;
-    const head = el('div.tr-tierhead', { 'data-tier': String(col.tier), style: `left:${col.x}px;top:${col.y}px;width:${col.w}px;height:${TIER_HEAD_H}px` }, [
-      el('span.tr-tiertitle', {}, [el('span.tr-tiername.lettering', {}, t('tree.rs.tier', { n: col.tier })), core ? el('span.tr-tierdot', {}, '·') : null, core]),
-      el('span.tr-opens', {}, [el('small', {}, t('tree.rs.opens')), gateBtn,
-        // Tier 2 also waits for two expertises chosen at the Core's Archive (D93).
-        col.tier === 2 ? el('small.tr-gate-exp', { title: t('research.block.expertise') }, [archiveGlyph(), t('tree.rs.opens.expertise')]) : null]),
-    ]);
-    const stripe = el('div.tr-tiercol', { 'data-tier': String(col.tier), style: `left:${col.x}px;top:${col.y}px;width:${col.w}px;height:${col.h}px` });
-    this.tierHeads.set(col.tier, { head, gate: gateBtn, core, col: stripe, pin: null });
-    return [stripe, head];
-  }
-
-  /** A plan path's label, as tall as its band: its name, what it is for and how much of it is unlocked (D41). */
-  private laneEl(lane: Lane): HTMLElement {
-    const style = `left:${lane.x}px;top:${lane.y - BAND_TOP}px;width:${LABEL_W - 14}px;height:${lane.h + BAND_TOP + BAND_BOTTOM}px`;
-    const id = lane.id as PlanLane;
-    const count = el('small.tr-pathcount');
-    const label = el('div.tr-lane', { 'data-kind': 'plan', 'data-lane': id, style }, [
-      el('span.tr-lanename.lettering', {}, t(`tree.lane.${id}` as MsgKey)),
-      el('small.tr-paththeme', {}, t(`tree.path.${id}` as MsgKey)),
-      count,
-    ]);
-    this.pathHeads.set(id, { label, count });
-    return label;
+  /** The cards' legend (D144), in the header: a swatch per state, as the cards draw it. */
+  private legend(): HTMLElement[] {
+    const sw = (k: string, label: string, inner: Array<Node | string>): HTMLElement =>
+      el('span.tr-lg', { 'data-k': k }, [el('i.tr-lgsw', { 'data-state': k }, inner), el('span', {}, label)]);
+    return [
+      sw('done', t('tree.legend.done'), ['✓']),
+      sw('ready', t('tree.legend.ready'), ['▶']),
+      sw('active', t('tree.legend.active'), []),
+      sw('locked', t('tree.legend.locked'), [mark('lock')]),
+      sw('core', t('tree.legend.core'), [buildingIcon(this.atlas, 'hearth', 14, 3) ?? '']),
+    ];
   }
 
   /**
-   * A category's block (D128): its stripe in its theme's colour, and its header — its name, how much
-   * of it is learnt, and from Tier 2 a pill per gate (a padlock, the gate's name and count; ✓ once
-   * finished). A pill selects the gate's first node still to learn, scrolled into view.
+   * The rails (D144): over the view, a head per stage — the plans (how many are taken), the lab,
+   * each tier (its name and bar; from Tier 2 the Core's level it needs, padlocked below it, the node
+   * that keys its wall, Tier 2's two expertises: D93, D118); left of it, each lane's name. They keep
+   * their size at every zoom and follow the scroll (`paintRails`).
    */
-  private catEl(k: CatBlock): CatView {
-    const L = locale();
-    const box = el('div.tr-cat', { 'data-cat': k.id, 'data-lane': k.theme, 'data-tier': String(k.tier), style: `left:${k.x}px;top:${k.y}px;width:${k.w}px;height:${k.h}px` });
-    const count = el('small.tr-catcount');
-    const gates = k.gates.map((g) => {
-      const c = el('small');
-      const pill = el('button.tr-catgate', {
-        type: 'button', 'data-gate-cat': g, 'data-lane': categoryDef(g)!.theme,
-        onclick: () => {
-          const sim = this.host.sim();
-          const next = categoryNodes(g).find((id) => !sim.done.has(id)) ?? categoryNodes(g)[0]!;
-          this.select(next);
-          this.views.get(next)?.node.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
-        },
-      }, [mark('lock'), el('span.tr-gatecheck', {}, '✓'), el('span', {}, categoryName(g)[L]), c]);
-      return { id: g, pill, count: c };
+  private buildRails(loc: Loc, zones: Map<ResearchTier, HTMLElement>, walls: Map<ResearchTier, { wall: HTMLElement; lock: HTMLElement }>): void {
+    const L = this.layout;
+    const rails: ResearchScreen['railEls'] = [];
+    const bar = (): { bar: HTMLElement; fill: HTMLElement } => { const fill = el('i'); return { bar: el('span.tr-hbar', {}, fill), fill }; };
+    for (const z of L.zones) {
+      if (z.id === 'heart') continue;
+      if (z.id === 'plans') {
+        const b = bar(), count = el('small.tr-hcount');
+        rails.push({ el: el('div.tr-colhead', { 'data-zone': 'plans', title: t('tree.legend.plan') }, [
+          el('span.tr-th1', {}, [el('span.tr-tiername.lettering', {}, t('tree.part.plans')), b.bar, count]),
+          el('small.tr-th2', {}, t('tree.legend.plan')),
+        ]), x: z.x, w: z.w });
+        this.plansHead = { count, fill: b.fill };
+        continue;
+      }
+      if (z.id === 'lab') {
+        rails.push({ el: el('div.tr-colhead', { 'data-zone': 'lab' }, [
+          el('span.tr-th1', {}, [el('span.tr-tiername.lettering', {}, t('tree.part.research'))]),
+          el('small.tr-th2', {}, t('tree.gate.caption')),
+        ]), x: z.x, w: z.w });
+        continue;
+      }
+      const tier = z.tier as ResearchTier;
+      const lvl = coreLevelFor(tier);
+      const b = bar(), count = el('small.tr-hcount');
+      const key = tier > 1 ? el('button.tr-gate', {
+        type: 'button', 'data-gate-id': gateOf(tier), title: t('tree.rs.opens.tip', { name: nodeName(gateOf(tier))[loc] }),
+        onclick: () => this.goTo(gateOf(tier)),
+      }, [mark('lock'), el('span.tr-gatecheck', {}, '✓'), el('span.tr-gname', {}, nodeName(gateOf(tier))[loc])]) : null;
+      const core = tier > 1
+        ? el('span.tr-core', { 'data-core': String(lvl) }, [mark('lock'), el('span.tr-gatecheck', {}, '✓'), buildingIcon(this.atlas, 'hearth', 20, lvl),
+          el('span.tr-corelong', {}, t('tree.heartLevel', { n: lvl })), el('span.tr-coreshort', {}, t('tree.rs.coreShort', { n: lvl }))])
+        : null;
+      const head = el('div.tr-tierhead', { 'data-tier': String(tier) }, [
+        el('span.tr-th1', {}, [el('span.tr-tiername.lettering', {}, t('tree.rs.tier', { n: tier })), b.bar, count]),
+        el('span.tr-th2', {}, tier > 1
+          ? [core, key, tier === 2 ? el('small.tr-gate-exp', { title: t('research.block.expertise') }, [archiveGlyph(), el('span', {}, t('tree.rs.opens.expertise'))]) : null]
+          : [el('small', {}, t('tree.rs.opens')), el('button.tr-gate', { type: 'button', 'data-gate-id': LAB_PLAN, onclick: () => this.goTo(LAB_PLAN) }, [mark('lock'), el('span.tr-gatecheck', {}, '✓'), el('span.tr-gname', {}, nodeName(LAB_PLAN)[loc])])]),
+      ]);
+      rails.push({ el: head, x: z.x, w: z.w });
+      const w = walls.get(tier);
+      this.tiers.set(tier, { head, count, fill: b.fill, core, key, zone: zones.get(tier)!, wall: w?.wall ?? null, lock: w?.lock ?? null });
+    }
+    this.railEls = rails;
+    this.rail.replaceChildren(el('div.tr-railin', {}, rails.map((r) => r.el)));
+    this.laneEls = L.lanes.map((b) => ({ el: el('div.tr-lanelabel', { 'data-lane': b.theme }, [el('span.lettering', {}, THEMES[b.theme].name[loc])]), y: b.y, h: b.h }));
+    this.laneRail.replaceChildren(el('div.tr-railin', {}, this.laneEls.map((r) => r.el)));
+  }
+
+  /** The tier navigator (D144): a segment per stage, as wide as its share of the tree, its name, bar and padlock. */
+  private buildNav(): void {
+    const L = this.layout;
+    const zx = (id: Zone['id']): number => L.zones.find((z) => z.id === id)!.x;
+    const spans: Array<{ id: Zone['id']; x0: number; x1: number; label: string }> = [
+      { id: 'plans', x0: 0, x1: zx('t1'), label: t('tree.part.plans') },
+      ...TIERS.map((k) => ({ id: `t${k}` as Zone['id'], x0: zx(`t${k}` as Zone['id']), x1: k < 4 ? zx(`t${k + 1}` as Zone['id']) : L.w, label: t('tree.rs.tierShort', { n: k }) })),
+    ];
+    this.navSegs = spans.map((s) => {
+      const fill = el('i'), count = el('small');
+      const seg = el('span.tr-navseg', { 'data-zone': s.id, style: `flex-grow:${s.x1 - s.x0}` }, [
+        el('span.tr-navname', {}, [mark('lock'), el('b', {}, s.label), count]), el('span.tr-navbar', {}, fill), el('i.tr-navdot'),
+      ]);
+      return { id: s.id, seg, fill, count };
     });
-    const head = el('div.tr-cathead', { 'data-cat': k.id, 'data-lane': k.theme, style: `left:${k.x}px;top:${k.y}px;width:${k.w}px` }, [
-      el('span.tr-catline', {}, [el('span.tr-catname.lettering', {}, categoryName(k.id)[L]), count]),
-      gates.length ? el('span.tr-catgates', {}, [el('small.tr-catopens', {}, t('tree.cat.after')), ...gates.map((g) => g.pill)]) : null,
-    ]);
-    const v: CatView = { block: k, box, head, count, gates };
-    this.cats.set(k.id, v);
+    this.nav.replaceChildren(...this.navSegs.map((s) => s.seg), this.navWin);
+  }
+
+  /** The navigator pressed or dragged at this pointer: the view centred there (sideways). */
+  private navTo(e: PointerEvent): void {
+    const r = this.nav.getBoundingClientRect();
+    if (!r.width) return;
+    const x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * this.layout.w;
+    this.view.scrollLeft = x * this.zoom - this.view.clientWidth / 2;
+    this.paintRails();
+  }
+
+  /**
+   * A cell (D128, D144): its box in its theme's colour, and its header — its name, a bar of how
+   * much of it is learnt and the count; a category's padlock while a category it waits for is
+   * unfinished. A plan path's header is its `.tr-lane` (D41: what it is for in its tooltip).
+   */
+  private cellEl(k: Cell): CellView {
+    const L = locale();
+    const fill = el('i'), count = el('small.tr-catcount');
+    const box = el('div.tr-cat', { 'data-cell': k.kind, 'data-cat': k.kind === 'cat' ? k.id : null, 'data-path': k.kind === 'plan' ? k.id : null, 'data-lane': k.theme, 'data-tier': String(k.tier), style: `left:${k.x}px;top:${k.y}px;width:${k.w}px;height:${k.h}px` });
+    const name = k.kind === 'cat' ? categoryName(k.id)[L] : t(`tree.lane.${k.id}` as MsgKey);
+    const kids = [mark('lock'), el('span.tr-catname.lettering', {}, name), el('span.tr-catbar', {}, fill), count];
+    const style = `left:${k.x}px;top:${k.y}px;width:${k.w}px;height:${CELL_HEAD}px`;
+    const head = k.kind === 'cat'
+      ? el('div.tr-cathead', { 'data-cat': k.id, 'data-lane': k.theme, style, onclick: () => this.goTo(this.nextIn(categoryNodes(k.id))) }, kids)
+      : el('div.tr-cathead.tr-lane', { 'data-kind': 'plan', 'data-lane': k.id, style, onclick: () => this.goTo(this.nextIn(pathPlans(k.id as PlanLane))) }, kids);
+    const v: CellView = { cell: k, box, head, count, fill };
+    this.cells.set(k.id, v);
     return v;
+  }
+
+  /** The first of these not done yet (the first of all when every one is). */
+  private nextIn(ids: readonly string[]): string {
+    const sim = this.host.sim();
+    return ids.find((id) => !sim.done.has(id)) ?? ids[0] ?? ROOT;
   }
 
   private icon(ic: Icon, px: number): HTMLElement | null {
@@ -1155,52 +831,75 @@ export class ResearchScreen {
     return c;
   }
 
+  /**
+   * A card: what it unlocks (its icons), its name, its costs (a plan's materials and « Débloquer »;
+   * a research node's resources and tokens), its state badge (D144: ✓, ▶, %, a padlock, the Core's
+   * level), its number on the focused node's path, a running project's bar. The Heart and the lab
+   * are pillars as tall as the lanes: the Heart's kit; the lab's plans taken, its cost, « Débloquer ».
+   */
   private nodeEl(s: Spot): HTMLElement {
     const L = locale();
     const res = s.kind === 'research';
-    const icons = iconsOf(s.id).map((ic, k) => this.icon(ic, k === 0 ? (res ? 34 : 36) : 20));
+    const pillar = !!s.pillar;
+    const icons = s.id === ROOT ? [this.icon({ b: 'hearth' }, 72)] : iconsOf(s.id).map((ic, k) => this.icon(ic, k === 0 ? (pillar ? 72 : res ? 34 : 34) : pillar ? 28 : 20));
     const name = s.id === ROOT ? t('tree.root') : nodeName(s.id)[L];
     const cost = el(res ? 'span.tr-rcost' : 'span.tr-cost');
     let chips: NodeView['chips'] = [];
     let unlock: HTMLButtonElement | null = null, bar: HTMLElement | null = null;
     let qtag: HTMLElement | null = null, tok: HTMLElement | null = null;
-    let lines: HTMLElement[];
+    let lines: Array<HTMLElement | null>;
     if (s.kind === 'plan') {
       chips = planDef(s.id)!.cost.map(([it, n]) => {
         const item = itemIdx(it);
         return { item, mu: toMu(n), node: el('span.tr-chip', { title: itemDef(item).name[L] }, [itemIcon(this.atlas, item, 14), String(n)]) };
       });
       cost.replaceChildren(...chips.map((c) => c.node));
-      unlock = el<'button'>('button.btn.primary.tr-unlock', { type: 'button', 'data-unlock': s.id, onclick: (e: Event) => { e.stopPropagation(); this.unlock(s.id); } }, t('tree.unlock'));
-      lines = [el('span.tr-line', {}, [cost, unlock])];
+      unlock = el<'button'>('button.btn.primary.tr-unlock', { type: 'button', 'data-unlock': s.id, title: t('tree.unlock'), onclick: (e: Event) => { e.stopPropagation(); this.unlock(s.id); } }, [el('span.tr-unlockw', {}, t('tree.unlock'))]);
+      lines = pillar ? [this.gateCountEl(), el('span.tr-line', {}, [cost]), unlock] : [el('span.tr-line', {}, [cost, unlock])];
     } else if (res) {
-      // What it unlocks first (its icons, left), then its name, a chip per resource it takes from the
-      // Core at launch, and a third line, its tokens (D122: at every tier, no data; D118: no time
+      // What it unlocks first (its icons, left), then its name and one line: a chip per resource it
+      // takes from the Core at launch, then its tokens (D122: at every tier, no data; D118: no time
       // anywhere; D128: no price in ◉).
       tok = el('span.tr-tokbox');
       bar = el('span.tr-bar');
       qtag = el('span.tr-qtag');
-      lines = [el('span.tr-rline', {}, [cost]), tok ? el('span.tr-rfoot', {}, [tok]) : null].filter((x): x is HTMLElement => !!x);
+      lines = [el('span.tr-rline', {}, [cost, tok])];
     } else {
       setText(cost, t('tree.start'));
-      lines = [el('span.tr-line', {}, [cost])];
+      lines = [el('small.tr-pillsub', {}, t('tree.start')), el('span.tr-kit', {}, startBuildings().map((b) => buildingIcon(this.atlas, b, 30)))];
     }
     const r = researchNode(s.id);
+    const pct = el('span.tr-b-pct');
+    const step = el('span.tr-step');
+    const badge = el('span.tr-badge', {}, [
+      el('span.tr-b-ok', {}, '✓'), el('span.tr-b-go', {}, '▶'), el('span.tr-b-lock', {}, [mark('lock')]),
+      r && r.tier > 1 ? el('span.tr-b-core', {}, [buildingIcon(this.atlas, 'hearth', 16, coreLevelFor(r.tier)), el('b', {}, String(coreLevelFor(r.tier)))]) : null,
+      pct,
+    ]);
     const node = el('div.tr-node.rs-card', {
       'data-id': s.id, 'data-kind': s.kind, 'data-lane': s.lane || null, 'data-tier': r ? String(r.tier) : null, 'data-cat': r?.cat ?? null,
-      'data-keystone': r?.depth === 9 ? '' : null, 'data-long': [...name].length > (res ? 19 : 15) ? '' : null, role: 'button', tabindex: '0',
+      'data-pillar': pillar ? '' : null, 'data-keystone': r?.depth === 9 ? '' : null, 'data-long': [...name].length > (res ? 20 : 16) ? '' : null,
+      role: 'button', tabindex: '0',
       style: `left:${s.x}px;top:${s.y}px;width:${s.w}px;height:${s.h}px`,
       onclick: () => this.select(s.id),
       onkeydown: (e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.select(s.id); } },
-    }, [
-      el('span.tr-icons', { 'data-n': String(icons.length) }, icons),
-      el('span.tr-main', {}, [el('span.tr-name.lettering', {}, name), ...lines]),
-      bar ? el('span.tr-track', {}, bar) : null,
-      el('span.tr-stamp', {}, '✓'),
-      qtag,
-    ]);
-    this.views.set(s.id, { spot: s, node, cost, chips, tok, qtag, bar, unlock });
+    }, pillar
+      ? [el('span.tr-pillin', {}, [el('span.tr-icons', { 'data-n': '1' }, icons.slice(0, 1)), el('span.tr-name.lettering', {}, name), ...lines]), badge, step]
+      : [
+        el('span.tr-icons', { 'data-n': String(icons.length) }, icons),
+        el('span.tr-main', {}, [el('span.tr-name.lettering', {}, name), ...lines]),
+        bar ? el('span.tr-track', {}, bar) : null,
+        badge, step, qtag,
+      ]);
+    this.views.set(s.id, { spot: s, node, cost, chips, tok, qtag, bar, unlock, pct, step });
     return node;
+  }
+
+  /** The lab's pillar (D71): how many of the plans it needs are taken, a bar under it. */
+  private gateCountEl(): HTMLElement {
+    const fill = el('i'), count = el('small');
+    this.gateHead = { count, fill };
+    return el('span.tr-pillcount', {}, [el('span.tr-hbar', {}, fill), count]);
   }
 
   /**
@@ -1231,14 +930,38 @@ export class ResearchScreen {
     const focus = this.focused && this.views.has(this.focused) ? this.focused : null;
     if (focus === this.chainFor) return;
     this.chainFor = focus;
-    const chain = focus && this.views.has(focus) ? chainOf(focus) : null;
+    const chain = focus ? chainOf(focus) : null;
     if (this.canvas) setAttr(this.canvas, 'data-chain', chain ? '' : null);
     for (const [id, v] of this.views) setAttr(v.node, 'data-chain', chain?.nodes.has(id) ? (id === focus ? 'self' : '') : null);
-    for (const { link, path } of this.paths) setAttr(path, 'data-chain', chain?.links.has(`${link.from}>${link.to}`) ? '' : null);
-    for (const { link, path } of this.gatePaths) setAttr(path, 'data-chain', chain?.links.has(`cat:${link.from}>cat:${link.to}`) ? '' : null);
-    // A category stays lit while one of its nodes is in the chain (D128): its own, its gates, what it opens.
-    const lit = new Set([...(chain?.nodes ?? [])].map((n) => researchNode(n)?.cat).filter((c): c is string => !!c));
-    for (const [c, v] of this.cats) { setAttr(v.box, 'data-chain', lit.has(c) ? '' : null); setAttr(v.head, 'data-chain', lit.has(c) ? '' : null); }
+    for (const { link, path } of this.paths) setAttr(path, 'data-chain', chain?.links.has(link.kind === 'key' ? `key:${link.from}` : `${link.from}>${link.to}`) ? '' : null);
+    for (const { link, path, head } of this.gatePaths) {
+      const on = chain?.links.has(`cat:${link.from}>cat:${link.to}`) ? '' : null;
+      setAttr(path, 'data-chain', on);
+      setAttr(head, 'data-chain', on);
+    }
+    // A cell stays lit while one of its nodes is in the chain (D128): its own, its gates, what it opens.
+    const lit = new Set([...(chain?.nodes ?? [])].map((n) => researchNode(n)?.cat ?? (planDef(n) && !isGate(n) ? planDef(n)!.lane : undefined)).filter((c): c is string => !!c));
+    for (const [c, v] of this.cells) { setAttr(v.box, 'data-chain', lit.has(c) ? '' : null); setAttr(v.head, 'data-chain', lit.has(c) ? '' : null); }
+    for (const tv of this.tiers.values()) if (tv.lock) setAttr(tv.lock, 'data-chain', chain?.links.has(`key:${tv.lock.dataset.key}`) ? '' : null);
+  }
+
+  /**
+   * The path to the focused node (D144): each node it still waits for numbered on its card, in the
+   * order `pathTo` reads them (the detail pane lists them the same) — repainted when the focus or
+   * what is done changes.
+   */
+  private paintSteps(sim: Sim): void {
+    const f = this.focused && this.views.has(this.focused) && !sim.done.has(this.focused) ? this.focused : null;
+    const sig = `${f}:${sim.done.size}`;
+    if (sig === this.stepSig) return;
+    this.stepSig = sig;
+    const steps = f ? pathTo(f, sim.done) : [];
+    const n = new Map(steps.map((id, k) => [id, k + 1]));
+    for (const [id, v] of this.views) {
+      const k = n.get(id);
+      setText(v.step, k ? String(k) : '');
+      setAttr(v.node, 'data-step', k ? '' : null);
+    }
   }
 
   /** The player selects a node: its detail, and the focus on its chain (none for the Heart: it has none). */
@@ -1250,23 +973,40 @@ export class ResearchScreen {
     this.refresh();
   }
 
+  /** Select a node and bring it into the middle of the view (a step of a path, a cell's next node, a wall's key). */
+  private goTo(id: string): void {
+    if (!this.views.has(id)) return;
+    this.select(id);
+    this.views.get(id)!.node.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+  }
+
   /** The focus let go (a click on the empty tree, Esc): the whole tree back; the detail stays. */
   private unfocus(): boolean {
     if (!this.focused) return false;
     this.focused = null;
     this.paintChain();
+    this.paintSteps(this.host.sim());
     return true;
   }
 
-  /** Esc (D111): the launch dialog first (D118), then the focus, then the screen closes. */
+  /** Esc (D111): the launch dialog first (D118), then the focus, then the filter (D144), then the screen closes. */
   back(): boolean {
     if (this.launch.isOpen) { this.launch.close(); return true; }
-    return this.unfocus();
+    if (this.unfocus()) return true;
+    if (this.filterOn) { this.toggleFilter(); return true; }
+    return false;
   }
 
   /** The tree closed: a launch dialog left open goes with it (nothing was started). */
   closed(): void {
     this.launch.close();
+  }
+
+  /** The available-now filter (D144): on, what cannot start now fades — what can (and runs) stays lit. */
+  private toggleFilter(): void {
+    this.filterOn = !this.filterOn;
+    if (this.canvas) setAttr(this.canvas, 'data-filter', this.filterOn ? 'now' : null);
+    setAttr(this.filterBtn, 'aria-pressed', this.filterOn ? 'true' : 'false');
   }
 
   private dragStart(e: PointerEvent): void {
@@ -1319,8 +1059,9 @@ export class ResearchScreen {
   }
 
   /**
-   * The wheel scrolls the tree (sideways when it has nothing to scroll up and down); with Ctrl or ⌘
-   * — and a trackpad's pinch, which the browser sends so — it zooms about the pointer (D111).
+   * The wheel scrolls the tree (sideways when it has nothing to scroll up and down: D144, every lane
+   * in the view, the wheel runs through the tiers); with Ctrl or ⌘ — and a trackpad's pinch, which
+   * the browser sends so — it zooms about the pointer (D111).
    */
   private wheel(e: WheelEvent): void {
     if (e.ctrlKey || e.metaKey) {
@@ -1336,22 +1077,25 @@ export class ResearchScreen {
     e.preventDefault();
   }
 
-  /** On opening: the guide's node, else the selection (or the first plan to take, else the first research to start), brought into view. */
+  /** On opening: the zoom (this viewer's, else every lane in view), the guide's node, else the selection (or the first thing to do), brought into the middle of the view. */
   opened(): void {
-    this.setZoom(this.zoom); // its range follows the window the tree opens in
+    this.setZoom(this.chosenZoom > 0 ? this.chosenZoom : this.autoZoom(), undefined, false);
     const sim = this.host.sim();
     const focus = this.host.focus?.() ?? null;
     if (focus && this.views.has(focus)) { this.selected = focus; this.focused = null; this.detailSig = ''; this.refresh(); }
     else if (!this.selected || !this.views.has(this.selected)) {
       this.focused = null;
       this.selected = readyPlans(sim)[0]
-        ?? PLAN_IDS.find((id) => planState(sim, id) === 'poor')
+        ?? RESEARCH_IDS.find((id) => researchState(sim, id) === 'active')
         ?? RESEARCH_IDS.find((id) => researchState(sim, id) === 'ready')
+        ?? PLAN_IDS.find((id) => planState(sim, id) === 'poor')
+        ?? RESEARCH_IDS.find((id) => researchState(sim, id) === 'poor')
         ?? ROOT;
       this.detailSig = '';
       this.refresh();
     }
-    this.views.get(this.selected)?.node.scrollIntoView({ block: 'nearest', inline: 'center' });
+    this.views.get(this.selected)?.node.scrollIntoView({ block: 'center', inline: 'center' });
+    this.paintRails();
   }
 
   // ── zoom (D111) ──
@@ -1361,12 +1105,18 @@ export class ResearchScreen {
     return fitZoom(this.view.clientWidth || this.layout.w, this.view.clientHeight || this.layout.h, this.layout);
   }
 
+  /** The tree's own zoom (D144): every lane in the view's height, its names readable. */
+  private autoZoom(): number {
+    return openZoom(this.view.clientHeight || this.layout.h, this.layout);
+  }
+
   /**
    * Zoom to `z` (within the range), keeping the point under `at` (client coordinates; the view's
    * middle by default) where it was: the canvas is measured before and after, and the view scrolled
-   * by the difference — in the view's own units, whatever zoom the screens stand under (D96).
+   * by the difference — in the view's own units, whatever zoom the screens stand under (D96). A
+   * player's zoom is kept for the next opening (`save`).
    */
-  private setZoom(z: number, at?: { x: number; y: number }): void {
+  private setZoom(z: number, at?: { x: number; y: number }, save = true): void {
     const c = this.canvas;
     const z1 = Math.min(ZOOM_MAX, Math.max(this.minZoom(), z));
     if (!c || !this.root.isConnected) { this.zoom = z1; return; }
@@ -1382,10 +1132,11 @@ export class ResearchScreen {
       v.scrollLeft += (r1.left + fx * r1.width - ax) * u;
       v.scrollTop += (r1.top + fy * r1.height - ay) * u;
     }
-    this.paintPins();
-    if (changed) {
+    this.paintRails();
+    if (changed && save) {
+      this.chosenZoom = this.zoom;
       window.clearTimeout(this.zoomSave);
-      this.zoomSave = window.setTimeout(() => ZOOM_STORE.save({ version: 1, zoom: this.zoom }), 300);
+      this.zoomSave = window.setTimeout(() => ZOOM_STORE.save({ version: 2, zoom: this.chosenZoom }), 300);
     }
   }
 
@@ -1396,8 +1147,11 @@ export class ResearchScreen {
     const z = this.zoom, lv = zoomLevel(z);
     c.style.zoom = String(z);
     c.style.setProperty('--tz', String(z));
+    // Shorter than the view (the whole tree in it): the canvas in the view's middle, not at its top.
+    const free = this.root.isConnected ? this.view.clientHeight - Math.ceil(this.layout.h * z) : 0;
+    const off = free > 1 ? Math.floor(free / 2) : 0;
+    if (off !== this.offY) { this.offY = off; this.view.style.paddingTop = off ? `${off}px` : ''; }
     setAttr(c, 'data-zoom', lv === 'near' ? null : lv);
-    setAttr(this.pins, 'data-on', lv === 'near' ? null : lv);
     setText(this.zoomPct, t('tree.zoom.pct', { v: Math.round(z * 100) }));
     const min = this.root.isConnected ? this.minZoom() : ZOOM_FLOOR;
     setAttr(this.zoomOut, 'disabled', z <= min + 1e-3 ? '' : null);
@@ -1410,7 +1164,7 @@ export class ResearchScreen {
     this.setZoom(0);
     this.view.scrollLeft = (this.view.scrollWidth - this.view.clientWidth) / 2;
     this.view.scrollTop = (this.view.scrollHeight - this.view.clientHeight) / 2;
-    this.paintPins();
+    this.paintRails();
   }
 
   /** The zoom keys while the tree is open (D111; app/controls.ts): - and = (or +) a step, 0 the whole tree. */
@@ -1421,74 +1175,37 @@ export class ResearchScreen {
     return true;
   }
 
-  /** The pinned names (D111): one per tier band (D118: from Tier 2 with the Core's level, padlocked below it), one per plan path and per category (D128), in this language. */
-  private buildPins(): void {
-    const L = this.layout, loc = locale();
-    const pins: ResearchScreen['pinEls'] = [];
-    for (const col of L.tiers) {
-      const lvl = coreLevelFor(col.tier);
-      const pin = el('span.tr-pin', { 'data-kind': 'tier', 'data-tier': String(col.tier) }, col.tier > 1
-        ? [el('span.lettering', {}, t('tree.rs.tier', { n: col.tier })), el('span.tr-pindot', {}, '·'),
-          // The whole tree in view: under the tier's name, the level alone, so the pin fits its band.
-          el('span.tr-pinsub', {}, [mark('lock'), buildingIcon(this.atlas, 'hearth', 20, lvl),
-            el('span.tr-pinlong', {}, t('tree.heartLevel', { n: lvl })), el('span.tr-pinshort', {}, t('tree.rs.coreShort', { n: lvl }))])]
-        : [el('span.lettering', {}, t('tree.rs.tier', { n: col.tier }))]);
-      const h = this.tierHeads.get(col.tier);
-      if (h) h.pin = pin;
-      pins.push({ el: pin, kind: 'tier', x: col.x, y: col.y, w: col.w, h: col.h });
-    }
-    for (const lane of L.lanes) pins.push({ el: el('span.tr-pin', { 'data-kind': 'lane', 'data-lane': lane.id }, t(`tree.lane.${lane.id}` as MsgKey)), kind: 'lane', x: lane.x, y: lane.y, w: lane.w, h: lane.h });
-    // Each category's name (D128) at its block's top left, padlocked while a gate is unfinished.
-    for (const k of L.cats) {
-      const pin = el('span.tr-pin', { 'data-kind': 'cat', 'data-lane': k.theme, 'data-cat': k.id }, [mark('lock'), el('span', {}, categoryName(k.id)[loc])]);
-      pins.push({ el: pin, kind: 'cat', x: k.x, y: k.y, w: k.w, h: k.h });
-    }
-    this.pinEls = pins;
-    this.pins.replaceChildren(...pins.map((p) => p.el));
-  }
-
-  private schedulePins(): void {
-    if (this.pinFrame) return;
-    this.pinFrame = requestAnimationFrame(() => { this.pinFrame = 0; this.paintPins(); });
+  private scheduleRails(): void {
+    if (this.railFrame) return;
+    this.railFrame = requestAnimationFrame(() => { this.railFrame = 0; this.paintRails(); });
   }
 
   /**
-   * The pinned names where their band is, at the zoom and the scroll: a tier's along the view's top,
-   * centred on the part of its band in view (held there while it is); a plan path's along the left
-   * edge, at its band's middle, and a category's at its block's top left (D128), but for one that
-   * would overlap the one above (the thin bands at the whole tree's size); out of view, hidden. Only
-   * while the cards are small (`zoomLevel` mid or far).
+   * The rails where their stage and lane are, at the zoom and the scroll (D144): a stage's head over
+   * its column, as wide as it shows — its long form, a shorter one, its name alone as it narrows
+   * (`data-w`); a lane's name beside its band, its colour alone where the band is thin (`data-h`);
+   * the navigator's window over the part of the tree in view.
    */
-  private paintPins(): void {
-    if (zoomLevel(this.zoom) === 'near' || !this.root.isConnected) return;
-    const v = this.view, z = this.zoom, sl = v.scrollLeft, st = v.scrollTop, W = v.clientWidth, H = v.clientHeight;
-    const ox = v.offsetLeft + v.clientLeft, oy = v.offsetTop + v.clientTop;
-    const place = (el: HTMLElement, x: number, y: number, mid: boolean): void => {
-      el.hidden = false;
-      el.style.transform = `translate(${Math.round(ox + x)}px, ${Math.round(oy + y)}px)${mid ? ' translateY(-50%)' : ''}`;
-    };
-    const lastY = new Map<number, number>(); // per column of lanes: the plans' block, research's
-    let floor = 38; // the category pins stay under the tier pins (D128)
-    for (const p of [...this.pinEls].sort((a, b) => a.y - b.y || Number(b.kind === 'tier') - Number(a.kind === 'tier'))) {
-      p.el.hidden = false; // measured shown
-      const x0 = p.x * z - sl, x1 = (p.x + p.w) * z - sl, y0 = p.y * z - st, y1 = (p.y + p.h) * z - st;
-      if (p.kind === 'tier') {
-        const w = p.el.offsetWidth || 70, left = Math.max(x0, 0), right = Math.min(x1, W);
-        const x = Math.min(Math.max((left + right) / 2 - w / 2, left + 4), right - w - 4), y = Math.max(y0, 0) + 6;
-        if (right - left > w + 8 && y1 > 24 && y < H - 20) { place(p.el, x, y, false); floor = Math.max(floor, y + (p.el.offsetHeight || 24) + 4); }
-        else p.el.hidden = true;
-      } else if (p.kind === 'cat') {
-        // A category's name at its block's top left (D128), held under the tier pins while its block is
-        // in view; where the blocks are thin, one a band column at a time.
-        const x = Math.max(x0, 0) + 4, y = Math.max(y0 + 2, floor), h = p.el.offsetHeight || 18, prev = lastY.get(p.x) ?? -Infinity;
-        if (y < H - 12 && y1 > y + 6 && x < W - 40 && x1 > 40 && y - prev >= h) { place(p.el, x, y, false); lastY.set(p.x, y); }
-        else p.el.hidden = true;
-      } else {
-        const x = Math.max(x0, 0) + 6, y = (y0 + y1) / 2, h = p.el.offsetHeight || 20, prev = lastY.get(p.x) ?? -Infinity;
-        if (y > 10 && y < H - 10 && x < W - 40 && x1 > 0 && y - prev >= h) { place(p.el, x, y, true); lastY.set(p.x, y); }
-        else p.el.hidden = true;
-      }
+  private paintRails(): void {
+    if (!this.root.isConnected) return;
+    const v = this.view, z = this.zoom, sl = v.scrollLeft, st = v.scrollTop;
+    for (const r of this.railEls) {
+      const w = Math.round(r.w * z);
+      r.el.style.transform = `translateX(${Math.round(r.x * z - sl)}px)`;
+      r.el.style.width = `${w}px`;
+      const cls = w >= 330 ? 'l' : w >= 150 ? 'm' : w >= 70 ? 's' : 'xs';
+      if (r.el.dataset.w !== cls) r.el.dataset.w = cls;
     }
+    for (const r of this.laneEls) {
+      const h = Math.round(r.h * z);
+      r.el.style.transform = `translateY(${Math.round(this.offY + r.y * z - st)}px)`;
+      r.el.style.height = `${h}px`;
+      const cls = h >= 96 ? 'l' : h >= 40 ? 'm' : 's';
+      if (r.el.dataset.h !== cls) r.el.dataset.h = cls;
+    }
+    const W = this.layout.w;
+    this.navWin.style.left = `${Math.max(0, (sl / z / W) * 100)}%`;
+    this.navWin.style.width = `${Math.min(100, (v.clientWidth / z / W) * 100)}%`;
   }
 
   /** The plans a gate needs (D71: every other plan), and how many are taken. */
@@ -1690,16 +1407,17 @@ export class ResearchScreen {
     const sig = famSig(sim);
     const costsChanged = sig !== this.costSig;
     this.costSig = sig;
-    this.refreshCats(sim);
-    this.refreshPaths(sim);
+    this.refreshCells(sim);
     this.refreshTiers(sim);
     const queued = new Map<string, number>();
     if (sim.mods.flags.has('researchQueue')) for (const lab of labsOf(sim)) { const q = sim.labQueue.get(lab.id); if (q && !queued.has(q)) queued.set(q, lab.n); }
     const now = performance.now();
     if (this.just && now > this.just.until) this.just = null;
+    let ready = 0;
     for (const v of this.views.values()) {
       const id = v.spot.id;
       const st = this.stateOf(sim, id);
+      if (st === 'ready') ready++;
       setAttr(v.node, 'data-state', st);
       setAttr(v.node, 'data-on', id === this.selected ? '' : null);
       setAttr(v.node, 'data-just', this.just?.id === id ? '' : null);
@@ -1711,9 +1429,13 @@ export class ResearchScreen {
       } else if (v.spot.kind === 'research') {
         if (costsChanged) this.fillCosts(v, sim);
         const proj = sim.projects.find((p) => p.id === id);
+        // The tier's Core level not reached (D118): the badge shows the Core's look and level.
+        setAttr(v.node, 'data-core', st !== 'done' && !proj && !sim.tierCoreOpen(tierOf(id)) ? '' : null);
         // Its resources (D122): coral while the Core lacks one (paid once launched: none marked then).
         for (const c of v.chips) setAttr(c.node, 'data-poor', st !== 'done' && !proj && sim.stock[c.item]! < c.mu ? '' : null);
-        v.bar!.style.width = proj ? `${projectPermille(proj) / 10}%` : st === 'done' ? '100%' : '0%';
+        const pm = proj ? projectPermille(proj) : st === 'done' ? 1000 : 0;
+        v.bar!.style.width = `${pm / 10}%`;
+        setText(v.pct, proj ? `${Math.floor(pm / 10)}%` : '');
         setAttr(v.node, 'data-held', proj && projectTiming(sim, proj).held ? '' : null);
         const q = queued.get(id);
         setText(v.qtag!, q ? String(q) : '');
@@ -1721,16 +1443,26 @@ export class ResearchScreen {
         setAttr(v.qtag!, 'title', q ? t('tree.rs.queued.tip', { lab: t('tree.rs.lab', { n: q }) }) : null);
       }
     }
-    // Links: inked once their prerequisite is done, dashed while it opens the way, faint while locked.
+    setText(this.filterCount, String(ready));
+    setAttr(this.filterBtn, 'data-some', ready ? '' : null);
+    setAttr(this.filterBtn, 'title', tr('tree.filter.tip', { n: ready }));
+    // Links: inked once their target is done, the theme's colour where they open the way (their
+    // source done), faint while locked.
     const done = (id: string): boolean => id === ROOT || sim.done.has(id);
     for (const { link, path } of this.paths) {
-      const from = link.path ? pathPlans(link.path).every((id) => sim.done.has(id)) : done(link.from);
-      setAttr(path, 'data-state', done(link.to) ? 'done' : from ? 'open' : 'locked');
+      const from = done(link.from), to = link.kind === 'key' ? sim.tierCoreOpen(Number(link.to.slice(5)) as ResearchTier) : done(link.to);
+      setAttr(path, 'data-state', to ? 'done' : from ? 'open' : 'locked');
       setAttr(path, 'data-hot', link.to === this.selected || link.from === this.selected ? '' : null);
     }
     // The categories' gates (D128): inked once the gate is finished, dashed while it is not.
-    for (const { link, path } of this.gatePaths) setAttr(path, 'data-state', categoryDone(link.from, sim.done) ? 'done' : 'locked');
+    for (const { link, path, head } of this.gatePaths) {
+      const st = categoryDone(link.from, sim.done) ? 'done' : 'locked';
+      setAttr(path, 'data-state', st);
+      setAttr(head, 'data-state', st);
+    }
     this.paintChain();
+    this.paintSteps(sim);
+    this.refreshNav(sim);
     this.renderDetail(sim, L);
     this.launch.refresh();
   }
@@ -1830,7 +1562,7 @@ export class ResearchScreen {
           const id = sim.labQueue.get(l.id)!;
           return el('span.rs-qchip', { 'data-lab': String(l.id), title: t('tree.rs.queued.tip', { lab: t('tree.rs.lab', { n: l.n }) }) }, [
             el('b', {}, t('tree.rs.lab', { n: l.n })), '▸',
-            el('button.rs-qname', { type: 'button', onclick: () => this.select(id) }, nodeName(id)[L]),
+            el('button.rs-qname', { type: 'button', onclick: () => this.goTo(id) }, nodeName(id)[L]),
             el('button.rs-qx', { type: 'button', 'data-queue-clear': String(l.id), title: t('tree.rs.queue.clear'), onclick: () => this.queue(l.id, null) }, '✕'),
           ]);
         }),
@@ -1848,50 +1580,42 @@ export class ResearchScreen {
     this.reserveEl.replaceChildren(...(keep.length ? [`${t('tree.reserve')} `, ...this.chips(keep.map((c) => ({ item: c.item, mu: Math.ceil(c.mu / 1000) * 1000 })), 14)] : []));
   }
 
-  /** The plan paths' labels (D41): « n/of » unlocked, full once the whole path is; the tooltip says what the path is for. */
-  private refreshPaths(sim: Sim): void {
-    if (this.gateHead) {
-      const c = this.gateCount(sim, this.gateHead.id);
-      setText(this.gateHead.count, `${c.n}/${c.of}`);
-      setAttr(this.gateHead.cap, 'data-full', c.n === c.of ? '' : null);
-      setAttr(this.gateHead.cap, 'title', t('tree.gate.needs', c));
-    }
-    for (const [lane, h] of this.pathHeads) {
-      const ids = pathPlans(lane);
-      const n = ids.filter((id) => sim.done.has(id)).length;
-      setText(h.count, `${n}/${ids.length}`);
-      setAttr(h.label, 'data-full', n === ids.length ? '' : null);
-      setAttr(h.label, 'title', t('tree.path.tip', { path: t(`tree.lane.${lane}` as MsgKey), theme: t(`tree.path.${lane}` as MsgKey), n, of: ids.length }));
-    }
-  }
-
   /**
-   * The categories (D128): how many of each one's nodes the claim owns (« 2/4 », ✓ once finished);
-   * each gate's pill with its own count, ✓ once finished; a category whose gates are not all
-   * finished padlocked, its block hatched; the selected node's category lit.
+   * The cells (D41, D128, D144): how many of each one's nodes the claim owns — the bar and « 2/4 »,
+   * ✓ once finished; a category whose gates are not all finished padlocked, its box hatched; the
+   * selected node's cell lit. The lab's pillar: how many plans are taken (D71).
    */
-  private refreshCats(sim: Sim): void {
-    const L = locale(), sel = researchNode(this.selected)?.cat ?? null;
-    const of = (c: string): { n: number; of: number } => { const ids = categoryNodes(c); return { n: ids.filter((id) => sim.done.has(id)).length, of: ids.length }; };
-    for (const [c, v] of this.cats) {
-      const k: CategoryDef = CATEGORIES[c as keyof typeof CATEGORIES];
-      const own = of(c);
-      setText(v.count, `${own.n}/${own.of}`);
-      setAttr(v.head, 'data-full', own.n === own.of ? '' : null);
-      let locked = false;
-      for (const g of v.gates) {
-        const gc = of(g.id), met = gc.n === gc.of;
-        if (!met) locked = true;
-        setText(g.count, met ? '' : `${gc.n}/${gc.of}`);
-        setAttr(g.pill, 'data-met', met ? '' : null);
-        setAttr(g.pill, 'title', `${this.opensText(c)} — ${categoryName(g.id)[L]} ${gc.n}/${gc.of}`);
-      }
-      setAttr(v.head, 'data-locked', locked ? '' : null);
-      setAttr(v.box, 'data-locked', locked ? '' : null);
+  private refreshCells(sim: Sim): void {
+    const L = locale(), sel = researchNode(this.selected)?.cat ?? planDef(this.selected)?.lane ?? null;
+    for (const [c, v] of this.cells) {
+      const ids = v.cell.kind === 'cat' ? categoryNodes(c) : pathPlans(c as PlanLane);
+      const n = ids.filter((id) => sim.done.has(id)).length;
+      setText(v.count, `${n}/${ids.length}`);
+      v.fill.style.width = `${ids.length ? (n * 100) / ids.length : 100}%`;
+      setAttr(v.head, 'data-full', n === ids.length ? '' : null);
       setAttr(v.head, 'data-on', sel === c ? '' : null);
-      setAttr(v.head, 'title', t('tree.cat.tip', { name: k.name[L], n: own.n, of: own.of, desc: k.desc[L] }));
+      if (v.cell.kind === 'cat') {
+        const k: CategoryDef = CATEGORIES[c as keyof typeof CATEGORIES];
+        const locked = k.gates.some((g) => !categoryDone(g, sim.done));
+        setAttr(v.head, 'data-locked', locked ? '' : null);
+        setAttr(v.box, 'data-locked', locked ? '' : null);
+        setAttr(v.head, 'title', `${t('tree.cat.tip', { name: k.name[L], n, of: ids.length, desc: k.desc[L] })}${k.gates.length ? ` — ${this.opensText(c)}` : ''}`);
+      } else {
+        const lane = c as PlanLane;
+        setAttr(v.head, 'title', t('tree.path.tip', { path: t(`tree.lane.${lane}` as MsgKey), theme: t(`tree.path.${lane}` as MsgKey), n, of: ids.length }));
+      }
     }
-    for (const p of this.pinEls) if (p.kind === 'cat') setAttr(p.el, 'data-locked', unmetGates(categoryNodes(p.el.dataset.cat ?? '')[0] ?? '', sim.done).length ? '' : null);
+    if (this.gateHead) {
+      const c = this.gateCount(sim, LAB_PLAN);
+      setText(this.gateHead.count, t('tree.gate.all', c));
+      this.gateHead.fill.style.width = `${c.of ? (c.n * 100) / c.of : 100}%`;
+    }
+    if (this.plansHead) {
+      const ids = PLAN_IDS as readonly string[];
+      const n = ids.filter((id) => sim.done.has(id)).length;
+      setText(this.plansHead.count, `${n}/${ids.length}`);
+      this.plansHead.fill.style.width = `${(n * 100) / ids.length}%`;
+    }
   }
 
   /** « Ouvre quand la catégorie Commerce (Tier 1) est terminée » (D128): what a category waits for, in a sentence. */
@@ -1906,30 +1630,49 @@ export class ResearchScreen {
   }
 
   /**
-   * The tier bands: open once their gate is done, the Core at their level (D118) and, for Tier 2, two
-   * expertises chosen (D93); a band whose Core level is not reached padlocked — its chip, its stripe
-   * hatched, its pinned name, the rule before Tier 2 —; the selected node's tier lit, and the tier the
-   * selected node opens.
+   * The tiers: open once their gate is done, the Core at their level (D118) and, for Tier 2, two
+   * expertises chosen (D93); a tier whose Core level is not reached padlocked — its head's chip, its
+   * column hatched, its wall and the wall's lock —; its bar and count; the selected node's tier lit.
    */
   private refreshTiers(sim: Sim): void {
     const sel = researchNode(this.selected)?.tier ?? null;
-    for (const [tier, h] of this.tierHeads) {
+    for (const [tier, h] of this.tiers) {
       const core = sim.tierCoreOpen(tier);
-      const open = sim.done.has(gateOf(tier)) && core && (tier !== 2 || tierTwoOpen(sim));
+      const keyDone = sim.done.has(gateOf(tier));
+      const open = keyDone && core && (tier !== 2 || tierTwoOpen(sim));
       setAttr(h.head, 'data-open', open ? '' : null);
       setAttr(h.head, 'data-locked', core ? null : '');
-      setAttr(h.col, 'data-locked', core ? null : '');
-      if (h.pin) setAttr(h.pin, 'data-locked', core ? null : '');
+      setAttr(h.head, 'data-keyed', keyDone ? '' : null);
+      setAttr(h.zone, 'data-locked', core ? null : '');
+      if (h.wall) setAttr(h.wall, 'data-locked', core ? null : '');
+      if (h.lock) {
+        setAttr(h.lock, 'data-open', core ? '' : null);
+        setAttr(h.lock, 'title', core ? t('tree.rs.core.open', { n: sim.hearthLevel }) : t('tree.rs.core.tip', { lv: coreLevelFor(tier), n: sim.hearthLevel }));
+      }
       setAttr(h.head, 'data-on', sel === tier ? '' : null);
-      setAttr(h.head, 'data-opens', this.selected === gateOf(tier) ? '' : null);
-      if (h.core) setAttr(h.core, 'title', core
-        ? t('tree.rs.core.open', { n: sim.hearthLevel })
-        : t('tree.rs.core.tip', { lv: coreLevelFor(tier), n: sim.hearthLevel }));
-      if (tier === 2 && this.tierRule) setAttr(this.tierRule, 'data-locked', core ? null : '');
+      if (h.core) setAttr(h.core, 'title', core ? t('tree.rs.core.open', { n: sim.hearthLevel }) : t('tree.rs.core.tip', { lv: coreLevelFor(tier), n: sim.hearthLevel }));
+      const ids = RESEARCH_IDS.filter((id) => tierOf(id) === tier);
+      const n = ids.filter((id) => sim.done.has(id)).length;
+      setText(h.count, `${n}/${ids.length}`);
+      h.fill.style.width = `${(n * 100) / ids.length}%`;
     }
   }
 
-  /** The detail pane: what the selected node is, unlocks and costs, what it needs, its action. */
+  /** The navigator (D144): each stage's bar, its padlock while the Core is below its level, a dot while something there can start. */
+  private refreshNav(sim: Sim): void {
+    for (const s of this.navSegs) {
+      const tier = s.id === 'plans' ? 0 : Number(s.id.slice(1)) as ResearchTier;
+      const ids: readonly string[] = tier ? RESEARCH_IDS.filter((id) => tierOf(id) === tier) : PLAN_IDS;
+      const n = ids.filter((id) => sim.done.has(id)).length;
+      s.fill.style.width = `${(n * 100) / ids.length}%`;
+      setText(s.count, `${n}/${ids.length}`);
+      setAttr(s.seg, 'data-locked', tier && !sim.tierCoreOpen(tier) ? '' : null);
+      setAttr(s.seg, 'data-full', n === ids.length ? '' : null);
+      setAttr(s.seg, 'data-ready', ids.some((id) => this.views.get(id)?.node.dataset.state === 'ready') ? '' : null);
+    }
+  }
+
+  /** The detail pane: what the selected node is, unlocks and costs, the path to it, its action. */
   private renderDetail(sim: Sim, L: Loc): void {
     const id = this.selected || ROOT;
     const plan = isPlan(id), res = isResearch(id);
@@ -1940,7 +1683,7 @@ export class ResearchScreen {
     const qOn = res && sim.mods.flags.has('researchQueue');
     const labs = qOn ? labsOf(sim).map((l) => l.id).join(',') : '';
     const core = res ? sim.tierCoreOpen(tierOf(id)) : true;
-    const sig = `${id}:${this.costSig}:${proj ? 1 : 0}:${st}:${block}:${core ? 1 : 0}:${L}:${this.shortList(short)}:${qOn ? 1 : 0}:${labs}`;
+    const sig = `${id}:${this.costSig}:${proj ? 1 : 0}:${st}:${block}:${core ? 1 : 0}:${L}:${this.shortList(short)}:${qOn ? 1 : 0}:${labs}:${sim.done.size}:${sim.hearthLevel}:${tierTwoOpen(sim) ? 1 : 0}`;
     if (sig !== this.detailSig) {
       this.detailSig = sig;
       this.detailLive = [];
@@ -1954,7 +1697,7 @@ export class ResearchScreen {
   private planDetail(sim: Sim, id: string, L: Loc, st: string, short: ReadonlyArray<{ item: number; mu: number }>): Array<HTMLElement | null> {
     const plan = isPlan(id);
     const name = id === ROOT ? t('tree.root') : nodeName(id)[L];
-    const kind = id === ROOT ? t('tree.start') : `${t('tree.kind.plan')} · ${t(`tree.lane.${laneOf(id)}` as MsgKey)}`;
+    const kind = id === ROOT ? t('tree.start') : isGate(id) ? t('tree.kind.plan') : `${t('tree.kind.plan')} · ${t(`tree.lane.${laneOf(id)}` as MsgKey)}`;
     // What it says: a plan's own line (or the building's it unlocks), the Heart's kit.
     const desc = id === ROOT ? t('tree.root.desc')
       : planDef(id)!.desc?.[L] ?? (buildingsUnlockedBy(id)[0] ? buildingDef(buildingIdx(buildingsUnlockedBy(id)[0]!)).desc[L] : '');
@@ -1972,7 +1715,7 @@ export class ResearchScreen {
       el('h4.lettering', {}, t('research.cost')),
       this.costList(p.cost.map(([it, n]) => ({ item: itemIdx(it), mu: toMu(n) })), st !== 'done'),
     );
-    kids.push(isGate(id) ? this.gatePart(id) : this.prereqList(sim, id, L));
+    kids.push(isGate(id) ? this.gatePart(id) : this.pathPart(sim, id, L));
     kids.push(el('footer.rs-actions', {}, [
       st === 'done' ? el('span.rs-tag', {}, t('tree.unlocked'))
         : el('button.btn.primary', { 'data-unlock-detail': id, disabled: st === 'ready' ? null : '', onclick: () => this.unlock(id) }, t('tree.unlock')),
@@ -1985,7 +1728,7 @@ export class ResearchScreen {
   /**
    * The one line under a node's action, only for what the pane does not already show (D111; owner,
    * 2026-10-17: « no need to say it twice, the prerequisites line is enough »): a prerequisite missing
-   * is its ✗ in the list, a material short its coral line in the cost, the gate's plans its bars —
+   * is its step in the path, a material short its coral line in the cost, the gate's plans its bars —
    * no line for them. What is left is said with its icon, tersely.
    */
   private whyLine(key: string, icon: Element | null, text: string): HTMLElement {
@@ -2003,7 +1746,7 @@ export class ResearchScreen {
    * Research: the Core below the tier's level (D118: its look at that level — said even when a
    * prerequisite is missing too, as nothing else in the pane says it), two expertises to choose, the
    * slots full, no idle lab, its resources held back by CrierBelt's restart reserve (D122, as a
-   * plan's), the purse in the red. A missing prerequisite alone: none, its ✗ says it; a resource
+   * plan's), the purse in the red. A missing prerequisite alone: none, its step says it; a resource
    * short: none, its coral line in the cost says it (D111).
    */
   private researchWhy(sim: Sim, id: string, block: string): HTMLElement | null {
@@ -2013,7 +1756,7 @@ export class ResearchScreen {
       return this.whyLine('core', buildingIcon(this.atlas, 'hearth', 18, lvl), t('tree.rs.coreNeed', { n: lvl }));
     }
     if (block === 'prereq' || block === 'unaffordable') return null;
-    // Its category waits for those of the tier before it builds on (D128): their pills say how far each is.
+    // Its category waits for those of the tier before it builds on (D128): the path says how far each is.
     if (block === 'gate') return this.whyLine('gate', mark('lock'), this.gateText(sim, id));
     if (block === 'reserve') return this.whyLine('reserve', inkGlyph('crier'), t('tree.reserved', { list: this.shortList(this.resReserve(sim, id)) }));
     const icon = block === 'expertise' ? archiveGlyph()
@@ -2044,38 +1787,46 @@ export class ResearchScreen {
   }
 
   /**
-   * What a node's category waits for (D128): each gate category of the tier before, its name in its
-   * theme's colour, a bar and « n/of », ✓ once finished; a line on what finishing them opens.
+   * The path to a node (D144; Civilization VI's path to a goal): every node it still waits for, in
+   * the order the tree reads them — numbered as on the cards while the node is focused —, each a
+   * chip (its icon, its name, its state's colour) that selects it; and in their places the Core's
+   * levels its tier and those before wait for (D118: after the node that makes each possible) and
+   * Tier 2's two expertises (D93). The first steps only, and how many more. Nothing when nothing is
+   * missing.
    */
-  private catGatePart(id: string, L: Loc): HTMLElement | null {
-    const r = researchNode(id);
-    const k = r ? categoryDef(r.cat) : undefined;
-    if (!r || !k || !k.gates.length) return null;
-    const rows = k.gates.map((g) => {
-      const ids = categoryNodes(g);
-      const fill = el('span'), txt = el('small');
-      const li = el('li.rs-gpath', { 'data-lane': categoryDef(g)!.theme, 'data-gate-cat': g }, [el('span.rs-gname', {}, categoryName(g)[L]), el('span.rs-pbar', {}, fill), txt]);
-      this.detailLive.push((sim) => {
-        const n = ids.filter((p) => sim.done.has(p)).length;
-        fill.style.width = `${(n * 100) / ids.length}%`;
-        setText(txt, n === ids.length ? '✓' : `${n}/${ids.length}`);
-        setAttr(li, 'data-full', n === ids.length ? '' : null);
-      });
-      return li;
-    });
-    return el('section.rs-gate.rs-catgates', {}, [
-      el('h4.lettering', {}, t('tree.cat.gates', { name: k.name[L] })), el('ul.rs-gpaths', {}, rows),
-      el('small.rs-qnote', {}, this.opensText(r.cat)),
-    ]);
-  }
-
-  /** The prerequisites by name, ✓ / ✗ each (`ownPrereq`: the category's gates have their own part, D128). */
-  private prereqList(sim: Sim, id: string, L: Loc): HTMLElement | null {
-    const pre = id === ROOT ? [] : ownPrereq(id);
-    if (!pre.length) return null;
-    return el('div', {}, [
-      el('h4.lettering', {}, t('research.prereq')),
-      el('ul.rs-pre', {}, pre.map((q) => el('li', { 'data-ok': sim.done.has(q) ? '' : null }, `${sim.done.has(q) ? '✓' : '✗'} ${nodeName(q)[L]}`))),
+  private pathPart(sim: Sim, id: string, L: Loc): HTMLElement | null {
+    if (sim.done.has(id) || id === ROOT) return null;
+    const steps = pathTo(id, sim.done);
+    const tier = researchNode(id)?.tier ?? 0;
+    type Step = { k: 'node'; id: string; n: number } | { k: 'core'; lvl: number } | { k: 'exp' };
+    const out: Step[] = [];
+    steps.forEach((s, i) => out.push({ k: 'node', id: s, n: i + 1 }));
+    // The Core's levels (D118) and Tier 2's expertises (D93), after what makes each possible.
+    for (const t2 of TIERS) {
+      if (t2 < 2 || t2 > tier) continue;
+      const extra: Step[] = [];
+      if (!sim.tierCoreOpen(t2)) extra.push({ k: 'core', lvl: coreLevelFor(t2) });
+      if (t2 === 2 && !tierTwoOpen(sim)) extra.push({ k: 'exp' });
+      if (!extra.length) continue;
+      const after = out.findIndex((s) => s.k === 'node' && s.id === gateOf(t2));
+      // The key itself done: the level comes before the first step of that tier (or last).
+      const at = after >= 0 ? after + 1 : (() => { const k = out.findIndex((s) => s.k === 'node' && (researchNode(s.id)?.tier ?? 0) >= t2); return k >= 0 ? k : out.length; })();
+      out.splice(at, 0, ...extra);
+    }
+    if (!out.length) return null;
+    const MAX = 14;
+    const chip = (s: Step): HTMLElement => {
+      if (s.k === 'core') return el('span.rs-step', { 'data-k': 'core', title: t('tree.rs.coreNeed', { n: s.lvl }) }, [buildingIcon(this.atlas, 'hearth', 18, s.lvl), el('span', {}, t('tree.heartLevel', { n: s.lvl }))]);
+      if (s.k === 'exp') return el('span.rs-step', { 'data-k': 'exp', title: t('research.block.expertise') }, [archiveGlyph(), el('span', {}, t('tree.path.exp'))]);
+      const ic = iconsOf(s.id)[0];
+      return el('button.rs-step', {
+        type: 'button', 'data-step-id': s.id, 'data-state': this.stateOf(sim, s.id), 'data-lane': laneOf(s.id) || null,
+        title: `${nodeName(s.id)[L]} — ${this.why(sim, s.id)}`, onclick: () => this.goTo(s.id),
+      }, [el('b.rs-stepn', {}, String(s.n)), ic ? this.icon(ic, 18) : null, el('span', {}, nodeName(s.id)[L])]);
+    };
+    return el('section.rs-path', {}, [
+      el('h4.lettering', {}, tr('tree.path.head', { n: steps.length })),
+      el('div.rs-steps', {}, [...out.slice(0, MAX).map(chip), out.length > MAX ? el('small.rs-more', {}, tr('tree.path.more', { n: out.length - MAX })) : null]),
     ]);
   }
 
@@ -2116,13 +1867,12 @@ export class ResearchScreen {
       rows.length ? el('h4.lettering', {}, t('tree.unlocks')) : null,
       rows.length ? el('ul.tr-unlocks', {}, rows) : null,
       ...this.costPart(sim, id, st !== 'done' && !proj),
-      this.prereqList(sim, id, L),
-      this.catGatePart(id, L),
+      st !== 'done' && !proj ? this.pathPart(sim, id, L) : null,
       proj ? this.progressPart(sim, proj) : null,
       el('footer.rs-actions', {}, [
         st === 'done' ? el('span.rs-tag', {}, t('research.done'))
           : proj ? el('button.btn', { type: 'button', onclick: () => this.cancel(id) }, t('research.cancel'))
-            : el('button.btn.primary', { type: 'button', disabled: block ? '' : null, onclick: () => this.start(id) }, t('research.start')),
+            : el('button.btn.primary', { type: 'button', 'data-start': id, disabled: block ? '' : null, onclick: () => this.start(id) }, t('research.start')),
         st !== 'done' && !proj && block ? this.researchWhy(sim, id, block) : null,
       ]),
     ];

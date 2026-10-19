@@ -63,8 +63,10 @@ import { neighboursGiveWay } from './systems/land';
  * the Production path (D129): a claim holding the research lab's plan holds the bench's too; the
  * workshop's plan, held, is the node now; a second price floor (`costFloorD129`, optional) for the
  * buildings whose price D129 changed.
+ * 22: no coal generator (D143): its plan, held, dropped and refunded to the Heart; the generators
+ * themselves taken down by the remap (refunded, their coal to the Heart, their wires dropped).
  */
-export const SAVE_VERSION = 21;
+export const SAVE_VERSION = 22;
 
 export interface SaveData {
   v: number;

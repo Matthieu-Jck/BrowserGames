@@ -28,7 +28,7 @@ Two rules still shape it (owner, 2026-10-12): **the Heart only takes in** (D34) 
 | — | `claim` · Ta concession | guided | — | the claim is named (`name` command) | — (its entry in the register) |
 | 1 | `first_strike` · Premier coup de pioche | guided: 4 steps | the construction bar, power, the first stocks | a drill built; 10 ore in the Core | 20 iron plates |
 | 2 | `bloom_kiln` · La fonderie | guided: 11 steps, 7 sentences to read | the tree (its chip, T), the clock, the Production and Électricité views; plan Fonderie | iron ore and coal reach a smelter by lines (`feeds`); 10 plates made (`ever`) | 30 iron plates |
-| 3 | `first_wind` · Tenir la nuit | goal | plans Éolienne, Générateur à charbon | the Core's grid would hold 80 % of its demand without the sun (`night`) | a coal generator kit (its cost) |
+| 3 | `first_wind` · Tenir la nuit | goal | plan Éolienne | the Core's grid would hold 80 % of its demand without the sun (`night`) | a wind turbine kit (its cost; the coal generator's until D143) |
 | 4 | `glassworks` · La verrerie | goal | the Logistique view; plans Collecteur de sable, Routeur, Jonction | 10 glass made (`ever`); glass reaches the Core | 20 plates, 20 glass |
 | 5 | `steam_power` · La vapeur (D114) | goal | plan Vapeur | water reaches a steam boiler from a pump (`feeds`); coal reaches it (`feeds`); the boiler on a grid (`linked`) | 30 plates, 10 glass |
 | 6 | `crier_trade` · La Criée | goal | ocelles, the Crier; plans Télémétrie, Comptoir, Tréfileuse | 5 glass sold (`ever`); 10 copper ore bought and delivered (`import`, `ever`); the bought ore reaches a wire mill (`feeds` `from` the trade post) | 150 ◉, 40 copper wire |
@@ -63,13 +63,13 @@ The second pass (D101, owner's notes of the same night) took out every wait that
 
 **The night** (owner, 2026-10-16: « something should tell the user that the core has solar panels that will stop producing electricity at night »):
 
-- The objective `night` reads `nightCover` ([sim/readouts/night.ts](../src/sim/readouts/night.ts)). That is the Core's grid's producers in this epoch's weather with the sun at nothing, its fuelled generators, and what its accumulators hold spread over a night, against what the grid asks for now. It reads the same at any hour, so the player prepares by day, and the log shows « 54 % / 80 % ». Its hints are the turbines, at the Crown's windiest spots (D95), two and then two more while the night does not hold (`unless`).
+- The objective `night` reads `nightCover` ([sim/readouts/night.ts](../src/sim/readouts/night.ts)). That is the Core's grid's producers in this epoch's weather with the sun at nothing, its fuelled generators, and what its accumulators hold spread over a night, against what the grid asks for now. It reads the same at any hour, so the player prepares by day, and the log shows « 54 % / 80 % ». Its hints are the turbines, at the Crown's windiest spots (D95), two and then two more while the night does not hold (`unless`). Since D143 the wind alone answers it (the coal generator left the game): one thing to learn in the first hour, the turbine the night does not stop; its brief says a steam boiler will hold the night too, later, with coal and water — « La vapeur », two quests on, with its pump and conduit. Solar with storage was set aside: the panel is a Tier 1 research at the lab, the accumulators Tier 2's, neither to hand in the first hour.
 - The night notice ([ui/night-notice.ts](../src/ui/night-notice.ts)) comes once per base, about one game hour (1.5 game minutes) before a sunset, if two things hold: the sun gives at least 15 % of the Core's grid, and `nightCover` is under 80 %.
-  - It shows the sun going down behind the Crown, a turbine and a coal generator.
+  - It shows the sun going down behind the Crown, then a turbine (a coal generator beside it until D143).
   - It shows two figures, « Le soleil : 30 % de ton énergie » and « La nuit : 77 % de ta demande ».
-  - Its one sentence: « Le panneau du Cœur s’éteint au soir ; son noyau donne jour et nuit, mais tes machines demandent déjà plus. Ajoute des éoliennes ou un générateur à charbon avant le soir. »
+  - Its one sentence: « Le panneau du Cœur s’éteint au soir ; son noyau donne jour et nuit, mais tes machines demandent déjà plus. Ajoute des éoliennes avant le soir : le vent, lui, ne tombe pas la nuit. »
   - Its buttons: « Vue Électricité (P) » (shown once the view is offered) and « Compris ».
-  - It goes by itself at nightfall. The brief's « accumulateurs » became « un générateur à charbon »: accumulators are a research of Tier 2 (tr3), so they are not to hand yet.
+  - It goes by itself at nightfall. The brief's « accumulateurs » became « un générateur à charbon » (accumulators are a research of Tier 2, tr3, not to hand yet), and that went with the generator (D143): the turbine is the answer at hand.
 - The Core gives most of its power day and night (D101; owner: « the solar panels from the core should do a less important part of its electricity production »): its isotope core, `BAL.hearthCoreKw` (210 kW at level 1, then 300, 420, 560), about 70 % of what it gives at noon; its panel the rest in full sun (`BAL.hearthSolarKw`: 90, 130, 180, 240). So « Tenir la nuit » is about the player's own machines: two drills hold the night on the core alone, and the three drills of « La fonderie » (270 kW) outgrow it. That is why the clock and the Électricité view come with that quest.
 
 **Optional objectives** (`SIDE_GOALS`): what the player can discover alone. Each is a tick in the log's « Objectifs libres » list, with no reward and no arrow, shown from its quest on:
@@ -229,7 +229,7 @@ The HUD's rates (what comes into the Heart each minute, D79) are no tutorial rev
 |---|---|
 | 1 first_strike | the construction bar; power; plates, glass, copper wire, iron ore |
 | 2 bloom_kiln | the tech tree (its HUD chip, T); the clock (day / night, temperature); the Production and Électricité views; plan Fonderie |
-| 3 first_wind | plans Éolienne, Générateur à charbon |
+| 3 first_wind | plan Éolienne |
 | 4 glassworks | the Logistique view; plans Collecteur de sable, Routeur, Jonction |
 | 5 steam_power | plan Vapeur |
 | 6 crier_trade | ocelles; the Crier; copper ore; plans Télémétrie, Comptoir, Tréfileuse |

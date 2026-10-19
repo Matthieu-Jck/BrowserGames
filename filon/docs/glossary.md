@@ -101,10 +101,9 @@ The story behind the names is in [lore.md](lore.md) (D29).
 | fil · relier | wire · link | `sim.links` (`PowerLinks`), `link` / `unlink` commands | A power wire: an explicit, saved pair of buildings, one end a pillar or the Cœur, the other a pillar or anything that makes, uses or stores power (D25). Drawn hanging in the air. The « Relier » / Link tool (L) strings and cuts them. |
 | pilier | pillar | content `pole` (`mast`, `pylon`, and the Cœur) | A link point: a building that carries wires — its `range` (how far, edge to edge), `slots` (how many) and `climb` (how many terraces up, down and over, D78). |
 | réseau | grid | `Net` | The buildings joined by wires: one satisfaction for all; « hors réseau » = on no wire. |
-| Générateur à charbon | Coal Generator | `brazier` [generator] | +300 kW, burning 10 coal/min. |
-| Chaudière à vapeur | Steam Boiler | `steam_boiler` [generator] | +600 kW, burning 8 coal and drinking 30 water a minute at full output (D114): two and a half times the coal generator's power per coal. Its plan « Vapeur » / Steam Power (`steam`) brings the water pump and the conduit too. |
-| Éolienne | Wind Turbine | `wind_flower` [wind] | Up to 130 kW on its curve at the local wind: nothing below ×0.4, full from ×1.4, stopped from ×3.6 (D95, D132); six tiles at least from another turbine, middle to middle (`BAL.wind.spacing`, D132). |
-| Panneau solaire | Solar Panel | `sun_bulb` [solar] | +150 kW in full sun. |
+| Chaudière à vapeur | Steam Boiler | `steam_boiler` [generator] | +700 kW, burning 8 coal and drinking 30 water a minute at full output (D114, D143): the one plant that burns coal (the coal generator, `brazier`, was retired by D143). Its plan « Vapeur » / Steam Power (`steam`) brings the water pump and the conduit too. |
+| Éolienne | Wind Turbine | `wind_flower` [wind] | Up to 100 kW on its curve at the local wind: nothing below ×0.4, full from ×1.4, stopped from ×3.6 (D95, D143); six tiles at least from another turbine, middle to middle (`BAL.wind.spacing`, D132). |
+| Panneau solaire | Solar Panel | `sun_bulb` [solar] | +200 kW in full sun (D143). |
 | Accumulateur | Accumulator | `accumulator` [accumulator] | Stores 1 200 kW·min, delivers 300 kW. |
 | Centrale géothermique | Geothermal Plant | `fumarole_tap` [geothermal] | +1.5 MW on a vent. |
 | Cœur-Soleil | Sunheart | `sunheart` [generator] | +20 MW; burns a resonator every 30 min. |
@@ -270,7 +269,7 @@ The story behind the names is in [lore.md](lore.md) (D29).
   - `outpost` was the Waystation (retired, D60), `skydock` the Skydock and `big_dock` the Great Skydock (retired with the drifters, [D108](decisions.md));
   - `observatory` is the Research Lab (kind `lab`), `hearth` the Core (« le Cœur »), `silo` kind `storage`, the ribbons kind `belt`, `skybridge` kind `bridge`;
   - `accumulator` is the Accumulator;
-  - `brazier` and `sunheart` have kind `generator`.
+  - `steam_boiler`, `cell_generator` and `sunheart` have kind `generator`; `brazier` was the Coal Generator (retired, [D143](decisions.md)).
 - **plan**: the plan view, or the design plan document in `~/.claude/plans/`.
 
 ## Trade (M6)

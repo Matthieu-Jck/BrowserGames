@@ -1,8 +1,11 @@
-// base20k.ts — a seeded large benchmark colony (~20k entities): a lattice of cells, each a
+// base20k.ts — a seeded large benchmark colony (~25k entities): a lattice of cells, each a
 // copper drill → ribbon → wire mill → ribbon → silo, with a pole wired (D25) to the
-// cell's drill, mill and two wind turbines — one grid per cell. Built by direct insertion (no
+// cell's drill, mill and three wind turbines — one grid per cell. Built by direct insertion (no
 // land/cost/range checks, wires included; every plan learnt; the land it covers granted) to
-// measure the engine, not the rules.
+// measure the engine, not the rules. Three turbines since D143 (a turbine 100 kW, 130 before): two
+// rated 200 kW against the cell's 150 kW browned it out far more often in calms, which turned the
+// filling's catch-up from exact to averaged and took it from 11.5 to 19.5 s; three keep the cell's
+// wind about where two at 130 kW had it (300 kW rated, 260 before).
 import { buildingIdx, itemIdx, recipeIdx } from '@/content/registry';
 import { FlatSource, tileIndex } from '../world/grid';
 import { Sim } from '../state';
@@ -38,7 +41,8 @@ export function buildBench(cellsPerSide = 41): Sim {
       const mast = put('mast', x + 3, y + 2, 0);
       const windA = put('wind_flower', x, y + 4, 0);
       const windB = put('wind_flower', x + 2, y + 4, 0);
-      for (const id of [drill, mill, windA, windB]) sim.links.add(mast, id); // each within 1 tile of the mast
+      const windC = put('wind_flower', x + 4, y + 4, 0); // D143: a third, the turbine at 100 kW
+      for (const id of [drill, mill, windA, windB, windC]) sim.links.add(mast, id); // each within 2 tiles of the mast
       for (let i = 0; i < 6; i++) put('ribbon', x + i, y + 6, 1);       // idle ribbons (background load)
     }
   }

@@ -152,17 +152,17 @@ describe('the wind (D95): on the real maps', () => {
     return s / n;
   };
 
-  it.each(Object.keys(MAPS).map(Number))('map %i: the Crown\'s windiest spot gives near its rating yet under a coal generator, the cirque\'s floor clearly less than the old cirque', (mapV) => {
+  it.each(Object.keys(MAPS).map(Number))('map %i: the Crown\'s windiest spot gives near its rating yet under half a steam boiler, the cirque\'s floor clearly less than the old cirque', (mapV) => {
     const src = new MapGen(WORLD_SEED, 1, mapV);
     const sim = new Sim({ worldSeed: WORLD_SEED, playerSeed: 1, source: src, foundingEpoch: WORLD_EPOCH0 + 24 });
     learnPlans(sim);
     const R = (src.crownOuter ?? CIRQUE.crownOuter) + 1;
     const best = windiest(sim, 'wind_flower', CENTER, CENTER, R, 1)[0]!;
-    // The best spot runs near the turbine's rating over a week, and still under a coal generator's
-    // 300 kW (D116: the wind is the free power, not the strong one). The old model gave 120 kW × 0.25
-    // down in the cirque.
+    // The best spot runs near the turbine's rating over a week, and still under half a steam
+    // boiler (D116: the wind is the free power, not the strong one; under a coal generator's 300 kW
+    // until D143 retired it). The old model gave 120 kW × 0.25 down in the cirque.
     expect(weekKw(best[2])).toBeGreaterThan(0.8 * FLOWER.kw);
-    expect(weekKw(best[2])).toBeLessThan(300);
+    expect(weekKw(best[2])).toBeLessThan(buildingDef(buildingIdx('steam_boiler')).gen!.kw / 2);
     const f = windField(src), b = prevailing(WORLD_SEED);
     const floor: number[] = [];
     for (let y = CENTER - 20; y <= CENTER + 20; y += 2) for (let x = CENTER - 20; x <= CENTER + 20; x += 2) if (f.level(x, y) === 0) floor.push(f.at(x, y, b));

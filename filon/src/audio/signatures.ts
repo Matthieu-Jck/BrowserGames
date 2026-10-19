@@ -111,8 +111,8 @@ export const ID_SIGNATURE: Partial<Record<BuildingId, Signature>> = {
   chip_fab: 'electric',
   optics_workshop: 'solar',
   sifter: 'sand',
-  // Generators: coal burns, batteries hum, the Sunheart shines; the steam boiler is the kind's.
-  brazier: 'smelter',
+  // Generators: batteries hum, the Sunheart shines; the steam boiler is the kind's (the coal
+  // generator, a furnace's roar, left the game with D143).
   cell_generator: 'electric',
   sunheart: 'solar',
 };

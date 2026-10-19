@@ -63,7 +63,7 @@ export function basicsWorks(b: Builder): void {
 function steelWorks(b: Builder): void {
   const sim = b.sim;
   const ore = b.laid(...Object.keys(b.lines).filter((r) => r.startsWith('iron')));
-  const coal = b.laid('coalB', 'coalGen', 'coal2', 'coal.f1', 'coal');
+  const coal = b.laid('coalB', 'coal2', 'coal.f1', 'coal');
   const skips = b.report.skipped.length;
   const spots = meetings(ore, coal, MEETINGS);
   for (const at of ore.length && coal.length ? spots : []) {
@@ -85,16 +85,17 @@ function steelWorks(b: Builder): void {
 /**
  * The steel line round `at`, in one order or the other (the smelter on its iron first, the mill
  * then laying both its feeds; or the mill on its coal first, the smelter then feeding it): whether
- * all of it stands. A failed order is taken back up before the next. Only the first piece looks far
- * (`Builder.fed`'s wider search, where land 2's smelter stands); the rest stay near the piece before
- * them — a smelter feeding a mill from 20 tiles off is no steel line, and on the lands where it does
- * not fit (1 and 3) those wide searches, a line in and a line out at each of 160 spots, were a
- * second of the late build.
+ * all of it stands. A failed order is taken back up before the next. No piece looks far (`Builder.fed`'s
+ * wider search): each stays near the meeting or the piece before it — a smelter feeding a mill from
+ * 20 tiles off is no steel line, and on the lands where it does not fit those wide searches, a line
+ * in and a line out at each of 160 spots, were a second of the late build. The first piece's went
+ * with D143: an extra the level can do without (`far` false, as `Builder.fed` asks of one), it found
+ * nothing on lands 1–3 and cost the late build 0.4 s on lands 1 and 2.
  */
 function steelAt(b: Builder, at: readonly [number, number], ore: BeltTiles[], coal: BeltTiles[]): boolean {
   const sim = b.sim;
   const orders: Array<() => boolean> = [
-    () => !!b.fed('steelPlates', 'electric_smelter', at, [{ lines: ore }], null)
+    () => !!b.fed('steelPlates', 'electric_smelter', at, [{ lines: ore }], null, undefined, false)
       && !!b.fed('steel', 'steel_mill', b.centre('steelPlates'), [b.ids.steelPlates!, { lines: coal }], null, undefined, false),
     () => !!b.fed('steel', 'steel_mill', at, [{ lines: coal }], null, undefined, false)
       && !!b.fed('steelPlates', 'electric_smelter', b.centre('steel'), [{ lines: ore }], b.ids.steel!, 'steelPlates.out', false),

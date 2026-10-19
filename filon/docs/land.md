@@ -106,7 +106,7 @@ the Heart's growing disc, the waystations and the land reclaimed next to a zone 
     motors (three inputs' lines into one bench find no way on two or three parcels). Maps 1–3 keep
     the old claims' single parcels: their bases stay small (mostly glass), and a few whose land
     gives nothing to mine sell nothing.
-    Then its power on the hub's far side (turbines, a coal generator, panels) and its own grid: every
+    Then its power on the hub's far side (turbines, a steam boiler — a coal generator until D143 —, panels) and its own grid: every
     building that takes part in power wired from its Core through masts (a chain of masts that
     cannot reach the grid is taken back), by the claim's own
     rule of reach (a mast at one end, its range and slots: sim/power/links.ts) — never joined to the

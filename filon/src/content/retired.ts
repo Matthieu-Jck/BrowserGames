@@ -74,7 +74,19 @@ export const RETIRED_COSTS: Readonly<Record<string, ReadonlyArray<readonly [stri
   data_collector: [['iron_plate', 10], ['glass', 4], ['copper_wire', 6]],
   test_bench: [['iron_plate', 20], ['glass', 6], ['copper_wire', 8]],
   data_relay: [['circuit', 10], ['glass', 10], ['iron_plate', 30]],
+  // The coal generator (D143; owner, 2026-10-19: « coal incinerator, delete it »; its id kept from
+  // the brazier it was drawn as): refunded at cost, the coal in its box handed to the Heart
+  // (`RETIRED_FUEL`), its wires dropped; a ribbon that fed it keeps its coal and backs up. Its plan
+  // is refunded by save v22 (`PLANS_RETIRED`). The steam boiler is the coal-fired plant now.
+  brazier: [['iron_plate', 20], ['copper_wire', 4]],
 };
+
+/**
+ * Fuel generators taken out of the game, and the item their box held (D143): the remap
+ * (sim/save-remap.ts) hands what a fallen one held to the Heart — the content no longer says what
+ * it burnt. Fuel only: none retired so far drank water.
+ */
+export const RETIRED_FUEL: Readonly<Record<string, string>> = { brazier: 'coal' };
 
 /**
  * What a retired building was called, for the absence report that tells the player it came down
@@ -88,6 +100,7 @@ export const RETIRED_NAMES: Readonly<Record<string, Loc>> = {
   data_collector: { fr: 'Collecteur de données', en: 'Data Collector' },
   test_bench: { fr: 'Banc d’essai', en: 'Test Bench' },
   data_relay: { fr: 'Relais de données', en: 'Data Relay' },
+  brazier: { fr: 'Générateur à charbon', en: 'Coal Generator' },
 };
 
 /**
@@ -142,10 +155,12 @@ export const TIER1_TOKENS_V19: Readonly<Record<string, number>> = {
  * Plans taken out of the tree, by the save version whose step drops them, with what each cost: a
  * plan held is forgotten and its cost handed back to the Heart (nothing vanishes: it was paid in
  * materials, D33). Frozen per version. 17: the survey beacon's and the unloader's (D117), the survey
- * path with the first (the Face Cutter moved to Production, its id unchanged).
+ * path with the first (the Face Cutter moved to Production, its id unchanged). 22: the coal
+ * generator's (D143), the Energy path's second plan; Steam Power hangs from the turbine's since.
  */
 export const PLANS_RETIRED: Readonly<Record<number, Readonly<Record<string, ReadonlyArray<readonly [string, number]>>>>> = {
   17: { beacon: [['iron_plate', 8], ['glass', 2]], unloader: [['iron_plate', 6], ['copper_wire', 2]] },
+  22: { brazier: [['iron_plate', 15], ['copper_wire', 2]] },
 };
 
 /**

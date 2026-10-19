@@ -26,7 +26,7 @@ import { C, mix } from '../tokens';
 import { castShadow, ellipsePts, flat, hatch, ink, pathOf, shape, stipple, type Ctx, type Pt } from '../ink';
 import { arrowPoly, crierMarkMapped, hull, light, rivet } from '../shapes';
 import { pvPanel } from '../solar';
-import { UNLIT, isUnlit } from '../unlit';
+import { isUnlit } from '../unlit';
 import {
   ILH, IS, IsoFrame, Scene, ShadowFrame, box, bucketWheelIso, cableIso, chevronIso, cupIso, cylinder,
   drumIso, faceGlow, faceGrille, faceHazard, faceInk, faceLeds, facePanel, facePt, faceQuad, frustumIso,
@@ -4433,43 +4433,6 @@ const R: Partial<Record<BuildingId, Recipe>> = {
   // The fence (D103, recipes/gleaners.ts): a low mesh cage that keeps the Gleaners off.
   fence: { head: 0.8, draw: fenceIso },
   pylon: { head: PYLON.apex + 0.3, draw: pylonIso },
-  brazier: {
-    head: 3.3,
-    draw(ctx, f, s) {
-      // A fire-tube boiler: a firebox with a glowing grate door, the boiler drum on top, and the
-      // coal generator itself — a flared fire basket crowning the stack at the front, flames leaping.
-      slab(ctx, f, C.steel, 0.07, SZ, s);
-      const sc = new Scene();
-      sc.add(f.depth(0.5, 0.45), () => {
-        latheIso(ctx, f, 0.5, 0.45, [[SZ, 0.2], [0.5, 0.2], [0.5, 0.12], [1.62, 0.12], [1.66, 0.16], [2.02, 0.36], [2.08, 0.38]], C.steelD, s + 1, { open: C.ink });
-        for (const z of [0.9, 1.3]) {
-          const c = f.p(0.5, 0.45, z), [ex, ey] = f.ell(0.12);
-          ink(ctx, ellipsePts(c[0], c[1], ex, ey, s + 2, 0, 20).filter(([, y]) => y >= c[1] - 0.5).sort((a, b) => a[0] - b[0]), { w: 2, color: C.brass, shade: false, taper: 0, seed: s + 2 + z });
-        }
-        const [x, y] = f.p(0.5, 0.45, 2.08);
-        const [ex, ey] = f.ell(0.3);
-        const cold = isUnlit(ctx); // switched off (D83): cold coals, no flames, no sparks
-        flat(ctx, ellipsePts(x, y, ex, ey, s + 3, 0.04, 24), cold ? UNLIT : C.warn);
-        flat(ctx, ellipsePts(x + 2, y + 1, ex * 0.6, ey * 0.6, s + 4, 0.04, 20), C.glowPeach);
-        if (!cold) {
-          light(ctx, x, y - 10, 9, C.ledWarm);
-          for (let i = 0; i < 5; i++) {
-            const ox = (i - 2) * 8.5, h = 26 + ((i * 7) % 3) * 9 - Math.abs(i - 2) * 4;
-            shape(ctx, [[x + ox - 6, y + 3], [x + ox - 2, y - h * 0.55], [x + ox + 2, y - h], [x + ox + 3, y - h * 0.5], [x + ox + 7, y + 3]], i % 2 ? C.coral : C.glowPeach, { w: 1.3, shade: false, seed: s + 5 + i });
-          }
-          for (const [dx, dy] of [[-12, -46], [9, -54], [2, -62]] as const) light(ctx, x + dx, y + dy, 1.4, C.ledWarm);
-        }
-      });
-      sc.add(f.depth(0.5, 1.35), () => {
-        const rr = box(ctx, f, 0.14, 0.88, 0.86, 1.86, SZ, 0.95, C.steelD, s + 6);
-        faceGlow(ctx, f, rr, 'L', 0.28, 0.72, 0.42, 0.78, C.ledWarm);
-        faceGrille(ctx, f, rr, 'R', 0.1, 0.9, SZ + 0.08, 0.85, s + 7, 3);
-        drumIso(ctx, f, 0.5, 1.37, 1.2, 0.22, 0.42, 'y', C.steelL, s + 8, { bands: [-0.55, 0, 0.55] });
-        pipeIso(ctx, f, [[0.5, 0.95, 1.25], [0.5, 0.6, 1.45]], 4, C.brass, s + 9);
-      });
-      sc.run();
-    },
-  },
   steam_boiler: {
     // A steam power plant (D114): the brick firebox with its glowing fire door and coal hopper,
     // the tall brick chimney and its plume, the pale riveted drum, and the engine — cylinder,

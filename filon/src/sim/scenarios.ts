@@ -24,7 +24,7 @@
 //             mill (taken up once delivered, the fulfilled contract stopped: the exit then goes into the
 //             Heart, fed by a small import order of plates, what the base builds with), the Core raised
 //             to level 2 (« Le Cœur grandit »), every plan (the Face Cutter's among them), the research
-//             lab on the Core's compute (D122: no ribbon), Mechanics started, a coal generator, the
+//             lab on the Core's compute (D122: no ribbon), Mechanics started, the
 //             quartz vein's parcel and two face cutters at its wall, their
 //             quartz over the Crown into the Heart, and the quartz workshop the quest pays for, its
 //             oscillators into the Heart (scenario-quartz.ts, D87) — the whole tutorial factory
@@ -146,7 +146,7 @@ export function buildScenario(sim: Sim, id: ScenarioId, name: string): ScenarioR
   if (upTo >= 2) { bloomKiln(b); firstWind(b); glassworks(b); steamPower(b); }
   // The quartz works before the iron's overflow into the Heart (D115: on land 2 that line ran past
   // the wire line's last tiles, where the works branch their wire from).
-  if (upTo >= 3) { crierTrade(b); coreUpgrade(b); fieldJournal(b); morePower(b); wallQuartz(b, () => powerUp(b, 12, 1000, 'veinPower')); postLine(b); tradeLine(b); quartzWorks(b); ironSurplus(b); }
+  if (upTo >= 3) { crierTrade(b); coreUpgrade(b); fieldJournal(b); wallQuartz(b, () => powerUp(b, 12, 1000, 'veinPower')); postLine(b); tradeLine(b); quartzWorks(b); ironSurplus(b); }
   if (upTo >= 4) grown(b);
   if (upTo >= 5) late(b);
   // The rest of the cirque's floor (D82), last: the late base's works take their places first.
@@ -699,7 +699,7 @@ function firstWind(b: Builder): void {
   b.plan('wind_flower');
   // Where the levels have always planted them, on the floor: they give little now (D44), but moving
   // them reshapes every line laid after and leaves the later levels no room to branch. The base's
-  // wind comes from the Crown (`morePower`, `powerUp`).
+  // wind comes from the Crown (`crownWind`, `powerUp`).
   const spot = b.quietSide(9);
   b.put('wind1', 'wind_flower', spot, { r: 8 });
   b.put('wind2', 'wind_flower', spot, { r: 8 });
@@ -899,7 +899,7 @@ function starterDone(b: Builder): void {
 
 /**
  * Two wind turbines on the Crown's windiest spot and next to it (D95: the Sough is read off the land,
- * not guessed): « Tenir la nuit »'s answer (D101), planted there since; `morePower` once did it.
+ * not guessed): « Tenir la nuit »'s answer (D101), planted there since.
  */
 function crownWind(b: Builder): void {
   const crown = b.windAnchor();
@@ -907,20 +907,6 @@ function crownWind(b: Builder): void {
   if (!b.windyWired('wind4', 'wind_flower', crown, 8)) { b.put('wind4', 'wind_flower', b.crown(), { r: 9, onRock: true }); b.wire('wind4'); }
   // A turbine whose line found no way up from the grid of the time: again, now the other's poles stand on the Crown.
   if (b.ids.wind3 && !b.sim.linksOf(b.ids.wind3).length) { b.unskip('wire:wind3'); b.wire('wind3'); }
-}
-
-/** After the tutorial: the coal generator (« Tenir la nuit »'s kit), fed by its own coal drill. */
-function morePower(b: Builder): void {
-  b.plan('brazier');
-  // The generator only with a coal drill of its own (the deposit is small: sharing the smelters' coal would starve them).
-  b.optional(() => {
-    if (!b.fed('generator', 'brazier', b.mid(b.deposit('coal')), [], null)) return;
-    if (b.source('coalGen', 'drill', b.centre('generator'), b.ids.generator!, { item: 'coal', r: 30 })) { b.wire('generator', 'coalGen'); return; }
-    const e = b.sim.ents.get(b.ids.generator!)!;
-    b.sim.remove(e.x, e.y);
-    delete b.ids.generator;
-  });
-  b.run(2 * EPOCH);
 }
 
 // ── later on ────────────────────────────────────────────────────────────────
@@ -1121,10 +1107,6 @@ function grown(b: Builder): void {
   // coal drill took a corner of the deposit, the base's later drills move and can take its room).
   b.optional(() => b.fed('silo', 'silo', b.middle('glass'), [glass.length ? { lines: glass } : 0], null, undefined, false)
     || (glass.length && b.ids.kiln2 ? b.fed('silo', 'silo', b.centre('kiln2'), [{ lines: glass }], null, undefined, false) : 0));
-  // The coal generator retired (the wind carries the grid; `powerUp` sizes it without it): its
-  // drill's coal into the kilns' coal line, which one drill fed for two kilns (D85: both stood
-  // starved, the generator's drill backed up while the wind did the work).
-  b.optional(() => retireGenerator(b));
   // Every cirque deposit covered as far as its lines carry (D82, D85).
   mineCirque(b);
   // The assembly bench (D129: Tier 1's, the electronics workshop is Tier 2's) on copper coils, off the
@@ -1272,7 +1254,7 @@ function expertises(b: Builder): void {
 
 /**
  * The late base's advanced part (each piece skipped, and reported, where the map does not allow
- * it): solar panels and accumulators, the coal generator retired; the first observatory's next
+ * it): solar panels and accumulators; the first observatory's next
  * project; the cirque's lines served in order; then the rest of the works (scenario-late.ts): the
  * coal pit where the cirque is short of coal (its coal back over the Crown), the Fabrique's research
  * lab on its project, a geothermal plant on a vent (the potteries come before, in `late`); the longest plain line upgraded to express ribbons; and time until
@@ -1280,8 +1262,7 @@ function expertises(b: Builder): void {
  */
 function advanced(b: Builder): void {
   const sim = b.sim;
-  // Solar panels and accumulators for the night (the coal generator went at the grown level, D85),
-  // and a deep bore on the coal deposit's free part.
+  // Solar panels and accumulators for the night, and a deep bore on the coal deposit's free part.
   b.optional(() => solarField(b));
   b.optional(() => coalBore(b));
   // Servers: the research's tokens out of the base's own power (D68).
@@ -1384,28 +1365,6 @@ function serveFirst(b: Builder, line: string, gate: 'underflow_gate' | 'overflow
     if (sim.place(gate, e.x, e.y, e.rot).ok) return;
   }
   b.skip(`serveFirst:${line}`);
-}
-
-/** The coal generator taken down and its drill's coal sent into the smelters' coal line instead. */
-function retireGenerator(b: Builder): void {
-  const sim = b.sim;
-  const gen = b.ids.generator && sim.ents.get(b.ids.generator), drill = b.ids.coalGen && sim.ents.get(b.ids.coalGen);
-  const coal = b.laid('coal');
-  if (!gen || !drill || !coal.length) { b.skip('moreCoal'); return; }
-  sim.remove(gen.x, gen.y);
-  delete b.ids.generator;
-  // Its line's own ribbons only: a junction on it carries another line across.
-  const ribbon = buildingIdx('ribbon');
-  for (const [x, y, r] of b.lines['coalGen'] ?? []) { const e = sim.entityAt(x, y); if (e?.def === ribbon && e.rot === r) sim.remove(x, y); }
-  delete b.lines['coalGen'];
-  const l = join(sim, drill.id, coal[0]!);
-  if (l) b.lines['coalGen'] = l;
-  else {
-    // No way into the coal line: the drill comes up too, rather than stand with an output to nothing (D85).
-    sim.remove(drill.x, drill.y);
-    delete b.ids.coalGen;
-    b.skip('moreCoal:join');
-  }
 }
 
 /** A deep bore on the coal deposit's free part, joining the coal line (its second outlet feeds the glass of the advanced industry). */

@@ -6,7 +6,7 @@ import { itemIdx } from '@/content/registry';
 import { foundScenario } from '../scenarios';
 import { WORLD_EPOCH0 } from '../constants';
 
-describe('performance (base20k: ~25k entities)', () => {
+describe('performance (base20k: ~27k entities)', () => {
   // Times on the CPU (core/cpu-time.ts): another test run on the machine does not count; the wall's in the log.
   it('ticks under 3 ms and catches up a week of absence in under 3 s', () => {
     const { value: sim, ms: tCompile } = timed(() => { const s = buildBench(); s.ensureCompiled(); return s; });

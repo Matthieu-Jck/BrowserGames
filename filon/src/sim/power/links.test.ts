@@ -271,25 +271,31 @@ describe('power wires in a colony', () => {
     expect(copy.stock[SAND()]).toBe(sim.stock[SAND()]);
   });
 
-  it('online ≈ offline on a wired grid over a whole day (sun, wind, a coal generator at night)', () => {
+  it('online ≈ offline on a wired grid over a whole day (sun, wind, a fuel generator at night)', () => {
     // The turbine stands in the lee of a low rock (D95: the wind from the north-west to the north
-    // in this world), so on most nights the wind cannot carry the drills and the coal burns.
+    // in this world), so on most nights the wind cannot carry the drills and the generator burns.
+    // A battery generator since D143 took the coal generator out of the game (the steam boiler's
+    // water has its own online = offline test, steam-boiler.test.ts): the same fuel node, its
+    // inlet where the coal generator's was.
     const src = testSource();
     const base = new Sim({ worldSeed: 7, playerSeed: 11, foundingEpoch: WORLD_EPOCH0 + 24, source: new FlatSource(src.deposits, [...src.rocks, { x: 515, y: 513, w: 5, h: 2, t: T.Rock1, level: 1 }]) });
     learnPlans(base);
     for (const [it, n] of [['iron_plate', 200], ['glass', 40], ['copper_wire', 40]] as const) base.grant(it, n);
+    base.done.add('en_cellgen'); // the battery generator's research
+    base.rebuildDerived();
+    grantCost(base, 'cell_generator');
     drillToHearth(base);
     const m = base.place('mast', 520, 512, 0);
     const sand = base.place('sand_collector', 522, 510, 3);
     const wind = base.place('wind_flower', 517, 516, 0);
-    const brazier = base.place('brazier', 507, 517, 0); // its inlet faces (507,519)
-    expect(m.ok && sand.ok && wind.ok && brazier.ok).toBe(true);
+    const gen = base.place('cell_generator', 507, 517, 0); // its inlet faces (507,519)
+    expect(m.ok && sand.ok && wind.ok && gen.ok, String(gen.reason)).toBe(true);
     wire(base, [sand.id!, wind.id!], m.id!);
-    wire(base, brazier.id!);
+    wire(base, gen.id!);
     base.placeBelts('ribbon', line(521, 511, 3, 7));
     // A second iron drill (facing east, side-loading the first one's line) and a third (into its
     // tail): with them the night's demand (3 × 90 + 30 kW) outruns the Heart's core (210 kW since
-    // D101) and the wind, so the coal generator burns.
+    // D101) and the wind, so the generator burns.
     const d2 = base.place('drill', 508, 500, 1);
     expect(d2.ok, d2.reason).toBe(true);
     wire(base, d2.id!);
@@ -298,8 +304,8 @@ describe('power wires in a colony', () => {
     expect(d3.ok, d3.reason).toBe(true);
     wire(base, d3.id!);
     expect(base.placeBelts('ribbon', [[514, 504, 3], [513, 504, 3]])).toBe(2);
-    // Coal from a silo under the coal generator: out (507,520) → one ribbon square up into its inlet.
-    stockedSilo(base, 507, 520, 0, 'coal', 400);
+    // Charged batteries from a silo under the generator: out (507,520) → one ribbon square up into its inlet.
+    stockedSilo(base, 507, 520, 0, 'charged_cell', 400);
     expect(base.placeBelts('ribbon', [[507, 519, 0]])).toBe(1);
     base.run(20);
     const save = serialize(base);
@@ -314,17 +320,17 @@ describe('power wires in a colony', () => {
       const flow = (a.produced[i]! + a.consumed[i]!) / 1000;
       expect(Math.abs(x - y), `item ${i}: online ${x} vs offline ${y}`).toBeLessThanOrEqual(Math.max(2, 0.005 * flow));
     }
-    // It did work: ore and sand came in by day, coal burnt at night.
+    // It did work: ore and sand came in by day, batteries burnt at night.
     expect(a.stock[IRON()]! - save.stock[IRON()]!).toBeGreaterThan(100_000);
     expect(a.stock[SAND()]! - save.stock[SAND()]!).toBeGreaterThan(50_000);
-    expect(a.consumed[itemIdx('coal')]!).toBeGreaterThan(0);
+    expect(a.consumed[itemIdx('charged_cell')]!).toBeGreaterThan(0);
   });
 
   it('the demo base is wired whole: every building that makes or uses power is on the Hearth’s grid', () => {
     const sim = new Sim({ worldSeed: WORLD_SEED, playerSeed: 1, source: new MapGen(WORLD_SEED, 1), foundingEpoch: WORLD_EPOCH0 + 24 });
     const ids = buildDemo(sim);
     const home = gridOf(sim, sim.hearthId);
-    for (const k of ['drillA', 'drillB', 'sand', 'coal', 'coal2', 'bench', 'observatory', 'trade', 'brazier', 'wind0', 'wind1', 'wind2', 'wind3']) {
+    for (const k of ['drillA', 'drillB', 'sand', 'coal', 'bench', 'observatory', 'trade', 'wind0', 'wind1', 'wind2', 'wind3']) {
       expect(ids[k], k).toBeGreaterThan(0);
       expect(gridOf(sim, ids[k]!), k).toBe(home);
     }

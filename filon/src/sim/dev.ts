@@ -449,11 +449,8 @@ export function buildDemo(sim: Sim, opt: { kiln?: readonly [number, number, Rot]
   const pd = dep('coal');
   const s4 = findSpot(sim, 'drill', 'coal', CENTER + pd.dx - 1, CENTER + pd.dy - 1, 1);
   if (s4) place('coal', 'drill', s4[0], s4[1], 1);
-  // A second coal drill feeds the coal generator (the night's power) by its own short ribbon; it must
-  // not stand on the square the first one hands out to.
-  const coalOut = new Set(ids.coal ? worldPorts(sim.ents.get(ids.coal)!).filter((p) => p.io === 'out').map((p) => tileIndex(p.fx, p.fy)) : []);
-  const s5 = findSpot(sim, 'drill', 'coal', CENTER + pd.dx - 1, CENTER + pd.dy + 1, 1, 4, coalOut);
-  if (s5) place('coal2', 'drill', s5[0], s5[1], 1);
+  // (A second coal drill fed the coal generator here until D143 took it out of the game: the night
+  // is the turbines' and the Core's isotope core.)
   // The smelter against the Heart's west side, between the iron and the coal (inlets west, its
   // outlet one square from the Heart's west inlet); `opt.kiln` tries another spot. Wind flowers
   // and an assembly bench around (D129: the electronics workshop is Tier 2's research now).
@@ -469,10 +466,6 @@ export function buildDemo(sim: Sim, opt: { kiln?: readonly [number, number, Rot]
   place('trade', 'trade_post', ...at(-4, 3), 2);
   // A turbine's room apart (D132: `BAL.wind.spacing`, six tiles middle to middle).
   for (const [i, [dx, dy]] of ([[-12, 9], [-6, 9], [0, 9], [6, 9]] as const).entries()) place(`wind${i}`, 'wind_flower', ...at(dx, dy), 0);
-  if (s5) {
-    // The coal generator a few tiles east of its drill, on free floor.
-    for (let d = 3; d < 8 && !ids.brazier; d++) if (freeSpot(sim, 'brazier', s5[0] + 2 + d, s5[1] + 1, 0)) place('brazier', 'brazier', s5[0] + 2 + d, s5[1] + 1, 0);
-  }
   // Ribbons.
   const H = hearth;
   if (ids.drillA) connect(sim, ids.drillA, H);
@@ -484,11 +477,10 @@ export function buildDemo(sim: Sim, opt: { kiln?: readonly [number, number, Rot]
     if (ids.coal) connect(sim, ids.coal, ids.kiln, -1, 1);
     connect(sim, ids.kiln, H);
   }
-  if (ids.coal2 && ids.brazier) connect(sim, ids.coal2, ids.brazier);
   if (ids.collector && ids.observatory) connect(sim, ids.collector, ids.observatory);
   // Power (D25): every building that makes or uses power is wired into the Hearth's grid,
   // through lines of poles where the Hearth's own wires (8 tiles) do not reach.
-  for (const k of ['drillA', 'drillB', 'sand', 'coal', 'coal2', 'bench', 'observatory', 'collector', 'trade', 'brazier', 'wind0', 'wind1', 'wind2', 'wind3']) {
+  for (const k of ['drillA', 'drillB', 'sand', 'coal', 'bench', 'observatory', 'collector', 'trade', 'wind0', 'wind1', 'wind2', 'wind3']) {
     if (ids[k]) powerLine(sim, ids[k]!);
   }
   return ids;

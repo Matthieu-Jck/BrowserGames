@@ -210,6 +210,12 @@ function rockInReach(sim: Sim, x: number, y: number, rot: Rot, keep: (x: number,
 const POTTERY_DIGGERS = 4; // three where the Crown's foot leaves room, as a rule
 /** The least rock an excavator of theirs must reach to be worth placing (tiles). */
 const DIG_MIN = 8;
+/**
+ * Excavator spots tried for the first one before an oven spot is given up (D143): where the stone
+ * finds a way up at all, it does from the first spot (lands 1–3), and an oven its stone cannot reach
+ * cost the late build a second and a half for its 60.
+ */
+const DIG_FIRST_TRIES = 2;
 
 type Tarn = { readonly x: number; readonly y: number; readonly level: number };
 
@@ -317,63 +323,77 @@ function pottery(b: Builder, x: number, y: number, rot: Rot, tarn: Tarn): boolea
   const pump = sim.place('pump', ps.x, ps.y, ps.rot);
   if (!pump.ok || sim.placeBelts('conduit', ps.path) !== ps.path.length) return false;
   // The ceramic down the terraces into a silo on the floor below the peak, its outlets toward the
-  // Core; from the silo on into the Core.
-  let silo = 0;
-  let down: OverPath | null = null, on: BeltTiles | null = null;
+  // Core; from the silo on into the Core. With `cross`, across a line on a junction where it must
+  // (each try then taken back whole, junctions too).
   b.crossings();
-  for (const [sx, sy, sr] of siloSpots(sim, tarn, b.heart)) {
-    const s = sim.place('silo', sx, sy, sr);
-    if (!s.ok) continue;
-    down = routeOver(sim, [out.fx, out.fy], inlets(sim, s.id!), 20_000);
-    if (down && layOver(b, down)) {
-      on = layTo(sim, s.id!, intoHeart(sim), -1, 40_000);
-      if (on) { silo = s.id!; break; }
+  const descend = (cross: boolean): { silo: number; down: OverPath; on: BeltTiles } | null => {
+    const spots = siloSpots(sim, tarn, b.heart);
+    // On its own way, one search toward every spot's inlets first: walled in, each spot's own search
+    // would spend its whole budget for nothing (D143: 0.4 s an oven spot on land 1).
+    if (!cross && !routeOver(sim, [out.fx, out.fy], siloInlets(sim, spots), DOWN_ANY)) return null;
+    for (const [sx, sy, sr] of spots) {
+      const cp = cross ? checkpoint(sim) : null;
+      const s = sim.place('silo', sx, sy, sr);
+      if (!s.ok) continue;
+      const down = routeOver(sim, [out.fx, out.fy], inlets(sim, s.id!), 20_000, cross);
+      if (down && layOver(b, down)) {
+        const on = layTo(sim, s.id!, intoHeart(sim), -1, 40_000);
+        if (on) return { silo: s.id!, down, on };
+      }
+      if (cp) rollback(sim, cp);
+      else { if (down) unlay(sim, down); sim.remove(sx, sy); }
     }
-    if (down) unlay(sim, down);
-    down = null;
-    sim.remove(sx, sy);
-  }
-  if (!silo || !down || !on) return false;
+    return null;
+  };
   // Stone: excavators on the floor against the Crown's foot near the peak (never digging rock of
   // the tarn's level: the peak round it), the first one's line climbing into the oven, the others'
   // into the side of a line already laid.
-  const at = toward([tarn.x, tarn.y], b.heart, 11);
-  let stone: BeltTiles | null = null;
-  const stones: BeltTiles[] = [];
-  const diggers: number[] = [];
-  const claimed = new Set<number>();
-  // Never the peak's rock round the tarn (at its level); by a pool on the floor (map 4, D115) any rock.
-  const keep = (tx: number, ty: number): boolean => (tarn.level > 0 && sim.grid.level(tx, ty) >= tarn.level) || claimed.has(tileIndex(tx, ty));
-  // Inside the cirque below the peak, and outside the Crown beyond it (their lines climb over).
-  const beyond = toward([tarn.x, tarn.y], b.heart, -10);
-  const cands = [...spotsNear(sim, 'excavator', at, { r: 14, toward: [x, y] }), ...spotsNear(sim, 'excavator', beyond, { r: 10, toward: [x, y] })]
-    .map((s, k) => [s, rockInReach(sim, s[0], s[1], s[2], keep).length, k] as const)
-    .filter(([, n]) => n >= DIG_MIN).sort((p, q) => q[1] - p[1] || p[2] - q[2]).slice(0, 60);
-  for (const [[ex, ey, er]] of cands) {
-    if (diggers.length >= POTTERY_DIGGERS) break;
-    if (rockInReach(sim, ex, ey, er, keep).length < DIG_MIN) continue; // its rock is a neighbour's already
-    const r = sim.place('excavator', ex, ey, er);
-    if (!r.ok) continue;
-    const sp = worldPorts(sim.ents.get(r.id!)!).find((p) => p.io === 'out')!;
-    // The first one's line into the oven; the next ones into the side of a line laid (on the floor
-    // or up the terraces).
-    let line: BeltTiles | null = null;
-    const goals: Map<number, Rot> = stone ? sideGoalsOver(sim, stones.flat()) : new Map([[tileIndex(dry.fx, dry.fy), opposite(dry.dir)]]);
-    const up: OverPath | null = goals.size ? routeOver(sim, [sp.fx, sp.fy], goals, 20_000) : null;
-    if (up && layOver(b, up)) line = up.map(([lx, ly, lr]) => [lx, ly, lr]);
-    else if (up) unlay(sim, up);
-    if (!line) { sim.remove(ex, ey); continue; }
-    if (!stone) stone = line;
-    stones.push(line);
-    // Its rock claimed now, so the next excavator's reach counts only what is left. Nothing is
-    // marked: with no mark in reach an excavator quarries, its rock left standing (owner,
-    // 2026-10-14: the stone must not run out), so the Crown's foot keeps its shape.
-    for (const t of rockInReach(sim, ex, ey, er, keep)) claimed.add(t);
-    diggers.push(r.id!);
-    b.ids[`digger${diggers.length}`] = r.id!;
-    b.lines[`stone${diggers.length}`] = line;
-  }
-  if (!diggers.length) return false;
+  const quarry = (): { diggers: number[]; lines: BeltTiles[] } | null => {
+    const at = toward([tarn.x, tarn.y], b.heart, 11);
+    const stones: BeltTiles[] = [];
+    const diggers: number[] = [];
+    const claimed = new Set<number>();
+    // Never the peak's rock round the tarn (at its level); by a pool on the floor (map 4, D115) any rock.
+    const keep = (tx: number, ty: number): boolean => (tarn.level > 0 && sim.grid.level(tx, ty) >= tarn.level) || claimed.has(tileIndex(tx, ty));
+    // Inside the cirque below the peak, and outside the Crown beyond it (their lines climb over).
+    const beyond = toward([tarn.x, tarn.y], b.heart, -10);
+    const cands = [...spotsNear(sim, 'excavator', at, { r: 14, toward: [x, y] }), ...spotsNear(sim, 'excavator', beyond, { r: 10, toward: [x, y] })]
+      .map((s, k) => [s, rockInReach(sim, s[0], s[1], s[2], keep).length, k] as const)
+      .filter(([, n]) => n >= DIG_MIN).sort((p, q) => q[1] - p[1] || p[2] - q[2]).slice(0, 60);
+    let fails = 0;
+    for (const [[ex, ey, er]] of cands) {
+      if (diggers.length >= POTTERY_DIGGERS || (!diggers.length && fails >= DIG_FIRST_TRIES)) break;
+      if (rockInReach(sim, ex, ey, er, keep).length < DIG_MIN) continue; // its rock is a neighbour's already
+      const r = sim.place('excavator', ex, ey, er);
+      if (!r.ok) continue;
+      const sp = worldPorts(sim.ents.get(r.id!)!).find((p) => p.io === 'out')!;
+      // The first one's line into the oven; the next ones into the side of a line laid (on the floor
+      // or up the terraces).
+      let line: BeltTiles | null = null;
+      const goals: Map<number, Rot> = stones.length ? sideGoalsOver(sim, stones.flat()) : new Map([[tileIndex(dry.fx, dry.fy), opposite(dry.dir)]]);
+      const up: OverPath | null = goals.size ? routeOver(sim, [sp.fx, sp.fy], goals, 20_000) : null;
+      if (up && layOver(b, up)) line = up.map(([lx, ly, lr]) => [lx, ly, lr]);
+      else if (up) unlay(sim, up);
+      if (!line) { sim.remove(ex, ey); fails++; continue; }
+      stones.push(line);
+      // Its rock claimed now, so the next excavator's reach counts only what is left. Nothing is
+      // marked: with no mark in reach an excavator quarries, its rock left standing (owner,
+      // 2026-10-14: the stone must not run out), so the Crown's foot keeps its shape.
+      for (const t of rockInReach(sim, ex, ey, er, keep)) claimed.add(t);
+      diggers.push(r.id!);
+    }
+    return diggers.length ? { diggers, lines: stones } : null;
+  };
+  // The ceramic's way down, then the stone. Walled in on its own way down — the peak's foot fenced
+  // by lines laid before it (D143: on land 1 the boiler's coal line along the floor's rim and the
+  // quartz line round the Crown; the ceramic had gone right round the Crown's far side while a coal
+  // generator's line ringed the Core) — across a line on a junction, as the quartz line goes (D115).
+  const way = descend(false) ?? descend(true);
+  const dig = way ? quarry() : null;
+  if (!way || !dig) return false;
+  const { silo, down, on } = way;
+  dig.diggers.forEach((id, k) => { b.ids[`digger${k + 1}`] = id; b.lines[`stone${k + 1}`] = dig!.lines[k]!; });
+  const diggers = dig.diggers;
   b.ids.oven = oven;
   b.ids.pump = pump.id!;
   b.ids.potSilo = silo;
@@ -386,6 +406,20 @@ function pottery(b: Builder, x: number, y: number, rot: Rot, tarn: Tarn): boolea
 
 /** The potteries' silo: how many spots are tried round each foot. */
 const SILO_TRIES = 4;
+/** The search toward every silo spot at once (tiles settled): three spots' own searches. */
+const DOWN_ANY = 40_000;
+
+/** The free inlets of a silo on each of these spots, were it placed there (the way into each). */
+function siloInlets(sim: Sim, spots: ReadonlyArray<readonly [number, number, Rot]>): Map<number, Rot> {
+  const def = buildingIdx('silo'), goals = new Map<number, Rot>();
+  for (const [x, y, rot] of spots) {
+    for (const p of worldPorts({ def, x, y, rot })) {
+      if (p.io !== 'in' || !inWorld(p.fx, p.fy) || sim.grid.occ[tileIndex(p.fx, p.fy)] !== 0) continue;
+      goals.set(tileIndex(p.fx, p.fy), opposite(p.dir));
+    }
+  }
+  return goals;
+}
 
 /**
  * Where the potteries' silo may stand, best first: on the floor below the peak 15 tiles toward the

@@ -62,7 +62,7 @@ Each bus runs at its slider's gain: `sliderGain(s) = s²` (half way ≈ −12 dB
 
 - **Harmony.** Chords are stacked thirds inside the mode, drawn by weight from the mode's progression (home first, then the modal chord: Lydian's major II, Mixolydian's ♭VII, Dorian's major IV), never twice in a row, home growing likelier the longer the music is away. The pad voices three upper tones (add9-flavoured sets, never a ♭9 over the root) as close as possible to the previous chord, avoiding unisons and semitone rubs; the bass takes the root under the pads.
 - **Melody.** Phrases of 2–6 notes (2–4 at night) separated by rests of several beats; a random walk on the mode's ladder (pentatonic at heart, plus the mode's colour note), mostly by steps; strong beats lean on chord tones and the phrase ends on one. Some phrases answer a remembered rhythm or echo a remembered contour, so it sounds composed rather than random.
-- **Pulses.** The base's activity (`1 − e^(−running/10)`, running machines, drills and burning coal generators) earns a little rhythm: a soft wooden knock on the bar (a few machines), shakers on off-beats (a working base), a plucked arpeggio of the chord (a busy one). The night halves them.
+- **Pulses.** The base's activity (`1 − e^(−running/10)`, running machines, drills and burning generators) earns a little rhythm: a soft wooden knock on the bar (a few machines), shakers on off-beats (a working base), a plucked arpeggio of the chord (a busy one). The night halves them.
 - **It never loops.** Everything is drawn from a seeded generator (a new seed every session), so the score is endless; `director.test.ts` checks that no 12-note stretch of melody (pitch and rhythm) ever comes back.
 - **The effects play along.** Tonal cues take their notes from the chord in force (`Score.harmony()`): a placement or a research done is in key with the music.
 
@@ -113,7 +113,7 @@ Every building has a short sound evocative of the machine ([D120](decisions.md))
 | `cutter` | Face Cutter | a stony scrape (gritty noise sweeping down), then a stone's tock | −13.5 / −22 |
 | `pump` | pumps | a gurgle: bubbles (sines bending up fast, on the chord) over a slosh | −13.5 / −22 |
 | `sand` | sand collector, sifter | a dry pour of grains (chopped high noise), a soft chord tone | −14 / −23 |
-| `smelter` | smelters, ceramic oven, coal generator, incinerator | a whoosh of fire (noise opening up, flickering), then a metallic tick | −13.5 / −22 |
+| `smelter` | smelters, ceramic oven, incinerator (the coal generator until D143) | a whoosh of fire (noise opening up, flickering), then a metallic tick | −13.5 / −22 |
 | `electric` | electric smelter, arc furnace, charger, etcher, chip fab, accumulators, battery generator | an electric hum on the chord, then crackles | −13.5 / −22 |
 | `press` | wire mills, presses, workshops (every other machine) | a mechanical clack-clack; built, the release | −13.5 / −22 |
 | `wind` | wind turbines | an airy swoosh crossing the field; built, the blade comes round again | −15 / −23.5 |

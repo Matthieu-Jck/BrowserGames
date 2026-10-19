@@ -87,7 +87,6 @@ export const TERMINALS: Readonly<Partial<Record<BuildingId, readonly Terminal[]>
     ...[-POLE.pin, POLE.pin].map((k) => { const [x, y] = onArm(POLE.cx, POLE.cy, k); return { x, y, z: POLE.arm + POLE.armH + INSULATOR }; }),
   ],
   pylon: [-PYLON.pin, PYLON.pin].map((k) => { const [x, y] = onArm(PYLON.cx, PYLON.cy, k); return { x, y, z: PYLON.arm - PYLON.string, base: PYLON.arm, hang: true }; }),
-  brazier: [roof(0.78, 1.8, 0.95, 0.3)],
   wind_flower: [roof(1.43, 1.43, 1.0, 0.22)],
   sun_bulb: [roof(1.65, 1.68, 0.75)],
   accumulator: [roof(1.0, 1.0, SZ, 1.1)],

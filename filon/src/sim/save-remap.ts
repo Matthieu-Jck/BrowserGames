@@ -6,17 +6,18 @@
 // rewrites every index through id → index maps when the table differs from today's. Inserting or
 // reordering content is then free; renaming follows `RENAMED` (content/retired.ts).
 //
-// What no longer exists does not vanish silently (ARCHITECTURE invariant 4): a building whose id
-// is gone comes down, refunded at its recorded cost (`RETIRED_COSTS`), its store and buffers
-// handed to the Heart; a machine whose recipe changed or is gone is cleared, its buffers handed to
-// the Heart; what is held of an item whose id is gone is counted in the note the player is shown —
-// or, for research's retired data (D122, `RETIRED_ITEM_TOKENS`), banked as tokens for research.
+// What no longer exists does not vanish silently (ARCHITECTURE invariant 4): a building whose id is
+// gone comes down, refunded at its recorded cost (`RETIRED_COSTS`), its store and buffers handed to
+// the Heart, and a fuel generator's box too (`RETIRED_FUEL`: the coal generator, D143); a machine
+// whose recipe changed or is gone is cleared, its buffers handed to the Heart; what is held of an
+// item whose id is gone is counted in the note the player is shown — or, for research's retired
+// data (D122, `RETIRED_ITEM_TOKENS`), banked as tokens for research.
 //
 // `FIELDS` declares every SaveData field, typed against SaveData: a new field does not compile
 // until it says whether it holds indices — the guard that keeps this file complete.
 import { BUILDINGS } from '@/content/buildings';
 import { BUILDING_IDS, CRECIPES, ITEM_IDS, RECIPE_IDS, recipesFor, type CRecipe } from '@/content/registry';
-import { RENAMED, RETIRED_COSTS, RETIRED_ITEM_TOKENS } from '@/content/retired';
+import { RENAMED, RETIRED_COSTS, RETIRED_FUEL, RETIRED_ITEM_TOKENS } from '@/content/retired';
 import type { BuildingDef } from '@/content/types';
 import { filterOf, recipeOf, withFilter, withRecipe } from './cfg';
 import type { SaveData } from './serialize';
@@ -47,6 +48,8 @@ export interface Retired {
   costs: Readonly<Record<string, ReadonlyArray<readonly [string, number]>>>;
   /** Items gone whose holdings become research tokens (D122): tokens per item. */
   tokens?: Readonly<Record<string, number>>;
+  /** Fuel generators gone: the item their box held (D143), handed to the Heart. */
+  fuel?: Readonly<Record<string, string>>;
 }
 
 /** 'index': holds content indices (re-pointed); 'refs': entity ids only (filtered when a building comes down); 'plain': neither. */
@@ -103,7 +106,7 @@ const kindOf = (id: string | undefined): BuildingDef | undefined =>
  * written against `to` (or without a table: written before D47 by this very content) comes back
  * as it is.
  */
-export function remapSave(d: SaveData, to: ContentTable = contentTable(), retired: Retired = { renamed: RENAMED, costs: RETIRED_COSTS, tokens: RETIRED_ITEM_TOKENS }): { data: SaveData; note: RemapNote | null } {
+export function remapSave(d: SaveData, to: ContentTable = contentTable(), retired: Retired = { renamed: RENAMED, costs: RETIRED_COSTS, tokens: RETIRED_ITEM_TOKENS, fuel: RETIRED_FUEL }): { data: SaveData; note: RemapNote | null } {
   const from = d.content;
   if (!from) return { data: { ...d, content: to }, note: null };
   if (sameTable(from, to)) return { data: d, note: null };
@@ -150,6 +153,8 @@ export function remapSave(d: SaveData, to: ContentTable = contentTable(), retire
 
   // Entities: today's def, cfg re-pointed; what is gone comes down, refunded.
   const gone = new Set<number>();
+  /** What each fallen entity was (its building id in the save's table). */
+  const goneDef = new Map<number, string>();
   const oldCfg = new Map<number, number>();
   const reset = new Set<string>();
   const resetEnts = new Set<number>();
@@ -163,6 +168,7 @@ export function remapSave(d: SaveData, to: ContentTable = contentTable(), retire
     if (nd < 0) {
       gone.add(id);
       const bid = from.buildings[def] ?? `#${def}`;
+      goneDef.set(id, bid);
       const cost = retired.costs[bid];
       const r = removed.get(bid) ?? { n: 0, refunded: !!cost };
       r.n++;
@@ -220,7 +226,14 @@ export function remapSave(d: SaveData, to: ContentTable = contentTable(), retire
       else nodes.push([ent, { ...o, item: j }]);
       continue;
     }
-    if (alive(ent)) nodes.push([ent, s]);
+    // A fallen fuel generator's box (D143: the coal generator's coal) goes to the Heart: the content
+    // no longer says what it burnt, `RETIRED_FUEL` does.
+    if (!alive(ent)) {
+      const fuel = retired.fuel?.[goneDef.get(ent) ?? ''];
+      if (fuel && o && typeof o.fuel === 'number') give(from.items.indexOf(fuel), o.fuel);
+      continue;
+    }
+    nodes.push([ent, s]);
   }
 
   // Stores: items re-pointed; a fallen building's store goes to the Heart.

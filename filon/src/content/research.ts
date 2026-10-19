@@ -199,8 +199,8 @@ export const RESEARCH = {
   tr8: paced('t3_electronics', 8, ['observatory'], [['lens', 40], ['thermal_core', 30]], 1_500_000, 360, ['Résonance', 'Resonance'], ['Résonateurs, treillis de nacre ; Cœur niveau 5, qui ouvre le Tier 4.', 'Resonators, nacre lattices; Core level 5, which opens Tier 4.']),
 
   // ── Energy: Energy (T1) → Power Grid → Power Plants (renewables, and plants that burn) → Great Power Plants ──
-  en_pitch: node('t1_energy', 1, null, ['Éolienne à pas variable', 'Pitch-Control Turbine'], ['Débloque l’Éolienne à pas variable : jusqu’à 180 kW, dès le moindre souffle.', 'Unlocks the Pitch-Control Turbine: up to 180 kW, from the lightest breeze.'], [['iron_plate', 20], ['copper_wire', 20]]),
-  en2: node('t1_energy', 2, 'en_pitch', ['Panneaux solaires', 'Solar Panels'], ['Débloque le Panneau solaire.', 'Unlocks the Solar Panel.'], [['glass', 30], ['copper_wire', 20]]),
+  en_pitch: node('t1_energy', 1, null, ['Éolienne à pas variable', 'Pitch-Control Turbine'], ['Débloque l’Éolienne à pas variable : jusqu’à 140 kW, dès le moindre souffle.', 'Unlocks the Pitch-Control Turbine: up to 140 kW, from the lightest breeze.'], [['iron_plate', 20], ['copper_wire', 20]]),
+  en2: node('t1_energy', 2, 'en_pitch', ['Panneaux solaires', 'Solar Panels'], ['Débloque le Panneau solaire : 200 kW en plein soleil.', 'Unlocks the Solar Panel: 200 kW in full sun.'], [['glass', 30], ['copper_wire', 20]]),
   en_heavyacc: node('t2_grid', 3, null, ['Accumulateur lourd', 'Heavy Accumulator'], ['Débloque l’Accumulateur lourd : 4 000 kW·min.', 'Unlocks the Heavy Accumulator: 4,000 kW·min.'], [['copper_coil', 30], ['cable', 20]]),
   en4: node('t2_grid', 4, 'en_heavyacc', ['Chargeur', 'Battery Charging'], ['Débloque le Chargeur et les batteries chargées.', 'Unlocks the Battery Charger and charged batteries.'], [['copper_coil', 30], ['copper_plate', 40]]),
   en_solarfarm: node('t3_plants', 5, null, ['Ferme solaire', 'Solar Farm'], ['Débloque la Ferme solaire : 600 kW en plein soleil.', 'Unlocks the Solar Farm: 600 kW in full sun.'], [['lens', 20], ['glass', 120]]),
@@ -377,11 +377,12 @@ const PATH_PLANS = {
 
   // ── energy ────────────────────────────────────────────────────────────────
   wind_flower: plan('energy', [], [['iron_plate', 10]]),
-  brazier: plan('energy', ['wind_flower'], [['iron_plate', 15], ['copper_wire', 2]]),
+  // The coal generator's plan (`brazier`) went with it (D143; owner, 2026-10-19: « coal incinerator,
+  // delete it »): a claim that held it is refunded by save v22 (`PLANS_RETIRED`, content/retired.ts).
   // Water's first use, in Tier 1 (D114; owner, 2026-10-17: « Il faudrait que l'eau serve assez tôt
   // dans le jeu, dès le Tier 1 »): the steam boiler, and the pump and conduit that bring it water
-  // (they were Ceramics', Tier 2). After the coal generator: the same coal, two and a half times the power.
-  steam: plan('energy', ['brazier'], [['iron_plate', 20], ['glass', 4], ['copper_wire', 2]], {
+  // (they were Ceramics', Tier 2). After the turbine since D143 (it hung from the coal generator's plan).
+  steam: plan('energy', ['wind_flower'], [['iron_plate', 20], ['glass', 4], ['copper_wire', 2]], {
     name: { fr: 'Vapeur', en: 'Steam Power' },
     desc: {
       fr: 'La Chaudière à vapeur, et ce qui lui porte son eau\u00a0: la Pompe à eau et le Conduit.',

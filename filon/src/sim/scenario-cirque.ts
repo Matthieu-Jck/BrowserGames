@@ -233,15 +233,20 @@ function mineDeposits(b: Builder): void {
     // Whole on the ore first, then astride its rim (a drill mines the ore tiles under it) — not on a
     // land of whole blocks (D104): there a deposit has no rim, and a drill half on sand is what it ends.
     const rims = oreBlockOf(b.sim.grid) === 1;
-    for (let n = 0, misses = 0, part: number | undefined; n < DRILLS_PER_DEPOSIT && misses < 4; n++) {
+    for (let n = 0, misses = 0, part: number | undefined, missed = ''; n < DRILLS_PER_DEPOSIT && misses < 4; n++) {
       if (misses === 2 && part === undefined && rims) part = RIM_ORE;
       // The lines with room, the most first: a drill boxed in from one may still reach another.
       const intos = [...load.keys()].filter((r) => (cap.get(r) ?? 0) - load.get(r)! >= whole)
         .sort((p, q) => ((cap.get(q) ?? 0) - load.get(q)!) - ((cap.get(p) ?? 0) - load.get(p)!) || (p < q ? -1 : 1));
       if (!intos.length) { if (fresh >= 2) break; const r = newLine(); if (!r) break; intos.push(r); }
+      // A try that missed leaves the base as it was: the same try, on the same lines and ore, misses
+      // again (D143: half of land 1's misses on its second iron deposit, 0.1 s of its grown level).
+      const key = `${part}|${intos.join(',')}`;
+      if (key === missed) { misses++; continue; }
       const role = `${tag}.f${n + 1}`;
       const into = intos.find((i) => guarded(b, [role], () => b.optional(() => b.source(role, 'drill', at, i, { item: d.item, orePart: part, r: DEPOSIT_R }))));
-      if (!into) { misses++; continue; }
+      if (!into) { misses++; missed = key; continue; }
+      missed = '';
       b.wireByPole(role);
       load.set(into, load.get(into)! + rateOf(b, b.ids[role]!));
     }

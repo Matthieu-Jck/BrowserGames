@@ -5,7 +5,7 @@
 //   the grade never dims them): every light the building art bakes in — LEDs, status beacons,
 //   landing rings, furnace mouths — gets a glow, found by re-running the building's recipe on a
 //   spy context (art/recipes/fx.ts), so lights sit exactly where the art puts them, in every
-//   rotation, whatever the art becomes. Amber only on machines that run hot (kilns, coal generators);
+//   rotation, whatever the art becomes. Amber only on machines that run hot (kilns, steam boilers);
 //   elsewhere amber LEDs glow work-lamp white, cyan stays cyan, red and green stay. Each
 //   building adds its night rig from its kind and footprint: a pool of work-lamp light on the
 //   ground, and on the Heart a pulsing uplink beacon, on its dish's feed horn (fx `beaconSpot`). A building standing on the mountains (D44)

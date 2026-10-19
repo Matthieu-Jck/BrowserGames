@@ -245,38 +245,32 @@ export const BUILDINGS = {
     // It lifts the fog as far as its wires reach (D117: the survey beacon's 40 tiles), so a pylon line walks it back.
     cost: [['steel', 10], ['cable', 8], ['ceramic', 4]], ports: [], reveal: 40, pole: { range: 40, slots: 4, climb: 3, tall: true }, // three terraces up or down, three above the land: never over a mountain (D78)
   },
-  brazier: {
-    name: { fr: 'Générateur à charbon', en: 'Coal Generator' },
-    desc: { fr: 'Brûle du charbon pour l’électricité : 300 kW à plein régime pour 10 charbon/min. Il ne brûle que ce que le réseau demande.', en: 'Burns coal for power: 300 kW at full output for 10 coal/min. It burns only what the grid asks for.' },
-    kind: 'generator', category: 'energy', w: 1, h: 2, needsZone: true, unlock: 'brazier',
-    cost: [['iron_plate', 20], ['copper_wire', 4]], ports: [P(0, 1, 'S', 'in')],
-    gen: { kw: 300, fuel: 'coal', fuelPerMin: 10 },
-  },
   // The steam boiler (D114; owner, 2026-10-17: « Il faudrait que l'eau serve assez tôt dans le jeu,
-  // dès le Tier 1 »): water's first use. Coal under a boiler, its steam through an engine: 600 kW for
-  // 8 coal a minute, 75 kW a coal against the coal generator's 30 (two and a half times), so the
-  // cirque's scarce coal goes further — at the price of a pump by water, a conduit and a bigger
-  // build. Fuel still: it burns, by night and day alike, only what the grid asks for; the wind and
-  // the sun stay free. 3×2: the firebox and the coal intake on the left, the drum across, the engine
-  // and the water intake on the right; onRock, like the pump, to stand by the Crown's tarn (D63).
+  // dès le Tier 1 »): water's first use. Coal under a boiler, its steam through an engine: 700 kW for
+  // 8 coal a minute (D143; owner, 2026-10-19: « coal + water is 700kW »), the one coal-fired plant
+  // since the coal generator left the game with that same decision — at the price of a pump by
+  // water, a conduit and a bigger build. Fuel still: it burns, by night and day alike, only what the
+  // grid asks for; the wind and the sun stay free. 3×2: the firebox and the coal intake on the left,
+  // the drum across, the engine and the water intake on the right; onRock, like the pump, to stand by
+  // the Crown's tarn (D63).
   steam_boiler: {
     name: { fr: 'Chaudière à vapeur', en: 'Steam Boiler' },
-    desc: { fr: 'Change le charbon et l’eau en vapeur, et la vapeur en électricité : 600 kW pour 8 charbon et 30 eau par minute, deux fois et demie ce que le charbon donne au générateur. Elle ne brûle que ce que le réseau demande.', en: 'Turns coal and water into steam, and steam into power: 600 kW for 8 coal and 30 water a minute, two and a half times what coal gives in the generator. It burns only what the grid asks for.' },
+    desc: { fr: 'Change le charbon et l’eau en vapeur, et la vapeur en électricité : 700 kW pour 8 charbon et 30 eau par minute, de jour comme de nuit. Elle ne brûle que ce que le réseau demande.', en: 'Turns coal and water into steam, and steam into power: 700 kW for 8 coal and 30 water a minute, by day and by night. It burns only what the grid asks for.' },
     kind: 'generator', category: 'energy', w: 3, h: 2, needsZone: true, onRock: true, unlock: 'steam',
     cost: [['iron_plate', 30], ['glass', 6], ['copper_wire', 6]], ports: [P(0, 1, 'S', 'in'), PW(2, 1, 'S', 'in')], // the water intake on the right (D142)
-    gen: { kw: 600, fuel: 'coal', fuelPerMin: 8, water: 30 },
+    gen: { kw: 700, fuel: 'coal', fuelPerMin: 8, water: 30 }, // 600 → 700 kW (D143)
   },
   wind_flower: {
     name: { fr: 'Éolienne', en: 'Wind Turbine' },
-    desc: { fr: 'De l’électricité au gré du vent : jusqu’à 130 kW. Le vent change d’un lieu à l’autre — fort sur les crêtes et les grands espaces dégagés, faible au creux du cirque et à l’abri des reliefs — et d’une heure à l’autre ; par grande tempête, elle s’arrête.', en: 'Power as the wind blows: up to 130 kW. The wind changes from place to place — strong on the ridges and wide open ground, weak down in the cirque and in the lee of the relief — and from hour to hour; in a great storm it stops.' },
+    desc: { fr: 'De l’électricité au gré du vent : jusqu’à 100 kW. Le vent change d’un lieu à l’autre — fort sur les crêtes et les grands espaces dégagés, faible au creux du cirque et à l’abri des reliefs — et d’une heure à l’autre ; par grande tempête, elle s’arrête.', en: 'Power as the wind blows: up to 100 kW. The wind changes from place to place — strong on the ridges and wide open ground, weak down in the cirque and in the lee of the relief — and from hour to hour; in a great storm it stops.' },
     kind: 'wind', replaceGroup: 'wind', category: 'energy', w: 2, h: 2, needsZone: true, onRock: true, unlock: 'wind_flower',
-    cost: [['iron_plate', 10], ['glass', 4], ['copper_wire', 6]], ports: [], gen: { kw: 130, wind: { cutIn: 400, rated: 1400, cutOut: 3600 } }, // D95: its rating, reached at 1.4× the reference wind; 360 → 160 kW (D116: half a coal generator at best) → 130 (D132)
+    cost: [['iron_plate', 10], ['glass', 4], ['copper_wire', 6]], ports: [], gen: { kw: 100, wind: { cutIn: 400, rated: 1400, cutOut: 3600 } }, // D95: its rating, reached at 1.4× the reference wind; 360 → 160 kW (D116) → 130 (D132) → 100 (D143)
   },
   sun_bulb: {
     name: { fr: 'Panneau solaire', en: 'Solar Panel' },
-    desc: { fr: 'De l’électricité gratuite le jour : 150 kW en plein soleil, rien la nuit. À doubler d’accumulateurs pour la nuit.', en: 'Free power by day: 150 kW in full sun, nothing at night. Pair it with accumulators for the night.' },
+    desc: { fr: 'De l’électricité gratuite le jour : 200 kW en plein soleil, rien la nuit. À doubler d’accumulateurs pour la nuit.', en: 'Free power by day: 200 kW in full sun, nothing at night. Pair it with accumulators for the night.' },
     kind: 'solar', category: 'energy', w: 2, h: 2, needsZone: true, unlock: 'en2',
-    cost: [['iron_plate', 6], ['glass', 12], ['copper_wire', 4]], ports: [], gen: { kw: 150 },
+    cost: [['iron_plate', 6], ['glass', 12], ['copper_wire', 4]], ports: [], gen: { kw: 200 }, // 150 → 200 kW (D143)
   },
   accumulator: {
     name: { fr: 'Accumulateur', en: 'Accumulator' },
@@ -367,9 +361,9 @@ export const BUILDINGS = {
   },
   pitch_turbine: {
     name: { fr: 'Éolienne à pas variable', en: 'Pitch-Control Turbine' },
-    desc: { fr: 'Ses pales s’orientent au vent : jusqu’à 180 kW, dès le moindre souffle et jusque dans la tempête. Posée sur une éolienne, elle la remplace.', en: 'Its blades turn to the wind: up to 180 kW, from the lightest breeze and on through a storm. Placed over a wind turbine, it replaces it.' },
+    desc: { fr: 'Ses pales s’orientent au vent : jusqu’à 140 kW, dès le moindre souffle et jusque dans la tempête. Posée sur une éolienne, elle la remplace.', en: 'Its blades turn to the wind: up to 140 kW, from the lightest breeze and on through a storm. Placed over a wind turbine, it replaces it.' },
     kind: 'wind', replaceGroup: 'wind', category: 'energy', w: 2, h: 2, needsZone: true, onRock: true, unlock: 'en_pitch',
-    cost: [['iron_plate', 15], ['glass', 6], ['copper_coil', 4], ['gear', 4]], ports: [], gen: { kw: 180, wind: { cutIn: 300, rated: 1250 } }, // D95: feathered blades, no storm stop; 480 → 220 kW (D116) → 180 (D132)
+    cost: [['iron_plate', 15], ['glass', 6], ['copper_coil', 4], ['gear', 4]], ports: [], gen: { kw: 140, wind: { cutIn: 300, rated: 1250 } }, // D95: feathered blades, no storm stop; 480 → 220 kW (D116) → 180 (D132) → 140 (D143)
   },
   heavy_accumulator: {
     name: { fr: 'Accumulateur lourd', en: 'Heavy Accumulator' },
