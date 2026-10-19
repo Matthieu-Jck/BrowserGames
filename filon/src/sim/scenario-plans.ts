@@ -89,13 +89,13 @@ export function planOf(spec: PlanSpec, q: Rot, drop: ReadonlySet<string> = new S
 /** Is a part a building of more than one tile (one letter, one building)? */
 const multi = (p: PlanPart): boolean => p.def !== 'mark' && buildingDef(buildingIdx(p.def)).w * buildingDef(buildingIdx(p.def)).h > 1;
 
-/** Every tile of a plan laid at (ax, ay): free, revealed, level floor that `land` accepts; bare sand under a sand collector. */
+/** Every tile of a plan laid at (ax, ay): free, level floor that `land` accepts; bare sand under a sand collector. */
 export function planFits(sim: Sim, plan: Plan, ax: number, ay: number, land: (x: number, y: number) => boolean): boolean {
   if (!inWorld(ax, ay)) return false;
   const level = sim.grid.level(ax, ay);
   for (const [i, j, c] of plan.cells) {
     const x = ax + i, y = ay + j;
-    if (!inWorld(x, y) || sim.grid.occ[tileIndex(x, y)] !== 0 || !sim.revealed(x, y)) return false;
+    if (!inWorld(x, y) || sim.grid.occ[tileIndex(x, y)] !== 0) return false;
     const t = sim.grid.terrain(x, y);
     if (!isFloor(t) || sim.grid.level(x, y) !== level || !land(x, y)) return false;
     const p = plan.spec.key[c];

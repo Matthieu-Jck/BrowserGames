@@ -203,9 +203,9 @@ function play(sim: Sim, last: QuestId = 'synth_parts'): Record<string, number> {
   hint('glassworks', 5);
   lay([[522, 505, 0], [522, 504, 3], [521, 504, 2]]);
   lay([[524, 504, 3], [523, 504, 3]]); // the second collector's line runs into the first's
-  hint('glassworks', 6); // the coal: the router's plan (another coal drill would pass this hint by)
+  hint('glassworks', 6); // the coal: a drill of its own (D146; a router on the coal line passes this hint by)
   unlock('router');
-  hint('glassworks', 7);
+  hint('glassworks', 6); // the router's plan alone passes nothing by
   place('routerCoal', 'router', 519, 502);
   lay([[519, 503, 2], [519, 504, 1], [520, 504, 2]]);
   hint('glassworks', 8);
@@ -361,7 +361,14 @@ function play(sim: Sim, last: QuestId = 'synth_parts'): Record<string, number> {
   hint('wall_quartz', 3);
   const quartzLine: Array<[number, number, Rot]> = [[470, 510, 2], ...line(470, 511, 1, 40)];
   lay(quartzLine); // from its output (front, east) down a tile, then east into (510, 511)
-  hint('wall_quartz', -1); // the land without a vein's hint (an import order) is passed by here
+  // The night to come (D146): six turbines on the grid (the steady tap holds it here, the quest still
+  // asks for them), a row south of the factory, each wired pole by pole.
+  hint('wall_quartz', 5); // the land without a vein's hint (an import order) is passed by here
+  for (let k = 0; k < 6; k++) {
+    place(`wind${k}`, 'wind_flower', 482 + 7 * k, 536);
+    powerLine(sim, ids[`wind${k}`]!);
+  }
+  hint('wall_quartz', -1);
   until(sim, 'wall_quartz', 6 * EPOCH);
   if (stop('wall_quartz')) return ids;
 
@@ -536,24 +543,24 @@ describe('quests', () => {
     expect(objectiveProgress(sim, night).met).toBe(true);
   });
 
-  it('a goal\'s hint for one way passes by once another way did it (D101: a second coal drill, no router)', () => {
+  it('a goal\'s hint for one way passes by once another way did it (D146: a router on the coal line, no second coal drill)', () => {
     const sim = colony();
     play(sim, 'first_wind');
     expect(currentQuest(sim)?.id).toBe('glassworks');
-    const routerHint = (QUESTS.glassworks as QuestDef).hints![6]!;
-    expect(routerHint.target).toEqual({ k: 'unlock', ids: ['router'] });
-    expect(stepApplies(sim, routerHint)).toBe(true);
-    // The glass smelter north of the extra coal, fed by a coal drill of its own: no router needed.
+    const drillHint = (QUESTS.glassworks as QuestDef).hints![6]!;
+    expect(drillHint.target).toEqual({ k: 'build', def: 'drill', at: { deposit: 'coal' } });
+    expect(stepApplies(sim, drillHint)).toBe(true);
+    // The glass smelter beside the first, its coal off the coal line by a router: no second coal drill.
     expect(sim.unlockPlan('sand_collector').ok).toBe(true);
-    const kiln2 = sim.place('kiln', 522, 492, 0).id!; // inputs south at (522|523, 493), fed from (522|523, 494)
+    expect(sim.unlockPlan('router').ok).toBe(true);
+    const kiln2 = sim.place('kiln', 520, 505, 2).id!; // inputs north at (520|521, 504)
     expect(sim.setRecipe(kiln2, 'glass')).toBe(true);
-    const d = sim.place('drill', 522, 496, 0).id!; // its output faces (522, 495)
-    powerLine(sim, d);
-    expect(sim.placeBelts('ribbon', [[522, 495, 0], [522, 494, 0]])).toBe(2);
+    expect(sim.place('router', 519, 502, 2).ok).toBe(true);
+    expect(sim.placeBelts('ribbon', [[519, 503, 2], [519, 504, 1], [520, 504, 2]])).toBe(3);
     sim.ensureCompiled();
     expect(objectiveProgress(sim, { k: 'feeds', item: 'coal', to: ['kiln', 'kiln_compact'], n: 2 }).met).toBe(true);
-    expect(stepApplies(sim, routerHint)).toBe(false); // the router's plan is no longer hinted at
-    expect(sim.done.has('router')).toBe(false);
+    expect(stepApplies(sim, drillHint)).toBe(false); // the second coal drill is no longer hinted at
+    expect(objectiveProgress(sim, { k: 'build', defs: ['drill', 'deep_bore'], item: 'coal', n: 2 }).met).toBe(false);
   }, 60_000);
 
   it('the tree offers each quest\'s few plans, then every plan (D101), and everything once the tutorial is over or skipped', () => {

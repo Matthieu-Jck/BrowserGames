@@ -527,8 +527,8 @@ export function nodeName(id: string): Loc {
 
 /**
  * The plan paths, top to bottom on the tree: making things first, then knowing and selling. The
- * survey path (the survey beacon, then the Face Cutter) went with the beacon (D117): the fog lifts as
- * the claim grows, and the Face Cutter makes things.
+ * survey path (the survey beacon, then the Face Cutter) went with the beacon (D117), and the Face
+ * Cutter makes things (no fog to survey at all since D148).
  */
 export const PLAN_PATHS: readonly PlanLane[] = ['production', 'logistics', 'energy', 'analytics', 'trade'];
 

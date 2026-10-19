@@ -134,11 +134,11 @@ describe('building facts', () => {
     expect(buildingFacts('kiln', fresh).rule).toBeNull();
   });
 
-  it('a pillar says how far round it the fog lifts (D117: the survey beacon retired)', () => {
+  it('no card speaks of fog (D148): a pillar shows its wires and climb, no reveal radius', () => {
     setLocale('en');
-    expect(row(buildingFacts('pylon', fresh), 'reveal')).toBe('40-tile radius');
-    expect(row(buildingFacts('mast', fresh), 'reveal')).toBe('12-tile radius');
-    expect(row(buildingFacts('kiln', fresh), 'reveal')).toBeUndefined();
+    for (const id of ['pylon', 'mast', 'kiln']) expect(row(buildingFacts(id, fresh), 'reveal'), id).toBeUndefined();
+    expect(row(buildingFacts('pylon', fresh), 'wires')).toBeDefined();
+    for (const b of Object.values(BUILDINGS)) for (const d of [b.desc.fr, b.desc.en]) expect(d).not.toMatch(/brouillard|\bfog\b/i);
   });
 
   it('every description is one or two sentences, and the first stands alone', () => {

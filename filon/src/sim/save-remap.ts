@@ -60,7 +60,7 @@ export const FIELDS: { readonly [K in keyof Required<SaveData>]: Kind } = {
   v: 'plain', worldSeed: 'plain', playerSeed: 'plain', mapV: 'plain', foundingEpoch: 'plain', colonyName: 'plain', emblem: 'plain', tick: 'plain',
   credits: 'plain', hearthLevel: 'plain', hearthId: 'plain', nextId: 'plain', content: 'plain',
   ents: 'index', portItems: 'index', stock: 'index', stores: 'index', selling: 'index', acc: 'refs', links: 'refs',
-  done: 'plain', terrainDiff: 'plain', levelDiff: 'plain', oreDiff: 'index', land: 'plain', explored: 'plain',
+  done: 'plain', terrainDiff: 'plain', levelDiff: 'plain', oreDiff: 'index', land: 'plain',
   nodes: 'index', chains: 'index', produced: 'index', consumed: 'index', projects: 'index', tokens: 'plain', labQueue: 'refs',
   costFloor: 'plain', costFloorD129: 'plain', notes: 'plain', respecs: 'plain', lastRespec: 'plain', designated: 'plain', jobs: 'refs',
   market: 'plain', trade: 'index', quests: 'plain', value: 'plain', expertise: 'plain',

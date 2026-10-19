@@ -57,7 +57,7 @@ describe('commands', () => {
     const s = found();
     const n = s.log.length;
     const bad: Command[] = [
-      { k: 'place', def: 'kiln', x: 0, y: 0, rot: 0 }, // fog / outside the zone
+      { k: 'place', def: 'kiln', x: 0, y: 0, rot: 0 }, // outside the zone
       { k: 'remove', x: CENTER, y: CENTER },           // the Hearth stays
       { k: 'recipe', id: 999, recipe: null },
       { k: 'unroute', id: 1 },

@@ -1,7 +1,7 @@
 // glyphs.ts — small inked symbols the panels show instead of words (D53, owner 2026-10-13:
 // "rather show than tell"): power served, no power, no wire, an empty slot; and the land's (D60):
-// a parcel, its grounds (floor, rock, water, salt flats, a vent, the dune sea, the fog; a chasm and a
-// river, D94), the buildings on
+// a parcel, its grounds (floor, rock, water, salt flats, a vent, the dune sea; a chasm and a river,
+// D94), the buildings on
 // it, an owner's flag (the claim's, a neighbouring base's or another claim's), CrierBelt's ringed planet, a lease's
 // hourglass; the trade post's gates (D62): its entrance and exit, « in turn », a ribbon linked to
 // nothing. Inline SVG drawn in
@@ -10,7 +10,7 @@
 
 export type GlyphId =
   | 'power' | 'noPower' | 'unwired' | 'empty'
-  | 'parcel' | 'floor' | 'rock' | 'water' | 'salt' | 'vent' | 'dunes' | 'fog' | 'chasm' | 'river' | 'ore' | 'building' | 'flag' | 'flagNeighbour' | 'crier' | 'lease'
+  | 'parcel' | 'floor' | 'rock' | 'water' | 'salt' | 'vent' | 'dunes' | 'chasm' | 'river' | 'ore' | 'building' | 'flag' | 'flagNeighbour' | 'crier' | 'lease'
   | 'gateIn' | 'gateOut' | 'turn' | 'noLink';
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -65,8 +65,6 @@ const SHAPES: Readonly<Record<GlyphId, ReadonlyArray<readonly [string, Record<st
   ],
   // The dune sea: two crests.
   dunes: [['path', { class: 'g-dunes', d: 'M1 12.6c2.4-4.4 5-4.4 7.2 0zM6.8 12.6c2.6-5.6 5.8-5.6 8.2 0z' }]],
-  // Land not explored yet: a bank of fog.
-  fog: [['path', { class: 'g-fog', d: 'M3.4 12.6a2.6 2.6 0 0 1 .4-5.2 3.6 3.6 0 0 1 6.8-1.2 2.9 2.9 0 0 1 2.4 5.2c-.4.8-1 1.2-1.8 1.2z' }]],
   // A chasm (D94): two lips of ground and the dark between them.
   chasm: [
     ['path', { class: 'g-chasm', d: 'M1.4 6.4L6 5.2 7.2 8.4 5.6 11.8 1.4 12.8zM14.6 5.4L10 4.6 9.2 8 10.8 11.4 14.6 12.2z' }],

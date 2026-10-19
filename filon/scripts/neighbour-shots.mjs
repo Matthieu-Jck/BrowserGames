@@ -1,5 +1,5 @@
 // neighbour-shots.mjs — the neighbouring bases (D110) for review: the land round the starting square
-// from afar (the fog lifted, a rig), the nearest base up close by day and by night, at mid zoom, and a
+// from afar, the nearest base up close by day and by night, at mid zoom, and a
 // base beside the claim's own buildings (the late debug base) by day and by night. Usage: a server
 // (dev or a frozen preview), then `URL=… PREFIX=after node scripts/neighbour-shots.mjs` →
 // scripts/nb-<prefix>-*.png (gitignored).
@@ -46,8 +46,8 @@ const near = () => page.evaluate(() => {
   return out.sort((a, b) => a.d - b.d);
 });
 
-// 1. The land round the starting square from afar, the fog lifted 260 tiles round the Heart.
-await page.evaluate(() => { window.FL.app.sim.explored.push([512, 512, 260]); window.FL.pause(); });
+// 1. The land round the starting square from afar.
+await page.evaluate(() => { window.FL.pause(); });
 await phase('noon');
 await page.evaluate(() => window.FL.lookAt(512, 512, 0.16));
 await settle(3000);
@@ -108,7 +108,7 @@ const smoky = await page.evaluate(() => {
   return out.filter((b) => ['foundry', 'ember', 'glasshouse', 'drifter'].includes(b.profile)).sort((a, b) => a.d - b.d)[0] ?? null;
 });
 if (smoky) {
-  await page.evaluate(([x, y]) => { window.FL.app.sim.explored.push([x, y, 30]); window.FL.lookAt(x, y + 3, 1.25); }, smoky.at);
+  await page.evaluate(([x, y]) => { window.FL.lookAt(x, y + 3, 1.25); }, smoky.at);
   await phase('noon');
   await page.evaluate(() => window.FL.resume());
   await settle(2500);

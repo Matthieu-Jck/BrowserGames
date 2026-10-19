@@ -3,8 +3,7 @@
 // quelque part »): the network from the cirque down to the sea at far zoom (plan and iso), a
 // confluence, a fall where a stream steps down off a massif, and the sea's coast (FL.sea):
 // scripts/shot-river-*.png (gitignored). Usage: a server on :5183 (or URL=…, SEED=…), then
-// `node scripts/river-shots.mjs`. It starts the sandbox base over (FL.wipe: map 4) and lifts the fog
-// out to the sea (a review rig).
+// `node scripts/river-shots.mjs`. It starts the sandbox base over (FL.wipe: map 4).
 import { chromium } from 'playwright-core';
 import { fileURLToPath } from 'node:url';
 
@@ -36,10 +35,9 @@ const view = async (mode) => {
   await page.waitForFunction((m) => { const v = window.FL.view(); return v.mode === m && (m === 'plan' ? v.t === 1 : v.t === 0); }, mode, { timeout: 5000 });
 };
 
-// The sea's coast, the fog lifted out to it; a confluence and a fall on the way.
+// The sea's coast; a confluence and a fall on the way.
 const spots = await page.evaluate(() => {
   const sim = window.FL.app.sim, g = sim.grid, C = 512;
-  sim.explored.push([C, C, 460]);
   const sea = window.FL.sea();
   const DX = [1, 1, 0, -1, -1, -1, 0, 1], DY = [0, 1, 1, 1, 0, -1, -1, -1];
   const flow = (x, y) => { const c = g.chunkAt(x >> 5, y >> 5).biome[(y & 31) * 32 + (x & 31)] - 16; return c >= 0 && c < 8 ? c : -1; };

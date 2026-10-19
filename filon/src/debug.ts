@@ -124,7 +124,7 @@ export interface FilonDebug {
   parcelAt(x: number, y: number): number;
   /** The land's quartz vein (D87: map 3): its face tiles, the way they look, the floor spots of its face cutters (top-left, rot); null on maps 1–2. */
   vein(): { x: number; y: number; dx: number; dy: number; n: number; look: number; parcel: number; spots: Array<[number, number, number]> } | null;
-  /** The sea's coast straight out from the cirque (map 4, D94); with a zoom, the camera jumps there (the fog lifted round it: a review rig). Null where there is no sea. */
+  /** The sea's coast straight out from the cirque (map 4, D94); with a zoom, the camera jumps there. Null where there is no sea. */
   sea(zoom?: number): [number, number] | null;
   /** This epoch's bid / ask of an item (◉). */
   price(item: string): { bid: number; ask: number };
@@ -342,10 +342,9 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
     ids: () => ({ buildings: [...BUILDING_IDS], items: [...ITEM_IDS] }),
     bankTokens: (n) => (app.sim.tokenBank += Math.max(0, Math.floor(n))),
     ribbonField: (x, y, rows, cols) => {
-      // Sandbox rig: lift the fog over the field, grant the plates, lay a dense serpentine
+      // Sandbox rig: grant the plates, lay a dense serpentine
       // (rows one tile apart, U-turns at the ends). Where the land steps (D77: a ribbon never
       // faces another level), a traction ribbon takes the step, as a player would lay it.
-      app.sim.explored.push([x + (cols >> 1), y + (rows >> 1), Math.ceil(Math.hypot(cols, rows) / 2) + 2]);
       app.sim.grant('iron_plate', rows * cols * 4);
       app.sim.grant('copper_wire', rows * cols);
       const path: Array<[number, number, Rot]> = [];
@@ -412,10 +411,7 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
     },
     sea: (zoom) => {
       const p = app.sim.grid.source.seaPoint?.() ?? null;
-      if (p && zoom !== undefined) {
-        app.sim.explored.push([p[0], p[1], 60]);
-        app.camera.centerOnTile(p[0], p[1], zoom);
-      }
+      if (p && zoom !== undefined) app.camera.centerOnTile(p[0], p[1], zoom);
       return p;
     },
     price: (item) => {

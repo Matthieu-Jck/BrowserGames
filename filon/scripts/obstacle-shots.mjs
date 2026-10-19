@@ -3,8 +3,7 @@
 // ribbon dragged across a chasm (the planner's skybridge pair), and the Terrain view (I) with each
 // parcel's usable-floor gauge and the land panel's figure: scripts/shot-obstacles-*.png
 // (gitignored). Usage: a server on :5183 (or URL=…), then `node scripts/obstacle-shots.mjs`. It
-// starts the sandbox base over (FL.wipe: today's map, 4) and lifts the fog round the cirque (a
-// review rig: `sim.explored`, never a command).
+// starts the sandbox base over (FL.wipe: today's map, 4).
 import { chromium } from 'playwright-core';
 import { fileURLToPath } from 'node:url';
 
@@ -37,10 +36,9 @@ const view = async (mode) => {
   await page.waitForFunction((m) => { const v = window.FL.view(); return v.mode === m && (m === 'plan' ? v.t === 1 : v.t === 0); }, mode, { timeout: 5000 });
 };
 
-// The land: its map version, the fog lifted round the cirque, the nearest chasm and river.
+// The land: its map version, the nearest chasm and river.
 const land = await page.evaluate(() => {
   const sim = window.FL.app.sim, g = sim.grid, C = 512;
-  sim.explored.push([C, C, 170]);
   const near = (t) => {
     let best = null, bd = Infinity;
     for (let y = C - 110; y <= C + 110; y++) for (let x = C - 110; x <= C + 110; x++) {

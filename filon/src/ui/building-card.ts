@@ -183,7 +183,7 @@ function recipesBlock(list: readonly RecipeFact[]): HTMLElement {
 /** Each figure's icon, by its row's key (building-facts.ts `kindRows` and the generic rows). */
 const ROW_ICON: Readonly<Record<string, () => HTMLElement>> = {
   power: () => glyph('power'), wind: () => glyph('power'), wires: () => glyph('power'), grid: () => glyph('unwired'),
-  place: () => glyph('parcel'), reveal: () => glyph('fog'), replace: () => mark('build'),
+  place: () => glyph('parcel'), replace: () => mark('build'),
   fee: () => glyph('crier'), lift: () => mark('flight'), tokens: () => mark('order'),
   mines: () => mark('job'), makes: () => mark('job'), yields: () => mark('job'), rate: () => mark('job'), speed: () => mark('job'), climb: () => mark('level'),
   store: () => mark('store'), buffer: () => mark('store'), fills: () => mark('store'), takes: () => mark('store'),

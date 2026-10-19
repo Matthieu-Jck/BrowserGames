@@ -240,10 +240,9 @@ export const BUILDINGS = {
   },
   pylon: {
     name: { fr: 'Pylône', en: 'Pylon' },
-    desc: { fr: 'Un grand pylône de 2×2 qui porte loin : 4 fils jusqu’à 40 tuiles (60 avec Pylônes renforcés), qui montent ou descendent de 3 gradins et passent 3 gradins de relief, jamais une montagne. Dissipe le brouillard sur 40 tuiles alentour.', en: 'A big 2×2 pylon that carries far: 4 wires up to 40 tiles long (60 with Reinforced Pylons), climbing or coming down 3 terraces and clearing a 3-terrace rise, never a mountain. It lifts the fog 40 tiles around it.' },
+    desc: { fr: 'Un grand pylône de 2×2 qui porte loin : 4 fils jusqu’à 40 tuiles (60 avec Pylônes renforcés), qui montent ou descendent de 3 gradins et passent 3 gradins de relief, jamais une montagne.', en: 'A big 2×2 pylon that carries far: 4 wires up to 40 tiles long (60 with Reinforced Pylons), climbing or coming down 3 terraces and clearing a 3-terrace rise, never a mountain.' },
     kind: 'pole', replaceGroup: 'power', category: 'energy', w: 2, h: 2, needsZone: false, onRock: true, unlock: 'tr4', // 2×2 and twice as tall since D75 (owner, 2026-10-14)
-    // It lifts the fog as far as its wires reach (D117: the survey beacon's 40 tiles), so a pylon line walks it back.
-    cost: [['steel', 10], ['cable', 8], ['ceramic', 4]], ports: [], reveal: 40, pole: { range: 40, slots: 4, climb: 3, tall: true }, // three terraces up or down, three above the land: never over a mountain (D78)
+    cost: [['steel', 10], ['cable', 8], ['ceramic', 4]], ports: [], pole: { range: 40, slots: 4, climb: 3, tall: true }, // three terraces up or down, three above the land: never over a mountain (D78)
   },
   // The steam boiler (D114; owner, 2026-10-17: « Il faudrait que l'eau serve assez tôt dans le jeu,
   // dès le Tier 1 »): water's first use. Coal under a boiler, its steam through an engine: 700 kW for
@@ -541,14 +540,14 @@ export const BUILDINGS = {
   // heavy machines, and the press's pipes. Each its one recipe (it starts on it, D83).
   brickworks: {
     name: { fr: 'Briqueterie', en: 'Brickworks' },
-    desc: { fr: 'Moule le sable mouillé en briques et les cuit : un sable et deux eaux par brique, ou deux scories et une eau. Le sable ou les scories arrivent par ruban, l’eau des pompes par conduit.', en: 'Moulds wet sand into bricks and bakes them: a sand and two waters a brick, or two slag and a water. Sand or slag comes by ribbon, water from pumps by conduit.' },
+    desc: { fr: 'Moule le sable mouillé en briques et les cuit : un sable et deux eaux par brique. Le sable arrive par ruban, l’eau des pompes par conduit.', en: 'Moulds wet sand into bricks and bakes them: a sand and two waters a brick. Sand comes by ribbon, water from pumps by conduit.' },
     // onRock: by the Crown's tarn too, like the ceramic oven (D63), where the water is.
     kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, onRock: true, unlock: 'ex_brick', crafts: true, kw: 90, idleKw: 9,
     cost: [['iron_plate', 20], ['glass', 4], ['copper_wire', 4]], ports: [P(0, 1, 'S', 'in'), PW(1, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
   },
   steel_mill: {
     name: { fr: 'Aciérie', en: 'Steel Mill' },
-    desc: { fr: 'Souffle deux plaques de fer et un charbon en un acier, dans un convertisseur garni de briques, ou refond trois chutes de la presse ; ses scories sortent par la même sortie. Une fonderie suffit à la nourrir.', en: 'Blows two iron plates and a coal into one steel, in a brick-lined converter, or remelts three of the press’s scrap; its slag leaves through the same output. One smelter is enough to feed it.' },
+    desc: { fr: 'Souffle deux plaques de fer et un charbon en un acier, dans un convertisseur garni de briques ; ses scories, bonnes à rien, sortent par la même sortie. Une fonderie suffit à la nourrir.', en: 'Blows two iron plates and a coal into one steel, in a brick-lined converter; its slag, good for nothing, leaves through the same output. One smelter is enough to feed it.' },
     kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'dn_steel', crafts: true, kw: 150, idleKw: 15,
     cost: [['iron_plate', 20], ['brick', 20], ['copper_plate', 4]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
   },

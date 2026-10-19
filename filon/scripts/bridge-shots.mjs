@@ -51,7 +51,6 @@ const rig = await page.evaluate(() => {
       const x0 = Math.round(core.x + r * Math.cos((a * Math.PI) / 32)), Y = Math.round(core.y + r * Math.sin((a * Math.PI) / 32));
       const ps = pieces(x0, Y);
       if (!ps.every(([d, x, y, rot]) => sim.canPlace(d, x, y, rot).ok)) continue;
-      sim.explored.push([x0, Y - 5, 12]);
       for (const [d, x, y, rot] of ps) {
         const ok = d === 'ribbon' ? sim.placeBelts('ribbon', [[x, y, rot]]) === 1 : sim.place(d, x, y, rot).ok;
         if (!ok) return { error: `${d} at ${x},${y}` };

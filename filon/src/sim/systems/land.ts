@@ -129,7 +129,7 @@ export function buyLand(sim: Sim, p: number): LandRefusal | null {
   sim.land.leases.delete(p);
   sim.land.bought.add(p);
   sim.land.paid.set(p, cents);
-  held(sim, p);
+  held(sim);
   sim.log.push({ tick: sim.tick, cmd: { k: 'buyLand', p } });
   sim.events.push({ k: 'land', p, what: 'bought', cents });
   return null;
@@ -143,7 +143,7 @@ export function rentLand(sim: Sim, p: number): LandRefusal | null {
   sim.credits -= cents;
   book(sim, 'rent', -cents); // the first hour's rent
   sim.land.leases.set(p, { next: sim.tick + LEASE_TICKS, cents });
-  held(sim, p);
+  held(sim);
   sim.log.push({ tick: sim.tick, cmd: { k: 'rentLand', p } });
   sim.events.push({ k: 'land', p, what: 'leased', cents });
   return null;
@@ -187,10 +187,8 @@ export function resalePrice(sim: Sim, p: number): number {
   return Math.floor((marketPrice(sim, p) * (1000 - BAL.landResaleTax)) / 1000);
 }
 
-/** Land newly held: its fog lifts, and what stands on it wakes (the graph is rebuilt). */
-function held(sim: Sim, p: number): void {
-  const [cx, cy] = parcelCentre(p);
-  sim.explored.push([cx, cy, BAL.landReveal]);
+/** Land newly held: what stands on it wakes (the graph is rebuilt). */
+function held(sim: Sim): void {
   sim.dirty = true;
 }
 

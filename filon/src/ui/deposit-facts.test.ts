@@ -1,7 +1,7 @@
 // deposit-facts.test.ts — what the deposit card says (D99): the extractors read from the content
 // tables by place, a deposit tile's ore, place, rate and machines (locked until unlocked), a vein
-// under rock with its excavators first, water with its pumps, nothing on plain sand or in the fog,
-// and a deposit's known extent.
+// under rock with its excavators first, water with its pumps, nothing on plain sand, and a deposit's
+// known extent — anywhere on the world, however far from the base (no fog, D148).
 import { describe, expect, it } from 'vitest';
 import { itemIdx } from '@/content/registry';
 import { testSim, COPPER, IRON } from '@/sim/testkit';
@@ -41,7 +41,7 @@ describe('the deposit card\'s facts (D99)', () => {
     expect(f.machines.map((m) => m.def)).toContain('drill');
   });
 
-  it('water: its pumps; plain sand and the fog: no card', () => {
+  it('water: its pumps; plain sand and off the world: no card', () => {
     const sim = testSim();
     sim.grid.setTerrain(515, 515, T.Shallow);
     const w = depositAt(sim, 515, 515)!;
@@ -49,9 +49,24 @@ describe('the deposit card\'s facts (D99)', () => {
     expect(w.where).toBe('water');
     expect(w.machines.map((m) => m.def)).toContain('pump');
     expect(depositAt(sim, 520, 512)).toBeNull(); // plain sand
-    expect(sim.revealed(900, 900)).toBe(false);
-    expect(depositAt(sim, 900, 900)).toBeNull(); // in the fog
     expect(depositAt(sim, -1, 3)).toBeNull();
+  });
+
+  it('a deposit far from the base shows its facts and its whole extent (D148: no fog)', () => {
+    // A copper field near the world's far corner, ~550 tiles from the Heart, nothing built near it.
+    const sim = testSim([{ x: 900, y: 900, w: 5, h: 4, item: COPPER(), rich: 500 }], { plans: false });
+    const f = depositAt(sim, 902, 901)!;
+    expect(f.item).toBe(COPPER());
+    expect(f.where).toBe('ground');
+    expect(f.tilePerMin).toBe(5);
+    expect(f.machines.find((m) => m.def === 'drill')?.locked).toBe(false);
+    const e = depositExtent(sim, 902, 901);
+    expect(e.tiles).toBe(20);
+    expect(e.perMin).toBe(100);
+    // And at the world's very edge.
+    const edge = testSim([{ x: 1020, y: 0, w: 4, h: 2, item: IRON(), rich: 400 }]);
+    expect(depositAt(edge, 1023, 0)?.item).toBe(IRON());
+    expect(depositExtent(edge, 1023, 0).tiles).toBe(8);
   });
 
   it('a deposit\'s known extent: its tiles joined by their sides and what they give together', () => {

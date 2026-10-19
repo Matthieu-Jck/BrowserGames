@@ -214,7 +214,7 @@ export class App {
         return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(this.sim.grid) : v;
       },
     });
-    this.terrain = new TerrainChunks(this.layers.get('terrain'), this.layers.get('relief'), this.layers.get('fog'), land, worker, () => this.sim.explored);
+    this.terrain = new TerrainChunks(this.layers.get('terrain'), this.layers.get('relief'), land, worker);
     this.buildings = new BuildingsView(this.layers.get('belts'), this.layers.get('objects'), this.layers.get('plan'), atlas, this.layers.get('shadows'));
     this.relief = new ReliefView(this.layers.get('objects'), land);
     this.ghost = new GhostView(this.layers.get('ghost'), atlas);
@@ -226,7 +226,7 @@ export class App {
     this.gleaners = new GleanersView(this.layers.get('glass'), this.layers.get('items'), this.layers.get('lights'), this.layers.get('objects'), atlas, this.items);
     this.cargo = new CargoView(this.layers.get('fxTop'), this.layers.get('fxGlow'));
     this.landing = new LandingView(this.layers.get('fxTop'), this.layers.get('fxGlow'), atlas);
-    this.dayNight = new DayNight([this.layers.lit, this.layers.get('fog'), this.layers.get('status'), this.layers.get('fxTop')], stage.renderer);
+    this.dayNight = new DayNight([this.layers.lit, this.layers.get('status'), this.layers.get('fxTop')], stage.renderer);
     this.lights = new LightsView(this.layers.get('lights'), this.layers.get('objects'), this.layers.get('plan'), atlas);
     this.lights.work = this.buildings.work; // a production building that does not work shows no light (D83)
     // The neighbouring bases near the view (D110): their buildings, lamps, wires, dress, goods, smoke, names and drones.

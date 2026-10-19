@@ -38,7 +38,7 @@ export interface ParcelFloor { readonly tiles: number; readonly usable: number; 
 const cache = new WeakMap<Grid, Map<number, { key: string; v: ParcelFloor }>>();
 
 /**
- * A parcel's usable floor, over all its tiles (as its price reads them, fog or not). Cached per grid
+ * A parcel's usable floor, over all its tiles (as its price reads them). Cached per grid
  * and parcel until the land changes (its saved diffs only grow: a tile dug or filled stays so), so
  * the price a tip asks for every frame does not walk 529 tiles' squares each time.
  */

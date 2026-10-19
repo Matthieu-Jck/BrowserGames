@@ -2,8 +2,8 @@
 // endroit possédé par un PNJ, il faut qu'il y ait vraiment une base », « leurs bâtiments ressemblent
 // trop aux miens », « il n'y a rien qui marche, même pas de câble électrique »). The sim lays each
 // base out from the seeds the first time something asks (sim/world/neighbours.ts); this view asks
-// for those near the camera once they are surveyed (their lift pad out of the fog), and draws each
-// as someone else's working base:
+// for those near the camera (there is no fog to wait for, D148), and draws each as someone else's
+// working base:
 // - its buildings, ribbons and flag through the buildings view (`layForeign`: the claim's art,
 //   washed strongly in the colony's weathered colours, never switched off, parts always turning),
 //   its lamps through the lights view, its grid's wires through the wires view (hung like the
@@ -18,7 +18,9 @@
 //   cargo view's).
 // A base laid stays laid until another colony comes into play (the views' `foreignEpoch`); its
 // sprites are hidden while it is out of range. Checked for new bases when the view's range of
-// parcels changes or the fog lifts, not every frame.
+// parcels changes, not every frame; with no fog (D148) a far view takes in a dozen at once, so they
+// are laid one step a frame, the nearest the view's middle first: the sim lays a base out (its first
+// time can take tens of ms), the next frame draws it (`pending`, `layNext`).
 import { Container, Sprite, type Texture } from 'pixi.js';
 import { BUILDING_IDS, BUILDING_KIND, ITEM_IDS } from '@/content/registry';
 import { colonyEmblem, type Emblem } from '@/content/emblem';
@@ -125,6 +127,8 @@ export class NeighboursView {
   private nSmoke = 0;
   private puff: DynFrame | null = null;
   private lastEpoch = -1;
+  /** The bases in range still to lay, nearest the view's middle first: `step` 0 to lay out, 1 to draw, 2 its lights (`lights`). */
+  private pending: Array<{ h: Holding; step: 0 | 1 | 2; lights: (() => void) | null }> = [];
 
   constructor(private readonly d: NeighboursDeps) {
     d.layers.items.addChild(this.goods);
@@ -173,19 +177,42 @@ export class NeighboursView {
     if (sim !== this.sim || ep !== this.epochs) this.reset(sim, ep);
     const x0 = Math.max(0, Math.floor(view[0]) - MARGIN), y0 = Math.max(0, Math.floor(view[1]) - MARGIN);
     const x1 = Math.min(WORLD, Math.ceil(view[2]) + MARGIN), y1 = Math.min(WORLD, Math.ceil(view[3]) + MARGIN);
-    const sig = `${Math.floor(x0 / PARCEL)},${Math.floor(y0 / PARCEL)},${Math.floor(x1 / PARCEL)},${Math.floor(y1 / PARCEL)}:${sim.explored.length}`;
+    const sig = `${Math.floor(x0 / PARCEL)},${Math.floor(y0 / PARCEL)},${Math.floor(x1 / PARCEL)},${Math.floor(y1 / PARCEL)}`;
     if (sig !== this.sig) {
       this.sig = sig;
-      for (const h of sim.neighbours.inRect(x0, y0, x1, y1)) if (!this.laid.has(h.hub)) this.lay(sim, h);
+      const mx = (view[0] + view[2]) / 2, my = (view[1] + view[3]) / 2;
+      // A base drawn but not yet lit keeps its place at the front: its lights are laid next.
+      this.pending = [...this.pending.filter((q) => q.step === 2), ...sim.neighbours.inRect(x0, y0, x1, y1).filter((h) => !this.laid.has(h.hub))
+        .map((h) => { const [px, py] = parcelCentre(h.hub); return { h, d: (px - mx) ** 2 + (py - my) ** 2 }; })
+        .sort((a, b) => a.d - b.d || a.h.hub - b.h.hub)
+        .map(({ h }) => ({ h, step: 0 as const, lights: null }))];
       for (const L of this.laid.values()) {
         const on = L.box[2] >= x0 && L.box[0] <= x1 && L.box[3] >= y0 && L.box[1] <= y1;
         if (on !== L.shown) { L.shown = on; for (const s of L.sprites) s.visible = on; }
       }
       this.sheet.flush();
     }
+    this.layNext(sim);
     this.lastSeconds = seconds;
     this.lastView = view;
     this.animate(view, P, t, zoom, seconds, epoch);
+  }
+
+  /** Bases still to lay (smoke, shots). */
+  get queued(): number { return this.pending.length; }
+
+  /** One step of laying a frame: the next base laid out by the sim; then drawn (its buildings, wires and dress); then lit. */
+  private layNext(sim: Sim): void {
+    const next = this.pending[0];
+    if (!next) return;
+    if (next.step === 0) { sim.neighbours.layout(next.h); next.step = 1; return; }
+    if (next.step === 1 && !this.laid.has(next.h.hub)) {
+      next.lights = this.lay(sim, next.h);
+      this.sheet.flush();
+      if (next.lights) { next.step = 2; return; }
+    }
+    this.pending.shift();
+    next.lights?.();
   }
 
   /** Another colony, or the views dropped their records: everything laid afresh. */
@@ -193,6 +220,7 @@ export class NeighboursView {
     this.sim = sim;
     this.epochs = ep;
     this.sig = '';
+    this.pending = [];
     for (const L of this.laid.values()) { for (const s of L.sprites) s.destroy(); L.name?.destroy(); }
     this.laid.clear();
     this.d.wires.clearForeign();
@@ -200,11 +228,12 @@ export class NeighboursView {
 
   // ── laying a base ────────────────────────────────────────────────────────────
 
-  private lay(sim: Sim, h: Holding): void {
-    if (h.parcels.every((p) => sim.land.neighbour(p) < 0)) return;
+  /** Lay a base: its buildings, wires and dress now; its lights by the step returned (null: nothing to lay). */
+  private lay(sim: Sim, h: Holding): (() => void) | null {
+    if (h.parcels.every((p) => sim.land.neighbour(p) < 0)) return null;
     const L = sim.neighbours.layout(h);
     const heart = L.structs[L.core >= 0 ? L.core : 0];
-    if (!heart || !sim.revealed(heart.x + 1, heart.y + 1)) return; // still under the fog
+    if (!heart) return null;
     const emblem = colonyEmblem(sim.worldSeed, h.colony);
     const colours = coloursOf(emblem);
     const top = NEIGHBOUR_CORE_TOP[h.profile];
@@ -225,7 +254,7 @@ export class NeighboursView {
       ...L.tents.map(([x, y]) => ({ x: x + NEIGHBOUR_TENT * 0.85, y: y + NEIGHBOUR_TENT * 0.85, z: 0.9 })),
       ...L.banners.map(([x, y]) => ({ x: x + 0.5, y: y + 0.5, z: 5.6 })),
     ];
-    this.d.lights.layForeign(h.hub, ents, lanterns);
+    const lights = (): void => this.d.lights.layForeign(h.hub, ents, lanterns);
     // Its grid's wires, from its Core's crown (its own terminal) or terminal to terminal, hidden where a cliff in front covers them.
     this.d.wires.layForeign(h.hub, L.wires.filter(([a, b]) => a < all.length && b < all.length).map(([a, b]) => {
       if (coreAt && (a === L.core || b === L.core)) { const o = all[a === L.core ? b : a]!; return [coreAt, wireAnchor(o, coreAt.x, coreAt.y)] as const; }
@@ -281,6 +310,7 @@ export class NeighboursView {
       smokers, pad: p0 ? { x: p0.x, y: p0.y, w: pw, h: ph, rot: p0.rot } : null,
       name: null, nameAt: [hx + 0.5, hy - 2.5], nameText: '',
     });
+    return lights;
   }
 
   /** A baked frame, once per key. */

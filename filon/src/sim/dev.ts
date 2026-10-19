@@ -48,7 +48,7 @@ export function findSpot(sim: Sim, def: string, item: string, x: number, y: numb
 /** BFS a ribbon from tile `from` to tile `to` (inclusive); the last ribbon points `finalDir`. */
 export function route(sim: Sim, from: [number, number], to: [number, number], finalDir: Rot, def = 'ribbon', maxLen = 120): Array<[number, number, Rot]> | null {
   const free = (x: number, y: number): boolean =>
-    inWorld(x, y) && sim.grid.occ[tileIndex(x, y)] === 0 && isFloor(sim.grid.terrain(x, y)) && sim.revealed(x, y);
+    inWorld(x, y) && sim.grid.occ[tileIndex(x, y)] === 0 && isFloor(sim.grid.terrain(x, y));
   if (!free(from[0], from[1]) || !free(to[0], to[1])) return null;
   const prev = new Map<number, number>();
   const start = tileIndex(from[0], from[1]), goal = tileIndex(to[0], to[1]);
@@ -101,7 +101,7 @@ export function routeOver(sim: Sim, from: readonly [number, number], goals: Read
   const ok = (x: number, y: number): boolean => {
     if (!inWorld(x, y)) return false;
     const t = sim.grid.terrain(x, y);
-    return sim.grid.occ[tileIndex(x, y)] === 0 && sim.revealed(x, y) && (isFloor(t) || isRock(t));
+    return sim.grid.occ[tileIndex(x, y)] === 0 && (isFloor(t) || isRock(t));
   };
   if (!ok(from[0], from[1])) return null;
   // Breadth first over (tile, came in by a step): a step may follow only a flat move.
@@ -162,7 +162,7 @@ export function routeOver(sim: Sim, from: readonly [number, number], goals: Read
 export function routeLevel(sim: Sim, from: readonly [number, number], goals: ReadonlyMap<number, Rot>, maxNodes = 4000, fall = false): BeltTiles | null {
   const avoid = keepOff(sim), W = 1024, lv = sim.grid.level(from[0], from[1]);
   const ok = (x: number, y: number): boolean => {
-    if (!inWorld(x, y) || sim.grid.occ[tileIndex(x, y)] !== 0 || !sim.revealed(x, y) || (!fall && sim.grid.level(x, y) !== lv)) return false;
+    if (!inWorld(x, y) || sim.grid.occ[tileIndex(x, y)] !== 0 || (!fall && sim.grid.level(x, y) !== lv)) return false;
     const t = sim.grid.terrain(x, y);
     return isFloor(t) || isRock(t);
   };
@@ -488,7 +488,7 @@ export function buildDemo(sim: Sim, opt: { kiln?: readonly [number, number, Rot]
 
 // ── the layout kit of scripted bases (scenarios.ts) ─────────────────────────
 // Coordinate-free on purpose: every spot is read off the map as it stands (ore from the tiles,
-// floor from the terrain, the claim's land and the fog from `canPlace`), so a scripted base follows the
+// floor from the terrain, the claim's land from `canPlace`), so a scripted base follows the
 // content when the cirque changes. Lines keep off every building's ports and every routing
 // block's sides (`keepOff`), so two lines never trade items by accident, and cross other lines
 // only straight through, on a junction, once its plan is unlocked; placements leave every
@@ -567,13 +567,13 @@ const isBeltAt = (sim: Sim, x: number, y: number): boolean => {
   return !!e && BUILDING_KIND[e.def] === 'belt';
 };
 
-/** Free, revealed rock: the mountains, where a turbine or a pole may stand (D44). */
+/** Free rock: the mountains, where a turbine or a pole may stand (D44). */
 const openRock = (sim: Sim, x: number, y: number): boolean =>
-  inWorld(x, y) && sim.grid.occ[tileIndex(x, y)] === 0 && isRock(sim.grid.terrain(x, y)) && sim.revealed(x, y);
+  inWorld(x, y) && sim.grid.occ[tileIndex(x, y)] === 0 && isRock(sim.grid.terrain(x, y));
 
-/** Free, revealed floor. */
+/** Free floor. */
 const openFloor = (sim: Sim, x: number, y: number): boolean =>
-  inWorld(x, y) && sim.grid.occ[tileIndex(x, y)] === 0 && isFloor(sim.grid.terrain(x, y)) && sim.revealed(x, y);
+  inWorld(x, y) && sim.grid.occ[tileIndex(x, y)] === 0 && isFloor(sim.grid.terrain(x, y));
 
 /** Do two footprints share an edge (along a side, not only at a corner)? */
 function touches(a: Pick<Ent, 'def' | 'x' | 'y' | 'rot'>, b: Pick<Ent, 'def' | 'x' | 'y' | 'rot'>): boolean {
@@ -856,7 +856,7 @@ export function sideGoalsOver(sim: Sim, line: BeltTiles, avoid: ReadonlySet<numb
     const lv = sim.grid.level(lx, ly);
     for (let d = 0; d < 4; d++) {
       const nx = lx + DX[d]!, ny = ly + DY[d]!, t = tileIndex(nx, ny);
-      if (!inWorld(nx, ny) || sim.grid.occ[t] !== 0 || !sim.revealed(nx, ny) || sim.grid.level(nx, ny) !== lv || avoid.has(t) || goals.has(t)) continue;
+      if (!inWorld(nx, ny) || sim.grid.occ[t] !== 0 || sim.grid.level(nx, ny) !== lv || avoid.has(t) || goals.has(t)) continue;
       const tt = sim.grid.terrain(nx, ny);
       if (isFloor(tt) || isRock(tt)) goals.set(t, opposite(d as Rot));
     }

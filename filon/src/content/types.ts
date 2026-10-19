@@ -196,12 +196,6 @@ export interface BuildingDef {
   /** An excavator's reach (tiles from its footprint) and digging speed (‰). */
   readonly excavator?: { readonly reach: number; readonly speed: number };
   readonly storageCap?: number;
-  /**
-   * The fog it lifts for good when placed (D117), in tiles from its footprint's centre. Omitted: every
-   * building lifts `BAL.buildReveal` plus half its longer side — but a line piece (the `transport` and
-   * `fluid` groups: ribbons, routing blocks, junctions, bridges, conduits) lifts none (`revealOf`, sim/space.ts).
-   */
-  readonly reveal?: number;
   readonly accumulator?: { readonly kwMin: number; readonly kw: number };
   /** Routing blocks (kind `fork`): how they hand items on. */
   readonly logic?: RouterLogic;

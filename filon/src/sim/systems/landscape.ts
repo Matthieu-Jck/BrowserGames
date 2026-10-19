@@ -26,7 +26,7 @@ export function designate(sim: Sim, tiles: readonly number[], on = true): number
     const x = t % 1024, y = (t - x) / 1024;
     if (!inWorld(x, y)) continue;
     if (!on) { if (sim.designated.delete(t)) n++; continue; }
-    if (sim.designated.has(t) || !sim.revealed(x, y)) continue;
+    if (sim.designated.has(t)) continue;
     if (sim.land.neighbour(parcelAt(x, y)) >= 0) continue; // a neighbouring base's land (D110): not the claim's to dig or fill
     const tt = sim.grid.terrain(x, y);
     const kind: JobKind | null = isRock(tt) ? 'dig' : tt === T.Shallow || tt === T.Deep || tt === T.Salt ? 'fill' : null;

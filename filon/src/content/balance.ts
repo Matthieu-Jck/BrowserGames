@@ -103,12 +103,6 @@ export const BAL = {
   },
 
   // ── land & space (docs/land.md, D60) ─────────────────────────────────────
-  // The fog (D117: no survey beacon; it lifts as the claim grows). Round the Core by its level 1..5:
-  // at founding the cirque, its Crown (r 32; a Closed Cirque's 43) and the near belt's first deposits
-  // (from r 36); each level a parcel's half farther.
-  coreReveal: [44, 56, 68, 80, 92],
-  landReveal: 32,  // fog lifted round a parcel the claim comes to hold (from its centre): the parcel (23 tiles, half-diagonal 16) and a margin round it
-  buildReveal: 12, // round any building placed (plus half its longer side; `revealOf`): a pole line walks the fog back, two poles' reach ahead
   remoteBuildTilesPerSec: 4,
   land: {
     // Tiles a side; parcels are centred on the Heart (odd: its parcel exactly so). The starting

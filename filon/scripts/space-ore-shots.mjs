@@ -5,7 +5,7 @@
 // view (I) over them — each parcel's usable-floor gauge and its ore pips — with the cramped one
 // picked (the land panel's « Sol constructible » and « Minerai »): scripts/shot-space-ore-*.png
 // (gitignored). Usage: a server on :5183 (or URL=…, SEED=…), then `node scripts/space-ore-shots.mjs`.
-// It starts the sandbox base over (FL.wipe: map 4) and lifts the fog round the cirque (a review rig).
+// It starts the sandbox base over (FL.wipe: map 4).
 import { chromium } from 'playwright-core';
 import { fileURLToPath } from 'node:url';
 
@@ -42,7 +42,6 @@ const view = async (mode) => {
 // pair: an open desert parcel (≥ 85 %, no ore) and a rich, cramped one (≥ 30 ore tiles, ≤ 45 %), closest first.
 const pair = await page.evaluate(() => {
   const sim = window.FL.app.sim, g = sim.grid;
-  sim.explored.push([512, 512, 200]);
   const FLOOR = new Set([0, 1, 8, 9, 11, 12]);
   const fl = (x, y, lv) => FLOOR.has(g.terrain(x, y)) && g.level(x, y) === lv;
   const usable = (x, y) => {

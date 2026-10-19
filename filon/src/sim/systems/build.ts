@@ -1,5 +1,5 @@
 // build.ts — placing and removing structures. The placement rules, in order: unlock, world
-// edge, fog, occupancy, terrain (a chasm or a river refused by name, D94), deposit / water / vent needs, the claim's land (docs/land.md:
+// edge, occupancy, terrain (a chasm or a river refused by name, D94), deposit / water / vent needs, the claim's land (docs/land.md:
 // production on its parcels; a neighbouring base's land only with Neighbour Treaties or for the camouflaged ribbon, D109–D110; its buildings never), the step a line piece faces (D77: only
 // a traction ribbon changes level, one terrace at a time), cost. An occupied tile is no refusal
 // when what stands there may be replaced (Mindustry-style): same replace group, wholly inside the
@@ -9,7 +9,7 @@
 // modules) to the Hearth. Ribbon drags are planned as a whole in belt-plan.ts
 // (`planBelts`, D73). Also: the Hearth's levels.
 import { BAL } from '@/content/balance';
-import { BUILDING_FLAT, BUILDING_KIND, BUILDING_REVEAL, CRECIPES, N_ITEMS, buildingDef, buildingIdx, costOf, itemIdx, recipesFor } from '@/content/registry';
+import { BUILDING_FLAT, BUILDING_KIND, CRECIPES, N_ITEMS, buildingDef, buildingIdx, costOf, itemIdx, recipesFor } from '@/content/registry';
 import { filterOf, recipeOf, withFilter } from '../cfg';
 import { footprint, forTiles, worldPorts } from '../entities';
 import { faceRot, faceTiles, isFaceOre } from '../face';
@@ -24,7 +24,7 @@ import type { Sim } from '../state';
 
 export type PlaceReason =
   | 'ok' | 'outside_world' | 'occupied' | 'terrain' | 'needs_deposit' | 'needs_water' | 'needs_vent'
-  | 'outside_zone' | 'neighbour_land' | 'locked' | 'unaffordable' | 'not_buildable' | 'fog' | 'limit' | 'reserve' | 'needs_sand' | 'uneven'
+  | 'outside_zone' | 'neighbour_land' | 'locked' | 'unaffordable' | 'not_buildable' | 'limit' | 'reserve' | 'needs_sand' | 'uneven'
   /** A traction step next to another one: an elevator needs one flat ribbon tile in front of it. */
   | 'lift_room'
   /** A plain ribbon facing another level (a wall, or the edge of a drop): only a traction ribbon changes level (D77). */
@@ -66,18 +66,6 @@ export function occupy(sim: Sim, e: Ent): void {
 
 function vacate(sim: Sim, e: Ent): void {
   forTiles(e, (x, y) => { if (sim.grid.occ[tileIndex(x, y)] === e.id) sim.grid.occ[tileIndex(x, y)] = 0; });
-}
-
-/**
- * Lift the fog for good around a building placed (D117: the survey beacon retired, the fog lifts as
- * the claim builds): `revealOf` its def — a pylon its wires' reach, any other building
- * `BAL.buildReveal` and its half-size, a line piece nothing. At placement, a kite's flight or not.
- */
-function reveal(sim: Sim, e: Ent): void {
-  const r = BUILDING_REVEAL[e.def] ?? 0;
-  if (!r) return;
-  const [w, h] = footprint(e.def, e.rot);
-  sim.liftFog(e.x + Math.floor(w / 2), e.y + Math.floor(h / 2), r);
 }
 
 const pay = (sim: Sim, cost: Cost): void => { for (const c of cost) sim.stock[c.item] = sim.stock[c.item]! - c.mu; };
@@ -142,7 +130,6 @@ export function canPlace(sim: Sim, defId: string, x: number, y: number, rot: Rot
   for (let ty = y; ty < y + h; ty++) {
     for (let tx = x; tx < x + w; tx++) {
       if (!inWorld(tx, ty)) return fail('outside_world');
-      if (!sim.revealed(tx, ty)) return fail('fog');
       const occ = sim.grid.occ[tileIndex(tx, ty)]!;
       if (occ !== 0 && !replaces.includes(occ)) {
         // Something stands here: the placement goes ahead only if it may take its place.
@@ -537,7 +524,6 @@ export function place(sim: Sim, defId: string, x: number, y: number, rot0: Rot, 
   const b = buildingDef(def);
   const e = sim.ents.add({ def, x, y, rot, cfg, builtAt: chk.delay > 0 ? sim.tick + chk.delay : 0 });
   occupy(sim, e);
-  reveal(sim, e);
   if (b.kind === 'excavator' || b.kind === 'backfiller') sim.jobsDirty = true;
   // The player's turn is logged only where it overrode the ribbon's way: elsewhere the logged
   // rotation alone places it the same again.
@@ -605,7 +591,7 @@ export function completeConstructions(sim: Sim, now = sim.tick): number[] {
   return done;
 }
 
-/** Raise the Hearth a level (a bigger store: `BAL.hearthCap`; the fog lifted farther round it, `BAL.coreReveal`, D117). */
+/** Raise the Hearth a level (a bigger store: `BAL.hearthCap`). */
 export function upgradeHearth(sim: Sim): { ok: boolean; reason: 'max' | 'locked' | 'unaffordable' | 'reserve' | null } {
   const up = BAL.hearthUpgrades[sim.hearthLevel - 1];
   if (!up) return { ok: false, reason: 'max' };
@@ -616,7 +602,6 @@ export function upgradeHearth(sim: Sim): { ok: boolean; reason: 'max' | 'locked'
   if (sim.reserveShort(cost).length) return { ok: false, reason: 'reserve' };
   pay(sim, cost);
   sim.hearthLevel++;
-  sim.liftFog(CENTER, CENTER, BAL.coreReveal[Math.min(BAL.coreReveal.length, sim.hearthLevel) - 1]!);
   sim.log.push({ tick: sim.tick, cmd: { k: 'hearthUp' } });
   sim.dirty = true;
   sim.events.push({ k: 'structure' });

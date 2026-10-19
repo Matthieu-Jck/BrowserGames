@@ -240,7 +240,7 @@ await step('build: place over things — a router clicked onto a ribbon replaces
 await step('build: off the claim’s land a kiln is refused, with the reason and the land key', async () => {
   await page.keyboard.press('Escape');
   await FL(() => window.FL.tool('kiln'));
-  // Past the starting square (3 × 3 parcels of 23 tiles round the Heart: ±34 tiles, D74), on explored floor.
+  // Past the starting square (3 × 3 parcels of 23 tiles round the Heart: ±34 tiles, D74), on floor.
   const far = await FL(() => {
     const sim = window.FL.app.sim;
     for (let d = 36; d <= 48; d++) for (const [x, y] of [[512, 512 + d], [512 + d, 512], [512, 512 - d], [512 - d, 512]]) {
@@ -248,7 +248,7 @@ await step('build: off the claim’s land a kiln is refused, with the reason and
     }
     return null;
   });
-  assert(far, 'no explored floor just off the claim’s land');
+  assert(far, 'no floor just off the claim’s land');
   await FL(([x, y]) => window.FL.lookAt(x, y, 1.2), far);
   await page.waitForTimeout(300);
   const [sx, sy] = await tileXY(far[0], far[1]);
@@ -350,7 +350,6 @@ await step('build: a ribbon dragged across a neighbouring base’s open land bur
       if (sim.land.neighbour(q.p) < 0 || sim.land.neighbour(w.p) >= 0 || sim.land.holds(w.p)) continue;
       let x0 = q.at[0];
       while (FL.parcelAt(x0 - 1, q.at[1]) === q.p) x0--;
-      sim.explored.push([x0, q.at[1], 30]);
       for (let k = 0; k < 20; k++) {
         const y = q.at[1] + (k % 2 ? -1 : 1) * (k >> 1);
         let ok = true;
@@ -822,10 +821,8 @@ await step('land (D60): I opens the land mode over the plan view; a click picks 
   await FL(() => { window.FL.tool(null); window.FL.category(null); window.FL.close(); window.FL.selected(0); });
   await settleView('iso');
   // A parcel for sale just past the starting square (ring 2: 3 × 3 parcels of 23 tiles round the
-  // Heart's, D74), clicked on its explored tile nearest its middle: a ring-2 middle lies 46 tiles
-  // out and more, past the founding's reveal (`coreReveal[0]` 44), so whether one was explored
-  // depended on the run; its inner edge (35 out) always is. The ocelles granted if short (a rig:
-  // the purse of the demo base).
+  // Heart's, D74), clicked on its tile nearest its middle (no fog to wait for, D148). The ocelles
+  // granted if short (a rig: the purse of the demo base).
   const pick = await FL(() => {
     const sim = window.FL.app.sim;
     for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
@@ -836,7 +833,7 @@ await step('land (D60): I opens the land mode over the plan view; a click picks 
       let at = null, best = Infinity;
       for (let y = mid[1] - 11; y <= mid[1] + 11; y++) for (let x = mid[0] - 11; x <= mid[0] + 11; x++) {
         const d = (x - mid[0]) ** 2 + (y - mid[1]) ** 2;
-        if (d < best && sim.revealed(x, y) && window.FL.parcelAt(x, y) === p) { best = d; at = [x, y]; }
+        if (d < best && window.FL.parcelAt(x, y) === p) { best = d; at = [x, y]; }
       }
       if (!at) continue;
       const cents = sim.landPrice(p);
@@ -877,7 +874,7 @@ await step('land (D60): I opens the land mode over the plan view; a click picks 
 await step('neighbouring bases (D110): a base stands on a neighbour\'s land, by day and by night; nothing of the claim\'s goes on its buildings; its parcel in the land panel: its name, its trade, not for sale', async () => {
   await FL(() => { window.FL.tool(null); window.FL.category(null); window.FL.close(); window.FL.selected(0); });
   await settleView('iso');
-  // The base nearest the Heart: its lift pad's middle, surveyed (a rig: the fog lifted round it).
+  // The base nearest the Heart: its lift pad's middle (in sight from the start: no fog, D148).
   const nb = await FL(() => {
     const sim = window.FL.app.sim;
     // None within three rings of the Heart's parcel (D110: « trop de bases de PNJ autour de moi »).
@@ -891,7 +888,6 @@ await step('neighbouring bases (D110): a base stands on a neighbour\'s land, by 
       const d = (pad.x - 512) ** 2 + (pad.y - 512) ** 2;
       if (!best || d < best.d) best = { d, hub: p, at: [pad.x + 2, pad.y + 2], n: L.structs.length, r: L.ribbons.length, parcels: h.parcels.length };
     }
-    if (best) sim.explored.push([best.at[0], best.at[1], 44]);
     return best;
   });
   assert(!(nb && 'near' in nb), `a neighbouring base within three rings of the Heart: ${JSON.stringify(nb)}`);
@@ -1508,7 +1504,7 @@ await step('deposit (D99): nothing in hand, a pointer resting on a known deposit
     const sim = window.FL.app.sim, g = sim.grid, it = window.FL.itemIndex('iron_ore');
     for (let r = 0; r < 40; r++) for (let y = 512 - r; y <= 512 + r; y++) for (let x = 512 - r; x <= 512 + r; x++) {
       if (Math.max(Math.abs(x - 512), Math.abs(y - 512)) !== r) continue;
-      if (g.ore(x, y) === it && (g.terrain(x, y) < 2 || g.terrain(x, y) > 5) && sim.revealed(x, y) && !sim.entityAt(x, y)) return [x, y];
+      if (g.ore(x, y) === it && (g.terrain(x, y) < 2 || g.terrain(x, y) > 5) && !sim.entityAt(x, y)) return [x, y];
     }
     return null;
   });
@@ -1533,6 +1529,50 @@ await step('deposit (D99): nothing in hand, a pointer resting on a known deposit
   await page.waitForTimeout(400);
   assert(await FL(() => document.querySelector('[data-deposit-card]')?.hidden !== false), 'the card stayed while placing');
   await FL(() => { window.FL.tool(null); window.FL.category(null); });
+});
+
+await step('no fog (D148): no fog layer; a deposit 250+ tiles out shows its card; a pole stands out there', async () => {
+  await FL(() => { window.FL.tool(null); window.FL.category(null); window.FL.view('plan'); });
+  await settleView('plan');
+  const far = await FL(() => {
+    const sim = window.FL.app.sim, g = sim.grid;
+    const fog = [];
+    window.FL.app.stage.root.children.forEach(function walk(c) { if (c.label === 'fog') fog.push(c); c.children?.forEach(walk); });
+    // A deposit tile on open ground 250 tiles out or more (square rings), nothing on it, on no neighbouring base's land.
+    for (let r = 250; r < 420; r++) for (let k = 0; k < 8 * r; k++) {
+      const side = Math.floor(k / (2 * r)), o = (k % (2 * r)) - r;
+      const [x, y] = [[512 + o, 512 - r], [512 + r, 512 + o], [512 - o, 512 + r], [512 - r, 512 - o]][side];
+      if (x < 2 || y < 2 || x > 1020 || y > 1020) continue;
+      const ore = g.ore(x, y), t = g.terrain(x, y);
+      if (ore < 0 || !(t < 2 || t > 5) || t === 13 || t === 14 || sim.entityAt(x, y) || sim.land.neighbour(window.FL.parcelAt(x, y)) >= 0) continue;
+      if (g.ore(x + 1, y) !== ore || g.ore(x, y + 1) !== ore) continue; // inside a deposit, not on a lone tile
+      return { at: [x, y], ore: window.FL.ids().items[ore], r, fog: fog.length };
+    }
+    return { at: null, fog: fog.length };
+  });
+  assert(far.fog === 0, `a fog layer is still on the stage (${far.fog})`);
+  assert(far.at, 'no deposit 250+ tiles out');
+  await FL(([x, y]) => window.FL.lookAt(x + 0.5, y + 0.5, 1.2), far.at);
+  await page.waitForTimeout(300);
+  const [sx, sy] = await tileXY(far.at[0], far.at[1]);
+  await page.mouse.move(sx + 25, sy + 25);
+  await page.mouse.move(sx, sy, { steps: 3 });
+  await page.waitForTimeout(700);
+  const card = await FL(() => { const n = document.querySelector('[data-deposit-card]'); return n && !n.hidden ? n.dataset.ore : null; });
+  assert(card === far.ore, `no card on the far ${far.ore} (${far.r} tiles out): ${card}`);
+  await page.screenshot({ path: shot('smoke-far-deposit.png') });
+  await page.mouse.move(5, 5);
+  // A pole out there, off the claim's land: a kite flies it.
+  const pole = await FL(([x, y]) => {
+    const sim = window.FL.app.sim;
+    sim.grant('iron_plate', 10); sim.grant('copper_wire', 10);
+    for (let d = 2; d < 30; d++) for (const [px, py] of [[x + d, y], [x, y + d], [x - d, y], [x, y - d]]) {
+      const c = sim.canPlace('mast', px, py, 0);
+      if (c.ok) return { ok: window.FL.place('mast', px, py, 0).ok, delay: c.delay };
+    }
+    return null;
+  }, far.at);
+  assert(pole && pole.ok && pole.delay > 0, `no pole far out: ${JSON.stringify(pole)}`);
 });
 
 await step('quests: CrierBelt has the claim named; the log moves on; rewards pay once', async () => {
@@ -1668,7 +1708,6 @@ await step('gaps (D94): today\'s land (map 4, and 5: D136) has chasms and rivers
     }
     if (!at) return { ok: false, why: 'no chasm crossing within 120 tiles' };
     const [x, y, n] = at;
-    sim.explored.push([x + 3, y, 12]); // a rig: the fog lifted over the crossing (land too far to buy is crossed by kite)
     const refused = sim.canPlace('mast', x + 2, y, 0).reason;
     for (const tx of [x, x + 3 + n]) { const p = window.FL.parcelAt(tx, y); if (!sim.land.holds(p)) { if (sim.credits < sim.landPrice(p) + 100) sim.grantCredits(sim.landPrice(p) + 100 - sim.credits); sim.buyLand(p); } }
     window.FL.unlock('bridge');

@@ -1,8 +1,8 @@
 // layers.ts — the fixed layer stack for two views of one world. `world` is a render group
 // holding the camera transform. Flat things live in TILE units inside "plane" containers that
 // all carry the view projection P(t): the ground and ribbons, the relief paint (iso only),
-// the plan sprites (plan only), and above everything the grid, overlays, fog, the land's parcels
-// and the ghost.
+// the plan sprites (plan only), and above everything the grid, overlays, the land's parcels and
+// the ghost.
 // Volumes (iso buildings and cliffs, depth-sorted together) live in iso world px under
 // M(t) = P(t)·P(0)⁻¹; items on the floor are placed in world px by their view, under the
 // buildings, and items above the floor (on the rock, in an elevator's shaft, falling into an
@@ -25,7 +25,7 @@ import { isoToView, type Lin } from './projection';
 
 export type LayerName =
   | 'terrain' | 'decals' | 'belts' | 'items' | 'relief' | 'plan' | 'objects'
-  | 'grid' | 'overlays' | 'fog' | 'ghost' | 'status' | 'fxTop'
+  | 'grid' | 'overlays' | 'ghost' | 'status' | 'fxTop'
   // Day / night (daynight.ts, world/lights-view.ts): cloud shadows inside the graded world,
   // night glows (additive) above it.
   | 'shade' | 'lights'
@@ -42,8 +42,7 @@ export type LayerName =
   // drawn over their flames and tinted by hand like `fxTop`.
   | 'fxGlow'
   // The claim's land (D60, world/overlays-view.ts): the parcels held, leased and a neighbouring base's (D110),
-  // the land mode's grid and marks — above the fog (a map of who holds what, readable on land not
-  // explored yet: the price says what a parcel holds), below the ghost.
+  // the land mode's grid and marks — above the overlays (a map of who holds what), below the ghost.
   | 'land'
   // The specialised views (D88, world/views-view.ts): the paper veil over the base, the view's
   // flat marks (tile units, untinted), its badges (view world px, untinted).
@@ -98,7 +97,6 @@ export class Layers {
     this.add(this.top, 'grid');
     this.add(this.top, 'viewFlat', true);
     this.add(this.top, 'overlays');
-    this.add(this.top, 'fog');
     this.add(this.top, 'land');
     this.add(this.top, 'ghost', true);
     this.add(this.world, 'status', true);

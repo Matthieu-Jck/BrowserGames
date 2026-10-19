@@ -5,7 +5,7 @@
 // square at far zoom, then the land out to the sixth ring further off, in plan and in iso, by day:
 // scripts/shot-desert-<TAG>-*.png (gitignored; TAG=before|after). Usage: a server on :5183 (or
 // URL=…, SEED=…, default 1), then `TAG=after node scripts/desert-shots.mjs`. It starts the sandbox
-// base over (FL.wipe: map 4) and lifts the fog out to the sixth ring (a review rig: `sim.explored`).
+// base over (FL.wipe: map 4).
 import { chromium } from 'playwright-core';
 import { fileURLToPath } from 'node:url';
 
@@ -38,7 +38,7 @@ const view = async (mode) => {
   await page.waitForFunction((m) => { const v = window.FL.view(); return v.mode === m && (m === 'plan' ? v.t === 1 : v.t === 0); }, mode, { timeout: 5000 });
 };
 
-const mapV = await page.evaluate(() => { const sim = window.FL.app.sim; sim.explored.push([512, 512, 220]); return sim.grid.source.mapV; });
+const mapV = await page.evaluate(() => window.FL.app.sim.grid.source.mapV);
 if ((mapV ?? 1) < 4) throw new Error(`map ${mapV}: the open desert is map 4's (and 5's, D136)`);
 
 // The cirque and the rings round its starting square; then out to the sixth ring.

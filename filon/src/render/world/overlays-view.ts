@@ -124,7 +124,7 @@ export class OverlaysView {
   /** The Link tool's preview while it is in hand, else a pole's or pylon's held to be placed (set by the shell each frame), else null. */
   linking: LinkPreview | null = null;
 
-  /** `landLayer`: where the land's parcels go (above the fog, layers.ts `land`); default, with the overlays. */
+  /** `landLayer`: where the land's parcels go (above the overlays, layers.ts `land`); default, with the overlays. */
   constructor(gridLayer: Container, overlayLayer: Container, landLayer: Container = overlayLayer) {
     this.grid = new TilingSprite({ texture: gridTexture(), width: 1, height: 1 });
     this.grid.tileScale.set(1 / 64);

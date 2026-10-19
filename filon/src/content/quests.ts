@@ -250,6 +250,15 @@ const INTAKE = { intake: true } as const;
 const NIGHT_HOLDS = { k: 'night', pct: 80 } as const;
 /** « Le Cœur grandit »'s measure: its hints for what is short pass by once the Core is raised. */
 const CORE_2 = { k: 'hearth', level: 2 } as const;
+/**
+ * « Le quartz de la paroi »'s power (D146): by then the base draws more at night than the Core, the
+ * boiler and « Tenir la nuit »'s turbine give (1 100–1 400 kW against about 1 100), and the next night
+ * is a quarter hour away: it dipped to 30–85 % for 7–12 minutes on lands 1–3, the boiler's coal drill
+ * slowing with the grid until the boiler ran dry. Six turbines wired hold it (docs/pacing.md). A count,
+ * not `night`: past « La vapeur » that measure reads the boiler at its day's dispatch, so by day it
+ * cannot tell a night that holds from one that does not.
+ */
+const WIND_SIX = { k: 'linked', defs: ['wind_flower', 'pitch_turbine'], n: 6, label: { fr: 'Six éoliennes au réseau', en: 'Six turbines on the grid' } } as const;
 /** The plans of the six paths: all of them open the research lab's plan (D71). */
 const PATH_PLANS = PLAN_IDS.filter((id) => PLANS[id].lane !== 'gate');
 
@@ -258,6 +267,8 @@ const VEIN_DRILL = { fr: 'Le filon de cuivre, au sud du Cœur, est maigre mais i
 // « La fonderie »'s larger steps: one sentence each, over the steps its arrow walks (D101).
 const KILN_COAL = { fr: 'Le charbon : une foreuse sur son gisement, à l’ouest, et un ruban de sa sortie jusqu’à une entrée de la fonderie.', en: 'The coal: a drill on its deposit, to the west, and a ribbon from its output to an input of the smelter.' } as const;
 const KILN_IRON = { fr: 'Le fer : une deuxième foreuse sur le gisement de fer, et son ruban jusqu’à l’autre entrée.', en: 'The iron: a second drill on the iron deposit, and its ribbon to the other input.' } as const;
+/** « La verrerie »'s coal (D146): one sentence over its two hints (the drill, its ribbon). */
+const GLASS_COAL = { fr: 'Le charbon de la verrerie : une deuxième foreuse sur le gisement de charbon, son ruban jusqu’à l’autre entrée de la fonderie à verre. La fonderie de fer garde ainsi tout le sien.', en: 'The glassworks’ coal: a second drill on the coal deposit, its ribbon to the glass smelter’s other input. The iron smelter keeps all of its own that way.' } as const;
 const KILN_WIRE = { fr: 'Relie les deux nouvelles foreuses au réseau (outil Relier). Trop loin pour un fil ? Un poteau le porte plus loin.', en: 'Wire both new drills into the grid (Link tool). Too far for a wire? A pole carries it further.' } as const;
 
 export const QUESTS = {
@@ -471,16 +482,19 @@ export const QUESTS = {
         target: { k: 'build', def: 'ribbon', at: { newest: 'kiln' } },
         done: { k: 'feeds', item: 'sand', to: KILNS, n: 1 },
       },
+      // Its coal from a drill of its own (D146): a router sharing the plate smelter's coal line halved
+      // both smelters (one coal drill, ~13 a minute, for two that take 10 each: 6.5 plates a minute)
+      // just before the tutorial's plate-hungry quests; the deposit takes four drills or more. The
+      // router comes with « La Criée », on the glass line (a router on the coal line still meets this).
       {
-        // Two ways to coal: a second coal drill (the deposit takes four), or a router sharing the line.
-        hint: { fr: 'Le charbon : une seconde foreuse sur son gisement, ou un Routeur qui partage la ligne (arbre, voie Logistique).', en: 'The coal: a second drill on its deposit, or a Router sharing the line (tree, Logistics path).' },
-        target: { k: 'unlock', ids: ['router'] },
-        done: { k: 'unlocked', ids: ['router'] },
+        hint: GLASS_COAL,
+        target: { k: 'build', def: 'drill', at: { deposit: 'coal' } },
+        done: { k: 'build', defs: DRILLS, item: 'coal', n: 2 },
         unless: { k: 'feeds', item: 'coal', to: KILNS, n: 2 },
       },
       {
-        hint: { fr: 'Un routeur sur la ligne du charbon (il remplace le ruban), puis un ruban jusqu’à la fonderie à verre.', en: 'A router on the coal line (it replaces the ribbon), then a ribbon to the glass smelter.' },
-        target: { k: 'branch', item: 'coal', to: KILNS },
+        hint: GLASS_COAL,
+        target: { k: 'build', def: 'ribbon', at: { newest: 'kiln' } },
         done: { k: 'feeds', item: 'coal', to: KILNS, n: 2 },
       },
       {
@@ -591,6 +605,12 @@ export const QUESTS = {
         hint: { fr: 'Relie le comptoir au réseau.', en: 'Wire the post into the grid.' },
         target: { k: 'link' },
         done: { k: 'powered', defs: ['trade_post'], n: 1 },
+      },
+      {
+        // D146: « La verrerie » feeds its coal by a drill of its own; the router is learnt here.
+        hint: { fr: 'Le Routeur est dans l’arbre, voie Logistique : il partage une ligne entre deux chemins.', en: 'The Router is in the tree, on the Logistics path: it shares a line between two ways.' },
+        target: { k: 'unlock', ids: ['router'] },
+        done: { k: 'unlocked', ids: ['router'] },
       },
       {
         hint: { fr: 'Du verre à son entrée (sa rampe turquoise) : un routeur sur la ligne du verre, un ruban jusqu’à elle.', en: 'Glass to its entrance (its teal ramp): a router on the glass line, a ribbon to it.' },
@@ -790,12 +810,13 @@ export const QUESTS = {
     name: { fr: 'Le quartz de la paroi', en: 'Quartz in the Wall' },
     reveals: ['view:land'],
     desc: {
-      fr: 'Le cirque n’a pas de quartz. La montagne la plus proche en a, serti dans sa paroi, à une parcelle de vos terres, au-delà de la Couronne. Achetez cette parcelle, posez-y une haveuse au pied de la paroi, et ramenez le quartz au Cœur par-dessus la Couronne : des rubans à traction montent les objets de gradin en gradin.',
-      en: 'The cirque has no quartz. The nearest mountain does, set in its face, one parcel from your land, beyond the Crown. Buy that parcel, set a face cutter at the foot of the wall, and bring the quartz back to the Core over the Crown: traction ribbons lift items from terrace to terrace.',
+      fr: 'Le cirque n’a pas de quartz. La montagne la plus proche en a, serti dans sa paroi, à une parcelle de vos terres, au-delà de la Couronne. Achetez cette parcelle, posez-y une haveuse au pied de la paroi, et ramenez le quartz au Cœur par-dessus la Couronne : des rubans à traction montent les objets de gradin en gradin. Et la nuit revient bientôt : vos machines tirent déjà plus que le Cœur et la chaudière ne donnent dans le noir, six éoliennes au réseau la tiendront.',
+      en: 'The cirque has no quartz. The nearest mountain does, set in its face, one parcel from your land, beyond the Crown. Buy that parcel, set a face cutter at the foot of the wall, and bring the quartz back to the Core over the Crown: traction ribbons lift items from terrace to terrace. And the night comes back soon: your machines already draw more than the Core and the boiler give in the dark, six turbines on the grid will hold it.',
     },
     objectives: [
       { k: 'vein', label: { fr: 'La parcelle de la veine', en: 'The vein’s parcel' } },
       { k: 'stock', items: ['quartz'], n: 10, label: { fr: 'Quartz au Cœur', en: 'Quartz in the Core' } },
+      WIND_SIX,
     ],
     reward: { kit: 'quartz_workshop', grant: 'arpentage' },
     hints: [
@@ -828,6 +849,17 @@ export const QUESTS = {
         hint: { fr: 'Ta terre n’a pas de veine de quartz : Criée (M), onglet Échanges, un ordre d’import de quartz, que la sortie du comptoir mène au Cœur.', en: 'Your land has no quartz vein: Crier (M), Trade tab, an import order of quartz, which the post’s exit leads into the Core.' },
         target: { k: 'crier', tab: 'trade', focus: 'order' },
         done: { k: 'order', item: 'quartz' },
+      },
+      // D146: the turbines (« Tenir la nuit »'s hints, up to six): on the Crown's windiest spots, wired.
+      {
+        hint: { fr: 'La nuit qui vient : des éoliennes sur la Couronne, bien exposées, jusqu’à six.', en: 'The coming night: turbines on the Crown, well exposed, up to six.' },
+        target: { k: 'build', def: 'wind_flower', at: { windy: true } },
+        done: { k: 'build', defs: ['wind_flower', 'pitch_turbine'], n: 6 },
+      },
+      {
+        hint: { fr: 'Relie-les au réseau, de poteau en poteau.', en: 'Wire them into the grid, pole by pole.' },
+        target: { k: 'link' },
+        done: WIND_SIX,
       },
     ],
   },

@@ -1,6 +1,6 @@
 // wind-shots.mjs — the wind (D95) for visual review, on the late debug base: the rare hints on the
 // land (gust streaks, sand off the tops) in the Normal view; the Vent view in iso, in plan and far
-// out (the zones, the arrows, the turbines' badges, the side card), and farther with the fog lifted (map 4's massifs); the inspector on the windiest
+// out (the zones, the arrows, the turbines' badges, the side card), and farther (map 4's massifs); the inspector on the windiest
 // and the least windy turbine, after the Anémométrie plan and before it (no figure about the wind);
 // a turbine in hand and what it would give where it stands. Usage: a dev server (default port
 // 5183; the scripts import /src), then `node scripts/wind-shots.mjs` → scripts/wind-*.png
@@ -86,8 +86,8 @@ await iso();
 await page.evaluate(() => window.FL.lookAt(512, 512, 0.3));
 await settle(4000);
 await page.screenshot({ path: shot('view-far') });
-// Farther, the fog lifted round the cirque (sandbox): the land past the Crown — map 4's massifs, their lees and passes.
-await page.evaluate(() => { window.FL.app.sim.explored.push([512, 512, 170]); window.FL.lookAt(512, 512, 0.2); });
+// Farther (sandbox): the land past the Crown — map 4's massifs, their lees and passes.
+await page.evaluate(() => { window.FL.lookAt(512, 512, 0.2); });
 await settle(6000);
 await page.screenshot({ path: shot('view-land') });
 console.log('✓ wind-view-iso.png, wind-view-plan.png, wind-view-far.png, wind-view-land.png');

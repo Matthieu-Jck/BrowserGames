@@ -241,7 +241,7 @@ Space (pan modifier) is hard-coded in `input.ts`, not in the table.
 - **Demolition box.** Every entity touching the inclusive box, except the Hearth, is removed with
   `sim.remove`; the engine refunds it. A click is a 1-tile box. In build mode with nothing in hand,
   a right click demolishes the building under the cursor.
-- **The dig/fill brush.** On release, `sim.designate(tiles, true)` marks revealed rock to dig and
+- **The dig/fill brush.** On release, `sim.designate(tiles, true)` marks rock to dig and
   shallow/deep water or salt flats to fill. The sim picks the job kind and skips occupied fill
   tiles. A right drag clears marks. Excavators and backfillers in reach then work the marks
   ([engine.md](engine.md)).

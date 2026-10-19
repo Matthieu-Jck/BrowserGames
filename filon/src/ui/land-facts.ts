@@ -2,8 +2,7 @@
 // (docs/land.md, D60), derived from the engine and never written by hand: its name on the map (a
 // compass offset from the Heart's parcel, « 2 E · 1 N »: the parcels have no names, and an offset
 // is what the player can find on the overlay), what it holds tile by tile (floor, rock, water, salt
-// flats, vents, the dune sea, chasms and rivers (D94), each deposit's ore — of the tiles explored: the fog keeps the rest,
-// counted apart; the price, the engine's, knows it all), who holds it (the claim — its starting square,
+// flats, vents, the dune sea, chasms and rivers (D94), each deposit's ore — every tile: there is no fog, D148), who holds it (the claim — its starting square,
 // bought, granted or leased —, a neighbouring base (D110), or nobody: CrierBelt sells it), and the buildings
 // standing on it. Pure text and numbers, no DOM, so it is tested in node (land-facts.test.ts).
 import { WORLD, CENTER } from '@/sim/constants';
@@ -87,8 +86,6 @@ export function neighbourName(sim: Sim, idx: number): string {
 /** What a parcel holds, tile by tile: grounds, and deposit tiles by ore (item index). */
 export interface ParcelContents {
   readonly tiles: number;
-  /** Tiles still under the fog: not counted below. */
-  readonly hidden: number;
   readonly floor: number;
   readonly rock: number;
   readonly water: number;
@@ -104,11 +101,10 @@ export interface ParcelContents {
 
 export function parcelContents(sim: Sim, p: number): ParcelContents {
   const { x0, y0, x1, y1 } = parcelRect(p);
-  let floor = 0, rock = 0, water = 0, salt = 0, vent = 0, dunes = 0, chasm = 0, river = 0, hidden = 0;
+  let floor = 0, rock = 0, water = 0, salt = 0, vent = 0, dunes = 0, chasm = 0, river = 0;
   const ores = new Map<number, number>();
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
-      if (!sim.revealed(x, y)) { hidden++; continue; }
       const tt = sim.grid.terrain(x, y);
       if (isRock(tt)) rock++;
       else if (tt === T.Shallow || tt === T.Deep) water++;
@@ -123,14 +119,14 @@ export function parcelContents(sim: Sim, p: number): ParcelContents {
     }
   }
   return {
-    tiles: (x1 - x0) * (y1 - y0), hidden, floor, rock, water, salt, vent, dunes, chasm, river,
+    tiles: (x1 - x0) * (y1 - y0), floor, rock, water, salt, vent, dunes, chasm, river,
     ores: [...ores].sort((a, b) => b[1] - a[1] || a[0] - b[0]),
   };
 }
 
 /** A short signature of what a parcel holds (the panel rebuilds its contents row when it changes: a tile dug, water filled). */
 export const contentsSig = (c: ParcelContents): string =>
-  `${c.hidden},${c.floor},${c.rock},${c.water},${c.salt},${c.vent},${c.dunes},${c.chasm},${c.river};${c.ores.map(([i, n]) => `${i}:${n}`).join(',')}`;
+  `${c.floor},${c.rock},${c.water},${c.salt},${c.vent},${c.dunes},${c.chasm},${c.river};${c.ores.map(([i, n]) => `${i}:${n}`).join(',')}`;
 
 /** The buildings with a footprint tile on the parcel (what a lapsed or given-up lease would stop), by id. */
 export function buildingsOn(sim: Sim, p: number): number[] {

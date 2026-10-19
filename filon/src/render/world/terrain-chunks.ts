@@ -8,8 +8,9 @@
 // the worker; an LRU keeps VRAM bounded. Re-painted when the sim marks a chunk dirty: a
 // chunk's paint reads 7 tiles around it, so its 8 neighbours repaint too, and a version per
 // chunk discards paints that were in flight when the land changed. A failed or lost paint is
-// retried after a pause instead of blocking the queue. Also lays the fog.
-import { CanvasSource, Container, ImageSource, Sprite, Texture } from 'pixi.js';
+// retried after a pause instead of blocking the queue. There is no fog over it (D148): every chunk
+// in view is painted, near the camera first.
+import { Container, ImageSource, Sprite, Texture } from 'pixi.js';
 import { CHUNK, CHUNKS } from '@/sim/constants';
 import type { Grid } from '@/sim/world/grid';
 import { buildWindow, hasRock } from '../art/terrain';
@@ -37,7 +38,6 @@ interface Entry { tex: Texture | null; bytes: number; used: number }
 export class TerrainChunks {
   private readonly cache = new Map<string, Entry>(); // `${kind}:${ck}:${ppt}`
   private readonly shown = new Map<string, { sprite: Sprite; key: string }>(); // `${kind}:${ck}`
-  private readonly fog = new Map<number, { sprite: Sprite; sig: string }>();
   /** Paints posted to the worker: the chunk version and the frame they were sent at. */
   private readonly inflight = new Map<string, { ver: number; at: number }>();
   /** Per chunk: bumped when its land changes (paints of an older version are stale). */
@@ -58,10 +58,8 @@ export class TerrainChunks {
   constructor(
     private readonly groundLayer: Container,
     private readonly reliefLayer: Container,
-    private readonly fogLayer: Container,
     private readonly grid: Grid,
     private readonly worker: Worker,
-    private readonly discs: () => ReadonlyArray<readonly [number, number, number]>,
   ) {
     reliefLayer.addChildAt(this.sunLayer, 0);
     worker.onmessage = (e: MessageEvent) => {
@@ -225,7 +223,6 @@ export class TerrainChunks {
     const [ctx, cty] = apply(invert(P), cam.cx, cam.cy);
     const ccx = ctx / CHUNK, ccy = cty / CHUNK;
     const want = new Set<string>();
-    const wantFog = new Set<number>();
     const relief = t < 0.6;
     this.missing.count = 0;
     this.visible = visibleChunksP(P, cam, vw, vh, 0, reliefHead(t, MAX_LEVEL));
@@ -240,58 +237,9 @@ export class TerrainChunks {
         want.add(`r:${ck}`); this.show('r', ck, cx, cy, rppt, d2);
         want.add(`s:${ck}`); this.show('s', ck, cx, cy, SUN_PPT, d2);
       }
-      wantFog.add(ck);
-      this.updateFog(ck, cx, cy);
     }
     for (const [sk, s] of this.shown) if (!want.has(sk)) { s.sprite.destroy(); this.shown.delete(sk); }
-    for (const [ck, f] of this.fog) if (!wantFog.has(ck)) { destroyFog(f.sprite); this.fog.delete(ck); }
     this.pump();
-  }
-
-  /** Fog: a soft mask per chunk (4 texels per tile, alpha ramps over ~2 tiles at disc edges). */
-  private updateFog(ck: number, cx: number, cy: number): void {
-    const x0 = cx * CHUNK, y0 = cy * CHUNK;
-    const discs = this.discs();
-    // Signature: which discs touch this chunk (they only ever grow).
-    const touching = discs.filter(([dx, dy, r]) => {
-      const nx = Math.max(x0, Math.min(dx, x0 + CHUNK)), ny = Math.max(y0, Math.min(dy, y0 + CHUNK));
-      return (nx - dx) ** 2 + (ny - dy) ** 2 <= (r + 3) ** 2;
-    });
-    const full = touching.some(([dx, dy, r]) => {
-      const far = Math.max(Math.hypot(x0 - dx, y0 - dy), Math.hypot(x0 + CHUNK - dx, y0 - dy), Math.hypot(x0 - dx, y0 + CHUNK - dy), Math.hypot(x0 + CHUNK - dx, y0 + CHUNK - dy));
-      return far <= r - 2;
-    });
-    const cur = this.fog.get(ck);
-    if (full) { if (cur) { destroyFog(cur.sprite); this.fog.delete(ck); } return; }
-    const sig = touching.map((d) => d.join(',')).join(';');
-    if (cur && cur.sig === sig) return;
-    if (cur) destroyFog(cur.sprite);
-    const R = 4, N = CHUNK * R;
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = N;
-    const g = cv.getContext('2d')!;
-    const img = g.createImageData(N, N);
-    const fog = num(C.fog);
-    const [r, gg, b] = [(fog >> 16) & 255, (fog >> 8) & 255, fog & 255];
-    for (let j = 0; j < N; j++) {
-      for (let i = 0; i < N; i++) {
-        const wx = x0 + (i + 0.5) / R, wy = y0 + (j + 0.5) / R;
-        // Signed distance inside the nearest explored disc (tiles).
-        let inside = -1e9;
-        for (const [dx, dy, rr] of touching) inside = Math.max(inside, rr - Math.hypot(wx - dx, wy - dy));
-        const a = inside >= 2 ? 0 : inside <= 0 ? 1 : 1 - inside / 2;
-        const o = (j * N + i) * 4;
-        img.data[o] = r; img.data[o + 1] = gg; img.data[o + 2] = b; img.data[o + 3] = Math.round(a * 238);
-      }
-    }
-    g.putImageData(img, 0, 0);
-    // Its own texture (not Texture.from, which would keep every mask in Pixi's global cache).
-    const tex = new Texture({ source: new CanvasSource({ resource: cv, scaleMode: 'linear' }) });
-    const s = new Sprite(tex);
-    s.scale.set(1 / R);
-    s.position.set(x0, y0);
-    this.fogLayer.addChild(s);
-    this.fog.set(ck, { sprite: s, sig });
   }
 
   stats(): { chunks: number; vramMB: number; inflight: number; queued: number } {
@@ -299,9 +247,4 @@ export class TerrainChunks {
     for (const k of this.shown.keys()) if (k.startsWith('g:')) n++;
     return { chunks: n, vramMB: Math.round(this.bytes / 1048576), inflight: this.inflight.size, queued: this.queue.length };
   }
-}
-
-/** A fog sprite owns its mask texture: free both (texture GC is off). */
-function destroyFog(s: Sprite): void {
-  s.destroy({ texture: true, textureSource: true });
 }

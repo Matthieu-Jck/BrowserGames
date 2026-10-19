@@ -1,5 +1,5 @@
 // projection.ts — the two views of one world and the morph between them. Everything flat
-// (ground, ribbons, plan sprites, grid, fog) lives in TILE units under one linear map P(t):
+// (ground, ribbons, plan sprites, grid, overlays) lives in TILE units under one linear map P(t):
 // t = 0 is the isometric view (a 45° turn and a 2:1 squash), t = 1 the plan view used to
 // build (a tile is a 32 px square). In between, the plane turns and unfolds — a scale-and-
 // rotate interpolation, so the board lies down instead of shearing. Volumes (iso buildings,

@@ -225,7 +225,6 @@ body[data-noui] #ui { opacity: 0; visibility: hidden; transition: opacity 200ms 
 .glyph .g-gap { fill: #2a2236; }
 .glyph .g-river { fill: none; stroke: #5ab7cf; stroke-width: 3; stroke-linecap: round; }
 .glyph .g-ore { fill: #9b5a3c; stroke: var(--c-ink); stroke-width: 1.1; stroke-linejoin: round; }
-.glyph .g-fog { fill: var(--t-fog, #f5e9d6); stroke: var(--c-ink-soft); stroke-width: 1.1; stroke-dasharray: 2 1.4; }
 .glyph .g-dunes { fill: var(--c-dune); stroke: var(--c-ink); stroke-width: 1.1; stroke-linejoin: round; }
 .glyph .g-works { fill: var(--t-steelL, #6c84b6); stroke: var(--c-ink); stroke-width: 1.2; stroke-linejoin: round; }
 .glyph .g-flag { fill: var(--c-turq); stroke: var(--c-ink); stroke-width: 1.1; stroke-linejoin: round; }

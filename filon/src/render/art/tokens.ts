@@ -30,7 +30,6 @@ export const C = {
   vent: '#6e4f6c', dug: '#d9b896', filled: '#e3c6a4', duneSea: '#e5c09d',
   // map 4's gaps (D94): a river's running water (bluer than the still lakes), a chasm's dark and its lit far wall
   river: '#5ab7cf', riverD: '#2f8fb0', chasm: '#2a2236', chasmWall: '#6a5677',
-  fog: '#f5e9d6',
 } as const;
 
 export type ColorToken = keyof typeof C;

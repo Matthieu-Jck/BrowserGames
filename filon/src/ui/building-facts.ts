@@ -12,7 +12,7 @@
 // yet researched are left out, and so are locked buildings in the « replaces » list.
 import { BAL } from '@/content/balance';
 import {
-  BUILDING_IDS, buildingDef, buildingIdx, costOf, itemIdx, recipeDef, recipesFor, revealOf,
+  BUILDING_IDS, buildingDef, buildingIdx, costOf, itemIdx, recipeDef, recipesFor,
 } from '@/content/registry';
 import { nodeName } from '@/content/research';
 import type { BuildingDef, ItemDef, Side } from '@/content/types';
@@ -237,8 +237,6 @@ function kindRows(def: number, b: BuildingDef, m: Readonly<Mods>): FactRow[] {
       const p = linkPoint(def, m);
       if (p) add('wires', t('card.wires'), t('card.wires.v', { n: p.slots, r: p.range }));
       if (p) add('climb', t('card.climb'), t('card.climb.v', { n: climbOf(def) }));
-      // The fog it lifts round itself (D117: every building does, but a pillar is how a line walks it back).
-      if (revealOf(b)) add('reveal', t('card.reveals'), t('card.radius', { n: revealOf(b) }));
       break;
     }
     default:

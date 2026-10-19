@@ -1,7 +1,6 @@
 // registry.ts — compiles the string-keyed content tables into dense numeric indices for the
 // engine (items, buildings, recipes, research), with milli-item quantities and tick cycles
 // precomputed. Unknown ids throw: content mistakes fail loudly at startup and in tests.
-import { BAL } from './balance';
 import { ITEMS } from './items';
 import { RECIPES } from './recipes';
 import { BUILDINGS, FLAT_KINDS } from './buildings';
@@ -117,17 +116,3 @@ export const isBeltDef = (def: string): boolean => {
 /** Laid by dragging a line (the build tool's drag, planned whole by `planBelts`): ribbons, conduits and fences (D103). */
 export const isDragDef = (def: string): boolean => isBeltDef(def) || BUILDING_KIND[buildingIdx(def)] === 'fence';
 
-/**
- * The fog a building lifts for good when placed (D117, the survey beacon retired), in tiles from its
- * footprint's centre: its own `reveal` (the pylon: its wires' reach), else `BAL.buildReveal` plus
- * half its longer side. A line piece lifts none — the transport and fluid groups (ribbons, routing
- * blocks, junctions, bridges, conduits) and the fence, all laid by the tile on land already seen:
- * a disc each would swell the fog's list (`Sim.explored`) for nothing.
- */
-export function revealOf(b: BuildingDef): number {
-  if (b.reveal !== undefined) return b.reveal;
-  if (b.replaceGroup === 'transport' || b.replaceGroup === 'fluid' || b.kind === 'fence') return 0;
-  return BAL.buildReveal + (Math.max(b.w, b.h) >> 1);
-}
-/** `revealOf` by building index. */
-export const BUILDING_REVEAL: readonly number[] = BUILDING_IDS.map((id) => revealOf(BUILDINGS[id] as BuildingDef));

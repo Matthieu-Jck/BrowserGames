@@ -4,8 +4,7 @@
 // by day, dusk and night:
 // scripts/shot-mesa-<TAG>-*.png (gitignored; TAG=before|after, default after). Usage: a server on
 // :5183 (or URL=…), then `TAG=after node scripts/mesa-shots.mjs`. It starts the sandbox base over
-// (FL.wipe: today's map, 4) and lifts the fog round the cirque (a review rig: `sim.explored`, never
-// a command). Each shot waits for the ground chunks and the relief sprites to be baked.
+// (FL.wipe: today's map, 4). Each shot waits for the ground chunks and the relief sprites to be baked.
 import { chromium } from 'playwright-core';
 import { fileURLToPath } from 'node:url';
 
@@ -30,7 +29,6 @@ await page.waitForFunction(() => !!window.FL && window.FL.ready(), undefined, { 
 await page.evaluate(() => {
   window.FL.intro?.(false); window.FL.menu?.(false);
   if (window.FL.app.guide) window.FL.app.guide.enabled = false;
-  window.FL.app.sim.explored.push([512, 512, 170]);
 });
 await page.addStyleTag({ content: '.qlog, .guide, .hud, .buildbar, .toasts, .view-bar, .views-card, [data-screen="quests"] { display: none !important; }' });
 const mapV = await page.evaluate(() => window.FL.app.sim.grid.source.mapV);
@@ -46,8 +44,7 @@ const view = async (mode) => {
   await page.waitForFunction((m) => { const v = window.FL.view(); return v.mode === m && (m === 'plan' ? v.t === 1 : v.t === 0); }, mode, { timeout: 5000 });
 };
 
-// A heartrock (H4) cliff out in the far ring: a crest tile of it with a drop in front of it (south),
-// the fog lifted round it.
+// A heartrock (H4) cliff out in the far ring: a crest tile of it with a drop in front of it (south).
 const h4 = await page.evaluate(() => {
   const g = window.FL.app.sim.grid;
   let best = null, bd = Infinity;
@@ -56,14 +53,13 @@ const h4 = await page.evaluate(() => {
     const d = (x - 512) ** 2 + (y - 512) ** 2;
     if (d < bd) { bd = d; best = [x, y]; }
   }
-  if (best) window.FL.app.sim.explored.push([best[0], best[1], 40]);
   return best;
 });
 console.log('heartrock cliff at', JSON.stringify(h4));
 
 // A stream up on a massif (D94) falling down a wall the camera sees: a river tile above the floor
 // whose next tile along its way (east, south-east or south) stands lower; the nearest to the
-// centre, the fog lifted round it. (On map 4, seed 2, there are some round (447, 152) and (202, 530).)
+// centre. (On map 4, seed 2, there are some round (447, 152) and (202, 530).)
 const fall = await page.evaluate(() => {
   const g = window.FL.app.sim.grid, DX = [1, 1, 0], DY = [0, 1, 1];
   let best = null, bd = Infinity;
@@ -75,7 +71,6 @@ const fall = await page.evaluate(() => {
     const d = (x - 512) ** 2 + (y - 512) ** 2;
     if (d < bd) { bd = d; best = [x, y, g.level(x, y) - g.level(x + DX[f], y + DY[f])]; }
   }
-  if (best) window.FL.app.sim.explored.push([best[0], best[1], 40]);
   return best;
 });
 console.log('stream fall at', JSON.stringify(fall));

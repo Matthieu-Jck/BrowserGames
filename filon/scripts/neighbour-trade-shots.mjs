@@ -89,7 +89,6 @@ else for (const b of [...all].sort((a, b) => b.makers - a.makers || b.machines -
 }
 for (const [k, b] of picks.entries()) {
   const { context, page } = await open(b.seed);
-  await page.evaluate(([x, y]) => window.FL.app.sim.explored.push([Math.round(x), Math.round(y), 60]), b.at);
   const zoom = Math.max(0.75, Math.min(1.1, 30 / Math.max(14, b.span)));
   for (const phase of ['noon', 'night']) {
     await page.evaluate((x) => window.FL.dayPhase(x), phase);

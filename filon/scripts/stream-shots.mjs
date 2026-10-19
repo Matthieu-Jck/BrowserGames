@@ -8,7 +8,7 @@
 // Usage: a server (URL=…, default :5183), then `TAG=after node scripts/stream-shots.mjs`
 // (ONLY=outflow,toward,… to pick; ZOOMS=near,mid,close; MODES=iso; TIMES=noon; DX/DY tiles off the spot).
 // It starts the sandbox base
-// over (FL.wipe: map 4) and lifts the fog over the spots (a review rig).
+// over (FL.wipe: map 4).
 import { chromium } from 'playwright-core';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -86,7 +86,6 @@ const spots = await page.evaluate(() => {
   };
   out.towardfall = falls(1);
   out.eastfall = falls(0);
-  sim.explored.push([C, C, 340]);
   return out;
 });
 // AT=x,y;x,y…: spots of one's own (at0, at1 …), in place of the searched ones.

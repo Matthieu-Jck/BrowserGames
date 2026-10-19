@@ -115,8 +115,6 @@ export class Sim {
   readonly land: Land;
   /** The neighbouring bases (D110, world/neighbours.ts): their land and what stands on it, from the seeds; never saved. */
   readonly neighbours: Neighbours;
-  /** Explored discs [cx, cy, r] (the fog lifts for good). Saved. */
-  readonly explored: Array<[number, number, number]> = [];
   /** The power wires (D25): explicit pairs of entity ids; grids are their components. Saved. */
   readonly links = new PowerLinks();
 
@@ -256,7 +254,6 @@ export class Sim {
       build.occupy(this, hearth);
       for (const [id, n] of Object.entries(BAL.startStock)) this.stock[itemIdx(id)] = n * 1000;
       this.credits = BAL.startCredits * 100;
-      this.explored.push([CENTER, CENTER, BAL.coreReveal[0]!]);
     }
     this.rebuildDerived();
   }
@@ -338,69 +335,12 @@ export class Sim {
     this.stock[item] = this.stock[item]! + mu;
   }
 
-  // ── unlocks & fog ─────────────────────────────────────────────────────────
+  // ── unlocks ───────────────────────────────────────────────────────────────
   /** Is an `unlock` held: 'start', or a node of the unlock tree (a plan or a research node, D33) that is done? */
   unlocked(unlock: string): boolean {
     if (unlock === 'start') return true;
     if (unlock === 'never') return false;
     return (hasResearch(unlock) || isPlan(unlock)) && this.done.has(unlock);
-  }
-
-  revealed(x: number, y: number): boolean {
-    if (x < 0 || y < 0 || x >= WORLD || y >= WORLD) {
-      for (const [cx, cy, r] of this.explored) {
-        const dx = x - cx, dy = y - cy;
-        if (dx * dx + dy * dy <= r * r) return true;
-      }
-      return false;
-    }
-    if (this.seenUpTo !== this.explored.length) this.paintSeen();
-    return this.seen![y * WORLD + x] === 1;
-  }
-
-  /**
-   * Lift the fog for good within `r` tiles of (cx, cy) (D117: round a building placed, a parcel held,
-   * the Core at each level): a disc on `explored`, unless every tile of it in the world is seen
-   * already — a building in the clear adds nothing, so the list grows only at the fog's edge (a pole
-   * line walking out). `seen` is painted from the list alone: the same answer on every replay.
-   * Whether it added a disc.
-   */
-  liftFog(cx: number, cy: number, r: number): boolean {
-    if (r <= 0) return false;
-    if (!this.seen || this.seenUpTo !== this.explored.length) this.paintSeen();
-    const seen = this.seen!;
-    for (let y = Math.max(0, Math.ceil(cy - r)); y <= Math.min(WORLD - 1, Math.floor(cy + r)); y++) {
-      for (let x = Math.max(0, Math.ceil(cx - r)); x <= Math.min(WORLD - 1, Math.floor(cx + r)); x++) {
-        const dx = x - cx, dy = y - cy;
-        if (dx * dx + dy * dy <= r * r && !seen[y * WORLD + x]) {
-          this.explored.push([cx, cy, r]);
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  /**
-   * The explored circles painted onto a tile map as they are added (the list only grows): the
-   * route searches ask `revealed` for every tile they look at, and the list runs to dozens of
-   * circles on a grown base. The same answer as reading the list; not saved, not hashed.
-   */
-  private seen: Uint8Array | null = null;
-  private seenUpTo = 0;
-
-  private paintSeen(): void {
-    if (!this.seen || this.explored.length < this.seenUpTo) { this.seen = new Uint8Array(WORLD * WORLD); this.seenUpTo = 0; }
-    const seen = this.seen;
-    for (; this.seenUpTo < this.explored.length; this.seenUpTo++) {
-      const [cx, cy, r] = this.explored[this.seenUpTo]!;
-      for (let y = Math.max(0, Math.ceil(cy - r)); y <= Math.min(WORLD - 1, Math.floor(cy + r)); y++) {
-        for (let x = Math.max(0, Math.ceil(cx - r)); x <= Math.min(WORLD - 1, Math.floor(cx + r)); x++) {
-          const dx = x - cx, dy = y - cy;
-          if (dx * dx + dy * dy <= r * r) seen[y * WORLD + x] = 1;
-        }
-      }
-    }
   }
 
   // ── commands: structures (systems/build.ts) ──────────────────────────────
@@ -695,13 +635,12 @@ export class Sim {
     h.int(this.serverAcc).int(this.researchHeld ? 1 : 0).int(this.tokenPlan ? 1 : 0).int(this.tokenBank);
     for (const [t, k] of this.designated) h.int(t).int(k === 'dig' ? 1 : 2);
     for (const j of this.jobs) h.int(j.ent).int(j.tile).int(j.dur).int(j.el).int(j.mu).int(j.moved).int(j.quarry ? 1 : 0);
-    // The land as changed by play: terrain / ore diffs, the parcels held, the lifted fog.
+    // The land as changed by play: terrain / ore diffs, the parcels held.
     for (const [t, v] of [...this.grid.terrainDiff].sort((a, b) => a[0] - b[0])) h.int(t).int(v);
     for (const [t, v] of [...this.grid.levelDiff].sort((a, b) => a[0] - b[0])) h.int(t).int(v);
     for (const [t, v] of [...this.grid.oreDiff].sort((a, b) => a[0] - b[0])) h.int(t).int(v);
     h.ints([...this.land.bought].sort((a, b) => a - b)).ints([...this.land.granted].sort((a, b) => a - b));
     for (const [p, l] of [...this.land.leases].sort((a, b) => a[0] - b[0])) h.int(p).int(l.next).int(l.cents);
-    for (const [cx, cy, r] of this.explored) h.int(cx).int(cy).int(r);
     // Trade: cargo, orders, goods in flight, the ocelles' history, and the market's own state.
     const t = this.trade;
     for (const [post, items] of [...t.cargo].sort((a, b) => a[0] - b[0])) h.int(post).ints(items);

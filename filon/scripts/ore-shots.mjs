@@ -1,12 +1,11 @@
 // ore-shots.mjs — the ground ores for review (D99; owner, 2026-10-16: « i cannot distinguish copper
 // resources from iron on the ground »): the cirque's nearest iron, copper and coal deposits (and
-// salt and the quartz face when the fog lifted round the cirque shows them) at three zooms (far,
+// salt and the quartz face where the land has them) at three zooms (far,
 // mid, near), in iso and in plan, by day and by night, each ore's twelve gathered on one contact
 // sheet; then, with nothing in hand, the pointer resting on each deposit and its card (D99), cropped
 // round the card. Writes scripts/shot-ore-<PREFIX>-*.png (gitignored; PREFIX defaults to `after`).
 // Usage: a server on :5183 (or URL=…, SEED=…, DPR=1|2, PREFIX=before|after, ONLY=iron_ore,…), then
-// `node scripts/ore-shots.mjs`. It starts the sandbox base over (FL.wipe) and lifts the fog round
-// the cirque (a review rig: `sim.explored`, never a command).
+// `node scripts/ore-shots.mjs`. It starts the sandbox base over (FL.wipe).
 import { chromium } from 'playwright-core';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { writeFileSync } from 'node:fs';
@@ -49,7 +48,6 @@ const view = async (mode) => {
 // The deposits: for each ore, the blob nearest the Core (its tiles flooded from the nearest one), its middle.
 const sites = await page.evaluate(() => {
   const FL = window.FL, sim = FL.app.sim, g = sim.grid, C = 512;
-  sim.explored.push([C, C, 120]);
   const out = {};
   const bigs = new Map();
   const big = (x0, y0, it) => {

@@ -84,7 +84,6 @@ describe('land in parcels', () => {
   it('buys a parcel: a kiln may stand there; a parcel held is not sold twice; the purse must pay', () => {
     const sim = testSim();
     const x = KX, y = KY;
-    sim.explored.push([x, y, 8]); // surveyed
     expect(sim.canPlace('kiln', x, y, 0).reason).toBe('outside_zone');
     sim.grantCredits(sim.landPrice(EAST) - sim.credits - 1);
     expect(sim.buyLand(EAST)).toBe('credits');
@@ -150,7 +149,6 @@ describe('land in parcels', () => {
     for (let q = 0; q < PARCEL_COLS * PARCEL_COLS && p < 0; q++) if (sim.land.neighbour(q) >= 0 && ringOf(q) < 8) p = q;
     expect(p).toBeGreaterThan(-1);
     const { x0, y0, x1, y1 } = parcelRect(p);
-    sim.explored.push([x0 + 11, y0 + 11, 20]); // surveyed
     // An open tile of its land, and one under its buildings.
     let open: [number, number] | null = null, taken: [number, number] | null = null;
     for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {

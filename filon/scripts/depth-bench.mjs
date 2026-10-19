@@ -92,7 +92,7 @@ const rig = await page.evaluate((only) => {
     return tiles;
   };
 
-  // ── room: boxes of free floor round the Core, explored and granted ──
+  // ── room: boxes of free floor round the Core, granted ──
   const core = sim.ents.get(sim.hearthId);
   const C0 = [core.x + 2, core.y + 2];
   const used = new Uint8Array(W * W);
@@ -104,7 +104,6 @@ const rig = await page.evaluate((only) => {
     const order = cands.map(([x, y]) => [x, y, (x + w / 2 - C0[0]) ** 2 + (y + h / 2 - C0[1]) ** 2]).sort((a, b) => a[2] - b[2] || a[1] - b[1] || a[0] - b[0]);
     outer: for (const [x, y] of order) {
       for (let j = -1; j <= h; j++) for (let i = -1; i <= w; i++) if (!floor(x + i, y + j)) continue outer;
-      sim.explored.push([x + (w >> 1), y + (h >> 1), Math.ceil(Math.hypot(w, h) / 2) + 6]);
       for (let j = -1; j <= h; j++) for (let i = -1; i <= w; i++) {
         used[(y + j) * W + x + i] = 1;
         const p = FL.parcelAt(x + i, y + j);
@@ -233,7 +232,6 @@ const rig = await page.evaluate((only) => {
     const e = (d + 2) & 3; // the line runs towards the Core
     const mx = core.x + 2 + DX[d] * 4, my = core.y + 2 + DY[d] * 4; // the tile just off the side's middle… then 3 more out
     const x0 = mx + DX[d] * 2, y0 = my + DY[d] * 2;
-    sim.explored.push([mx, my, 8]);
     line(x0, y0, e, 3, { sink: false });
     shot('ports', `Core from ${NAME[d]}`, mx + 0.5 - DX[d] * 0.5, my + 0.5 - DY[d] * 0.5);
   }

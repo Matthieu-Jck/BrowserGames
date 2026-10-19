@@ -34,7 +34,6 @@ const rig = await page.evaluate(() => {
   sim.grant('glass', 40);
   sim.grant('copper_wire', 40);
   const c = sim.ents.get(sim.hearthId), x = c.x + 1, y = c.y;
-  sim.explored.push([x, y + 8, 14]);
   const steel = sim.place('silo', x, y + 9, 0), slag = sim.place('silo', x + 2, y + 9, 0);
   if (!steel.ok || !slag.ok) return { error: `silos ${steel.reason} ${slag.reason}` };
   const n = sim.placeBelts('ribbon', [[x + 2, y + 8, 3], [x + 1, y + 8, 3]]) + sim.placeBelts('ribbon', [[x, y + 8, 0], [x, y + 7, 0], [x, y + 6, 0], [x, y + 5, 0]]);
@@ -51,7 +50,6 @@ const rig = await page.evaluate(() => {
   // B, west of the Core: a silo of slag straight into a wire mill's input (the tutorial's « Les
   // scories »: the contract's slag at the mill's door) — a machine's door, the same badge.
   const mx = c.x - 9, my = c.y + 1;
-  sim.explored.push([mx, my + 3, 10]);
   const mill = sim.place('wire_mill', mx, my, 0), ms = sim.place('silo', mx, my + 4, 0);
   if (!mill.ok || !ms.ok) return { error: `mill ${mill.reason} ${ms.reason}` };
   if (sim.placeBelts('ribbon', [[mx, my + 3, 0], [mx, my + 2, 0]]) !== 2) return { error: 'mill ribbons' };

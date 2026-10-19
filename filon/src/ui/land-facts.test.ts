@@ -47,19 +47,23 @@ describe('land facts', () => {
     expect(ownsForGood('leased')).toBe(false);
   });
 
-  it('counts what a parcel holds, tile by tile, and each deposit by its ore — of the tiles explored', () => {
+  it('counts what a parcel holds, tile by tile, and each deposit by its ore — every tile, near or far (no fog, D148)', () => {
     const ore = itemIdx('copper_ore');
-    const sim = new Sim({ worldSeed: 7, playerSeed: 11, foundingEpoch: testSim().foundingEpoch, source: testSource([{ x: CENTER + 12, y: CENTER - 4, w: 4, h: 4, item: ore, rich: 500 }]) });
+    const sim = new Sim({ worldSeed: 7, playerSeed: 11, foundingEpoch: testSim().foundingEpoch, source: testSource([
+      { x: CENTER + 12, y: CENTER - 4, w: 4, h: 4, item: ore, rich: 500 },
+      { x: CENTER + 300, y: CENTER + 300, w: 3, h: 5, item: ore, rich: 500 },
+    ]) });
     const east1 = parcelAt(CENTER + PARCEL, CENTER);
     const c = parcelContents(sim, east1);
     expect(c.tiles).toBe(PARCEL * PARCEL);
-    expect(c.hidden).toBe(0); // inside the land explored at founding
     expect(c.floor + c.rock + c.water + c.salt + c.vent + c.dunes).toBe(c.tiles);
     expect(c.ores).toEqual([[ore, 16]]);
-    // Ring 3 reaches past it: the fog keeps some tiles out of the counts.
-    const far = parcelContents(sim, EAST3);
-    expect(far.hidden).toBeGreaterThan(0);
-    expect(far.hidden + far.floor + far.rock + far.water + far.salt + far.vent + far.dunes).toBe(far.tiles);
+    // Ring 3, and a parcel some 13 rings out: every tile counted, the far deposit whole.
+    const ring3 = parcelContents(sim, EAST3);
+    expect(ring3.floor + ring3.rock + ring3.water + ring3.salt + ring3.vent + ring3.dunes).toBe(ring3.tiles);
+    const far = parcelContents(sim, parcelAt(CENTER + 301, CENTER + 302));
+    expect(far.floor + far.rock + far.water + far.salt + far.vent + far.dunes).toBe(far.tiles);
+    expect(far.ores).toEqual([[ore, 15]]);
   });
 
   it('says what a neighbouring base does: its trade\'s word, a line per good it sells from what it mines, and both on its band (D134)', () => {

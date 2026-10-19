@@ -176,7 +176,7 @@ function coalFor(b: Builder, dry: WorldPort): boolean {
  */
 function rimRoute(b: Builder, from: readonly [number, number], goals: ReadonlyMap<number, Rot>): BeltTiles | null {
   const sim = b.sim, avoid = keepOff(sim), W = 1024, lv = sim.grid.level(from[0], from[1]);
-  const ok = (x: number, y: number): boolean => inWorld(x, y) && sim.grid.occ[tileIndex(x, y)] === 0 && sim.revealed(x, y)
+  const ok = (x: number, y: number): boolean => inWorld(x, y) && sim.grid.occ[tileIndex(x, y)] === 0
     && sim.grid.level(x, y) === lv && isFloor(sim.grid.terrain(x, y));
   if (!ok(from[0], from[1])) return null;
   const cost = (x: number, y: number): number => 1 + ((x - CENTER) ** 2 + (y - CENTER) ** 2 < RIM * RIM ? INNER : 0);

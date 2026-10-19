@@ -31,7 +31,6 @@ for (const seed of [1, 2, 3]) {
   };
   const bases = await page.evaluate(() => {
     const sim = window.FL.app.sim, out = [];
-    sim.explored.push([512, 512, 300]);
     for (let p = 0; p < 45 * 45; p++) {
       const h = sim.neighbours.holdingOf(p);
       if (!h || h.hub !== p || sim.land.neighbour(p) < 0) continue;

@@ -8,7 +8,7 @@
 // holding docks, drifters and a route the way the late base held them. The check that nothing but the
 // docks is lost: the loaded base, with the refunds taken back out of the Heart, has the very hash of the
 // same base saved at version 14 without the docks and opened through the same chain — so the steps
-// after this one (v16 the steam plan, D114; v17 the Core's fog, D117) act on both alike.
+// after this one (v16 the steam plan, D114; v17 the beacons, D117; v23 no fog, D148) act on both alike.
 import { describe, it, expect } from 'vitest';
 import { ITEM_IDS, itemIdx } from '@/content/registry';
 import { RESEARCH_RETIRED, RETIRED_COSTS, RETIRED_DRIFTER } from '@/content/retired';

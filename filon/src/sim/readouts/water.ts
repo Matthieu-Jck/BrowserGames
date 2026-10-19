@@ -26,7 +26,7 @@ export function drawsWater(sim: Sim, x: number, y: number): boolean {
 }
 
 /**
- * The tiles where a pump would draw water and may stand — free, seen, floor, rock or shallows, on
+ * The tiles where a pump would draw water and may stand — free, floor, rock or shallows, on
  * the claim's land — within `r` of (cx, cy), nearest first (squared distance, then y, then x: a
  * total order). At most `max`.
  */
@@ -35,7 +35,7 @@ export function waterSpots(sim: Sim, cx = CENTER, cy = CENTER, r = WATER_REACH, 
   const out: Array<[number, number, number]> = [];
   for (let y = cy - r; y <= cy + r; y++) {
     for (let x = cx - r; x <= cx + r; x++) {
-      if (!inWorld(x, y) || sim.grid.occ[tileIndex(x, y)] !== 0 || !sim.revealed(x, y)) continue;
+      if (!inWorld(x, y) || sim.grid.occ[tileIndex(x, y)] !== 0) continue;
       const t = sim.grid.terrain(x, y);
       if (!(isFloor(t) || isRock(t) || t === T.Shallow) || !drawsWater(sim, x, y)) continue;
       if (!sim.land.coversFootprint(pump, x, y, 0)) continue;

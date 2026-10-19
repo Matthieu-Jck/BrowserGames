@@ -48,7 +48,6 @@ const rig = await page.evaluate(() => {
     bx = x0; by = y0; break outer;
   }
   if (bx < 0) return { error: 'no room' };
-  sim.explored.push([bx + 8, by + 12, 20]);
   for (let j = -1; j <= 24; j++) for (let i = -1; i <= 16; i++) { const p = FL.parcelAt(bx + i, by + j); if (!sim.land.holds(p)) sim.land.granted.add(p); }
   // The ridge: rows by + 9 … by + 12, the whole box wide, one terrace up.
   const ry = by + 9;

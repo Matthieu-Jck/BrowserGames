@@ -23,17 +23,17 @@
 // the drifters too: the far drill's climb feeds that mill, `farCopper` in scenarios.ts.) What the land
 // does not allow is skipped and reported (`report.skipped`), never thrown.
 import { BAL } from '@/content/balance';
-import { BUILDING_KIND, buildingDef, buildingIdx, itemIdx } from '@/content/registry';
+import { BUILDING_KIND, buildingIdx, itemIdx } from '@/content/registry';
 import { CENTER } from './constants';
 import { checkpoint, hearthNetwork, lay, layTo, powerLine, pylonLine, rollback, routeLevel, routeOver, sideGoals, sideGoalsOver, spotsNear, type BeltTiles } from './dev';
 import { footprint, worldPorts, type WorldPort } from './entities';
 import type { DrillNode } from './flow/nodes';
-import { gap2, linkPoint } from './power/links';
+import { gap2 } from './power/links';
 import { layPlan, planSpots, type Laid, type PlanSpec } from './scenario-plans';
 import type { Builder } from './scenarios';
 import type { Sim } from './state';
 import { inReach } from './systems/landscape';
-import { isWater, opposite, T, type Ent, type Rot } from './types';
+import { isWater, opposite, T, type Rot } from './types';
 import { inWorld, tileIndex } from './world/grid';
 import { parcelAt } from './world/land';
 import { MapGen } from './world/mapgen';
@@ -141,12 +141,12 @@ export function buyable(sim: Sim, x: number, y: number): boolean {
   return sim.land.covers(x, y) || sim.land.neighbour(parcelAt(x, y)) < 0;
 }
 
-/** The tile nearest a point within `r` that passes `ok` (revealed), or null. */
+/** The tile nearest a point within `r` that passes `ok`, or null. */
 export function nearestTile(sim: Sim, at: readonly [number, number], r: number, ok: (x: number, y: number) => boolean): [number, number] | null {
   let best: [number, number, number] | null = null;
   for (let y = at[1] - r; y <= at[1] + r; y++) {
     for (let x = at[0] - r; x <= at[0] + r; x++) {
-      if (!inWorld(x, y) || !sim.revealed(x, y) || !ok(x, y)) continue;
+      if (!inWorld(x, y) || !ok(x, y)) continue;
       const d = (x - at[0]) * (x - at[0]) + (y - at[1]) * (y - at[1]);
       if (d <= r * r && (!best || d < best[2])) best = [x, y, d];
     }
@@ -471,63 +471,10 @@ function intoHeart(sim: Sim): Map<number, Rot> {
 
 // ── the Fabrique on the copper field ─────────────────────────────────────────
 
-/** The guaranteed copper field's centre (MapGen's own; else the revealed copper nearest r 90). */
+/** The guaranteed copper field's centre (MapGen's own; else the copper nearest r 90). */
 function copperField(sim: Sim): [number, number] | null {
   if (sim.grid.source instanceof MapGen) return [sim.grid.source.copperField.cx, sim.grid.source.copperField.cy];
   return nearestTile(sim, [CENTER, CENTER - 90], 60, (x, y) => sim.grid.ore(x, y) === itemIdx('copper_ore'));
-}
-
-/**
- * A pylon line out to a far point, walking the fog back (D117: no survey beacon — a pylon lifts the
- * fog as far as its wires reach): from the grid's pillar nearest the point, each pylon on the
- * revealed tile within a wire's reach that comes nearest the point, wired to the last, until the
- * point lies in the clear. `wireFar` then wires the works out there from its last pylon.
- */
-function surveyTo(b: Builder, at: readonly [number, number]): void {
-  const sim = b.sim;
-  const pylon = buildingIdx('pylon');
-  const R = linkPoint(pylon, sim.mods)?.range ?? 0;
-  if (!R || !sim.unlocked(buildingDef(pylon).unlock)) { if (!sim.revealed(at[0], at[1])) b.skip('survey'); return; }
-  const to = (x: number, y: number): number => (x - at[0]) * (x - at[0]) + (y - at[1]) * (y - at[1]);
-  for (let k = 0; k < 16 && !sim.revealed(at[0], at[1]); k++) {
-    // The pillar of the grid nearest the point with a wire to spare.
-    let src: Ent | undefined;
-    for (const id of [...hearthNetwork(sim)].sort((p, q) => p - q)) {
-      const e = sim.ents.get(id), lp = e ? linkPoint(e.def, sim.mods) : null;
-      if (!e || !lp || sim.links.degree(e.id) >= lp.slots) continue;
-      if (!src || to(e.x, e.y) < to(src.x, src.y)) src = e;
-    }
-    if (!src) break;
-    // The tiles within its reach, nearest the point first, that bring the line nearer.
-    const near: Array<[number, number, number]> = [];
-    for (let y = src.y - R; y <= src.y + R; y += 2) {
-      for (let x = src.x - R; x <= src.x + R; x += 2) {
-        if (!inWorld(x, y) || !sim.revealed(x, y) || gap2(src, { def: pylon, x, y, rot: 0 }) > R * R) continue;
-        const d = to(x, y);
-        if (d < to(src.x, src.y)) near.push([x, y, d]);
-      }
-    }
-    near.sort((p, q) => p[2] - q[2] || p[1] - q[1] || p[0] - q[0]);
-    b.affordDef('pylon');
-    let placed = false;
-    for (const [x, y] of near.slice(0, 40)) {
-      const c = sim.canPlace('pylon', x, y, 0);
-      if (!c.ok || c.replaces.length) continue;
-      const r = sim.place('pylon', x, y, 0);
-      if (!r.ok) continue;
-      // A pylon placed in reach wires itself to the nearest pillar; else it is wired to the line's end.
-      if (sim.links.has(src.id, r.id!) || sim.link(src.id, r.id!).ok || hearthNetwork(sim).has(r.id!)) { placed = true; break; }
-      sim.remove(x, y);
-    }
-    if (!placed) break;
-  }
-  if (!sim.revealed(at[0], at[1])) b.skip('survey');
-}
-
-/** Buy the parcels round a point (the fog lifts with them); the way there surveyed first, by a pylon line. */
-function claimAround(b: Builder, at: readonly [number, number], r: number): void {
-  surveyTo(b, at);
-  b.landAround(at, r);
 }
 
 /** Take a laid plan back up (its ribbons, blocks and buildings). */
@@ -545,7 +492,7 @@ export function fabrique(b: Builder): boolean {
   const sim = b.sim;
   const field = copperField(sim);
   if (!field) { b.skip('fabrique:copper'); return false; }
-  claimAround(b, field, 10);
+  b.landAround(field, 10);
   const bore = b.put('boreCu', 'deep_bore', field, { item: 'copper_ore', r: 6, toward: b.heart });
   if (!bore) return false;
   // Where the plan fits round a point between the bore and the Heart, its copper entry nearest the
@@ -590,7 +537,7 @@ export function emberSite(sim: Sim): [number, number] | null {
 
 /**
  * The Ember Fields mine (tier 3: embersalt, a unique the base sells; Atlas Lore, tr6): the site's
- * parcels bought (the fog lifts with them), a deep bore on the embersalt and,
+ * parcels bought, a deep bore on the embersalt and,
  * beside it, a third trade post (The Crier House, cmK) whose entrance takes the bore's line: the
  * embersalt is sold where it is mined, CrierBelt's lift on the spot (D108: a skydock before, whence
  * drifters flew it to the Fabrique's thermal cores — 125 to 350 tiles from the field on lands 1–3,
@@ -600,7 +547,7 @@ export function emberSite(sim: Sim): [number, number] | null {
 export function emberMine(b: Builder): boolean {
   const sim = b.sim, at = emberSite(sim);
   if (!at) return false;
-  claimAround(b, at, 9);
+  b.landAround(at, 9);
   const bore = b.put('boreE', 'deep_bore', at, { item: 'embersalt', r: 5, toward: b.heart });
   if (!bore) return false;
   b.affordDef('trade_post');
@@ -707,7 +654,7 @@ export function coalPit(b: Builder, crownOuter: number): boolean {
   if (!line || cirqueCoalDrills(sim, crownOuter) >= 2 || boreInPlace(b)) return false;
   const at = coalDeposit(sim, crownOuter + 4, COAL_PIT_R);
   if (!at) { b.skip('coalPit'); return false; }
-  claimAround(b, at, 8);
+  b.landAround(at, 8);
   const bore = b.put('boreC', 'deep_bore', at, { item: 'coal', r: 4, toward: b.heart });
   if (!bore) return false;
   const k = line.findIndex(([x, y]) => { const e = sim.entityAt(x, y); return !!e && BUILDING_KIND[e.def] === 'fork'; });
@@ -750,7 +697,6 @@ export function geothermal(b: Builder): boolean {
     .filter(([, , d]) => d <= VENT_R * VENT_R).sort((p, q) => p[2] - q[2] || p[1] - q[1] || p[0] - q[0]);
   for (const [x, y] of vents) {
     if (!buyable(sim, x, y)) continue;
-    surveyTo(b, [x + 1, y + 1]);
     b.landAround([x + 1, y + 1], 2);
     b.affordDef('fumarole_tap');
     const r = sim.place('fumarole_tap', x, y, 0);

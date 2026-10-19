@@ -54,7 +54,6 @@ const at = await page.evaluate(() => {
       if (sim.land.neighbour(q.p) < 0 || sim.land.neighbour(w.p) >= 0 || sim.land.holds(w.p)) continue;
       let x0 = q.at[0];
       while (FL.parcelAt(x0 - 1, q.at[1]) === q.p) x0--;
-      sim.explored.push([x0, q.at[1], 34]);
       for (let k = 0; k < 20; k++) {
         const row = q.at[1] + (k % 2 ? -1 : 1) * (k >> 1);
         let ok = true;

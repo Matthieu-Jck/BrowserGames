@@ -1,6 +1,6 @@
 // deposit-card.ts — the deposit card (D99; owner, 2026-10-16: « hovering over a known resource
 // source should pop a little tooltip or window that says what it is and which machine to extract
-// it »). With nothing in hand, the pointer resting on a known deposit (explored, out of the fog)
+// it »). With nothing in hand, the pointer resting on a known deposit (anywhere: no fog, D148)
 // pops a small cartouche beside it: the ore's glyph and name; what one tile of it gives a drill a
 // minute as a bar against the best such tile, and the deposit's known tiles and their sum; the
 // machines that work it as icons with their names, dim with a lock while still to unlock (a vein

@@ -46,7 +46,7 @@ const look = (zoom) => page.evaluate(([x, y, z]) => window.FL.lookAt(Math.round(
 await view('iso');
 await look(1.7);
 await settle();
-await page.screenshot({ path: shot('shot-quartz-vein-iso.png') }); // as the player first sees it: just past the start's reveal, in the fog
+await page.screenshot({ path: shot('shot-quartz-vein-iso.png') }); // as the player first sees it
 console.log('✓ shot-quartz-vein-iso.png');
 
 // The vein's parcel bought, the Face Cutter learnt (a review rig), two cutters dropped facing away from the wall.
@@ -61,7 +61,7 @@ await page.evaluate((v) => {
 }, v);
 console.log('parcel bought');
 await settle();
-await page.screenshot({ path: shot('shot-quartz-vein-bought-iso.png') }); // the fog lifted round the bought parcel: the bare wall
+await page.screenshot({ path: shot('shot-quartz-vein-bought-iso.png') }); // the bought parcel: the bare wall
 console.log('✓ shot-quartz-vein-bought-iso.png');
 const placed = await page.evaluate((v) => {
   const sim = window.FL.app.sim;

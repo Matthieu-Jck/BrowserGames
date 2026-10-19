@@ -2,7 +2,7 @@
 // dragged over it (the planner's skybridge pair, its parcels bought), up close and at mid zoom, in iso
 // and in plan, by day and by night: scripts/shot-crevasse-<TAG>-*.png (gitignored; TAG=before|after,
 // default "after"). Usage: a server on :5183 (or URL=…), then `node scripts/crevasse-shots.mjs`. It
-// starts the sandbox base over (FL.wipe: map 4) and lifts the fog round the cirque (a review rig).
+// starts the sandbox base over (FL.wipe: map 4).
 import { chromium } from 'playwright-core';
 import { fileURLToPath } from 'node:url';
 
@@ -38,7 +38,6 @@ const view = async (mode) => {
 // The nearest straight crossing (east–west) of a chasm 2–4 tiles across, floor on both sides; the bridge over it.
 const at = await page.evaluate(() => {
   const sim = window.FL.app.sim, g = sim.grid, C = 512;
-  sim.explored.push([C, C, 170]);
   const floor = (x, y) => [0, 1].includes(g.terrain(x, y)) && g.level(x, y) === 0;
   let best = null, bd = Infinity;
   for (let y = C - 110; y <= C + 110; y++) for (let x = C - 110; x <= C + 110; x++) {

@@ -29,8 +29,8 @@ function camoSim(learn = true): Sim {
 
 /**
  * A neighbouring base's parcel (D110) whose west neighbour is free land (CrierBelt's, not held), and
- * a row of it (`row`) where nothing of that base stands from 7 tiles west of it to its east edge,
- * surveyed: a drag can run east from the free parcel straight across its open land.
+ * a row of it (`row`) where nothing of that base stands from 7 tiles west of it to its east edge:
+ * a drag can run east from the free parcel straight across its open land.
  */
 function neighbourParcel(sim: Sim): { p: number; x0: number; y0: number; row: number } {
   for (let q = 0; q < PARCEL_COLS * PARCEL_COLS; q++) {
@@ -43,7 +43,6 @@ function neighbourParcel(sim: Sim): { p: number; x0: number; y0: number; row: nu
       let free = true;
       for (let x = x0 - 7; x < x0 + PARCEL && free; x++) if (sim.neighbours.at(x, row)) free = false;
       if (!free) continue;
-      sim.explored.push([x0, row, 40]);
       return { p: q, x0, y0, row };
     }
   }
@@ -72,7 +71,6 @@ describe('the camouflaged ribbon (D109)', () => {
     let built: [number, number] | null = null;
     for (let ty = py; ty < py + PARCEL && !built; ty++) for (let tx = px; tx < px + PARCEL && !built; tx++) if (sim.neighbours.at(tx, ty)) built = [tx, ty];
     if (built) {
-      sim.explored.push([built[0], built[1], 4]);
       expect(sim.canPlace(CAMO, built[0], built[1], 1).reason).toBe('occupied');
     }
   });
@@ -80,7 +78,6 @@ describe('the camouflaged ribbon (D109)', () => {
   it('costs the same on any land (no remote surcharge): its plates and sand; a swift ribbon pays ×3 off the claim', () => {
     const sim = camoSim();
     sim.done.add('xp_swift'); sim.rebuildDerived();
-    sim.explored.push([CENTER + 2 * PARCEL, CENTER, 12]);
     const base = costOf(buildingIdx(CAMO));
     expect(base.map((c) => [c.item, c.mu])).toEqual([[itemIdx('iron_plate'), 1000], [itemIdx('sand'), 2000]]);
     const home = sim.canPlace(CAMO, CENTER + 6, CENTER + 6, 0);
@@ -128,7 +125,6 @@ describe('the camouflaged ribbon (D109)', () => {
   it('a plain drag over free land stays plain (it costs nothing even off the claim)', () => {
     const sim = camoSim();
     const fx = CENTER + 2 * PARCEL - 5, fy = CENTER + 3;
-    sim.explored.push([fx + 5, fy, 12]);
     const plan = sim.planBelts('ribbon', line(fx, fy, 1, 10));
     expect(plan.every((st) => st.ok && st.def === 'ribbon')).toBe(true);
     expect(plan.some((st) => !sim.land.covers(st.x, st.y))).toBe(true);
@@ -216,7 +212,6 @@ describe('the camouflaged ribbon and the Gleaners (D109)', () => {
     learnPlans(sim);
     sim.done.add('xp_camo'); sim.rebuildDerived();
     sim.grant('iron_plate', 200); sim.grant('sand', 200);
-    sim.explored.push([540, 504, 30]);
     for (let y = 501; y <= 507; y++) expect(sim.placeBelts(side, [[540, y, 3 as Rot]])).toBe(1);
     expect(sim.placeBelts('ribbon', [[544, 504, 0 as Rot]])).toBe(1);
     sim.run(200); // the kites land (off the claim's land)

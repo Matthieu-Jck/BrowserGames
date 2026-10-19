@@ -2,7 +2,7 @@
 // down each river tile in view along the way it flows (the chunk's biome code: `RIVER_BIOME` + the
 // eighth of a turn, mapgen's `BIOME.river`), fading in and out over its run, so a river reads as
 // moving water beside the still lakes. On the ground plane in tile units (the `decals` layer, under
-// the relief and the buildings, under the fog), so it lies flat in plan and in iso alike. Cheap: the
+// the relief and the buildings), so it lies flat in plan and in iso alike. Cheap: the
 // river tiles in view are found again only when the view moves by a block of 8 tiles, at most
 // `MAX_DASHES` of them, and the dashes are three strokes a frame (three bands of alpha).
 import { Graphics, type Container } from 'pixi.js';

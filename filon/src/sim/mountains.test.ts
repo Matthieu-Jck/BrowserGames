@@ -41,7 +41,6 @@ describe('the mountains (D44)', () => {
     expect(sim.canPlace('drill', 534, 505, 0).reason).toBe('terrain');
     expect(sim.canPlace('kiln', 534, 505, 0).reason).toBe('terrain');
     // Past the starting square the mountain is CrierBelt's: poles and pylons go up, a turbine waits for the parcel.
-    sim.explored.push([562, 507, 6]); // surveyed
     expect(sim.canPlace('wind_flower', 560, 505, 0).reason).toBe('outside_zone');
     for (const def of ['mast', 'pylon']) expect(sim.canPlace(def, 560, 505, 0).reason, def).toBe('ok');
     sim.grantCredits(sim.landPrice(parcelAt(560, 505)));

@@ -18,7 +18,7 @@ atlases baked on the main thread. Render reads the sim and never mutates it.
 | [perf-overlay.ts](../src/render/perf-overlay.ts) | Frame timing, draw-call counter, `FL.perf()` stats |
 | [stress.ts](../src/render/stress.ts) | `StressSpike`: the M0 particle spike kept as a perf tool (`FL.stress`) on `fxTop` |
 | [daynight.ts](../src/render/daynight.ts) | The time of day's look: keyframes → `Grade` (tint, night factor, sun, clouds); `DayNight` applies it and holds the `FL.dayPhase` offset |
-| [world/terrain-chunks.ts](../src/render/world/terrain-chunks.ts) | Streams painted ground / relief-paint chunk textures; fog |
+| [world/terrain-chunks.ts](../src/render/world/terrain-chunks.ts) | Streams painted ground / relief-paint chunk textures (no fog over them, D148) |
 | [art/water-top.ts](../src/render/art/water-top.ts) | The water on a column's top up on the rock as one body (D135): a tile's part of it from the 7 × 7 round it — the floor's outline, the depth by the distance to the banks, banks and far-bank walls only where water meets land, the marks, a fall's lip (`lipSpan`) |
 | [world/relief-view.ts](../src/render/world/relief-view.ts) | Near-zoom rock columns as depth-sorted sprites (cut at their ledges, each part shaded at its height; talus decals); `level(x, y)` (= `tileTop`) |
 | [world/buildings-view.ts](../src/render/world/buildings-view.ts) | Building sprites (iso + plan, lifted onto the rock top when they stand on the mountains), ribbon pieces; moving parts turning (`animate`); a production building switched off when it does not work (D83: its unlit picture, baked on demand); the incinerators' pits, their flames and their bursts (D125); the cast shadows |
@@ -146,7 +146,7 @@ Y = sy·(sin θ·x + cos θ·y)    //      b = sy·sin θ,  d =  sy·cos θ
   `invert`, `compose(B, A)` (A first) work on it. `ease` is smoothstep; `ISO_LIN = proj(0)` equals
   `tileToIso` at z = 0.
 - **Flat content lives in tile units under P.** Ground and relief-paint chunks, ribbons, plan
-  sprites, grid, overlays, fog and ghost are drawn top-down in tile units. A linear map of the
+  sprites, grid, overlays and ghost are drawn top-down in tile units. A linear map of the
   plane keeps them valid for every `te`, so one ground texture per chunk serves both views and
   the whole morph.
 - **Volumes live in iso px under M = P·P(0)⁻¹.** Building and cliff sprites are pre-drawn in
@@ -201,7 +201,7 @@ stage.root                          eventMode 'none'
    │  ├─ wiresPlanPlane P × planA   wiresPlan [rg]
    │  └─ shade        —             cloud shadows (multiply; CloudShadows sets P itself), the wind's hints (WindHints sets P itself, D95)
    ├─ lights    [render group]      night glows, additive (LightsView: iso under M, plan under P)
-   ├─ top             P             grid · viewFlat [rg] · overlays · fog · land · ghost [rg]
+   ├─ top             P             grid · viewFlat [rg] · overlays · land · ghost [rg]
    ├─ status    [rg]  —             empty (view world px)
    ├─ viewMarks [rg]  —             a specialised view's badges (view world px, untinted)
    ├─ fxTop           —             the cargo drones' containers, the intro's landing (under M), M0 stress spike
@@ -221,8 +221,7 @@ stage.root                          eventMode 'none'
 | `plan` | BuildingsView: plan sprites; ItemsView: the items above the floor (a container drawn through P⁻¹, so in view px) | `sortableChildren` in bands (stand.ts `PLAN_Z`): the plan copies of ribbons and junction passages on rock (−2), the elevators' marks (−1.5), the items riding them (−1), every building sprite at 0 in the order laid — so items on rock show over their ribbons and go under a building, as on the floor |
 | `objects` | BuildingsView iso sprites (the incinerators' pits, the junctions and the skybridges' pieces in two parts — D130 —, the pits with their flames and bursts), ReliefView columns, ItemsView: pooled sprites of the items above the floor, in a shaft, at an incinerator, on a bridge, by a building's near face | `sortableChildren`, shared zIndex keys (§7.4). Its parent `volumes` is a render group: an item crossing a tile changes its key, and the re-sort and re-batch stay inside the volumes |
 | `grid`, `overlays` | OverlaysView | Fade by `te` inside the view |
-| `land` | OverlaysView: the claim's land (D60) — parcels held, leased, a neighbouring base's (D110); the land mode's parcel grid, hovered and picked parcel | Above the fog (a map of who holds what, readable over land not explored yet), below the ghost; untinted like the overlays |
-| `fog` | TerrainChunks fog masks | Above the overlays |
+| `land` | OverlaysView: the claim's land (D60) — parcels held, leased, a neighbouring base's (D110); the land mode's parcel grid, hovered and picked parcel | Above the overlays (a map of who holds what), below the ghost; untinted like the overlays |
 | `ghost` | GhostView | Render group |
 | `status` | — | Empty since the drifters went ([D108](decisions.md)): kept as the slot for billboards over the land |
 | `veil` | ViewsView: a paper sprite over the visible tiles while Électricité, Logistique or Production is on (`VEIL` alpha, eased in 0.22 s) | Inside `lit` (graded with the world), over the buildings, ribbons and items, under the wires — so the Électricité view's bold wires stay on top; the shell multiplies the night glows (`lights`) by 1 − veil, and fades the wires to 0.3 under the other two views |
@@ -235,7 +234,7 @@ stage.root                          eventMode 'none'
 | `wires` | WiresView, iso: wires, preview wire, glints | Under M with the volumes, faded by `isoA`; above every building and cliff (not depth-sorted: a wire may pass over a building), so each wire is drawn only where the relief in front leaves it in view (wire-geom `wireRuns`: cut at a cliff's edge; owner, 2026-10-18, on a neighbouring base's wires drawn across the cliff before it) |
 | `wiresPlan` | WiresView, plan: lines, preview, glints | Tile units under P, faded by `planA`, above the plan sprites |
 
-DayNight tints `lit`, `fog`, `status` and `fxTop` (and the stage background): the grid, the
+DayNight tints `lit`, `status` and `fxTop` (and the stage background): the grid, the
 overlays and the ghost stay untinted so building aids read the same day and night.
 
 `setView(P, te)` gives the plane containers (`plane`, `reliefPlane`, `planPlane`, `top`, `wiresPlanPlane`) `P`, and `volumes`, `shadowsIso` and `wiresIso` M = `isoToView(P)`; the shadows and the iso wires fade with the volumes (`isoA`), the plan wires with the plan sprites (`planA`). It then
@@ -295,10 +294,9 @@ oldest first, down to 85 %. `drop()` destroys the texture and its source plus an
 `invalidate(ck)`, which drops both kinds at every bucket, and the next update repaints. See
 [Known gaps](#15-known-gaps) for the neighbour-seam and in-flight caveats.
 
-**Fog.** Each visible chunk gets a 4-texel-per-tile alpha mask built from `sim.explored` discs
-`[x, y, r]`. Tiles 2 or more inside a disc are clear; the mask ramps to 93 % fog colour at the
-disc edge. Chunks fully inside a disc have no sprite. A mask is rebuilt when the set of discs
-touching its chunk changes (discs only grow).
+**No fog** (D148). Every chunk in view is painted and shown alike, near the Heart or at the
+world's edge; D117's fog masks (an alpha mask per chunk from `sim.explored`) are gone, and with
+them their main-thread paint (4 texels a tile, a canvas each).
 
 **`paintChunk` passes:** (1) a smoothly upscaled pastel field with biome tints and height
 whitening; (2) world-hashed stipple; (2b) hardpan plateaus; (3) the floor's water with an inked
@@ -1087,7 +1085,7 @@ play the ghost shows flat with its hint; the lift shows while the view morphs.
 rebuilt only when its signature changes. The z-order inside `overlays` follows the list below.
 - *Grid*: a `TilingSprite` over `viewTiles`, with a 64 px tile of two inked edges plus corner
   crosses. Alpha is `te × clamp((zoom − 0.3)/0.35) × 0.55`.
-- *The claim's land* (D60, [land.md](land.md); on its own layer `land`, above the fog: the
+- *The claim's land* (D60, [land.md](land.md); on its own layer `land`, above the overlays: the
   constructor's third container), from `sim.land`, over the parcels near the view only (those
   `viewTiles` touches, one more each side): the parcels held for good (the starting square,
   bought, granted) washed turquoise (0.07) inside one solid `turqD` border drawn where a held
@@ -1115,7 +1113,7 @@ rebuilt only when its signature changes. The z-order inside `overlays` follows t
   massif stands on its column: the relief draws it) (the biome code), fading in
   and out over a 0.6-tile run (three strokes a frame, by band of alpha); the river tiles in view
   are found again only when the view moves by a block of 8 tiles (at most 900). On the ground
-  plane, under the relief and the buildings and under the fog.
+  plane, under the relief and the buildings.
 - *Dig / fill marks*: coral (dig) or cyan (fill) squares with two hatch strokes, brighter with a
   progress bar where a machine works. The flat copy fades in with `te`; the iso copy is lifted onto
   rock tops by `levelAt(x, y)·SHIFT` and fades out.
@@ -1383,7 +1381,7 @@ No channel drops below 0.5, so the board stays readable at night. `sun` is SOLAR
 between epoch centres (0–1); `clouds` is a smoothstep of the sun × (1 − night).
 
 **Applying it.** `DayNight.update(worldTick, te)` writes one 24-bit tint on `lit` (a render
-group: one uniform whatever the sprite count), `fog`, `status` and `fxTop`, and on the stage
+group: one uniform whatever the sprite count), `status` and `fxTop`, and on the stage
 background (sand × tint), only when the 24-bit colour changes: a few times a minute at dawn and
 dusk, never in full day or night. The plan view keeps 40 % of the grade (`1 − 0.6·te`), so
 building stays clear. A multiply tint cannot brighten: what glows does so on `lights`, above `lit`.
@@ -1697,7 +1695,7 @@ load drifts a lot):
   Destroy textures you create with `tex.destroy(true)`, and never destroy atlas, DynAtlas or
   `Texture.WHITE` textures. `Texture.from(canvas)` also registers the texture in Pixi's global
   `Cache`: for short-lived canvases build `new Texture({ source: new CanvasSource(...) })` and
-  destroy it with its sprite (`destroy({ texture: true, textureSource: true })`), as the fog does.
+  destroy it with its sprite (`destroy({ texture: true, textureSource: true })`), as the fog's masks did (D117; gone with D148).
 - **A hidden tab pauses `requestAnimationFrame`.** No frames run, so no ticks and no view updates.
   On return, `dt` is clamped to 0.1 s and the loop runs at most 8 ticks per frame; long gaps are
   the catch-up's job ([offline.md](offline.md)). Worker replies still arrive and get cached.
@@ -1782,7 +1780,7 @@ load drifts a lot):
   culled by 16-tile squares, not one by one, with a 12-tile margin; the skybridges' spans and the flag
   are never culled. The night glows (lights view) and the specialised views' marks are not culled. A change
   that touches many entities at once (a lease lapsing, the Heart's level) re-draws them all, in one pass.
-- **Plan differences.** Camera bounds cover the whole map, not the revealed area. The placeholder
+- **Plan differences.** Camera bounds cover the whole map (there is no fog, D148). The placeholder
   is flat sand, not the chunk's average colour. The LRU budget is 256 MB, not 192 MB, and does not
   count mipmaps. Atlas and relief sprites are baked on the main thread, not in an art worker.
 - **Fixed in the architecture pass** (kept as a record): fog masks own their texture (an explicit

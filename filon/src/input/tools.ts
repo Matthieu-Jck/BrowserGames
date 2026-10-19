@@ -268,7 +268,7 @@ export class Tools {
       for (const t of this.boxTiles(b[0], b[1], b[2], b[3])) {
         const x = t % 1024, y = (t - x) / 1024;
         const tt = sim.grid.terrain(x, y);
-        if (s.clear ? sim.designated.has(t) : !sim.designated.has(t) && sim.revealed(x, y) && (isRock(tt) || tt === T.Shallow || tt === T.Deep || tt === T.Salt)) n++;
+        if (s.clear ? sim.designated.has(t) : !sim.designated.has(t) && (isRock(tt) || tt === T.Shallow || tt === T.Deep || tt === T.Salt)) n++;
       }
       out.mark = { box: b, clear: s.clear, n };
       return out;

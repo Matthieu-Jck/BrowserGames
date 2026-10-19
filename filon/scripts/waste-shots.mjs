@@ -52,7 +52,6 @@ const rigs = await page.evaluate(() => {
         if (avoid && Math.abs(ox - avoid[0]) < 14 && Math.abs(oy - avoid[1]) < 14) continue;
         const ps = pieces(m).map(([d, x, y, rot]) => [d, ox + x, oy + y, rot]);
         if (!ps.every(([d, x, y, rot]) => sim.canPlace(d, x, y, rot).ok && sim.canPlace(d, x, y, rot).replaces.length === 0)) continue;
-        sim.explored.push([ox, oy, 14]);
         const ids = {};
         for (const [d, x, y, rot] of ps) {
           const ok = d === 'ribbon' ? sim.placeBelts('ribbon', [[x, y, rot]]) === 1 : sim.place(d, x, y, rot);

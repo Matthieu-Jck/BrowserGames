@@ -46,8 +46,7 @@ import { neighboursGiveWay } from './systems/land';
  * steam boiler; a claim holding the lab's plan holds it. A boiler's water is an optional field of its
  * generator node's state (absent: none).
  * 17: no survey beacon and no unloader (D117): their plans dropped from `done`, their cost back to
- * the Heart; a Core above level 1 lifts the fog as far as its level does now; the buildings
- * themselves the remap's (retired ids, refunded).
+ * the Heart; the buildings themselves the remap's (retired ids, refunded).
  * 18: research without time, its tokens a flow (D118): a project carries the tokens it needs, those
  * delivered (`tokIn`) and the flow bought for it (`buy`); a project under way loses its minimum time,
  * a Tier 1 one its tokens, a Tier 2+ one counts what it had used as delivered; the tokens used and
@@ -65,8 +64,9 @@ import { neighboursGiveWay } from './systems/land';
  * buildings whose price D129 changed.
  * 22: no coal generator (D143): its plan, held, dropped and refunded to the Heart; the generators
  * themselves taken down by the remap (refunded, their coal to the Heart, their wires dropped).
+ * 23: no fog of war (D148): the explored discs a save held (`explored`) dropped; the whole world is known.
  */
-export const SAVE_VERSION = 22;
+export const SAVE_VERSION = 23;
 
 export interface SaveData {
   v: number;
@@ -113,7 +113,6 @@ export interface SaveData {
   oreDiff: Array<[number, number]>;
   /** The parcels held beyond the starting square (docs/land.md): bought, granted (save v3), leased [parcel, next tick due, rent]. Absent: none. */
   land?: { bought: number[]; granted?: number[]; leases: Array<[number, number, number]>; paid?: Array<[number, number]> };
-  explored: Array<[number, number, number]>;
   nodes: Array<[number, unknown]>;
   /**
    * Every chain, keyed by tier, head tile and length. A ribbon: `cells`, item + 1 per tile from
@@ -225,7 +224,6 @@ export function serialize(sim: Sim): SaveData {
       leases: [...sim.land.leases].sort((a, b) => a[0] - b[0]).map(([p, l]) => [p, l.next, l.cents] as [number, number, number]),
       paid: [...sim.land.paid].sort((a, b) => a[0] - b[0]),
     },
-    explored: sim.explored.map((d) => [...d] as [number, number, number]),
     nodes, chains,
     produced: Array.from(sim.produced),
     consumed: Array.from(sim.consumed),
@@ -310,7 +308,6 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
   for (const [p, cents] of d.land?.paid ?? []) sim.land.paid.set(p, cents);
   // A neighbouring base gives way to what an older save holds or built on its land (D110): granted.
   neighboursGiveWay(sim);
-  for (const e of d.explored ?? []) sim.explored.push([e[0], e[1], e[2]]);
   sim.produced.set(d.produced);
   sim.consumed.set(d.consumed);
   sim.notes = d.notes ?? 0;

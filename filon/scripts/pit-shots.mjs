@@ -50,7 +50,6 @@ const rig = await page.evaluate(() => {
       const ps = pieces(x0, Y);
       if (!ps.every(([d, x, y, rot]) => sim.canPlace(d, x, y, rot).ok)) continue;
       // Clear ground round it too (nothing else in the shots' way).
-      sim.explored.push([x0 + 4, Y - 3, 12]);
       const ids = [];
       for (const [d, x, y, rot] of ps) {
         if (d === 'ribbon') { if (sim.placeBelts('ribbon', [[x, y, rot]]) !== 1) return { error: `ribbon at ${x},${y}` }; continue; }

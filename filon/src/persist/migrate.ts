@@ -10,7 +10,7 @@ import { CENTER, WORLD } from '@/sim/constants';
 import { packRuns } from '@/sim/flow/chain';
 import { MapGen } from '@/sim/world/mapgen';
 import { SAVE_VERSION, type SaveData } from '@/sim/serialize';
-import { CORE_REVEAL_V17, PLANS_RETIRED, RESEARCH_RENAMED, RESEARCH_RETIRED, RETIRED_DRIFTER, RETIRED_ITEM_TOKENS, TIER1_TOKENS_V19, TIER1_V17, TIER2_UP_V10 } from '@/content/retired';
+import { PLANS_RETIRED, RESEARCH_RENAMED, RESEARCH_RETIRED, RETIRED_DRIFTER, RETIRED_ITEM_TOKENS, TIER1_TOKENS_V19, TIER1_V17, TIER2_UP_V10 } from '@/content/retired';
 
 /** A step from version v to v + 1 (input: a parsed save of version v). */
 export type Migration = (d: Record<string, unknown>) => Record<string, unknown>;
@@ -411,10 +411,9 @@ export function steamPlan(d: Record<string, unknown>): Record<string, unknown> {
  * 16 → 17, no survey beacon and no unloader (D117; owner, 2026-10-17: « On va supprimer le survey
  * beacon, je n'aime pas. Et toute cette ligne du tech tree peut être supprimée », « le "Unloader"
  * n'est plus nécessaire »). Their plans (`PLANS_RETIRED[17]`), held, are dropped from `done` and
- * their cost handed back to the Heart, by the save's own item table. The fog now lifts as the claim
- * grows, the Core's level widening it (`BAL.coreReveal`): a Core above level 1 lifts it now as far
- * as its level would have (`CORE_REVEAL_V17`); what the beacons lifted stays lifted (`explored` is
- * kept whole). The beacons and unloaders themselves are the remap's: their ids are gone from the
+ * their cost handed back to the Heart, by the save's own item table. (Until D148 it also lifted the
+ * fog round a Core above level 1; step 22 → 23 drops the fog whole, so that went.) The beacons and
+ * unloaders themselves are the remap's: their ids are gone from the
  * content, so it takes them down, refunds them at `RETIRED_COSTS` and hands an unloader's held item
  * to the Heart (sim/save-remap.ts) — nothing vanishes, and the report lists them.
  */
@@ -426,10 +425,7 @@ export function beaconsRetired(d: Record<string, unknown>): Record<string, unkno
   for (const id of done) {
     for (const [it, q] of gone[id] ?? []) { const i = items.indexOf(it); if (i >= 0) stock[i] = (stock[i] ?? 0) + q * 1000; }
   }
-  const lv = Math.max(1, Math.min(CORE_REVEAL_V17.length, (d.hearthLevel as number | undefined) ?? 1));
-  const explored = [...((d.explored as Array<[number, number, number]> | undefined) ?? [])];
-  if (lv > 1) explored.push([CENTER, CENTER, CORE_REVEAL_V17[lv - 1]!]);
-  return { ...d, stock, done: done.filter((id) => !(id in gone)), explored };
+  return { ...d, stock, done: done.filter((id) => !(id in gone)) };
 }
 
 /**
@@ -571,7 +567,17 @@ export function coalRetired(d: Record<string, unknown>): Record<string, unknown>
   return { ...d, stock, done: done.filter((id) => !(id in gone)) };
 }
 
-export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsToTowers, 6: researchToTokens, 7: researchAtBase, 8: parcelsResized, 9: labsToThree, 10: expertiseArc, 11: electricSmelting, 12: coreData, 13: tierOneWhole, 14: docksRetired, 15: steamPlan, 16: beaconsRetired, 17: researchFlows, 18: dataRetired, 19: quartzWorkshop, 20: assemblyBench, 21: coalRetired };
+/**
+ * 22 → 23, no fog of war (D148; owner, 2026-10-19: « make it so that there's no fog of war
+ * anywhere »): the explored discs a save held (`explored`, D117's fog lifted round each building,
+ * parcel and Core level) are dropped. Nothing else held them: the whole world is known.
+ */
+export function fogLifted(d: Record<string, unknown>): Record<string, unknown> {
+  const { explored: _explored, ...rest } = d;
+  return rest;
+}
+
+export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsToTowers, 6: researchToTokens, 7: researchAtBase, 8: parcelsResized, 9: labsToThree, 10: expertiseArc, 11: electricSmelting, 12: coreData, 13: tierOneWhole, 14: docksRetired, 15: steamPlan, 16: beaconsRetired, 17: researchFlows, 18: dataRetired, 19: quartzWorkshop, 20: assemblyBench, 21: coalRetired, 22: fogLifted };
 
 export class SaveTooNew extends Error {
   constructor(readonly version: number) { super(`save version ${version} is newer than this build (${SAVE_VERSION})`); }

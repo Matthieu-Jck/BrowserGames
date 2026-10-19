@@ -56,9 +56,9 @@ export function tileMaxOf(item: number): number {
   return tileRate((base * RICH_MULT.far) / 1000);
 }
 
-/** The deposit card's facts for tile (x, y), or null: in the fog, plain ground, or off the world. */
+/** The deposit card's facts for tile (x, y), or null: plain ground, or off the world. */
 export function depositAt(sim: Sim, x: number, y: number): DepositFacts | null {
-  if (x < 0 || y < 0 || x >= WORLD || y >= WORLD || !sim.revealed(x, y)) return null;
+  if (x < 0 || y < 0 || x >= WORLD || y >= WORLD) return null;
   const g = sim.grid, t = g.terrain(x, y), ore = g.ore(x, y);
   const of = (ids: readonly string[]): DepositMachine[] => ids.map((def) => ({ def, locked: !sim.unlocked(buildingDef(buildingIdx(def)).unlock) }));
   if (ore < 0) {
@@ -90,7 +90,7 @@ export function depositExtent(sim: Sim, x: number, y: number, cap = 1500): { til
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
       const nx = kx + dx, ny = ky + dy, nk = ny * WORLD + nx;
       if (nx < 0 || ny < 0 || nx >= WORLD || ny >= WORLD || keys.has(nk)) continue;
-      if (g.ore(nx, ny) !== ore || !sim.revealed(nx, ny)) continue;
+      if (g.ore(nx, ny) !== ore) continue;
       keys.add(nk);
       stack.push(nk);
     }

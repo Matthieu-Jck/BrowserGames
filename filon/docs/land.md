@@ -151,30 +151,25 @@ or water filled):
 - **Selling back** (`sellLand`, D119; owner, 2026-10-17: « il ne devrait pas y avoir d'upgrade pour revendre une parcelle. Ce n'est pas à 80 % du prix, c'est au prix du marché, avec 20 % de taxe du gouvernement »): always available, no research, for any parcel the claim bought. CrierBelt pays the parcel's **market price** — what buying it would cost now (`marketPrice`: `landPrice` with the parcel itself left out of the growth, so land growth, ore, floor and research move it) — less `BAL.landResaleTax` (200 ‰), the **taxe du Cadastre de l'Anneau** the authority that registers land on the Ring keeps. What stands on it goes dormant. The land panel shows « Revendre · X ◉ » and under it « Prix du marché Y ◉ − taxe 20 % du Cadastre de l'Anneau ». A granted parcel is not sold (`not_bought`), nor one bought from a base before D110 (`neighbour`).
 - A lease needs no sale: `endLease` gives it back at any time, free, as before (the rent is paid by the hour, nothing was paid up front to get back).
 
-## The fog (D117)
+## No fog of war (D148)
 
-The land past what the claim has seen is in the fog (`Sim.explored`: discs that never close; a
-building is placed and a tile marked on revealed land only). There is no scouting building since
-D117 (owner, 2026-10-17: « On va supprimer le survey beacon, je n'aime pas »): the fog lifts as the
-claim grows.
+The whole world is known from the founding, for every base, new and old (D148; owner, 2026-10-19:
+« make it so that there's no fog of war anywhere »): the terrain, the rivers, every deposit, the
+neighbouring bases (D110) and the Gleaners' desert are drawn and read the same near the Heart or at
+the world's edge. Nothing is explored, so nothing is saved for it.
 
-- **The Core** lifts it round itself by its level, `BAL.coreReveal`: 44 tiles at founding (the
-  cirque, its Crown and the near belt's first deposits), 56, 68 and 80 at levels 2–4.
-- **A parcel newly held** (bought or leased) lifts it `BAL.landReveal` (32) round its centre: the
-  whole parcel and a margin round it (16 tiles at its corners), so its neighbours' near edges show.
-  A parcel can be bought in the fog: its price says what it holds (the land panel's facts wait).
-- **A building stood up** lifts it round its footprint's centre, `revealOf` its def: a pylon as far
-  as its wires reach (40), any other building `BAL.buildReveal` (12) plus half its longer side; a
-  line piece (ribbons, routing blocks, junctions, bridges, conduits, fences) nothing. So a pole
-  line walks the fog back: each pole, wired from the edge of the clear, lifts the next stretch;
-  a pylon line does it 40 tiles at a time. Off the claim's land the drones fly a building out
-  (`remoteBuildDelay`): the fog lifts when it is placed, not when it lands.
-- `Sim.liftFog` adds a disc only when one of its tiles is still in the fog, so building in the
-  clear adds nothing and the list grows only at the fog's edge. Placements are commands: a replay
-  lifts the same fog.
+- **Placing** checks the world's edge, occupancy, terrain, the land's needs and the claim's land
+  (`canPlace`, [engine.md](engine.md#placement-and-replacement)); far out, a kite flies the materials there
+  (`remoteBuildDelay`).
+- **Buying and leasing** keep their own rules — next to the claim's land, or anywhere with Far
+  Claim (D70); never a neighbouring base's parcel (D110); the price — and the land panel says
+  what a parcel holds tile by tile wherever it lies.
+- **The deposit card** (D99) shows any deposit's facts and extent, however far.
+- **Marks** (dig and fill) go on any rock or water tile the other rules allow.
 
-What the survey beacons of a save lifted stays lifted; the beacons themselves are refunded
-(save v17, [persistence.md](persistence.md)).
+D117's fog (discs round the Core by its level, round each parcel held and each building stood up,
+`Sim.explored`) went with D148; a save's discs are dropped on load (save v23,
+[persistence.md](persistence.md)).
 
 ## Saves
 

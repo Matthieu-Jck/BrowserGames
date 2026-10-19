@@ -63,8 +63,8 @@ export const RETIRED_COSTS: Readonly<Record<string, ReadonlyArray<readonly [stri
   big_dock: [['ceramic', 60], ['gear', 30], ['lens', 15]],
   // The survey beacon (owner, 2026-10-17: « On va supprimer le survey beacon, je n'aime pas ») and the
   // unloader (« le "Unloader" n'est plus nécessaire »), retired by D117: refunded, an unloader's held
-  // item handed to the Heart (the remap's rule for a routing block). The fog a beacon lifted stays
-  // lifted (`explored` is the save's); their plans are dropped and refunded by save v17 (`PLANS_RETIRED`).
+  // item handed to the Heart (the remap's rule for a routing block); their plans are dropped and
+  // refunded by save v17 (`PLANS_RETIRED`). The fog they lifted went with the fog itself (D148, save v23).
   beacon: [['iron_plate', 5], ['glass', 2]],
   unloader: [['iron_plate', 2], ['copper_wire', 1]],
   // The data's makers (D122; owner, 2026-10-17: « on va enlever le principe de la data… on n'a plus
@@ -168,6 +168,3 @@ export const PLANS_RETIRED: Readonly<Record<number, Readonly<Record<string, Read
  * drops its tokens and its time — Tier 1 is data alone now — and finishes once its data is paid).
  */
 export const TIER1_V17: readonly string[] = ['tr1', 'tr_synth', 'en_pitch', 'en2', 'ex_fastdrill', 'dn3', 'dn_esmelt', 'dn_wiremill', 'cm_post2', 'cm_floor', 'an_data', 'an_relay', 'xp_swift', 'xp_bigsilo', 'xp_guard'];
-
-/** The fog round the Core by its level 1..4 in saves 1–16, frozen (`BAL.coreReveal` since D117; before, the founding's 44 at every level). */
-export const CORE_REVEAL_V17: readonly number[] = [44, 56, 68, 80];

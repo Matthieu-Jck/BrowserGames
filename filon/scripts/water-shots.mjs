@@ -6,7 +6,7 @@
 // iso and plan, by day and by night, cropped round the spot: scripts/shot-water-<TAG>-*.png
 // (gitignored; TAG=before|after; ONLY=stream,broad,… to pick). Usage: a server on :5183 (or URL=…,
 // SEED=…), then `TAG=after node scripts/water-shots.mjs`. It starts the sandbox base over (FL.wipe:
-// map 4) and lifts the fog out to the sea (a review rig).
+// map 4).
 import { chromium } from 'playwright-core';
 import { fileURLToPath } from 'node:url';
 
@@ -40,10 +40,9 @@ const view = async (mode) => {
   await page.waitForFunction((m) => { const v = window.FL.view(); return v.mode === m && (m === 'plan' ? v.t === 1 : v.t === 0); }, mode, { timeout: 5000 });
 };
 
-// The spots: searched outward from the cirque over the land's tiles (the fog lifted out to r 460).
+// The spots: searched outward from the cirque over the land's tiles.
 const spots = await page.evaluate(() => {
   const sim = window.FL.app.sim, g = sim.grid, C = 512, RIVER = 14, SH = 6, DEEP = 7;
-  sim.explored.push([C, C, 460]);
   const still = (t) => t === SH || t === DEEP;
   const wet = (x, y) => still(g.terrain(x, y)) || g.terrain(x, y) === RIVER;
   const biome = (x, y) => g.chunkAt(x >> 5, y >> 5).biome[(y & 31) * 32 + (x & 31)];

@@ -571,9 +571,9 @@ export interface MapParams {
 
 /**
  * Map 3's vein (D87). The face 44–46 tiles out (the starting square ends at 34, its ring of parcels
- * at 57: the bluff stands wholly in the parcel west or north of it; the start's reveal, r 44, just
- * misses it), eight tiles of quartz (two tiles a cutter: four cutters along it, 60 a minute),
- * five tiles of floor before it, a corridor of floor back to the Crown's foot.
+ * at 57: the bluff stands wholly in the parcel west or north of it), eight tiles of quartz (two
+ * tiles a cutter: four cutters along it, 60 a minute), five tiles of floor before it, a corridor of
+ * floor back to the Crown's foot.
  */
 export const QUARTZ_VEIN: QuartzVein = {
   item: 'quartz', sides: ['W', 'N'], face: 44, faceSpan: 3, length: 8, shift: 3,

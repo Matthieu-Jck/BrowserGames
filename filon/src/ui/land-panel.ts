@@ -5,8 +5,8 @@
 // shows rather than tells (owner, D53): a little map of the parcel's 16 × 16 tiles, its name on
 // the map (a compass offset from the Heart), who holds it (an owner's flag and the name: the
 // claim, a neighbouring base with its emblem and its trade — D110 —, CrierBelt) and how (a tag), what it holds as glyphs and tile counts (each
-// ore's icon, rock, water, salt flats, vents, the dune sea, chasms and rivers, the fog over what is
-// not explored yet, the buildings on it), its usable floor as a gauge and a share (D94: where a 2 × 2
+// ore's icon, rock, water, salt flats, vents, the dune sea, chasms and rivers, the buildings on
+// it), its usable floor as a gauge and a share (D94: where a 2 × 2
 // machine stands; the price follows it), then the price
 // with the ocelle sign and « Acheter », the rent an hour and « Louer » (Land Registry first), or on
 // a leased parcel its hour as a bar and « Rendre le bail »; a bought one, « Revendre » and what CrierBelt gives back (D119: the market price less the Cadastre's tax). A button the colony would
@@ -132,10 +132,9 @@ export class LandPanel {
     if (!g) return cv;
     for (let y = y0; y < y1; y++) {
       for (let x = x0; x < x1; x++) {
-        const seen = sim.revealed(x, y); // the fog keeps what it hides, as in the world
-        g.fillStyle = seen ? TERRAIN_COL[sim.grid.terrain(x, y)] ?? C.cirque : C.fog;
+        g.fillStyle = TERRAIN_COL[sim.grid.terrain(x, y)] ?? C.cirque;
         g.fillRect((x - x0) * k, (y - y0) * k, k, k);
-        const ore = seen ? sim.grid.ore(x, y) : -1;
+        const ore = sim.grid.ore(x, y);
         if (ore >= 0) {
           const k0 = itemDef(ore).color, col = k0.startsWith('#') ? k0 : (C as Record<string, string>)[k0] ?? C.ink; // a hex or a token
           g.fillStyle = col;
@@ -202,7 +201,7 @@ export class LandPanel {
     const chip = (icon: HTMLElement, n: number, label: string, k: string): HTMLElement =>
       el('span.land-chip', { 'data-k': k, title: `${label} · ${tr('land.tiles', { n })}` }, [icon, el('b', {}, String(n))]);
     const kids: HTMLElement[] = c.ores.map(([i, n]) => chip(itemMention(i, { name: false }), n, itemDef(i).name[locale()], ITEM_IDS[i]!));
-    for (const [k, n] of [['rock', c.rock], ['water', c.water], ['river', c.river], ['chasm', c.chasm], ['salt', c.salt], ['vent', c.vent], ['dunes', c.dunes], ['floor', c.floor], ['fog', c.hidden]] as const) {
+    for (const [k, n] of [['rock', c.rock], ['water', c.water], ['river', c.river], ['chasm', c.chasm], ['salt', c.salt], ['vent', c.vent], ['dunes', c.dunes], ['floor', c.floor]] as const) {
       if (n > 0) kids.push(chip(glyph(k), n, t(`land.c.${k}` as MsgKey), k));
     }
     const built = el('b');

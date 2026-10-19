@@ -60,7 +60,7 @@ export function basicsWorks(b: Builder): void {
  * line, then by the plate smelter, then on the open floor nearest the Core, each spot taken back up
  * whole when a part fails.
  */
-function steelWorks(b: Builder): void {
+export function steelWorks(b: Builder): void {
   const sim = b.sim;
   const ore = b.laid(...Object.keys(b.lines).filter((r) => r.startsWith('iron')));
   const coal = b.laid('coalB', 'coal2', 'coal.f1', 'coal');
@@ -187,7 +187,7 @@ const JOIN_TRIES = 6;
  * into a trade post the same way: the Crier buys what the Core cannot take (D64: an entrance sells
  * whatever comes in). Null: nothing laid.
  */
-function intoCore(b: Builder, id: number): BeltTiles | null {
+export function intoCore(b: Builder, id: number): BeltTiles | null {
   const sim = b.sim, e = sim.ents.get(id);
   if (!e) return null;
   const direct = lay(sim, id, b.H);
@@ -228,7 +228,7 @@ const into = (p: WorldPort): Map<number, Rot> => new Map([[tileIndex(p.fx, p.fy)
  * the Core; whole, or reported `bricks`. Early in the late base's build: by its end the water's
  * shores are taken and a conduit crosses no line.
  */
-function brickWorks(b: Builder): void {
+export function brickWorks(b: Builder): void {
   const sim = b.sim;
   b.affordAll(['brickworks', 1], ['pump', 1], ['conduit', 40], ['sand_collector', 1], b.spare);
   const skips = b.report.skipped.length, budget = { works: WORKS_BUDGET };
