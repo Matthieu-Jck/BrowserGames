@@ -7,7 +7,11 @@
 // size and packed together as one sheet — the same page, so stepping through them never
 // breaks a batch. A water drinker (D142) also gets, per rotation, its look with the pipework on
 // each of its other entrances (`wetKey`; art/pipe-ports.ts), the steam boiler's flywheel shared
-// with its own look; and the conduit's coupling at a port is a ribbon piece (`COUPLING_KEY`).
+// with its own look; and the conduit's coupling at a port is a ribbon piece (`COUPLING_KEY`). The
+// conduit in iso is a raised pipe (D145, recipes/pipes.ts): every piece a conduit tile can show —
+// each straight and elbow with its ends full or stopped at a stub's mouth, a straight's joint and
+// sight-glass, the tee branches — is a 1 × 1 iso frame (`pipeKey`, `pipeBranchKey`); its plan
+// pieces stay ribbon pieces (a tube), with a flanged joint's variant (`CONDUIT_JOINT_KEY`).
 import { CanvasSource, Rectangle, Texture } from 'pixi.js';
 import { BUILDING_IDS, ITEM_IDS, buildingDef, buildingIdx, isBeltDef } from '@/content/registry';
 import type { BuildingId } from '@/content/buildings';
@@ -18,7 +22,8 @@ import { artLevels, drawBuilding, drawBuildingMoving, needsRotations } from './r
 import { drawBuildingTop, drawBuildingTopMoving, needsRotationsTop, TOP_MARGIN, TOP_PX } from './recipes/buildings-top';
 import { MOVING } from './recipes/moving';
 import { drawItem, GLYPH } from './recipes/items';
-import { BELT_PX, BELT_TIERS, drawCamoVent, drawCorner, drawDeck, drawInlet, drawStraight, type BeltTier } from './recipes/belts';
+import { BELT_PX, BELT_TIERS, drawCamoVent, drawConduitJoint, drawCorner, drawDeck, drawInlet, drawStraight, type BeltTier } from './recipes/belts';
+import { PIPE_BRANCHES, PIPE_PIECES, drawPipe, drawPipeBranch, pipeFrame, type PipeMark } from './recipes/pipes';
 import { C } from './tokens';
 import { drawCoupling, wetAlternatives } from './pipe-ports';
 import { drawIcon, ICON, ICON_IDS } from './recipes/icons';
@@ -82,6 +87,12 @@ export const DECK_KEY = 'belt:deck';
 export const wetKey = (key: string, i: number): string => `${key}~w${i}`;
 /** A conduit's end coupled to a port (D142, pipe-ports.ts `drawCoupling`): the joint at the piece's top edge, turned to the port's side. */
 export const COUPLING_KEY = 'belt:conduit:coupling';
+/** A conduit tile's pipe in iso (D145): `arms` its N E S W edges ('0' none, '1' to the edge, '2' to a stub's mouth), `mark` a full straight's joint or sight-glass. */
+export const pipeKey = (arms: string, mark: PipeMark = ''): string => `pipe:${arms}${mark ? `:${mark}` : ''}`;
+/** A tee's branch from the main tube to edge `side`, to the edge (`full`) or a stub's mouth. */
+export const pipeBranchKey = (side: number, full: boolean): string => `pipe:b${side}${full ? 1 : 2}`;
+/** The conduit's plan straight with a flanged joint (D145). */
+export const CONDUIT_JOINT_KEY = 'belt:conduit:joint';
 /** The body alone of a building sprite (`bKey` / `btKey`) whose moving part is drawn apart. */
 export const bodyKey = (key: string): string => `${key}/body`;
 /** Phase k of the moving part of a building sprite (`bKey` / `btKey`), anchored like the sprite. */
@@ -236,6 +247,22 @@ export function bakeAtlas(): Atlas {
     const { canvas, ctx } = canvasOf(BELT_PX, BELT_PX);
     drawCoupling(ctx, 13, BELT_PX);
     pieces.push({ key: COUPLING_KEY, canvas, ox: BELT_PX / 2, oy: BELT_PX / 2, k: 1 / BELT_PX });
+  }
+  {
+    const { canvas, ctx } = canvasOf(BELT_PX, BELT_PX);
+    drawConduitJoint(ctx, 5);
+    pieces.push({ key: CONDUIT_JOINT_KEY, canvas, ox: BELT_PX / 2, oy: BELT_PX / 2, k: 1 / BELT_PX });
+  }
+  // The conduit's pipe pieces in iso (D145), anchored as a 1 × 1 building is (its tile's top corner, z = 0).
+  for (const { arms, mark } of PIPE_PIECES) {
+    const f = pipeFrame(), { canvas, ctx } = canvasOf(f.W, f.H);
+    drawPipe(ctx, f, arms, mark);
+    pieces.push({ key: pipeKey(arms, mark), canvas, ox: f.ox, oy: f.oy, k: 0.5 });
+  }
+  for (const { side, full } of PIPE_BRANCHES) {
+    const f = pipeFrame(), { canvas, ctx } = canvasOf(f.W, f.H);
+    drawPipeBranch(ctx, f, side, full);
+    pieces.push({ key: pipeBranchKey(side, full), canvas, ox: f.ox, oy: f.oy, k: 0.5 });
   }
   for (const id of ICON_IDS) {
     const { canvas, ctx } = canvasOf(ICON, ICON);

@@ -8,7 +8,7 @@
 // bringing them now, whether its lab has the power to take them; an autonomous lab's own compute)
 // and what it runs next. Every item shows its icon (mention.ts); every number goes through the kit's
 // formats.
-import { CRECIPES, ITEM_IDS, recipesFor } from '@/content/registry';
+import { CRECIPES, ITEM_IDS, buildingDef, recipesFor } from '@/content/registry';
 import { RECIPES } from '@/content/recipes';
 import { RESEARCH, type ResearchId } from '@/content/research';
 import type { RecipeDef, ResearchDef } from '@/content/types';
@@ -115,11 +115,17 @@ export const machinePanel: Panel = (ctx) => {
 // ── a drill ───────────────────────────────────────────────────────────────────
 
 /** What it cuts a minute at full power, and the next item on its way (whole items leave it, D37). */
-export const drillHero = ({ sim, node, anim }: PanelCtx): HTMLElement | null => {
+export const drillHero = ({ sim, e, node, anim }: PanelCtx): HTMLElement | null => {
   const d = node as DrillNode | undefined;
   if (!d || d.item < 0) return null;
   const eq = equation([], [itemTerm(d.item, num(d.rateEp / 1000))], t('insp.unit.perMin'));
-  eq.title = t('insp.eq.tip');
+  // Below its rating, the tiles under it set the pace, not the drill (D150: a fast drill on a poor
+  // deposit read slower than a drill beside it on richer tiles): said on hover, and marked.
+  const rated = buildingDef(e.def).drill?.perMin ?? 0;
+  const capped = rated > 0 && d.rateEp < rated * 1000;
+  eq.title = capped ? t('insp.eq.deposit', { max: num(rated) }) : t('insp.eq.tip');
+  // The drill's rating beside what the tiles give, dimmed: « 1,75 /min · 35 ».
+  if (capped) { eq.dataset.capped = '1'; eq.append(el('small.keq-max', {}, `· ${num(rated)}`)); }
   const task = taskBar('mine', t('insp.mine'));
   const full = (): boolean => d.outBuf + 1000 > d.outCap;
   const prog = smoothProgress(sim, () => ({ v: full() ? 1000 : d.outBuf % 1000, need: 1000, on: !full() && (d.status === St.Ok || d.status === St.LowPower) }));

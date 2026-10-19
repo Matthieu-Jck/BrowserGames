@@ -14,7 +14,8 @@
 // floor it lies on the ground plane with the other ribbons; on rock it is drawn on the column's top
 // among the volumes, sorted by `beltZ` — after its own column, before whatever stands in front —
 // and a traction ribbon's lift up a terrace's wall by `liftZ` (owner, 2026-10-13: ribbons on the
-// mountains were drawn at the floor, under the rock).
+// mountains were drawn at the floor, under the rock). A conduit is a raised pipe in iso (D145): a
+// volume on the floor too, sorted by `pipeZ`; a lifted building's reach stops at one ahead of it.
 //
 // Its depth key (docs/render.md §7.4: 4 × doubled depth + kind) sorts it after every column under
 // it — by its FRONT tile, not its centre, or the column under its front corner would cover it — and
@@ -90,6 +91,16 @@ export const flat = (def: number): boolean => BUILDING_KIND[def] === 'belt' || B
 
 /** A ribbon piece on a rock top (kind 0.5): after the columns of its diagonal, before those in front. */
 export const beltZ = (x: number, y: number): number => 8 * (x + y) + 0.5;
+
+/**
+ * A conduit's pipe (D145: raised, a volume): after the columns of its diagonal and whatever lies flat
+ * on it (a ribbon on a rock top, the items riding one: `beltZ` + 0.05), before a building of its
+ * diagonal (a 1 × 1's `buildingZ` is + 1) and a skybridge's deck over it (+ 1.25), and before
+ * anything in front — on the floor and up on the rock alike. A tee's branch towards the camera sorts
+ * just after it, one away just before (`PIPE_DZ`).
+ */
+export const pipeZ = (x: number, y: number): number => 8 * (x + y) + 0.6;
+export const PIPE_DZ = 0.01;
 
 /**
  * A traction ribbon's lift, keyed by the LOW tile of its step (it stands there, against the high
@@ -201,7 +212,8 @@ function reachOf(world: StandWorld, b: Lifted, level: (x: number, y: number) => 
       const ahead = done.get(o);
       if (ahead) { reach = Math.min(reach, (ahead.z - 0.5) / 8 - b.front - 1); continue; } // a lifted building ahead stays after it
       const oe = world.ents.get(o);
-      if (!oe || !flat(oe.def)) return Math.min(reach, k - 1); // a building on the floor ahead stays in front
+      // A building on the floor ahead stays in front; so does a conduit's pipe (D145: it stands up).
+      if (!oe || !flat(oe.def) || BUILDING_KIND[oe.def] === 'conduit') return Math.min(reach, k - 1);
     }
   }
   return reach;

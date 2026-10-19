@@ -1,101 +1,72 @@
 // falls.ts — a conduit's water pouring one terrace down (D114: a conduit whose next tile stands one
-// terrace lower hands its water on to it; it never climbs). Where it does, a glazed downpipe in
-// the conduit's own colours (belts.ts `BELT_TIERS.conduit`: pale glazed steel, the deep water in
-// its window) stands against the terrace's wall on the low side: a hood bends the line over the
-// edge of the high tile, the duct runs down the wall on two clamps, its window showing the water
-// falling in streaks, and a little foam rises at its foot where the water meets the low conduit.
+// terrace lower hands its water on to it; it never climbs). Where it does, the pipe goes down the
+// terrace's wall on the low side (D145: the conduit is a raised pipe, recipes/pipes.ts): it runs on
+// over the high tile's edge at its own height, bends down in a long-radius elbow just past the lip,
+// drops as a riser against the wall on two clamps bolted to it — a sight window halfway showing the
+// water falling in pale streaks — and comes down onto the low tile's pipe, a collar where they meet.
 // It is the conduit's analogue of the traction ribbon's elevator (lifts.ts), drawn on the same
 // frame and laid the same way (world/traction-lifts.ts `fallOfConduit`, world/buildings-view.ts).
 //
 // Iso: a 1 × 2 frame, its way north (−y) as a ribbon's: local y ∈ [1, 2] the conduit's own (high)
 // tile, y ∈ [0, 1] the low tile it pours into, the wall between them at y = 1; heights from the
-// low top (0) to the high one (`h` levels). One sprite: seen from the camera (+x +y) the pipe shows
-// where the low side faces it; otherwise it stands behind the high column and only its hood peeks
-// over the edge (world/stand.ts `liftZ`).
+// low top (0) to the high one (`h` levels). One sprite: seen from the camera (+x +y) the riser shows
+// where the low side faces it; otherwise it stands behind the high column and only its elbow peeks
+// over (world/stand.ts `liftZ`).
 //
-// Plan: the hood and the duct seen from above, a dark drop band on the low side, a double chevron
-// in the water's pale for the way down, a fleck of foam beyond.
-import { flat, ink, type Ctx, type Pt } from '../ink';
-import { IsoFrame, box, faceQuad, facePt, type Face, type RRect } from '../iso-shapes';
+// Plan: the pipe seen from above — the tube over the edge to the elbow's round back, a flange at the
+// lip, a clamp — over a dark drop band on the low side. No chevron: the drop band says the way down.
+import { ellipsePts, flat, ink, shape, type Ctx, type Pt } from '../ink';
+import { IsoFrame, box } from '../iso-shapes';
 import { rivet } from '../shapes';
 import { C, mix } from '../tokens';
-import { BELT_TIERS } from './belts';
+import { PLAN_R } from '../pipe-ports';
+import { RUN, flangeIso, tube, type P3 } from './pipes';
 import type { Rot } from '@/sim/types';
 
-const T = BELT_TIERS.conduit;
-/** The downpipe across the way (local x), its depth off the wall (tiles); the hood's reach over the high tile and its rise above it. */
-export const FALL = { x0: 0.29, x1: 0.71, depth: 0.17, reach: 0.13, rise: 0.13 } as const;
-/** The glazed steel's faces (the conduit's fill and its rails' steel). */
-const GLAZE = { top: mix(T.fill, C.paper, 0.2), left: T.fill, right: mix(T.fill, C.ink, 0.35) };
+/** The riser's axis off the wall, the elbow's bend radius (tiles), how far over the high tile the drawing reaches; kept for the plan mark. */
+export const FALL = { off: RUN.r + 0.035, bend: 0.2, reach: 0.15 } as const;
 
-/** Of a box (rotated), the visible face that looks along local (0, s), or null when it faces away. */
-function faceToward(f: IsoFrame, s: number): Face | null {
-  const [ax, ay] = f.r(0.5, 1), [bx, by] = f.r(0.5, 1 + s);
-  return by - ay > 0.5 ? 'L' : bx - ax > 0.5 ? 'R' : null;
+const GLASS = C.deep, GLASS_D = C.deepD, DARK = C.steelD;
+
+/** A horizontal hoop round the riser at height z (the half the camera sees): a clamp, a collar. */
+function hoop(ctx: Ctx, f: IsoFrame, x: number, y: number, z: number, r: number, w: number, seed: number): void {
+  const [cx, cy] = f.p(x, y, z), [ex, ey] = f.ell(r);
+  const arc = ellipsePts(cx, cy, ex, ey, seed, 0, 40).filter(([, py]) => py >= cy - 0.3).sort((a, b) => a[0] - b[0]);
+  ink(ctx, arc, { w, color: DARK, shade: false, taper: 0, jitter: 0, seed });
 }
 
-/** The faces of a box (rotated) that look across the way (along local ±x) and are in sight. */
-function sideFaces(f: IsoFrame): Face[] {
-  const out: Face[] = [];
-  for (const s of [-1, 1]) {
-    const [ax, ay] = f.r(0.5, 1), [bx, by] = f.r(0.5 + s, 1);
-    if (by - ay > 0.5) out.push('L'); else if (bx - ax > 0.5) out.push('R');
-  }
-  return out;
-}
-
-/** The window down a face: the deep water, pale streaks falling in it, a glint on its lit edge. */
-function waterWindow(ctx: Ctx, f: IsoFrame, rr: RRect, face: Face, z0: number, z1: number, s: number): void {
-  const q = faceQuad(f, rr, face, 0.28, 0.72, z0, z1);
-  flat(ctx, q, C.deep, 0.95);
-  for (let k = 0, z = z1 - 0.12; z > z0 + 0.08; z -= 0.23, k++) {
-    const u = k % 2 ? 0.42 : 0.56;
-    ink(ctx, [facePt(f, rr, face, u, z), facePt(f, rr, face, u, z - 0.13)], { w: 1.4, color: C.shallow, alpha: 0.9, shade: false, taper: 0.3, jitter: 0, seed: s + k });
-  }
-  ink(ctx, [facePt(f, rr, face, 0.34, z1 - 0.02), facePt(f, rr, face, 0.34, z0 + 0.02)], { w: 1.4, color: '#ffffff', alpha: 0.6, shade: false, taper: 0, jitter: 0, seed: s + 20 });
-  ink(ctx, q, { closed: true, w: 1.1, alpha: 0.8, shade: false, taper: 0, jitter: 0, seed: s + 21 });
-}
-
-/** Foam at the downpipe's foot on the low tile: pale lobes in the water's light, a few drops. */
-function foam(ctx: Ctx, f: IsoFrame, y: number): void {
-  const lobes: ReadonlyArray<readonly [number, number, number]> = [[0.5, 0, 4.2], [0.39, 0.03, 3.2], [0.61, 0.02, 3.4], [0.45, -0.05, 2.6], [0.56, -0.06, 2.4]];
-  for (const [x, dy, r] of lobes) { const [px, py] = f.p(x, y + dy, 0.05); flat(ctx, [[px - r - 1, py], [px, py - r * 0.7 - 1], [px + r + 1, py], [px, py + r * 0.55 + 1]], C.shallow, 0.9); }
-  for (const [i, [x, dy, r]] of lobes.entries()) {
-    const [px, py] = f.p(x, y + dy, 0.07);
-    flat(ctx, Array.from({ length: 10 }, (_, k) => { const a = (k / 10) * Math.PI * 2; return [px + Math.cos(a) * r, py + Math.sin(a) * r * 0.62] as Pt; }), C.paper, 0.95);
-    if (i < 2) flat(ctx, [[px - r * 0.4, py - r * 0.2], [px, py - r * 0.45], [px + r * 0.2, py - r * 0.2]], '#ffffff', 0.9);
-  }
-  for (const [x, dz] of [[0.36, 0.22], [0.64, 0.3], [0.52, 0.4]] as const) {
-    const [px, py] = f.p(x, y - 0.02, dz);
-    flat(ctx, [[px - 1.2, py], [px, py - 1.6], [px + 1.2, py], [px, py + 1.2]], C.paper, 0.9);
-  }
-}
-
-/** The downpipe on the 1 × 2 frame: the duct on its clamps, its window, the hood over the edge, the foam at its foot. */
+/** The pipe down the wall on the 1 × 2 frame: over the edge, the elbow, the riser on its clamps, its window, the collar on the low pipe. */
 function fall(ctx: Ctx, f: IsoFrame, h: number, s: number): void {
-  const { x0, x1, depth, reach, rise } = FALL;
-  const y0 = 1 - depth, y1 = 1;
-  const duct = box(ctx, f, x0, y0, x1, y1, 0.02, h, GLAZE, s, { shadow: false, outline: 1.6, hatchRight: false });
-  const front = faceToward(f, -1);
-  if (front) waterWindow(ctx, f, duct, front, 0.12, h - 0.1, s + 1);
-  // Two clamps round the duct, bolted to the wall.
-  for (const [k, z] of [0.42, h - 0.42].entries()) {
-    for (const fc of [front, ...sideFaces(f)]) {
-      if (!fc) continue;
-      flat(ctx, faceQuad(f, duct, fc, 0, 1, z - 0.06, z + 0.06), T.rail);
-      ink(ctx, [facePt(f, duct, fc, 0, z + 0.06), facePt(f, duct, fc, 1, z + 0.06)], { w: 0.9, color: C.steelL, alpha: 0.8, shade: false, taper: 0, jitter: 0, seed: s + 10 + k });
+  const { off, bend } = FALL, Z = RUN.z, zH = h + Z, x = 0.5, y = 1 - off;
+  const across = [1, 0, 0] as const;
+  // Clamp brackets to the wall, behind the riser.
+  const zc = [Z + 0.33, zH - 0.55];
+  for (const z of zc) box(ctx, f, x - 0.035, y + RUN.r * 0.5, x + 0.035, 1, z - 0.05, z + 0.05, DARK, s + 1, { outline: 1.2, shadow: false });
+  // Over the edge: the high pipe's last stretch, a flange at the lip, then the elbow and the riser down to the low pipe.
+  tube(ctx, f, [[x, 1 + FALL.reach, zH], [x, 1.03, zH]], { across, ext0: true, seed: s });
+  flangeIso(ctx, f, [x, 1.02, zH], 'y', s + 2);
+  const arc: P3[] = Array.from({ length: 11 }, (_, i) => { const a = (i / 10) * (Math.PI / 2); return [x, y + bend - Math.sin(a) * bend, zH - (1 - Math.cos(a)) * bend * 2] as P3; });
+  const w0 = Z + 0.6, w1 = zH - 0.82; // the window, between the clamps
+  const foot = Z + RUN.r * 1.6; // into the low pipe's crown
+  tube(ctx, f, [[x, 1.0, zH], [x, y + bend, zH], ...arc, [x, y, w1]], { across, seed: s + 3 });
+  tube(ctx, f, [[x, y, w0], [x, y, foot]], { across, seed: s + 4 });
+  if (w1 > w0 + 0.1) {
+    tube(ctx, f, [[x, y, w1], [x, y, w0]], { across, col: GLASS, shade: GLASS_D, glint: 1.4, seed: s + 5 });
+    // The water falling: pale streaks on the side the camera sees.
+    const [nx, ny] = [x + 0.06, y - 0.06];
+    for (let k = 0, z = w1 - 0.1; z > w0 + 0.1; z -= 0.24, k++) {
+      const dx = k % 2 ? -0.03 : 0.03;
+      ink(ctx, [f.p(nx + dx, ny - dx, z), f.p(nx + dx, ny - dx, z - 0.12)], { w: 1.4, color: C.shallow, alpha: 0.95, shade: false, taper: 0.3, jitter: 0, seed: s + 10 + k });
     }
-    if (front) { const [px, py] = facePt(f, duct, front, 0.5, z); rivet(ctx, px, py, 1.4, C.steelL); }
+    hoop(ctx, f, x, y, w1, RUN.r * 1.12, 3, s + 6);
+    hoop(ctx, f, x, y, w0, RUN.r * 1.12, 3, s + 7);
   }
-  // The hood: the conduit's end bent over the edge, down into the duct.
-  const hood = box(ctx, f, x0 - 0.03, y0 - 0.02, x1 + 0.03, y1 + reach, h - 0.12, h + rise, GLAZE, s + 20, { shadow: false, outline: 1.6, hatchRight: false });
-  const [a0, b0, a1, b1] = hood;
-  flat(ctx, [f.pr(a0 + 0.06, b0 + 0.06, h + rise), f.pr(a1 - 0.06, b0 + 0.06, h + rise), f.pr(a1 - 0.06, b1 - 0.06, h + rise), f.pr(a0 + 0.06, b1 - 0.06, h + rise)], mix(T.fill, C.steel, 0.25), 0.6);
-  for (const fc of [front, ...sideFaces(f)]) {
-    if (!fc) continue;
-    flat(ctx, faceQuad(f, hood, fc, 0, 1, h - 0.12, h - 0.06), T.rail);
+  for (const [k, z] of zc.entries()) {
+    hoop(ctx, f, x, y, z, RUN.r * 1.08, 2.6, s + 20 + k);
+    const [px, py] = f.p(x, y - RUN.r * 1.08, z);
+    rivet(ctx, px, py, 1.5, C.steelL);
   }
-  foam(ctx, f, y0 - 0.08);
+  hoop(ctx, f, x, y, foot + 0.02, RUN.r * 1.2, 3.2, s + 30); // the collar on the low pipe
 }
 
 /**
@@ -104,7 +75,7 @@ function fall(ctx: Ctx, f: IsoFrame, h: number, s: number): void {
  * gives a canvas.
  */
 export function drawFall(rot: Rot, h: number, make: (w: number, h: number) => { ctx: Ctx; canvas: unknown }): { canvas: unknown; frame: IsoFrame } {
-  const f = new IsoFrame(1, 2, rot, h + FALL.rise + 0.35);
+  const f = new IsoFrame(1, 2, rot, h + RUN.z + RUN.flange * 2 + 0.25);
   const { ctx, canvas } = make(f.W, f.H);
   fall(ctx, f, h, 61);
   return { canvas, frame: f };
@@ -115,26 +86,24 @@ export const FALL_TOP_PX = 64;
 
 /**
  * A fall from above, its way north, on a one-tile canvas centred on the wall (the canvas's middle
- * row; the low tile north of it): the hood over the edge with the water in its mouth, the duct's
- * top beyond it, the dark drop band on the low side, a double chevron for the way down, foam.
+ * row; the low tile north of it): the dark drop band on the low side, the tube from the high side
+ * over the lip — a flange there — to the elbow's round back over the riser, its clamp.
  */
 export function drawFallTop(ctx: Ctx, seed = 29): void {
-  const S = FALL_TOP_PX, m = S / 2;
-  const x0 = FALL.x0 * S, x1 = FALL.x1 * S, d = FALL.depth * S, r = FALL.reach * S;
-  // The drop: a dark band across the whole line on the low side, the cliff's shade under the pipe.
-  const b0 = S * 0.11, b1 = S * 0.89;
-  flat(ctx, [[b0, m], [b1, m], [b1 + 2, m - d - 10], [b0 + 2, m - d - 10]], C.ink, 0.38);
-  // Foam beyond it.
-  for (const [dx, dy, rr] of [[0, -11, 3.4], [-6, -9, 2.4], [6, -10, 2.6]] as const) {
-    flat(ctx, Array.from({ length: 10 }, (_, k) => { const a = (k / 10) * Math.PI * 2; return [m + dx + Math.cos(a) * rr, m - d + dy + Math.sin(a) * rr] as Pt; }), C.paper, 0.9);
-  }
-  // The hood and the duct's top: glazed steel, the deep water in the mouth.
-  const hood: Pt[] = [[x0 - 2, m - d - 1], [x1 + 2, m - d - 1], [x1 + 2, m + r], [x0 - 2, m + r]];
-  flat(ctx, hood, GLAZE.top);
-  flat(ctx, [[x0 + 3, m - d + 2], [x1 - 3, m - d + 2], [x1 - 3, m + r - 3], [x0 + 3, m + r - 3]], C.deep, 0.95);
-  ink(ctx, [[x0 + 5, m + r - 4], [x0 + 5, m - d + 3]], { w: 1.4, color: '#ffffff', alpha: 0.6, shade: false, taper: 0, jitter: 0, seed });
-  ink(ctx, hood, { closed: true, w: 1.8, taper: 0, jitter: 0.2, seed: seed + 1 });
-  // The way down: a double chevron in the water's pale.
-  for (const [k, y] of [m + 4, m - 3].entries()) ink(ctx, [[m - 6, y], [m, y - 5], [m + 6, y]], { w: 2.2, color: C.shallow, shade: false, taper: 0, jitter: 0, seed: seed + 2 + k });
-  for (const x of [x0 - 2, x1 + 2]) rivet(ctx, x, m, 1.6, C.steelL);
+  const S = FALL_TOP_PX, m = S / 2, hw = PLAN_R * S, d = FALL.off * S;
+  // The drop: a dark band across the line on the low side, the cliff's shade under the pipe.
+  const b0 = S * 0.18, b1 = S * 0.82;
+  flat(ctx, [[b0, m], [b1, m], [b1 + 2, m - d - 9], [b0 + 2, m - d - 9]], C.ink, 0.34);
+  // The tube over the lip, rounded at the elbow's back.
+  const end = m - d;
+  const body: Pt[] = [[m - hw, S / 2 + 18], [m - hw, end], ...Array.from({ length: 9 }, (_, i) => { const a = Math.PI + (i / 8) * Math.PI; return [m + Math.cos(a) * hw, end + Math.sin(a) * hw] as Pt; }), [m + hw, end], [m + hw, S / 2 + 18]];
+  flat(ctx, body.map(([x, y]) => [x + 1.5, y + 2] as Pt), C.ink, 0.2);
+  shape(ctx, body, C.steelL, { w: 1.8, shade: false, jitter: 0, seed });
+  flat(ctx, [[m + hw - 3.4, S / 2 + 18], [m + hw - 3.4, end], [m + hw, end], [m + hw, S / 2 + 18]], mix(C.steelL, C.ink, 0.32));
+  ink(ctx, [[m, S / 2 + 18], [m, end - hw * 0.4]], { w: 2.4, color: '#ffffff', alpha: 0.62, shade: false, taper: 0, jitter: 0, seed: seed + 1 });
+  // The flange at the lip and the clamp over the riser.
+  const fl: Pt[] = [[m - hw - 3.6, m + 1], [m + hw + 3.6, m + 1], [m + hw + 3.6, m + 5], [m - hw - 3.6, m + 5]];
+  shape(ctx, fl, mix(C.steelL, '#ffffff', 0.18), { w: 1.4, shade: false, jitter: 0, seed: seed + 2 });
+  for (const x of [m - hw - 1.6, m + hw + 1.6]) rivet(ctx, x, m + 3, 1.4, C.brassL);
+  flat(ctx, [[m - hw - 1, end - 1.3], [m + hw + 1, end - 1.3], [m + hw + 1, end + 1.3], [m - hw - 1, end + 1.3]], C.steelD, 0.9);
 }

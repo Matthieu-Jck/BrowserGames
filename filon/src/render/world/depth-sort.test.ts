@@ -8,6 +8,9 @@
 // near faces: an item on the floor within `FACE_REACH` of its south or east face sorts after all it
 // lays, farther off with the ribbons; never by its back faces, on a routing block's intake side,
 // or on a glazed ribbon. The art's parts partition its drawing (every fill in exactly one of back and front).
+// A conduit's raised pipe (D145, `pipeZ`): in front of a building's near faces, behind its back faces,
+// under a skybridge's deck, after an item on the ribbon beside it on its own diagonal and before one on
+// the next, after its rock column and before the one in front; a lifted building's reach stops at it.
 import { describe, it, expect } from 'vitest';
 import { buildingIdx } from '@/content/registry';
 import { Entities, footprint } from '@/sim/entities';
@@ -17,7 +20,7 @@ import { T, type Ent, type Rot } from '@/sim/types';
 import { drawJunctionPart, drawSkyPiece, type SkyPiece } from '../art/recipes/buildings';
 import type { Ctx } from '../art/ink';
 import { BeltLift, FACE_REACH, ITEM_DZ } from './belt-lift';
-import { FRONT_DZ, beltZ, buildingZ, computeStands, deckSquareZ, depthKey, rampZ } from './stand';
+import { FRONT_DZ, PIPE_DZ, beltZ, buildingZ, computeStands, deckSquareZ, depthKey, pipeZ, rampZ, rockZ } from './stand';
 
 /** Sand, and a rock plateau (land level 1) on x 600–609, y 600–609. */
 class Land implements TerrainSource {
@@ -254,3 +257,48 @@ describe('D130 depth sort: the parts the art is drawn in', () => {
     }
   });
 });
+
+describe('D145 depth sort: a conduit’s raised pipe', () => {
+  it('in front of a building’s south and east faces, behind its north and west ones, whatever its size and turn', () => {
+    for (const [def, rot] of [['silo', 0], ['steam_boiler', 0], ['steam_boiler', 1], ['kiln', 0], ['router', 0]] as const) {
+      const [w, h] = footprint(buildingIdx(def), rot as Rot), x = 500, y = 500, k = buildingZ(x, y, w, h);
+      for (let i = 0; i < w; i++) {
+        expect(pipeZ(x + i, y + h), `${def}:${rot} south ${i}`).toBeGreaterThan(k);
+        expect(pipeZ(x + i, y - 1), `${def}:${rot} north ${i}`).toBeLessThan(k);
+      }
+      for (let j = 0; j < h; j++) {
+        expect(pipeZ(x + w, y + j), `${def}:${rot} east ${j}`).toBeGreaterThan(k);
+        expect(pipeZ(x - 1, y + j), `${def}:${rot} west ${j}`).toBeLessThan(k);
+      }
+    }
+  });
+
+  it('after the items on a ribbon of its own diagonal and its tile’s flat pieces, before the next diagonal’s; under a deck, between the rock columns', () => {
+    const x = 520, y = 530;
+    // A ribbon tile beside it (same diagonal) or behind it: its items sort before the pipe; in front of it, after.
+    expect(beltZ(x + 1, y - 1) + ITEM_DZ.belt).toBeLessThan(pipeZ(x, y));
+    expect(beltZ(x, y - 1) + ITEM_DZ.belt).toBeLessThan(pipeZ(x, y));
+    expect(beltZ(x, y + 1) + ITEM_DZ.belt).toBeGreaterThan(pipeZ(x, y));
+    // A tee's branches stay with their tile, a building of the next diagonal after all of them.
+    expect(pipeZ(x, y) + PIPE_DZ).toBeLessThan(buildingZ(x + 1, y, 1, 1));
+    expect(pipeZ(x, y) - PIPE_DZ).toBeGreaterThan(beltZ(x, y) + ITEM_DZ.belt);
+    // A skybridge's deck over it (on the floor and up on the rock) covers it.
+    expect(deckSquareZ(x, y, 0)).toBeGreaterThan(pipeZ(x, y));
+    expect(deckSquareZ(x, y, 2)).toBeGreaterThan(pipeZ(x, y));
+    // Up on the rock: after its own column, before the column in front.
+    expect(pipeZ(x, y)).toBeGreaterThan(rockZ(x, y));
+    expect(pipeZ(x, y)).toBeLessThan(rockZ(x + 1, y));
+  });
+
+  it('a building standing on the rock does not sort past a pipe in front of it (a ribbon there it may)', () => {
+    const key = (what: 'conduit' | 'ribbon'): number => {
+      const w = world();
+      const t = w.put('wind_flower', 602, 602, 0); // 2 × 2 on the plateau (602–603)
+      w.put(what, 604, 603, 0); // on the rock, east of it: in front
+      return computeStands(w).get(t.id)!.z;
+    };
+    expect(key('conduit')).toBeLessThan(pipeZ(604, 603));
+    expect(key('ribbon')).toBeGreaterThan(key('conduit'));
+  });
+});
+

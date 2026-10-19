@@ -66,11 +66,16 @@ export function wetEntrance(def: BuildingDef, joined: (i: number) => number): nu
 
 /**
  * The stub's measures, in tiles along the port's way out from the footprint's edge (t) and levels
- * (z): its axis height and radius, where it starts inside the wall and ends outside (an outlet
- * reaches further, as a nozzle does), its collar and flange radii, the valve's stem and wheel.
- * `hub`: where the valve's lamp is — the ribbon hatch's LED point (iso-shapes.ts `portIso`).
+ * (z): its axis height and radius — the conduit's own (D145: the pipe run, recipes/pipes.ts, is
+ * carried at this height, so a stub and the pipe coupled to it are one tube) —, where it starts
+ * inside the wall and where its mouth is (`tOut`, an intake's and an outlet's alike: the pipe's end
+ * flange meets it there), its collar and flange radii, the valve's wheel (its radius, its height
+ * above the pipe's crown). `hub`: where the valve's lamp is — the ribbon hatch's LED point
+ * (iso-shapes.ts `portIso`), so a building's night lights sit right in every variant.
  */
-export const PIPE = { zc: 0.26, r: 0.11, tIn: -0.14, tOutIn: 0.18, tOutOut: 0.24, collar: 0.14, flange: 0.15, wheel: 0.165, hubT: 0.02, hubDz: 0.35 } as const;
+export const PIPE = { zc: 0.46, r: 0.115, tIn: -0.14, tOut: 0.22, collar: 0.145, flange: 0.155, wheel: 0.165, wheelUp: 0.3, hubT: 0.02, hubDz: 0.35 } as const;
+/** The pipe's half-width in plan (tiles): the stubs' and the conduit's plan pieces' (recipes/belts.ts). */
+export const PLAN_R = 0.155;
 
 /** The glazed band's water and glint (the conduit's line, recipes/belts.ts); the flange's pale steel. */
 const WATER = C.deep, WATER_D = C.deepD, FLANGE = mix(C.steelL, '#ffffff', 0.18);
@@ -93,7 +98,7 @@ export function pipePortIso(ctx: Ctx, f: IsoFrame, px: number, py: number, side:
   const mx = px + 0.5 + dx * 0.5, my = py + 0.5 + dy * 0.5; // the edge's middle
   const axis: 'x' | 'y' = dx !== 0 ? 'x' : 'y';
   const at = (t: number): [number, number] => [mx + dx * t, my + dy * t];
-  const { zc, r, tIn } = PIPE, tOut = io === 'out' ? PIPE.tOutOut : PIPE.tOutIn;
+  const { zc, r, tIn, tOut } = PIPE;
   const outNear = f.depth(...at(1)) > f.depth(...at(0)); // does its mouth face the viewer?
   const drum = (t0: number, t1: number, rr: number, col: string, s: number, bands?: readonly number[]): void => {
     const [cx, cy] = at((t0 + t1) / 2);
@@ -129,10 +134,13 @@ export function pipePortIso(ctx: Ctx, f: IsoFrame, px: number, py: number, side:
   };
   // Far end first: an outlet facing away shows its flange behind the stub, its collar in front.
   if (outNear) { collar(); stub(); flange(); } else { flange(); stub(); collar(); }
-  valveIso(ctx, f, ...at(PIPE.hubT), zc + r * 2, z + PIPE.hubDz, io, seed + 7);
+  valveIso(ctx, f, ...at(PIPE.hubT), zc + r * 2, zc + r * 2 + PIPE.wheelUp, io, seed + 7);
+  // The valve's lamp, at the foot of its stem on the stub's crown: the hatch's LED point, its colour.
+  const lamp = f.p(...at(PIPE.hubT), z + PIPE.hubDz);
+  light(ctx, lamp[0], lamp[1], 2, C.led);
 }
 
-/** The valve on a pipe: a dark stem from the pipe's top `z0` up to its handwheel at `z1`, the wheel's ring and spokes, its lamp for a hub. */
+/** The valve on a pipe: a dark stem from the pipe's top `z0` up to its handwheel at `z1`, the wheel's ring and spokes, a brass nut for a hub (its lamp is at the stem's foot: `pipePortIso`). */
 function valveIso(ctx: Ctx, f: IsoFrame, x: number, y: number, z0: number, z1: number, io: 'in' | 'out', seed: number): void {
   const a = f.p(x, y, z0 - 0.04), b = f.p(x, y, z1);
   ink(ctx, [a, b], { w: 4.6, color: C.ink, shade: false, taper: 0, jitter: 0, seed });
@@ -151,8 +159,7 @@ function valveIso(ctx: Ctx, f: IsoFrame, x: number, y: number, z0: number, z1: n
   ink(ctx, ring, { closed: true, w: 3, color: col, shade: false, taper: 0, jitter: 0, seed: seed + 11 });
   // The lit half of the rim (the light comes from the top left).
   ink(ctx, ring.filter(([px, py]) => px < b[0] + ex * 0.2 && py < b[1] + ey * 0.2).sort((p, q) => p[0] - q[0]), { w: 1.1, color: mix(col, '#ffffff', 0.5), shade: false, taper: 0, jitter: 0, seed: seed + 12 });
-  // The hub: a lamp in the water's colour, where a hatch has its LED.
-  light(ctx, b[0], b[1], 2, C.led);
+  rivet(ctx, b[0], b[1], 2, C.brassL);
 }
 
 /**
@@ -169,7 +176,7 @@ export function pipePortTop(ctx: Ctx, f: Frame, x: number, y: number, side: numb
   const d = DIRV[f.dir(side)]!, tx = -d[1], ty = d[0];
   const P = (t: number, u: number): Pt => [c[0] + d[0] * t * S + tx * u * S, c[1] + d[1] * t * S + ty * u * S];
   const quad = (t0: number, t1: number, u: number): Pt[] => [P(t0, -u), P(t1, -u), P(t1, u), P(t0, u)];
-  const { tIn } = PIPE, r = PIPE.r * 1.1, tOut = io === 'out' ? PIPE.tOutOut : PIPE.tOutIn;
+  const { tIn, tOut } = PIPE, r = PLAN_R;
   const w = Math.max(1.2, f.l(0.028));
   // The stub, its shadow under it, the water line along it.
   const body = quad(tIn, tOut - 0.03, r);
@@ -203,25 +210,21 @@ export function pipePortTop(ctx: Ctx, f: Frame, x: number, y: number, side: numb
 const DIRV: ReadonlyArray<Pt> = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 
 /**
- * A conduit's end at a port (a ribbon piece, BELT_PX square, the joint at the top edge; the views
- * turn it to the port's side): a bolted coupling across the line just past its rails — two steel
- * flanges with a dark gasket between and a brass bolt at each end — the water line running into
- * a round socket under it. Over the conduit's straight, corner or inlet piece (recipes/belts.ts:
- * the band is 0.6 of a tile, its rails 6 px).
+ * A conduit's end at a port in plan (a ribbon piece, BELT_PX square, the port beyond its top edge;
+ * the views turn it to the port's side): the pipe's flange bolted to the stub's at the stub's mouth
+ * (`PIPE.tOut` in from the edge) — two pale steel bars across the tube with a dark gasket between and
+ * a brass bolt at each end — over the conduit's plan piece (recipes/belts.ts: a tube `PLAN_R` wide).
  */
 export function drawCoupling(ctx: Ctx, seed: number, S = 64): void {
-  const x0 = S * 0.2, x1 = S * 0.8, rail = 6;
-  const a = x0 - rail - 3, b = x1 + rail + 3;
+  const m = PIPE.tOut * S, hw = (PLAN_R + 0.06) * S, a = S / 2 - hw, b = S / 2 + hw;
   const bar = (y0: number, y1: number, col: string, s: number): void => {
     const q: Pt[] = [[a, y0], [b, y0], [b, y1], [a, y1]];
     flat(ctx, q.map(([x, y]) => [x + 1.5, y + 2] as Pt), C.ink, 0.25);
     shape(ctx, q, col, { w: 1.6, seed: seed + s, shade: false, jitter: 0 });
   };
-  // The socket: the water line widening into the coupling.
-  flat(ctx, ellipsePts(S / 2, 9, 10, 6, seed, 0, 18), WATER_D);
-  bar(0.5, 5, C.steel, 1);
-  flat(ctx, [[a + 2, 5], [b - 2, 5], [b - 2, 7], [a + 2, 7]], C.ink, 0.85);
-  bar(7, 12, C.steelL, 2);
-  ink(ctx, [[a + 2, 8.2], [b - 2, 8.2]], { w: 1.1, color: '#ffffff', alpha: 0.55, shade: false, taper: 0, jitter: 0, seed: seed + 3 });
-  for (const x of [a + 3.4, S / 2 - 11, S / 2 + 11, b - 3.4]) rivet(ctx, x, 6, 1.9, C.brassL);
+  bar(m - 5.5, m - 1, C.steel, 1);
+  flat(ctx, [[a + 2, m - 1], [b - 2, m - 1], [b - 2, m + 1], [a + 2, m + 1]], C.ink, 0.85);
+  bar(m + 1, m + 5.5, FLANGE, 2);
+  ink(ctx, [[a + 2, m + 2.2], [b - 2, m + 2.2]], { w: 1.1, color: '#ffffff', alpha: 0.55, shade: false, taper: 0, jitter: 0, seed: seed + 3 });
+  for (const x of [a + 3, b - 3]) for (const y of [m - 3.2, m + 3.2]) rivet(ctx, x, y, 1.7, C.brassL);
 }

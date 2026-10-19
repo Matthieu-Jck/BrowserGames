@@ -1,9 +1,16 @@
 // belts.ts — ribbon tiles as inked conveyors: blue-steel side rails with rivets carrying a
-// slatted belt in the tier colour (ribbon turquoise, swift lilac, express coral; conduits are
-// glazed pipes). A straight piece (moving north), a corner piece (entering from the south,
-// leaving east), a side inlet (a line merging in from the west: the rail opens) and a
-// skybridge deck; other orientations are rotations / mirrors at render time. Shadows are
-// symmetric soft halos, so a piece looks the same whichever way it is turned.
+// slatted belt in the tier colour (ribbon turquoise, swift lilac, express coral). A straight piece
+// (moving north), a corner piece (entering from the south, leaving east), a side inlet (a line
+// merging in from the west: the rail opens) and a skybridge deck; other orientations are rotations /
+// mirrors at render time. Shadows are symmetric soft halos, so a piece looks the same whichever way
+// it is turned.
+//
+// The conduit is a pipe, not a belt (D145): in plan (these pieces; in iso it is a raised tube,
+// recipes/pipes.ts) a pale steel tube `PLAN_R` a side with darker edges and a highlight down its
+// crown, inked along both sides, the saddle under it showing either side at the tile's middle with
+// its strap across; a bend a long-radius elbow between two flanged joints (at the stub's mouth from
+// each edge, as in iso); a side inlet a tee's branch with a collar at its root; every few tiles a
+// flanged joint (`drawConduitJoint`, the tiles iso draws one on). No rails, no lights, no chevron.
 //
 // The glazed ribbon (D103) is a ribbon whose rails are glass-edged, pale ice with a bright edge;
 // its hood is laid over its items by the views (recipes/gleaners.ts `drawGlassCover`).
@@ -19,8 +26,9 @@
 // with sprocket wheels. Where it changes level, its lift up the terrace's wall is drawn apart
 // (art/recipes/lifts.ts).
 import { C, mix } from '../tokens';
-import { ink, flat, type Ctx, type Pt } from '../ink';
+import { ink, flat, shape, type Ctx, type Pt } from '../ink';
 import { light, rivet } from '../shapes';
+import { PIPE, PLAN_R } from '../pipe-ports';
 
 export const BELT_PX = 64;
 const S = BELT_PX;
@@ -41,14 +49,12 @@ export type BeltTier = keyof typeof BELT_TIERS;
 /** Straight piece, motion towards the top. Canvas S×S (seamless top/bottom edges). */
 export function drawStraight(ctx: Ctx, tier: BeltTier, seed: number): void {
   if (tier === 'camo_ribbon') { camoStraight(ctx, seed, false); return; }
+  if (tier === 'conduit') { conduitStraight(ctx, seed, false); return; }
   const t = BELT_TIERS[tier];
   const x0 = (S * (1 - BAND)) / 2, x1 = S - x0;
   flat(ctx, [[x0 - RAIL - 2, 0], [x1 + RAIL + 2, 0], [x1 + RAIL + 2, S], [x0 - RAIL - 2, S]], C.ink, 0.12); // soft halo
   flat(ctx, [[x0, 0], [x1, 0], [x1, S], [x0, S]], t.fill);
-  if (tier === 'conduit') {
-    flat(ctx, [[S / 2 - 6, 0], [S / 2 + 6, 0], [S / 2 + 6, S], [S / 2 - 6, S]], C.deep, 0.95);
-    ink(ctx, [[S / 2 - 3, -2], [S / 2 - 3, S + 2]], { w: 2, color: '#ffffff', alpha: 0.6, shade: false, taper: 0, seed });
-  } else if (tier === 'traction_ribbon') {
+  if (tier === 'traction_ribbon') {
     treadPlates(ctx, x0, x1, seed);
   } else {
     // Slats across the belt (the belt "moves" under them).
@@ -112,6 +118,7 @@ function treadRails(ctx: Ctx, x0: number, x1: number, seed: number): void {
 /** Corner piece: enters through the bottom edge, leaves through the right edge. */
 export function drawCorner(ctx: Ctx, tier: BeltTier, seed: number): void {
   if (tier === 'camo_ribbon') { camoCorner(ctx, seed); return; }
+  if (tier === 'conduit') { conduitCorner(ctx, seed); return; }
   const t = BELT_TIERS[tier];
   const rIn = (S * (1 - BAND)) / 2, rOut = S - rIn; // radii around the bottom-right corner (S, S)
   const arc = (r: number, n = 20): Pt[] => Array.from({ length: n + 1 }, (_, i) => {
@@ -121,9 +128,7 @@ export function drawCorner(ctx: Ctx, tier: BeltTier, seed: number): void {
   const band = (ra: number, rb: number): Pt[] => [...arc(ra), ...arc(rb).reverse()];
   flat(ctx, band(Math.max(0, rIn - RAIL - 2), rOut + RAIL + 2), C.ink, 0.12); // soft halo
   flat(ctx, band(rIn, rOut), t.fill);
-  if (tier === 'conduit') {
-    ink(ctx, arc(S / 2), { w: 12, color: C.deep, shade: false, taper: 0, seed });
-  } else if (tier === 'traction_ribbon') {
+  if (tier === 'traction_ribbon') {
     // Grouser plates fanning round the bend, each a brass bar lit on its leading edge.
     for (let i = 0; i < 8; i++) {
       const a = Math.PI + ((i + 0.5) / 8) * (Math.PI / 2), da = 0.07;
@@ -162,19 +167,16 @@ export function drawCorner(ctx: Ctx, tier: BeltTier, seed: number): void {
  */
 export function drawInlet(ctx: Ctx, tier: BeltTier, seed: number): void {
   if (tier === 'camo_ribbon') { camoInlet(ctx, seed); return; }
+  if (tier === 'conduit') { conduitInlet(ctx, seed); return; }
   const t = BELT_TIERS[tier];
   const x0 = (S * (1 - BAND)) / 2, x1 = S - x0; // the feeder's band spans y ∈ [x0, x1]
   const reach = x0 + 2; // just past the opened rail, onto the belt
   flat(ctx, [[0, x0], [reach, x0], [reach, x1], [0, x1]], t.fill);
-  if (tier === 'conduit') {
-    flat(ctx, [[0, S / 2 - 6], [reach + 4, S / 2 - 6], [reach + 4, S / 2 + 6], [0, S / 2 + 6]], C.deep, 0.95);
-  } else {
-    ctx.save();
-    ctx.strokeStyle = t.slat;
-    ctx.lineWidth = 2;
-    for (let x = 4; x < reach; x += 8) { ctx.beginPath(); ctx.moveTo(x, x0 + 1); ctx.lineTo(x, x1 - 1); ctx.stroke(); }
-    ctx.restore();
-  }
+  ctx.save();
+  ctx.strokeStyle = t.slat;
+  ctx.lineWidth = 2;
+  for (let x = 4; x < reach; x += 8) { ctx.beginPath(); ctx.moveTo(x, x0 + 1); ctx.lineTo(x, x1 - 1); ctx.stroke(); }
+  ctx.restore();
   for (const [ya, yb] of [[x0 - RAIL, x0], [x1, x1 + RAIL]] as const) {
     flat(ctx, [[-1, ya], [x0, ya], [x0, yb], [-1, yb]], t.rail);
     ink(ctx, [[-2, ya], [x0, ya]], { w: 1.8, taper: 0, jitter: 0.2, seed: seed + 1 });
@@ -208,6 +210,85 @@ export function drawDeck(ctx: Ctx, seed: number): void {
     light(ctx, (xa + xb) / 2, S * 0.75, 1.5, C.ledWarm);
   }
   void mix;
+}
+
+// ── the conduit in plan (D145) ───────────────────────────────────────────────
+
+const HW = PLAN_R * S; // the tube's half-width (px)
+const PIPE_FILL = C.steelL, PIPE_EDGE = mix(C.steelL, C.ink, 0.32), PIPE_FLANGE = mix(C.steelL, '#ffffff', 0.18);
+
+/** Offset a polyline by d px to its left (its way's normal). */
+function offset(pts: readonly Pt[], d: number): Pt[] {
+  return pts.map((p, i) => {
+    const a = pts[Math.max(0, i - 1)]!, b = pts[Math.min(pts.length - 1, i + 1)]!;
+    const tx = b[0] - a[0], ty = b[1] - a[1], l = Math.hypot(tx, ty) || 1;
+    return [p[0] - (ty / l) * d, p[1] + (tx / l) * d] as Pt;
+  });
+}
+
+/** A tube seen from above along a centre line: its halo, the steel, darker edges, the crown's highlight, inked sides. */
+function tubeTop(ctx: Ctx, mid: readonly Pt[], seed: number, halo = true): void {
+  const strip = (d0: number, d1: number): Pt[] => [...offset(mid, d0), ...offset(mid, d1).reverse()];
+  if (halo) flat(ctx, strip(-HW - 3, HW + 3), C.ink, 0.12);
+  flat(ctx, strip(-HW, HW), PIPE_FILL);
+  flat(ctx, strip(-HW, -HW + 3.4), PIPE_EDGE);
+  flat(ctx, strip(HW - 3.4, HW), PIPE_EDGE);
+  ink(ctx, mid, { w: 2.4, color: '#ffffff', alpha: 0.62, shade: false, taper: 0, jitter: 0, seed: seed + 1 });
+  ink(ctx, offset(mid, -HW), { w: 1.8, taper: 0, jitter: 0, shade: false, seed: seed + 2 });
+  ink(ctx, offset(mid, HW), { w: 1.8, taper: 0, jitter: 0, shade: false, seed: seed + 3 });
+}
+
+/** A flange across the tube at (x, y), the tube running along angle `a` (radians): a pale bar, bolted at both ends. */
+function flangeTop(ctx: Ctx, x: number, y: number, a: number, seed: number, w = 4): void {
+  const ux = Math.cos(a), uy = Math.sin(a), nx = -uy, ny = ux, h = HW + 3.6;
+  const q: Pt[] = [[x - ux * w / 2 + nx * h, y - uy * w / 2 + ny * h], [x + ux * w / 2 + nx * h, y + uy * w / 2 + ny * h], [x + ux * w / 2 - nx * h, y + uy * w / 2 - ny * h], [x - ux * w / 2 - nx * h, y - uy * w / 2 - ny * h]];
+  flat(ctx, q.map(([px, py]) => [px + 1.2, py + 1.6] as Pt), C.ink, 0.22);
+  shape(ctx, q, PIPE_FLANGE, { w: 1.4, seed, shade: false, jitter: 0 });
+  for (const k of [-1, 1]) rivet(ctx, x + nx * (h - 2) * k, y + ny * (h - 2) * k, 1.4, C.brassL);
+}
+
+/** The saddle under the tube at the tile's middle (moving north): its plate either side, its dark strap across. */
+function saddleTop(ctx: Ctx): void {
+  const w = (PLAN_R + 0.06) * S;
+  shape(ctx, [[S / 2 - w, S / 2 - 3.6], [S / 2 + w, S / 2 - 3.6], [S / 2 + w, S / 2 + 3.6], [S / 2 - w, S / 2 + 3.6]], C.steelD, { w: 1.3, shade: false, jitter: 0, seed: 3 });
+}
+function strapTop(ctx: Ctx): void {
+  flat(ctx, [[S / 2 - HW - 0.5, S / 2 - 1.3], [S / 2 + HW + 0.5, S / 2 - 1.3], [S / 2 + HW + 0.5, S / 2 + 1.3], [S / 2 - HW - 0.5, S / 2 + 1.3]], C.steelD, 0.9);
+}
+
+/** The conduit's straight (moving north): the tube on its saddle; `joint`: a flanged joint just inside its top edge. */
+function conduitStraight(ctx: Ctx, seed: number, joint: boolean): void {
+  saddleTop(ctx);
+  tubeTop(ctx, [[S / 2, -2], [S / 2, S + 2]], seed);
+  strapTop(ctx);
+  if (joint) { flangeTop(ctx, S / 2, 3.6, Math.PI / 2, seed + 10); flangeTop(ctx, S / 2, 8.4, Math.PI / 2, seed + 11); }
+}
+
+/** A straight with a flanged joint (the plan's mark where iso draws one: every few tiles of a run). */
+export function drawConduitJoint(ctx: Ctx, seed: number): void {
+  conduitStraight(ctx, seed, true);
+}
+
+/** The conduit's bend (in at the bottom edge, out at the right): straight to the mouth, a joint, the long-radius elbow, a joint, straight on. */
+function conduitCorner(ctx: Ctx, seed: number): void {
+  const m = PIPE.tOut * S, R = S / 2 - m; // the mouth from each edge; the bend's radius
+  const c: Pt = [S / 2 + R, S / 2 + R];
+  const arc: Pt[] = Array.from({ length: 17 }, (_, i) => { const a = Math.PI + (i / 16) * (Math.PI / 2); return [c[0] + Math.cos(a) * R, c[1] + Math.sin(a) * R] as Pt; });
+  const sx = c[0] - R * 0.71, sy = c[1] - R * 0.71; // the bend's middle: the saddle's plate under it
+  shape(ctx, [[sx - 7, sy], [sx, sy - 7], [sx + 7, sy], [sx, sy + 7]], C.steelD, { w: 1.3, shade: false, jitter: 0, seed: seed + 4 });
+  tubeTop(ctx, [[S / 2, S + 2], [S / 2, S - m + 1], ...arc, [S - m - 1, S / 2], [S + 2, S / 2]], seed);
+  flangeTop(ctx, S / 2, S - m - 2.4, Math.PI / 2, seed + 10);
+  flangeTop(ctx, S / 2, S - m + 2.4, Math.PI / 2, seed + 11);
+  flangeTop(ctx, S - m - 2.4, S / 2, 0, seed + 12);
+  flangeTop(ctx, S - m + 2.4, S / 2, 0, seed + 13);
+}
+
+/** A tee's branch coming in from the west edge onto a straight moving north: the branch to the main tube, a collar at its root. */
+function conduitInlet(ctx: Ctx, seed: number): void {
+  const reach = S / 2 - HW + 1.5;
+  tubeTop(ctx, [[-2, S / 2], [reach, S / 2]], seed, false);
+  flat(ctx, [[reach - 4.5, S / 2 - HW - 1.6], [reach - 1.5, S / 2 - HW - 1.6], [reach - 1.5, S / 2 + HW + 1.6], [reach - 4.5, S / 2 + HW + 1.6]], C.steel);
+  ink(ctx, [[reach - 4.5, S / 2 - HW - 1.6], [reach - 4.5, S / 2 + HW + 1.6]], { w: 1.3, taper: 0, jitter: 0, shade: false, seed: seed + 5 });
 }
 
 // ── the camouflaged ribbon (D109) ────────────────────────────────────────────

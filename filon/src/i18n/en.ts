@@ -196,6 +196,7 @@ export const en: Dict = {
   'kit.state.sleep': 'Asleep',
   'kit.state.slow': 'Slowed',
   'insp.unit.perMin': '/min',
+  'insp.eq.deposit': 'Per minute, at full speed: the deposit limits this drill, built for {max}/min',
   'insp.eq.tip': 'Per minute, at full speed',
   'insp.sec.buffers': 'Buffers',
   'insp.hearth.levelOf': 'Level {n} of {max}',

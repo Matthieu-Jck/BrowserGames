@@ -404,9 +404,9 @@ export const BUILDINGS = {
   },
   fast_drill: {
     name: { fr: 'Foreuse rapide', en: 'Fast Drill' },
-    desc: { fr: 'Une foreuse 2×2 plus puissante : jusqu’à 35/min selon la richesse des tuiles. Posée sur une foreuse, elle la remplace.', en: 'A stronger 2×2 drill: up to 35/min, depending on how rich the tiles are. Placed over a drill, it replaces it.' },
+    desc: { fr: 'Une foreuse 2×2 plus puissante : jusqu’à 35/min, et moitié plus qu’une foreuse sur les mêmes tuiles d’un gisement pauvre. Posée sur une foreuse, elle la remplace.', en: 'A stronger 2×2 drill: up to 35/min, and half as much again as a drill on the same tiles of a poor deposit. Placed over a drill, it replaces it.' },
     kind: 'drill', replaceGroup: 'drill', category: 'extraction', w: 2, h: 2, needsZone: true, unlock: 'ex_fastdrill', kw: 180, idleKw: 18,
-    cost: [['iron_plate', 20], ['gear', 6], ['copper_coil', 4]], ports: [P(0, 0, 'N', 'out')], drill: { perMin: 35 }, // D129: coils, not circuits
+    cost: [['iron_plate', 20], ['gear', 6], ['copper_coil', 4]], ports: [P(0, 0, 'N', 'out')], drill: { perMin: 35, capMult: 1500 }, // D129: coils, not circuits; D150: half as much again from the same tiles
   },
   hp_pump: {
     name: { fr: 'Pompe haute pression', en: 'High-Pressure Pump' },

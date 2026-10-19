@@ -198,6 +198,7 @@ export const fr = {
   'kit.state.sleep': 'En sommeil',
   'kit.state.slow': 'Au ralenti',
   'insp.unit.perMin': '/min',
+  'insp.eq.deposit': 'Par minute, à plein régime : le gisement limite cette foreuse, faite pour {max}/min',
   'insp.eq.tip': 'Par minute, à plein régime',
   'insp.sec.buffers': 'Réserves',
   'insp.hearth.levelOf': 'Niveau {n} sur {max}',

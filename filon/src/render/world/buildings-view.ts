@@ -8,7 +8,11 @@
 // iso, among the volumes (`layBelt`; world/stand.ts `beltZ`), and flat in plan; a traction ribbon
 // that hands on a terrace up or down gets its lift against the wall between (traction-lifts.ts), a
 // conduit pouring a terrace down its downpipe (D114, the same file). A skybridge's deck spans the
-// gap to its far end, lifted above the ground in iso. Sorters show their chosen item.
+// gap to its far end, lifted above the ground in iso. Sorters show their chosen item. A conduit is a
+// pipe (D145): in iso a raised tube among the volumes on the floor too (`addPipe`: its piece from
+// water-ports.ts `pipeOf`, its tee branches either side of it, world/stand.ts `pipeZ`), with a short
+// cast shadow of its own (baked on the shadows' sheet, never stretched: one offset for all of them,
+// `pipeShades`, moved with the sun); in plan a flat tube on the plan layer.
 //
 // Updated on structural changes, entity by entity (D92): each entity keeps its sprites with what
 // they were drawn from (`sigOf`: its kind, place, turn, stand, piece, lift, look…), and a change
@@ -76,28 +80,31 @@ import { footprint } from '@/sim/entities';
 import { tileIndex } from '@/sim/world/grid';
 import { TPS, WORLD } from '@/sim/constants';
 import { turbineWind, weatherAt, type Producer } from '@/sim/power/network';
-import { CAMO_VENT_KEY, COUPLING_KEY, bKey, bodyKey, btKey, beltKey, iKey, inletKey, partKey, wetKey, type Atlas } from '../art/atlas';
+import { CAMO_VENT_KEY, CONDUIT_JOINT_KEY, COUPLING_KEY, bKey, bodyKey, btKey, beltKey, iKey, inletKey, partKey, pipeBranchKey, pipeKey, wetKey, type Atlas } from '../art/atlas';
+import { RUN, drawPipe, drawPipeBranch, drawPipeShadow, pipeShadowFrame } from '../art/recipes/pipes';
 import { DynAtlas, type DynFrame } from '../art/dyn-atlas';
 import { BELT_PX, BELT_TIERS, type BeltTier } from '../art/recipes/belts';
 import { SKY, artLevelOf, drawBuildingShadow, isoHead, shadowFrameOf, type SkyPiece } from '../art/recipes/buildings';
 import { MOVING } from '../art/recipes/moving';
 import { drawOff } from '../art/recipes/off';
 import { silhouette } from '../art/silhouette';
+import type { Ctx } from '../art/ink';
+import type { IsoFrame } from '../art/iso-shapes';
 import type { Grade } from '../daynight';
 import { LH, TH, TW, tileToIso } from '../iso';
 import { tileTop } from '../relief';
-import { SHADOW_DX, SHADOW_DY, SHADOW_TINT, maskCover, maskReach, seamClip, shadowLook, shadowMap, type MaskAlpha, type ShadowMat } from './cast-shadows';
+import { SHADOW_DX, SHADOW_DY, SHADOW_PX, SHADOW_TINT, maskCover, maskReach, seamClip, shadowLook, shadowMap, type MaskAlpha, type ShadowMat } from './cast-shadows';
 import { spinSeed, windTurns, workTurns } from './moving-parts';
 import { OFF_TINT, WorkLook, looksAtWork } from './work-look';
 import { ISO_K, PLAN_K, junctionFrames, skyFrames } from './sky-decks';
-import { FRONT_DZ, PLAN_Z, SPAN_DZ, beltZ, buildingZ, computeStands, deckSquareZ, liftOf, liftZ, rampZ, riseOffset, standOf, type Stand } from './stand';
+import { FRONT_DZ, PIPE_DZ, PLAN_Z, SPAN_DZ, beltZ, buildingZ, pipeZ, computeStands, deckSquareZ, liftOf, liftZ, rampZ, riseOffset, standOf, type Stand } from './stand';
 import { PIT_ISO_K, PIT_PLAN_K, PIT_Z, burstFrames, flameFrames, flameLevel, flicker, pitFire, pitFrames, planFlameFrame } from './pits';
 import { BURST, BURST_LIFE, FLAME_TINT_TICKS, PLAN_LIFT, burstTints, puffAt, sparkAt, towards, type PuffAt, type SparkAt } from './pit-burst';
 import { LIFT_ISO_K, LIFT_PLAN_K, fallFrames, fallOfConduit, liftFrames, liftOfBelt, type Fall, type Lift } from './traction-lifts';
 import { FLAG, FLAG_K, flagFrames, type FlagFrames } from './heart-flag';
 import { defaultEmblem, emblemKey, type Emblem } from '@/content/emblem';
 import { ribbonRuns } from './neighbour-goods';
-import { couplingSides, wetEntranceOf } from './water-ports';
+import { couplingSides, pipeOf, wetEntranceOf } from './water-ports';
 
 /** The shadows' colour (world/cast-shadows.ts): also the plan's hint of height. */
 export { SHADOW_TINT };
@@ -350,6 +357,8 @@ export class BuildingsView {
   private readonly windLocal = new Map<number, Producer>();
   /** Cast shadows: their sprites (iso world px), their masks, the look last applied (length, swing, quantised), the shadows laid since. */
   private readonly shadowRoot = new Container({ label: 'buildings:shadows', isRenderGroup: true });
+  /** The conduits' pipe shadows on the floor (D145): baked along the reference light, all moved by one offset as the sun goes (`shade`). */
+  private readonly pipeShades = new Container({ label: 'buildings:pipe-shadows' });
   private readonly shadowSheet = new DynAtlas();
   private readonly shadows = new Set<Shade>();
   private fresh: Shade[] = [];
@@ -414,6 +423,8 @@ export class BuildingsView {
     beltLayer.addChild(this.beltRoot);
     shadowLayer?.addChild(this.shadowRoot);
     this.shadowRoot.visible = false;
+    this.pipeShades.sortableChildren = true;
+    this.shadowRoot.addChild(this.pipeShades);
   }
 
   /**
@@ -496,7 +507,8 @@ export class BuildingsView {
    * building: its kind, place and turn, built or not, dormant or not, where it stands, the look it
    * wears (the Heart's level), the item it shows (sorters), the entrance a water drinker's
    * pipework is on (D142). A ribbon: its kind, place, its piece (bend, turn, mirror), its inlets,
-   * its tile's height and its elevator; a conduit, the ports it couples to.
+   * its tile's height and its elevator; a conduit, the ports it couples to and its pipe (D145: its
+   * ends, which follow its neighbours, its mark, its branches).
    */
   private sigOf(sim: Sim, e: Ent, st: Stand | undefined): string {
     const kind = BUILDING_KIND[e.def]!;
@@ -504,7 +516,8 @@ export class BuildingsView {
       const p = beltPiece(sim, e);
       const fed = p.corner ? 0 : (sim.graph?.feedDirs.get(tileIndex(e.x, e.y)) ?? 0) & ((1 << ((e.rot + 3) & 3)) | (1 << ((e.rot + 1) & 3)));
       const l = this.liftOf(sim, e), fl = this.fallOf(sim, e);
-      return `r${e.def},${e.x},${e.y},${e.rot},${+p.corner}${p.rot}${+p.mirror},${fed},${tileTop(sim.grid, e.x, e.y)}${l?.shaft ? `,${l.rot}${+l.up},${l.x},${l.y},${l.low}` : ''}${fl ? `,f${fl.low},${fl.h}` : ''}${kind === 'conduit' ? `,c${couplingSides(sim, e)}` : ''}`;
+      const pipe = kind === 'conduit' ? pipeOf(sim, e, p.corner, p.rot, !!fl) : null;
+      return `r${e.def},${e.x},${e.y},${e.rot},${+p.corner}${p.rot}${+p.mirror},${fed},${tileTop(sim.grid, e.x, e.y)}${l?.shaft ? `,${l.rot}${+l.up},${l.x},${l.y},${l.low}` : ''}${fl ? `,f${fl.low},${fl.h}` : ''}${pipe ? `,c${couplingSides(sim, e)},${pipe.arms}${pipe.mark}${pipe.branches.map((b) => `${b.side}${+b.full}`).join('')}` : ''}`;
     }
     const id = BUILDING_IDS[e.def]! as BuildingId;
     const logic = buildingDef(e.def).logic;
@@ -904,7 +917,7 @@ export class BuildingsView {
    */
   private shade(g: Grade): void {
     const look = shadowLook(g.hour, g.night);
-    const on = look.alpha > 0.01 && this.shadows.size > 0;
+    const on = look.alpha > 0.01 && (this.shadows.size > 0 || this.pipeShades.children.length > 0);
     this.shadowRoot.visible = on;
     // The lifted ones lie among the volumes, out of the container: their alpha one by one (few), when it shows a change.
     const la = on ? Math.round(look.alpha * 256) : 0;
@@ -925,6 +938,10 @@ export class BuildingsView {
     this.lookA = A;
     const [a, b, c, d] = shadowMap(L / 80, A / 160);
     this.lookMat = [a, b, c, d];
+    // The pipes' shadows (D145): a low tube's shadow only slides along the light as the sun goes, by
+    // what the day's map does to a point at the axis's height — one offset for all of them.
+    const [sx, sy] = SHADOW_PX;
+    this.pipeShades.position.set(RUN.z * ((a - 1) * sx + c * sy), RUN.z * (b * sx + (d - 1) * sy));
     for (const sh of all ? this.shadows : this.fresh) {
       const px = sh.x - sh.cx, py = sh.y - sh.cy;
       sh.s.setFromMatrix(this.mat.set(a, b, c, d, sh.cx + a * px + c * py, sh.cy + b * px + d * py));
@@ -1470,13 +1487,10 @@ export class BuildingsView {
     const tex = this.atlas.textures.get(vent ? CAMO_VENT_KEY : beltKey(tier, p.corner));
     if (!tex) return;
     const lv = tileTop(sim.grid, e.x, e.y);
+    if (tier === 'conduit') { this.addPipe(sim, e, p, lv); return; }
     this.beltSprite(tex, e.x, e.y, p.rot, p.mirror, lv);
     this.addLift(sim, e);
-    this.addFall(sim, e);
-    // A conduit's end at a port (D142): a bolted coupling at that edge, over its piece (and its inlet, below).
-    const couple = tier === 'conduit' ? couplingSides(sim, e) : 0;
-    const coupling = couple ? this.atlas.textures.get(COUPLING_KEY) : undefined;
-    if (p.corner) { this.couple(coupling, couple, e, lv); return; }
+    if (p.corner) return;
     // A straight piece fed from a side (a merging line, a router, a machine's outlet): open the
     // rail there so the connection reads. The inlet art comes in from the left; mirror for the right.
     const fed = sim.graph?.feedDirs.get(tileIndex(e.x, e.y)) ?? 0;
@@ -1486,12 +1500,63 @@ export class BuildingsView {
       if (fed & (1 << left)) this.beltSprite(inlet, e.x, e.y, e.rot, false, lv);
       if (fed & (1 << right)) this.beltSprite(inlet, e.x, e.y, e.rot, true, lv);
     }
-    this.couple(coupling, couple, e, lv);
   }
 
-  /** The coupling piece at each edge of `mask` (bit `1 << side`), turned to face it: drawn for the north edge. */
-  private couple(tex: Texture | undefined, mask: number, e: Ent, lv: number): void {
-    if (!tex) return;
-    for (let s = 0; s < 4; s++) if (mask & (1 << s)) this.beltSprite(tex, e.x, e.y, s as Rot, false, lv);
+  /**
+   * A conduit (D145): in plan its tube flat on the plan layer (under the plan buildings) — a joint's
+   * variant where iso draws one, a tee's inlet, the coupling at each port (D142); in iso its pipe on
+   * its tile's top among the volumes (`pipeZ`), a tee's branch just before it (away from the camera)
+   * or after it, each piece's short shadow; its downpipe when it pours a terrace down (D114).
+   */
+  private addPipe(sim: Sim, e: Ent, p: ReturnType<typeof beltPiece>, lv: number): void {
+    const fall = this.fallOf(sim, e);
+    const pipe = pipeOf(sim, e, p.corner, p.rot, !!fall);
+    const flatPiece = (key: string, rot: Rot, mirror: boolean): void => {
+      const tex = this.atlas.textures.get(key);
+      if (!tex) return;
+      const s = new Sprite(tex);
+      s.setFromMatrix(beltMatrix(e.x, e.y, rot, mirror));
+      this.lay(s, this.planLayer, PLAN_Z.belt);
+    };
+    flatPiece(pipe.mark === 'j' ? CONDUIT_JOINT_KEY : beltKey('conduit', p.corner), p.rot, p.mirror);
+    for (const b of pipe.branches) flatPiece(inletKey('conduit'), e.rot, b.side === ((e.rot + 1) & 3));
+    const couple = couplingSides(sim, e);
+    for (let side = 0; side < 4; side++) if (couple & (1 << side)) flatPiece(COUPLING_KEY, side as Rot, false);
+    const z = pipeZ(e.x, e.y);
+    this.isoPipe(pipeKey(pipe.arms, pipe.mark), e, lv, z, (ctx, f) => drawPipe(ctx, f, pipe.arms, pipe.mark));
+    for (const b of pipe.branches) {
+      this.isoPipe(pipeBranchKey(b.side, b.full), e, lv, z + (b.side === 1 || b.side === 2 ? PIPE_DZ : -PIPE_DZ), (ctx, f) => drawPipeBranch(ctx, f, b.side, b.full));
+    }
+    this.addFall(sim, e);
+  }
+
+  /**
+   * One pipe piece in iso on tile e, `lv` levels up, at depth key `z`, and its shadow: on the floor in
+   * the pipes' own shadow container (moved with the sun as one), on a rock top among the volumes just
+   * under it (as a lifted building's, faded with the day's look). `draw` paints the piece (its shadow's bake).
+   */
+  private isoPipe(key: string, e: Ent, lv: number, z: number, draw: (ctx: Ctx, f: IsoFrame) => void): void {
+    const [wx, wy] = tileToIso(e.x, e.y, lv);
+    this.place(key, this.objectLayer, wx, wy, 1, 0xffffff, z);
+    const fr = this.pipeShadow(key, draw);
+    const s = new Sprite(fr.tex);
+    s.tint = SHADOW_TINT;
+    s.position.set(wx - fr.ox, wy - fr.oy);
+    if (lv > 0) {
+      s.visible = false;
+      this.lay(s, this.objectLayer, z - 0.3);
+      this.cur!.liftShadows.push({ s, a: 1, ent: e.id });
+    } else this.lay(s, this.pipeShades, 0);
+  }
+
+  /** A pipe piece's shadow mask (D145), baked the first time on the shadows' sheet (1 px per world px), along the reference light. */
+  private pipeShadow(key: string, draw: (ctx: Ctx, f: IsoFrame) => void): DynFrame {
+    const got = this.shadowSheet.get(key);
+    if (got) return got;
+    const f = pipeShadowFrame(SHADOW_DX, SHADOW_DY);
+    return this.shadowSheet.add(key, f.SW / 2, f.SH / 2, f.ox / 2, f.oy / 2, (ctx) => {
+      ctx.scale(0.5, 0.5);
+      drawPipeShadow(silhouette(ctx), f, draw);
+    });
   }
 }

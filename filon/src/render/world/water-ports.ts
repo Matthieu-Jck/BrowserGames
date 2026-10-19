@@ -12,11 +12,19 @@
 //   intake, or comes in from an outlet there (any way but back into it, as the compile joins them).
 //   Each gets the coupling piece. Geometry only (the entities and their ports), so it holds for a
 //   ribbon-looking hatch as well: wherever water meets a port, the joint is a pipe joint.
+// - **Which pipe a conduit tile shows in iso** (`pipeOf`, D145; the art: art/recipes/pipes.ts): its
+//   straight or elbow from its piece (buildings-view.ts `beltPiece`), each end running on to the edge
+//   where the tube goes on — fed from behind, feeding the tile ahead (or pouring down its fall) — and
+//   stopping at a stub's mouth with a flange where it couples to a port or the line ends open; a
+//   straight's side inlets as tee branches; on a run's plain straights a flanged joint every
+//   `JOINT_EVERY` tiles along it and now and then a sight-glass, by the tile's place (the same tiles
+//   every time, both views alike).
 import { BUILDING_KIND, buildingDef } from '@/content/registry';
 import { worldPorts } from '@/sim/entities';
 import type { Chain } from '@/sim/flow/chain';
 import type { Sim } from '@/sim/state';
 import { DX, DY, opposite, type Ent, type Rot } from '@/sim/types';
+import type { PipeMark } from '../art/recipes/pipes';
 import { tileIndex } from '@/sim/world/grid';
 import { WORLD } from '@/sim/constants';
 import { DRY, WET, homeEntrance, wetEntrance } from '../art/pipe-ports';
@@ -53,4 +61,40 @@ export function couplingSides(sim: Sim, e: Ent): number {
     }
   }
   return mask;
+}
+
+/** A run's plain straights get a flanged joint every this many tiles along it (by their place). */
+export const JOINT_EVERY = 3;
+/** …and one in this many of the others a sight-glass (a hash of the place). */
+export const GLASS_EVERY = 7;
+
+/** A conduit tile's pipe (D145): its main piece's N E S W edges ('0' none, '1' on to the edge, '2' to a stub's mouth), a straight's mark, its tee branches. */
+export interface PipeOf { arms: string; mark: PipeMark; branches: Array<{ side: number; full: boolean }> }
+
+/**
+ * The pipe conduit `e` shows (D145): `corner` and `enter` its piece (buildings-view.ts `beltPiece`:
+ * a bend entering the way `enter`), `fall` whether it pours a terrace down (its way on is the
+ * downpipe's). An end goes on to the edge where a tube meets it — the tile behind (or the bend's
+ * feeder) feeds it, it feeds the tile ahead — and stops at the stub's mouth where it couples to a
+ * port (`couplingSides`) or meets nothing; a straight fed from a side gets a branch there.
+ */
+export function pipeOf(sim: Sim, e: Ent, corner: boolean, enter: Rot, fall = false): PipeOf {
+  const g = sim.graph;
+  const fed = g?.feedDirs.get(tileIndex(e.x, e.y)) ?? 0, couple = couplingSides(sim, e);
+  const out = e.rot, back = opposite(corner ? enter : e.rot);
+  const nx = e.x + DX[out]!, ny = e.y + DY[out]!;
+  const ahead = nx >= 0 && ny >= 0 && nx < WORLD && ny < WORLD && ((g?.feedDirs.get(tileIndex(nx, ny)) ?? 0) & (1 << opposite(out))) !== 0;
+  const state = (side: number, joined: boolean): string => (couple & (1 << side) || !joined ? '2' : '1');
+  const arms = ['0', '0', '0', '0'];
+  arms[back] = state(back, (fed & (1 << back)) !== 0);
+  arms[out] = state(out, ahead || fall);
+  const branches: PipeOf['branches'] = [];
+  if (!corner) for (const s of [(out + 1) & 3, (out + 3) & 3]) if (fed & (1 << s)) branches.push({ side: s, full: !(couple & (1 << s)) });
+  let mark: PipeMark = '';
+  if (!corner && !branches.length && arms[back] === '1' && arms[out] === '1') {
+    const along = out & 1 ? e.x : e.y;
+    if (along % JOINT_EVERY === 0) mark = 'j';
+    else if (((Math.imul(e.x, 0x45d9f3b) ^ Math.imul(e.y, 0x2c1b3c6d)) >>> 0) % GLASS_EVERY === 3) mark = 'g';
+  }
+  return { arms: arms.join(''), mark, branches };
 }

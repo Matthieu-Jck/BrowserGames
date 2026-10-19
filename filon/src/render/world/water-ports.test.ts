@@ -1,14 +1,17 @@
 // water-ports.test.ts — where the water meets the buildings, as the views read it (D142): the
 // entrance a water drinker's pipework is drawn on follows the conduit that really waters it (the
 // engine lets either entrance drink, D114), and a conduit couples to the ports it meets, at the
-// pump's outlet and at the drinker's entrance, not elsewhere.
+// pump's outlet and at the drinker's entrance, not elsewhere. The pipe a conduit tile shows in iso
+// (D145, `pipeOf`): its ends on to the edge where a tube meets it, at a stub's mouth where it couples
+// to a port or the line ends open; a side inlet a tee's branch; the marks of a run's plain straights.
 import { describe, it, expect } from 'vitest';
 import { WORLD_EPOCH0 } from '@/sim/constants';
 import { Sim } from '@/sim/state';
 import { learnPlans, stockedSilo, testSource } from '@/sim/testkit';
 import { T, type Rot } from '@/sim/types';
 import { FlatSource, tileIndex } from '@/sim/world/grid';
-import { couplingSides, wetEntranceOf } from './water-ports';
+import { JOINT_EVERY, couplingSides, pipeOf, wetEntranceOf } from './water-ports';
+import { beltPiece } from './buildings-view';
 
 /** A pond east of the Heart (the steam boiler test's): where the pump stands. */
 const POND = { x: 522, y: 502, w: 4, h: 6, t: T.Shallow } as const;
@@ -61,4 +64,27 @@ describe('water ports in the world (D142)', () => {
     expect(couplingSides(by.sim, ent(by.sim, 518, 507))).toBe(0);
     expect(couplingSides(by.sim, ent(by.sim, 517, 507))).toBe(0);
   });
+
+  it('a conduit’s pipe (D145): on to the edge where a tube meets it, to a stub’s mouth at a port or an open end; a side inlet a branch', () => {
+    const pipe = (sim: Sim, x: number, y: number) => { const e = ent(sim, x, y), p = beltPiece(sim, e); return pipeOf(sim, e, p.corner, p.rot); };
+    const { sim } = base([[520, 507, 3], [519, 507, 3], [518, 507, 0]], 0);
+    // N E S W: out of the pump (its east end at the outlet's mouth) on to the next tile (west).
+    expect(pipe(sim, 520, 507)).toEqual({ arms: '0201', mark: '', branches: [] });
+    // A plain length: on to both edges; 519 is a multiple of JOINT_EVERY along x — a joint.
+    expect(519 % JOINT_EVERY).toBe(0);
+    expect(pipe(sim, 519, 507)).toEqual({ arms: '0101', mark: 'j', branches: [] });
+    // The bend into the boiler: in from the east edge, out north at the intake's mouth.
+    expect(pipe(sim, 518, 507)).toEqual({ arms: '2100', mark: '', branches: [] });
+    // A line that ends on nothing: its last end stops at the mouth, capped.
+    const open = base([[520, 507, 3], [519, 507, 3]]);
+    expect(pipe(open.sim, 519, 507).arms).toBe('0102');
+    // A second line joining from the south: the tile it joins shows a branch on that side, to the edge.
+    const tee = base([[520, 507, 3], [519, 507, 3], [518, 507, 0]], 0);
+    expect(tee.sim.placeBelts('conduit', [[519, 509, 0], [519, 508, 0]])).toBe(2);
+    tee.sim.ensureCompiled();
+    const t = pipe(tee.sim, 519, 507);
+    expect(t.branches).toEqual([{ side: 2, full: true }]);
+    expect(t.mark).toBe(''); // no mark on a tee
+  });
 });
+

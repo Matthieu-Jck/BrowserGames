@@ -83,6 +83,9 @@
 .keq-op { align-self: flex-start; padding-top: 3px; font-size: 14px; color: var(--c-ink-soft); }
 .keq-to { font-size: 17px; color: var(--c-ink); padding-top: 1px; }
 .keq-unit { align-self: flex-end; margin-left: 1px; padding-bottom: 1px; font-size: 11px; color: var(--c-ink-soft); }
+/* A drill below its rating (D150): the deposit sets the pace — its figure in amber, the rating dimmed after it. */
+.keq[data-capped] .keq-n { color: var(--c-warn); }
+.keq-max { align-self: flex-end; margin-left: 4px; padding-bottom: 1px; font-size: 11px; color: var(--c-ink-soft); opacity: .7; }
 /* On one line (a list of recipes): the figure beside its icon. */
 .keq[data-inline] { align-items: center; flex-wrap: nowrap; gap: 3px; }
 .keq[data-inline] .keq-term { flex-direction: row; gap: 2px; min-width: 0; }
