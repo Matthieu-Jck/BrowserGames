@@ -1194,13 +1194,13 @@ export const en: Dict = {
   'stock.group.part': 'Parts',
   'stock.group.rare': 'Rare finds',
   'stock.group.waste': 'Waste',
-  'stock.wasteNote': 'The Core takes none: sort them out before it, to an incinerator, a trade post’s entrance or a recycler. What it holds sells at the Crier.',
+  'stock.wasteNote': 'Neither the Core nor any machine takes them: sort them out before it, to an incinerator or a trade post’s entrance. What it holds sells at the Crier.',
   // D139: the Core takes no waste in; what waits refused at a door (the Core's, a machine's).
   'insp.refused.core': 'The Core takes no waste',
   'insp.refused.machine': 'Refused at the input',
   'insp.refused.tip': 'The line stops here: nothing gets by until this item leaves it. A sorter placed on this last ribbon tile takes it in: set to what must pass, it pushes the rest to an incinerator at its side.',
   'insp.hearth.refused': 'Refused at its inputs',
-  'insp.hearth.refused.tip': 'The Core takes no waste: slag and scrap stop at its input, and their line jams behind them. Sort them out before it, to an incinerator, a trade post’s entrance or a recycler.',
+  'insp.hearth.refused.tip': 'The Core takes no waste: slag and scrap stop at its input, and their line jams behind them. Sort them out before it, to an incinerator or a trade post’s entrance.',
   'stock.short': '{n} short for: {need}',
   'stock.out': 'Run out: {n} needed for: {need}',
   // Auto-sell (D127): a row's toggle, its threshold, what it sold.
@@ -1216,7 +1216,7 @@ export const en: Dict = {
   'hud.stock.tipRate': '{item} in the Core: {n} · coming in: {rate} over the last minute',
   'insp.io.held': 'held',
   'insp.io.perMin': 'per min',
-  'insp.waste.tip': 'Its waste waits here to go out, before its product, through the same output: one every {n} crafts. Sort it to an incinerator, the Crier or a recycler.',
+  'insp.waste.tip': 'Its waste waits here to go out, before its product, through the same output: one every {n} crafts. Sort it to an incinerator or the Crier: no machine wants it.',
   'insp.wiredTo': 'Wired to',
   'insp.wiredTo.list': 'Wired to: {list}',
   // ── persistence (M7): boot, one tab at a time, saves ──

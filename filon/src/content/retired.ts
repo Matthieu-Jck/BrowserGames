@@ -104,6 +104,22 @@ export const RETIRED_NAMES: Readonly<Record<string, Loc>> = {
 };
 
 /**
+ * Recipes taken out with no successor: what each was called, for the absence report (the recipe
+ * table no longer names them; save-remap.ts `RemapNote.reset` holds ids), and what one craft of it
+ * took in, which a save's table does not say (its signature holds ids, not counts). A machine a save
+ * still holds on one is cleared by the remap — no recipe, waiting for the player's pick, as for any
+ * recipe gone — and its buffers, its waste bin and the inputs of a craft under way are handed to the
+ * Heart, as setting another recipe in play does (`refundNode`). D151 (owner, 2026-10-19: « don't use
+ * slag or scraps in machines, the point is that it's very useless »): D125's two recyclers, the
+ * brickworks' slag bricks and the steel mill's recycled steel. Their slag and scrap go home with the
+ * rest: a refund is no intake (D139), and what the Core holds of waste sells at the Crier. Frozen.
+ */
+export const RETIRED_RECIPES: Readonly<Record<string, { readonly name: Loc; readonly ins: ReadonlyArray<readonly [string, number]> }>> = {
+  slag_brick: { name: { fr: 'Brique de scories', en: 'Slag Brick' }, ins: [['slag', 2], ['water', 1]] },
+  steel_scrap: { name: { fr: 'Acier de récupération', en: 'Recycled Steel' }, ins: [['scrap', 3], ['coal', 1]] },
+};
+
+/**
  * The items retired with research's data (D122), and the AI tokens each one held is worth when a
  * save still holds some — in the Core, a store, a lab, on a ribbon, in a buffer or on its way from
  * the Crier: the remap (sim/save-remap.ts) banks them for research (`tokens.bank`, delivered to the

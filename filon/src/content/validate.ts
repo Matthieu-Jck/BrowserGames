@@ -4,7 +4,7 @@
 // a lift slower than a plain ribbon (D141), a port off its
 // building's edge, a machine with fewer entrances than the kinds of input a recipe of its takes
 // (D140, `entranceProblems`), a water port where no water goes or a water drinker without one (D142,
-// `fluidPortProblems`). It also pins the design's intentional scarcities: the cirque's « tired
+// `fluidPortProblems`), a recipe taking a waste item (D151, `wasteInputProblems`). It also pins the design's intentional scarcities: the cirque's « tired
 // vein » cannot feed one electronics workshop, a resonator needs two different unique resources and
 // a nacre lattice two more — so every colony must trade. Machines are specialised: none offers more than
 // `MAX_RECIPES` recipes (D70); every research node unlocks a building, a recipe or a feature,
@@ -102,6 +102,21 @@ export function fluidPortProblems(
     if (drinks && wetIn !== 1) errs.push(`building ${id}: drinks water through ${wetIn} water entrances (one, D142)`);
     if (drinks && dryIn < dry) errs.push(`building ${id}: ${dryIn} dry entrance${dryIn === 1 ? '' : 's'} for ${dry} other kinds of input (D140, D142)`);
     if (!drinks && wetIn) errs.push(`building ${id}: a water entrance, but it drinks no fluid (D142)`);
+  }
+  return errs;
+}
+
+/**
+ * Waste has no use (D151; owner, 2026-10-19: « don't use slag or scraps in machines, the point is that
+ * it's very useless »): no recipe takes an item of kind `waste` in, so a machine's slag and scrap are
+ * only ever a nuisance to get rid of — burnt, sold for next to nothing —, never a resource. D125's
+ * slag bricks and recycled steel did; this keeps them from coming back. The table is an argument so
+ * a test can hand it a recycler.
+ */
+export function wasteInputProblems(rs: ReadonlyArray<readonly [string, RecipeDef]> = recipes): string[] {
+  const errs: string[] = [];
+  for (const [id, r] of rs) {
+    for (const [it] of r.ins) if ((ITEMS as Record<string, ItemDef>)[it]?.kind === 'waste') errs.push(`recipe ${id}: takes the waste ${it} in (waste has no use, D151)`);
   }
   return errs;
 }
@@ -295,6 +310,8 @@ export function validateContent(): string[] {
     if (!recipes.some(([, r]) => r.waste?.[0] === it)) errs.push(`item ${it}: a waste no recipe puts out`);
     if (recipes.some(([, r]) => r.outs.some(([o]) => o === it))) errs.push(`item ${it}: a waste made as a product`);
   }
+  // …and none a recipe's input (D151).
+  errs.push(...wasteInputProblems());
 
   // The neighbouring bases' kits (D110): known buildings, power for each (their chains: sim/neighbour-chain.test.ts).
   for (const [pid, k] of Object.entries(NEIGHBOUR_KITS)) {

@@ -9,7 +9,8 @@
 // What no longer exists does not vanish silently (ARCHITECTURE invariant 4): a building whose id is
 // gone comes down, refunded at its recorded cost (`RETIRED_COSTS`), its store and buffers handed to
 // the Heart, and a fuel generator's box too (`RETIRED_FUEL`: the coal generator, D143); a machine
-// whose recipe changed or is gone is cleared, its buffers handed to the Heart; what is held of an
+// whose recipe changed or is gone is cleared, its buffers handed to the Heart (and a craft under way's
+// inputs, as in play: a retired recipe's counts from `RETIRED_RECIPES`, D151); what is held of an
 // item whose id is gone is counted in the note the player is shown — or, for research's retired
 // data (D122, `RETIRED_ITEM_TOKENS`), banked as tokens for research.
 //
@@ -17,8 +18,9 @@
 // until it says whether it holds indices — the guard that keeps this file complete.
 import { BUILDINGS } from '@/content/buildings';
 import { BUILDING_IDS, CRECIPES, ITEM_IDS, RECIPE_IDS, recipesFor, type CRecipe } from '@/content/registry';
-import { RENAMED, RETIRED_COSTS, RETIRED_FUEL, RETIRED_ITEM_TOKENS } from '@/content/retired';
-import type { BuildingDef } from '@/content/types';
+import { RECIPES } from '@/content/recipes';
+import { RENAMED, RETIRED_COSTS, RETIRED_FUEL, RETIRED_ITEM_TOKENS, RETIRED_RECIPES } from '@/content/retired';
+import type { BuildingDef, RecipeDef } from '@/content/types';
 import { filterOf, recipeOf, withFilter, withRecipe } from './cfg';
 import type { SaveData } from './serialize';
 
@@ -50,6 +52,8 @@ export interface Retired {
   tokens?: Readonly<Record<string, number>>;
   /** Fuel generators gone: the item their box held (D143), handed to the Heart. */
   fuel?: Readonly<Record<string, string>>;
+  /** Recipes gone: what one craft took in (D151), handed back for a craft under way. */
+  recipes?: Readonly<Record<string, { readonly ins: ReadonlyArray<readonly [string, number]> }>>;
 }
 
 /** 'index': holds content indices (re-pointed); 'refs': entity ids only (filtered when a building comes down); 'plain': neither. */
@@ -106,7 +110,7 @@ const kindOf = (id: string | undefined): BuildingDef | undefined =>
  * written against `to` (or without a table: written before D47 by this very content) comes back
  * as it is.
  */
-export function remapSave(d: SaveData, to: ContentTable = contentTable(), retired: Retired = { renamed: RENAMED, costs: RETIRED_COSTS, tokens: RETIRED_ITEM_TOKENS, fuel: RETIRED_FUEL }): { data: SaveData; note: RemapNote | null } {
+export function remapSave(d: SaveData, to: ContentTable = contentTable(), retired: Retired = { renamed: RENAMED, costs: RETIRED_COSTS, tokens: RETIRED_ITEM_TOKENS, fuel: RETIRED_FUEL, recipes: RETIRED_RECIPES }): { data: SaveData; note: RemapNote | null } {
   const from = d.content;
   if (!from) return { data: { ...d, content: to }, note: null };
   if (sameTable(from, to)) return { data: d, note: null };
@@ -151,6 +155,20 @@ export function remapSave(d: SaveData, to: ContentTable = contentTable(), retire
     return [idx(ins), idx(outs)];
   };
 
+  /**
+   * What one craft of recipe r (the save's index) took in, by the save's item index: the table holds
+   * ids, not counts, so a retired recipe's come from `retired.recipes` (D151), else today's recipe of
+   * that id (or its new name) for the inputs it still shares with the old one. Unknown: none.
+   */
+  const craftIns = (r: number): Array<[number, number]> => {
+    const id = from.recipes[r] ?? '';
+    const gone = retired.recipes?.[id];
+    if (gone) return gone.ins.map(([it, q]) => [from.items.indexOf(it), Math.round(q * 1000)]);
+    const now = (RECIPES as Readonly<Record<string, RecipeDef>>)[retired.renamed.recipes[id] ?? id];
+    const [ins = ''] = (from.recipeSigs[r] ?? '>').split('>');
+    const old = ins ? ins.split(',') : [];
+    return (now?.ins ?? []).filter(([it]) => old.includes(it)).map(([it, q]) => [from.items.indexOf(it), Math.round(q * 1000)]);
+  };
   // Entities: today's def, cfg re-pointed; what is gone comes down, refunded.
   const gone = new Set<number>();
   /** What each fallen entity was (its building id in the save's table). */
@@ -217,6 +235,8 @@ export function remapSave(d: SaveData, to: ContentTable = contentTable(), retire
         (o.inBuf as number[]).forEach((mu, k) => give(ins![k] ?? -1, mu));
         (o.outBuf as number[]).forEach((mu, k) => give(outs![k] ?? -1, mu));
       }
+        // A craft under way had taken its inputs in: back to the Heart, as `refundNode` does in play.
+        if (o.crafting === true) for (const [it, mu] of craftIns(r - 1)) give(it, mu);
       continue;
     }
     if (o && typeof o.item === 'number' && typeof o.mu === 'number' && 'turn' in o) {

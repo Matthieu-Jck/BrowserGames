@@ -118,7 +118,8 @@ function steelAt(b: Builder, at: readonly [number, number], ore: BeltTiles[], co
 function steelOn(b: Builder): boolean {
   const sim = b.sim;
   b.recipe('steelPlates', 'arc_plate');
-  // Two recipes at the mill since D125 (recycled steel): it waits for a choice (D83).
+  // Its one recipe since D151 (recycled steel gone: waste has no use), so it starts on it (D83); set
+  // anyway, as the base was laid when it had two.
   b.recipe('steel', 'steel');
   const out = intoCore(b, b.ids.steel!) ?? (b.fed('steelSilo', 'silo', b.centre('steel'), [b.ids.steel!], null) ? b.lines['steelSilo.in0'] ?? null : null);
   if (!out) return false;
@@ -276,7 +277,7 @@ function worksBy(b: Builder, out: WorldPort, water: readonly [number, number], b
     const cp = checkpoint(sim);
     const w = sim.place('brickworks', x, y, rot);
     if (!w.ok) continue;
-    sim.setRecipe(w.id!, 'brick'); // two recipes since D125 (slag bricks): it waits for a choice (D83)
+    sim.setRecipe(w.id!, 'brick'); // its one recipe again since D151 (slag bricks gone), set anyway (D83 starts it on it)
     const ins = worldPorts(sim.ents.get(w.id!)!).filter((p) => p.io === 'in');
     const pipe = routeLevel(sim, [out.fx, out.fy], into(ins[1]!), CONDUIT_SEARCH, true);
     if (pipe && sim.placeBelts('conduit', pipe) === pipe.length) {

@@ -8,7 +8,7 @@ export type Side = 'N' | 'E' | 'S' | 'W';
 
 export type ItemKind =
   | 'ore' | 'fuel' | 'fluid' | 'material' | 'part' | 'unique' | 'energy' | 'rubble'
-  // What a machine puts out beside its product (D125: slag, scrap): sorted off, burnt, sold cheap or recycled.
+  // What a machine puts out beside its product (D125: slag, scrap): sorted off, burnt or sold cheap — no recipe takes it in (D151).
   | 'waste';
 
 /** Glyph shapes the art pipeline knows how to ink (render/art/recipes/items.ts). */

@@ -1197,13 +1197,13 @@ export const fr = {
   'stock.group.part': 'Pièces',
   'stock.group.rare': 'Raretés',
   'stock.group.waste': 'Déchets',
-  'stock.wasteNote': 'Le Cœur n’en prend aucun : trie-les avant lui, vers un incinérateur, l’entrée d’un comptoir ou un recyclage. Ceux qu’il garde se vendent à la Criée.',
+  'stock.wasteNote': 'Le Cœur n’en prend aucun, aucune machine non plus : trie-les avant lui, vers un incinérateur ou l’entrée d’un comptoir. Ceux qu’il garde se vendent à la Criée.',
   // D139: the Core takes no waste in; what waits refused at a door (the Core's, a machine's).
   'insp.refused.core': 'Le Cœur ne prend aucun déchet',
   'insp.refused.machine': 'Refusé à l’entrée',
   'insp.refused.tip': 'La ligne s’arrête là : rien ne passe tant que cet objet n’en sort pas. Un trieur posé sur ce dernier ruban le prend : réglé sur ce qui doit passer, il pousse le reste vers un incinérateur à son côté.',
   'insp.hearth.refused': 'Refusés à ses entrées',
-  'insp.hearth.refused.tip': 'Le Cœur ne prend aucun déchet : scories et chutes s’arrêtent à son entrée, et leur ligne se bouche derrière. Triez-les avant lui, vers un incinérateur, l’entrée d’un comptoir ou un recyclage.',
+  'insp.hearth.refused.tip': 'Le Cœur ne prend aucun déchet : scories et chutes s’arrêtent à son entrée, et leur ligne se bouche derrière. Triez-les avant lui, vers un incinérateur ou l’entrée d’un comptoir.',
   'stock.short': 'Il en manque {n} pour : {need}',
   'stock.out': 'Épuisé : il en faut {n} pour : {need}',
   // Auto-sell (D127): a row's toggle, its threshold, what it sold.
@@ -1219,7 +1219,7 @@ export const fr = {
   'hud.stock.tipRate': '{item} au Cœur : {n} · entrée : {rate} sur la dernière minute',
   'insp.io.held': 'en réserve',
   'insp.io.perMin': 'par min',
-  'insp.waste.tip': 'Ses déchets attendent ici de sortir, avant son produit, par la même sortie : un tous les {n} cycles. Trie-les vers un incinérateur, la Criée ou un recyclage.',
+  'insp.waste.tip': 'Ses déchets attendent ici de sortir, avant son produit, par la même sortie : un tous les {n} cycles. Trie-les vers un incinérateur ou la Criée : aucune machine n’en veut.',
   'insp.wiredTo': 'Relié à',
   'insp.wiredTo.list': 'Relié à : {list}',
   // ── persistence (M7): boot, one tab at a time, saves ──

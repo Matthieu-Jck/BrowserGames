@@ -189,20 +189,9 @@ export const RECIPES = {
     name: { fr: 'Câble', en: 'Cable' }, machines: WIRE, seconds: 6,
     ins: [['copper_wire', 3]], outs: [['cable', 1]], unlock: 'dn_wiremill',
   },
-  // ── appended (D125): the waste recycled ──────────────────────────────────
-  // Slag crushed and bound with water into bricks at the brickworks, its second recipe: two slag and
-  // a water a brick, at the sand brick's pace — free waste saves the sand, and a sorted slag line
-  // has somewhere useful to go.
-  slag_brick: {
-    name: { fr: 'Brique de scories', en: 'Slag Brick' }, machines: ['brickworks'], seconds: 4,
-    ins: [['slag', 2], ['water', 1]], outs: [['brick', 1]], unlock: 'ex_brick',
-  },
-  // Scrap melted back into steel at the steel mill, its second recipe: three scraps and a coal a
-  // steel, at the mill's pace; it is still smelting, so it still gives the converter's slag.
-  steel_scrap: {
-    name: { fr: 'Acier de récupération', en: 'Recycled Steel' }, machines: ['steel_mill'], seconds: 12,
-    ins: [['scrap', 3], ['coal', 1]], outs: [['steel', 1]], unlock: 'dn_steel', waste: ['slag', 5],
-  },
+  // (D125 appended two recycling recipes here, slag bricks and recycled steel; D151 took them out —
+  // owner, 2026-10-19: « don't use slag or scraps in machines, the point is that it's very useless ».
+  // No recipe takes a waste item (validate.ts), and their ids are listed in retired.ts.)
   // ── appended (D129): the assembly bench ───────────────────────────────────
   // Copper wire wound on an iron plate's core, at the bench from its plan: two wires and a plate a
   // coil, 6 s — 20 wires a minute (half a wire mill: more than the cirque's tired vein gives, so the

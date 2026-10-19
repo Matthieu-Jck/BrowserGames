@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { categoryProblems, entranceProblems, fluidPortProblems, reachableItems, reachableNodes, rootPlans, startBuildings, tiredVeinPerMin, uniquesNeeded, validateContent, wirePerElectronicsWorkshop } from './validate';
+import { categoryProblems, entranceProblems, fluidPortProblems, reachableItems, reachableNodes, rootPlans, startBuildings, tiredVeinPerMin, uniquesNeeded, validateContent, wasteInputProblems, wirePerElectronicsWorkshop } from './validate';
 import { ITEMS } from './items';
 import { RECIPES } from './recipes';
 import { BAL } from './balance';
@@ -67,6 +67,22 @@ describe('content invariants', () => {
     // A water entrance on a machine no fluid goes into: the smelter's (the kiln).
     const kiln: BuildingDef = { ...of('kiln'), ports: of('kiln').ports.map((p, i) => (i === 0 ? { ...p, fluid: true as const } : p)) };
     expect(fluidPortProblems([['kiln', kiln]], [])).toEqual(['building kiln: a water entrance, but it drinks no fluid (D142)']);
+  });
+
+  it('waste has no use (D151): no recipe takes slag or scrap in; D125’s recyclers fail by name', () => {
+    expect(wasteInputProblems()).toEqual([]);
+    for (const [id, r] of Object.entries(RECIPES) as Array<[string, RecipeDef]>) {
+      for (const [it] of r.ins) expect(ITEMS[it as keyof typeof ITEMS].kind, `${id} takes ${it}`).not.toBe('waste');
+    }
+    expect('slag_brick' in RECIPES).toBe(false);
+    expect('steel_scrap' in RECIPES).toBe(false);
+    // The recipes D151 took out, as D125 had them: each caught, its waste named.
+    const slagBrick: RecipeDef = { name: { fr: 'Brique de scories', en: 'Slag Brick' }, machines: ['brickworks'], seconds: 4, ins: [['slag', 2], ['water', 1]], outs: [['brick', 1]], unlock: 'ex_brick' };
+    const steelScrap: RecipeDef = { name: { fr: 'Acier de récupération', en: 'Recycled Steel' }, machines: ['steel_mill'], seconds: 12, ins: [['scrap', 3], ['coal', 1]], outs: [['steel', 1]], unlock: 'dn_steel', waste: ['slag', 5] };
+    expect(wasteInputProblems([['brick', RECIPES.brick as RecipeDef], ['slag_brick', slagBrick], ['steel_scrap', steelScrap]])).toEqual([
+      'recipe slag_brick: takes the waste slag in (waste has no use, D151)',
+      'recipe steel_scrap: takes the waste scrap in (waste has no use, D151)',
+    ]);
   });
 
   it('the tired vein cannot feed a single mechanics workshop: copper must be imported', () => {

@@ -134,16 +134,16 @@ function pressIntoCore(sim: Sim, steel: number): number {
 }
 
 describe('the machines’ waste (D125, D139)', () => {
-  it('the content: only the steel line leaves waste — the smelters and the press on gears none; recycling takes it', () => {
+  it('the content: only the steel line leaves waste — the smelters and the press on gears none; no machine takes it in (D151)', () => {
     const wasteful = Object.entries(RECIPES).filter(([, r]) => 'waste' in r).map(([id]) => id).sort();
-    expect(wasteful).toEqual(['pipe', 'steel', 'steel_scrap']);
+    expect(wasteful).toEqual(['pipe', 'steel']);
     expect(RECIPES.steel.waste).toEqual(['slag', 5]);
     expect(RECIPES.pipe.waste).toEqual(['scrap', 5]);
     for (const id of ['iron_plate', 'arc_plate', 'copper_plate', 'arc_copper', 'glass', 'arc_glass', 'gear'] as const) expect('waste' in RECIPES[id], id).toBe(false);
     const c = CRECIPES.find((r) => r.id === 'steel')!;
     expect(c.waste).toEqual({ item: SLAG(), every: 5 });
-    expect(RECIPES.slag_brick.ins.some(([i]) => i === 'slag')).toBe(true);
-    expect(RECIPES.steel_scrap.ins.some(([i]) => i === 'scrap')).toBe(true);
+    // Waste has no use (D151): no recipe takes slag or scrap in — D125's slag bricks and recycled steel are gone.
+    for (const r of CRECIPES) for (const i of r.ins) expect(i.item === SLAG() || i.item === SCRAP(), `${r.id} takes ${ITEM_IDS[i.item]}`).toBe(false);
   });
 
   it('the Core takes every item but the waste, by kind (D139)', () => {

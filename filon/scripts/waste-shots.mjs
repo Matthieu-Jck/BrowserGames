@@ -3,8 +3,9 @@
 //   - a copper smelter (slag every five plates) fed by two stocked silos, its plates and slag down one
 //     line (five tiles of it mixed), a sorter set to the plates on it, an incinerator against its side taking the slag, the
 //     plates on into a silo — the mixed line and the sort;
-//   - the steel mill on scrap (« Acier de récupération »: a recycler), the same geometry, its steel and
-//     slag sorted the same way.
+//   - the steel mill on steel (its plates and coal from the silos), the same geometry, its steel and
+//     slag sorted the same way. (It ran on scrap, D125's recycled steel, until D151 took the recyclers
+//     out: waste has no use.)
 // The base runs a few minutes, then is paused right after the pit has burnt something (its node's
 // `burnTick`, D125: the burst), and shot near: iso and plan, noon and night; the smelter's inspector
 // (the equation with its slag, the waste bin) and the Stock panel's « Déchets ».
@@ -77,7 +78,7 @@ const rigs = await page.evaluate(() => {
     return { error: `no room for the ${m}` };
   };
   const smelter = lay('kiln', 'copper_plate', 'copper_ore', 'coal', 'copper_plate', null);
-  const mill = smelter.error ? smelter : lay('steel_mill', 'steel_scrap', 'scrap', 'coal', 'steel', [smelter.ox, smelter.oy]);
+  const mill = smelter.error ? smelter : lay('steel_mill', 'steel', 'iron_plate', 'coal', 'steel', [smelter.ox, smelter.oy]);
   return { smelter, mill };
 });
 console.log('rigs', JSON.stringify(rigs));
@@ -126,8 +127,8 @@ await frame(rigs.smelter, 'iso', 'noon', 'line-iso-day');
 await frame(rigs.smelter, 'plan', 'noon', 'line-plan-day');
 await frame(rigs.smelter, 'iso', 'night', 'line-iso-night');
 await frame(rigs.smelter, 'plan', 'night', 'line-plan-night');
-await frame(rigs.mill, 'iso', 'noon', 'recycler-iso-day');
-await frame(rigs.mill, 'plan', 'dusk', 'recycler-plan-dusk');
+await frame(rigs.mill, 'iso', 'noon', 'mill-iso-day');
+await frame(rigs.mill, 'plan', 'dusk', 'mill-plan-dusk');
 
 // The smelter's inspector and the Stock panel, the HUD back.
 await hideUi.evaluate((n) => n.remove());

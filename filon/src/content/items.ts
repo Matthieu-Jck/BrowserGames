@@ -81,8 +81,9 @@ export const ITEMS = {
   // avec leur vraie production, qu'il faille traiter »). A smelter's metal recipes, the steel mill's
   // put out a slag every few crafts, the press a scrap, through the same output as their product
   // (`RecipeDef.waste`): the line carries both and the player sorts them. Worth little at the Crier
-  // (sold cheap is one way out); burnt in an incinerator, or recycled — slag into bricks at the
-  // brickworks, scrap back into steel at the steel mill.
+  // (sold cheap is one way out), or burnt in an incinerator. No machine takes them in (D151; owner,
+  // 2026-10-19: « don't use slag or scraps in machines, the point is that it's very useless »): D125's
+  // recyclers are gone, and waste is only ever a nuisance to get rid of.
   slag: { name: { fr: 'Scories', en: 'Slag' }, tier: 1, kind: 'waste', value: 0.2, depth: 300, glyph: 'slag', color: '#6b5a4e' },
   scrap: { name: { fr: 'Chutes', en: 'Scrap' }, tier: 1, kind: 'waste', value: 0.6, depth: 200, glyph: 'scrap', color: '#8a8f98' },
 

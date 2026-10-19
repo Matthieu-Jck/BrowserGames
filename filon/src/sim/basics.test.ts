@@ -114,7 +114,7 @@ describe('more to make of the basic resources (D123)', () => {
     const sim = d123Sim();
     steadyPower(sim);
     const id = put(sim, 'brickworks', 516, 505); // 516–517 × 505–506: sand in at (516,506) S, water at (517,506) S
-    sim.setRecipe(id, 'brick'); // two recipes since D125 (slag bricks): it waits for a choice (D83)
+    sim.setRecipe(id, 'brick'); // its one recipe since D151 (slag bricks gone): it starts on it (D83), set anyway
     put(sim, 'incinerator', 516, 504);
     stockedSilo(sim, 514, 508, 0, 'sand', 3000);
     expect(sim.placeBelts('ribbon', [[515, 507, 1], [516, 507, 0]])).toBe(2);
