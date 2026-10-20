@@ -314,7 +314,7 @@ export class Sim {
     const old = this.graph ?? null;
     this.graph = compileGraph({
       ents: this.ents, grid: this.grid, mods: this.mods, now: this.tick, worldSeed: this.worldSeed,
-      hearthStock: this.stock, hearthCap: this.hearthCap(), hearthCaps: trade.autoSellCaps(this), hearthLevel: this.hearthLevel, stores: this.stores, selling: this.selling, old,
+      hearthStock: this.stock, hearthCap: this.hearthCap(), hearthCaps: null, hearthLevel: this.hearthLevel, stores: this.stores, selling: this.selling, old,
       refund: (item, mu) => this.refund(item, mu),
       busyLabs: research.busyLabs(this),
       tradeAccepts: trade.exportAccepts(this),

@@ -1242,6 +1242,7 @@ export const en: Dict = {
   'stock.auto.on': 'Auto-sell: the Core sells what it receives of this item beyond a threshold, every minute (CrierBelt takes 40%). Its ribbons no longer back up.',
   'stock.auto.off': 'Auto-sell on: click to stop it.',
   'stock.auto.sold': 'Sold automatically: {v}',
+  'stock.auto.noBuyer': 'Nobody buys it: the Core keeps it until it is full',
   'stock.auto.wait': 'Sold automatically beyond the threshold',
   'stock.auto.at': 'threshold {n}',
   'stock.auto.atTip': 'The Core keeps {n} of this item and sells the surplus every minute. Click to change the threshold ({min} to {max}).',

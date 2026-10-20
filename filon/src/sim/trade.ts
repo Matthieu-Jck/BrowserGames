@@ -137,7 +137,7 @@ export interface TradeState {
   /**
    * Auto-sell (cm_autosell, D127): per item switched on, its threshold in whole items — what the Core
    * holds beyond it is sold at each boundary (systems/trade.ts `autoSales`), and the Core takes the
-   * item in without its cap meanwhile (`autoSellCaps`).
+   * item under its threshold, which stays below the Core's cap (D163).
    */
   autoSell: Map<number, number>;
   /** Lifetime ocelles earned and spent through the Crier (centi-◉), and mu sold / bought per item. */

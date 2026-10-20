@@ -16,7 +16,7 @@
 // ribbons (owner, 2026-10-17: « il faut expliquer au joueur que le core ne peut contenir que X de
 // chaque item au maximum »). One cap for every item (D122: the data's own cap went with the data).
 // Auto-sell (D127, once researched): a small ◉ at each tradable item's row end switches it on — the
-// Core then takes the item in uncapped and sells what it holds beyond a threshold at each minute's
+// Core then sells what it holds beyond a threshold (at most 90 % of its cap, D163) at each minute's
 // end. The threshold stands on the gauge as an ink mark, and as a chip beside it, which a click edits
 // in place (each change a logged command, `Sim.setAutoSell`); under them « Vendu automatiquement :
 // +X ◉/h » (the purse's own figure for the item, ui/purse-facts.ts). An auto-sold item is never « plein ».
@@ -223,16 +223,19 @@ export class StockPanel {
       if (at !== undefined) {
         r.mark.style.left = `${Math.min(100, (at * 100000) / Math.max(1, capI))}%`;
         const v = sold(i);
-        setText(r.sold, v ? t('stock.auto.sold', { v: perHour(v) }) : t('stock.auto.wait'));
+        // Nobody buys it (a bid of nothing): it isn't sold, and the Core keeps it until full (D163).
+        const none = (sim.prices.bid[i] ?? 0) <= 0;
+        setText(r.sold, none ? t('stock.auto.noBuyer') : v ? t('stock.auto.sold', { v: perHour(v) }) : t('stock.auto.wait'));
+        setAttr(r.line, 'data-none', none ? '' : null);
         setText(r.at, t('stock.auto.at', { n: compact(at) }));
         const keep = Math.floor(sim.autoSellKeep(i) / 1000);
         setAttr(r.at, 'title', `${t('stock.auto.atTip', { n: num(at), min: num(BAL.autoSell.min), max: num(autoSellMax(sim)) })}${keep > at ? ` ${t('stock.auto.keep', { n: num(keep) })}` : ''}`);
         setAttr(r.edit, 'aria-label', t('stock.auto.edit'));
       } else if (!r.edit.hidden) this.closeAt(i);
-      // Its share of what the Heart can hold of it: near the top, full (the Heart takes no more of it —
-      // unless it auto-sells it: then it takes it all, and sells the surplus).
+      // Its share of what the Heart can hold of it: near the top, full (the Heart takes no more of it;
+      // an auto-sold item too since D163, when nobody buys it).
       const share = Math.min(1000, Math.floor((sim.stock[i]! * 1000) / Math.max(1, capI)));
-      const full = share >= 1000 && at === undefined;
+      const full = share >= 1000;
       r.fill.style.width = `${share / 10}%`;
       setAttr(r.node, 'data-fill', full ? 'full' : share >= 900 && at === undefined ? 'near' : null);
       setText(r.need, lack ? `−${num(Math.ceil(lack.missing / 1000))}` : full ? t('stock.full') : '');

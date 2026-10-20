@@ -15,8 +15,8 @@
 //      its entrance brought, within its throughput. The starter contract (D101, `takeStarter`)
 //      buys under the same holds at its fixed price, off the market, and is gone once bought in full;
 //   2b. auto-sell (cm_autosell, D127): what the Core holds beyond each switched-on item's
-//      threshold is sold at the bid, less the Core's fee (D126) — the Core took it in uncapped
-//      meanwhile (`autoSellCaps`), so its lines never back up on it;
+//      threshold is sold at the bid, less the Core's fee (D126) — the threshold below the Core's cap
+//      (D163), so its lines don't back up on it;
 //   3. the cargo no order wants, none on its way and none left in its container leaves it (the
 //      graph is then recompiled: the entrance takes the item again);
 //   4. the market settles that epoch with the mu sold / bought → the next epoch's prices;
@@ -244,23 +244,21 @@ export function setFloorPrice(sim: Sim, item: string, cents: number | null): boo
 
 // ── auto-sell (cm_autosell, D127) ─────────────────────────────────────────
 // Owner, 2026-10-18: « il faudrait qu'une amélioration de l'arbre permette de faire de la vente
-// automatique des items qui arrivent en surplus dans le cœur (+10 000) ». The Core takes a switched-on
-// item in without its cap (so the lines bringing it never back up on it: the overflow is sold, not
-// refused), and at each boundary what it holds beyond the item's threshold is sold (`autoSales`).
-// Offline-exact by construction: within a minute the item is an ordinary level between its bounds
-// (the catch-up's NORMAL: never FULL, its cap lifted), and the boundary's sale is this same call.
+// automatique des items qui arrivent en surplus dans le cœur (+10 000) ». At each boundary what the
+// Core holds of a switched-on item beyond its threshold is sold (`autoSales`). The threshold stays
+// under the Core's cap (`BAL.autoSell.maxShare`, D163), so a minute's arrivals fit below the cap and
+// its lines don't back up; the cap itself is the Core's usual one (until D163 it was lifted, and an
+// item nobody bought — a bid of nothing — piled up past 10 000 without end: owner, 2026-10-20, « the
+// core somehow has more than 10k of an item stored. And the auto-sell doesn't work I think »). An
+// item with no buyer now fills to the cap and backs its line up, seen, as any full item does.
+// Offline-exact by construction: the boundary's sale is this same call, and the levels are ordinary.
 
-/**
- * The Core's room for an item it auto-sells (mu): none to speak of. A sentinel, not a number to tune:
- * far above any stock, and exact in float arithmetic with any level added to it.
- */
-export const UNCAPPED = 2 ** 50;
 
 /** Auto-sell researched: its settings act only then (they stay saved otherwise). */
 export const autoSellOn = (sim: Sim): boolean => sim.mods.flags.has('autoSell');
 
-/** The highest threshold an item may take (whole items): what the Core holds of it at most. */
-export const autoSellMax = (sim: Sim): number => Math.floor(sim.hearthCap() / 1000);
+/** The highest threshold an item may take (whole items): a share of the Core's cap, room left under it for a minute's arrivals (D163). */
+export const autoSellMax = (sim: Sim): number => Math.floor((sim.hearthCap() * BAL.autoSell.maxShare) / 1_000_000);
 
 /**
  * Switch auto-sell on for a tradable item at a threshold (whole items, `BAL.autoSell.min` up to the
@@ -282,13 +280,6 @@ export function setAutoSell(sim: Sim, item: string, at: number | null): boolean 
   return true;
 }
 
-/** The Core's caps for the graph compiler (mu, per item; null: its one cap for all): an auto-sold item's lifted. */
-export function autoSellCaps(sim: Sim): Float64Array | null {
-  if (!autoSellOn(sim) || !sim.trade.autoSell.size) return null;
-  const caps = new Float64Array(N_ITEMS).fill(sim.hearthCap());
-  for (const it of sim.trade.autoSell.keys()) caps[it] = UNCAPPED;
-  return caps;
-}
 
 /**
  * What the Core keeps of an auto-sold item at a boundary (mu); the rest is sold. Its threshold, never
@@ -303,7 +294,9 @@ export function autoSellKeep(sim: Sim, it: number): number {
     for (const c of planCost(id)) if (c.item === it && c.mu > need) need = c.mu;
   }
   for (const id of sim.labQueue.values()) for (const c of effectiveCost(id, sim.mods).cost) if (c.item === it && c.mu > need) need = c.mu;
-  return Math.max(sim.reserveFloor(it), Math.min(sim.hearthCap(), need));
+  // Never above the highest threshold (D163): a save's older threshold at the cap would hold the whole
+  // cap and never sell, now that the Core no longer takes an auto-sold item beyond it.
+  return Math.max(sim.reserveFloor(it), Math.min(autoSellMax(sim) * 1000, need));
 }
 
 /**

@@ -1246,6 +1246,7 @@ export const fr = {
   'stock.auto.off': 'Vente automatique en marche : cliquer pour l’arrêter.',
   'stock.auto.sold': 'Vendu automatiquement : {v}',
   'stock.auto.wait': 'Vendu automatiquement au-delà du seuil',
+  'stock.auto.noBuyer': 'Personne n’en achète : le Cœur le garde jusqu’à être plein',
   'stock.auto.at': 'seuil {n}',
   'stock.auto.atTip': 'Le Cœur garde {n} de cet objet et vend le surplus à chaque minute. Cliquer pour changer le seuil ({min} à {max}).',
   'stock.auto.keep': 'Il en garde {n} pour l’instant : un plan ouvert ou une recherche en file en a besoin.',

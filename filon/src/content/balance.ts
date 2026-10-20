@@ -187,7 +187,7 @@ export const BAL = {
   // holds of a switched-on item beyond its threshold is sold at each minute's end, at the bid less
   // `coreSellFee`. `at`: the threshold an item starts with (whole items, at most the Core's cap);
   // `min`: the lowest a player may set (the Core keeps a working stock).
-  autoSell: { at: 10_000, min: 100 },
+  autoSell: { at: 10_000, min: 100, maxShare: 900 }, // maxShare ‰ of the Core's cap: the highest threshold (D163)
   tradeThroughput: [120, 240, 480], // items/min
   liftDelayMin: [3, 2, 1], // minutes from a purchase to the lift-off, by trade-post level (D113: was 10, 6, 3)
   tradeOrders: 2,           // standing import orders (Standing Orders: +4)

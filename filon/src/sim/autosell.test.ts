@@ -1,8 +1,8 @@
 // autosell.test.ts — auto-sell (cm_autosell, D127; owner, 2026-10-18: « une amélioration de l'arbre
 // permette de faire de la vente automatique des items qui arrivent en surplus dans le cœur »): the
 // setting as a logged command within its bounds; the sale at a minute's end (the Core's surplus at
-// the bid less 40 %, on the ledger and in the purse's journal); the Core taking a switched-on item
-// uncapped, so its line never backs up; what it keeps (an open plan's need, a queued research's, the
+// the bid less 40 %, on the ledger and in the purse's journal); the Core keeping its cap for a
+// switched-on item, its threshold under it so its line never backs up (D163); what it keeps (an open plan's need, a queued research's, the
 // restart reserve); saves; and the catch-up, bit for bit with ticking.
 import { describe, it, expect } from 'vitest';
 import { BAL } from '@/content/balance';
@@ -16,7 +16,7 @@ import { catchUp } from './offline/catchup';
 import { deserialize, serialize } from './serialize';
 import type { Sim } from './state';
 import { planCost } from './systems/research';
-import { UNCAPPED } from './systems/trade';
+import { autoSellMax } from './systems/trade';
 import { drillToHearth, steadyPower, testSim, testSource, IRON } from './testkit';
 
 /** Auto-sell learnt outside the commands (a research: a test colony is not replayed from its founding). */
@@ -33,8 +33,8 @@ describe('auto-sell (D127)', () => {
     a.skipTutorial();
     expect(a.setAutoSell('iron_plate', 1000), 'not researched').toBe(false);
     learn(a);
-    const cap = a.hearthCap() / 1000;
-    expect(a.setAutoSell('iron_plate', cap + 1), 'above the Core’s cap').toBe(false);
+    const cap = autoSellMax(a); // the highest threshold, 90 % of the Core's cap (D163)
+    expect(a.setAutoSell('iron_plate', cap + 1), 'above the highest threshold').toBe(false);
     expect(a.setAutoSell('iron_plate', BAL.autoSell.min - 1), 'below the floor').toBe(false);
     expect(a.setAutoSell('water', 1000), 'a fluid never reaches the Crier').toBe(false);
     expect(a.setAutoSell('iron_plate', 1.5), 'whole items').toBe(false);
@@ -82,7 +82,7 @@ describe('auto-sell (D127)', () => {
     expect(autoLines(sim)).toHaveLength(1);
   });
 
-  it('takes a switched-on item in uncapped, so its line never backs up; the rest keep the Core’s cap', () => {
+  it('sells a switched-on item down to its threshold each minute, so its line runs on; the Core’s cap stays (D163)', () => {
     const build = (auto: boolean): Sim => {
       const s = learn(testSim());
       s.skipTutorial();
@@ -96,7 +96,7 @@ describe('auto-sell (D127)', () => {
     const full = build(false), sold = build(true);
     sold.ensureCompiled();
     const core = sold.graph.hearth as ReservoirNode;
-    expect(core.capOf(IRON())).toBe(UNCAPPED);
+    expect(core.capOf(IRON())).toBe(sold.hearthCap()); // no lifted cap since D163
     expect(core.capOf(itemIdx('iron_plate'))).toBe(sold.hearthCap());
     const p0 = [full.produced[IRON()]!, sold.produced[IRON()]!];
     for (let m = 0; m < 5; m++) {
@@ -116,7 +116,24 @@ describe('auto-sell (D127)', () => {
     expect((sold.graph.hearth as ReservoirNode).capOf(IRON())).toBe(sold.hearthCap());
   });
 
-  it('keeps what an open plan or a queued research costs, never more than the Core’s cap, never under the restart reserve', () => {
+  it('never holds more than its highest threshold, 90 % of the cap: an older save’s threshold at the cap sells again (D163)', () => {
+    const sim = learn(testSim());
+    sim.skipTutorial();
+    steadyPower(sim);
+    drillToHearth(sim);
+    const max = autoSellMax(sim);
+    expect(max).toBe(Math.floor((sim.hearthCap() * BAL.autoSell.maxShare) / 1_000_000));
+    expect(sim.setAutoSell('iron_ore', max + 1)).toBe(false); // above the highest threshold: refused
+    // A threshold saved before D163, at the whole cap, as an old save would hold it.
+    sim.trade.autoSell.set(IRON(), sim.hearthCap() / 1000);
+    sim.dirty = true;
+    fill(sim, 'iron_ore', sim.hearthCap() / 1000);
+    sim.run(toEnd(sim));
+    expect(sim.stock[IRON()]).toBe(max * 1000); // sold down to the highest threshold
+    for (let m = 0; m < 3; m++) { sim.run(EPOCH); expect(sim.stock[IRON()]!).toBeLessThanOrEqual(sim.hearthCap()); }
+  });
+
+  it('keeps what an open plan or a queued research costs, never more than its highest threshold, never under the restart reserve', () => {
     // A new base (no plan taken): the open plans wait on their plates.
     const sim = learn(testSim(undefined, { plans: false }));
     const plate = itemIdx('iron_plate');
@@ -132,9 +149,9 @@ describe('auto-sell (D127)', () => {
     expect(all.autoSellKeep(glass)).toBe(BAL.autoSell.min * 1000);
     all.labQueue.set(1, 'en_solarfarm');
     expect(all.autoSellKeep(glass)).toBe(120_000);
-    // A threshold above what the Core may hold (an older setting) keeps the cap.
+    // A threshold above what the Core may hold (an older setting) keeps the highest threshold (D163).
     all.trade.autoSell.set(glass, 1_000_000);
-    expect(all.autoSellKeep(glass)).toBe(all.hearthCap());
+    expect(all.autoSellKeep(glass)).toBe(autoSellMax(all) * 1000);
   });
 
   it('keeps its settings through a save; acts only while researched', () => {
