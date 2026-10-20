@@ -187,6 +187,11 @@ export class WiresView {
     this.drawForeign();
   }
 
+  /** One neighbouring base's wires dropped (D162: the neighbours view let it go, out of the view's ring a while). */
+  dropForeign(key: number): void {
+    if (this.foreign.delete(key)) this.drawForeign();
+  }
+
   /** Every neighbouring base's wires dropped (another colony). */
   clearForeign(): void {
     if (!this.foreign.size) return;

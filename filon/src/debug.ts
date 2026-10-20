@@ -14,7 +14,8 @@ import type { PerfStats } from '@/render/perf-overlay';
 import { gradeAt, MOMENTS, phaseAt } from '@/render/daynight';
 import { temperatureAt } from '@/sim/world/climate';
 import { buildDemo, connect, powerLine, learnPlans } from '@/sim/dev';
-import { BUILDING_IDS, ITEM_IDS, RESEARCH_IDS } from '@/content/registry';
+import { BUILDING_IDS, ITEM_IDS, RESEARCH_IDS, buildingIdx, costOf } from '@/content/registry';
+import { sellingOf } from '@/sim/systems/trade';
 import { QUEST_IDS } from '@/content/quests';
 import { isResearch, researchNode } from '@/content/research';
 import { projectPermille } from '@/sim/research/runtime';
@@ -141,6 +142,8 @@ export interface FilonDebug {
   sea(zoom?: number): [number, number] | null;
   /** The field of rock spires (map 6, D147): its middle tile, its wedge's bearing (64ths) and radii, its needles' count and the tallest (levels); with a zoom, the camera jumps to look at it. Null on maps 1–5. */
   spires(zoom?: number): { x: number; y: number; bearing: number; r0: number; r1: number; count: number; tallest: number } | null;
+  /** Map 6's rare huge mountains (D157): their summits (tile, foot radius, level); with a zoom, the camera jumps to look at the `n`th (D149: its beacon's wreck on top). [] on maps 1–5. */
+  peaks(zoom?: number, n?: number): Array<{ x: number; y: number; R: number; top: number }>;
   /** This epoch's bid / ask of an item (◉). */
   price(item: string): { bid: number; ask: number };
   /** The first built trade post (0 = none). */
@@ -266,6 +269,25 @@ export interface FilonDebug {
   absence(open?: boolean): boolean;
   /** « Avant de partir »: `hours` caught up on a copy of the base (the base itself does not move): what stops first, when, and what it earns. */
   forecast(hours: number): { ticks: number; mode: string; stop: { kind: string; item: string | null; afterMin: number } | null; creditsDelta: number; produced: number; hash: string };
+  /**
+   * CrierBelt's delivery orders (D153): those standing (items by id; `due` −1 while offered), the last
+   * closed, the lifetime figures, and the claim's last standings.
+   */
+  orders(): {
+    open: Array<{ id: number; item: string; n: number; got: number; cents: number; due: number; offerEnd: number; windowMin: number; first: boolean; event: boolean; reward: string | null }>;
+    past: Array<{ id: number; item: string; n: number; got: number; paid: number; what: string }>;
+    filled: number; missed: number; paid: number;
+    ranking: { epoch: number; value: number; rank: number; best: number };
+  };
+  /**
+   * A sandbox rig for the orders (D153; shots and the smoke, not replayable): the first standing order
+   * made to ask `n` of `item` (its price the bid plus its premium, as drawn), and a silo holding `stock`
+   * of it set beside the first trade post, a ribbon from it into the post's entrance — the order fills
+   * through the post as a line would bring it. Where no ribbon reaches the entrance (the demo base's post
+   * stands against the Core), the stock goes straight into the entrance's store, as a line would have
+   * brought it. Returns the order's id and the ribbons laid (0: the stock put in the entrance).
+   */
+  orderRig(item: string, n: number, stock?: number): { id: number; ribbons: number } | null;
 }
 
 const ITEM_SAFE = (def: number): string => BUILDING_IDS[def] ?? '?';
@@ -444,6 +466,14 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
       if (p && zoom !== undefined) app.camera.centerOnTile(p[0], p[1], zoom);
       return p;
     },
+    peaks: (zoom, n = 0) => {
+      const src = app.sim.grid.source as { peakSites?: () => ReadonlyArray<{ x: number; y: number; R: number; top: number }> };
+      const all = (src.peakSites?.() ?? []).map(({ x, y, R, top }) => ({ x, y, R, top }));
+      // A top `top` levels up shows `top` tiles back along −x −y in iso: look between it and its foot.
+      const p = all[n];
+      if (p && zoom !== undefined) app.camera.centerOnTile(p.x - (p.top >> 1), p.y - (p.top >> 1), zoom);
+      return all;
+    },
     spires: (zoom) => {
       const src = app.sim.grid.source as { spireField?: { x: number; y: number; bearing: number; r0: number; r1: number } | null; spiresIn?: (x0: number, y0: number, x1: number, y1: number) => Array<{ level: number }> };
       const f = src.spireField;
@@ -458,6 +488,40 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
       return { bid: (app.sim.prices.bid[i] ?? 0) / 100, ask: (app.sim.prices.ask[i] ?? 0) / 100 };
     },
     tradePost: () => app.sim.tradePosts()[0]?.id ?? 0,
+    orders: () => {
+      const st = app.sim.deliveries;
+      return {
+        open: st.open.map((o) => ({ id: o.id, item: ITEM_IDS[o.item]!, n: o.n, got: o.got, cents: o.cents, due: o.due, offerEnd: o.offerEnd, windowMin: o.windowMin, first: !!o.first, event: !!o.event, reward: o.reward ? o.reward.k : null })),
+        past: st.past.map((o) => ({ id: o.id, item: ITEM_IDS[o.item]!, n: o.n, got: o.got, paid: o.paid, what: o.what })),
+        filled: st.filled, missed: st.missed, paid: st.paid, ranking: { ...app.sim.ranking },
+      };
+    },
+    orderRig: (item, n, stock = n) => {
+      const sim = app.sim, post = sim.tradePosts()[0], o = sim.deliveries.open[0];
+      const it = ITEM_IDS.indexOf(item as never);
+      if (!post || !o || it < 0) return null;
+      o.item = it;
+      o.n = n;
+      o.cents = Math.max(o.cents, Math.ceil(((sim.prices.bid[it] ?? 0) * 1150) / 1000));
+      // A silo on free floor near the post (its cost granted: a rig), holding the stock, led into the entrance.
+      const intoEntrance = (): { id: number; ribbons: number } => {
+        const st = sellingOf(sim, post.id);
+        st[it] = st[it]! + stock * 1000;
+        return { id: o.id, ribbons: 0 };
+      };
+      const spot = api.freeSpot('silo', post.x + 2, post.y + 7, 14);
+      if (!spot) return intoEntrance();
+      for (const c of costOf(buildingIdx('silo'))) sim.stock[c.item] = sim.stock[c.item]! + c.mu;
+      const s = sim.place('silo', spot[0]!, spot[1]!, 0);
+      if (!s.ok || !s.id) return intoEntrance();
+      sim.ensureCompiled();
+      sim.stores.get(s.id)![it] = stock * 1000;
+      (sim.graph.nodeByEnt.get(s.id) as unknown as { locked: number }).locked = it;
+      const ribbons = connect(sim, s.id, post.id);
+      if (ribbons > 0) return { id: o.id, ribbons };
+      sim.remove(spot[0]!, spot[1]!); // no way into the entrance: the silo back up (its stock refunded to the Core)
+      return intoEntrance();
+    },
     gazette: () => {
       const snap = app.sim.market.snapshot();
       return { announced: snap.events.announced.map((e) => eventLine(e, snap.colonies)), active: snap.events.active.map((e) => eventLine(e, snap.colonies)) };

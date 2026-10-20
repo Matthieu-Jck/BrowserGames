@@ -36,6 +36,11 @@ export const TOP_MARGIN = 14; // room for shadows and overhangs
 /** A plan recipe; `lv`: its look's level (buildings.ts `artLevels`: the Heart's, D86; 1 for any other). */
 type Recipe = (ctx: Ctx, f: Frame, seed: number, lv: number) => void;
 
+/** A junction turned east–west from above (D158): its plan drawing reflected across the tile's diagonal (local x ↔ y), as its iso one is (buildings.ts `JunctionFrame`). */
+class JunctionTopFrame extends Frame {
+  override p(x: number, y: number): Pt { return super.p(y, x); }
+}
+
 const LEDS = [C.led, C.led, C.ledGreen, C.led] as const;
 
 // ── machine parts and human places seen from above ───────────────────────────
@@ -1799,10 +1804,13 @@ const R: Partial<Record<BuildingId, Recipe>> = {
   inverted_sorter: (ctx, f, s) => sorterTop(ctx, f, s, true),
   overflow_gate: (ctx, f, s) => gateTop(ctx, f, s, false),
   underflow_gate: (ctx, f, s) => gateTop(ctx, f, s, true),
-  crossing(ctx, f, s) {
-    // The junction from above: its little bridge (buildings.ts, `junctionIso`). The north–south
-    // line rides the humped deck between two parapet girders; the east–west line runs under it on
-    // the ground, where the items view lays its ribbon — the sprite leaves both sides see-through.
+  crossing(ctx, f0, s) {
+    // The junction from above: its little bridge (buildings.ts, `junctionIso`). The line along its
+    // rotation's axis rides the humped deck between two parapet girders (D158); the other runs under
+    // it on the ground, where the items view lays its ribbon — the sprite leaves both sides
+    // see-through. Turned east–west it is the same drawing reflected across the tile's diagonal
+    // (`JunctionTopFrame`), as in iso: its shadow still falls south-east, its lit ramp the far one.
+    const f = (f0.rot & 1) === 0 ? new Frame(f0.S, f0.M, 1, 1, 0) : new JunctionTopFrame(f0.S, f0.M, 1, 1, 0);
     const { x0, x1, r0, r1, parapet, deck } = JUNCTION;
     const N = 48;
     const ys = Array.from({ length: N + 1 }, (_, i) => i / N);

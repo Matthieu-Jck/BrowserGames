@@ -9,7 +9,10 @@
 // what stood on it is dormant now; the hourly rent is silent (the HUD's ocelles show it). An
 // expertise's rank earned, or one in place after its réorientation, gets a notice (D93). The
 // Gleaners (D103): their first night on a base and each morning's report go to their card
-// (ui/gleaners-card.ts); without one (a test), the morning report is a toast.
+// (ui/gleaners-card.ts); without one (a test), the morning report is a toast. CrierBelt's delivery
+// orders (D153): a new one posted is a notice (the first, right after the tutorial, has its own card:
+// ui/order-notice.ts), one filled says what it paid and its reward, one missed what its items fetched;
+// a climb in the claims' standings names the claim passed.
 import { RESEARCH, buildingsUnlockedBy, nodeName, type ResearchId } from '@/content/research';
 import type { ResearchDef } from '@/content/types';
 import { bus } from '@/core/bus';
@@ -23,6 +26,7 @@ import { itemRef } from '@/ui/mention';
 import { questToast } from '@/ui/quest-log';
 import { expertiseDef } from '@/content/expertises';
 import { romanRank } from '@/ui/screens/expertise';
+import { claimName, ordinal, rewardText } from '@/ui/orders-view';
 import type { Toasts } from '@/ui/toasts';
 
 export interface EventSink {
@@ -100,6 +104,30 @@ const HANDLERS: Handlers = {
     if (ev.what === 'earned') sink.toasts.show('good', t('toast.expertise.earned', { name, rank: romanRank(ev.rank) }), 7000);
     else sink.toasts.show('good', t('toast.expertise.ready', { name }), 6000);
     bus.emit('sfx', { cue: 'research' });
+  },
+  // CrierBelt's delivery orders (D153): posted, filled, missed; an offer withdrawn goes without a word.
+  delivery: (ev, sink) => {
+    const item = itemRef(ev.item);
+    if (ev.what === 'posted') {
+      if (ev.first) return; // the first order's card says it (ui/order-notice.ts)
+      sink.toasts.show('info', t('delivery.toast.posted', { n: ev.n, item, pay: oc(ev.n * ev.cents, false, 0) }), 7000);
+      bus.emit('sfx', { cue: 'notice' });
+    } else if (ev.what === 'filled') {
+      const more = ev.reward ? ` ${t('delivery.toast.reward', { what: rewardText(ev.reward) })}` : '';
+      sink.toasts.show('good', `${t('delivery.toast.filled', { n: ev.n, item, pay: oc(ev.cents, false, 0) })}${more}`, 9000);
+      bus.emit('sfx', { cue: 'quest' });
+    } else if (ev.what === 'missed') {
+      sink.toasts.show('warn', t('delivery.toast.missed', { got: ev.got, n: ev.n, item, pay: oc(ev.cents, false, 0) }), 9000);
+    }
+  },
+  // The claims' standings (D153): a climb names the claim passed (or how many).
+  rank: (ev, sink) => {
+    const rank = ordinal(ev.rank);
+    const text = ev.passed.length === 1
+      ? t('rank.toast', { name: claimName(sink.colonies(), ev.passed[0]!, ''), rank, of: ev.of })
+      : t('rank.toast.many', { n: Math.max(ev.passed.length, ev.prev - ev.rank), rank, of: ev.of });
+    sink.toasts.show('good', text, 7000);
+    bus.emit('sfx', { cue: 'notice' });
   },
   // The Gleaners (D103): what they took off the ribbons by night, shown on their card.
   gleaners: (ev, sink) => {

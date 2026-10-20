@@ -71,7 +71,19 @@ export const SAND_POCKET = '#f5e2c3';
 const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
 
 /** A terrace top's colour: its hardness, paler and cooler a step higher (clearly enough that the plan view, which sees only tops, tells the levels apart: owner, 2026-10-14). */
-export const topColor = (cls: number, level: number): string => mix(ROCK[cls]!.top, HAZE, Math.min(0.32, Math.max(0, (level - 2) * 0.045)));
+export const topColor = (cls: number, level: number): string => {
+  const c = mix(ROCK[cls]!.top, HAZE, Math.min(0.32, Math.max(0, (level - 2) * 0.045)));
+  return level > HIGH ? mix(c, HIGH_TOP, high(level)) : c;
+};
+
+/**
+ * Over the mountains, the old lilac (D157; owner, 2026-10-20: « top color could be somewhat purple,
+ * like the old style »: the crests' lilac rock of before 2026-10-16): a top above `HIGH` relief levels
+ * (the spring's summit, 12) turns cooler and violet with height, the walls up there towards a violet
+ * umber; the lower terraces keep their ochres.
+ */
+const HIGH = 12, HIGH_TOP = '#c3aee0', HIGH_WALL = '#7d5f9e';
+const high = (z: number): number => clamp01((z - HIGH) / 12) * 0.7;
 
 /**
  * A wall's colour: its hardness, by how it faces the light (`shade`: 0 lit … 1 shaded), deeper
@@ -79,7 +91,8 @@ export const topColor = (cls: number, level: number): string => mix(ROCK[cls]!.t
  */
 export function wallColor(cls: number, shade: number, z = 0, tone = 0): string {
   const r = ROCK[cls]!, h = clamp01(z / (MOUNTAIN_TERRACE * STEP_LEVELS));
-  const c = mix(mix(r.lit, DEEP_LIT, h * 0.24), mix(r.dark, DEEP_DARK, h * 0.22), shade);
+  const c0 = mix(mix(r.lit, DEEP_LIT, h * 0.24), mix(r.dark, DEEP_DARK, h * 0.22), shade);
+  const c = z > HIGH ? mix(c0, HIGH_WALL, high(z) * 0.6) : c0;
   return tone > 0 ? mix(c, r.rim, tone * 0.22 * (1 - shade * 0.45)) : tone < 0 ? mix(c, r.line, -tone * 0.2) : c;
 }
 

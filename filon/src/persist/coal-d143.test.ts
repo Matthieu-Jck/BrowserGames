@@ -16,7 +16,7 @@ import { remapSave } from '@/sim/save-remap';
 import { foundScenario } from '@/sim/scenarios';
 import { deserialize, serialize, SAVE_VERSION, type SaveData } from '@/sim/serialize';
 import type { Sim } from '@/sim/state';
-import { stockedSilo, testSim } from '@/sim/testkit';
+import { stockedSilo, testSim, uprightJunctions } from '@/sim/testkit';
 import { coalRetired, migrate, MIGRATIONS } from './migrate';
 
 /** A coal generator to forge into a save: where it stood, the coal in its box (mu), and what it was wired to. */
@@ -118,7 +118,8 @@ describe('save 21 → 22 (D143): no coal generator', () => {
   });
 
   it('the tutorial debug base, saved with two coal generators standing wired, loads with nothing lost but those and runs on', () => {
-    const { sim } = foundScenario('tutorial', { playerSeed: 1, near: WORLD_EPOCH0 + 1000, name: 'Essai' });
+    // Its junctions upright: the chain's step 23 → 24 sets them so (D158), and the hash checks compare.
+    const sim = uprightJunctions(foundScenario('tutorial', { playerSeed: 1, near: WORLD_EPOCH0 + 1000, name: 'Essai' }).sim);
     const { data, owed, ids } = forge(sim, [
       { x: 300, y: 300, fuel: 5_000, wiredTo: sim.hearthId },
       { x: 302, y: 300, fuel: 0, wiredTo: sim.hearthId },

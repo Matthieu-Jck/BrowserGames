@@ -10,7 +10,7 @@ import { remapSave } from '@/sim/save-remap';
 import { foundScenario } from '@/sim/scenarios';
 import { deserialize, serialize, SAVE_VERSION, type SaveData } from '@/sim/serialize';
 import type { Sim } from '@/sim/state';
-import { testSim } from '@/sim/testkit';
+import { testSim, uprightJunctions } from '@/sim/testkit';
 import { parcelAt } from '@/sim/world/land';
 import { fogLifted, migrate, MIGRATIONS } from './migrate';
 
@@ -33,7 +33,7 @@ function open(data: Record<string, unknown>, sim: Sim): Sim {
 
 describe('save 22 → 23 (D148): no fog of war', () => {
   it('the step drops the explored discs and nothing else', () => {
-    expect(SAVE_VERSION).toBe(23);
+    expect(SAVE_VERSION).toBeGreaterThanOrEqual(23); // 24: junctions upright (D158)
     expect(MIGRATIONS[22]).toBe(fogLifted);
     const d = { v: 22, stock: [1, 2], done: ['kiln'], hearthLevel: 3, explored: [[512, 512, 68], [600, 480, 32], [700, 700, 40]] };
     expect(fogLifted(d)).toEqual({ v: 22, stock: [1, 2], done: ['kiln'], hearthLevel: 3 });
@@ -60,7 +60,8 @@ describe('save 22 → 23 (D148): no fog of war', () => {
   });
 
   it('the late debug base on map 4, saved with its discs, loads with nothing else changed and runs on', () => {
-    const { sim } = foundScenario('late', { playerSeed: 1, near: WORLD_EPOCH0 + 1000, name: 'Essai', mapV: 4 });
+    // Its junctions upright: the chain's later step sets them so (24, D158), and the hash checks compare.
+    const sim = uprightJunctions(foundScenario('late', { playerSeed: 1, near: WORLD_EPOCH0 + 1000, name: 'Essai', mapV: 4 }).sim);
     const discs: Array<[number, number, number]> = [[CENTER, CENTER, 92]];
     for (let k = 0; k < 40; k++) discs.push([CENTER - 200 + k * 10, CENTER + ((k * 37) % 120) - 60, 12 + (k % 5) * 8]);
     const back = open(forge(sim, discs), sim);

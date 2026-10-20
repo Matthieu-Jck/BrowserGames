@@ -14,6 +14,12 @@
 // zones). A wait has a cap: past it the step goes on without what it waited for (a building not
 // placed, a quest not met) and the run reports it as a problem.
 //
+// D153: the `orders` player also takes CrierBelt's delivery orders past the tutorial — those it can
+// feed through its post: what a line already brings there (glass, iron ore), and quartz once a router
+// on the quartz line leads some to the post (laid the first time a quartz order comes, as the first
+// order's notice says) — and the run records each order and how it closed, and the claim's value and
+// rank among the claims at each hour (docs/pacing.md, « What delivery orders add »).
+//
 // Deterministic (the same land and founding minute give the same run), integers only, no clock:
 // engine code, like the scenarios. pacing.test.ts runs it on lands 1–3 and keeps the main
 // milestones within bounds; `PACING_OUT` writes the raw measurements (docs/pacing.md).
@@ -21,11 +27,11 @@ import { BAL } from '@/content/balance';
 import { BUILDINGS } from '@/content/buildings';
 import { EXPERTISE_IDS } from '@/content/expertises';
 import { QUESTS, type QuestDef, type QuestId } from '@/content/quests';
-import { BUILDING_KIND, buildingIdx, itemIdx } from '@/content/registry';
+import { BUILDING_KIND, ITEM_IDS, buildingIdx, itemIdx } from '@/content/registry';
 import { CATEGORIES, CATEGORY_IDS, planDef, RESEARCH, researchNode } from '@/content/research';
 import { CIRQUE, WORLD_SEED } from '@/content/world';
 import { CENTER, DAY_EPOCHS, EPOCH, SOLAR, WORLD_EPOCH0 } from '../constants';
-import { branch, checkpoint, join, powerLine, rollback, spotsNear, type Feed } from '../dev';
+import { branch, checkpoint, join, powerLine, rollback, sideGoals, spotsNear, type Feed } from '../dev';
 import { worldPorts } from '../entities';
 import { DX, DY, isFloor } from '../types';
 import { inWorld, tileIndex } from '../world/grid';
@@ -42,6 +48,8 @@ import { archiveOpen, rankOf, tierTwoOpen } from '../systems/expertise';
 import { currentQuest, objectiveProgress, planOffered, questProgress } from '../systems/quests';
 import { tierCoreOpen } from '../systems/research';
 import { handsOut, tradePosts } from '../systems/trade';
+import { orderPay, tutorialOver } from '../systems/orders';
+import { claimValue } from '../systems/value';
 import { parcelAt } from '../world/land';
 import { MapGen } from '../world/mapgen';
 
@@ -90,6 +98,9 @@ export interface HourMark {
   purse: number;
   perHour: number;
   byKind: Record<string, number>;
+  /** The claim's value (◉, D50) and its rank among the claims at the last standings (D153; 0: none yet). */
+  value: number;
+  rank: number;
   /** Items paid so far into the buildings standing, the plans, the research launched and the Core's levels. */
   spent: { buildings: Record<string, number>; plans: Record<string, number>; research: Record<string, number>; core: Record<string, number> };
 }
@@ -123,6 +134,12 @@ export interface PacingRun {
   powerAdds: number[];
   /** The expertises chosen, in order. */
   expertises: string[];
+  /**
+   * CrierBelt's delivery orders the player accepted (D153; the `orders` player only): when (game
+   * minute), what, how many, its window and pay (◉), its special reward, and how it closed (filled or
+   * missed, when, what it paid in ◉; null: still open at the run's end).
+   */
+  orders: Array<{ id: number; at: number; item: string; n: number; window: number; pay: number; reward: string | null; what: 'filled' | 'missed' | null; closed: number | null; paid: number }>;
 }
 
 /** The items followed at each hour's end. */
@@ -199,6 +216,10 @@ export class PacingBot extends Builder {
   glassCoal = GLASS_HINTS_DRILL;
   /** Called after each step of the tutorial (a debugging look; the test leaves it out). */
   trace?: (b: PacingBot, step: string) => void;
+  /** Does the player take CrierBelt's delivery orders past the tutorial (D153)? */
+  takesOrders = false;
+  /** The quartz branch to the post was tried (laid or not: never searched again). */
+  private quartzTried = false;
   // Power: the night (or day) under way, its ticks under 1000 ‰.
   private night: Night | null = null;
   private nightBelow = 0;
@@ -219,7 +240,7 @@ export class PacingBot extends Builder {
     this.end = minutes * EPOCH;
     this.out = {
       land, founded: sim.foundingEpoch, minutes, milestones: {}, purse: [], nights: [], days: [], waits: [], hours: [],
-      bought: {}, boughtCost: 0, skipped: this.report.skipped, problems: [], research: {}, labIdle: {}, powerAdds: [], expertises: [],
+      bought: {}, boughtCost: 0, skipped: this.report.skipped, problems: [], research: {}, labIdle: {}, powerAdds: [], expertises: [], orders: [],
     };
     // No free grant, ever: a builder that would grant gets nothing, and the run says so.
     sim.grant = (item: string, n: number): void => { this.problem(`grant asked: ${n} ${item}`); };
@@ -442,6 +463,7 @@ export class PacingBot extends Builder {
       this.keepPower();
       this.keepResearch();
       this.chooseExpertises();
+      this.keepOrders();
     } finally { this.bg = false; }
   }
 
@@ -483,7 +505,8 @@ export class PacingBot extends Builder {
     const prev = this.out.hours.length ? this.out.hours[this.out.hours.length - 1]!.purse : BAL.startCredits;
     this.out.hours.push({
       h, stock: pick((it) => Math.floor(sim.stock[it]! / 1000)), made: pick((it) => per(this.made, it)), intoCore: pick((it) => per(this.into, it)), sold: pick((it) => per(this.sold, it)),
-      purse: Math.floor(sim.credits / 100), perHour: Math.floor(sim.credits / 100) - prev, byKind, spent: spentSoFar(sim),
+      purse: Math.floor(sim.credits / 100), perHour: Math.floor(sim.credits / 100) - prev, byKind,
+      value: Math.floor(claimValue(sim).total / 100), rank: sim.ranking.rank, spent: spentSoFar(sim),
     });
   }
 
@@ -543,6 +566,63 @@ export class PacingBot extends Builder {
     }
     const k = why || 'nothing left to launch';
     this.out.labIdle[k] = (this.out.labIdle[k] ?? 0) + 1;
+  }
+
+  // ── background: CrierBelt's orders (D153) ──
+
+  /**
+   * Past the tutorial, the `orders` player: what came of the orders it took, then each offer it can
+   * feed through its post accepted at once (a missed order costs nothing but its premium: it takes them).
+   */
+  private keepOrders(): void {
+    const sim = this.sim;
+    if (!this.takesOrders || !tutorialOver(sim)) return;
+    for (const r of this.out.orders) {
+      if (r.what) continue;
+      const p = sim.deliveries.past.find((x) => x.id === r.id);
+      if (p) { r.what = p.what; r.closed = this.minute; r.paid = Math.round(p.paid / 100); }
+    }
+    for (const o of sim.deliveries.open) {
+      if (o.due >= 0 || !this.feedsPost(ITEM_IDS[o.item]!)) continue;
+      if (sim.acceptDelivery(o.id)) this.out.orders.push({ id: o.id, at: this.minute, item: ITEM_IDS[o.item]!, n: o.n, window: o.windowMin, pay: Math.round(orderPay(o) / 100), reward: o.reward?.k ?? null, what: null, closed: null, paid: 0 });
+    }
+  }
+
+  /**
+   * Does a line bring `item` into the post's entrance? Glass and iron ore by the tutorial's lines;
+   * quartz by a router on the quartz line, its branch led into the side of a line already running
+   * into the post (or the entrance itself), laid here the first time — when a router is in hand.
+   */
+  private feedsPost(item: string): boolean {
+    if (item === 'glass') return !!this.lines['post.glass'];
+    if (item === 'iron_ore') return !!this.lines['post.in'];
+    if (item !== 'quartz') return false;
+    if (this.lines['post.quartz']) return true;
+    const post = this.ids.post, quartz = this.laid('quartz');
+    if (this.quartzTried || !post || !quartz.length || this.short(needOf(costOf('router'))).length) return false;
+    this.quartzTried = true;
+    const sim = this.sim;
+    // The router on a tile of the line's own level, its neighbours along the line too: one set where
+    // the line steps down a level (a traction ribbon off the Crown) would hand nothing on and cut it.
+    const flat = quartz.map((l) => l.filter(([x, y, d], k) => {
+      const lv = sim.grid.level(x, y), back = l[k - 1], next = l[k + 1];
+      return (!back || sim.grid.level(back[0], back[1]) === lv) && (!next || sim.grid.level(next[0], next[1]) === lv) && sim.grid.level(x + DX[d]!, y + DY[d]!) === lv;
+    }));
+    // Into the side of a line already running into the post (its iron ore's, its glass's), else into its entrance.
+    const goals = [...this.laid('post.in', 'post.glass').map((l) => sideGoals(sim, l)), undefined];
+    for (const lines of [quartz, flat]) {
+      for (const onto of goals) {
+        const cp = checkpoint(sim);
+        const r = branch(sim, lines, post, -1, onto);
+        if (!r) continue;
+        sim.ensureCompiled();
+        // A router that hands on both ways (the line on, the branch off): kept.
+        if ((sim.graph.nodeByEnt.get(r.router)?.outE.length ?? 0) >= 2) { this.lines['post.quartz'] = r.path; return true; }
+        rollback(sim, cp);
+      }
+    }
+    this.skip('line:post.quartz');
+    return false;
   }
 
   // ── background: expertises ──
@@ -962,6 +1042,8 @@ export interface PacingOptions {
   near?: number;
   /** The map version (default today's). */
   mapV?: number;
+  /** Whether the player takes CrierBelt's delivery orders past the tutorial (D153; default no: D146's player). */
+  orders?: boolean;
 }
 
 /** A new base on `land` played for `minutes` game minutes (default three hours): what it measured. */
@@ -972,6 +1054,7 @@ export function playPacing(o: PacingOptions): PacingRun {
   b.trace = o.trace;
   b.askHints = o.askHints ?? true;
   b.glassCoal = o.glassCoal ?? GLASS_HINTS_DRILL;
+  b.takesOrders = o.orders ?? false;
   try {
     tutorial(b, 'Essai');
     tierOne(b);

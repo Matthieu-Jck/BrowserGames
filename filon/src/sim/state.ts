@@ -16,8 +16,9 @@
 //      reconversion runs its time (systems/research.ts; research takes no data since D122)
 //   6. landscape: dig / fill jobs advance and finish (the drifters' freight between skydocks,
 //      which came next, went with the skydocks: D108)
-//   7. tick++; at every epoch boundary (each game minute) the trade posts trade and the Crier
-//      settles (systems/trade.ts), the leases due take their hour's rent or lapse
+//   7. tick++; at every epoch boundary (each game minute) the trade posts trade — CrierBelt's
+//      delivery orders first (systems/orders.ts, D153) — and the Crier settles (systems/trade.ts),
+//      the claim's value and standings are drawn up when due (value.ts, ranking.ts), the leases due take their hour's rent or lapse
 //      (systems/land.ts), then research's tokens are delivered — the Core's compute and the servers'
 //      minute, the bank, the bought flows billed — and the projects they complete finish
 //      (systems/research.ts `tokenEpoch`, D118, D122),
@@ -57,6 +58,8 @@ import * as quests from './systems/quests';
 import * as value from './systems/value';
 import * as expertise from './systems/expertise';
 import * as gleaners from './systems/gleaners';
+import * as orders from './systems/orders';
+import * as ranking from './systems/ranking';
 import { newTradeState, type SpotSide, type TradeRefusal, type TradeState } from './trade';
 import type { Ent, Rot } from './types';
 import { Grid, inWorld, tileIndex, type TerrainSource } from './world/grid';
@@ -184,12 +187,16 @@ export class Sim {
   prices: PriceTable;
   /** Export streams, import orders, goods in flight, the ledger. Saved. */
   readonly trade: TradeState = newTradeState(N_ITEMS);
+  /** CrierBelt's delivery orders (D153, systems/orders.ts): those standing, the last closed. Saved, hashed (the history not). */
+  deliveries: orders.DeliveryState = orders.newDeliveryState();
 
   // ── the tutorial (systems/quests.ts) ──────────────────────────────────────
   /** Quests done, the current one's baselines and rate windows, rewards in force. Saved. */
   quests: quests.QuestState = quests.newQuestState();
   /** The claim's value over time (systems/value.ts, D50). */
   value: value.ValueState = value.newValueState();
+  /** The claim's last standings among the other claims (D153, systems/ranking.ts): a statistic, saved, not hashed. */
+  ranking: ranking.RankingState = ranking.newRankingState();
   /** The expertises (D93): ranks earned, the slots, réorientations, the Core's grid held. Saved, hashed. */
   expertise: expertise.ExpertiseState = expertise.newExpertiseState();
   /**
@@ -522,13 +529,17 @@ export class Sim {
   cargoOf(post: number): readonly number[] { return trade.cargoOf(this, post); }
   /**
    * The epoch boundary (online: from step; offline: from the catch-up — the same call): trade
-   * posts trade and the Crier settles, then the claim's value is sampled when due.
+   * posts trade — CrierBelt's delivery orders first (D153) — and the Crier settles, then the claim's
+   * value is sampled and its standings drawn up when due (D50, D153).
    */
   tradeEpoch(): boolean {
     const changed = trade.tradeEpoch(this);
     value.valueEpoch(this);
+    ranking.rankEpoch(this);
     return changed;
   }
+  /** Accept one of CrierBelt's delivery orders (D153): its window starts now. Logged; false when refused. */
+  acceptDelivery(id: number): boolean { return orders.acceptDelivery(this, id); }
   /** The claim's value now, in centi-ocelles (systems/value.ts). */
   claimValue(): ReturnType<typeof value.claimValue> { return value.claimValue(this); }
 
@@ -670,6 +681,7 @@ export class Sim {
     h.int(t.nextOrderId).int(t.earned).int(t.spent).ints(t.sold).ints(t.bought).int(t.starterTaken ? 1 : 0);
     // Auto-sell's thresholds (D127; nothing when none, so older states hash as before).
     for (const [it, at] of [...t.autoSell].sort((a, b) => a[0] - b[0])) h.int(it).int(at);
+    orders.hashDeliveries(this.deliveries, h); // CrierBelt's delivery orders (D153)
     h.str(JSON.stringify(this.market.save()));
     quests.hashQuests(this.quests, h);
     expertise.hashExpertise(this.expertise, h);

@@ -238,6 +238,7 @@ body[data-noui] #ui { opacity: 0; visibility: hidden; transition: opacity 200ms 
 .glyph .g-out { fill: none; stroke: var(--c-coral-d); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .glyph .g-turn { fill: none; stroke: var(--c-ink-soft); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .glyph .g-ribbon { fill: none; stroke: var(--c-ink-soft); stroke-width: 1.4; stroke-linecap: round; }
+.glyph .g-deck-end { fill: none; stroke: var(--c-turq-d); stroke-width: 2.4; stroke-linecap: round; }
 
 /* ── the land mode (D60, the Terrain view: its button is the view selector's) and the land panel (ui/land-panel.ts) ── */
 /* Where the inspector sits (the land mode drops the selection, so the two never show together). */
@@ -312,8 +313,23 @@ body[data-noui] #ui { opacity: 0; visibility: hidden; transition: opacity 200ms 
 .tip-tee .tip-tee-mark { display: block; width: 18px; height: 18px; }
 /* A ribbon facing a step (D77): the traction ribbon that takes it, faded while it is still to learn (its key then the tree's). */
 .tip-lift canvas { display: block; }
+.tip-deck canvas { display: block; }
+.tip-deck .glyph { font-size: 18px; }
 .tip-lift[data-locked] canvas { opacity: 0.5; filter: grayscale(1); }
 /* Buried off the claim's land (D109): the camouflaged ribbon, how many, whose land. */
 .tip-buried canvas { display: block; }
 .tip-buried .glyph { margin-left: 4px; }
 .tip-buried span { white-space: nowrap; }
+
+/* CrierBelt's orders (D153): a chip in the research row — per order accepted its item, a bar of what
+   was delivered and, under it, its window draining (amber in its last quarter); the offers' badge. */
+.hud-ord-bars { display: inline-flex; align-items: center; gap: 9px; }
+.hud-ord-bars:empty { display: none; }
+.hud-ord { display: inline-flex; align-items: center; gap: 3px; }
+.hud-ord .imention-icon { margin: 0; vertical-align: middle; }
+.hud-ord-bars-col { display: inline-flex; flex-direction: column; justify-content: center; gap: 2px; }
+.hud-ord-bars-col .hud-rs-bar { width: 38px; height: 5px; }
+.hud-ord-got > i { background: var(--c-lilac-d); }
+.hud-ord-time > i { background: var(--c-ink-soft); }
+.hud-ord-time[data-low] > i { background: var(--c-warn); }
+.hud-orders > .kmark { width: 18px; height: 18px; }

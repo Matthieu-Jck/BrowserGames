@@ -10,6 +10,7 @@
 // kW (the words — the wind's factor here — in its tooltip). A drag that buries pieces off the
 // claim's land (D109): the camouflaged ribbon's icon, how many, and whose land; a ribbon refused on a
 // neighbouring base's land, the camouflaged ribbon that would take it (T, the tree, while it is still to learn).
+// Refused at a junction's deck end (D158): the junction, its deck coming down, the ribbon it takes there.
 // A blueprint in hand or an upgrade box (D154): the whole's cost against the Core (coral where it
 // lacks, and then nothing is laid), and its pieces as three counts — to lay, already there, refused.
 // It stays inside the window (D96: `tipPlace` flips it to the pointer's other side near an edge)
@@ -108,6 +109,11 @@ export class Tip {
     }
     if (pre.mark) kids.push(el('div.tip-title.lettering', {}, tr(pre.mark.clear ? 'toast.cleared' : 'toast.marked', { n: pre.mark.n })));
     if (pre.reason && pre.reason !== 'ok') kids.push(el('div.tip-why', {}, t(`reason.${pre.reason}` as MsgKey)));
+    // A junction's deck end (D158): shown — the junction, its deck coming down onto a ribbon at each end, the ribbon.
+    if (pre.reason === 'junction_deck') {
+      const say = t('reason.junction_deck');
+      kids.push(el('div.tip-key.tip-deck', { title: say, 'aria-label': say }, [buildingIcon(this.atlas, 'crossing', 18), glyph('deckEnds'), buildingIcon(this.atlas, 'ribbon', 18)]));
+    }
     // Buried off the claim's land (D109): the piece, how many, whose land — at the price above, no surcharge.
     if (pre.buried) {
       kids.push(el('div.tip-key.tip-buried', {}, [

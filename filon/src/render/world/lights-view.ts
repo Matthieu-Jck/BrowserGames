@@ -315,6 +315,14 @@ export class LightsView {
   /** Is this neighbouring base's light laid? */
   hasForeign(key: number): boolean { return this.foreign.has(key); }
 
+  /** Work out ahead where a building of kind `def` turned `rot` glows (D162: in idle time, before a neighbouring base is laid; fx.ts caches it). */
+  warmForeign(def: number, rot: Rot): void {
+    const id = BUILDING_IDS[def]! as BuildingId;
+    const look = artLevelOf(id, this.sim?.hearthLevel ?? 1);
+    isoArt(id, this.atlas.frames.has(bKey(id, rot)) ? rot : 0, look);
+    planArt(id, this.atlas.frames.has(btKey(id, rot)) ? rot : 0, look);
+  }
+
   /**
    * A neighbouring base's lights (D110): every building's, always on (they always work), and its
    * lanterns — points at tile (x, y), `z` levels up (its tents' doors, its banner poles' tips), warm.
@@ -435,6 +443,14 @@ export class LightsView {
     this.watched.delete(r);
     for (const b of r.beacons) this.beacons.delete(b);
     if (r.pit) this.pits.delete(r.pit);
+  }
+
+  /** One neighbouring base's lights dropped (D162: the neighbours view let it go, out of the view's ring a while). */
+  dropForeign(key: number): void {
+    const rs = this.foreign.get(key);
+    if (!rs) return;
+    for (const r of rs) this.drop(r);
+    this.foreign.delete(key);
   }
 
   /** Every record dropped (another colony; a full rebuild keeps the neighbouring bases', `foreign` false). */

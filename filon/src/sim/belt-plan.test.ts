@@ -1,14 +1,17 @@
-// belt-plan.test.ts — a ribbon drag planned as a whole (D73): junctions never chain; a drag across
-// two lines side by side leaps them with a bridge pair, and so it does water or a building in its
-// way; a step takes a traction ribbon, never two in a row; what no bridge reaches stays refused.
+// belt-plan.test.ts — a ribbon drag planned as a whole (D73): junctions chain along their tunnels,
+// never along their decks (D158) — a drag across lines side by side lays a row of them and runs under
+// it, a junction's deck turning along the drag where the crossed line's would come down on a block;
+// a bridge pair leaps what no junction may take, water or a building in its way; a step takes a
+// traction ribbon, never two in a row; what no bridge reaches stays refused.
 import { describe, it, expect } from 'vitest';
 import { BUILDING_FLAT, BUILDING_IDS, buildingIdx } from '@/content/registry';
+import { isSpanTile } from './flow/chain';
 import { deserialize, serialize } from './serialize';
 import { WORLD_EPOCH0 } from './constants';
 import { Sim } from './state';
 import { learnPlans, line, testSim, testSource } from './testkit';
 import { T, type Rot } from './types';
-import { FlatSource, tileIndex } from './world/grid';
+import { FlatSource } from './world/grid';
 
 const defAt = (sim: Sim, x: number, y: number): string | undefined => {
   const e = sim.entityAt(x, y);
@@ -39,23 +42,38 @@ function twoLines(): Sim {
 const EAST = line(520, 528, 1, 11); // x 520–530 along y 528
 
 describe('a ribbon drag planned as a whole (D73)', () => {
-  it('junctions never chain: a ribbon runs between two of them (a diagonal is fine)', () => {
+  it('junctions chain along their tunnels, never along their decks (D158; D73 had them never chain at all); a diagonal is fine', () => {
     const sim = testSim();
     sim.grant('iron_plate', 20);
-    expect(sim.place('crossing', 525, 528, 0).ok).toBe(true);
-    for (const [x, y] of [[526, 528], [524, 528], [525, 527], [525, 529]] as const) expect(sim.canPlace('crossing', x, y, 0).reason).toBe('junction_chain');
+    expect(sim.place('crossing', 525, 528, 0).ok).toBe(true); // upright: its deck north–south
+    // On its tunnel's sides: a row, turned as it is — turned across, the new one's deck would come down on it.
+    for (const [x, y] of [[526, 528], [524, 528]] as const) {
+      expect(sim.canPlace('crossing', x, y, 0).ok).toBe(true);
+      expect(sim.canPlace('crossing', x, y, 2).ok).toBe(true);
+      expect(sim.canPlace('crossing', x, y, 1).reason).toBe('junction_deck');
+    }
+    // At its deck's ends, turned either way: the deck would come down on a junction.
+    for (const [x, y] of [[525, 527], [525, 529]] as const) for (const r of [0, 1] as Rot[]) expect(sim.canPlace('crossing', x, y, r).reason).toBe('junction_deck');
     expect(sim.canPlace('crossing', 526, 529, 0).ok).toBe(true);
-    expect(sim.canPlace('crossing', 527, 528, 0).ok).toBe(true);
   });
 
-  it('a drag across two lines side by side leaps them with a bridge pair; the lines run on underneath', () => {
+  it('a drag across two lines side by side lays a junction on each, its deck along the line it crosses: the drag runs under the row, a cell over each (D158, D121)', () => {
     const sim = twoLines();
-    expect(plan(sim, 'ribbon', EAST)).toEqual(['ribbon', 'ribbon', 'ribbon', 'ribbon', 'skybridge', 'leapt', 'leapt', 'skybridge', 'ribbon', 'ribbon', 'ribbon']);
-    expect(sim.placeBelts('ribbon', EAST)).toBe(9);
-    expect([524, 525, 526, 527].map((x) => defAt(sim, x, 528))).toEqual(['skybridge', 'ribbon', 'ribbon', 'skybridge']);
-    expect([sim.entityAt(525, 528)!.rot, sim.entityAt(526, 528)!.rot]).toEqual([2, 2]); // the crossed lines, untouched
+    expect(plan(sim, 'ribbon', EAST)).toEqual(['ribbon', 'ribbon', 'ribbon', 'ribbon', 'ribbon', 'crossing', 'crossing', 'ribbon', 'ribbon', 'ribbon', 'ribbon']);
+    expect(sim.placeBelts('ribbon', EAST)).toBe(11);
+    expect([525, 526].map((x) => sim.entityAt(x, 528)!.rot)).toEqual([2, 2]); // turned as the lines they carry over
     sim.ensureCompiled();
-    expect(sim.graph!.jumps.get(tileIndex(524, 528))).toBe(tileIndex(527, 528));
+    const c = sim.chainAt(524, 528)!;
+    expect(c).toBe(sim.chainAt(527, 528));
+    expect(Array.from(c.tiles).filter(isSpanTile)).toHaveLength(2);
+    // Southwards across two lines running east, alike: the decks east–west.
+    const two = testSim();
+    two.grant('iron_plate', 30);
+    for (const y of [525, 526]) expect(two.placeBelts('ribbon', line(520, y, 1, 11))).toBe(11);
+    const south = line(525, 520, 2, 11);
+    expect(plan(two, 'ribbon', south).slice(4, 8)).toEqual(['ribbon', 'crossing', 'crossing', 'ribbon']);
+    expect(two.placeBelts('ribbon', south)).toBe(11);
+    expect([525, 526].map((y) => two.entityAt(525, y)!.rot)).toEqual([1, 1]);
   });
 
   it('one line crossed still takes a junction', () => {
@@ -64,13 +82,31 @@ describe('a ribbon drag planned as a whole (D73)', () => {
     expect(plan(sim, 'ribbon', EAST)[5]).toBe('crossing');
   });
 
-  it('before bridges are learnt, the chain stays refused and the drag is laid in part', () => {
-    const sim = twoLines();
-    sim.done.delete('bridge');
-    sim.rebuildDerived();
-    expect(plan(sim, 'ribbon', EAST).slice(4, 8)).toEqual(['ribbon', 'junction_chain', 'junction_chain', 'ribbon']);
-    expect(sim.placeBelts('ribbon', EAST)).toBe(9);
-    expect([525, 526].map((x) => sim.entityAt(x, 528)!.rot)).toEqual([2, 2]);
+  it('a junction whose deck would come down on a block lays its deck along the drag; refused both ways, a bridge pair leaps it — before bridges, the drag is laid in part (D158)', () => {
+    /** A line south along x 525 with a router just north of where the drag crosses it; `fence`: one on the drag's next tile too. */
+    const blocked = (fence: boolean): Sim => {
+      const sim = testSim();
+      sim.grant('iron_plate', 40);
+      sim.done.add('xp_guard'); // the fence (D103): flat, a bridge may pass over it (D124)
+      sim.rebuildDerived();
+      expect(sim.placeBelts('ribbon', line(525, 524, 2, 9))).toBe(9);
+      expect(sim.place('router', 525, 527, 2).ok).toBe(true);
+      if (fence) expect(sim.place('fence', 526, 528, 0).ok).toBe(true);
+      return sim;
+    };
+    const sim = blocked(false);
+    const st = sim.planBelts('ribbon', EAST)[5]!;
+    expect([st.def, st.ok, st.rot]).toEqual(['crossing', true, 1]); // its deck along the drag: the line runs under it, into the router's lane
+    expect(sim.placeBelts('ribbon', EAST)).toBe(11);
+    // Its deck along the line would come down on the router; along the drag, on the fence.
+    const both = blocked(true);
+    expect(plan(both, 'ribbon', EAST).slice(3, 9)).toEqual(['ribbon', 'skybridge', 'leapt', 'leapt', 'skybridge', 'ribbon']);
+    const none = blocked(true);
+    none.done.delete('bridge');
+    none.rebuildDerived();
+    expect(plan(none, 'ribbon', EAST).slice(4, 8)).toEqual(['ribbon', 'junction_deck', 'occupied', 'ribbon']);
+    expect(none.placeBelts('ribbon', EAST)).toBe(9);
+    expect(none.entityAt(525, 528)!.rot).toBe(2); // the crossed line, untouched
   });
 
   it('water within the bridges’ reach is leapt; wider water stays refused, until Long Bridges', () => {

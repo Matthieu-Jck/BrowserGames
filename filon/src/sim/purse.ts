@@ -11,8 +11,8 @@ import type { Sim } from './state';
 export const PURSE_KINDS = [
   // recurring (`autoSell`: the Core's surplus sold at each minute's end, D127)
   'sales', 'orders', 'tokens', 'fee', 'rental', 'rent', 'autoSell',
-  // one-offs
-  'spotSell', 'spotBuy', 'land', 'reorient', 'reward', 'grant',
+  // one-offs (`delivery`: a CrierBelt delivery order paid, D153)
+  'spotSell', 'spotBuy', 'land', 'reorient', 'reward', 'grant', 'delivery',
 ] as const;
 export type PurseKind = (typeof PURSE_KINDS)[number];
 

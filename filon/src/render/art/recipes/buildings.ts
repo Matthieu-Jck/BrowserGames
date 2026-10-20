@@ -1202,9 +1202,10 @@ function gateIso(ctx: Ctx, f: IsoFrame, s: number, under: boolean): void {
 // ── the junction: a little bridge (owner, 2026-10-13) ─────────────────────────────────────────
 //
 // "A junction should look a little bit more like a little bridge, with items going under it in
-// one direction, and over it in another." Its art is drawn once (rot 0, `turnsArt` is false) and
-// serves every rotation, so its axes are the world's: the north–south line rides over its humped
-// deck, the east–west line runs under it, through a tunnel in its body. The items ride the deck
+// one direction, and over it in another." Its deck runs along its rotation's axis (D158): drawn once
+// for rot 0 — the north–south line riding over its humped deck, the east–west line running under
+// it, through a tunnel in its body — and served to rot 2 as it is, to rot 1 and 3 reflected across
+// the tile's diagonal (`JunctionFrame`): the east–west line over, the north–south one under. The items ride the deck
 // on exactly this profile (world/item-flow.ts), and the game draws them over this sprite while
 // they are on it; the ones under it are drawn beneath it (seen through the tunnel's mouth), on a
 // ribbon the items view lays on the ground through the tunnel (world/junctions-view.ts).
@@ -1230,6 +1231,18 @@ export function junctionHump(u: number): number {
 }
 
 const { x0: JX0, x1: JX1, r0: JR0, r1: JR1, parapet: J_PARAPET, deck: J_DECK } = JUNCTION;
+
+/**
+ * A junction turned east–west (D158, rot 1 or 3): its drawing reflected across the tile's diagonal —
+ * local x ↔ y —, not turned. A quarter turn would put its near wall on the far side, or run its
+ * deck's slices near to far; reflected, the wall with the tunnel's arch faces the viewer (south now,
+ * east before), the slices still run far to near, and the boxes keep their faces lit as any box's.
+ */
+class JunctionFrame extends IsoFrame {
+  override r(x: number, y: number): [number, number] { return [y, x]; }
+}
+/** The frame a junction turned `rot` is drawn on: its own for north–south, reflected for east–west. */
+const junctionFrame = (rot: Rot, head: number): IsoFrame => ((rot & 1) === 0 ? new IsoFrame(1, 1, 0, head) : new JunctionFrame(1, 1, 0, head));
 /** The deck's thickness over the tunnel (levels). */
 const J_THICK = 0.13;
 /** The tunnel: its mouth on the ground (local y, the ribbon's band) and its arch's height (levels). */
@@ -1251,8 +1264,9 @@ const J_MOUTH0 = 0.2, J_MOUTH1 = 0.8, J_ARCH = 0.74;
  * (they never reach it but zoomed out, where the items are drawn bigger) and over the items in
  * the tunnel. Nothing of the front overlaps the south-west post, which goes with the back.
  */
-function junctionIso(ctx: Ctx, f: IsoFrame, s: number, part: JunctionPart = 'all'): void {
+function junctionIso(ctx: Ctx, f0: IsoFrame, s: number, part: JunctionPart = 'all'): void {
   const back = part !== 'front', front = part !== 'back';
+  const f = junctionFrame(f0.rot, f0.head), ew = (f0.rot & 1) === 1; // east–west: its near wall the lit south face
   // Slices along the bridge, north to south; two in every nine are a slat (8 a tile, as on a
   // skybridge's deck), so the slats hide behind the crown exactly as the deck does.
   const N = 72;
@@ -1310,9 +1324,9 @@ function junctionIso(ctx: Ctx, f: IsoFrame, s: number, part: JunctionPart = 'all
     if (!front) post(0.17, 0.955, 2);
   }
   if (!front) return;
-  // The near side: the body's wall, hatched in shade, the arch cut out of it, rivets.
-  flat(ctx, wall, mix(C.steel, C.ink, 0.3));
-  hatch(ctx, wall, Math.PI / 3, 3.4, { alpha: 0.35, seed: s + 30, w: 1 });
+  // The near side: the body's wall, hatched in shade (facing east; lit, facing south), the arch cut out of it, rivets.
+  flat(ctx, wall, mix(C.steel, C.ink, ew ? 0.2 : 0.3));
+  if (!ew) hatch(ctx, wall, Math.PI / 3, 3.4, { alpha: 0.35, seed: s + 30, w: 1 });
   for (const y of [0.09, 0.91]) rivet(ctx, ...f.p(JX1, y, rim(y) * 0.45), 1.5, C.steelL);
   for (let i = 1; i < 6; i++) {
     const y = J_MOUTH0 + ((J_MOUTH1 - J_MOUTH0) * i) / 6;
@@ -1339,9 +1353,9 @@ function junctionIso(ctx: Ctx, f: IsoFrame, s: number, part: JunctionPart = 'all
 /** The junction's two parts in the world (D130): `all` is the atlas's whole sprite. */
 export type JunctionPart = 'all' | 'back' | 'front';
 
-/** A part of the junction (its art is one for every rotation), on its own frame — the atlas sprite's size and anchor; the buildings view bakes them on first use. */
-export function drawJunctionPart(part: JunctionPart, make: (w: number, h: number) => { ctx: Ctx; canvas: unknown }): { canvas: unknown; frame: IsoFrame } {
-  const f = new IsoFrame(1, 1, 0, J_DECK + J_PARAPET + 0.25);
+/** A part of the junction turned `rot` (D158: one drawing a deck axis), on its own frame — the atlas sprite's size and anchor; the buildings view bakes them on first use. */
+export function drawJunctionPart(part: JunctionPart, make: (w: number, h: number) => { ctx: Ctx; canvas: unknown }, rot: Rot = 0): { canvas: unknown; frame: IsoFrame } {
+  const f = new IsoFrame(1, 1, rot, J_DECK + J_PARAPET + 0.25);
   const { ctx, canvas } = make(f.W, f.H);
   junctionIso(ctx, f, seedOf('crossing'), part);
   return { canvas, frame: f };
@@ -4048,8 +4062,8 @@ const R: Partial<Record<BuildingId, Recipe>> = {
   overflow_gate: { head: 0.85, draw: (ctx, f, s) => gateIso(ctx, f, s, false) },
   underflow_gate: { head: 0.85, draw: (ctx, f, s) => gateIso(ctx, f, s, true) },
   crossing: {
-    // A little humped bridge: the north–south line over its deck, the east–west one through its
-    // tunnel (`junctionIso`, with the routing blocks above).
+    // A little humped bridge: the line along its rotation's axis over its deck, the other through its
+    // tunnel (`junctionIso`, with the routing blocks above; D158).
     head: J_DECK + J_PARAPET + 0.25,
     draw: (ctx, f, s) => junctionIso(ctx, f, s),
   },

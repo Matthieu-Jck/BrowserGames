@@ -16,7 +16,7 @@ import { remapSave } from '@/sim/save-remap';
 import { foundScenario } from '@/sim/scenarios';
 import { deserialize, serialize, SAVE_VERSION, type SaveData } from '@/sim/serialize';
 import type { Sim } from '@/sim/state';
-import { testSim } from '@/sim/testkit';
+import { testSim, uprightJunctions } from '@/sim/testkit';
 import { beaconsRetired, migrate } from './migrate';
 
 /** A retired building to forge into a save: its id, where it stood, and (an unloader) the item it held. */
@@ -117,7 +117,8 @@ describe('save 16 → 17 (D117): no survey beacon, no unloader', () => {
   });
 
   it.each([3, 4])('a debug base on map %i, saved with beacons past the Crown and unloaders, loads with nothing lost but those and runs on', (mapV) => {
-    const { sim } = foundScenario(mapV === 4 ? 'late' : 'grown', { playerSeed: 1, near: WORLD_EPOCH0 + 1000, name: 'Essai', mapV });
+    // Its junctions upright: the chain's step 23 → 24 sets them so (D158), and the hash checks compare.
+    const sim = uprightJunctions(foundScenario(mapV === 4 ? 'late' : 'grown', { playerSeed: 1, near: WORLD_EPOCH0 + 1000, name: 'Essai', mapV }).sim);
     const olds: Old[] = [
       { def: 'beacon', x: CENTER + 50, y: CENTER - 10 },
       { def: 'beacon', x: CENTER - 70, y: CENTER + 40 },

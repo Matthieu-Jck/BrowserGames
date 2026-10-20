@@ -61,6 +61,26 @@ describe('neighbouring bases (D110)', () => {
     expect([...back.keys()].sort((x, y) => x - y)).toEqual(all.map((h) => h.hub));
     for (const h of [...all].reverse().slice(0, 8)) expect(sig(b, b.neighbours.holdingOf(h.hub)!)).toBe(sig(a, h));
   });
+  it('a base laid out a try at a time (D162: the view, in idle time) is the base laid out at once; asked for meanwhile, it is finished', () => {
+    const a = map4(), b = map4();
+    const all = bases(a);
+    let steps = 0;
+    for (const h of all) {
+      const hb = b.neighbours.holdingOf(h.hub)!;
+      expect(b.neighbours.laidOut(hb)).toBe(false);
+      while (!b.neighbours.layoutStep(hb)) steps++;
+      expect(b.neighbours.laidOut(hb)).toBe(true);
+      expect(sig(b, hb)).toBe(sig(a, h));
+    }
+    expect(steps).toBeGreaterThan(all.length); // some bases took several tries
+    // Two bases asked for in turn, one half laid out: the other's tries start over, and asking for the
+    // first finishes it — the same bases again.
+    const c = map4(), [p, q] = bases(c).slice(0, 2);
+    c.neighbours.layoutStep(p!);
+    c.neighbours.layoutStep(q!);
+    expect(sig(c, p!)).toBe(sig(a, a.neighbours.holdingOf(p!.hub)!));
+    expect(sig(c, q!)).toBe(sig(a, a.neighbours.holdingOf(q!.hub)!));
+  });
 
   it('a base works: its chain into a lift pad, ribbons between, its own grid, a flag — wholly on its own open floor, a building on every parcel', () => {
     const sim = map4();

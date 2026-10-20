@@ -68,8 +68,12 @@
 // come near the view): their buildings with the same art as the claim's, tinted a little towards
 // their emblem's colour, their ribbons as laid (bends from the line's own turns), their flag waving
 // by their lift pad. Kept apart from the claim's records (`foreign`): a rebuild leaves them be,
-// another colony drops them (`foreignEpoch`). Their moving parts turn steadily, the turbines with
-// the open desert's wind: they always work.
+// another colony drops them (`foreignEpoch`), the neighbours view one base at a time (`dropForeign`).
+// Their moving parts turn steadily, the turbines with the open desert's wind: they always work. A
+// base is laid with the art of its look (D162, world/neighbour-art.ts): its sprites laid as the
+// claim's, then each texture swapped for the look's (a half-size copy far off, its scale doubled;
+// in detail the claim's own where its page is on the GPU, else a copy) — never a page of the
+// claim's atlas brought up for them. Their cast shadows keep the shadows' sheet (the claim's).
 import { Container, Matrix, Sprite, type Texture } from 'pixi.js';
 import { BUILDING_IDS, BUILDING_KIND, ITEM_IDS, buildingDef } from '@/content/registry';
 import type { BuildingId } from '@/content/buildings';
@@ -103,6 +107,7 @@ import { PIT_ISO_K, PIT_PLAN_K, PIT_Z, burstFrames, flameFrames, flameLevel, fli
 import { BURST, BURST_LIFE, FLAME_TINT_TICKS, PLAN_LIFT, burstTints, puffAt, sparkAt, towards, type PuffAt, type SparkAt } from './pit-burst';
 import { LIFT_ISO_K, LIFT_PLAN_K, fallFrames, fallOfConduit, liftFrames, liftOfBelt, type Fall, type Lift } from './traction-lifts';
 import { FLAG, FLAG_K, flagFrames, type FlagFrames } from './heart-flag';
+import type { ForeignArt } from './neighbour-art';
 import { defaultEmblem, emblemKey, type Emblem } from '@/content/emblem';
 import { ribbonRuns } from './neighbour-goods';
 import { couplingSides, pipeOf, wetEntranceOf } from './water-ports';
@@ -415,7 +420,7 @@ export class BuildingsView {
   private readonly foreign = new Map<number, Rec[]>();
   /** Each neighbouring base's ribbon tiles and the record that draws each (its goods ride only on a drawn one). */
   private readonly foreignRibbons = new Map<number, Map<number, Rec>>();
-  private foreignFlags: Array<{ s: Sprite; frames: FlagFrames; k: number }> = [];
+  private foreignFlags: Array<{ s: Sprite; tex: Texture[]; k: number; key: number }> = [];
   foreignEpoch = 0;
 
   constructor(
@@ -915,13 +920,13 @@ export class BuildingsView {
   }
 
   /**
-   * A junction in iso (D130): its back at its key — the far parapet, the deck, the west posts —
+   * A junction in iso (D130): its back at its key — the far parapet, the deck, the far posts —
    * and its front just after (`FRONT_DZ`) — the near wall with the tunnel's mouth, the near
-   * parapet, the east posts —, the items riding its deck between the two and those in its tunnel
-   * under both (belt-lift.ts `junctionZ`, `itemZ`).
+   * parapet, the near posts —, the items riding its deck between the two and those in its tunnel
+   * under both (belt-lift.ts `junctionZ`, `itemZ`). Its deck along its rotation's axis (D158).
    */
-  private addJunction(wx: number, wy: number, alpha: number, tint: number, z: number): void {
-    const fr = junctionFrames();
+  private addJunction(rot: Rot, wx: number, wy: number, alpha: number, tint: number, z: number): void {
+    const fr = junctionFrames(rot);
     for (const [f, dz] of [[fr.back, 0], [fr.front, FRONT_DZ]] as const) {
       const s = new Sprite(f.tex);
       s.scale.set(ISO_K);
@@ -1299,7 +1304,7 @@ export class BuildingsView {
     // The neighbouring bases' flags (D110), on the same wave.
     if (this.foreignFlags.length) {
       const n = FLAG.phases, k = ((Math.floor(seconds * FLAG.wavesPerSec * n) % n) + n) % n;
-      if (Number.isFinite(k)) for (const f of this.foreignFlags) if (f.k !== k && !f.s.culled) { f.k = k; f.s.texture = f.frames.iso[k]!.tex; }
+      if (Number.isFinite(k)) for (const f of this.foreignFlags) if (f.k !== k && !f.s.culled) { f.k = k; f.s.texture = f.tex[k]!; }
     }
     const fl = this.flagRec ? this.flag : null;
     if (!fl) return;
@@ -1315,6 +1320,17 @@ export class BuildingsView {
   /** Is this neighbouring base laid (D110)? */
   hasForeign(key: number): boolean { return this.foreign.has(key); }
 
+  /**
+   * Bake ahead what laying a neighbouring base's building of kind `def` turned `rot` will need the
+   * first time (D162: in idle time, so a base coming into view is only drawn): its cast shadow's mask,
+   * as `addBuilding` picks it. Uploaded with the next base laid.
+   */
+  warmForeign(def: number, rot: Rot): void {
+    const id = BUILDING_IDS[def]! as BuildingId;
+    const lv = artLevelOf(id, this.heartLv);
+    this.shadowMask(id, this.atlas.frames.has(bKey(id, rot, lv)) ? rot : 0, lv);
+  }
+
   /** Is a ribbon of that neighbouring base drawn on tile t, and on screen (not culled)? (Its goods ride only there.) */
   foreignRibbonShown(key: number, t: number): boolean {
     const r = this.foreignRibbons.get(key)?.get(t);
@@ -1325,9 +1341,10 @@ export class BuildingsView {
    * Lay a neighbouring base (D110): its buildings (ghost entities, ids out of the claim's range, a
    * tint), its ribbons (x, y, rot per tile in the order items ride: a tile turning from the one before
    * is a bend) and its flag on the ground at (x, y) in its emblem. Each building and each ribbon is a
-   * record of its own, culled with its bucket.
+   * record of its own, culled with its bucket. `art`: the look's textures (D162, neighbour-art.ts),
+   * swapped in once all is laid (`retexture`).
    */
-  layForeign(key: number, ents: readonly Ent[], ribbons: readonly Int32Array[], tint: number, flag: { x: number; y: number; emblem: Emblem } | null): void {
+  layForeign(key: number, ents: readonly Ent[], ribbons: readonly Int32Array[], tint: number, flag: { x: number; y: number; emblem: Emblem } | null, art?: ForeignArt): void {
     if (this.foreign.has(key)) return;
     const recs: Rec[] = [];
     for (const e of ents) {
@@ -1387,14 +1404,61 @@ export class BuildingsView {
       badge.scale.set(k);
       badge.position.set(flag.x + 0.5 - frames.badge.ox * k, flag.y + 0.5 - frames.badge.oy * k);
       this.lay(badge, this.planLayer, 0);
-      this.foreignFlags.push({ s: iso, frames, k: 0 });
+      this.foreignFlags.push({ s: iso, tex: frames.iso.map((f) => f.tex), k: 0, key });
       this.adopt(r);
       recs.push(r);
     }
     this.cur = null;
+    for (const e of ents) this.kept.delete(e.id); // a base laid again took up its parts' turns (`dropForeign`)
+    if (art) this.retexture(key, recs, art);
     this.shadowSheet.flush();
     this.liftAlpha = -1;
     this.foreign.set(key, recs);
+  }
+
+  /**
+   * A neighbouring base's sprites drawn with its look's textures (D162): each through `art.map`, its
+   * scale × `art.k` (a copy's frame is the original's / k exactly, so it covers what it did); its
+   * moving parts' phases and its flag's waves likewise. Its cast shadows keep the shadows' sheet (the
+   * sun sets their whole transform: `shade`). Its pits' flame and bursts keep the pits' own: a base's
+   * pits never burn (no fire of the sim's), they are never shown.
+   */
+  private retexture(key: number, recs: readonly Rec[], art: ForeignArt): void {
+    const live = new Set<Sprite>();
+    for (const r of recs) {
+      for (const sh of r.shadows) live.add(sh.s);
+      for (const l of r.liftShadows) live.add(l.s);
+      const p = r.pit;
+      if (!p) continue;
+      live.add(p.flame);
+      if (p.glow) live.add(p.glow);
+      for (const b of [...p.iso, ...p.plan]) { live.add(b.puff); for (const s of b.sparks) live.add(s); }
+    }
+    for (const r of recs) {
+      for (const s of r.sprites) {
+        if (live.has(s)) continue;
+        const t = art.map(s.texture);
+        if (!t) continue;
+        s.texture = t;
+        s.scale.set(s.scale.x * art.k, s.scale.y * art.k);
+      }
+      if (r.spinner) for (const p of r.spinner.sprites) p.tex = p.tex.map((t) => art.map(t) ?? t);
+    }
+    for (const f of this.foreignFlags) if (f.key === key) f.tex = f.tex.map((t) => art.map(t) ?? t);
+  }
+
+  /**
+   * One neighbouring base dropped (D162: out of the view's ring a while, or laid again in another
+   * look): its sprites gone. `relay`: laid again at once, its moving parts go on where they were.
+   */
+  dropForeign(key: number, relay = false): void {
+    const recs = this.foreign.get(key);
+    if (!recs) return;
+    this.foreign.delete(key);
+    this.foreignRibbons.delete(key);
+    if (this.foreignFlags.some((f) => f.key === key)) this.foreignFlags = this.foreignFlags.filter((f) => f.key !== key);
+    this.drop(recs);
+    if (!relay) for (const r of recs) this.kept.delete(r.ent);
   }
 
   /** A sprite of an atlas frame anchored at (x, y) (the frame's own anchor), on a layer at depth key `key`. */
@@ -1434,7 +1498,7 @@ export class BuildingsView {
     this.addShadow(e, id as BuildingId, artRot, pending ? 0.35 : 1, st, lv);
     const look: Look | null = foreign === undefined && looksAtWork(e.def) ? { ent: e.id, id: id as BuildingId, dormant, views: [], parts: [], off: false, waits: false, dead: false } : null;
     if (pit) this.addPit(e, artRot, wx, wy, alpha, tint, z);
-    else if (jct) this.addJunction(wx, wy, alpha, tint, z);
+    else if (jct) this.addJunction(e.rot, wx, wy, alpha, tint, z);
     else {
       const key = isoMv ? bodyKey(isoKey) : isoKey;
       const s = this.place(key, this.objectLayer, wx, wy, alpha, tint, z);

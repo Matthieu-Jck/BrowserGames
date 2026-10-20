@@ -966,13 +966,16 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
   return finish();
 }
 
-/** The catch-up's trade, deliveries and Gazette news belong in the report, not in a week of toasts. */
+/**
+ * The catch-up's trade, deliveries and Gazette news belong in the report, not in a week of toasts;
+ * so do CrierBelt's delivery orders and the hourly standings (D153: the Crier shows where they stand).
+ */
 function dropTradeEvents(sim: Sim): void {
   const ev = sim.events;
   let w = 0;
   for (let r = 0; r < ev.length; r++) {
     const k = ev[r]!.k;
-    if (k !== 'trade' && k !== 'delivered' && k !== 'gazette' && k !== 'land') ev[w++] = ev[r]!;
+    if (k !== 'trade' && k !== 'delivered' && k !== 'gazette' && k !== 'land' && k !== 'delivery' && k !== 'rank') ev[w++] = ev[r]!;
   }
   ev.length = w;
 }

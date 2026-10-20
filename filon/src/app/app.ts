@@ -11,7 +11,7 @@
 import { reliefSun } from '@/render/world/cast-shadows';
 import { SHADOW_REACH } from '@/render/art/terrain';
 import { MAX_LEVEL } from '@/render/relief';
-import type { Stage } from '@/render/stage';
+import { gpuSources, type Stage } from '@/render/stage';
 import type { Atlas } from '@/render/art/atlas';
 import { Layers } from '@/render/layers';
 import { Camera } from '@/render/camera';
@@ -66,6 +66,7 @@ import { Guide } from '@/ui/guide';
 import { QuestLog } from '@/ui/quest-log';
 import { NightNotice } from '@/ui/night-notice';
 import { ContractNotice } from '@/ui/contract-notice';
+import { OrderNotice } from '@/ui/order-notice';
 import { GleanCard } from '@/ui/gleaners-card';
 import { ResearchScreen } from '@/ui/screens/research';
 import { StatsScreen } from '@/ui/screens/stats';
@@ -165,6 +166,8 @@ export class App {
   readonly night: NightNotice;
   /** The starter contract fulfilled: continue at the market's price, or stop (D101). */
   readonly contract: ContractNotice;
+  /** CrierBelt's first delivery order (D153): the tutorial's next step, in the notices' column. */
+  readonly orderNotice: OrderNotice;
   /** The Gleaners' cards (D103): their first night, each morning's report. */
   readonly gleanCard: GleanCard;
   readonly stats = new StatsRecorder();
@@ -238,6 +241,8 @@ export class App {
       buildings: this.buildings, lights: this.lights, wires: this.wires, cargo: this.cargo, atlas,
       layers: { decals: this.layers.get('decals'), objects: this.layers.get('objects'), plan: this.layers.get('plan'), items: this.layers.get('items'), status: this.layers.get('status'), fx: this.layers.get('fxTop') },
       name: (h) => neighbourBanner(this.sim, h),
+      density: () => this.stage.resolution, // the look goes by zoom × density (D162)
+      onGpu: () => gpuSources(this.stage.renderer),
     });
     this.clouds = new CloudShadows(this.layers.get('shade'), this.lights.cloudTextures());
     this.windHints = new WindHints(this.layers.get('shade'));
@@ -267,13 +272,13 @@ export class App {
       takeLifts: () => this.lifts.splice(0),
     });
     this.screens.register('market', this.crier);
-    const openCrier = (tab?: 'trade'): void => {
+    const openCrier = (tab?: 'trade' | 'orders'): void => {
       if (tab) this.crier.show(tab);
       if (this.screens.current !== 'market') this.screens.open('market');
     };
     this.hud = new Hud(atlas, { sim: () => this.sim, building: () => !!this.build.category, toggleBuild: () => this.build.toggle(), openResearch: () => this.screens.open('research'), openCrier: () => openCrier(), openMenu: () => this.screens.open('menu'), worldTick: () => this.dayNight.worldTick(this.sim), openStats: () => this.screens.open('stats'), covered: () => !!this.screens.current || this.quests.modalOpen,
       openPower: () => { if (this.viewShown('power')) this.views.toggle('power'); }, powerShown: () => this.viewShown('power'), powerOn: () => this.views.current === 'power', buildNew: () => this.bar?.hasNew() ?? false,
-      openExpertise, purseGo: (f) => this.goToFlow(f),
+      openExpertise, purseGo: (f) => this.goToFlow(f), openOrders: () => openCrier('orders'),
     });
     this.viewBar = new ViewBar({ current: () => this.views.current, pick: (v) => (v === 'normal' ? this.views.set('normal') : this.views.toggle(v)), shows: (v) => this.viewShown(v) });
     this.hud.views.append(this.viewBar.root);
@@ -360,11 +365,12 @@ export class App {
     this.gleanCard = new GleanCard(atlas, { sim: () => this.sim, covered: () => !!this.screens.current || this.quests.modalOpen, openView: () => this.views.set('logistics') });
     // The starter contract fulfilled (D101): its question, under the night notice, top right.
     this.contract = new ContractNotice({ sim: () => this.sim, covered: () => !!this.screens.current || this.quests.modalOpen, notify });
+    this.orderNotice = new OrderNotice({ sim: () => this.sim, covered: () => !!this.screens.current || this.quests.modalOpen, notify, openOrders: () => openCrier('orders') });
     const notices = document.createElement('div');
     notices.className = 'notices';
     // The Gleaners' cards (D103) take the night notice's place, top right under the HUD, with the others:
     // appended beside them, the card fell to the top left, under the HUD's left cluster and the quest log.
-    notices.append(this.night.root, this.contract.root, this.gleanCard.root);
+    notices.append(this.night.root, this.contract.root, this.orderNotice.root, this.gleanCard.root);
     document.getElementById('ui')?.append(this.quests.root, notices);
     document.body.append(this.guide.root, this.quests.modal);
   }
@@ -566,6 +572,7 @@ export class App {
       this.quests.refresh();
       this.night.refresh();
       this.contract.refresh();
+      this.orderNotice.refresh();
       this.gleanCard.refresh();
     }
     this.screens.frame(dt);

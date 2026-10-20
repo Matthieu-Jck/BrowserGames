@@ -221,6 +221,78 @@ export const BAL = {
    */
   /** The claim's value (systems/value.ts, D50): sampled every `everyMin` world minutes, `points` kept (two weeks). */
   value: { everyMin: 60, points: 336 },
+  /**
+   * CrierBelt's delivery orders (D153, « Commandes de la Criée »; sim/systems/orders.ts, content/orders.ts):
+   * timed orders, paid above the market, posted once the tutorial is over, accepted by the player,
+   * filled through a trade post's entrance before its sales. Sized on D146's measures (docs/pacing.md,
+   * « Numbers for delivery orders »): an hour's sales are 1 150–1 750 ◉ after the tutorial, so an
+   * order of 300–600 ◉ is a quarter to a third of it and one of 1 500 or more an event.
+   */
+  orders: {
+    /** Orders standing at once at most, offered or accepted (D153: a few, 2–3). */
+    open: 3,
+    /** A new order every `everyMin` world minutes (the world's clock: its minute a multiple) while fewer stand. */
+    everyMin: 15,
+    /** An offer not accepted is withdrawn this many minutes after it was posted (it outlasts a night). */
+    offerMin: 45,
+    /**
+     * An order's size: what its items are worth at their reference value (◉), by the Core's level 1..5
+     * — it grows with the base. Paid 10–20 % over the bid, that is 300–600 ◉ at levels 1–2.
+     */
+    worth: [300, 450, 900, 1800, 3600] as readonly number[],
+    /** The size drawn between these shares of `worth` (‰), then rounded to a round number of items. */
+    spread: [800, 1250] as readonly [number, number],
+    /**
+     * Its price: the item's bid when it is posted, plus this share (‰, drawn in the range), CrierBelt's
+     * fee waived. Kept under a purchase's cost (ask + the fee): an order is never filled at a profit
+     * from the Crier's own goods.
+     */
+    premium: [100, 200] as readonly [number, number],
+    /** Minutes to deliver once accepted, by the good's class (D146; each outlasts a night of 18 minutes). */
+    window: { raw: [20, 40], plate: [20, 40], glass: [30, 60], part: [60, 120] } as Readonly<Record<'raw' | 'plate' | 'glass' | 'part', readonly [number, number]>>,
+    /** An event order (‰ of the draws): `eventWorth` × the size, `eventWindow` ‰ of the window, always a special reward. 1 500 ◉ or more. */
+    eventChance: 100,
+    eventWorth: 3,
+    eventWindow: 1500,
+    /** The chance (‰) an ordinary order carries a special reward too. */
+    rewardChance: 200,
+    /**
+     * A special reward's bonus in ocelles (◉, by the Core's level 1..5), paid with the order; an event's is
+     * three times it. Never AI tokens: the owner rules out any reserve of them (« there can't be ai tokens reserve »).
+     */
+    bonus: [100, 150, 400, 1200, 3000] as readonly number[],
+    /**
+     * The first order, right after the tutorial (D146's problem 7: the Core piles quartz up and nothing
+     * tells the player it sells): quartz, through the post — its window, its premium (‰), its bonus (◉). 120
+     * in 40 minutes: what a router on the quartz line brings the post in that time just after the
+     * tutorial (the pacing bot's measure, D153), about 650–800 ◉ and the bonus's 150.
+     */
+    first: { item: 'quartz', n: 120, windowMin: 40, premium: 200, bonus: 150 },
+    /** Orders closed (filled or missed) kept for the Crier's history. */
+    past: 8,
+  },
+  /**
+   * The claim's ranking among the other claims (D153, « Classement des concessions »; sim/systems/ranking.ts):
+   * the claim's value (D50) against the forty claims of the Crier, drawn up every world hour. Their
+   * values at the player's founding make a ladder from `floor` (a claim just begun, above a new base's
+   * ~1 000 ◉) up by `step` ‰ a rank (the leader ≈ 1.5 M ◉); each grows by its `growth` share a day
+   * (the smallest the fastest, the leaders slowest, a profile's own growth scaling it), with a gentle
+   * day-to-day `wobble`. A new base passes the first claims within the hour, the middle within days;
+   * the top asks for a late base that keeps growing: the leaders grow too.
+   */
+  ranking: {
+    /** World minutes between two standings (the world's clock: its minute a multiple). */
+    everyMin: 60,
+    /** The smallest claim's value at the player's founding (centi-◉), and the ladder's step a rank (‰). */
+    floor: 150_000,
+    step: 1194,
+    /** Daily growth (‰ of the founding value), of the ladder's foot and of its top, before the profile's factor. */
+    growth: [400, 40] as readonly [number, number],
+    /** The profiles' growth is read against this one (‰ a day: a foundry's 1.5 %). */
+    growthRef: 15,
+    /** The day-to-day wobble (‰ of the value, either way), eased from one day to the next. */
+    wobble: 60,
+  },
   market: {
     // NPC supply S = S0·e·r^supplyExp, demand D = D0·e′·r^−demandExp; the price stays in [rMin, rMax]·V.
     supplyExp: 0.8,

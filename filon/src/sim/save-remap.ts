@@ -68,6 +68,7 @@ export const FIELDS: { readonly [K in keyof Required<SaveData>]: Kind } = {
   nodes: 'index', chains: 'index', produced: 'index', consumed: 'index', projects: 'index', tokens: 'plain', labQueue: 'refs',
   costFloor: 'plain', costFloorD129: 'plain', notes: 'plain', respecs: 'plain', lastRespec: 'plain', designated: 'plain', jobs: 'refs',
   market: 'plain', trade: 'index', quests: 'plain', value: 'plain', expertise: 'plain',
+  deliveries: 'plain', ranking: 'plain', // D153: items by id, never by index
   gleaners: 'index',
   blueprints: 'plain', // by content ids (D154): nothing to re-point
 };

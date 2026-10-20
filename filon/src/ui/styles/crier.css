@@ -469,3 +469,101 @@
 .cr-o-acts { grid-column: 1 / -1; grid-row: 2; display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; padding-bottom: 2px; }
 .cr-order[data-order-starter='done'] > .cr-x { grid-row: 1; grid-column: -2; }
 .cr-o-acts .btn { font-size: 13px; padding: 1px 9px; }
+
+/* ── Commandes (D153): CrierBelt's delivery orders as cards ───────────────── */
+.cr-tab[data-badge]::after {
+  content: attr(data-badge); min-width: 18px; height: 18px; padding: 0 5px; margin-left: 2px; border-radius: 9px;
+  font: 700 11px/15px var(--f-body); text-align: center; color: var(--c-paper); background: var(--c-coral); border: 1.5px solid var(--c-ink);
+}
+.dl-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; padding: 4px 4px 6px 0; }
+.dl-card {
+  display: flex; flex-direction: column; gap: 7px; padding: 10px 12px 10px;
+  border: 2px solid var(--c-ink); border-radius: 12px 9px 13px 8px / 9px 12px 8px 13px;
+  background: var(--c-paper); box-shadow: 2px 3px 0 var(--c-ink);
+}
+.dl-card[data-state='running'] { border-color: var(--c-turq-d); box-shadow: 2px 3px 0 var(--c-turq-d); }
+.dl-card[data-event] { background: linear-gradient(180deg, color-mix(in srgb, var(--c-warn) 18%, var(--c-paper)), var(--c-paper) 55%); }
+.dl-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.dl-icon {
+  flex: none; display: grid; place-items: center; width: 46px; height: 46px; border-radius: 50%;
+  border: 1.5px solid var(--c-ink); background: var(--c-paper-d); font-size: 19px;
+}
+.dl-icon .imention-icon { margin: 0; vertical-align: middle; }
+.dl-what { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 7px; min-width: 0; }
+.dl-n { font-size: 25px; line-height: 1; }
+.dl-name { font-size: 14px; font-weight: 700; }
+.dl-event { background: var(--c-warn); border-color: var(--c-peach-d); }
+.dl-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 8px; cursor: help; }
+.dl-row .insp-bar { height: 10px; }
+.dl-ri { display: inline-flex; }
+.dl-ri > .kmark { width: 18px; height: 18px; }
+.dl-fig { font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dl-card[data-state='offer'] .dl-row[data-k='time'] .dl-fig { color: var(--c-ink-soft); font-weight: 400; }
+.dl-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 9px; margin-top: 2px; }
+.dl-pay { display: inline-flex; align-items: baseline; gap: 5px; cursor: help; }
+.dl-pay .cr-coin { font-size: 19px; }
+.dl-pay-v { font-size: 22px; line-height: 1; font-variant-numeric: tabular-nums; }
+.dl-over {
+  font-size: 11.5px; font-weight: 700; padding: 0 7px; border-radius: 999px;
+  color: var(--c-turq-d); border: 1.5px solid var(--c-turq-d); background: color-mix(in srgb, var(--c-turq-l) 35%, var(--c-paper));
+}
+.dl-over:empty { display: none; }
+.dl-reward {
+  display: inline-flex; align-items: center; gap: 5px; padding: 1px 9px 1px 4px; border-radius: 999px; cursor: help;
+  font-size: 12.5px; border: 1.5px solid var(--c-lilac-d); background: var(--c-lilac-l); max-width: 100%;
+}
+.dl-reward b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dl-reward-i { display: inline-flex; flex: none; }
+.dl-reward-i > .kmark { width: 18px; height: 18px; }
+.dl-reward-i canvas { display: block; width: 22px; height: 22px; }
+.dl-accept { margin-left: auto; font-size: 15px; padding: 2px 16px; }
+.dl-state { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 700; color: var(--c-turq-d); }
+.dl-state > .kmark { width: 16px; height: 16px; }
+.dl-note { margin: 6px 2px 2px; font-size: 12.5px; color: var(--c-ink-soft); }
+.dl-nopost { margin: 2px 0 6px; padding: 4px 10px; font-size: 12.5px; font-weight: 700; color: var(--c-paper); background: var(--c-coral); border-radius: 7px; }
+.dl-nopost[hidden] { display: none; }
+.dl-past { display: flex; flex-direction: column; }
+.dl-prow {
+  display: grid; grid-template-columns: 26px 78px 110px minmax(0, 1fr) auto; align-items: center; gap: 8px;
+  padding: 4px 2px; font-size: 12.5px; border-bottom: 1px dashed rgba(30, 27, 46, 0.2);
+}
+.dl-prow:last-child { border-bottom: none; }
+.dl-pn { font-variant-numeric: tabular-nums; }
+.dl-pw { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; }
+.dl-pw > .kmark { width: 15px; height: 15px; }
+.dl-prow[data-what='missed'] .dl-pw { color: var(--c-coral-d); }
+.dl-prow[data-what='filled'] .dl-pw { color: var(--c-turq-d); }
+.dl-pp { font-variant-numeric: tabular-nums; }
+.dl-prow .dl-reward { justify-self: start; }
+.dl-stats { margin: 6px 2px 0; font-size: 12px; color: var(--c-ink-soft); }
+[data-sec='delivery-past'][hidden] { display: none; }
+
+/* ── the claims' standings (D153), first in the Gazette ───────────────────── */
+.rk { padding: 4px 0 8px; border-bottom: 1.5px solid var(--c-ink); cursor: help; }
+.rk-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; }
+.rk-head .cr-gz-sec { margin: 6px 0 2px; }
+.rk-pos { font-size: 22px; line-height: 1; font-weight: 400; }
+.rk-best { font-size: 11.5px; color: var(--c-ink-soft); }
+.rk-rows { display: flex; flex-direction: column; margin: 3px 0 5px; }
+.rk-row { display: grid; grid-template-columns: 22px 18px minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 2px 4px; font-size: 12.5px; border-radius: 6px; }
+.rk-row[data-own] { font-weight: 700; background: color-mix(in srgb, var(--c-turq-l) 45%, var(--c-paper)); box-shadow: inset 0 0 0 1.5px var(--c-turq-d); }
+.rk-n { text-align: right; color: var(--c-ink-soft); font-variant-numeric: tabular-nums; }
+.rk-flag { display: inline-flex; }
+.rk-flag .glyph { width: 1.15em; height: 1.15em; }
+.rk-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rk-v { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rk-gap { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; gap: 4px 7px; }
+.rk-gap[hidden] { display: none; }
+.rk-gap > .kmark { width: 16px; height: 16px; }
+.rk-gap .insp-bar { height: 9px; }
+.rk-gap-t { grid-column: 2; font-size: 12px; font-weight: 700; color: var(--c-lilac-d); }
+.rk-next { display: block; margin-top: 3px; font-size: 11.5px; color: var(--c-ink-soft); }
+
+/* ── the first order's notice (D153, ui/order-notice.ts), in the notices' column ── */
+.on-art { width: auto; display: flex; justify-content: center; padding: 6px 4px; }
+.on-icon { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; border: 1.5px solid var(--c-ink); background: var(--c-paper-d); font-size: 22px; }
+.on-icon .imention-icon { margin: 0; vertical-align: middle; }
+.on-top { display: flex; align-items: flex-start; gap: 8px; }
+.on-top .nn-title { flex: 1; }
+.on-x { flex: none; border: none; background: none; padding: 0 2px; font-size: 14px; line-height: 1; color: var(--c-ink-soft); cursor: pointer; }
+.on-x:hover { color: var(--c-ink); }

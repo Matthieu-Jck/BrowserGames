@@ -1,6 +1,6 @@
 # Pacing: the first three hours (D146)
 
-How a new base plays for its first three game hours, measured by a headless player on the real map, lands 1–3, with what was off, what changed, and the numbers the next features (CrierBelt delivery orders, blueprints) size themselves on. One game minute is one real minute (`EPOCH`), so three game hours are three hours of play; a day is 36 minutes, its night 12 dark minutes between a dusk and a dawn of 3 each.
+How a new base plays for its first three game hours, measured by a headless player on the real map, lands 1–3, with what was off, what changed, and the numbers the next features (CrierBelt delivery orders, blueprints) size themselves on — and, since D153, what the delivery orders add ([below](#what-delivery-orders-add-d153)). One game minute is one real minute (`EPOCH`), so three game hours are three hours of play; a day is 36 minutes, its night 12 dark minutes between a dusk and a dawn of 3 each.
 
 Related: [quests.md](quests.md) (the tutorial), [research.md](research.md), [content.md](content.md), [testing.md](testing.md) (how to re-run it), [decisions.md](decisions.md) (D146).
 
@@ -259,6 +259,30 @@ After D146, the tutorial's factory alone (a player who expands earns more):
   - At the end of the first hour the Core holds 30–80 plates, 180–190 glass and 60–75 wire. A blueprint priced in materials must stay within what the tutorial lines bring in 10–20 minutes.
   - From hour 2 on, plates pile up (+900 an hour) and glass (+300); wire does not.
   - In ◉, a blueprint of 200–500 is a fair hour-2 purchase. Anything above 1 500 competes with the Synthesis' parts in hour 3.
+
+## What delivery orders add (D153)
+
+A third player, the hints player who also takes CrierBelt's delivery orders past the tutorial (`playPacing({ orders: true })`, [bot.ts](../src/sim/pacing/bot.ts) `keepOrders`). It accepts at once every offer it can feed through its post — glass and iron ore, which the tutorial's lines already bring there, and quartz once it has laid a router on the quartz line toward the post (the first time a quartz order comes, as the first order's notice says). A missed order costs nothing but its premium, so it takes them all. Measured on the pushed content (b3c4046; the same on 34c467d and 596cd72; the lead runs it on 2717713) with D153: the first order 120 quartz in 40 minutes and a 150 ◉ bonus; rewards in ocelles, never AI tokens.
+
+**The first order.** Posted at the boundary after « Les pièces de la Synthèse » (minute 43–44): 120 quartz for 670 ◉ and its 150 ◉ bonus, 40 minutes. On lands 1 and 3 the router branch brings it in 14–15 minutes. On land 2 the bot's builders find no room for that router (its layout heuristics, as D146's « Its limits »), so it takes only the glass and ore orders there.
+
+◉ by hour, the hints player → the orders player (land 1 · land 3; land 2 below):
+
+| Hour | Sales | Orders paid | Change | Purse at its end |
+|---:|---|---:|---|---|
+| 1 | 1 144 → 1 196 · 1 165 → 1 299 | 820 · 820 | +1 515 → +2 387 · +1 641 → +2 594 | 1 815 → 2 687 · 1 941 → 2 894 |
+| 2 | 1 716 → **2 996** · 1 817 → **3 399** | 547 · 644 | +1 125 → **+2 954** · +1 351 → **+3 578** | 2 940 → 5 641 · 3 292 → 6 472 |
+| 3 | 1 487 → **2 957** · 1 561 → **3 490** | 965 · 88 | −2 651 → −1 953 · −1 980 → +37 | 289 → **3 688** · 1 312 → **6 509** |
+
+- **The orders themselves** pay 1 550–2 330 ◉ over the three hours (lands 1, 3; the first order's bonus included): two or three filled (two quartz, a glass), an iron-ore order missed each time (425–450 ore in 20–40 minutes is more than the post's branch of the ore line brings: paid 90–210 ◉ at the market, the premium and the bonus lost).
+- **The bigger effect is what the first order teaches**: the quartz branch stays, and the post sells 8.7–9 quartz a minute from then on — +1 300–1 900 ◉ an hour of sales, D146's problem 7 (the Core's 2 500 idle quartz) answered by the player's own line.
+- **Hour 3's money wall** (problem 8) eases: the purse ends the third hour at 3 700–6 500 ◉ instead of 290–1 310, with the same spot purchases on land 3 (4 100 ◉); on land 1 the bot spends 6 660 instead of 4 925 ◉, buying sooner what it lacks.
+- **The milestones barely move**: on land 3 not at all; on land 1 the Synthesis comes 2 minutes later and the Core's level 3 four (144 and 166 against 142 and 162; probably the quartz the post now sells, which the workshop no longer gets). The orders pay in ◉, and the bot's research waits on materials, not money; a player who spends on parcels, more drills or token flows turns them into time.
+- **Land 2** (no quartz branch): an iron-ore order missed (254 ◉ at the market), a glass order still filling at the end; the hours as the hints player's.
+
+**The claim's standings** (D153), the same runs (value in ◉ at the hour's end, rank of 41): the hints player 8 840–9 360 → 35th, 21 800–23 360 → 27th, 29 930–33 020 → 24th–25th; the no-hints player 7 100–7 350 → 35th–36th, 18 690–20 000 → 28th, 28 290–30 650 → 25th. A climb of about eight ranks in the second hour, two or three in the third — then slower: each rank above asks ×1.19 the value and the claims above grow too (`BAL.ranking`). Selling the Core's quartz turns stock (counted at the bid) into ocelles less the fee, so the orders player's value runs a little behind (up to −9 %) while its purse runs far ahead.
+
+Re-run: `PACING_OUT=… npx vitest run src/sim/pacing` writes the three sets (`hints`, `nohints`, `orders`); the orders player's runs carry `orders` (each order accepted, its fate) and each hour's `value` and `rank`.
 
 ## Bigger than tuning, for the lead (ranked)
 

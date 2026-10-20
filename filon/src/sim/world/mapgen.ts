@@ -54,7 +54,7 @@ import { BAL } from '@/content/balance';
 import { itemIdx } from '@/content/registry';
 import {
   ARCHETYPES, ARCHETYPE_IDS, COMMON_DEPOSITS, COS64, DEPOSIT_CHANCE, MAP_VERSION, MAPS, MOUNTAINS, RICH_MULT, RINGS, SHADE, SIN64,
-  T3_UNIQUES, T4_UNIQUES, UNIQUE_BIOMES, type ArchetypeId, type CirqueTemplate, type MapParams, type Obstacles, type QuartzFaces, type QuartzVein, type SpireField, type SummitShape, type UniqueBiomeId,
+  T3_UNIQUES, T4_UNIQUES, UNIQUE_BIOMES, type ArchetypeId, type CirqueTemplate, type MapParams, type Obstacles, type HugePeaks, type QuartzFaces, type QuartzVein, type SpireField, type SummitShape, type UniqueBiomeId,
 } from '@/content/world';
 import { hash32 } from '@/core/hash';
 import { isqrt } from '@/core/fixed';
@@ -112,7 +112,10 @@ interface Bluff { west: boolean; u0: number; va: number; vb: number; vc: number;
  * the sea's (`sea`), for its surf; a needle of map 6's spire field (D147), `spire`, and the plain
  * floor of its ground (lanes and all; a tile with no other code), `spireGround`: badlands.
  */
-export const BIOME = { none: 0, cirque: 7, crown: 8, river: 16, sea: 24, spire: 32, spireGround: 33 } as const;
+export const BIOME = { none: 0, cirque: 7, crown: 8, river: 16, sea: 24, spire: 32, spireGround: 33, beacon: 34, boulder: 35 } as const;
+
+/** A huge mountain (map 6, D157): its summit's tile, its foot's radius (tiles), its summit's level, its seed. */
+export interface PeakSite { readonly x: number; readonly y: number; readonly R: number; readonly top: number; readonly seed: number }
 
 // A tile as `classify` sees it, packed in one integer.
 const LV = 7; //         bits 0–2: the raw level (0 … MAX_LEVEL)
@@ -204,6 +207,10 @@ export class MapGen implements TerrainSource {
   private readonly oreCells = new Map<number, Blob[]>();
   /** Map 5's quartz faces (D136; null on maps 1–4), each cell's wall and each wedge's face once found (null: none). */
   private readonly F: QuartzFaces | null;
+  /** Map 6's huge mountains (D157): their parameters, the sites found (lazily, `peakSites`), the balanced rock on the spring's summit (D149). */
+  private readonly PK: HugePeaks | null;
+  private peakList: PeakSite[] | null = null;
+  private springRock: number | undefined;
   private readonly faceCells = new Map<number, VeinSite | null>();
   private readonly sectorFaces = new Map<number, { cell: number; face: VeinSite } | null>();
   /**
@@ -314,6 +321,7 @@ export class MapGen implements TerrainSource {
     // nearest eighth), never towards the Heart: its distance from it, the tutorial's, is everyone's.
     this.holdings = !!P.holdings;
     this.F = P.faces && P.obstacles ? P.faces : null;
+    this.PK = P.peaks && P.obstacles ? P.peaks : null;
     const OB = (this.oreBlock = P.oreBlock ?? 1);
     C.deposits.forEach((d, i) => {
       let jx = (hash32(ps, 30 + i) % 3) - 1, jy = (hash32(ps, 40 + i) % 3) - 1;
@@ -1218,7 +1226,9 @@ export class MapGen implements TerrainSource {
     const sp = this.spireAt(x, y);
     if (sp) return sp;
     const c = this.classify(x, y, false), raw = c & LV;
-    return raw <= 1 ? raw : this.settled(x, y, c); // a tile at 0 or 1 never comes down
+    const base = raw <= 1 ? raw : this.settled(x, y, c); // a tile at 0 or 1 never comes down
+    const pk = this.PK ? this.peakLevel(x, y) : 0; // a huge mountain over it (map 6, D157)
+    return pk > base && this.peakTakes(x, y) ? pk : base;
   }
 
   /** What `takesOre` reads of a tile, as `fill` writes it, without settling: any rock as Rock1 (rock or not does not depend on settling), else its ground. */
@@ -1235,6 +1245,7 @@ export class MapGen implements TerrainSource {
    */
   floorAt(x: number, y: number): boolean {
     if (this.spireAt(x, y)) return false;
+    if (this.PK && this.peakLevel(x, y) > 0 && this.peakTakes(x, y)) return false;
     const c = this.classify(x, y, true);
     return (c & LV) === 0 && !(c & WET) && isFloor((c >> GROUND) & 15);
   }
@@ -1254,6 +1265,8 @@ export class MapGen implements TerrainSource {
     const v = this.quartzVein;
     if (v) for (let k = 0; k < v.n; k++) if (disc(v.x + k * v.dx, v.y + k * v.dy, 8)) return true;
     if (this.O) for (let y = y0; y < y1; y += 2) for (let x = x0; x < x1; x += 2) if (this.lines.hit(x, y, LineKind.Corridor)) return true;
+    // Map 6's huge mountains (D157): no neighbouring base on their slopes.
+    if (this.PK) for (const s of this.peakSites()) if (disc(s.x, s.y, Math.ceil((s.R * (1000 + this.PK.wobble + this.PK.ridge)) / 1000) + this.PK.margin)) return true;
     const F = this.spf;
     if (F) for (let y = Math.max(y0, F.by0); y < Math.min(y1, F.by1 + 1); y++) for (let x = Math.max(x0, F.bx0); x < Math.min(x1, F.bx1 + 1); x++) if (this.spireElev(x, y) !== -1) return true;
     return false;
@@ -1280,6 +1293,8 @@ export class MapGen implements TerrainSource {
   /** Base terrain class of a tile (before deposits), as `fill` writes it. */
   terrainAt(x: number, y: number): number {
     if (this.spireAt(x, y)) return T.Rock1 + this.spf!.S.hardness - 1;
+    const pk = this.PK ? this.peakLevel(x, y) : 0;
+    if (pk > 0 && this.peakTakes(x, y) && pk > this.levelAt0(x, y)) return this.peakRock(pk);
     const c = this.classify(x, y, true), raw = c & LV;
     if (raw === 0 || c & WET) return (c >> GROUND) & 15;
     return this.rockOf(c, raw <= 1 ? raw : this.settled(x, y, c), x, y);
@@ -1439,6 +1454,8 @@ export class MapGen implements TerrainSource {
         if (biome) biome[k] = BIOME.spire;
       }
     }
+    // Map 6's huge mountains (D157) over the land as made, and what stands on the tops (D149).
+    if (this.PK) this.peakFill(cx, cy, m.level, terrain, height, biome, level);
   }
 
   /** A chunk as `make` gives it (map 5's faces and map 6's spires not laid on it yet), kept for the land (`MADE`). */
@@ -1736,6 +1753,166 @@ export class MapGen implements TerrainSource {
    * Chunk (cx, cy)'s spire map (map 6, D147): a needle's tile its level, a tile of the field's ground
    * `SPIRE_GROUND`, 0 off it; null where the field has no ground. Kept once found.
    */
+  /**
+   * Map 6's huge mountains (D157), found once, lazily (the first tile that asks): the land's draw of
+   * how many (`counts`), then each `cell` square's candidate far out, in the land's order, while it
+   * is clear (`peakClear`) and stands apart from those taken. None on maps 1–5.
+   */
+  peakSites(): readonly PeakSite[] {
+    if (this.peakList) return this.peakList;
+    const K = this.PK, out: PeakSite[] = [];
+    this.peakList = out;
+    if (!K) return out;
+    const ps = this.playerSeed >>> 0, want = K.counts[hash32(ps, 350) % K.counts.length]!;
+    const n = Math.floor(WORLD / K.cell), cands: Array<[number, number, number, number, number]> = [];
+    for (let b = 0; b < n && want; b++) {
+      for (let a = 0; a < n; a++) {
+        const h = hash32(ps, a, b, 351), x = a * K.cell + 24 + (h % (K.cell - 48)), y = b * K.cell + 24 + ((h >>> 12) % (K.cell - 48));
+        const r2 = (x - CENTER) * (x - CENTER) + (y - CENTER) * (y - CENTER);
+        if (r2 >= K.r[0] * K.r[0] && r2 <= K.r[1] * K.r[1]) cands.push([hash32(ps, a, b, 352), b, a, x, y]);
+      }
+    }
+    cands.sort((p, q) => p[0] - q[0] || p[1] - q[1] || p[2] - q[2]);
+    for (const [h, , , x, y] of cands) {
+      if (out.length >= want) break;
+      const R = K.radius[0] + (h % (K.radius[1] - K.radius[0] + 1)), top = K.top[0] + ((h >>> 8) % (K.top[1] - K.top[0] + 1));
+      const reach = Math.ceil((R * (1000 + K.wobble + K.ridge)) / 1000) + K.margin;
+      if (out.some((o) => (o.x - x) * (o.x - x) + (o.y - y) * (o.y - y) < (2 * reach + 8) * (2 * reach + 8))) continue;
+      if (this.peakClear(x, y, reach)) out.push({ x, y, R, top, seed: hash32(ps, x, y, 353) });
+    }
+    return out;
+  }
+
+  /** Is the ground `R` tiles round (x, y) clear for a huge mountain (D157): far out, dry, and off what the land guarantees? */
+  private peakClear(x: number, y: number, R: number): boolean {
+    const K = this.PK!;
+    if (this.F && this.facesIn(x - R, y - R, x + R + 1, y + R + 1).length) return false;
+    for (const c of this.clearings) if ((c.cx - x) * (c.cx - x) + (c.cy - y) * (c.cy - y) < (c.r + R) * (c.r + R)) return false;
+    for (const c of this.keep) if ((c.cx - x) * (c.cx - x) + (c.cy - y) * (c.cy - y) < (c.r + R) * (c.r + R)) return false;
+    for (let dy = -R; dy <= R; dy += 2) {
+      for (let dx = -R; dx <= R; dx += 2) {
+        if (dx * dx + dy * dy > R * R) continue;
+        const tx = x + dx, ty = y + dy;
+        if (tx < 4 || ty < 4 || tx >= WORLD - 4 || ty >= WORLD - 4) return false;
+        if (ringOf(parcelAt(tx, ty)) < K.ring || this.inVeinZone(tx, ty, 2)) return false;
+        if (this.O && this.lines.hit(tx, ty, LineKind.Corridor)) return false;
+        const c = this.classify(tx, ty, true), g = (c >> GROUND) & 15;
+        if (c & (WET | SEAF) || g === T.Shallow || g === T.Deep || g === T.River || g === T.Chasm || g === T.DuneSea) return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * A huge mountain's level at a tile (map 6, D157), 0 off them: a broad cone of terraces from its
+   * foot to its summit's plateau — its outline wandering with the bearing (the shared noise read on a
+   * circle round the summit, as the Crown's rim is), its terraces moved by a slower noise (bays,
+   * spurs, an uneven climb: about a level a tile, so a traction ribbon climbs it).
+   */
+  private peakLevel(x: number, y: number): number {
+    const K = this.PK!;
+    let best = 0;
+    for (const s of this.peakSites()) {
+      const dx = x - s.x, dy = y - s.y, d2 = dx * dx + dy * dy, far = s.R * (1000 + K.wobble + K.ridge);
+      if (d2 * 1000000 > far * far) continue;
+      const r = isqrt(d2), d4 = isqrt(16 * d2);
+      const n = r ? qfbm(this.jit, s.x + (dx * s.R) / r, s.y + (dy * s.R) / r, 9, 2) : 128;
+      const rb4 = Math.floor((4 * s.R * (1000 + Math.floor((K.wobble * (n - 128)) / 128))) / 1000);
+      // Its ridges: a few spurs by the summit's hash running out along their bearings (the slope gentler
+      // on them, a spur), the ground between them hollowed (a valley): no stacked rings.
+      let ridge = 0;
+      if (d2) {
+        const hd = headingOf(dx, dy);
+        for (let q = 0; q < 4; q++) {
+          const b = hash32(s.seed, q, 357) & 63, del = Math.min((hd - b) & 63, (b - hd) & 63);
+          ridge = Math.max(ridge, Math.max(0, 1000 - Math.floor((del * 1000) / 7)));
+        }
+      }
+      const spur = Math.floor((d4 * (K.ridge * ridge - (K.ridge * 1000) / 3)) / 1000000);
+      const dd = d4 - spur + Math.floor(((qfbm(this.eW, x, y, K.scale, 2) - 128) * K.rough * d4) / 128000);
+      if (dd >= rb4) continue;
+      const p4 = 4 * K.plateau, L = dd <= p4 ? s.top : Math.min(s.top, Math.max(1, Math.ceil((s.top * (rb4 - dd)) / Math.max(1, rb4 - p4))));
+      if (L > best) best = L;
+    }
+    return best;
+  }
+
+  /** Does a huge mountain take this tile (D157): not water, a river or a chasm (`peakClear` keeps them off; a stray one stays as it is)? */
+  private peakTakes(x: number, y: number): boolean {
+    const c = this.classify(x, y, true), g = (c >> GROUND) & 15;
+    return !(c & (WET | SEAF)) && g !== T.Shallow && g !== T.Deep && g !== T.River && g !== T.Chasm;
+  }
+
+  /** A tile's level without the huge mountains (as `levelAt` before D157). */
+  private levelAt0(x: number, y: number): number {
+    const c = this.classify(x, y, false), raw = c & LV;
+    return raw <= 1 ? raw : this.settled(x, y, c);
+  }
+
+  /** A huge mountain's rock at a level (D157): harder up. */
+  private peakRock(L: number): number {
+    const H = this.PK!.hardness;
+    return T.Rock1 + (L >= 10 ? H[2] : L >= 7 ? H[1] : H[0]) - 1;
+  }
+
+  /**
+   * The tops' marks (D149): on each huge mountain's summit the wreck of an old CrierBelt survey
+   * beacon, on its upper terraces `boulders` balanced rocks (a bearing and a distance from the
+   * summit by hash); on the spring's summit, every land's, one balanced rock (`springRockTile`).
+   */
+  private peakMarks(): Array<[number, number, number]> {
+    const K = this.PK!, out: Array<[number, number, number]> = [];
+    for (const s of this.peakSites()) {
+      out.push([s.x, s.y, BIOME.beacon]);
+      for (let q = 0; q < K.boulders; q++) {
+        const h = hash32(s.seed, q, 355), a = h % 64, d = K.plateau + 1 + ((h >>> 8) % 3);
+        out.push([s.x + ((COS64[a]! * d) >> 10), s.y + ((SIN64[a]! * d) >> 10), BIOME.boulder]);
+      }
+    }
+    const t = this.springRockTile();
+    if (t >= 0) out.push([t % WORLD, Math.floor(t / WORLD), BIOME.boulder]);
+    return out;
+  }
+
+  /** The spring summit's balanced rock (D149): of its plateau's rock tiles at the summit's level, the hash's pick; −1 with no summit. */
+  springRockTile(): number {
+    if (this.springRock !== undefined) return this.springRock;
+    let best = -1, bh = -1;
+    const S = this.summit;
+    if (S) {
+      for (let y = S.y - S.top; y <= S.y + S.top; y++) {
+        for (let x = S.x - S.top; x <= S.x + S.top; x++) {
+          if (this.levelAt(x, y) !== S.level || this.terrainAt(x, y) < T.Rock1 || this.terrainAt(x, y) > T.Rock4) continue;
+          const h = hash32(x, y, 356);
+          if (h > bh) { bh = h; best = y * WORLD + x; }
+        }
+      }
+    }
+    this.springRock = best;
+    return best;
+  }
+
+  /** Lay the huge mountains (D157) and the tops' marks (D149) over chunk (cx, cy) as made (`base`: its levels). */
+  private peakFill(cx: number, cy: number, base: Uint8Array, terrain: Uint8Array, height?: Uint8Array, biome?: Uint8Array, level?: Uint8Array): void {
+    const K = this.PK!, x0 = cx * CHUNK, y0 = cy * CHUNK;
+    for (const s of this.peakSites()) {
+      const reach = Math.ceil((s.R * (1000 + K.wobble + K.ridge)) / 1000) + 1;
+      if (s.x + reach < x0 || s.x - reach >= x0 + CHUNK || s.y + reach < y0 || s.y - reach >= y0 + CHUNK) continue;
+      for (let j = 0; j < CHUNK; j++) {
+        for (let i = 0; i < CHUNK; i++) {
+          const x = x0 + i, y = y0 + j, k = j * CHUNK + i, L = this.peakLevel(x, y);
+          if (L <= base[k]! || !this.peakTakes(x, y)) continue;
+          terrain[k] = this.peakRock(L);
+          if (level) level[k] = L;
+          if (height) height[k] = clamp255(SHADE.rock + SHADE.perLevel * L);
+        }
+      }
+    }
+    if (biome) {
+      for (const [x, y, b] of this.peakMarks()) if (x >> 5 === cx && y >> 5 === cy && terrain[(y & 31) * CHUNK + (x & 31)]! >= T.Rock1 && terrain[(y & 31) * CHUNK + (x & 31)]! <= T.Rock4) biome[(y & 31) * CHUNK + (x & 31)] = b;
+    }
+  }
+
   private spireChunk(cx: number, cy: number): Uint8Array | null {
     const key = cy * 64 + cx, kept = this.spireChunks.get(key);
     if (kept !== undefined) return kept;

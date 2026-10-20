@@ -31,6 +31,7 @@ import { paintDeposits } from './ore';
 import { reaches } from './water-top';
 import { columnSeed, columnShadow, columnVariant, crystal, drawColumn, hasWall, QZ, ROCK, SAND_POCKET, topColor, type Foot, type Proj, type TopLook } from './rock';
 import { drawSpire, SPIRE_BIOME, spirePlan, spireSeed, spireShadow, spireVariant } from './spire';
+import { drawTopMark, isTopMark, topMarkPlan } from './tops';
 import { isRiverT, isRockT, isWaterT, levelOf, maskAt, masksAt, MAX_TERRACE, PEAK_LEVEL, SHIFT, slabOutline, SMOOTH, STEP_LEVELS, type OutlinePt } from '../relief';
 
 export { BORDER, WIN } from './paint-kit';
@@ -228,6 +229,11 @@ export function paintChunk(ctx: Ctx2, d: PaintData, ppt: number, scratch: (w: nu
     const i = sp[n]!, j = sp[n + 1]!;
     if (i < B - 1 || j < B - 1 || i > B + 32 || j > B + 32) continue;
     spirePlan(ctx, (i - B) * ppt, (j - B) * ppt, ppt, sp[n + 2]!, spireSeed(sp[n + 2]!, sp[n + 3]!));
+  }
+  // What stands on the tops (D149), seen from above.
+  if (ppt >= 8) for (let j = B; j < B + 32; j++) for (let i = B; i < B + 32; i++) {
+    const o = j * WIN + i;
+    if (isTopMark(d.biome[o]!) && isRockT(d.terrain[o]!)) topMarkPlan(ctx, (i - B) * ppt, (j - B) * ppt, ppt, d.biome[o]!);
   }
 
   // ── 5. deposits (ore.ts, D99: each ore its own material, denser where richer), then vents,
@@ -889,6 +895,8 @@ export function paintRelief(ctx: Ctx2, d: PaintData, ppt: number, scratch: (w: n
     const ms = tileMasks(lv, masks, o);
     const layers = top && top.kind !== 'rock' ? null : windowLayers(d, lv, o, cls, ms.length);
     drawColumn(ctx, proj(i, j), cls, ms, { detail, seed: columnSeed(cls, ms, columnVariant(wx, wy, hasWall(ms))), k, top, vein, layers });
+    // What stands on its top (D149: a balanced rock, a survey beacon's wreck).
+    if (isTopMark(d.biome[o]!) && isRockT(d.terrain[o]!)) drawTopMark(ctx, proj(i, j), d.biome[o]!, ms.length * STEP_LEVELS, (hash32(wx, wy, 0x70a) & 3) * 977 + d.biome[o]!, k, detail);
   }
   return true;
 }

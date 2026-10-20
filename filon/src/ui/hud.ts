@@ -13,6 +13,9 @@
 // per research project — the tree's state and a project's clock as the tree screen derives them
 // (ui/tree-state.ts). Once the Core mounts its Archive (level 3), the Expertise chip (D93, E): the
 // two slots' pictures and a badge of the expertises a free slot could take.
+// Once CrierBelt posts its delivery orders (D153), the Orders chip: one small bar per order accepted —
+// its item, what was delivered of what it asks, the window draining under it — and a badge of the offers
+// waiting for « Accepter »; a click opens the Crier on its Commandes tab.
 // What the Analytics path unlocks (D41, ui/analytics.ts) shows here: the stocks' rates with the
 // telemetry (in the Stock panel), the Statistics chip with the ledger. When an analytics plan is taken, the HUD plays
 // its reveal (ui/focus.ts): the base dims and the new readout is lifted out with CrierBelt's line,
@@ -51,6 +54,9 @@ import { shortages, type Shortage } from './stock-facts';
 import { PurseCard, perHour as purseHour } from './purse-card';
 import { PurseHistory, purseSummary, type FlowLine, type PurseSummary } from './purse-facts';
 import { makeStore } from '@/core/store';
+import { runningOrders } from '@/sim/systems/orders';
+import { itemMention, nameOf } from './mention';
+import { orderLeft } from './orders-view';
 
 /** More ticks than this between two one-second samples: a catch-up ran (play runs `TPS` a second). */
 const CATCH_UP_TICKS = 3 * TPS;
@@ -132,6 +138,8 @@ export interface HudHost {
   buildNew?(): boolean;
   /** Open the Expertise window (D93); when given, its chip shows once the Core mounts the Archive. */
   openExpertise?(): void;
+  /** Open the Crier on its orders (D153); when given, the Orders chip shows once CrierBelt posts one. */
+  openOrders?(): void;
 }
 
 export class Hud {
@@ -187,6 +195,12 @@ export class Hud {
   private readonly expSlots: HTMLElement;
   private readonly expBadge: HTMLElement;
   private expSig = '';
+  /** CrierBelt's orders (D153): the chip, its name, one bar per order accepted, a badge of the offers to accept. */
+  private readonly orders: HTMLElement;
+  private readonly ordersName: HTMLElement;
+  private readonly ordersBars: HTMLElement;
+  private readonly ordersBadge: HTMLElement;
+  private ordersSig = '';
   /** The spotlight the analytics reveals play in (D41); FL.focusReveal drives it too. */
   readonly spotlight = new Spotlight({ auto: !(typeof navigator !== 'undefined' && navigator.webdriver) });
   /** Which analytics plans were just taken: each plays its reveal once. */
@@ -249,6 +263,13 @@ export class Hud {
       type: 'button', 'data-hud-expertise': '', hidden: true,
       onclick: (e: Event) => { e.stopPropagation(); host.openExpertise?.(); },
     }, [archiveGlyph(), this.expName, this.expSlots, this.expBadge]);
+    this.ordersName = el('span.hud-rs-name.lettering');
+    this.ordersBars = el('span.hud-ord-bars');
+    this.ordersBadge = el('span.hud-tree-badge');
+    this.orders = el('button.hud-rs.hud-tree.hud-orders.cartouche', {
+      type: 'button', 'data-hud-orders': '', hidden: true,
+      onclick: (e: Event) => { e.stopPropagation(); host.openOrders?.(); },
+    }, [mark('order'), this.ordersName, this.ordersBars, this.ordersBadge]);
     this.clockTime = el('span.hud-time');
     this.clockTemp = el('span.hud-temp');
     this.clock = el('div.hud-chip.hud-clock', {}, [this.clockTime, this.clockTemp]);
@@ -379,13 +400,14 @@ export class Hud {
         ]);
       });
       setText(this.treeName, t('tree.hud'));
-      this.research.replaceChildren(this.tree, this.stats, this.exp, ...chips, ...this.pinned);
+      this.research.replaceChildren(this.tree, this.stats, this.exp, this.orders, ...chips, ...this.pinned);
     }
     // The Statistics chip: the ledger's way in (G), shown once it is unlocked (D41).
     setAttr(this.stats, 'hidden', analyticsOn(sim, 'ledger') ? null : '');
     setText(this.statsName, t('hud.stats'));
     setAttr(this.stats, 'title', t('hud.stats.tip'));
     this.refreshExpertise(sim);
+    this.refreshOrders(sim);
     // The plans the Heart can pay for right now (prerequisites met): an invitation to open the tree
     // (tree-state.ts: the tree's own derivation, the same « ready » its cards show).
     const ready = readyPlans(sim).length;
@@ -453,6 +475,45 @@ export class Hud {
     setText(this.expBadge, n ? String(n) : '');
     setAttr(this.exp, 'data-ready', n ? '' : null);
     setAttr(this.exp, 'title', n ? `${t('hud.expertise.tip')} · ${choosableText(n)}` : t('hud.expertise.tip'));
+  }
+
+  /**
+   * The Orders chip (D153): shown while CrierBelt has an order standing; per order accepted its item's
+   * icon, a bar of what was delivered over what it asks and, under it, its window draining (amber in its
+   * last quarter); a badge counting the offers not accepted yet — an invitation, like the tree's.
+   */
+  private refreshOrders(sim: Sim): void {
+    const open = sim.deliveries.open;
+    const on = !!this.host.openOrders && open.length > 0;
+    setAttr(this.orders, 'hidden', on ? null : '');
+    if (!on) return;
+    setText(this.ordersName, t('hud.orders'));
+    const run = runningOrders(sim);
+    const sig = run.map((o) => `${o.id}:${o.item}`).join(',') + locale();
+    if (sig !== this.ordersSig) {
+      this.ordersSig = sig;
+      this.ordersBars.replaceChildren(...run.map((o) => el('span.hud-ord', { 'data-delivery': String(o.id) }, [
+        itemMention(o.item, { name: false }),
+        el('span.hud-ord-bars-col', {}, [el('span.hud-rs-bar.hud-ord-got', {}, [el('i')]), el('span.hud-rs-bar.hud-ord-time', {}, [el('i')])]),
+      ])));
+    }
+    const tips: string[] = [];
+    for (const o of run) {
+      const n = this.ordersBars.querySelector<HTMLElement>(`[data-delivery="${o.id}"]`);
+      if (!n) continue;
+      const left = orderLeft(sim, o), frac = left / Math.max(1, o.windowMin * 60);
+      n.querySelector<HTMLElement>('.hud-ord-got')!.style.setProperty('--p', `${Math.round((1000 * o.got) / Math.max(1, o.n)) / 10}%`);
+      const time = n.querySelector<HTMLElement>('.hud-ord-time')!;
+      time.style.setProperty('--p', `${Math.round(1000 * Math.min(1, frac)) / 10}%`);
+      setAttr(time, 'data-low', frac < 0.25 ? '' : null);
+      const tip = t('hud.orders.tip', { n: o.got, item: nameOf(o.item), total: o.n, d: duration(left) });
+      setAttr(n, 'title', tip);
+      tips.push(tip);
+    }
+    const offers = open.length - run.length;
+    setText(this.ordersBadge, offers ? String(offers) : '');
+    setAttr(this.orders, 'data-ready', offers ? '' : null);
+    setAttr(this.orders, 'title', [t('delivery.title'), ...tips, offers ? tr('hud.orders.offers', { n: offers }) : null].filter(Boolean).join('\n'));
   }
 
   /**

@@ -577,7 +577,27 @@ export function fogLifted(d: Record<string, unknown>): Record<string, unknown> {
   return rest;
 }
 
-export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsToTowers, 6: researchToTokens, 7: researchAtBase, 8: parcelsResized, 9: labsToThree, 10: expertiseArc, 11: electricSmelting, 12: coreData, 13: tierOneWhole, 14: docksRetired, 15: steamPlan, 16: beaconsRetired, 17: researchFlows, 18: dataRetired, 19: quartzWorkshop, 20: assemblyBench, 21: coalRetired, 22: fogLifted };
+/**
+ * 23 → 24, a junction's rotation turns its deck (D158; owner, 2026-10-19: « the junction should
+ * prevent putting something other than a ribbon on the two sides where the junction brings the
+ * items, but not on the other two sides »): its deck runs along its rotation's axis now — north–south
+ * for rot 0 and 2, east–west for 1 and 3 —, where every junction was drawn north–south whatever its
+ * rotation (a drag laid one turned its own way, a hand placement the tool's). Each junction a save
+ * holds is set upright (rot 0), so it keeps the look it had and the lines through it ride over and
+ * under it as before. Found by the save's own building table; id frozen here.
+ */
+export function junctionsUpright(d: Record<string, unknown>): Record<string, unknown> {
+  const ids = (d.content as { buildings?: string[] } | undefined)?.buildings ?? (BUILDING_IDS as readonly string[]);
+  const j = ids.indexOf('crossing');
+  const ents = d.ents as number[] | undefined;
+  if (j < 0 || !ents) return d;
+  let changed = false;
+  const out = ents.slice();
+  for (let i = 0; i + 6 < out.length; i += 7) if (out[i + 1] === j && out[i + 4] !== 0) { out[i + 4] = 0; changed = true; }
+  return changed ? { ...d, ents: out } : d;
+}
+
+export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: ribbonsToCells, 2: zonesToParcels, 3: postsToPads, 4: streamsToCargo, 5: pylonsToTowers, 6: researchToTokens, 7: researchAtBase, 8: parcelsResized, 9: labsToThree, 10: expertiseArc, 11: electricSmelting, 12: coreData, 13: tierOneWhole, 14: docksRetired, 15: steamPlan, 16: beaconsRetired, 17: researchFlows, 18: dataRetired, 19: quartzWorkshop, 20: assemblyBench, 21: coalRetired, 22: fogLifted, 23: junctionsUpright };
 
 export class SaveTooNew extends Error {
   constructor(readonly version: number) { super(`save version ${version} is newer than this build (${SAVE_VERSION})`); }

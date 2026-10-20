@@ -4,14 +4,14 @@
 // D94), the buildings on
 // it, an owner's flag (the claim's, a neighbouring base's or another claim's), CrierBelt's ringed planet, a lease's
 // hourglass; the trade post's gates (D62): its entrance and exit, « in turn », a ribbon linked to
-// nothing. Inline SVG drawn in
+// nothing; a junction's deck coming down onto a ribbon at each end (D158). Inline SVG drawn in
 // the palette through CSS classes (styles/hud.css `.glyph`), sized in em so they sit in a line of
 // text; a glyph carries its meaning in `title` / `aria-label` for hover and screen readers.
 
 export type GlyphId =
   | 'power' | 'noPower' | 'unwired' | 'empty'
   | 'parcel' | 'floor' | 'rock' | 'water' | 'salt' | 'vent' | 'dunes' | 'chasm' | 'river' | 'ore' | 'building' | 'flag' | 'flagNeighbour' | 'crier' | 'lease'
-  | 'gateIn' | 'gateOut' | 'turn' | 'noLink';
+  | 'gateIn' | 'gateOut' | 'turn' | 'noLink' | 'deckEnds';
 
 const NS = 'http://www.w3.org/2000/svg';
 
@@ -107,6 +107,11 @@ const SHAPES: Readonly<Record<GlyphId, ReadonlyArray<readonly [string, Record<st
   noLink: [
     ['path', { class: 'g-ribbon', d: 'M5.4 1.6v5.2M10.6 1.6v5.2M5.4 9.4v5M10.6 9.4v5' }],
     ['path', { class: 'g-slash', d: 'M3 10.6l10-3.6' }],
+  ],
+  // A junction's deck (D158): its hump, coming down at each end onto a ribbon (turquoise).
+  deckEnds: [
+    ['path', { class: 'g-line', d: 'M3.2 12.4C5.4 12.4 5.7 5.6 8 5.6s2.6 6.8 4.8 6.8' }],
+    ['path', { class: 'g-deck-end', d: 'M1 13.8h3.6M11.4 13.8h3.6' }],
   ],
 };
 

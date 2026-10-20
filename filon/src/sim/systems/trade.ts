@@ -12,8 +12,12 @@
 //      not fit waits in the air, and so do the post's next ones (D43);
 //   2. each post buys its orders — only while its exit leads somewhere, and not while its
 //      container is full: nothing is spent on goods that could not come out — then sells what
-//      its entrance brought, within its throughput. The starter contract (D101, `takeStarter`)
+//      its entrance brought, within its throughput: CrierBelt's delivery orders the player accepted
+//      take their items first, at their price, off the market (D153, systems/orders.ts `fillAtPost`),
+//      the rest is sold. The starter contract (D101, `takeStarter`)
 //      buys under the same holds at its fixed price, off the market, and is gone once bought in full;
+//   2a. the delivery orders close (filled: paid and rewarded; missed: what they got paid at the bid
+//      less the fee), offers past their time are withdrawn, a new order is posted when due (D153);
 //   2b. auto-sell (cm_autosell, D127): what the Core holds beyond each switched-on item's
 //      threshold is sold at the bid, less the Core's fee (D126) — the threshold below the Core's cap
 //      (D163), so its lines don't back up on it;
@@ -38,6 +42,7 @@ import {
 import type { Ent } from '../types';
 import type { Sim } from '../state';
 import { planCost } from './research';
+import { deliveryEpoch, fillAtPost } from './orders';
 
 /** Can this item go through the Crier at all (a market depth, not a fluid)? */
 export const tradable = (item: number): boolean => item >= 0 && item < N_ITEMS && itemDef(item).depth > 0 && itemDef(item).kind !== 'fluid';
@@ -548,6 +553,9 @@ export function tradeEpoch(sim: Sim): boolean {
     }
     // What its entrance brought, its cargo's items too (D131): its own store, never the container's purchases.
     const own = sellingOf(sim, p.id);
+    // CrierBelt's delivery orders accepted (D153) take their items first, within the lift; paid once filled.
+    const took = fillAtPost(sim, own, budget);
+    budget -= took; soldMu += took;
     for (const it of tradables()) {
       if (budget <= 0) break;
       if (own[it]! < 1000 || (bid[it] ?? 0) <= 0) continue;
@@ -573,6 +581,10 @@ export function tradeEpoch(sim: Sim): boolean {
   // The starter contract bought in full stays, stopped (D101, `orderHold` 'fulfilled'): the player
   // continues it at the market's price (`continueStarter`) or stops it (`cancelImport`).
 
+  // 2a. The delivery orders (D153): filled, missed, withdrawn, a new one posted. A research node
+  //     learnt as a reward changes the Mods: the graph is rebuilt (offline too).
+  const learnt = deliveryEpoch(sim, bid, fee(sim));
+
   // 2b. The Core's surplus (D127), after the posts: the market sees both at its settlement.
   autoSales(sim, bid);
 
@@ -586,7 +598,7 @@ export function tradeEpoch(sim: Sim): boolean {
   t.bought.fill(0);
   // 5. The Gazette.
   if (out.started.length || out.announced.length || out.ended.length) sim.events.push({ k: 'gazette', started: out.started, ended: out.ended, announced: out.announced });
-  return changed || cargoKey(sim) !== cargo0;
+  return changed || learnt || cargoKey(sim) !== cargo0;
 }
 
 /** Every post's cargo in one string (posts by id, items ascending): what the exits hand out. */

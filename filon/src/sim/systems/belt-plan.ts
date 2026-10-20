@@ -13,10 +13,14 @@
 //    a plain ribbon would face a step (D77), once traction is learnt — one already there is kept,
 //    as it takes its line's pace whatever the tier dragged (D141); the dragged ribbon otherwise.
 // 2. Each wish checked (`canPlace`), and what the grid cannot see yet because nothing is laid:
-//    two planned traction steps in a row (D65: the later one is refused) and a run of planned
-//    junctions (D73: junctions never chain).
+//    two planned traction steps in a row (D65: the later one is refused) and a planned junction at
+//    another's deck end (D158: a junction's deck comes down only onto a ribbon). A junction's deck
+//    runs along the line it crosses, so the drag passes under it — or along the drag, when only
+//    that way the deck comes down on ribbons. Along their tunnels junctions chain: a drag across
+//    lines side by side lays a row of them, and its items pass under each in turn.
 // 3. Each run of obstacles — a building, water or other ground a ribbon cannot take, a chasm or a
-//    river (D94), a neighbouring base's land (D110), a chain of junctions — is leapt by a bridge pair (`skybridge`) on the plain
+//    river (D94), a neighbouring base's land (D110), junctions stacked along their decks or one whose
+//    deck end holds something else (D158) — is leapt by a bridge pair (`skybridge`) on the plain
 //    ribbon tiles just before and after it: when bridges are learnt, the run is straight, the
 //    start is fed from straight behind (D55), the pair is within the bridges' reach on one level
 //    and no other bridge of that direction on the line would take the leap. The tiles between
@@ -40,7 +44,7 @@ import { inWorld, tileIndex } from '../world/grid';
 import { parcelAt } from '../world/land';
 import { refundCost } from '../refund';
 import type { Sim } from '../state';
-import { affordable, canPlace, place, stepAt, stepRefusal, tallAt, type PlaceCheck, type PlaceReason } from './build';
+import { affordable, deckSides, canPlace, place, stepAt, stepRefusal, tallAt, type PlaceCheck, type PlaceReason } from './build';
 
 /** One tile of a ribbon drag as planned: what goes there (or why nothing does), and its check. */
 export interface BeltStep extends PlaceCheck {
@@ -70,7 +74,7 @@ const LIFT = BUILDING_IDS.findIndex((_, i) => BUILDING_KIND[i] === 'belt' && !!b
 const CAMO = BUILDING_IDS.findIndex((_, i) => BUILDING_KIND[i] === 'belt' && !!buildingDef(i).camo);
 
 /** Refusals a bridge pair can leap: what stands or lies on the tile — not a step, nor the purse. */
-const LEAPABLE: ReadonlySet<PlaceReason> = new Set<PlaceReason>(['occupied', 'terrain', 'neighbour_land', 'junction_chain', 'chasm', 'river']);
+const LEAPABLE: ReadonlySet<PlaceReason> = new Set<PlaceReason>(['occupied', 'terrain', 'neighbour_land', 'junction_deck', 'chasm', 'river']);
 // (`bridge_over_tall`, D124, is set by `leap` itself on the tiles it refuses: it is not leapable.)
 
 const learnt = (sim: Sim, def: number): boolean => def >= 0 && sim.unlocked(buildingDef(def).unlock);
@@ -113,6 +117,14 @@ export function planBelts(sim: Sim, defId: string, path: BeltPath): BeltStep[] {
       what = LIFT;
     }
     const id = BUILDING_IDS[what]!;
+    if (what === JUNCTION && o) {
+      // Its deck along the crossed line, so the drag runs under it and a row of them across lines
+      // side by side chains (D158); along the drag when only that way the deck comes down on ribbons.
+      const under = canPlace(sim, id, x, y, o.rot);
+      if (under.ok || under.reason !== 'junction_deck') return { x, y, rot: o.rot, def: id, skip: false, ...under };
+      const over = canPlace(sim, id, x, y, rot);
+      return over.ok || over.reason !== 'junction_deck' ? { x, y, rot, def: id, skip: false, ...over } : { x, y, rot: o.rot, def: id, skip: false, ...under };
+    }
     return { x, y, rot, def: id, skip: false, ...canPlace(sim, id, x, y, rot) };
   });
   // Two planned traction steps in a row: an elevator wants a flat ribbon in front of it (D65).
@@ -122,13 +134,13 @@ export function planBelts(sim: Sim, defId: string, path: BeltPath): BeltStep[] {
     const da = buildingIdx(a.def), dc = buildingIdx(c.def);
     if (buildingDef(da).lift && buildingDef(dc).lift && stepAt(sim, da, a.x, a.y, a.rot) && stepAt(sim, dc, c.x, c.y, c.rot)) refuse(c, 'lift_room');
   }
-  // A run of planned junctions: none chains (D73) — the run is an obstacle for a bridge to leap.
-  for (let i = 0; i < n;) {
-    if (!isJunction(out[i]!)) { i++; continue; }
-    let m = i;
-    while (m + 1 < n && isJunction(out[m + 1]!)) m++;
-    if (m > i) for (let j = i; j <= m; j++) refuse(out[j]!, 'junction_chain');
-    i = m + 1;
+  // A planned junction at another's deck end (D158): that deck may not come down on it — an obstacle
+  // for a bridge to leap. Along their tunnels they chain: a line runs under the row.
+  const planned = new Set<number>();
+  for (const st of out) if (isJunction(st) && inWorld(st.x, st.y)) planned.add(tileIndex(st.x, st.y));
+  for (const st of out) {
+    if (!isJunction(st) || !inWorld(st.x, st.y)) continue;
+    if (deckSides(st.rot).some((d) => inWorld(st.x + DX[d]!, st.y + DY[d]!) && planned.has(tileIndex(st.x + DX[d]!, st.y + DY[d]!)))) refuse(st, 'junction_deck');
   }
   // 3. Bridges over the obstacles.
   if (items && learnt(sim, BRIDGE)) {
@@ -137,7 +149,13 @@ export function planBelts(sim: Sim, defId: string, path: BeltPath): BeltStep[] {
       if (!leapable(out[i]!)) { i++; continue; }
       let m = i;
       while (m + 1 < n && leapable(out[m + 1]!)) m++;
-      leap(sim, path, out, def, i - 1, m + 1, span);
+      // A bridge end never stands on a junction: the planned junctions right before or after the run
+      // go under the leap with it (their lines run on underneath), so a row of them by a pond, or by
+      // a line whose deck end is taken (D158), is leapt whole as a run of obstacles was before.
+      let s = i - 1, e = m + 1;
+      while (s >= 0 && isJunction(out[s]!) && out[s]!.ok) s--;
+      while (e < n && isJunction(out[e]!) && out[e]!.ok) e++;
+      leap(sim, path, out, def, s, e, span);
       i = m + 1;
     }
   }

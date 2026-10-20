@@ -1,5 +1,7 @@
 // item-flow.test.ts — the ribbons' paths (item-flow.ts): bends round the corner, a block's path
-// through its centre, a junction's hump over the north–south line and none under the east–west one.
+// through its centre, a junction's hump over the line along its deck and none under the other: the
+// north–south one over an upright junction, the east–west one over a turned one (D158), each junction
+// of a row on its own.
 // How items are placed on them, frame by frame, is cell-flow.test.ts.
 import { describe, it, expect } from 'vitest';
 import { testSim, line } from '@/sim/testkit';
@@ -44,7 +46,7 @@ function junctionLayout(): { sim: Sim } {
     sim.placeBelts('ribbon', line(505, 503, E, 7));
     sim.placeBelts('ribbon', [...line(513, 503, E, 5), ...line(518, 503, S, 8), ...line(518, 511, W, 4)]);
     expect(sim.placeBelts('ribbon', line(512, 524, N, 4))).toBe(4);
-    expect(sim.place('crossing', 512, 520, E).ok).toBe(true);
+    expect(sim.place('crossing', 512, 520, N).ok).toBe(true); // upright (D158: its deck north–south)
     sim.placeBelts('ribbon', line(512, 519, N, 5));
     expect(sim.placeBelts('ribbon', line(519, 520, W, 7))).toBe(7);
     expect(sim.placeBelts('ribbon', [...line(511, 520, W, 6), ...line(505, 520, N, 8), ...line(505, 512, E, 5)])).toBe(19);
@@ -88,10 +90,41 @@ describe('ribbon paths', () => {
     for (const t of [tileIndex(511, 503), spanTile(tileIndex(512, 503), E), tileIndex(513, 520), spanTile(tileIndex(512, 520), W)]) {
       for (let k = 0; k <= 10; k++) { pieceAt(pieces.get(t)!, k / 10, P); expect(P.z).toBe(0); expect(P.o).toBe(0); }
     }
-    expect([N, E, S, W].map(overJunction)).toEqual([true, false, true, false]);
+    expect([N, E, S, W].map((d) => overJunction(d))).toEqual([true, false, true, false]);
+    // Turned east–west (D158), the east–west line rides over and the north–south one runs under.
+    expect([N, E, S, W].map((d) => overJunction(d, E))).toEqual([false, true, false, true]);
+    expect([N, E, S, W].map((d) => overJunction(d, S))).toEqual([true, false, true, false]);
     // The profile: flat at both ends, symmetric, a flat crown.
     expect(junctionHump(0)).toBe(0); expect(junctionHump(1)).toBe(0); expect(junctionHump(0.5)).toBe(1);
     for (let k = 1; k < 20; k++) expect(junctionHump(k / 20)).toBeCloseTo(junctionHump(1 - k / 20), 12);
+  });
+
+  it('a junction turned east–west (D158): the east–west line rides its hump, the north–south one runs under; a row of them, each on its own', () => {
+    // A line east along y 503 over a junction turned east–west at (512, 503), a line south under it;
+    // a line east along y 510 under a row of three upright junctions (511–513), a line south over each.
+    const { sim } = layout((sim) => {
+      expect(sim.place('crossing', 512, 503, E).ok).toBe(true);
+      sim.placeBelts('ribbon', line(505, 503, E, 7));
+      sim.placeBelts('ribbon', [...line(513, 503, E, 5), ...line(518, 503, S, 8)]);
+      sim.placeBelts('ribbon', line(512, 497, S, 6));
+      sim.placeBelts('ribbon', line(512, 504, S, 4));
+      for (const x of [511, 512, 513]) expect(sim.place('crossing', x, 490, N).ok).toBe(true);
+      sim.placeBelts('ribbon', line(505, 490, E, 15));
+      for (const x of [511, 512, 513]) { sim.placeBelts('ribbon', line(x, 487, S, 3)); sim.placeBelts('ribbon', line(x, 491, S, 3)); }
+    });
+    const pieces = buildPieces(sim, beltPiece, 20);
+    const P = { x: 0, y: 0, z: 0, o: 0 };
+    const over = pieces.get(spanTile(tileIndex(512, 503), E))!;
+    pieceAt(over, 0.5, P); expect(P.x).toBeCloseTo(512.5, 9); expect(P.z).toBeCloseTo(HUMP_Z, 9); expect(P.o).toBe(1);
+    const under = pieces.get(spanTile(tileIndex(512, 503), S))!;
+    for (let k = 0; k <= 10; k++) { pieceAt(under, k / 10, P); expect(P.z).toBe(0); expect(P.o).toBe(0); }
+    // Under the row: flat under each; over each: its own hump.
+    for (const x of [511, 512, 513]) {
+      const u = pieces.get(spanTile(tileIndex(x, 490), E))!;
+      for (let k = 0; k <= 10; k++) { pieceAt(u, k / 10, P); expect(P.z).toBe(0); expect(P.o).toBe(0); }
+      const o = pieces.get(spanTile(tileIndex(x, 490), S))!;
+      pieceAt(o, 0.5, P); expect(P.z).toBeCloseTo(HUMP_Z, 9); expect(P.o).toBe(1);
+    }
   });
 
 });

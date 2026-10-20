@@ -129,7 +129,7 @@ export const BUILDINGS = {
   },
   crossing: {
     name: { fr: 'Croisement', en: 'Junction' },
-    desc: { fr: 'Deux lignes de rubans s’y croisent sans se mêler : chaque objet ressort tout droit en face, vers un ruban, un routeur ou une machine. Un tracé qui coupe une ligne en pose un de lui-même.', en: 'Two ribbon lines cross here without mixing: each item comes out straight across, onto a ribbon or into a router or a machine. A ribbon drag cutting across a line lays one by itself.' },
+    desc: { fr: 'Deux lignes de rubans s’y croisent sans se mêler : l’une sur son petit pont, qui ne descend que sur un ruban à chaque bout, l’autre dessous, vers un ruban, un routeur ou une machine, et sous plusieurs croisements à la suite. Un tracé qui coupe une ligne en pose un de lui-même, et R tourne son pont.', en: 'Two ribbon lines cross here without mixing: one over its little deck, which comes down only onto a ribbon at each end, the other under it, onto a ribbon or into a router or a machine, and under several junctions in a row. A ribbon drag cutting across a line lays one by itself, and R turns its deck.' },
     kind: 'crossing', replaceGroup: 'transport', category: 'logistics', w: 1, h: 1, needsZone: false, onRock: true, unlock: 'junction',
     cost: [['iron_plate', 1]], ports: [],
   },

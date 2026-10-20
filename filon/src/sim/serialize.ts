@@ -16,6 +16,8 @@ import { modulesOf, withModules } from './cfg';
 import type { ImportOrder, PostActivity, Shipment, TradeLine } from './trade';
 import { loadQuests, saveQuests, type QuestSave } from './systems/quests';
 import { loadValue, saveValue, type ValueState } from './systems/value';
+import { loadDeliveries, saveDeliveries, type DeliverySave } from './systems/orders';
+import { loadRanking, saveRanking, type RankingState } from './systems/ranking';
 import { loadExpertise, saveExpertise, type ExpertiseSave } from './systems/expertise';
 import { cleanBlueprint, type Blueprint } from './systems/blueprint';
 import type { TerrainSource } from './world/grid';
@@ -66,8 +68,10 @@ import { neighboursGiveWay } from './systems/land';
  * 22: no coal generator (D143): its plan, held, dropped and refunded to the Heart; the generators
  * themselves taken down by the remap (refunded, their coal to the Heart, their wires dropped).
  * 23: no fog of war (D148): the explored discs a save held (`explored`) dropped; the whole world is known.
+ * 24: a junction's rotation turns its deck (D158: along rot 0 / 2 north–south, 1 / 3 east–west): every
+ * junction a save held is set upright (rot 0), the look it had — its rotation meant nothing before.
  */
-export const SAVE_VERSION = 23;
+export const SAVE_VERSION = 24;
 
 export interface SaveData {
   v: number;
@@ -172,6 +176,10 @@ export interface SaveData {
   quests?: QuestSave;
   /** The claim's value history (systems/value.ts, D50; absent: none yet). */
   value?: ValueState;
+  /** CrierBelt's delivery orders (D153, systems/orders.ts; items by id): those standing, the last closed. Absent: none posted yet. */
+  deliveries?: DeliverySave;
+  /** The claim's last standings among the other claims (D153, systems/ranking.ts; a statistic). Absent: none drawn up yet. */
+  ranking?: RankingState;
   /** The expertises (D93, systems/expertise.ts): ranks earned, the slots, réorientations, the Core's grid held. Absent: nothing earned yet. */
   expertise?: ExpertiseSave;
   /**
@@ -267,6 +275,8 @@ export function serialize(sim: Sim): SaveData {
     },
     quests: saveQuests(sim.quests),
     value: saveValue(sim.value),
+    deliveries: saveDeliveries(sim.deliveries),
+    ranking: saveRanking(sim.ranking),
     expertise: saveExpertise(sim.expertise),
     gleaners: {
       gleaned: Array.from(sim.gleaned),
@@ -416,6 +426,8 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
   // The tutorial (a colony saved before quests existed starts them at quest 0).
   if (d.quests) loadQuests(sim, d.quests);
   loadValue(sim, d.value);
+  loadDeliveries(sim, d.deliveries);
+  loadRanking(sim, d.ranking);
   sim.expertise = loadExpertise(d.expertise);
   if (d.gleaners) {
     sim.gleaned.set(d.gleaners.gleaned.slice(0, N_ITEMS));

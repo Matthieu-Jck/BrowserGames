@@ -8,8 +8,8 @@
 // silhouette, cut at the seam through its foot as the buildings' masks are), on one DynAtlas of
 // their own, kept for the session (a score of small frames at most). The buildings view lays them
 // (`addDecks`). The junctions' two parts share the sheet (D130, `junctionFrames`: the little bridge's
-// back under the items riding its deck, its front — near wall, arch, parapet, east posts — over them
-// and over those in its tunnel).
+// back under the items riding its deck, its front — near wall, arch, near parapet and posts — over
+// them and over those in its tunnel), one pair a deck axis (D158: north–south, east–west).
 import type { Rot } from '@/sim/types';
 import { DynAtlas, type DynFrame } from '../art/dyn-atlas';
 import { drawJunctionPart, drawSkyPiece, drawSkyPieceShadow, skyShadowFrame, type SkyPiece } from '../art/recipes/buildings';
@@ -70,15 +70,18 @@ export function skyFrames(piece: SkyPiece, rot: Rot, dx: number, dy: number): Sk
   return frames;
 }
 
-/** A junction's two parts (iso, atlas px at 2× world: scale `ISO_K`; one drawing for every rotation). */
+/** A junction's two parts (iso, atlas px at 2× world: scale `ISO_K`; one drawing a deck axis, D158). */
 export interface JunctionFrames { back: DynFrame; front: DynFrame }
-let junction: JunctionFrames | null = null;
+const junction: Array<JunctionFrames | null> = [null, null];
 
-/** The junction's parts, baked the first time (D130). */
-export function junctionFrames(): JunctionFrames {
-  if (junction) return junction;
-  const part = (p: 'back' | 'front'): DynFrame => { const d = drawJunctionPart(p, canvasOf); return bake(`j:${p}`, d.canvas as HTMLCanvasElement, d.frame.ox, d.frame.oy); };
-  junction = { back: part('back'), front: part('front') };
+/** The parts of a junction turned `rot` — its deck north–south (rot 0, 2) or east–west (1, 3) — baked the first time (D130). */
+export function junctionFrames(rot: Rot = 0): JunctionFrames {
+  const ax = rot & 1;
+  const have = junction[ax];
+  if (have) return have;
+  const part = (p: 'back' | 'front'): DynFrame => { const d = drawJunctionPart(p, canvasOf, ax as Rot); return bake(`j:${p}:${ax}`, d.canvas as HTMLCanvasElement, d.frame.ox, d.frame.oy); };
+  const fr = { back: part('back'), front: part('front') };
+  junction[ax] = fr;
   sheet.flush();
-  return junction;
+  return fr;
 }

@@ -710,6 +710,8 @@ export interface MapParams {
   readonly faces?: QuartzFaces;
   /** A field of rock spires in the open sand round the Crown (map 6, D147); absent: none (maps 1–5). */
   readonly spires?: SpireField;
+  /** A few huge mountains far out, their summits landmarks (map 6, D157, D149); absent: none (maps 1–5). */
+  readonly peaks?: HugePeaks;
 }
 
 /**
@@ -736,6 +738,47 @@ export const QUARTZ_FACES: QuartzFaces = {
  * out of it that keep the whole wedge on the lower half of the iso screen); needles 4 to 14 levels
  * tall (the mountains stop at 5, the spring's summit at 6), 12–14 along a crest round the cirque.
  */
+/**
+ * Rare huge mountains (map 6, D157; owner, 2026-10-20: « make some rare huge mountains (height 10+).
+ * Top color could be somewhat purple, like the old style »), and what stands on the tops (D149:
+ * « let's put some interesting stuff at the top of the mountains »). The land's draw gives it 0, 1, 1
+ * or 2 of them (`counts`, by a hash of the land), each in a `cell` × `cell` square of the world, far
+ * out (`r` tiles from the centre, parcel ring `ring` on: the rough ground past the open sand, D94),
+ * the squares' candidates taken in the land's order while they are clear — `margin` tiles round the
+ * foot holding no water, river, chasm or sea, no corridor, clearing, site, vent, quartz vein or face —
+ * and stand apart. A mountain is laid over the land as made: a broad cone of terraces from its foot
+ * (`radius` tiles, its outline wandering `wobble` ‰ by bearing) up to its summit (`top`, far over the
+ * mountains' 5) on a plateau `plateau` tiles round, the terraces moved `rough` ‰ by a noise of `scale`
+ * tiles (bays, an uneven climb), four ridges by its hash running out as spurs (`ridge` ‰), valleys between —
+ * a level a tile or so, so a traction ribbon climbs it; its rock
+ * harder up (`hardness`: under 7, 7–9, 10 and up). On its summit the wreck of an old CrierBelt survey
+ * beacon (D149), on its upper terraces `boulders` balanced rocks; one balanced rock on the spring's
+ * summit too, every land's (the cirque's own top).
+ */
+export interface HugePeaks {
+  readonly cell: number;
+  readonly counts: readonly number[];
+  readonly r: readonly [number, number];
+  readonly ring: number;
+  readonly radius: readonly [number, number];
+  readonly top: readonly [number, number];
+  readonly plateau: number;
+  readonly wobble: number;
+  readonly rough: number;
+  readonly scale: number;
+  readonly margin: number;
+  readonly hardness: readonly [number, number, number];
+  readonly boulders: number;
+  /** ‰ of the distance a spur runs out on its ridge's bearing (and a valley sinks in between: a third of it). */
+  readonly ridge: number;
+}
+
+/** Map 6's huge mountains (D157) and their tops (D149). */
+export const PEAKS: HugePeaks = {
+  cell: 128, counts: [0, 1, 1, 2], r: [150, 400], ring: 5, radius: [13, 17], top: [10, 13], plateau: 2,
+  wobble: 260, rough: 260, scale: 6, margin: 4, hardness: [2, 3, 4], boulders: 2, ridge: 380,
+};
+
 export const SPIRES: SpireField = {
   bearings: [60, 0, 4, 8, 12, 14, 16, 18], wind: { from: 62, veer: 4 }, avoid: { wind: 12, copper: 10, vein: 10, vent: 6 },
   half: 5, r: [44, 84], rings: [2, 3], clear: 2,
@@ -812,6 +855,7 @@ export const MAPS: Readonly<Record<number, MapParams>> = {
     holdings: true,
     faces: QUARTZ_FACES,
     spires: SPIRES,
+    peaks: PEAKS,
   },
 };
 

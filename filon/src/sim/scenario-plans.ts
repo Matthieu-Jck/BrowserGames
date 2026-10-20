@@ -11,7 +11,9 @@
 //   '.'          kept free while the plan is laid (a routing block's side that must deal into nothing)
 //   ^ > v <      a ribbon going that way
 //   ↑ → ↓ ←      a ribbon of the sell line (kept as the plan's `ret`: others join it)
-//   +            a junction
+//   +  =         a junction, its deck down the plan (+: the line from top to bottom rides over it)
+//                or across it (=: the line from side to side does), turned with the plan (D158:
+//                only a ribbon at either end of its deck; anything on its tunnel's sides)
 //   a key letter a building of the key (every cell of a multi-tile one bears its letter; one
 //                letter, one building) or a one-tile part (each cell its own: routers, gates…)
 // A directional routing block takes the rotation its feeder gives it: its back faces the arrow
@@ -147,7 +149,7 @@ export function layPlan(sim: Sim, plan: Plan, ax: number, ay: number, afford: (d
     const p = key[c];
     if (p?.def === 'mark') { if (p.role) marks[p.role] = [x, y, (((p.dir ?? 2) + q) & 3) as Rot]; continue; }
     if (p && multi(p)) { const m = builds.get(c); builds.set(c, m ? [Math.min(m[0], x), Math.min(m[1], y)] : [x, y]); continue; }
-    if (p || c === '+') { blocks.push([c, x, y]); if (c === '+') junction.add(t); continue; }
+    if (p || c === '+' || c === '=') { blocks.push([c, x, y]); if (c === '+' || c === '=') junction.add(t); continue; }
     const a = ARROW[c] ?? RETURN[c];
     if (a === undefined) continue; // '.': kept free
     const d = ((a + q) & 3) as Rot;
@@ -177,8 +179,9 @@ export function layPlan(sim: Sim, plan: Plan, ax: number, ay: number, afford: (d
   };
   const filters: Array<[number, string]> = [];
   for (const [c, x, y] of blocks) {
-    const p = c === '+' ? { def: 'crossing' } as PlanPart : key[c]!;
-    let rot = 0 as Rot;
+    const p = c === '+' || c === '=' ? { def: 'crossing' } as PlanPart : key[c]!;
+    // A junction's deck along the plan's columns (+) or rows (=), turned with the plan (D158).
+    let rot = (c === '+' ? q : c === '=' ? (q + 1) & 3 : 0) as Rot;
     if (DIRECTIONAL.has(p.def)) { const back = backOf(x, y); rot = back === null ? (((2 + q) & 3) as Rot) : opposite(back); }
     afford(p.def, 1);
     const r = sim.place(p.def, x, y, rot);

@@ -3,9 +3,10 @@
 // junction's hump (`buildPieces`), and a routing block's way through its centre (`viaPiece`).
 // Where on those paths each item is comes from the engine's cells (cell-flow.ts, D57).
 //
-// Junctions are little bridges (owner, 2026-10-13): the north–south line rides over the humped
-// deck — its items rise onto it and come down on the far side, at exactly the art's height — and
-// the east–west line runs under it. A path's stretch over a bridge is flagged `o` (its items are
+// Junctions are little bridges (owner, 2026-10-13): the line along a junction's rotation's axis
+// rides over the humped deck (D158: north–south for rot 0 and 2, east–west for 1 and 3) — its items
+// rise onto it and come down on the far side, at exactly the art's height — and the other line runs
+// under it; a line under a row of junctions runs under each. A path's stretch over a bridge is flagged `o` (its items are
 // drawn over the bridge's sprite, on the items view's upper layer); the others are drawn beneath
 // the buildings, so those passing under the bridge vanish under its deck and show through its
 // tunnel's mouth.
@@ -14,6 +15,7 @@ import { BUILDING_KIND } from '@/content/registry';
 import { DX, DY, type Ent, type Rot } from '@/sim/types';
 import { tileIndex } from '@/sim/world/grid';
 import { WORLD } from '@/sim/constants';
+import { overDeck } from '@/sim/systems/build';
 import { spanTile } from '@/sim/flow/chain';
 import { JUNCTION, junctionHump } from '../art/recipes/buildings';
 import { LH } from '../iso';
@@ -21,11 +23,11 @@ import { LH } from '../iso';
 /** A junction's crown over the ground (iso px): its deck's running surface, which items ride. */
 export const HUMP_Z = JUNCTION.deck * LH;
 /**
- * Does a line running this way ride over a junction's bridge (else it runs under it)? The art is
- * drawn once for every rotation (buildings.ts `junctionIso`), so the axes are the world's: the
- * north–south line goes over.
+ * Does a line running this way ride over the bridge of a junction turned `rot` (else it runs under
+ * it)? Its deck runs along its rotation's axis (D158; buildings.ts `junctionIso`): an upright one's
+ * (rot 0) carries the north–south line.
  */
-export const overJunction = (dir: Rot): boolean => (dir & 1) === 0;
+export const overJunction = (dir: Rot, rot: Rot = 0): boolean => overDeck(rot, dir);
 /**
  * How far before and after a junction (tiles) an item on its deck is drawn over the buildings:
  * where it changes layer its glyph must clear the bridge's sprite (in both views), so the switch
@@ -171,7 +173,7 @@ export function skyLeaps(sim: Sim): { starts: Set<number>; landing: Set<number> 
 function pastBridge(sim: Sim, p: Piece, landing: ReadonlySet<number>): void {
   const d = p.enter, bx = p.x - DX[d]!, by = p.y - DY[d]!;
   const sky = bx >= 0 && by >= 0 && bx < WORLD && by < WORLD && landing.has(tileIndex(bx, by)) && sim.entityAt(bx, by)?.rot === d;
-  if (!sky && !(overJunction(d) && junctionAt(sim, bx, by))) return;
+  if (!sky && !junctionOver(sim, bx, by, d)) return;
   const len = lengthOf(p);
   if (len > 0) drawOver(p, 0, Math.min(1, OVER_M / len), sky ? OVER.sky : OVER.junction);
 }
@@ -181,9 +183,9 @@ function pastBridge(sim: Sim, p: Piece, landing: ReadonlySet<number>): void {
  * span cells: flow/chain.ts `spanTile`) — a tile each, so an item crosses each at its line's pace. A
  * skybridge's start rises to `deckZ` across its own tile, each tile of the gap is a stretch of deck at
  * `deckZ`, the far end comes down (the whole way drawn over the bridge, as are the last OVER_M before
- * it and the first after it); a line passing junctions rides over each one's bridge (the
- * north–south line: a hump `humpZ` px high, drawn over the bridge) or under it (the east–west line:
- * flat, drawn beneath).
+ * it and the first after it); a line passing junctions rides over each one's bridge (along its
+ * deck: a hump `humpZ` px high, drawn over the bridge) or under it (across its deck: flat, drawn
+ * beneath), each junction of a row on its own (D158).
  */
 export function buildPieces(sim: Sim, beltPiece: BeltPieceFn, deckZ: number, humpZ = HUMP_Z): Map<number, Piece> {
   const pieces = new Map<number, Piece>();
@@ -210,8 +212,8 @@ export function buildPieces(sim: Sim, beltPiece: BeltPieceFn, deckZ: number, hum
     const piece = makePiece(e.x, e.y, enter, d, landing.has(t) ? deckZ : 0, leap ? deckZ : 0, 1);
     // A skybridge: up its start, down its far end, all over the buildings.
     if (leap || landing.has(t)) drawOver(piece, 0, 1, OVER.sky);
-    // Before junctions on the over axis: drawn over them from OVER_M before the first.
-    else if (to !== undefined && overJunction(d)) {
+    // Before a junction it rides over: drawn over it from OVER_M before it.
+    else if (to !== undefined && junctionOver(sim, e.x + DX[d]!, e.y + DY[d]!, d)) {
       const len = lengthOf(piece);
       if (len > 0) drawOver(piece, Math.max(0, 1 - OVER_M / len), 1);
     }
@@ -226,7 +228,7 @@ export function buildPieces(sim: Sim, beltPiece: BeltPieceFn, deckZ: number, hum
       const sp = makePiece(x, y, d, d, leap ? deckZ : 0, leap ? deckZ : 0, 1);
       if (leap) drawOver(sp, 0, 1, OVER.sky);
       else {
-        if (overJunction(d)) rideOver(sp, along(d, sp.ax, sp.ay), along(d, sp.bx, sp.by), along(d, sp.ax, sp.ay), 1, humpZ);
+        if (junctionOver(sim, x, y, d)) rideOver(sp, along(d, sp.ax, sp.ay), along(d, sp.bx, sp.by), along(d, sp.ax, sp.ay), 1, humpZ);
         intoStart(sp, x, y, d);
       }
       pieces.set(spanTile(tileIndex(x, y), d), sp);
@@ -235,8 +237,8 @@ export function buildPieces(sim: Sim, beltPiece: BeltPieceFn, deckZ: number, hum
   return pieces;
 }
 
-/** Does a built junction stand on tile (x, y)? */
-const junctionAt = (sim: Sim, x: number, y: number): boolean => {
+/** Does a built junction stand on tile (x, y) whose deck a line running way `d` rides over (D158)? */
+const junctionOver = (sim: Sim, x: number, y: number, d: Rot): boolean => {
   const o = sim.entityAt(x, y);
-  return !!o && o.builtAt === 0 && BUILDING_KIND[o.def] === 'crossing';
+  return !!o && o.builtAt === 0 && BUILDING_KIND[o.def] === 'crossing' && overDeck(o.rot, d);
 };

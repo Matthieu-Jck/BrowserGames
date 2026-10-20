@@ -146,8 +146,8 @@ export function terminalsOf(id: BuildingId): readonly Terminal[] {
 /** Does the generic kit draw this terminal (a service mast on a roof), or does the recipe? */
 export const kitDrawn = (t: Terminal): boolean => t.base !== undefined && !t.hang;
 
-/** Asymmetric art without ports: directional routing blocks and bridges, rigs with a front. */
-const ORIENTED: ReadonlySet<BuildingId> = new Set<BuildingId>(['drill', 'excavator', 'router', 'sorter', 'inverted_sorter', 'overflow_gate', 'underflow_gate', 'skybridge']);
+/** Asymmetric art without ports: directional routing blocks and bridges, rigs with a front, a junction's deck (D158: north–south or east–west). */
+const ORIENTED: ReadonlySet<BuildingId> = new Set<BuildingId>(['drill', 'excavator', 'router', 'sorter', 'inverted_sorter', 'overflow_gate', 'underflow_gate', 'skybridge', 'crossing']);
 
 /**
  * Does a building's art change with its rotation? Ports, a long footprint or an oriented look

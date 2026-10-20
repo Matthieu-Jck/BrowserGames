@@ -36,8 +36,10 @@ atlases baked on the main thread. Render reads the sim and never mutates it.
 | [world/cell-flow.ts](../src/render/world/cell-flow.ts) | Pure: where each item is drawn, read from the engine's cells (D57): on its tile, eased in from where it was over one step |
 | [world/cast-shadows.ts](../src/render/world/cast-shadows.ts) `reliefSun`, [art/terrain.ts](../src/render/art/terrain.ts) `paintSunShadows`, [world/relief-view.ts](../src/render/world/relief-view.ts) `setSun` | The rock's shadows following the sun (D59): the floor's as a chunk texture (`s`), the rock tops' as a tint of their columns |
 | [world/neighbours-view.ts](../src/render/world/neighbours-view.ts), [art/recipes/neighbour-dress.ts](../src/render/art/recipes/neighbour-dress.ts) | The neighbouring bases (D110): those near the view laid once surveyed — their buildings washed in their colours, lamps, wires (`layForeign` in the buildings, lights and wires views) — dressed in tarps, dome tents, banner poles and cairns; a side join's inlet drawn where one line ends on another's side; their goods (a line of several goods carries them in turn), smoke, name band (its name and trade's word, « Sept-Cornes · Fonderie », D134) and drones per frame |
+| [world/neighbour-lod.ts](../src/render/world/neighbour-lod.ts) | Pure (D162): the neighbouring bases' look by zoom × density (`zoomLook`: detail from 0.9, far under 0.75, held between), the rings they are laid in and dropped past, `planBases` (which to lay, lay again or drop) |
+| [world/neighbour-art.ts](../src/render/world/neighbour-art.ts) | Their textures (D162): the far sheet (every texture a base shows copied at half size, its dress drawn at half size, name bands and the smoke's puff) and the detail sheet (the claim's frames shared where their page is on the GPU, the others copied; the dress at full size), 1024² pages packed by skyline; a sheet renewed past its cap, the detail one let go when unused, a retired one destroyed once nothing draws from it |
 | [world/heart-flag.ts](../src/render/world/heart-flag.ts), [art/emblem.ts](../src/render/art/emblem.ts) | The claim's flag on the Heart (D58): baked wave frames bearing the emblem, laid and stepped by the buildings view; the emblem's ink drawing (shared with the register's designer) |
-| [world/ghost-view.ts](../src/render/world/ghost-view.ts) | Build ghost, demolition / marking boxes, hover outline; the flow arrows of a directional routing block being placed; a face cutter's working side (D87: the tiles behind it turquoise where they hold quartz, coral where not, an arrow into the wall); a ribbon drag's plan as a faint placeholder until the release (D73: `DRAG_ALPHA`), a dashed line over each bridge pair's leap; a piece the drag buries (D109: the camouflaged ribbon) drawn stronger, inside a dashed ink frame (`buriedFrame`) |
+| [world/ghost-view.ts](../src/render/world/ghost-view.ts) | Build ghost, demolition / marking boxes, hover outline; the flow arrows of a directional routing block being placed; a face cutter's working side (D87: the tiles behind it turquoise where they hold quartz, coral where not, an arrow into the wall); a ribbon drag's plan as a faint placeholder until the release (D73: `DRAG_ALPHA`), a dashed line over each bridge pair's leap; a piece the drag buries (D109: the camouflaged ribbon) drawn stronger, inside a dashed ink frame (`buriedFrame`); a junction's deck ends (D158, `deckEnds` / `deckArrow`): the one in hand shows an arrow over each end of its deck, turquoise where a line piece or nothing stands, coral with the end tile framed where something else does (or another junction the preview lays); a piece refused at a junction's deck end (`junction_deck`), that junction's deck coming down on it in coral (`deckBlocks`) |
 | [world/flow-arrows.ts](../src/render/world/flow-arrows.ts) | Pure: which blocks take in at their back only (`isDirectional`) and their flow arrows (`flowArrows`) |
 | [world/rivers-view.ts](../src/render/world/rivers-view.ts) | The rivers' running water at near zooms (D94): dashes drifting downstream on the ground plane |
 | [world/overlays-view.ts](../src/render/world/overlays-view.ts) | Grid, the claim's land in parcels (D60: held, leased, a neighbouring base's holding outlined, D110; the land mode's grid, marks and usable-floor gauges, D94), the Link tool's marks, selection, dig/fill marks, reach circles |
@@ -53,7 +55,7 @@ atlases baked on the main thread. Render reads the sim and never mutates it.
 | [world/lights-view.ts](../src/render/world/lights-view.ts) | `LightsView`: night glows (additive; none on a building switched off, D83), solar states (solar panel petals, PV cells); `CloudShadows` |
 | [art/tokens.ts](../src/render/art/tokens.ts), [ink.ts](../src/render/art/ink.ts) | Palette; inked strokes, flat fills, hatching, stipple, shadows |
 | [art/shapes.ts](../src/render/art/shapes.ts), [iso-shapes.ts](../src/render/art/iso-shapes.ts) | Machine vocabulary seen from above (`Frame`) / in iso volume (`IsoFrame`, `Scene`) |
-| [art/terminals.ts](../src/render/art/terminals.ts) | Where the power wires meet each building: the terminal table (`TERMINALS`, one point or a few per building, in its unrotated frame), the poles' heads (`POLE`, `PYLON`), the Heart's link masts; `turnsArt` / `artRot` (which rotation a building's art is drawn in), `rotLocal` (the art's rotation rule) |
+| [art/terminals.ts](../src/render/art/terminals.ts) | Where the power wires meet each building: the terminal table (`TERMINALS`, one point or a few per building, in its unrotated frame), the poles' heads (`POLE`, `PYLON`), the Heart's link masts; `turnsArt` / `artRot` (which rotation a building's art is drawn in: ports, a long footprint, or `ORIENTED` — the directional routing blocks, the bridge, the rigs, the junction's deck, D158), `rotLocal` (the art's rotation rule) |
 | [art/pipe-ports.ts](../src/render/art/pipe-ports.ts) | Water ports as pipework (D142): `pipePortIso` / `pipePortTop` (the stub, its glazed band, the flange, the valve), `drawCoupling` (a conduit's end at a port, in plan), the rules `pipeAt`, `wetAlternatives`, `wetEntrance` (which entrance wears the pipework); `PIPE`, the one tube the stubs and the conduit's pipe share (D145: its axis, radius, flange, mouth), `PLAN_R` |
 | [art/recipes/pipes.ts](../src/render/art/recipes/pipes.ts) | The conduit as a raised pipe in iso (D145): `tube` (a tube swept along a path, its core shadow and highlight from a world light on the half the camera sees, its silhouettes only — never its cut ends), the pieces (`drawPipe`: each straight and elbow, ends on to the edge or to a stub's mouth, a straight's joint or sight-glass; `drawPipeBranch`: a tee's branch; `drawPipeValve`, a sharing tee's valve, D152: a bolted bonnet on the crown, its stem and a brass handwheel, in its own taller `valveFrame`; D155's pressure gauge: `drawPipeGauge` — bonnet, stem, the dial at `gaugeCentre` —, `drawDial` (bezel, face, the scale's arcs by `BAL.pressure`, ticks; the inspector draws it too), `drawGaugeNeedle`, `gaugeAngle`, `PRESSURE_COL`), their saddles and flanges, `PIPE_PIECES` / `PIPE_BRANCHES` (what the atlas bakes), `drawPipeShadow` (cast along the light and a contact shade under the tube, cut to the light-shifted tile) |
 | [art/recipes/](../src/render/art/recipes/) | One drawing per building (iso + plan), belts, item glyphs, status icons; `fx.ts`: the light spy, night rigs, glow / haze / cloud textures, solar panel petals, PV states; `moving.ts`: the buildings with a moving part and the geometry their two views share (D87: the face cutter's cutting drum, `CUTTER`, which turns while it works; the deep bore's rig, `BORE`, its rotary table and kelly turning while it works, §9 note 13). The face cutter (D87) is a crawler rig whose toothed drum on its back overhangs the footprint about 0.2 tile into the wall it stands against, a ramp of cut quartz behind, a conveyor up to its output chute at the front left, an ochre power house with an amber beacon and a floodlight on the rock; the quartz workshop a saw bench and a winding spindle at its back, a lapping wheel and a tray of oscillators by its output. Item glyphs: `crystal` is quartz (two milky points on a grey stone, apart from the singing quartz's three lilac prisms), `oscillator` a silver can on two copper leads |
@@ -61,8 +63,9 @@ atlases baked on the main thread. Render reads the sim and never mutates it.
 | [art/silhouette.ts](../src/render/art/silhouette.ts) | A context that paints a drawing's solid fills in one colour (cast-shadow masks) |
 | [art/unlit.ts](../src/render/art/unlit.ts), [art/recipes/off.ts](../src/render/art/recipes/off.ts) | A building's art switched off (D83): `unlitCtx` (lamps drawn as dark glass, their halos left out; `isUnlit` for a recipe to leave out its fire and steam), `switchOff` (greyed, darker, a touch of lilac); `drawOff` runs a building's own recipe through both |
 | [art/solar.ts](../src/render/art/solar.ts) | `PV` (the solar-cell colour) and `pvPanel`: draw cells with them and they get their day / night states |
-| [art/atlas.ts](../src/render/art/atlas.ts), [dyn-atlas.ts](../src/render/art/dyn-atlas.ts) | Static atlas baked at boot; on-demand atlas for relief columns |
+| [art/atlas.ts](../src/render/art/atlas.ts), [dyn-atlas.ts](../src/render/art/dyn-atlas.ts), [skyline.ts](../src/render/art/skyline.ts) | Static atlas baked at boot; on-demand atlas for relief columns and the rest (its pages' size, skyline packing with `fit`, `destroy`: D162) |
 | [art/terrain.ts](../src/render/art/terrain.ts), [terrain.worker.ts](../src/render/art/terrain.worker.ts), [rock.ts](../src/render/art/rock.ts) | Chunk painters (ground, relief paint) and the rock-column painter, worker-safe |
+| [art/tops.ts](../src/render/art/tops.ts) | What stands on the tops (D149, §7.2c): a balanced rock, a survey beacon's wreck (`drawTopMark`), their plan marks (`topMarkPlan`) |
 | [art/spire.ts](../src/render/art/spire.ts) | Map 6's rock spires (D147, §7.2b): a spire's solid (`spireShape`: a clump of needles, bed by bed), its painter (`drawSpire`, the sprites' and the far paint's), its cast shadow (`spireShadow`), its height at a point (`spireHeightAt`, the shade's walk) and its plan mark (`spirePlan`), worker-safe |
 | [art/ore.ts](../src/render/art/ore.ts) | The ore deposits on the ground (D99): `paintDeposits` (terrain.ts calls it once, pass 5), each ore's material `ORE_LOOK` (the item glyphs read the same tones), `richness`, `nodulesOf`; worker-safe |
 
@@ -586,6 +589,20 @@ and paint windows keep `MAX_LEVEL`.
   needle a cone shaded from the light, hachures down it (denser in the shade), a contour round its
   foot; at its top the map-maker's peak, a small inked triangle, bigger the taller.
 
+### 7.2c High tops and what stands on them (D157, D149)
+
+Map 6's rare huge mountains (D157) are terraces like any rock, up to level 13: `MAX_TERRACE` is the
+tallest anywhere (`PEAK_TERRACE`, 14), so the columns, their masks, the paint windows (`BORDER` 17) and
+the sun's shadows reach that high. Over the spring summit's height (12 relief levels) a top turns the
+old lilac with height (rock.ts `topColor`, `HIGH_TOP`) and its walls a violet umber (`wallColor`,
+`HIGH_WALL`), in plan as in iso; the lower terraces keep their ochres. What stands on a top (D149;
+[tops.ts](../src/render/art/tops.ts)): the land marks the tile (`TOP_BEACON`, `TOP_BOULDER`: mapgen's
+`BIOME.beacon`, `BIOME.boulder`); `drawTopMark` draws a balanced rock (a waisted pedestal under a
+wind-polished boulder) or a CrierBelt survey beacon's wreck (a fallen lattice mast, its dish in the
+scree, a red lamp) on the column's top — in the far paint after its column, in the sprites as a decal
+lifted onto the top (relief-view `markFrame`, `m:<kind>:<look>`, at the column's key + 0.02) —, and
+`topMarkPlan` its mark in plan.
+
 ### 7.3 Two renderings of the same columns
 
 | | Far: relief paint | Near: relief sprites |
@@ -627,8 +644,12 @@ point exactly `level·LH` px up in iso.
 
 **DynAtlas** ([dyn-atlas.ts](../src/render/art/dyn-atlas.ts)) grows on demand. `add(key, w, h,
 ox, oy, draw)` bakes through a temp canvas onto shelf-packed 2048² pages (6 px padding) and
-accumulates `spent` ms. `flush()` uploads dirty pages once per frame and resets the budget. It
-never evicts: the key space is bounded (4 hardnesses × mask combinations × 2 variants — 4 for a
+accumulates `spent` ms. `flush()` uploads dirty pages once per frame and resets the budget. Two
+options (D162, the neighbouring bases' sheets): smaller pages (`new DynAtlas(1024)`), and `fit`,
+skyline packing ([skyline.ts](../src/render/art/skyline.ts): a sprite goes where its bottom ends
+highest up, on the first page with room) for sprites of very mixed sizes coming in no order — the
+neighbours' far sheet went from 59 % to 71 % filled; and `destroy()`, its pages off the GPU and
+their canvases let go, once nothing draws from it. The relief's never evicts: the key space is bounded (4 hardnesses × mask combinations × 2 variants — 4 for a
 column with a wall in sight, D147 — × the few layer, part and top looks; the talus decals a few
 dozen; map 6's spires 11 heights × 4 looks, `s:` keys, a tile wide and up to 28 levels tall: about
 three 2048² pages over the field). The mesas of 2026-10-16 cost about a
@@ -688,8 +709,8 @@ The rule is the plane the item is on the near side of — never which sprite it 
 
 | What the item meets | Its back (under the item) | Its front (over the item) | Where the item sorts (belt-lift.ts) |
 |---|---|---|---|
-| A junction, its deck's riders (N–S, `OVER.junction`) | far parapet, running surface, the two west posts | near wall with the tunnel's arch, near parapet, the two east posts | `junctionZ`: key + 0.02, between them (the next junction's of a run when its front-most point is on it). On the ribbon by it: in front of it (south) over it all, behind it (north) between its parts |
-| A junction, its tunnel's items (E–W) | — | — | on its tile: `beltZ` − 0.02, under both, seen through the near (east) mouth; past the near mouth: the near-face rule, over it all; behind it (west): on the floor, under it |
+| A junction, its deck's riders (along its rotation's axis, D158: N–S upright, E–W turned; `OVER.junction`) | far parapet, running surface, the two far posts (west upright, north turned) | near wall with the tunnel's arch, near parapet, the two near posts (east upright, south turned) | `junctionZ`: key + 0.02, between them (the next junction's of a run when its front-most point is on it). On the ribbon by it: in front of it over it all, behind it between its parts |
+| A junction, its tunnel's items (across its deck; under a row of junctions, under each) | — | — | on its tile: `beltZ` − 0.02, under both, seen through the near mouth (east upright, south turned); under the next junction of a row the same, under that one; past the near mouth: the near-face rule, over it all; behind it: on the floor, under it |
 | A skybridge's deck square | far girder, running surface | near girder and its truss face | `spanZ`: key + 0.02, between them (D121: a backed-up line waits there) |
 | A skybridge's ramp (on an end) | the same, and the end's own sprite (footing, far leg) under the piece | near girder and face, the hazard toe plate, the gantry's near leg, beam and lamps | behind the plane of the gantry's beam (its square's middle, across the line): key + 0.02; in front of it: key + 0.06, over the whole piece. On the ribbon by an end: in front of it over it all, behind it between its parts |
 | A building's south or east face — a port box, a wall, a silo's foot, a routing block's outlet slots | the whole building | — | on the floor within `FACE_REACH` (0.55 tile: the glyph rises over the face's foot from about 0.3 away, more zoomed out) of it: its host tile's key, at least the building's + 0.45 (after its moving part, overlay, chosen item); farther off, on the floor |
@@ -1070,13 +1091,20 @@ beam; `drawSkyPiece(…, part)`) —; the line it crosses runs under it, and its
 two (their path's `o` stretch; §7.4). Plan: over the plan's buildings. Shadows with the
 buildings'. **Junctions** are little bridges: their sprite (`junctionIso`) is a humped deck over a
 tunnel, laid in iso as two (D130, `addJunction`: `drawJunctionPart` baked on the decks' sheet,
-`junctionFrames` — the back, far parapet, deck and west posts, and the front, near wall and arch,
-near parapet and east posts; the atlas keeps the whole for the icon and the ghost); the line under
-it gets its own ribbon laid through the tunnel (`JunctionsView`, on `belts`, or on the rock top for
-a junction on rock), and the line over it rides the hump (item-flow.ts) between the two parts.
-`underPass` decides the passage from what stands in line east and west, past any junctions (as the
-engine's `across` looks): a ribbon running into or away from the junction, **or a building's port
-facing it on that axis** (a trade post's exit feeds it, a machine's input is fed through it).
+`junctionFrames(rot)` — the back, far parapet, deck and far posts, and the front, near wall and arch,
+near parapet and near posts; the atlas keeps the whole for the icon and the ghost). Its deck runs
+along its rotation's axis (D158): rot 0 and 2 north–south (the one drawing, as every junction was
+drawn before), 1 and 3 east–west — the same drawing **reflected across the tile's diagonal**
+(`JunctionFrame` in iso, `JunctionTopFrame` in plan: local x ↔ y), not turned, so its near wall
+with the arch faces the viewer (south now, east before; lit, not hatched), its slices still run far
+to near and its shadow in plan still falls south-east; the atlas bakes junctions per rotation
+(`ORIENTED`, art/terminals.ts). The line under it gets its own ribbon laid through the tunnel
+(`JunctionsView`, on `belts`, or on the rock top for a junction on rock), and the line over it rides
+the hump (item-flow.ts) between the two parts. `underPass` decides the passage from what stands in
+line along the tunnel — east and west of an upright junction, north and south of a turned one —,
+past any junctions (as the engine's `across` looks: a row of junctions shares the line under it):
+a ribbon running into or away from the junction, **or a building's port facing it on that axis** (a
+trade post's exit feeds it, a machine's input is fed through it).
 Owner's bug, 2026-10-17: a junction at a trade post's exit showed no ribbon under its bridge when
 nothing in line past it ran on east–west (a ribbon turning off the axis, or none yet) — the old
 rule looked at ribbons only. The passage is rebuilt whole with every structural change, so a
@@ -1112,8 +1140,9 @@ Pieces (`buildPieces`, after each structural change): a straight tile goes entry
 edge; a bend (`beltPiece`) a quarter circle round its corner; a tile in `graph.jumps` across its
 own tile, then a piece for each of the engine's cells over the leap (D121, `spanTile`: a tile
 each, so an item crosses at its line's pace) — over a skybridge's gap (rising to `DECK_Z` across the
-start tile, a stretch of deck a tile, coming down on the far end) or through crossings (the
-north–south line's cell over a junction rides its hump, the east–west line's runs flat under it).
+start tile, a stretch of deck a tile, coming down on the far end) or through crossings (the cell of
+the line along a junction's deck rides its hump, the other line's runs flat under it — each junction
+of a row on its own, `junctionOver`: its rotation's axis, D158).
 Each piece says which bridge its stretch is drawn over (`OVER`): a junction's deck or a skybridge's
 span — its ramps, its deck, the ribbons' last and first `OVER_M` at its ends — whose items sort among
 the volumes between the back and the front of the piece they ride (D130, §7.4: belt-lift.ts
@@ -1562,6 +1591,7 @@ the look and the HUD read (never the sim's) and returns `{ hour, sun, night, tem
 |---|---|
 | any | Terrain bucket 8/16/32/64 px/tile from `zoom·dpr`. Ground details at ≥ 16. Relief paint capped at 32 (detail 1 at 32, flat below). |
 | ≥ 0.3 / < 0.26 | Relief sprites on / off (hysteresis); the paint carries the cliffs when off |
+| zoom × density ≥ 0.9 / < 0.75 | The neighbouring bases in detail / far (hysteresis, D162): far from half-size copies |
 | < 0.28 | Items hidden |
 | 0.3 → 0.65 | Grid fades in (plan only) |
 | 1 → 0.75 | Item glyphs grow from 0.42 to 0.56 tile, then stay |
@@ -1608,6 +1638,29 @@ at the noise's edge, a few tenths in iso: the items by a building's face are spr
 volumes, which re-sort when one crosses a tile, and the junctions and skybridge pieces are two
 sprites each. Reading the shadow masks for every such item each frame cost base20k 1.8 ms: the
 answer is kept by 4-px cell (`shadowAt`).
+
+### The neighbouring bases' cost (D162)
+
+Each base wears a look by zoom × density ([world/neighbour-lod.ts](../src/render/world/neighbour-lod.ts)):
+far under 0.75, detail from 0.9, held between. Far, every texture it shows is a half-size copy on the
+neighbours' far sheet; in detail, the claim's frames where their page is on the GPU already, copies
+of the rest ([world/neighbour-art.ts](../src/render/world/neighbour-art.ts)). Their layouts and first
+bakes are done ahead in idle time. Frozen builds, headless Chrome 1440 × 900, dpr 1 (the machine
+loaded by other runs: frame times ±5 ms), textures the neighbours bring up, mipmaps counted:
+
+| Case | Before | After |
+|---|---|---|
+| Fresh base, near (zoom 1, 2 bases in detail) | +191 MB (8 atlas pages, a dress page) | +32 MB (detail sheet 5 pages, far 1) |
+| Fresh base, mid (0.5, 4 bases) | +191 MB | +16 MB (far sheet 3 pages) |
+| Fresh base, far (0.125, 13 bases), iso / plan | +298 / +234 MB | +27–32 MB (far sheet 5–6 pages) |
+| Late base, near / far | +64 / +107 MB | +21 / +32 MB, no atlas page brought up |
+| Zoomed out to 0.125 at once: their worst step a frame, their total | 43–45 ms, 255 ms | 15–23 ms, 85 ms |
+| A first layout in a frame | up to 44 ms | 0.1 ms (laid out in idle time, a try at a time) |
+
+The picture is the same: paused before / after shots (`plain` on and off) differ on ≤ 0.28 % of
+pixels (mean ≤ 0.27/255), on the bases' ink edges (a copy's mip levels fall on other texels).
+The heap at far zoom is unchanged (all 13 bases are in view); a base is dropped 10 s after it leaves
+a ring 69 tiles round the view.
 
 ### Long sessions and the cost of a frame (D100)
 
@@ -1913,8 +1966,8 @@ load drifts a lot):
 | [world/cast-shadows.test.ts](../src/render/world/cast-shadows.test.ts) | The shadow map is the identity for the reference light, sends the reference displacement to the sun's and keeps the cross direction; no shadow at night, shortest at noon, long and soft in a low sun, smooth through the day; at every hour a shadow runs straight away from the sun and nothing drawn (the far side of the seam) lies past a building's sun-side edge, which the stretch alone did at dawn; the bake's clip is exactly the far side; no shadow of the day reaches past `shadowReach`; a mask is read back where the day's map sends it (`maskCover`), stays within `maskReach` of its box at every hour, and its shade as a tint runs from white to the shadows' ink (D130) |
 | [world/stand.test.ts](../src/render/world/stand.test.ts) | A building stands at 0 on the floor, on the rock top on the mountains (`tileTop`, the highest under its footprint; the ghost asks the same, ribbons lie flat); it sorts after every column under it (its front corner too), past the flat rock its shadow falls on, never past a higher column or a building on the floor ahead (a ribbon there changes nothing), behind the lifted buildings in front of it |
 | [world/flow-arrows.test.ts](../src/render/world/flow-arrows.test.ts) | The ghost's way-in arrow comes from the tile behind into the block, the three ways out leave by the front and sides, in every rotation; only the blocks that take in at the back get them |
-| [world/item-flow.test.ts](../src/render/world/item-flow.test.ts) | The paths: a bend round its corner; a junction's hump on the north–south line (the art's own profile, drawn over the bridge a little before and after), none under the east–west one |
-| [world/junctions-view.test.ts](../src/render/world/junctions-view.test.ts) | `underPass`: a ribbon either side either way; a trade post's and a kiln's ports facing the junction in every orientation (exit feeds, entrance is fed); nothing for the deck axis |
+| [world/item-flow.test.ts](../src/render/world/item-flow.test.ts) | The paths: a bend round its corner; a junction's hump on the line along its deck (the art's own profile, drawn over the bridge a little before and after), none under the other — the north–south line over an upright junction, the east–west one over a turned one (D158); a row of three, each junction on its own |
+| [world/junctions-view.test.ts](../src/render/world/junctions-view.test.ts) | `underPass`: a ribbon either side either way; a trade post's and a kiln's ports facing the junction in every orientation (exit feeds, entrance is fed; the junction turns its deck across the port by itself, D158); a turned junction's tunnel north–south; nothing along the deck axis |
 | [world/item-speed.test.ts](../src/render/world/item-speed.test.ts) | D121: an item keeps its line's pace over a skybridge's span (gaps of 1–3 tiles) and through a junction, northward and eastward, plain and swift — its speed (tiles a tick) binned by the tile it is over; a backed-up line waits on the deck: a token still on each square at the deck's height, keyed just after its square, a silo in front keyed after the one it hides |
 | [world/cell-flow.test.ts](../src/render/world/cell-flow.test.ts) | Items drawn from the cells (D57), the real engine at 60 frames a second: a line through a junction (over its hump), a skybridge and onto a swift ribbon into an incinerator (it rides into the pit); a router dealing a line out three ways; a jammed line (each item still, on its tile's centre). Nothing jumps, nothing pops up but at a source, nothing vanishes but into a building |
 | [world/belt-lift.test.ts](../src/render/world/belt-lift.test.ts) | Items at their tile's top; up a traction elevator (onto the car, up with it standing still, off over the edge; the car back down alone), down one onto a ribbon, a slide onto a building; among the volumes (`itemZ`): after their ribbon, keyed by the next tile of a plateau as they cross onto it, by their own against higher rock in front; down a step away from the viewer, after the high column while on the car at the top, behind it (and over the elevator's front frame) once it sinks, under a building in front; into an incinerator, over its pit on the near half, behind its flame on the far half and once it tips in |

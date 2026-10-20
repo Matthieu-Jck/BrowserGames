@@ -4,7 +4,7 @@
 // testkit deposits all lie within the Hearth's 8-tile reach). The Hearth has no outputs
 // (D34): a line that must start from a stock starts from a `stockedSilo`.
 import { BUILDINGS } from '@/content/buildings';
-import { itemIdx } from '@/content/registry';
+import { BUILDING_KIND, itemIdx } from '@/content/registry';
 import { PLAN_IDS } from '@/content/research';
 import { ReservoirNode } from './flow/nodes';
 import { FlatSource } from './world/grid';
@@ -40,6 +40,18 @@ export function testSource(extra: ConstructorParameters<typeof FlatSource>[0] = 
 export function testSim(extra?: ConstructorParameters<typeof FlatSource>[0], opts: { plans?: boolean } = {}): Sim {
   const sim = new Sim({ worldSeed: 7, playerSeed: 11, source: testSource(extra), foundingEpoch: WORLD_EPOCH0 + 24 });
   if (opts.plans ?? true) learnPlans(sim);
+  return sim;
+}
+
+/**
+ * Every junction set upright (rot 0), outside commands, as a save from before D158 holds it once its
+ * step (persist/migrate.ts `junctionsUpright`, 23 → 24) has run: what the migration tests compare a
+ * forged old save of today's base against. The engine reads no junction's rotation (both lines pass
+ * either way), so the base runs as before; only the look and the deck rule do.
+ */
+export function uprightJunctions(sim: Sim): Sim {
+  for (const e of sim.ents.map.values()) if (BUILDING_KIND[e.def] === 'crossing') e.rot = 0;
+  sim.dirty = true;
   return sim;
 }
 

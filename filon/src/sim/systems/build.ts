@@ -1,7 +1,9 @@
 // build.ts — placing and removing structures. The placement rules, in order: unlock, world
 // edge, occupancy, terrain (a chasm or a river refused by name, D94), deposit / water / vent needs, the claim's land (docs/land.md:
 // production on its parcels; a neighbouring base's land only with Neighbour Treaties or for the camouflaged ribbon, D109–D110; its buildings never), the step a line piece faces (D77: only
-// a traction ribbon changes level, one terrace at a time), cost. An occupied tile is no refusal
+// a traction ribbon changes level, one terrace at a time), a junction's deck ends (D158: only a ribbon
+// or a skybridge end at either end of its deck, which runs along its rotation's axis; its tunnel's
+// sides take anything), cost. An occupied tile is no refusal
 // when what stands there may be replaced (Mindustry-style): same replace group, wholly inside the
 // new footprint, not the very same building. It comes down first, fully refunded, so its refund
 // counts towards the new cost. Off the claim's land a kite flies the materials out: the building
@@ -33,8 +35,11 @@ export type PlaceReason =
   | 'steep'
   /** A conduit facing a step up, or a drop of two levels or more: water never climbs, and pours down one terrace at a time (D77, D114). */
   | 'cliff'
-  /** A junction next to another junction: a ribbon must run on each side of one (D73). */
-  | 'junction_chain'
+  /**
+   * Something other than a line piece at either end of a junction's deck, or a junction whose deck
+   * would come down onto one (D158): only a ribbon or a skybridge end stands there.
+   */
+  | 'junction_deck'
   /** A face cutter whose back meets no face ore: it stands at the foot of a quartz wall, its back to the rock (D87). */
   | 'needs_face'
   /** A chasm or a river under the footprint (D94): nothing stands there nor fills it; a skybridge pair leaps it (a ribbon drag plans one). */
@@ -93,13 +98,13 @@ function refundOf(sim: Sim, ids: readonly number[], item: number): number {
 /**
  * Does turning this building change anything? Its ports move, a line runs another way, a
  * directional routing block (the router among them) faces elsewhere, a long footprint swings
- * round. Distributors, junctions and masts work (and are drawn) the same in every
- * rotation: re-placing one turned would change nothing.
+ * round, a junction's deck runs along the other axis (D158). Distributors and masts work (and are
+ * drawn) the same in every rotation: re-placing one turned would change nothing.
  */
 export function turns(def: number): boolean {
   const b = buildingDef(def);
   if (b.ports.length > 0 || b.w !== b.h) return true;
-  if (b.kind === 'belt' || b.kind === 'conduit' || b.kind === 'bridge') return true;
+  if (b.kind === 'belt' || b.kind === 'conduit' || b.kind === 'bridge' || b.kind === 'crossing') return true;
   const logic = b.logic ?? 'router';
   return b.kind === 'fork' && logic !== 'distributor';
 }
@@ -115,7 +120,9 @@ function replaceable(def: number, x: number, y: number, rot: Rot, o: Ent): boole
   if (g === undefined || buildingDef(o.def).replaceGroup !== g) return false;
   const [w, h] = footprint(def, rot), [ow, oh] = footprint(o.def, o.rot);
   if (o.x < x || o.y < y || o.x + ow > x + w || o.y + oh > y + h) return false;
-  return !(o.def === def && o.x === x && o.y === y && (o.rot === rot || !turns(def)));
+  // A junction turned half round is the same junction: its deck runs along the same axis (D158).
+  const same = o.rot === rot || !turns(def) || (BUILDING_KIND[def] === 'crossing' && ((o.rot ^ rot) & 1) === 0);
+  return !(o.def === def && o.x === x && o.y === y && same);
 }
 
 export function canPlace(sim: Sim, defId: string, x: number, y: number, rot: Rot): PlaceCheck {
@@ -186,7 +193,7 @@ export function canPlace(sim: Sim, defId: string, x: number, y: number, rot: Rot
   const step = stepRefusal(sim, def, x, y, rot);
   if (step) return fail(step);
   if (b.lift && liftCrowded(sim, def, x, y, rot)) return fail('lift_room');
-  if (b.kind === 'crossing' && junctionNear(sim, x, y)) return fail('junction_chain');
+  if (deckBlocks(sim, def, x, y, rot).length) return fail('junction_deck');
   if (b.kind === 'wind' && windNear(sim, x, y, w, h, replaces)) return fail('wind_spacing');
   if (bridgeOverTall(sim, def, x, y, rot, w, h)) return fail('bridge_over_tall');
   replaces.sort((a, c) => a - c);
@@ -323,11 +330,59 @@ function bridgeOverTall(sim: Sim, def: number, x: number, y: number, rot: Rot, w
 }
 
 /**
- * Does a junction stand on a tile beside (x, y)? Junctions never chain (owner, 2026-10-15, D73:
- * « on ne devrait pas pouvoir mettre plusieurs jonctions à la chaîne, il faut un tapis de chaque
- * côté du pont »): a ribbon runs between two of them, or a bridge leaps both lines. Old chains
- * laid before the rule stay as they are.
+ * The sides a junction's deck comes down on (D158): along its rotation's axis — north and south for
+ * rot 0 and 2 (the look every junction had before, and the one a save from then keeps, persist/
+ * migrate.ts `junctionsUpright`), east and west for rot 1 and 3. The line along that axis rides over
+ * the hump; the other runs under it, through the tunnel.
  */
+export const deckSides = (rot: Rot): readonly [Rot, Rot] => ((rot & 1) === 0 ? [0, 2] : [1, 3]);
+
+/** Does a line running way `d` ride over the deck of a junction turned `rot` (else it runs under it, D158)? */
+export const overDeck = (rot: Rot, d: Rot): boolean => ((rot ^ d) & 1) === 0;
+
+/**
+ * May a building of `def` stand at a junction's deck end (D158)? A line piece the deck can come down
+ * onto: a ribbon of any tier (a traction ribbon, a buried one) or a skybridge end.
+ */
+export function deckEndOk(def: number): boolean {
+  const k = BUILDING_KIND[def];
+  return k === 'belt' || k === 'bridge';
+}
+
+/**
+ * The junction deck ends a placement of `def` at (x, y, rot) would break (owner, 2026-10-19, D158:
+ * « the junction should prevent putting something other than a ribbon on the two sides where the
+ * junction brings the items, but not on the other two sides. You can have items going below
+ * multiple junctions in a row »), as [junction x, y, deck end x, y]: a junction with something else
+ * at either end of its deck (`deckSides`: a building, a routing block, a conduit, a mast, another
+ * junction), or such a thing at a junction's deck end. Its tunnel's sides take anything, another
+ * junction too: a line runs under a row of them (D73's « no chained junctions » holds now only
+ * along the deck). Read against the grid as it stands: the drag planner checks its
+ * own planned junctions (belt-plan.ts). What stands there from before the rule stays and works as
+ * it did: asked for a junction already standing (its own def and tile), it lists what its deck ends
+ * hold that the rule would refuse now, and its inspector shows it (ui/inspector/junction.ts).
+ */
+export function deckBlocks(sim: Sim, def: number, x: number, y: number, rot: Rot): Array<[number, number, number, number]> {
+  const out: Array<[number, number, number, number]> = [];
+  const at = (tx: number, ty: number): Ent | undefined => (inWorld(tx, ty) ? sim.ents.get(sim.grid.occ[tileIndex(tx, ty)]!) : undefined);
+  if (BUILDING_KIND[def] === 'crossing') {
+    for (const d of deckSides(rot)) {
+      const ex = x + DX[d]!, ey = y + DY[d]!, o = at(ex, ey);
+      if (o && !deckEndOk(o.def)) out.push([x, y, ex, ey]);
+    }
+  } else if (deckEndOk(def)) return out;
+  // Round the footprint: a junction whose deck runs at it — one just north or south of it turned
+  // north–south, one just east or west of it turned east–west — has an end on it (a junction too).
+  const [w, h] = footprint(def, rot);
+  const meets = (jx: number, jy: number, ex: number, ey: number, ns: boolean): void => {
+    const o = at(jx, jy);
+    if (o && BUILDING_KIND[o.def] === 'crossing' && ((o.rot & 1) === 0) === ns) out.push([jx, jy, ex, ey]);
+  };
+  for (let tx = x; tx < x + w; tx++) { meets(tx, y - 1, tx, y, true); meets(tx, y + h, tx, y + h - 1, true); }
+  for (let ty = y; ty < y + h; ty++) { meets(x - 1, ty, x, ty, false); meets(x + w, ty, x + w - 1, ty, false); }
+  return out;
+}
+
 /**
  * Does another wind turbine stand closer than `BAL.wind.spacing` tiles, middle to middle, to a
  * turbine's footprint at (x, y) (D132; owner, 2026-10-18: « on ne devrait pas pouvoir placer autant
@@ -349,16 +404,6 @@ function windNear(sim: Sim, x: number, y: number, w: number, h: number, replaces
       const [ow, oh] = footprint(o.def, o.rot), dx = 2 * o.x + ow - cx, dy = 2 * o.y + oh - cy;
       if (dx * dx + dy * dy < 4 * S * S) return true;
     }
-  }
-  return false;
-}
-
-function junctionNear(sim: Sim, x: number, y: number): boolean {
-  for (let d = 0; d < 4; d++) {
-    const nx = x + DX[d]!, ny = y + DY[d]!;
-    if (!inWorld(nx, ny)) continue;
-    const o = sim.ents.get(sim.grid.occ[tileIndex(nx, ny)]!);
-    if (o && BUILDING_KIND[o.def] === 'crossing') return true;
   }
   return false;
 }
@@ -446,12 +491,20 @@ export function loneRecipe(sim: Sim, def: number): number {
  * straight run, sideways on a curve (owner, 2026-10-16: on a curve the ribbon's own way, the way
  * out, turned the block's back away from its feed). `turned`: the player turned the block in hand
  * (R), and their rotation wins over the ribbon's (D98). A face cutter turns its back to the quartz
- * wall it is dropped against (D87, `faceRot`). Anything else keeps the rotation asked for. The
- * ghost shows the same.
+ * wall it is dropped against (D87, `faceRot`). A junction whose deck would come down on something
+ * else than a ribbon turns its deck to the other axis when that one fits (D158), unless turned.
+ * Anything else keeps the rotation asked for. The ghost shows the same.
  */
 export function placementRot(sim: Sim, defId: string, x: number, y: number, rot: Rot, turned = false): Rot {
   const def = buildingIdx(defId), b = buildingDef(def);
   if (b.drill?.face) return inWorld(x, y) ? faceRot(sim.grid, def, x, y, rot) : rot;
+  // A junction (D158): its deck along the axis in hand, or the other when only that one comes down
+  // on ribbons — unless the player turned it (R), then it is theirs.
+  if (b.kind === 'crossing') {
+    if (turned || !inWorld(x, y) || !deckBlocks(sim, def, x, y, rot).length) return rot;
+    const other = ((rot + 1) & 3) as Rot;
+    return deckBlocks(sim, def, x, y, other).length ? rot : other;
+  }
   // A pressure gauge (D155) runs as the conduit it is set into, whatever the turn in hand.
   if (b.gauge) {
     const e = inWorld(x, y) ? sim.entityAt(x, y) : undefined;

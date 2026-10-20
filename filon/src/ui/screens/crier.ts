@@ -19,9 +19,14 @@
 //     delay, « Signer »; its order's row then carries a « Contrat » tag and what is left to buy; « Au comptant » (spot
 //     trades with a live quote both ways); « En route » by item and post (how many, the soonest
 //     arrival), not one line per shipment;
+//   · Commandes (D153): CrierBelt's delivery orders as cards — the item's icon and count, a bar of what
+//     was delivered, a bar of the time left draining, the pay and how much more than a sale, the special
+//     reward as a chip, « Accepter » — then when the next comes and the last orders closed;
 //   · Ce qui rapporte: the unlocked recipes by ◉ per raw tile-minute, best first, each with a bar on
 //     that figure and a diverging bar on its margin per machine, its sparkline and what the player's
 //     flow (or one machine's) does to the price.
+// The Gazette opens on « Classement des concessions » (D153): the claim's rank among all the claims,
+// those just above and below, the gap to the next rank as a bar, when the next standings come.
 // Every item named shows its icon (mention.ts), and every item choice is an item picker with icons
 // (item-picker.ts, through trade-view's `tradeSelect`).
 // Built once (again only on a locale or world change); refresh() (4 Hz while open) writes values
@@ -54,6 +59,9 @@ import {
   refusalText, secondsTo, spct, TRADABLE, tradePerHour, tradeSelect, unitBuyCents, unitSellCents, type PostFacts,
 } from '../trade-view';
 import { orderCentsPerMin } from '@/sim/systems/trade';
+import { orderPay, tutorialOver, type DeliveryOrder } from '@/sim/systems/orders';
+import { lastStandings } from '@/sim/systems/ranking';
+import { claimName, nextPostIn, nextStandingsIn, ordinal, orderLeft, overSale, rewardChip } from '../orders-view';
 import { OrbitView, type OrbitLift } from '../orbit/orbit-view';
 
 export interface CrierHost {
@@ -65,8 +73,8 @@ export interface CrierHost {
 }
 
 /** The screen's tabs (the Gazette is always in view, under the orbit). */
-export type CrierTab = 'prices' | 'trade' | 'board';
-const TABS: readonly CrierTab[] = ['prices', 'trade', 'board'];
+export type CrierTab = 'prices' | 'trade' | 'orders' | 'board';
+const TABS: readonly CrierTab[] = ['prices', 'trade', 'orders', 'board'];
 
 /** Energy priced into « Ce qui rapporte »: coal as fuel, ≈ 0.04 ◉ per kW·min (design §6). */
 const ENERGY_COST = BAL.market.energyCost;
@@ -139,10 +147,11 @@ function svg<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string,
   return n;
 }
 
-/** The tabs' inked icons on a 16 × 16 board (drawn in the text's colour, crier.css `.cr-ticon`): a price line, ⇄, a podium of bars. */
+/** The tabs' inked icons on a 16 × 16 board (drawn in the text's colour, crier.css `.cr-ticon`): a price line, ⇄, a ticked order slip, a podium of bars. */
 const TAB_ICON: Readonly<Record<CrierTab, ReadonlyArray<readonly ['path' | 'rect', Record<string, string>]>>> = {
   prices: [['path', { d: 'M1.6 14.4h12.8' }], ['path', { d: 'M1.8 11.4l3.2-3.8 3 2.6 3.6-5.6 2.8 2.4' }]],
   trade: [['path', { d: 'M2.4 5.2h10.4M10.2 2.6l2.6 2.6-2.6 2.6' }], ['path', { d: 'M13.6 10.8H3.2M5.8 8.2l-2.6 2.6 2.6 2.6' }]],
+  orders: [['rect', { x: '2.4', y: '1.8', width: '11.2', height: '12.6', rx: '1.2' }], ['path', { d: 'M5 5.4h6M5 8.2h3.4M8.6 11.4l1.5 1.5 2.9-3.4' }]],
   board: [['rect', { x: '1.8', y: '9', width: '3.4', height: '5.4', rx: '0.6' }], ['rect', { x: '6.3', y: '5.4', width: '3.4', height: '9', rx: '0.6' }], ['rect', { x: '10.8', y: '1.8', width: '3.4', height: '12.6', rx: '0.6' }]],
 };
 function tabIcon(k: CrierTab): SVGSVGElement {
@@ -952,6 +961,199 @@ class BoardPane {
   }
 }
 
+// ── CrierBelt's orders (D153) ─────────────────────────────────────────────────
+
+/** One order's card: what is live in it. */
+interface OrderCard {
+  readonly o: DeliveryOrder;
+  readonly node: HTMLElement;
+  readonly got: { root: HTMLElement; set(frac: number, tone: string): void };
+  readonly gotT: HTMLElement;
+  readonly time: { root: HTMLElement; set(frac: number, tone: string): void };
+  readonly timeT: HTMLElement;
+  readonly over: HTMLElement;
+  readonly pay: HTMLElement;
+}
+
+/**
+ * The Commandes tab (D153): CrierBelt's orders as cards, shown more than told — the item's icon and
+ * how many, a bar of what was delivered over what it asks, a bar of the time left draining (its
+ * offer's before « Accepter », its window's after), the pay as a big figure with how much more than a
+ * sale at the post, the special reward as a chip, « Accepter »; the words on hover. Under them, when
+ * the next order may come, and the last orders closed. The sim decides; this asks through
+ * `acceptDelivery` (a logged command).
+ */
+class OrdersPane {
+  readonly root: HTMLElement;
+  private readonly cards = el('div.dl-cards');
+  private readonly count = el('span.cr-count');
+  private readonly note = el('p.dl-note');
+  private readonly nopost = el('p.dl-nopost', { hidden: '' });
+  private readonly pastCard: HTMLElement;
+  private readonly pastRows = el('div.dl-past');
+  private readonly stats = el('p.dl-stats');
+  private live: OrderCard[] = [];
+  private sig: string | null = null;
+  private pastSig: string | null = null;
+
+  constructor(private readonly ctx: Ctx) {
+    this.pastCard = section({ sec: 'delivery-past', title: () => t('delivery.past'), icon: mark('flight') }, [this.pastRows, this.stats]);
+    this.root = el('div.cr-pane', { 'data-crier-pane': 'orders' }, [
+      section({ sec: 'delivery', title: () => t('delivery.title'), icon: tabIcon('orders'), aside: this.count, tip: () => t('delivery.help') }, [
+        this.nopost, this.cards, this.note,
+      ]),
+      this.pastCard,
+    ]);
+  }
+
+  private card(o: DeliveryOrder): OrderCard {
+    const got = progressBar(), time = progressBar();
+    const gotT = el('span.dl-fig'), timeT = el('span.dl-fig'), over = el('span.dl-over'), pay = el('b.dl-pay-v');
+    const offer = o.due < 0;
+    const head = el('div.dl-head', {}, [
+      el('span.dl-icon', {}, itemMention(o.item, { name: false, big: true })),
+      el('div.dl-what', {}, [
+        el('span.dl-n.lettering', {}, `${num(o.n)} ×`),
+        el('span.dl-name', {}, nameOf(o.item)),
+        o.event ? el('span.cr-tag.dl-event', { title: t('delivery.event.tip') }, t('delivery.event')) : null,
+      ]),
+    ]);
+    const act = offer
+      ? el<'button'>('button.btn.primary.dl-accept', {
+        type: 'button', 'data-delivery-accept': String(o.id), title: t('delivery.accept.tip', { d: minutes(o.windowMin) }),
+        onclick: () => this.accept(o),
+      }, t('delivery.accept'))
+      : el('span.dl-state', {}, [mark('on'), t('delivery.state.running')]);
+    const node = el('article.dl-card', { 'data-delivery': String(o.id), 'data-state': offer ? 'offer' : 'running', 'data-event': o.event ? '' : null, 'data-first': o.first ? '' : null }, [
+      head,
+      el('div.dl-row', { 'data-k': 'got' }, [el('span.dl-ri', {}, mark('cargo')), got.root, gotT]),
+      el('div.dl-row', { 'data-k': 'time' }, [el('span.dl-ri', {}, mark('order')), time.root, timeT]),
+      el('div.dl-foot', {}, [
+        el('span.dl-pay', {}, [el('span.cr-coin', {}, '◉'), pay, over]),
+        o.reward ? rewardChip(this.ctx.atlas, o.reward) : null,
+        act,
+      ]),
+    ]);
+    return { o, node, got, gotT, time, timeT, over, pay };
+  }
+
+  private accept(o: DeliveryOrder): void {
+    const sim = this.ctx.host.sim();
+    if (sim.acceptDelivery(o.id)) this.ctx.host.notify('good', t('delivery.accepted', { n: o.n, item: itemRef(o.item), d: minutes(o.windowMin) }));
+  }
+
+  refresh(sim: Sim): void {
+    const st = sim.deliveries, open = st.open;
+    const sig = `${locale()}|${open.map((o) => `${o.id}:${o.due >= 0 ? 'r' : 'o'}`).join(',')}`;
+    if (sig !== this.sig) {
+      this.sig = sig;
+      this.live = open.map((o) => this.card(o));
+      this.cards.replaceChildren(...this.live.map((c) => c.node));
+    }
+    setText(this.count, `${open.length}/${BAL.orders.open}`);
+    setAttr(this.nopost, 'hidden', open.length && !sim.tradePosts().length ? null : '');
+    setText(this.nopost, t('delivery.noPost'));
+    for (const c of this.live) {
+      const o = c.o, left = orderLeft(sim, o), offer = o.due < 0;
+      c.got.set(o.got / Math.max(1, o.n), o.got >= o.n ? '' : 'lilac');
+      setText(c.gotT, `${num(o.got)} / ${num(o.n)}`);
+      setAttr(c.gotT.parentElement!, 'title', t('delivery.got.tip', { got: num(o.got), n: num(o.n) }));
+      const span = (offer ? BAL.orders.offerMin : o.windowMin) * (EPOCH / TPS);
+      const frac = left / Math.max(1, span);
+      c.time.set(frac, offer ? 'idle' : frac < 0.25 ? 'bad' : frac < 0.5 ? 'warn' : '');
+      setText(c.timeT, offer ? t('delivery.window', { d: minutes(o.windowMin) }) : t('delivery.left', { d: duration(left) }));
+      setAttr(c.timeT.parentElement!, 'title', offer ? t('delivery.offer.left', { d: duration(left) }) : t('delivery.left', { d: duration(left) }));
+      setText(c.pay, ocNum(orderPay(o), false, 0));
+      const over = overSale(sim, o);
+      setText(c.over, over > 0 ? `+${spct(over).replace(/^\+/, '')}` : '');
+      setAttr(c.pay.parentElement!, 'title', t('delivery.pay.tip', { pay: oc(orderPay(o), false, 0), unit: oc(o.cents), pct: spct(over).replace(/^\+/, '') }));
+    }
+    // Nothing standing: why, and when the next one may come.
+    if (!open.length) setText(this.note, !tutorialOver(sim) ? t('delivery.before') : `${t('delivery.none')} ${t('delivery.next', { d: duration(nextPostIn(sim)) })}`);
+    else setText(this.note, open.length >= BAL.orders.open ? t('delivery.full') : t('delivery.next', { d: duration(nextPostIn(sim)) }));
+    // The last closed: filled or missed, what each paid.
+    const psig = `${locale()}|${st.past.map((p) => p.id).join(',')}`;
+    if (psig !== this.pastSig) {
+      this.pastSig = psig;
+      this.pastRows.replaceChildren(...st.past.map((p) => el('div.dl-prow', { 'data-what': p.what }, [
+        itemMention(p.item, { name: false }),
+        el('span.dl-pn', {}, `${num(p.got)} / ${num(p.n)}`),
+        el('span.dl-pw', {}, [mark(p.what === 'filled' ? 'on' : 'off'), t(`delivery.past.${p.what}` as MsgKey)]),
+        p.reward && p.what === 'filled' ? rewardChip(this.ctx.atlas, p.reward) : el('span'),
+        el('b.dl-pp', {}, oc(p.paid, false, 0)),
+      ])));
+      setText(this.stats, t('delivery.stats', { filled: num(st.filled), missed: num(st.missed), paid: oc(st.paid, false, 0) }));
+    }
+    setAttr(this.pastCard, 'hidden', st.past.length ? null : '');
+  }
+}
+
+// ── the claims' standings (D153) ─────────────────────────────────────────────
+
+/**
+ * « Classement des concessions », in the Gazette (D153): the claim's rank as a big figure among all
+ * the claims, its best; the claims just above and just below it with their values, its own line
+ * marked; the gap to the next rank as a bar (the claim's value against the next one's) and what it
+ * takes; when the next standings come. Drawn from the last standings (hourly), read from the sim.
+ */
+class RankBox {
+  readonly root: HTMLElement;
+  private readonly pos = el('b.rk-pos.lettering');
+  private readonly best = el('small.rk-best');
+  private readonly rows = el('div.rk-rows');
+  private readonly gap = progressBar();
+  private readonly gapT = el('span.rk-gap-t');
+  private readonly gapRow: HTMLElement;
+  private readonly next = el('small.rk-next');
+  private sig = '';
+
+  constructor() {
+    this.gapRow = el('div.rk-gap', {}, [mark('level'), this.gap.root, this.gapT]);
+    this.root = el('div.rk', { 'data-crier-section': 'ranking', title: t('rank.tip') }, [
+      el('div.rk-head', {}, [el('h3.cr-gz-sec.lettering', {}, t('rank.title')), this.pos, this.best]),
+      this.rows, this.gapRow, this.next,
+    ]);
+  }
+
+  refresh(sim: Sim, colonies: readonly ColonyView[]): void {
+    const s = lastStandings(sim);
+    if (!s) {
+      setText(this.pos, '—');
+      setText(this.best, '');
+      this.rows.replaceChildren();
+      setAttr(this.gapRow, 'hidden', '');
+      setText(this.next, t('rank.first', { d: duration(secondsTo(sim, nextBoundary(sim))) }));
+      return;
+    }
+    const of = s.rows.length, rank = s.rank;
+    setText(this.pos, t('rank.pos', { rank: ordinal(rank), of }));
+    setText(this.best, sim.ranking.best && sim.ranking.best < rank ? t('rank.best', { rank: ordinal(sim.ranking.best) }) : '');
+    // Two claims above, the claim, two below (more below at the top, more above at the foot).
+    const from = Math.max(0, Math.min(rank - 3, of - 5)), shown = s.rows.slice(from, from + 5);
+    const sig = `${locale()}|${sim.ranking.epoch}|${sim.colonyName}`;
+    if (sig !== this.sig) {
+      this.sig = sig;
+      this.rows.replaceChildren(...shown.map((r, k) => el('div.rk-row', { 'data-own': r.colony < 0 ? '' : null, 'data-colony': String(r.colony) }, [
+        el('span.rk-n', {}, num(from + k + 1)),
+        el('span.rk-flag', {}, glyph(r.colony < 0 ? 'flag' : 'flagNeighbour')),
+        el('span.rk-name', {}, claimName(colonies, r.colony, sim.colonyName)),
+        el('b.rk-v', {}, `${compact(Math.round(r.value / 100))} ◉`),
+      ])));
+    }
+    // The gap to the next rank: the claim's value against the one just above it.
+    const above = rank > 1 ? s.rows[rank - 2]! : null, own = s.rows[rank - 1]!;
+    setAttr(this.gapRow, 'hidden', null);
+    if (above) {
+      this.gap.set(own.value / Math.max(1, above.value), 'lilac');
+      setText(this.gapT, t('rank.gap', { v: oc(above.value - own.value + 100, false, 0), name: claimName(colonies, above.colony, '') }));
+    } else {
+      this.gap.set(1, '');
+      setText(this.gapT, t('rank.top'));
+    }
+    setText(this.next, t('rank.next', { d: duration(nextStandingsIn(sim)) }));
+  }
+}
+
 // ── the Gazette ───────────────────────────────────────────────────────────────
 
 class GazetteBox {
@@ -959,10 +1161,13 @@ class GazetteBox {
   private readonly list = el('div.cr-gz-list');
   private sig: string | null = null;
   private live: Array<(sim: Sim) => void> = [];
+  /** « Classement des concessions » (D153), first under the masthead. */
+  private readonly rank = new RankBox();
 
   constructor(private readonly atlas: Atlas) {
     this.root = el('section.cr-gazette.cartouche', { 'data-crier-section': 'gazette' }, [
       el('header.cr-gz-head', {}, [el('h2.lettering', {}, t('crier.gazette')), el('small', {}, t('crier.gazette.sub'))]),
+      this.rank.root,
       this.list,
     ]);
   }
@@ -1001,6 +1206,7 @@ class GazetteBox {
   }
 
   refresh(sim: Sim, snap: MarketSnapshot): void {
+    this.rank.refresh(sim, snap.colonies);
     const { active, announced } = snap.events;
     const sig = `${announced.map((e) => e.id).join(',')}|${active.map((e) => e.id).join(',')}`;
     if (sig !== this.sig) {
@@ -1038,6 +1244,7 @@ interface Parts {
   readonly tabs: ReadonlyMap<CrierTab, HTMLButtonElement>;
   readonly prices: PricesPane;
   readonly trade: TradePane;
+  readonly orders: OrdersPane;
   readonly board: BoardPane;
   readonly gazette: GazetteBox;
 }
@@ -1112,6 +1319,7 @@ export class CrierScreen {
       tabs,
       prices: new PricesPane(ctx, snap, (item) => this.tradeItem(item)),
       trade: new TradePane(ctx, this.forms),
+      orders: new OrdersPane(ctx),
       board: new BoardPane(),
       gazette: new GazetteBox(this.atlas),
     };
@@ -1127,7 +1335,7 @@ export class CrierScreen {
           el('div.cr-orbit', {}, [this.orbit.root, el('div.cr-legend', {}, [p.colonies.chip, p.partners.chip])]),
           p.gazette.root,
         ]),
-        el('div.cr-main', {}, [nav, p.prices.root, p.trade.root, p.board.root]),
+        el('div.cr-main', {}, [nav, p.prices.root, p.trade.root, p.orders.root, p.board.root]),
       ]),
     );
     this.paintTabs(p);
@@ -1138,6 +1346,7 @@ export class CrierScreen {
     for (const [k, b] of p.tabs) setAttr(b, 'data-on', k === this.tab ? '' : null);
     setAttr(p.prices.root, 'hidden', this.tab === 'prices' ? null : '');
     setAttr(p.trade.root, 'hidden', this.tab === 'trade' ? null : '');
+    setAttr(p.orders.root, 'hidden', this.tab === 'orders' ? null : '');
     setAttr(p.board.root, 'hidden', this.tab === 'board' ? null : '');
   }
 
@@ -1177,9 +1386,13 @@ export class CrierScreen {
 
     ui.gazette.refresh(sim, snap);
     this.paintTabs(ui);
+    // The orders' tab counts the offers waiting for « Accepter » (D153).
+    const offers = sim.deliveries.open.filter((o) => o.due < 0).length;
+    setAttr(ui.tabs.get('orders')!, 'data-badge', offers ? String(offers) : null);
     const items = new Map(snap.items.map((im) => [im.idx, im] as const));
     if (this.tab === 'prices') ui.prices.refresh(sim, snap, items, f);
     else if (this.tab === 'trade') ui.trade.refresh(sim, snap, f, posts);
+    else if (this.tab === 'orders') ui.orders.refresh(sim);
     else ui.board.refresh(sim, items);
     // The purse's card asked for a line (D102): into view, flashed once.
     if (this.pending) {

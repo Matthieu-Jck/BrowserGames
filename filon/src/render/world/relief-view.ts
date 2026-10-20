@@ -28,6 +28,7 @@ import { CHUNK, CHUNKS } from '@/sim/constants';
 import type { Grid } from '@/sim/world/grid';
 import { buildWindow, BORDER, columnLook, footOf, spireTile, tileMasks, WIN, windowLayers, windowLevels } from '../art/terrain';
 import { drawSpire, spireHeightAt, spireSeed, spireVariant } from '../art/spire';
+import { drawTopMark, isTopMark, TOP_HEAD } from '../art/tops';
 import { columnSeed, columnVariant, drawColumn, drawFoot, footKey, hasWall, topKey, type Foot, type TopLook } from '../art/rock';
 import { DynAtlas } from '../art/dyn-atlas';
 import { IS, IH, ILH } from '../art/iso-shapes';
@@ -71,7 +72,7 @@ export { rockZ };
  * `Foot`: talus there); and its rock spires (D147: `peak`, a spire's relief height, 0 elsewhere — its
  * `lv` is 0, no terrace —, `pvar` its look).
  */
-interface ChunkRelief { lv: Uint8Array; masks: Uint8Array[]; cls: Uint8Array; top: Array<TopLook | null>; vein: Uint8Array; foot: Array<Foot | null>; layers: Array<number[] | null>; peak: Uint8Array; pvar: Uint8Array; high: number }
+interface ChunkRelief { lv: Uint8Array; masks: Uint8Array[]; cls: Uint8Array; top: Array<TopLook | null>; vein: Uint8Array; foot: Array<Foot | null>; layers: Array<number[] | null>; peak: Uint8Array; pvar: Uint8Array; high: number; mark: Uint8Array }
 
 export class ReliefView {
   readonly atlas = new DynAtlas();
@@ -130,13 +131,14 @@ export class ReliefView {
         lv: new Uint8Array(CHUNK * CHUNK), masks: Array.from({ length: MAX_TERRACE }, () => new Uint8Array(CHUNK * CHUNK)),
         cls: new Uint8Array(CHUNK * CHUNK), top: new Array<TopLook | null>(CHUNK * CHUNK).fill(null), vein: new Uint8Array(CHUNK * CHUNK),
         foot: new Array<Foot | null>(CHUNK * CHUNK).fill(null), layers: new Array<number[] | null>(CHUNK * CHUNK).fill(null),
-        peak: new Uint8Array(CHUNK * CHUNK), pvar: new Uint8Array(CHUNK * CHUNK), high: 0,
+        peak: new Uint8Array(CHUNK * CHUNK), pvar: new Uint8Array(CHUNK * CHUNK), high: 0, mark: new Uint8Array(CHUNK * CHUNK),
       };
       for (let j = 0; j < CHUNK; j++) {
         for (let i = 0; i < CHUNK; i++) {
           const o = (j + BORDER) * WIN + i + BORDER, k = j * CHUNK + i;
           if (spireTile(d, o)) { c.peak[k] = levelOf(d.terrain[o]!, d.level[o]!); c.pvar[k] = spireVariant(cx * CHUNK + i, cy * CHUNK + j); }
           c.lv[k] = lv[o]!;
+          if (lv[o] && isTopMark(d.biome[o]!)) c.mark[k] = d.biome[o]!;
           c.high = Math.max(c.high, c.lv[k]!, c.peak[k]!);
           if (lv[o]) {
             const look = columnLook(d, lv, o);
@@ -197,6 +199,18 @@ export class ReliefView {
     const ox = M + IS, oy = M + h * ILH;
     return this.atlas.add(key, w, hh, ox, oy, (ctx) => {
       drawSpire(ctx, (u, v, z) => [ox + (u - v) * IS, oy + (u + v) * IH - z * ILH], h, { detail: 2, seed: spireSeed(h, variant), k: 1 });
+    });
+  }
+
+  /** The baked decal of what stands on a top (D149, art/tops.ts): drawn at height 0, lifted onto the top by its sprite; a look by tile. */
+  private markFrame(kind: number, seed: number): ReturnType<DynAtlas['get']> {
+    const key = `m:${kind}:${seed & 3}`;
+    const f = this.atlas.get(key);
+    if (f || this.atlas.spent > BUDGET_MS) return f;
+    const head = Math.ceil(TOP_HEAD * ILH), w = 2 * IS + 2 * M, h = 2 * IH + 2 * M + head;
+    const ox = M + IS, oy = M + head;
+    return this.atlas.add(key, w, h, ox, oy, (ctx) => {
+      drawTopMark(ctx, (u, v, z) => [ox + (u - v) * IS, oy + (u + v) * IH - z * ILH], kind, 0, (seed & 3) * 977 + kind, 1, 2);
     });
   }
 
@@ -308,6 +322,21 @@ export class ReliefView {
           const [wx, wy] = tileToIso(x, y);
           s.position.set(wx - f.ox * 0.5, wy - f.oy * 0.5 - L * LH);
           s.zIndex = rockZ(x, y) + 0.01;
+          s.tint = this.tintAt(x, y, L, null);
+          this.layer.addChild(s);
+          out.push({ s, x, y, lv: L, ms: null });
+        }
+        // What stands on its top (D149): a decal lifted onto it, over its talus.
+        const mark = c.mark[k];
+        if (mark) {
+          const f = this.markFrame(mark, hash32(x, y, 0x70a));
+          if (!f) { complete = false; this.pending++; continue; }
+          const L = c.lv[k]!;
+          const s = new Sprite(f.tex);
+          s.scale.set(0.5);
+          const [wx, wy] = tileToIso(x, y);
+          s.position.set(wx - f.ox * 0.5, wy - f.oy * 0.5 - L * LH);
+          s.zIndex = rockZ(x, y) + 0.02;
           s.tint = this.tintAt(x, y, L, null);
           this.layer.addChild(s);
           out.push({ s, x, y, lv: L, ms: null });

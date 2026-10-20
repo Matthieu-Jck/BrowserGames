@@ -1446,3 +1446,82 @@ describe('map 6: a field of rock spires (D147)', () => {
     }
   }, 60_000);
 });
+
+describe('map 6: rare huge mountains (D157) and what stands on the tops (D149)', () => {
+  const LANDS = [1, 2, 3, 4, 5, 6, 7, 8];
+  const K = MAPS[6]!.peaks!;
+  /** A chunk as `fill` gives it (terrain, level, biome). */
+  const chunk = (gen: MapGen, cx: number, cy: number): { t: Uint8Array; lv: Uint8Array; b: Uint8Array } => {
+    const n = CHUNK * CHUNK, t = new Uint8Array(n), lv = new Uint8Array(n), b = new Uint8Array(n);
+    gen.fill(cx, cy, t, new Uint8Array(n), new Uint16Array(n), new Uint8Array(n), b, lv);
+    return { t, lv, b };
+  };
+
+  it('a few a land at most, some lands with none; far out, 10 levels and more, a summit the land reads', () => {
+    let some = 0;
+    for (const land of LANDS) {
+      const gen = new MapGen(WORLD_SEED, land, 6), sites = gen.peakSites();
+      expect(sites.length).toBeLessThanOrEqual(Math.max(...K.counts));
+      if (sites.length) some++;
+      for (const s of sites) {
+        const r2 = (s.x - CENTER) ** 2 + (s.y - CENTER) ** 2;
+        expect(r2).toBeGreaterThanOrEqual(K.r[0] ** 2);
+        expect(s.top).toBeGreaterThanOrEqual(10);
+        expect(ringOf(parcelAt(s.x, s.y))).toBeGreaterThanOrEqual(K.ring);
+        expect(gen.levelAt(s.x, s.y)).toBe(s.top);
+        expect(isRock(gen.terrainAt(s.x, s.y))).toBe(true);
+        expect(gen.floorAt(s.x, s.y)).toBe(false);
+        // Off what the land guarantees: no corridor on its slopes, no neighbouring base on them.
+        for (let dy = -s.R; dy <= s.R; dy++) for (let dx = -s.R; dx <= s.R; dx++) expect(gen.lines.hit(s.x + dx, s.y + dy, LineKind.Corridor)).toBeFalsy();
+        expect(gen.keepsClear(s.x, s.y, s.x + 1, s.y + 1)).toBe(true);
+      }
+    }
+    expect(some).toBeGreaterThanOrEqual(4);
+    expect(some).toBeLessThan(LANDS.length);
+    // Maps 1–5 have none.
+    expect(new MapGen(WORLD_SEED, 1, 5).peakSites()).toEqual([]);
+  });
+
+  it('is climbed a level a step from its foot to its summit (a traction ribbon goes up), and fill agrees with the accessors', () => {
+    for (const land of LANDS) {
+      const gen = new MapGen(WORLD_SEED, land, 6);
+      for (const s of gen.peakSites()) {
+        const R = s.R + 6, seen = new Set<number>(), key = (x: number, y: number): number => y * WORLD + x;
+        const q: Array<[number, number]> = [];
+        for (let dx = -R; dx <= R; dx++) if (gen.levelAt(s.x + dx, s.y + R) <= 1) { q.push([s.x + dx, s.y + R]); seen.add(key(s.x + dx, s.y + R)); }
+        let top = 0;
+        while (q.length) {
+          const [x, y] = q.pop()!, L = gen.levelAt(x, y);
+          top = Math.max(top, L);
+          for (const [ax, ay] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+            const nx = x + ax, ny = y + ay;
+            if (Math.abs(nx - s.x) > R || Math.abs(ny - s.y) > R || seen.has(key(nx, ny))) continue;
+            if (Math.abs(gen.levelAt(nx, ny) - L) > 1) continue;
+            seen.add(key(nx, ny));
+            q.push([nx, ny]);
+          }
+        }
+        expect(top, `land ${land}: the summit reached`).toBe(s.top);
+        const c = chunk(gen, s.x >> 5, s.y >> 5);
+        for (let j = 0; j < CHUNK; j += 3) for (let i = 0; i < CHUNK; i += 3) {
+          const x = (s.x >> 5) * CHUNK + i, y = (s.y >> 5) * CHUNK + j;
+          expect(c.lv[j * CHUNK + i]).toBe(gen.levelAt(x, y));
+          expect(c.t[j * CHUNK + i]).toBe(gen.terrainAt(x, y));
+        }
+        // The beacon's wreck on its summit (D149).
+        expect(c.b[(s.y & 31) * CHUNK + (s.x & 31)]).toBe(BIOME.beacon);
+      }
+    }
+  });
+
+  it('every land: a balanced rock on the spring summit\'s plateau (D149)', () => {
+    for (const land of LANDS) {
+      const gen = new MapGen(WORLD_SEED, land, 6), t = gen.springRockTile();
+      expect(t).toBeGreaterThanOrEqual(0);
+      const x = t % WORLD, y = Math.floor(t / WORLD), c = chunk(gen, x >> 5, y >> 5), k = (y & 31) * CHUNK + (x & 31);
+      expect(c.b[k]).toBe(BIOME.boulder);
+      expect(isRock(c.t[k]!)).toBe(true);
+      expect(c.lv[k]).toBe(MAPS[6]!.cirque.spring!.summit.level);
+    }
+  });
+});

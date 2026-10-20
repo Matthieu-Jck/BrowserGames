@@ -361,11 +361,11 @@ await step('build: a ribbon dragged over the Crown takes its steps with traction
   await page.screenshot({ path: shot('smoke-crown-laid.png') });
 });
 
-await step('build: a drag across two lines side by side lays a bridge pair over them (D73), never two junctions in a row', async () => {
+await step('build: a drag across two lines side by side lays a junction on each, the drag running under the row (D158: junctions chain along their tunnels; no bridge pair, though bridges are learnt)', async () => {
   await page.keyboard.press('Escape');
   const at = await FL(() => {
     const sim = window.FL.app.sim;
-    sim.done.add('bridge'); sim.rebuildDerived(); sim.grant('iron_plate', 20);
+    sim.done.add('bridge'); sim.done.add('junction'); sim.rebuildDerived(); sim.grant('iron_plate', 20);
     const free = (x, y) => { const c = sim.canPlace('ribbon', x, y, 2); return c.ok && c.replaces.length === 0; };
     for (let r = 8; r < 34; r++) for (let y = 512 - r; y <= 512 + r; y++) for (let x = 512 - r; x <= 512 + r; x++) {
       if (Math.max(Math.abs(x - 512), Math.abs(y - 512)) !== r) continue;
@@ -388,15 +388,17 @@ await step('build: a drag across two lines side by side lays a bridge pair over 
   await page.mouse.down();
   await page.mouse.move(bx, by, { steps: 8 });
   await page.waitForTimeout(200);
-  const leaps = await FL(() => window.FL.app.tools.preview().leaps ?? []);
-  await page.screenshot({ path: shot('smoke-bridge-ghost.png') });
+  const ghost = await FL(() => { const pre = window.FL.app.tools.preview(); return { leaps: (pre.leaps ?? []).length, junctions: pre.pieces.filter((p) => p.def === 'crossing' && p.ok).length }; });
+  await page.screenshot({ path: shot('smoke-junction-row-ghost.png') });
   await page.mouse.up();
-  assert(leaps.length === 1, `the ghost shows no leap: ${JSON.stringify(leaps)}`);
+  assert(ghost.leaps === 0 && ghost.junctions === 2, `the ghost is not a row of two junctions: ${JSON.stringify(ghost)}`);
   const row = await FL(([x, y]) => [-1, 0, 1, 2].map((d) => window.FL.entityAt(x + d, y)), [lx, ly + 2]);
-  assert(row[0]?.def === 'skybridge' && row[3]?.def === 'skybridge', `no bridge pair over the lines: ${JSON.stringify(row)}`);
-  assert(row[1]?.def === 'ribbon' && row[1].rot === 2 && row[2]?.def === 'ribbon' && row[2].rot === 2, 'a crossed line was cut');
+  assert(row[0]?.def === 'ribbon' && row[3]?.def === 'ribbon', `the drag was cut: ${JSON.stringify(row)}`);
+  assert(row[1]?.def === 'crossing' && row[2]?.def === 'crossing' && (row[1].rot & 1) === 0 && (row[2].rot & 1) === 0, `no row of junctions with their decks along the crossed lines: ${JSON.stringify(row)}`);
+  const lines = await FL(([x, y]) => [[x, y + 1], [x + 1, y + 1], [x, y + 3], [x + 1, y + 3]].map(([a, b]) => window.FL.entityAt(a, b)), [lx, ly]);
+  assert(lines.every((e) => e?.def === 'ribbon' && e.rot === 2), 'a crossed line was cut');
   await page.waitForTimeout(400);
-  await page.screenshot({ path: shot('smoke-bridge-laid.png') });
+  await page.screenshot({ path: shot('smoke-junction-row-laid.png') });
 });
 
 await step('build: a ribbon dragged across a neighbouring base’s open land buries itself there (D109): the ghost and the tip say so; the rest stays plain', async () => {
@@ -774,6 +776,47 @@ await step('crier: a standing order imports copper ore by the post’s one exit 
   assert(pick.hits >= 0.95 * pick.n, `clicks on the post pick something else: ${pick.hits}/${pick.n}`);
   await FL(() => window.FL.selected(0));
   await FL((o) => window.FL.app.sim.cancelImport(o), id);
+});
+
+await step('orders (D153): past the tutorial CrierBelt posts its delivery orders; one accepted from the Crier\'s Commandes tab fills through the trade post\'s entrance before its sale and is paid at the boundary; the HUD\'s chip; the Gazette ranks the claim', async () => {
+  // The demo base starts with the tutorial skipped: its orders are posted at the minute's boundaries.
+  const o0 = await FL(() => window.FL.orders());
+  assert(o0.open.length > 0, `no order posted: ${JSON.stringify(o0)}`);
+  assert(o0.ranking.rank > 0 && o0.ranking.rank <= 41, `no standings: ${JSON.stringify(o0.ranking)}`);
+  // A rig: the first standing order asks for 30 iron plates; 60 come to the post's entrance (a line, or its store).
+  const rig = await FL(() => window.FL.orderRig('iron_plate', 30, 60));
+  assert(rig && rig.id > 0, `no rig: ${JSON.stringify(rig)}`);
+  await page.keyboard.press('m');
+  await page.waitForSelector('[data-screen="market"][data-open]', { timeout: 2000 });
+  await page.click('[data-crier-tab="orders"]');
+  await page.waitForSelector(`[data-delivery-accept="${rig.id}"]`, { timeout: 3000 });
+  const cards = await FL(() => document.querySelectorAll('.dl-card').length);
+  assert(cards === o0.open.length, `cards ${cards} for ${o0.open.length} orders`);
+  await page.click(`[data-delivery-accept="${rig.id}"]`);
+  const acc = await FL((id) => ({ due: window.FL.orders().open.find((o) => o.id === id)?.due ?? -1, cmd: window.FL.app.sim.log.at(-1)?.cmd }), rig.id);
+  assert(acc.due >= 0 && acc.cmd?.k === 'acceptDelivery' && acc.cmd.id === rig.id, `not accepted by the command: ${JSON.stringify(acc)}`);
+  await page.waitForSelector(`.dl-card[data-delivery="${rig.id}"][data-state="running"]`, { timeout: 2000 });
+  const c0 = await FL(() => window.FL.app.sim.credits);
+  for (let i = 0; i < 12 && !(await FL((id) => window.FL.orders().past.some((p) => p.id === id), rig.id)); i++) await FL(() => window.FL.tick(600));
+  const after = await FL(() => window.FL.orders());
+  const done = after.past.find((p) => p.id === rig.id);
+  const c1 = await FL(() => window.FL.app.sim.credits);
+  console.log(`    order ${rig.id}: ${done ? `${done.what} ${done.got}/${done.n}, ${(done.paid / 100).toFixed(0)} ◉` : 'open'} (ribbons ${rig.ribbons}) · rank ${after.ranking.rank}/41`);
+  assert(done && done.what === 'filled' && done.got === 30, `the order not filled through the post: ${JSON.stringify(after)}`);
+  assert(c1 - c0 >= done.paid, `not paid: ${c0} → ${c1} for ${done.paid}`);
+  const toast = await page.waitForFunction(() => window.FL.toasts().some((t) => /Commande livrée|Order delivered/.test(t)), undefined, { timeout: 3000 }).then(() => true, () => false);
+  assert(toast, `no « Commande livrée » notice: ${JSON.stringify(await FL(() => window.FL.toasts()))}`);
+  assert(await page.isVisible('[data-crier-section="ranking"] .rk-row[data-own]'), 'no standings in the Gazette');
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: shot('smoke-orders.png') });
+  await page.keyboard.press('Escape');
+  // The HUD's chip stands while an order does; a click opens the Crier on its orders.
+  if ((await FL(() => window.FL.orders().open.length)) > 0) {
+    await page.waitForSelector('[data-hud-orders]:not([hidden])', { timeout: 2000 });
+    await page.click('[data-hud-orders]');
+    await page.waitForSelector('[data-screen="market"][data-open] [data-crier-pane="orders"]:not([hidden])', { timeout: 2000 });
+    await page.keyboard.press('Escape');
+  }
 });
 
 // ── M5: space ──────────────────────────────────────────────────────────────

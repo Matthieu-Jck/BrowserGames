@@ -29,6 +29,10 @@
 //
 // A parcel of a holding the claim holds (an older base's lease or grant, `systems/land.ts`
 // `neighboursGiveWay`) is left out of its base: what stood there gave way. Nothing here is saved.
+//
+// A first layout takes a few tries (`tries`), each up to ~10 ms, a base up to ~40 ms all told:
+// the view spreads it over idle time a try at a time (`layoutStep`, D162). The tries are the same
+// either way, so the base is the same; anything asking for it meanwhile (`layout`) finishes it at once.
 import { BAL } from '@/content/balance';
 import type { BuildingId } from '@/content/buildings';
 import { COLONY_PROFILES, COLONY_PROFILE_IDS, type ColonyProfile, type ColonyProfileId } from '@/content/colonies';
@@ -174,25 +178,57 @@ export class Neighbours {
     return h >= 0 ? this.holdings.get(h)! : null;
   }
 
-  /** A base's buildings and ribbons (laid out on first need). */
+  /** A base's buildings and ribbons (laid out on first need; a layout under way a try at a time is finished). */
   layout(h: Holding): NLayout {
     let L = this.layouts.get(h.hub);
-    if (!L) { L = this.layChecked(h); this.layouts.set(h.hub, L); this.surveys.clear(); }
+    if (!L) {
+      const g = this.stepping?.hub === h.hub ? this.stepping.tries : this.tries(h);
+      let r = g.next();
+      while (!r.done) r = g.next();
+      L = r.value;
+      this.stepping = null;
+      this.layouts.set(h.hub, L);
+      this.surveys.clear();
+    }
     return L;
   }
+
+  /** Is the base laid out already (its `layout` costs nothing)? */
+  laidOut(h: Holding): boolean { return this.layouts.has(h.hub); }
+
+  /**
+   * One try towards a base's first layout (D162: the view spreads it over idle time, ~10 ms a try at
+   * most where the whole can take ~40 ms); true once it is laid out. One base at a time: asking for
+   * another drops the one under way (its tries start over when it is asked for again).
+   */
+  layoutStep(h: Holding): boolean {
+    if (this.layouts.has(h.hub)) return true;
+    if (this.stepping?.hub !== h.hub) this.stepping = { hub: h.hub, tries: this.tries(h) };
+    const r = this.stepping.tries.next();
+    if (!r.done) return false;
+    this.stepping = null;
+    this.layouts.set(h.hub, r.value);
+    this.surveys.clear();
+    return true;
+  }
+
+  /** The layout under way a try at a time (`layoutStep`). */
+  private stepping: { hub: number; tries: Generator<void, NLayout, void> } | null = null;
 
   /**
    * A base laid out until it checks (`neighbourProblems`): each try again with the pad on the Core's
    * other side, then its lines laid from the mines down (each side); then fewer copies of its chain; one product only, as many copies again then fewer;
    * then a raw good whose extractor or line could not be laid is given up and the chain planned again
    * without it; at last its plainest chain (glass from sand…). None checks: the best try, what still
-   * does not check taken away (`prune`) — the fewest problems left, then the most machines.
+   * does not check taken away (`prune`) — the fewest problems left, then the most machines. A
+   * generator: it pauses between two tries (`layoutStep`); `layout` runs it through.
    */
-  private layChecked(h: Holding): NLayout {
+  private *tries(h: Holding): Generator<void, NLayout, void> {
     const ban = new Set<string>();
     let products = 2, copies = 4, side = 1, mineFirst = false;
     let best: NLayout = EMPTY_LAYOUT, bestScore = -Infinity;
     for (let k = 0; k < 64; k++) {
+      if (k > 0) yield;
       const { layout: L, raws, unplaced } = this.lay(h, ban, products, copies, side, mineFirst);
       const probs = neighbourProblems(this.grid, L);
       if (!probs.length && !unplaced.length) return L;
@@ -259,8 +295,8 @@ export class Neighbours {
     return h ? this.layout(h).structs.filter((s) => parcelAt(s.x, s.y) === p) : [];
   }
 
-  /** Forget the layouts (the claim's land changed under a base: an older save given way to, `neighboursGiveWay`). */
-  forget(): void { this.layouts.clear(); this.surveys.clear(); }
+  /** Forget the layouts (the claim's land changed under a base: an older save given way to, `neighboursGiveWay`), and the one under way. */
+  forget(): void { this.layouts.clear(); this.surveys.clear(); this.stepping = null; }
 
   // ── who holds what ────────────────────────────────────────────────────────
 
@@ -530,7 +566,7 @@ export class Neighbours {
     this.surveys.set(key, { hub, hx, hy, region, raws: new Set(raws), oreAt, drills });
     }
     // 3. What it makes (world/neighbour-chain.ts): its trade's goods, back-chained to that land (less
-    // what an earlier try could not lay: `layChecked`).
+    // what an earlier try could not lay: `tries`).
     for (const b of ban) raws.delete(b);
     // Its plainest: glass from its sand, else a mine on its largest deposit.
     if (ban.has('*')) {

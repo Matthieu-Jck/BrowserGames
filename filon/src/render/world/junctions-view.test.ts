@@ -1,6 +1,8 @@
 // junctions-view.test.ts — the ribbon laid under a junction (`underPass`): from a ribbon either side,
 // either way, and from a building's port facing the junction on that axis (a trade post's exit, a
-// machine's input), in every orientation; the deck axis (north–south) lays nothing for a port.
+// machine's input), in every orientation; along its tunnel, across its deck (D158: its deck along its
+// rotation's axis — a junction at a building's port turns its deck across the port by itself, so the
+// port's line always runs under it); a ribbon along the deck lays nothing.
 import { describe, it, expect } from 'vitest';
 import { testSim, line } from '@/sim/testkit';
 import { worldPorts } from '@/sim/entities';
@@ -30,12 +32,28 @@ describe('underPass', () => {
     }
   });
 
-  it('a ribbon across the deck axis only lays nothing', () => {
+  it('a ribbon along the deck axis only lays nothing', () => {
     const sim = fresh();
     sim.place('crossing', 512, 503, S);
     sim.placeBelts('ribbon', line(512, 504, S, 1));
     settle(sim);
     expect(underPass(sim, 512, 503)).toBeNull();
+  });
+
+  it('turned east–west (D158), its tunnel runs north–south: a ribbon north or south of it, either way', () => {
+    const cases: Array<[Rot, number, Rot]> = [[S, -1, S], [N, -1, N], [S, 1, S], [N, 1, N]]; // belt rot, side, expected
+    for (const [rot, dy, want] of cases) {
+      const sim = fresh();
+      expect(sim.place('crossing', 512, 503, E).ok).toBe(true);
+      sim.placeBelts('ribbon', line(512, 503 + dy, rot, 1));
+      settle(sim);
+      expect(underPass(sim, 512, 503)).toEqual({ tier: 'ribbon', rot: want });
+    }
+    const along = fresh();
+    expect(along.place('crossing', 512, 503, W).ok).toBe(true);
+    along.placeBelts('ribbon', line(513, 503, E, 1)); // along its deck
+    settle(along);
+    expect(underPass(along, 512, 503)).toBeNull();
   });
 
   for (const id of ['trade_post', 'kiln'] as const) {
@@ -50,14 +68,14 @@ describe('underPass', () => {
           expect(sim.place(id, 500, 500, rot).ok).toBe(true);
           const ok = sim.place('crossing', p.fx, p.fy, S);
           if (!ok.ok) continue;
+          // Its deck never comes down on the building: turned across the port by itself (D158).
+          expect((sim.entityAt(p.fx, p.fy)!.rot & 1) === (p.dir & 1), `${id} rot ${rot} port dir ${p.dir}`).toBe(false);
           settle(sim);
           const got = underPass(sim, p.fx, p.fy);
-          if (p.dir === E || p.dir === W) {
-            // an exit feeds the junction (runs away from the building), an entrance is fed through it
-            const away = p.dir;
-            expect(got, `${id} rot ${rot} port ${p.io} dir ${p.dir}`).toEqual({ tier: 'ribbon', rot: p.io === 'out' ? away : ((away + 2) & 3) as Rot });
-            tested++;
-          } else expect(got).toBeNull();
+          // an exit feeds the junction (runs away from the building), an entrance is fed through it
+          const away = p.dir;
+          expect(got, `${id} rot ${rot} port ${p.io} dir ${p.dir}`).toEqual({ tier: 'ribbon', rot: p.io === 'out' ? away : ((away + 2) & 3) as Rot });
+          tested++;
         }
       }
       expect(tested).toBeGreaterThan(0);

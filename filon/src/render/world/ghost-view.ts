@@ -17,7 +17,10 @@
 // underground. Blueprints (D154): the copy tool's box in turquoise, what it would take tinted inside
 // it; the upgrade tool's box in amber over the faster pieces it would lay; a paste's pieces as any
 // placement's (turquoise where they go, coral where they do not, amber under what they replace),
-// inside a dashed ink frame round the whole blueprint. Redrawn only when the preview changes.
+// inside a dashed ink frame round the whole blueprint. A junction in hand (D158) shows where its
+// deck comes down, along its rotation's axis: an arrow over each end, turquoise where a ribbon (or nothing)
+// stands, coral — the tile framed — where something else does; a piece refused at a junction's deck
+// end shows that junction's deck coming down onto it, coral. Redrawn only when the preview changes.
 //
 // A building that would stand above the floor (D44: on the mountains; world/stand.ts, from the
 // one height function, relief.ts `tileTop`) is shown where it would stand: in iso its ghost is
@@ -26,8 +29,10 @@
 // it lays the same ink hint of height under it as a placed one; red where `canPlace` refuses it
 // (astride a cliff). Per frame only the lift's position, while the view morphs.
 import { Container, Graphics, Sprite } from 'pixi.js';
-import { buildingDef, buildingIdx } from '@/content/registry';
+import { BUILDING_KIND, buildingDef, buildingIdx } from '@/content/registry';
 import { footprint } from '@/sim/entities';
+import { deckBlocks, deckEndOk, deckSides } from '@/sim/systems/build';
+import { inWorld, tileIndex } from '@/sim/world/grid';
 import { backRow, faceTiles, workSide, worksFace } from '@/sim/face';
 import type { Sim } from '@/sim/state';
 import type { Rot } from '@/sim/types';
@@ -43,6 +48,8 @@ import { flowArrows, isDirectional } from './flow-arrows';
 import { riseOffset, standLevel } from './stand';
 
 const OK = num(C.cyan), BAD = num(C.ledRed), SWAP = num(C.warn);
+/** A junction's deck end (D158): free or a ribbon (turquoise), something else there (coral). */
+const DECK_OK = num(C.glowTurq), DECK_BAD = num(C.coral);
 const FLOW_IN = num(C.glowTurq), FLOW_OUT = num(C.coral), INK = num(C.ink);
 /** A face cutter's back row (D87): a face ore there (turquoise), none (coral). */
 const FACE_OK = num(C.turq), FACE_OK_FILL = num(C.glowTurq), FACE_NONE = num(C.coral);
@@ -197,6 +204,14 @@ export class GhostView {
       }
       // A bridge pair's leap: a dashed line from end to end, over what it leaves as it is.
       for (const [x0, y0, x1, y1] of pre.leaps ?? []) leapDash(g, x0 + 0.5, y0 + 0.5, x1 + 0.5, y1 + 0.5);
+      // Junctions' deck ends (D158): the one in hand's both ends; a refused junction's in a drag; the
+      // deck of a junction a refused piece would stand at the end of.
+      for (const p of pre.pieces) {
+        if (p.reason !== 'junction_deck' && p !== one) continue;
+        const di = buildingIdx(p.def);
+        if (BUILDING_KIND[di] === 'crossing') this.deckEnds(sim, pre.pieces, p.x, p.y, p.rot, a);
+        else if (p.reason === 'junction_deck') for (const [jx, jy, ex, ey] of deckBlocks(sim, di, p.x, p.y, p.rot)) this.deckArrow(jx, jy, ex, ey, false, a);
+      }
       // The copy or upgrade tool's box (D154): turquoise round what a copy takes (its buildings tinted), amber round an upgrade.
       if (pre.area) {
         const [x0, y0, x1, y1] = pre.area.box;
@@ -257,6 +272,31 @@ export class GhostView {
     const col = hits.size ? FACE_OK_FILL : FACE_NONE;
     g.poly(arrow.map(([px, py]) => [px + 0.04, py + 0.05]).flat()).fill({ color: INK, alpha: 0.3 });
     g.poly(arrow.flat()).fill({ color: col, alpha: 1 }).stroke({ width: 0.055, color: INK, alpha: 1 });
+  }
+
+  /**
+   * A junction's two deck ends (D158), along its rotation's axis from (x, y): an arrow over each,
+   * turquoise where the deck may come down — nothing there, or a ribbon or a skybridge end — coral
+   * where something else stands, or another junction the preview lays.
+   */
+  private deckEnds(sim: Sim, pieces: Preview['pieces'], x: number, y: number, rot: Rot, a: number): void {
+    for (const d of deckSides(rot)) {
+      const [vx, vy] = SIDE_V[d]!, ex = x + vx, ey = y + vy;
+      const o = inWorld(ex, ey) ? sim.ents.get(sim.grid.occ[tileIndex(ex, ey)]!) : undefined;
+      const planned = pieces.some((q) => q.x === ex && q.y === ey && BUILDING_KIND[buildingIdx(q.def)] === 'crossing');
+      this.deckArrow(x, y, ex, ey, !planned && (!o || deckEndOk(o.def)), a);
+    }
+  }
+
+  /** The deck of the junction on (jx, jy) coming down onto its end (ex, ey): an arrow over the edge; a blocked end framed in coral. */
+  private deckArrow(jx: number, jy: number, ex: number, ey: number, ok: boolean, a: number): void {
+    const g = this.g, vx = ex - jx, vy = ey - jy;
+    const mx = jx + 0.5 + vx * 0.5, my = jy + 0.5 + vy * 0.5; // the shared edge's middle
+    const arrow = arrowPoly(mx - vx * 0.3, my - vy * 0.3, mx + vx * 0.34, my + vy * 0.34, 0.07, 0.2, 0.22);
+    const col = ok ? DECK_OK : DECK_BAD;
+    if (!ok) g.rect(ex + 0.07, ey + 0.07, 0.86, 0.86).fill({ color: DECK_BAD, alpha: 0.16 * a }).stroke({ width: 0.06, color: DECK_BAD, alpha: 0.95 * a });
+    g.poly(arrow.map(([px, py]) => [px + 0.04, py + 0.05]).flat()).fill({ color: INK, alpha: 0.3 * a });
+    g.poly(arrow.flat()).fill({ color: col, alpha: a }).stroke({ width: 0.045, color: INK, alpha: a });
   }
 
   /** A directional block's flow: the way in (big, turquoise, over a soft shadow), the ways out (coral). */

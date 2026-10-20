@@ -7,6 +7,7 @@
 // `gridCard`, D76), the same card for every kind.
 import type { BuildingKind } from '@/content/types';
 import { hearthHero, hearthPanel, landscapeHero, landscapePanel } from './colony';
+import { junctionPanel } from './junction';
 import type { Panel, PanelCtx } from './kit';
 import { forkPanel, gaugeHero, gaugePanel, ribbonPanel, storeHero, teePanel } from './logistics';
 import { producerHero } from './power';
@@ -44,6 +45,7 @@ export const PANELS: Partial<Record<BuildingKind, readonly Panel[]>> = {
   belt: [ribbonPanel],
   conduit: [ribbonPanel, teePanel, gaugePanel], // a tee's water by way (D152); a gauge's network (D155)
   fork: [forkPanel],
+  crossing: [junctionPanel], // its deck: which line over, which under; a deck end from before D158 marked
   hearth: [hearthPanel], // no outlets to set: the Heart takes, it never gives (D34; its data outlet went with the data, D122)
   // storage: none — a silo's one item is its hero (`storeHero`), nothing more.
   excavator: [landscapePanel],

@@ -210,7 +210,11 @@ Space (pan modifier) is hard-coded in `input.ts`, not in the table.
   a router over a ribbon, a swift ribbon over a ribbon, a distributor over four ribbons or routers,
   a pylon over a pole, a deep bore over a drill. They are refunded first, so their refund
   counts towards the cost. Re-placing the very same building (or turning one whose rotation means
-  nothing, such as a router or a mast) is `occupied`. A sorter turned round keeps its chosen item.
+  nothing, such as a distributor or a mast) is `occupied`. A sorter turned round keeps its chosen item.
+  A junction's rotation turns its deck (D158: north–south or east–west; R turns it in hand, a junction
+  turned a quarter replaces the one there); only a ribbon or a skybridge end may stand at either end
+  of its deck (`junction_deck`), anything on its tunnel's sides. Dropped where only the other axis
+  fits, it turns its deck by itself unless R turned it.
 - **Ribbon drags** are laid on release only, as `sim.planBelts(def, path)` plans them whole
   ([belt-plan.ts](../src/sim/systems/belt-plan.ts), D73) — the plan the ghost shows meanwhile, as a
   faint placeholder:
@@ -220,8 +224,11 @@ Space (pan modifier) is hard-coded in `input.ts`, not in the table.
     (lines are dragged through routers); a one-tile drag (a click) replaces it;
   - **auto-junction**: where the drag runs straight across a ribbon of any tier lying
     perpendicular to it (not at the drag's first or last tile, not at its bend), a junction
-    (`crossing`) is laid instead, so both lines keep flowing. Junctions never chain (D73,
-    `junction_chain`): a ribbon runs between two of them;
+    (`crossing`) is laid instead, so both lines keep flowing. Its deck runs along the line it
+    crosses, so the drag runs under it: across lines side by side, a row of junctions, the drag's
+    items under each in turn (D158; D73 had them never chain); its deck along the drag only where
+    the crossed line's way would come down on a block; a planned junction at another's deck end is
+    `junction_deck`;
   - **a step** a plain ribbon would face takes a **traction ribbon** by itself once `traction` is
     learnt (D73), whatever the tier dragged: it goes at its line's pace (D141), so one already on
     the step is kept; never two steps in a row (`lift_room`, D65);
@@ -229,7 +236,7 @@ Space (pan modifier) is hard-coded in `input.ts`, not in the table.
     ribbons** by itself once `xp_camo` is learnt (D109), after the bridges (a short run a pair can
     leap keeps the line's pace); a plain ribbon on free land stays plain;
   - **an obstacle** — a run of tiles refused as `occupied`, `terrain` (water…), `chasm` or `river`
-    (map 4, D94), `neighbour_land` (D110) or `junction_chain` (two lines side by side) — is leapt by a **bridge pair** on the ribbon tiles
+    (map 4, D94), `neighbour_land` (D110) or `junction_deck` (D158) — is leapt by a **bridge pair** on the ribbon tiles
     just before and after it, when `bridge` is learnt, the run is straight, the start is fed from
     straight behind, the pair is within reach (`4 + bridgeSpan`) on one level and no other bridge of
     that direction on the line would take the leap; what lies between stays as it is (`leapt`);

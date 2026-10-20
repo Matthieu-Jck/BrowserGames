@@ -6,6 +6,7 @@
 // with the same seeds: same log ⇒ same state hash (tested in commands.test.ts). Anything that
 // mutates a colony outside these commands (sandbox helpers of window.FL) breaks replay.
 import type { Emblem } from '@/content/emblem';
+import type { OrderReward } from './systems/orders';
 import type { MarketEvent } from '@/market/types';
 import type { Sim } from './state';
 import type { Blueprint } from './systems/blueprint';
@@ -40,6 +41,8 @@ export type Command =
   | { k: 'starter'; post: number }
   /** The fulfilled starter contract continued at the market's price (D101). */
   | { k: 'starterGo'; id: number }
+  /** One of CrierBelt's delivery orders accepted (D153): its window starts. */
+  | { k: 'acceptDelivery'; id: number }
   | { k: 'spot'; item: string; side: 'sell' | 'buy'; n: number }
   /** Power wires (D25): `a` is the end the player started from (a pillar or the Hearth, usually). */
   | { k: 'link'; a: number; b: number }
@@ -115,7 +118,15 @@ export type SimEvent =
    * The Gleaners (D103): their first take of a night (`night`: the notice that introduces them), and
    * at dawn what they took in the night just ended (`dawn`: item and milli-items, by item; the morning report).
    */
-  | { k: 'gleaners'; what: 'night' | 'dawn'; taken: Array<[number, number]> };
+  | { k: 'gleaners'; what: 'night' | 'dawn'; taken: Array<[number, number]> }
+  /**
+   * CrierBelt's delivery orders (D153, systems/orders.ts): one posted (`cents`: its price an item; `first`: the tutorial's next step),
+   * filled (`cents`: what it paid; its reward delivered), missed (its window ran out: `cents`, what its
+   * `got` items were paid at the market) or an offer withdrawn, never accepted.
+   */
+  | { k: 'delivery'; what: 'posted' | 'filled' | 'missed' | 'withdrawn'; id: number; item: number; n: number; got: number; cents: number; reward?: OrderReward; first?: boolean }
+  /** The claim climbed the standings (D153, systems/ranking.ts): its rank now and before, of how many, the claims it passed (colony indices, nearest first). */
+  | { k: 'rank'; rank: number; prev: number; of: number; passed: number[] };
 
 /** Apply one command (as logged). Returns whether the colony accepted it. */
 export function exec(sim: Sim, cmd: Command): boolean {
@@ -138,6 +149,7 @@ export function exec(sim: Sim, cmd: Command): boolean {
     case 'cancelOrder': return sim.cancelImport(cmd.id);
     case 'starter': return typeof sim.takeStarter(cmd.post) === 'number';
     case 'starterGo': return sim.continueStarter(cmd.id);
+    case 'acceptDelivery': return sim.acceptDelivery(cmd.id);
     case 'spot': return 'cents' in sim.spotTrade(cmd.item, cmd.side, cmd.n);
     case 'link': return sim.link(cmd.a, cmd.b).ok;
     case 'unlink': return sim.unlink(cmd.a, cmd.b);

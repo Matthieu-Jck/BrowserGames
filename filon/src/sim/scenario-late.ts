@@ -54,9 +54,12 @@ import { isSpanTile } from './flow/chain';
  *   circuit is a copper plate, two wires and a glass since D129) — no line from the post's exit
  *   carries them, so the glass the same workshops need never waits behind them there;
  * - the post's exit (a swift ribbon): an inverted sorter (I) sends the motors aside, down toward the
- *   etcher, the glass on along a glass bus (row 2) whose routers drop it, across the copper bus on
+ *   etcher, the glass on, up onto a glass bus (row 1) whose routers drop it, across the copper bus on
  *   junctions, into the circuit workshops' other inputs; each mill hands its wire straight into its
- *   workshop below;
+ *   workshop below. D158: a junction's deck comes down only on ribbons, so the glass bus runs a row
+ *   above its drops (a ribbon at each end of the junctions' decks, `+`) and the copper routers stand
+ *   on their tunnels' sides; the lines a building hands straight into a junction cross on one whose
+ *   deck runs across the plan (`=`), the building on its tunnel's side;
  * - the motors and the circuits down to the etcher (T: servomotors, a motor and two circuits, three
  *   times as fast as an electronics workshop), what it leaves of them onto the sell line, sold at the
  *   post; below, the research lab O, fed by no line (D122: the data collector that filled it went
@@ -69,21 +72,21 @@ import { isSpanTile } from './flow/chain';
  */
 export const FABRIQUE: PlanSpec = {
   rows: [
-    ' PPPPP',
-    ' PPPPP .  .. ..',
-    '→PPPPP>I>>R+>R+..',
+    ' PPPPP    .  .',
+    ' PPPPP . >R>>R.',
+    '→PPPPP>I>^v. v. .',
     '↑PPPPP v .+R<+R<R<e',
     '↑PPPPP v  vM vNSS',
     '↑      v  vM vNSS',
     '↑      v  CC<cc<Kv',
     '↑      v  CC^cc Xv',
-    '↑<<<<<<v.  v^<+<<<',
+    '↑<<<<<<v.  v^<=<<<',
     '↑<<<<<<%.  v<<<',
-    '↑<<<<<<+<<<%.',
+    '↑<<<<<<=<<<%.',
     '↑      v   v',
     '↑      v   v',
     '↑     .R.  v',
-    '↑     v+<<<<',
+    '↑     v=<<<<',
     '↑     vv',
     '↑     vv',
     '↑     vv',

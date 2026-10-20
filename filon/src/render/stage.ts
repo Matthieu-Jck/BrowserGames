@@ -1,7 +1,7 @@
 // stage.ts — PixiJS v8 renderer creation. We use autoDetectRenderer (no Application, no
 // ticker): main.ts owns the loop, like the sibling games. Texture GC is off — the atlas is
 // permanent and terrain chunks are evicted explicitly by their LRU.
-import { autoDetectRenderer, Container, type Renderer } from 'pixi.js';
+import { autoDetectRenderer, Container, type Renderer, type TextureSource } from 'pixi.js';
 
 export interface Stage {
   renderer: Renderer;
@@ -51,6 +51,18 @@ export async function createStage(host: HTMLElement, opts: { perf?: boolean; low
   };
   window.addEventListener('resize', () => stage.resize());
   return stage;
+}
+
+/**
+ * A test of the texture sources on the GPU now (D162: the neighbouring bases share a page of the
+ * claim's atlas only where it is up already, render/world/neighbour-art.ts). Read once from the GL
+ * texture system's list (Pixi 8's `managedTextures`); none known: none up (they copy, never share).
+ */
+export function gpuSources(r: Renderer): (s: TextureSource) => boolean {
+  const list = (r.texture as unknown as { managedTextures?: ReadonlyArray<TextureSource | null> }).managedTextures ?? [];
+  const up = new Set<TextureSource>();
+  for (const s of list) if (s) up.add(s);
+  return (s) => up.has(s);
 }
 
 /** Renderer label for diagnostics ('webgl' | 'webgpu' | 'canvas'). */

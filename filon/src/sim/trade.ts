@@ -61,8 +61,8 @@ export interface TradeLine {
   epoch: number;
   post: number;
   item: number;
-  /** `autoSell`: the Core's surplus sold at the boundary (D127; `post` is the Core's id). */
-  kind: 'export' | 'import' | 'spotSell' | 'spotBuy' | 'autoSell';
+  /** `autoSell`: the Core's surplus sold at the boundary (D127; `post` is the Core's id). `delivery`: a CrierBelt order paid (D153; the Core's id too). */
+  kind: 'export' | 'import' | 'spotSell' | 'spotBuy' | 'autoSell' | 'delivery';
   mu: number;
   /** Ocelles received (+) or paid (−), after fees. */
   cents: number;
