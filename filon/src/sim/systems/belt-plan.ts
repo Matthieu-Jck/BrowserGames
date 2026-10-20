@@ -23,7 +23,8 @@
 //    deck end holds something else (D158) — is leapt by a bridge pair (`skybridge`) on the plain
 //    ribbon tiles just before and after it: when bridges are learnt, the run is straight, the
 //    start is fed from straight behind (D55), the pair is within the bridges' reach on one level
-//    and no other bridge of that direction on the line would take the leap. The tiles between
+//    and pairs with no other bridge of that direction on the line (D160: ends go in pairs, in order;
+//    none between its ends, a pair's far end or none just behind its start — pairs chain). The tiles between
 //    are left as they are. A run no pair can leap stays refused: the drag is laid in part.
 // 3b. What is still refused for its land — a neighbouring base's parcel (`neighbour_land`) — is laid camouflaged
 //    (D109: `camo_ribbon`, buried, the one ribbon that runs there), once learnt, when the dragged
@@ -223,20 +224,29 @@ function leap(sim: Sim, path: BeltPath, out: BeltStep[], def: number, s: number,
   if (!plain(out[s]!) || !plain(out[e]!)) return;
   const [sx, sy] = path[s]!, [ex, ey] = path[e]!;
   if (sim.grid.level(sx, sy) !== sim.grid.level(ex, ey)) return; // a bridge keeps to its level
-  // No other bridge of this direction on the line within reach, laid or planned: it would take
-  // the leap from ours, or leap onto it.
-  for (let k = -span; k <= e - s + span; k++) {
+  // The other bridges of this way on its line and level, laid or planned (D160: ends go in pairs, in
+  // order along their line, compile.ts): none between the pair's ends (it would cut the leap), and
+  // the nearest behind its start within reach the far end of a pair (a start there would take ours
+  // as its far end). Past its far end the next end is a start: pairs chain, bridge after bridge.
+  const lv = sim.grid.level(sx, sy);
+  const at = new Set<number>(); // their places along the line, from the start (tiles)
+  for (let k = -64; k <= e - s + span; k++) {
     if (k === 0 || k === e - s) continue;
     const tx = sx + DX[d]! * k, ty = sy + DY[d]! * k;
     if (!inWorld(tx, ty)) continue;
     const o = sim.ents.get(sim.grid.occ[tileIndex(tx, ty)]!);
-    if (o && BUILDING_KIND[o.def] === 'bridge' && o.rot === d) return;
+    if (o && BUILDING_KIND[o.def] === 'bridge' && o.rot === d && sim.grid.level(tx, ty) === lv) at.add(k);
   }
   for (const st of out) {
     if (st.skip || buildingIdx(st.def) !== BRIDGE || st.rot !== d) continue;
     const k = (st.x - sx) * DX[d]! + (st.y - sy) * DY[d]!;
-    if ((DX[d] === 0 ? st.x === sx : st.y === sy) && k >= -span && k <= e - s + span) return;
+    if ((DX[d] === 0 ? st.x === sx : st.y === sy) && sim.grid.level(st.x, st.y) === lv) at.add(k);
   }
+  for (let k = 1; k < e - s; k++) if (at.has(k)) return;
+  const behind = (k: number): number | null => { for (let j = k - 1; j >= k - span; j--) if (at.has(j)) return j; return null; };
+  const farEnd = (k: number): boolean => { const b = behind(k); return b !== null && !farEnd(b); };
+  const back = behind(0);
+  if (back !== null && !farEnd(back)) return;
   // Height rule (D124): a bridge never leaps a tall building. The tiles that hold one say so, and the drag stops there.
   let tall = false;
   for (let j = s + 1; j < e; j++) {

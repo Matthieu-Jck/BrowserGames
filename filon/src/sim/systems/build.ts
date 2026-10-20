@@ -271,20 +271,31 @@ export function tallAt(sim: Sim, x: number, y: number): boolean {
   return !!o && !BUILDING_FLAT[o.def];
 }
 
-/**
- * The skybridge standing `k` tiles `d`-ward of the first bridge ahead of (x, y) — i.e. the partner a
- * bridge at (x, y) facing `d` leaps to (compile.ts: the first bridge of its direction on its level
- * within `4 + mods.bridgeSpan`) — as the distance in tiles, or 0 when there is none.
- */
-function partnerAhead(sim: Sim, x: number, y: number, d: Rot): number {
+/** The skybridge of way `d` on (x, y)'s level nearest it `dir`-ward (1 ahead, −1 behind) within reach, as the distance in tiles (0: none). */
+function bridgeNear(sim: Sim, x: number, y: number, d: Rot, dir: number): number {
   const span = 4 + sim.mods.bridgeSpan, lv = sim.grid.level(x, y);
   for (let k = 1; k <= span; k++) {
-    const bx = x + DX[d]! * k, by = y + DY[d]! * k;
+    const bx = x + DX[d]! * k * dir, by = y + DY[d]! * k * dir;
     if (!inWorld(bx, by)) return 0;
     const o = sim.ents.get(sim.grid.occ[tileIndex(bx, by)]!);
     if (o && BUILDING_KIND[o.def] === 'bridge' && o.rot === d && sim.grid.level(bx, by) === lv) return k;
   }
   return 0;
+}
+
+/** Would a bridge of way `d` on (x, y) be the far end of the pair behind it (D160: ends pair in order along their line, compile.ts)? */
+function farEnd(sim: Sim, x: number, y: number, d: Rot): boolean {
+  const k = bridgeNear(sim, x, y, d, -1);
+  return k > 0 && !farEnd(sim, x - DX[d]! * k, y - DY[d]! * k, d);
+}
+
+/**
+ * The far end a bridge at (x, y) facing `d` leaps to (compile.ts: ends go in pairs, in order along
+ * their line, D160 — a start leaps to the nearest end ahead within `4 + mods.bridgeSpan`), as the
+ * distance in tiles, or 0 when there is none (it is a far end itself, or alone).
+ */
+function partnerAhead(sim: Sim, x: number, y: number, d: Rot): number {
+  return farEnd(sim, x, y, d) ? 0 : bridgeNear(sim, x, y, d, 1);
 }
 
 /**
@@ -305,8 +316,9 @@ function bridgeOverTall(sim: Sim, def: number, x: number, y: number, rot: Rot, w
       if (!inWorld(bx, by)) break;
       const o = sim.ents.get(sim.grid.occ[tileIndex(bx, by)]!);
       if (!o || BUILDING_KIND[o.def] !== 'bridge' || o.rot !== rot || sim.grid.level(bx, by) !== lv) continue;
-      for (let i = 1; i < back; i++) if (tallAt(sim, bx + DX[rot]! * i, by + DY[rot]! * i)) return true;
-      break; // the nearest one behind is the one that now pairs with this bridge
+      // The nearest one behind pairs with this bridge when it is a start (D160), not a pair's far end.
+      if (!farEnd(sim, bx, by, rot)) for (let i = 1; i < back; i++) if (tallAt(sim, bx + DX[rot]! * i, by + DY[rot]! * i)) return true;
+      break;
     }
     return false;
   }

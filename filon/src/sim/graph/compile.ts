@@ -388,17 +388,39 @@ export function compileGraph(inp: CompileInput): Graph {
   const beltFeederOf = new Map<number, number[]>(); // belt tile → feeding belt tiles
   const span = 4 + mods.bridgeSpan;
   const jumps = new Map<number, number>();
+  // Skybridge ends go in pairs, in order along their line (D160; owner, 2026-10-20: « bridge blocs
+  // should go in pair »): an end leaps to the nearest end ahead of its way, on its level, within
+  // reach — unless it is itself the far end of the pair behind it. So three ends in a row make a pair
+  // and a lone start (a plain piece of line), four make two pairs; the far end of one pair hands on
+  // to the next tile as a ribbon does, the next pair's start included. Read back along the line: an
+  // end is a far end when the nearest end behind it within reach is a start.
+  const bridgeNear = (e: Ent, dir: number): Ent | undefined => {
+    for (let k = 1; k <= span; k++) {
+      const bx = e.x + DX[e.rot]! * k * dir, by = e.y + DY[e.rot]! * k * dir;
+      if (bx < 0 || by < 0 || bx >= WORLD || by >= WORLD) return undefined;
+      const o = beltAt.get(tileIndex(bx, by));
+      if (o && BUILDING_KIND[o.def] === 'bridge' && o.rot === e.rot && grid.level(bx, by) === grid.level(e.x, e.y)) return o;
+    }
+    return undefined;
+  };
+  const farEnds = new Map<number, boolean>();
+  const isFarEnd = (e: Ent): boolean => {
+    const t = tileIndex(e.x, e.y);
+    let far = farEnds.get(t);
+    if (far === undefined) {
+      const behind = bridgeNear(e, -1);
+      far = !!behind && !isFarEnd(behind);
+      farEnds.set(t, far);
+    }
+    return far;
+  };
   for (const [t, e] of beltAt) {
     const d = e.rot;
     let gx = e.x + DX[d]!, gy = e.y + DY[d]!;
-    // A skybridge leaps to the next skybridge ahead in its direction, within its span.
-    if (BUILDING_KIND[e.def] === 'bridge') {
-      for (let k = 1; k <= span; k++) {
-        const bx = e.x + DX[d]! * k, by = e.y + DY[d]! * k;
-        if (bx < 0 || by < 0 || bx >= WORLD || by >= WORLD) break;
-        const o = beltAt.get(tileIndex(bx, by));
-        if (o && BUILDING_KIND[o.def] === 'bridge' && o.rot === d && grid.level(bx, by) === grid.level(e.x, e.y)) { gx = bx; gy = by; break; }
-      }
+    // A skybridge's start leaps to its pair's far end (above).
+    if (BUILDING_KIND[e.def] === 'bridge' && !isFarEnd(e)) {
+      const far = bridgeNear(e, 1);
+      if (far) { gx = far.x; gy = far.y; }
     }
     // Crossings let both lines pass straight through.
     while (gx >= 0 && gy >= 0 && gx < WORLD && gy < WORLD && crossingAt.has(tileIndex(gx, gy))) { gx += DX[d]!; gy += DY[d]!; }
