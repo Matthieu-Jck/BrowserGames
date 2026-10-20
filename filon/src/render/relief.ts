@@ -10,6 +10,7 @@
 // (art/rock.ts `drawColumn`'s `top`; a stream's fall down its wall), never a hole down to the floor.
 // The steps of a column whose lower top shows in front of the one above (`ledges`) are where the
 // relief sprites cut it in parts. Pure maths: no DOM, no Pixi.
+import { SPIRES } from '@/content/world';
 import { T } from '@/sim/types';
 import { LH, TH } from './iso';
 
@@ -22,6 +23,15 @@ export const MAX_TERRACE = 6;
 /** Terraces of the mountains (`MOUNTAIN_LEVEL`): the rock's colours deepen up to their tops, a summit over them as deep. */
 export const MOUNTAIN_TERRACE = 5;
 export const MAX_LEVEL = MAX_TERRACE * STEP_LEVELS;
+/**
+ * Terraces of the tallest rock anywhere: map 6's spires (D147, content `SPIRES`: needles of rock a
+ * tile at the foot, far over the mountains), the one land above `MAX_TERRACE`; their relief levels
+ * (`PEAK_LEVEL`). Whatever must reach every top — the picking ray, the culling's headroom, the shade's
+ * walk to the sun — reads these; the terraces' columns, their masks and the paint windows the
+ * terraces' own (`MAX_LEVEL`): a spire is drawn whole by its own painter (art/spire.ts).
+ */
+export const PEAK_TERRACE = SPIRES.levels[1];
+export const PEAK_LEVEL = PEAK_TERRACE * STEP_LEVELS;
 /** Ground-plane shift (tiles, along −x and −y) that lifts a point by one level on screen. */
 export const SHIFT = LEVEL_PX / TH;
 /** The ring (tiles) a paint window's levels leave out at its edge (its columns' neighbours are read from there). */
@@ -36,12 +46,12 @@ const liftsT = (t: number): boolean => isWaterT(t) || t === T.River || t === T.F
 
 /**
  * Relief level of a tile (0 = the floor's level; rock: one terrace — `STEP_LEVELS` levels — per
- * level of the land, at least one; water and reclaimed ground up on the rock, the Crown's tarn
- * (D63), and a stream up on a massif (D94): one terrace per level too): from its terrain class and
- * the land's level there.
+ * level of the land, at least one, up to a spire's `PEAK_TERRACE` (D147); water and reclaimed
+ * ground up on the rock, the Crown's tarn (D63), and a stream up on a massif (D94): one terrace per
+ * level too): from its terrain class and the land's level there.
  */
 export function levelOf(terrain: number, level: number): number {
-  if (isRockT(terrain)) return (level < 1 ? 1 : level > MAX_TERRACE ? MAX_TERRACE : level) * STEP_LEVELS;
+  if (isRockT(terrain)) return (level < 1 ? 1 : level > PEAK_TERRACE ? PEAK_TERRACE : level) * STEP_LEVELS;
   if (level < 1 || !liftsT(terrain)) return 0;
   return (level > MAX_TERRACE ? MAX_TERRACE : level) * STEP_LEVELS;
 }
@@ -69,11 +79,11 @@ export function tileTop(land: ReliefLand, x: number, y: number): number {
  * The tile a view ray meets first, from its ground point (px, py) — where it crosses z = 0. A
  * point `lv` levels up on the same ray lies `lv·SHIFT` tiles further along +x +y, towards the
  * viewer (in iso, and for the volumes through the whole morph), so walking down from the highest
- * relief, the first tile whose top (`tileTop`) reaches the ray is the rock top or the cliff it
- * hits; else the ground tile. Picking reads it (what a click lands on when it hits no sprite).
+ * relief (a spire's top, D147), the first tile whose top (`tileTop`) reaches the ray is the rock
+ * top or the cliff it hits; else the ground tile. Picking reads it (what a click lands on when it hits no sprite).
  */
 export function surfaceTile(land: ReliefLand, px: number, py: number): [number, number] {
-  for (let lv = MAX_LEVEL; lv > 0; lv--) {
+  for (let lv = PEAK_LEVEL; lv > 0; lv--) {
     const tx = Math.floor(px + lv * SHIFT), ty = Math.floor(py + lv * SHIFT);
     if (tileTop(land, tx, ty) >= lv) return [tx, ty];
   }

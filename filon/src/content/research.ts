@@ -109,7 +109,7 @@ export const CATEGORIES = {
   t1_workshop: cat(1, 'dn', [], ['Atelier', 'Workshop'], ['Les pièces : engrenages, oscillateurs à quartz, fil et câble.', 'Parts: gears, quartz oscillators, wire and cable.']),
   t1_commerce: cat(1, 'cm', [], ['Commerce', 'Commerce'], ['Un second comptoir, des prix plancher.', 'A second trade post, floor prices.']),
   t1_core: cat(1, 'an', [], ['Calcul du Cœur', 'Core Compute'], ['Le calcul du Cœur, et la Synthèse qui ouvre son niveau 3.', 'The Core’s compute, and the Synthesis that opens its level 3.']),
-  t1_logistics: cat(1, 'xp', [], ['Logistique', 'Logistics'], ['Rubans plus vifs, grands silos, grilles contre les Glaneurs.', 'Swifter ribbons, great silos, fences against the Gleaners.']),
+  t1_logistics: cat(1, 'xp', [], ['Logistique', 'Logistics'], ['Rubans plus vifs, grands silos, grilles contre les Glaneurs, terres lointaines.', 'Swifter ribbons, great silos, fences against the Gleaners, far land.']),
   // ── Tier 2: the Core's level 3 and two expertises (D93, D118) ──
   t2_grid: cat(2, 'en', ['t1_energy'], ['Réseau électrique', 'Power Grid'], ['Garder l’électricité : accumulateurs lourds, batteries chargées.', 'Keeping power: heavy accumulators, charged batteries.']),
   t2_quarry: cat(2, 'ex', ['t1_extraction'], ['Carrière', 'Quarry'], ['Creuser la roche, tamiser la pierre, combler l’eau.', 'Digging rock, sifting stone, filling water.']),
@@ -117,7 +117,7 @@ export const CATEGORIES = {
   t2_automation: cat(2, 'dn', ['t1_foundry', 't1_workshop'], ['Automatisation', 'Automation'], ['L’atelier d’électronique, les servomoteurs, l’assemblage compact.', 'The electronics workshop, servomotors, compact assembly.']),
   t2_finance: cat(2, 'cm', ['t1_commerce'], ['Finance', 'Finance'], ['Ordres permanents, vente automatique, forfaits de tokens.', 'Standing orders, auto-sell, token plans.']),
   t2_servers: cat(2, 'an', ['t1_core'], ['Serveurs', 'Servers'], ['Les serveurs, la file de recherche, un deuxième pupitre.', 'Servers, the research queue, a second desk.']),
-  t2_land: cat(2, 'xp', ['t1_logistics'], ['Territoire', 'Territory'], ['Baux, pylônes, longues passerelles, terres lointaines.', 'Leases, pylons, long bridges, far land.']),
+  t2_land: cat(2, 'xp', ['t1_logistics'], ['Territoire', 'Territory'], ['Baux, pylônes, longues passerelles, le ruban camouflé.', 'Leases, pylons, long bridges, the camouflaged ribbon.']),
   // ── Tier 3: the Core's level 4 (Optics) ──
   t3_plants: cat(3, 'en', ['t2_grid'], ['Centrales', 'Power Plants'], ['Fermes solaires, grandes éoliennes, géothermie, générateurs à batteries.', 'Solar farms, great turbines, geothermal plants, battery generators.']),
   t3_deep: cat(3, 'ex', ['t2_quarry'], ['Mine profonde', 'Deep Mining'], ['Forer profond, pomper fort, tailler le cœur-de-roche.', 'Boring deep, pumping hard, cutting heartrock.']),
@@ -308,13 +308,20 @@ export const RESEARCH = {
   xp_bigsilo: node('t1_logistics', 2, 'xp_swift', ['Grand silo', 'Great Silo'], ['Débloque le Grand silo : 5 000 objets.', 'Unlocks the Great Silo: 5,000 items.'], [['iron_plate', 60], ['glass', 20]]),
   // The Gleaners (D103): the fence they do not cross and the ribbon under glass, by the time a line runs out past the Crown (the quartz, D87).
   xp_guard: node('t1_logistics', 2, 'xp_bigsilo', ['Grilles et rubans vitrés', 'Fences and Glazed Ribbons'], ['Débloque la Grille, que les Glaneurs ne franchissent pas, et le Ruban vitré, dont ils ne prennent rien.', 'Unlocks the Fence, which the Gleaners do not cross, and the Glazed Ribbon, from which they take nothing.'], [['glass', 40], ['iron_plate', 20]]),
+  // Far Claim (D161; owner, 2026-10-19: « you should be able to buy parcels that are not connected to
+  // your base from Tier 1 »): a parcel that does not touch the claim's land, Logistique's last Tier 1
+  // node — after the fence and the glazed ribbon, so the outpost can be closed in and its line home
+  // kept from the Gleaners. Nothing else is needed at Tier 1: a held parcel is the claim's land (no
+  // kite delay there), the plain ribbon and the pole cross free land, the parcel takes turbines of its
+  // own. It was Tier 2 after the camouflaged ribbon (D119), Tier 4 before; its id is kept.
+  xp_far: node('t1_logistics', 2, 'xp_guard', ['Concession lointaine', 'Far Claim'], ['Acheter une parcelle qui ne touche pas tes terres : tes rubans et tes poteaux la rejoignent par les terres libres.', 'Buy a parcel that does not touch your land: your ribbons and poles reach it across the free land.'], [['iron_plate', 40], ['copper_wire', 40]], [flag('farClaims')]),
   // The camouflaged ribbon (D109): the Territory opens on the ribbon that runs across land the claim does not
   // hold — a neighbouring base's too (D110) — buried, for its pace; Neighbour Treaties later opens that land to every ribbon and the poles.
   xp_camo: node('t2_land', 3, null, ['Ruban camouflé', 'Camouflaged Ribbon'], ['Débloque le Ruban camouflé (40/min) : enfoui sous le sable, il passe sur les terres des bases voisines, sans surcoût hors de tes terres, et les Glaneurs ne le voient pas.', 'Unlocks the Camouflaged Ribbon (40/min): buried under the sand, it runs across the neighbouring bases’ land, with no surcharge off your land, and the Gleaners do not see it.'], [['steel', 20], ['gear', 20]]),
   xp_bridges: node('t2_land', 3, 'xp_camo', ['Passerelles longues', 'Long Bridges'], ['Les passerelles portent à 8 tuiles.', 'Bridges reach 8 tiles.'], [['steel', 40], ['gear', 20]], [add('bridgeSpan', 4)]),
-  // The pylons it reaches farther with are Land Registry's (D107), the Territory's since D128.
-  // Far Claim (D119, was Tier 4 after the treaties): a parcel that does not touch the claim's land, from Tier 2 — after the camouflaged ribbon.
-  xp_far: node('t2_land', 4, 'xp_camo', ['Concession lointaine', 'Far Claim'], ['Acheter une parcelle qui ne touche pas tes terres.', 'Buy a parcel that does not touch your land.'], [['steel', 30], ['copper_wire', 80]], [flag('farClaims')]),
+  // The pylons it reaches farther with are Land Registry's (D107), the Territory's since D128. Far
+  // Claim left the Territory for Tier 1's Logistique (D161): the Territory keeps the leases, the
+  // pylons, the long bridges and the buried ribbon — what makes far land cheaper to hold and reach.
   xp4: node('t2_land', 4, 'xp_bridges', ['Pylônes renforcés', 'Reinforced Pylons'], ['Les pylônes portent à 60 tuiles.', 'Pylons reach 60 tiles.'], [['steel', 40], ['cable', 40]], [add('pylonLink', 20)], ['tr4']),
   xp_distrib: node('t3_transport', 5, null, ['Distributeurs', 'Distributors'], ['Débloque le Distributeur (routeur 2×2).', 'Unlocks the Distributor (a 2×2 router).'], [['thermal_core', 10], ['gear', 100]]),
   xp_express: node('t3_transport', 6, 'xp_distrib', ['Ruban express', 'Express Ribbon'], ['Débloque le Ruban express (240/min).', 'Unlocks the Express Ribbon (240/min).'], [['lens', 15], ['gear', 120]]),
@@ -385,8 +392,8 @@ const PATH_PLANS = {
   steam: plan('energy', ['wind_flower'], [['iron_plate', 20], ['glass', 4], ['copper_wire', 2]], {
     name: { fr: 'Vapeur', en: 'Steam Power' },
     desc: {
-      fr: 'La Chaudière à vapeur, et ce qui lui porte son eau\u00a0: la Pompe à eau et le Conduit.',
-      en: 'The Steam Boiler, and what brings it its water: the Water Pump and the Conduit.',
+      fr: 'La Chaudière à vapeur, et ce qui lui porte son eau\u00a0: la Pompe à eau, le Conduit et le Manomètre qui en lit la pression.',
+      en: 'The Steam Boiler, and what brings it its water: the Water Pump, the Conduit and the Pressure Gauge that reads its pressure.',
     },
   }),
 

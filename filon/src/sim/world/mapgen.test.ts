@@ -5,8 +5,10 @@
 // lilac rock on their tops; the deposits on the floor; the unique sites, the copper field and the
 // archetypes where they belong; maps 1–3, the land of the bases founded on them, kept tile for tile;
 // and map 4's obstacles (D94): massifs and their cliffs, chasms, rivers, a floor corridor to each
-// site, the rings past the starting square cut up; map 5's few quartz faces farther out (D136).
+// site, the rings past the starting square cut up; map 5's few quartz faces farther out (D136);
+// map 6's field of rock spires in the open sand round the Crown (D147).
 import { describe, it, expect } from 'vitest';
+import { BAL } from '@/content/balance';
 import { BUILDINGS } from '@/content/buildings';
 import { CIRQUE, CIRQUE_V1, COS64, MAP_VERSION, MAPS, MOUNTAINS, OBSTACLES, RINGS, SIN64, WORLD_SEED, UNIQUE_BIOMES } from '@/content/world';
 import { buildingDef, buildingIdx, itemIdx } from '@/content/registry';
@@ -18,7 +20,9 @@ import { T, isFloor, isRock, isWater } from '../types';
 import { BIOME, MapGen } from './mapgen';
 import { Grid, MAX_LEVEL, MOUNTAIN_LEVEL } from './grid';
 import { parcelFloor } from './floor';
-import { PARCEL_COLS, parcelAt, parcelRect, ringOf } from './land';
+import { PARCEL, PARCEL_COLS, parcelAt, parcelRect, ringOf } from './land';
+import { LineKind } from './obstacles';
+import { bearingOf, prevailing, WindField } from './wind';
 import { faceRate, faceTiles, isFaceOre } from '../face';
 
 /** Sixteen lands, and seed 8's Closed Cirque (none of the sixteen draws one). */
@@ -416,10 +420,13 @@ describe('map versions (D63)', () => {
     // Pinned from the generator as it was before map versions (seeds: lagoons, steppe, mesas, closed).
     const pinned: Record<number, number> = { 1: 0xd443c4a6, 42: 0x8fe9aa81, 8919: 0x41478c03, 8: 0x39dc2ff4 };
     for (const [seed, h] of Object.entries(pinned)) expect(fingerprint(new MapGen(WORLD_SEED, Number(seed), 1)).toString(16), `seed ${seed}`).toBe(h.toString(16));
-    // Maps 2 and 3 likewise, pinned when map 4 came (D94): a new version never moves an old land.
+    // Maps 2 and 3 likewise, pinned when map 4 came (D94): a new version never moves an old land;
+    // maps 4 and 5 pinned when map 6 came (D147), before its spires were written.
     const pinnedV: Record<number, Record<number, number>> = {
       2: { 1: 0xfc2900c2, 42: 0x7837f35f, 8919: 0x69742876, 8: 0xf7c51baa, 1000: 0x4cd39501, 3: 0x6b65d226 },
       3: { 1: 0x5e1d903a, 42: 0x808f9557, 8919: 0x81d65964, 8: 0xc5470347, 1000: 0xbe8417f6, 3: 0x8fa64496 },
+      4: { 1: 0x97a3b56d, 42: 0x7fb14cff, 8919: 0x7fae8822, 8: 0xe838c089, 1000: 0x8ee352b2, 3: 0xf0211603 },
+      5: { 1: 0x97a3b56d, 42: 0x7fb14cff, 8919: 0x7fae8822, 8: 0xe838c089, 1000: 0x8ee352b2, 3: 0xf0211603 },
     };
     for (const [v, pins] of Object.entries(pinnedV)) {
       for (const [seed, h] of Object.entries(pins)) expect(fingerprint(new MapGen(WORLD_SEED, Number(seed), Number(v))).toString(16), `map ${v} seed ${seed}`).toBe(h.toString(16));
@@ -599,11 +606,13 @@ describe('map 4: obstacles (D94)', () => {
       const R = 120, tiles = disc(g, R);
       const lv = new Map<number, number>();
       let cliffs = 0, tall = 0, top = 0, high = 0;
-      // The massifs' top (the spring's summit stands a level over them, D115: tested below).
+      // The massifs' top (the spring's summit stands a level over them, D115, out to 13 tiles from its
+      // middle on map 6, D147: tested below; map 6's needles far over them, D147: tested below).
       const SM = MAPS[4]!.cirque.spring!.summit;
       for (const [x, y, l] of tiles) {
         lv.set(y * WORLD + x, l);
-        if ((x - CENTER - SM.dx) ** 2 + (y - CENTER - SM.dy) ** 2 >= (SM.top + SM.level) ** 2) top = Math.max(top, l);
+        if (biomeAt(g, x, y) === BIOME.spire) continue;
+        if ((x - CENTER - SM.dx) ** 2 + (y - CENTER - SM.dy) ** 2 >= 14 * 14) top = Math.max(top, l);
         if (l >= 3) high++;
         for (const d of [Math.abs(l - g.level(x + 1, y)), Math.abs(l - g.level(x, y + 1))]) { if (d >= 2) cliffs++; if (d >= 3) tall++; }
       }
@@ -840,7 +849,7 @@ describe('map 4: obstacles (D94)', () => {
 
 });
 
-describe('the spring on the Crown (map 4, D115)', () => {
+describe('the spring on the Crown (map 4, D115; map 6\'s summit a natural massif, D147)', () => {
   /** The spring's stream: the river tiles within the Crown's reach. */
   const stream = (gen: MapGen, g: Grid): Array<[number, number]> => {
     const out: Array<[number, number]> = [], R = gen.crownReach;
@@ -850,9 +859,9 @@ describe('the spring on the Crown (map 4, D115)', () => {
   const DX8 = [1, 1, 0, -1, -1, -1, 0, 1], DY8 = [0, 1, 1, 1, 0, -1, -1, -1];
 
   it('the tarn replaced (owner: « Il reste un lac vestige… Il faut l\'enlever ou le remplacer… make it go from a higher mountain… from north to south… a little plateau, and at least 6 in height »): its peak dry; a spring in a basin on a summit\'s plateau over every mountain, its stream south down the terraces in falls, never climbing, into a pool on the floor', () => {
-    const W = MAPS[4]!.cirque, SP = W.spring!, P = SP.pool;
-    for (const seed of SEEDS) {
-      const { gen, g } = world(seed, 4);
+    for (const v of [4, 6]) for (const seed of SEEDS) {
+      const W = MAPS[v]!.cirque, SP = W.spring!, P = SP.pool;
+      const { gen, g } = world(seed, v);
       expect(gen.tarn).toBeNull();
       expect(gen.spring!.x).toBe(CENTER + SP.summit.dx);
       expect(gen.spring!.y).toBe(CENTER + SP.summit.dy);
@@ -864,12 +873,15 @@ describe('the spring on the Crown (map 4, D115)', () => {
       expect(sp.level, `seed ${seed}: over every other mountain`).toBeGreaterThan(MOUNTAIN_LEVEL);
       expect(g.terrain(sp.x, sp.y)).toBe(T.Deep);
       expect(g.level(sp.x, sp.y)).toBe(sp.level);
+      // The plateau whole out to `top` tiles (map 4), or round the basin's rim (map 6: bays in its edge).
+      const H = SM.shape, keep = (dx: number, dy: number): boolean => (H ? isqrt(16 * (dx * dx + dy * dy)) <= Math.ceil(4 * SM.basin) + H.rim : isqrt(dx * dx + dy * dy) <= SM.top);
       let basin = 0, rimLow = 0, plateau = 0, off = 0;
       for (let dy = -SM.top; dy <= SM.top; dy++) for (let dx = -SM.top; dx <= SM.top; dx++) {
         if (isqrt(dx * dx + dy * dy) > SM.top) continue;
         const x = sp.x + dx, y = sp.y + dy, t = g.terrain(x, y), l = g.level(x, y), still = t === T.Shallow || t === T.Deep;
         if (still) basin++;
-        else plateau++;
+        else if (l === sp.level) plateau++;
+        if (!keep(dx, dy)) continue;
         if (l !== sp.level) off++;
         // The basin's rim: its rock (not the stream's way out) at the water's level all round.
         if (still) for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
@@ -917,8 +929,8 @@ describe('the spring on the Crown (map 4, D115)', () => {
   });
 
   it('its banks never stand below its water (owner, of a fall whose water was lost at its foot: « the visuals are still a little bit broken »): it runs in a channel, stepping down only along its way', () => {
-    for (const seed of SEEDS.slice(0, 6)) {
-      const { gen, g } = world(seed, 4);
+    for (const v of [4, 6]) for (const seed of SEEDS.slice(0, 6)) {
+      const { gen, g } = world(seed, v);
       let low = 0, n = 0;
       for (const [x, y] of stream(gen, g)) {
         const l = g.level(x, y);
@@ -932,10 +944,95 @@ describe('the spring on the Crown (map 4, D115)', () => {
     }
   });
 
-  it('the same stream for every player, tile for tile', () => {
+  it('the same stream for every player, tile for tile (map 6\'s map 4\'s own)', () => {
     const ref = world(SEEDS[0]!, 4), key = (gen: MapGen, g: Grid): string => stream(gen, g).map(([x, y]) => `${x},${y},${g.level(x, y)}`).join(' ');
     const want = key(ref.gen, ref.g);
-    for (const seed of SEEDS.slice(1)) { const { gen, g } = world(seed, 4); expect(key(gen, g), `seed ${seed}`).toBe(want); }
+    for (const v of [4, 6]) for (const seed of SEEDS) { const { gen, g } = world(seed, v); expect(key(gen, g), `map ${v} seed ${seed}`).toBe(want); }
+  });
+
+  it('map 6\'s summit a natural massif (D147; the lead, of map 4\'s: « a perfect octagon… stacked boxes »): bays in its plateau\'s edge by bearing, its sides falling 2 or 3 a tile, never 1 off the plateau, never above map 4\'s (the Crown keeps its wind); on its east and south — the stream, its banks, the floor the bases\' lines run down — map 4\'s tile for tile', () => {
+    const SM = MAPS[6]!.cirque.spring!.summit, H = SM.shape!, G = MAPS[6]!.cirque.spring!.ledge!, sx = CENTER + SM.dx, sy = CENTER + SM.dy;
+    const kept = (b: number): boolean => ((b - H.keep[0]) & 63) <= ((H.keep[1] - H.keep[0]) & 63);
+    const eroded = new Set([...G.bites!.map(([x, y]) => `${x},${y}`), ...G.spurs!.map(([x, y]) => `${x},${y}`)]);
+    const heading = (dx: number, dy: number): number => { let best = 0, bd = -Infinity; for (let k = 0; k < 64; k++) { const v = dx * COS64[k]! + dy * SIN64[k]!; if (v > bd) { bd = v; best = k; } } return best; };
+    for (const seed of SEEDS.slice(0, 8)) {
+      const four = world(seed, 4), six = world(seed), at = `seed ${seed}`;
+      const g = six.g, plateau = (x: number, y: number): boolean => g.level(x, y) === SM.level && isRock(g.terrain(x, y));
+      let lower = 0, more = 0, south = 0, stepOne = 0, two = 0, three = 0, before = 0, after = 0;
+      // Along 64 bearings out of its middle: how far it stands 4 or higher (its first terrace's edge),
+      // and its first step down off the plateau.
+      const reach: number[] = [];
+      for (let b = 0; b < 64; b++) {
+        if (kept(b) || [-1, 1].some((s) => kept((b + s * H.blend) & 63))) continue;
+        const at2 = (d: number): [number, number] => [sx + ((COS64[b]! * d + 512) >> 10), sy + ((SIN64[b]! * d + 512) >> 10)];
+        let d = 1;
+        while (d < 13 && (plateau(...at2(d)) || isWater(g.terrain(...at2(d))))) d++;
+        const drop = SM.level - g.level(...at2(d));
+        if (drop === 2) two++;
+        if (drop === 3) three++;
+        while (d < 13 && g.level(...at2(d)) >= 4) d++;
+        reach.push(d);
+      }
+      expect(Math.max(...reach) - Math.min(...reach), `${at}: its first terrace's edge by bearing ${reach.join(' ')}`).toBeGreaterThanOrEqual(1);
+      expect(two, `${at}: sides falling two`).toBeGreaterThan(0);
+      expect(three, `${at}: sides falling three`).toBeGreaterThan(0);
+      for (let y = sy - 13; y <= sy + 13; y++) for (let x = sx - 13; x <= sx + 13; x++) {
+        const dx = x - sx, dy = y - sy;
+        if (dx * dx + dy * dy >= 169) continue;
+        if (four.g.level(x, y) >= 4) before++;
+        if (g.level(x, y) >= 4) after++;
+        // Off the plateau: never a single step down (no ribbon climbs it), but the basin's water and its stream.
+        if (plateau(x, y)) for (const [i, j] of N4) {
+          const u = x + i, v = y + j, t = g.terrain(u, v);
+          if (!plateau(u, v) && !isWater(t) && g.level(u, v) > SM.level - 2) stepOne++;
+        }
+        const b = heading(dx, dy);
+        // On its east and south, map 4's (the ledge's erosion apart: tested below).
+        if (kept(b) && !eroded.has(`${dx + SM.dx},${dy + SM.dy}`)) {
+          if (g.level(x, y) !== four.g.level(x, y) || g.terrain(x, y) !== four.g.terrain(x, y)) south++;
+        } else if (g.level(x, y) < four.g.level(x, y)) lower++;
+        if (g.level(x, y) > four.g.level(x, y) && !eroded.has(`${dx + SM.dx},${dy + SM.dy}`)) more++;
+      }
+      expect(stepOne, `${at}: a single step off the plateau`).toBe(0);
+      expect(south, `${at}: tiles on its east and south unlike map 4's`).toBe(0);
+      expect(more, `${at}: tiles above map 4's`).toBe(0);
+      expect(lower, `${at}: tiles its bays and steeper sides lowered`).toBeGreaterThan(5);
+      // Its footprint (tiles of level 4 or more within 13 tiles of its middle): map 4's 69, map 6's fewer.
+      expect(after, `${at}: its footprint (map 4: ${before})`).toBeLessThan(before);
+    }
+  });
+
+  it('map 6\'s ledge eroded (D147; the lead: « the boxiest thing in the owner\'s view… long straight walls on its south and east sides »): bays and a spur east of the stream, no straight wall over 4 tiles there; flat at its level west of it, where the late base\'s potteries stand, as map 4\'s', () => {
+    const G = MAPS[6]!.cirque.spring!.ledge!, G4 = MAPS[4]!.cirque.spring!.ledge!;
+    expect([G.dx0, G.dy0, G.dx1, G.dy1, G.level]).toEqual([G4.dx0, G4.dy0, G4.dx1, G4.dy1, G4.level]);
+    for (const seed of SEEDS.slice(0, 8)) {
+      const four = world(seed, 4).g, g = world(seed).g, at = `seed ${seed}`, lv = (dx: number, dy: number): number => g.level(CENTER + dx, CENTER + dy);
+      for (const [dx, dy, l] of G.bites!) expect(lv(dx, dy), `${at}: the bite at ${dx},${dy}`).toBe(l);
+      for (const [dx, dy] of G.spurs!) expect(lv(dx, dy), `${at}: the spur at ${dx},${dy}`).toBe(G.level);
+      // West of the stream's east bank (x + 13 and less) and round it: map 4's, flat at the ledge's level.
+      for (let dy = G.dy0 - 1; dy <= G.dy1 + 1; dy++) for (let dx = G.dx0 - 1; dx <= 13; dx++) {
+        expect(lv(dx, dy), `${at}: ${dx},${dy}`).toBe(four.level(CENTER + dx, CENTER + dy));
+        expect(g.terrain(CENTER + dx, CENTER + dy), `${at}: ${dx},${dy}`).toBe(four.terrain(CENTER + dx, CENTER + dy));
+      }
+      // Its walls east of the stream: along its east side row by row, along its south one column by
+      // column, its outermost tile at its level over lower land; a straight run where that tile stays
+      // in line, 4 tiles at most (map 4's: 6 and 5).
+      const wall = (cells: Array<[number, number, number, number]>): number => {
+        let run = 0, longest = 0, prev = NaN;
+        for (const [dx, dy, ox, oy] of cells) {
+          const edge = lv(dx, dy) === G.level && lv(dx + ox, dy + oy) < G.level, at2 = ox ? dx : dy;
+          run = edge ? (at2 === prev ? run + 1 : 1) : 0;
+          prev = edge ? at2 : NaN;
+          longest = Math.max(longest, run);
+        }
+        return longest;
+      };
+      const east: Array<[number, number, number, number]> = [], south: Array<[number, number, number, number]> = [];
+      for (let dy = G.dy0; dy <= G.dy1 + 1; dy++) { let dx = G.dx1 + 1; while (dx > 13 && lv(dx, dy) !== G.level) dx--; east.push([dx, dy, 1, 0]); }
+      for (let dx = 13; dx <= G.dx1; dx++) { let dy = G.dy1 + 1; while (dy > G.dy0 && lv(dx, dy) !== G.level) dy--; south.push([dx, dy, 0, 1]); }
+      expect(wall(east), `${at}: its east wall`).toBeLessThanOrEqual(4);
+      expect(wall(south), `${at}: its south wall`).toBeLessThanOrEqual(4);
+    }
   });
 });
 
@@ -1006,6 +1103,346 @@ describe('map 5: quartz faces farther out (D136)', () => {
       }
       expect(diff, `land ${seed}: tiles map 5 changed`).toBe(0);
       expect(ore, `land ${seed}: ore map 5 changed off its faces`).toBe(0);
+    }
+  }, 60_000);
+});
+
+describe('map 6: a field of rock spires (D147)', () => {
+  const S = MAPS[6]!.spires!, LANDS = [1, 2, 3, 4, 5, 6, 7, 8], ROCK = T.Rock1 + S.hardness - 1;
+  // The rings' square: the Heart's parcel's half and a parcel a ring (Chebyshev from the centre).
+  const home = parcelRect(parcelAt(CENTER, CENTER)), hp = CENTER - home.x0;
+  const C0 = hp + 1 + (S.rings[0] - 1) * PARCEL, C1 = hp + S.rings[1] * PARCEL;
+  const PLAIN = new Set<number>([T.Sand, T.Hardpan, T.Salt]);
+  /** A tile in the field's frame: along its middle and across it (×1024 tiles), its Chebyshev distance and its radius from the centre. */
+  const frame = (gen: MapGen, x: number, y: number): { U: number; V: number; c: number; r: number } => {
+    const b = gen.spireField!.bearing, dx = x - CENTER, dy = y - CENTER;
+    return { U: dx * COS64[b]! + dy * SIN64[b]!, V: dy * COS64[b]! - dx * SIN64[b]!, c: Math.max(Math.abs(dx), Math.abs(dy)), r: isqrt(dx * dx + dy * dy) };
+  };
+  /** Is a tile within the wedge narrowed by `less` 64ths each side? */
+  const inWedge = (gen: MapGen, x: number, y: number, less = 0): boolean => {
+    const { U, V } = frame(gen, x, y);
+    return U > 0 && Math.abs(V) * COS64[S.half - less]! <= U * SIN64[S.half - less]!;
+  };
+  /** Is a tile on the field's ground: its wedge, its radii, its rings? */
+  const onGround = (gen: MapGen, x: number, y: number): boolean => {
+    const F = gen.spireField!, ring = ringOf(parcelAt(x, y));
+    return inWedge(gen, x, y) && d2c(x, y) >= F.r0 * F.r0 && d2c(x, y) <= F.r1 * F.r1 && ring >= S.rings[0] && ring <= S.rings[1];
+  };
+  /** How far in from the ground's nearest edge a tile lies (tiles): its radii, its rings' square, the wedge's sides. */
+  const inward = (gen: MapGen, x: number, y: number): number => {
+    const { U, V, c, r } = frame(gen, x, y), F = gen.spireField!;
+    return Math.min(r - F.r0, F.r1 - r, c - C0, C1 - c, Math.floor((U * SIN64[S.half]! - Math.abs(V) * COS64[S.half]!) / (1024 * 1024)));
+  };
+  const needles = (gen: MapGen): Array<{ x: number; y: number; level: number }> => gen.spiresIn(0, 0, WORLD, WORLD);
+  /** The chunks round the field's ground (its box and a chunk more) and a few far away. */
+  const chunksOf = (gen: MapGen): Array<[number, number]> => {
+    const t = needles(gen), F = gen.spireField!, out: Array<[number, number]> = [[20, 9], [5, 25], [28, 28], [16, 16]];
+    const xs = t.map((n) => n.x).concat(F.x), ys = t.map((n) => n.y).concat(F.y);
+    for (let cy = (Math.min(...ys) >> 5) - 1; cy <= (Math.max(...ys) >> 5) + 1; cy++) for (let cx = (Math.min(...xs) >> 5) - 1; cx <= (Math.max(...xs) >> 5) + 1; cx++) if (!out.some(([a, b]) => a === cx && b === cy)) out.push([cx, cy]);
+    return out;
+  };
+
+  it('needles in one wedge of the open sand round the Crown, on the lower half of the iso screen (owner, 2026-10-19: « lots of very small but tall mountains that will seem like big spiky mountains »): 150 needle tiles or more a land, 4 to 14 levels', () => {
+    expect(MAP_VERSION).toBe(6);
+    for (let v = 1; v <= 5; v++) expect(new MapGen(WORLD_SEED, 1, v).spireField, `map ${v}`).toBeNull();
+    for (const seed of LANDS) {
+      const { gen } = world(seed), F = gen.spireField!, at = `land ${seed}`;
+      expect(S.bearings.map((b) => b & 63), at).toContain(F.bearing);
+      // The lower half of the iso screen: its middle and both its sides south of the screen's horizon (x + y > 0).
+      for (const b of [F.bearing - S.half, F.bearing, F.bearing + S.half]) expect(COS64[b & 63]! + SIN64[b & 63]!, `${at}: bearing ${b}`).toBeGreaterThan(0);
+      expect([F.r0, F.r1], at).toEqual([...S.r]);
+      expect([F.x, F.y], at).toEqual([CENTER + ((COS64[F.bearing]! * ((F.r0 + F.r1) >> 1)) >> 10), CENTER + ((SIN64[F.bearing]! * ((F.r0 + F.r1) >> 1)) >> 10)]);
+      const tiles = needles(gen);
+      expect(tiles.length, at).toBeGreaterThanOrEqual(150);
+      expect(tiles.length, at).toBeLessThanOrEqual(320);
+      for (const { x, y, level } of tiles) {
+        const here = `${at}: (${x - CENTER}, ${y - CENTER}) level ${level}`;
+        expect(level, here).toBeGreaterThanOrEqual(S.levels[0]);
+        expect(level, here).toBeLessThanOrEqual(S.levels[1]);
+        // On its ground: past the starting square, short of the neighbouring bases.
+        expect(onGround(gen, x, y), here).toBe(true);
+      }
+      expect(tiles.some((t) => t.level === S.levels[1]), `${at}: the top level`).toBe(true);
+    }
+  });
+
+  it('a skyline (the owner, of the first renders: « a flat bed of nails »): the tallest along a crest, steeply lower off it, the fringe low', () => {
+    for (const seed of LANDS) {
+      const { gen } = world(seed), tiles = needles(gen), at = `land ${seed}`;
+      const tall = tiles.filter((t) => t.level >= 12), n = tiles.length;
+      // A summit line, not a few spikes nor a plateau (lands 1–8: 23–45 tiles of 12 or more).
+      expect(tall.length, `${at}: 12 or more`).toBeGreaterThanOrEqual(15);
+      expect(tall.length, `${at}: 12 or more`).toBeLessThanOrEqual(Math.floor(n / 4));
+      expect(tiles.filter((t) => t.level <= 6).length, `${at}: 4–6`).toBeGreaterThanOrEqual(Math.floor(n / 5));
+      // The tall ones in a line: most with another within four tiles.
+      const near = (a: { x: number; y: number }, b: { x: number; y: number }, d: number): boolean => a !== b && (a.x - b.x) ** 2 + (a.y - b.y) ** 2 <= d * d;
+      expect(tall.filter((t) => tall.some((o) => near(t, o, 4))).length, `${at}: tall needles along a line`).toBeGreaterThanOrEqual(Math.ceil((tall.length * 7) / 10));
+      // Steeply lower off it: the needles 6 tiles or more from every tall one 11 levels at most (its
+      // flanks), 10 tiles or more 8 at most on average.
+      const off = (d: number) => tiles.filter((t) => t.level < 12 && !tall.some((o) => near(t, o, d - 1)));
+      for (const t of off(6)) expect(t.level, `${at}: (${t.x - CENTER}, ${t.y - CENTER}) away from the crest`).toBeLessThanOrEqual(11);
+      const far = off(10);
+      if (far.length) expect(far.reduce((s, t) => s + t.level, 0) / far.length, `${at}: far from the crest`).toBeLessThanOrEqual(8);
+      // The fringe low, the tallest well inside its ground.
+      for (const t of tiles) {
+        const k = inward(gen, t.x, t.y), here = `${at}: (${t.x - CENTER}, ${t.y - CENTER}) level ${t.level}, ${k} tiles in`;
+        if (k <= 2) expect(t.level, here).toBeLessThanOrEqual(8);
+        if (t.level >= 12) expect(k, here).toBeGreaterThanOrEqual(4);
+      }
+    }
+  });
+
+  it('an organic outline (« a rectangle of pins »): its edge wanders in and out along the wedge\'s sides and radii, never straight along them for 7 tiles', () => {
+    for (const seed of LANDS) {
+      const { gen } = world(seed), tiles = needles(gen), at = `land ${seed}`, F = gen.spireField!;
+      // Along each side of the wedge: radius by radius, how far in from it the outermost needle stands;
+      // along each radius: across the field, tile by tile, how far in from it the nearest needle stands.
+      const profiles: Array<[string, number[]]> = [];
+      for (const sgn of [1, -1]) {
+        const p: number[] = [];
+        for (let r = F.r0; r <= F.r1; r++) {
+          let g = Infinity;
+          for (const t of tiles) {
+            const f = frame(gen, t.x, t.y);
+            if (f.r === r && Math.sign(f.V) === sgn) g = Math.min(g, Math.floor((f.U * SIN64[S.half]! - Math.abs(f.V) * COS64[S.half]!) / (1024 * 1024)));
+          }
+          if (g < Infinity) p.push(g);
+        }
+        profiles.push([`side ${sgn}`, p]);
+      }
+      for (const outer of [false, true]) {
+        const p: number[] = [];
+        const byV = new Map<number, number>();
+        for (const t of tiles) {
+          const f = frame(gen, t.x, t.y), v = f.V >> 10, g = outer ? Math.min(F.r1, C1) - Math.max(f.r, f.c) : f.r - F.r0;
+          byV.set(v, Math.min(byV.get(v) ?? Infinity, g));
+        }
+        for (const v of [...byV.keys()].sort((a, b) => a - b)) p.push(byV.get(v)!);
+        profiles.push([outer ? 'outer' : 'inner', p]);
+      }
+      for (const [edge, p] of profiles) {
+        expect(p.length, `${at} ${edge}`).toBeGreaterThan(15);
+        expect(Math.max(...p) - Math.min(...p), `${at} ${edge}: bays and spurs ${p.join(' ')}`).toBeGreaterThanOrEqual(4);
+        let run = 1, longest = 1;
+        for (let i = 1; i < p.length; i++) { run = p[i] === p[i - 1] ? run + 1 : 1; longest = Math.max(longest, run); }
+        expect(longest, `${at} ${edge}: straight along it ${p.join(' ')}`).toBeLessThanOrEqual(6);
+      }
+    }
+  });
+
+  it('a mass from afar: in its core a needle tile in every 4–6 or so, its fringe sparser; never two needles side by side but a twin (one in five or so), at a corner only well inside; pockets of floor among them', () => {
+    for (const seed of LANDS) {
+      const { gen, g } = world(seed), tiles = needles(gen), at = `land ${seed}`;
+      const lv = new Map(tiles.map((t) => [t.y * WORLD + t.x, t.level]));
+      let twins = 0;
+      for (const { x, y, level } of tiles) {
+        const here = `${at}: (${x - CENTER}, ${y - CENTER})`;
+        expect(g.terrain(x, y), here).toBe(ROCK);
+        expect(g.level(x, y), here).toBe(level);
+        expect(biomeAt(g, x, y), here).toBe(BIOME.spire);
+        expect(g.ore(x, y), here).toBe(-1);
+        // Side by side: only its twin, east or south of it or west or north.
+        const side = N4.filter(([i, j]) => lv.has((y + j) * WORLD + x + i));
+        expect(side.length, `${here}: needles beside it`).toBeLessThanOrEqual(1);
+        // At a corner: only well inside (where the body is whole: lands 1–8, 3 tiles in or more).
+        for (const [i, j] of [[1, 1], [-1, 1]] as const) if (lv.has((y + j) * WORLD + x + i)) expect(Math.min(inward(gen, x, y), inward(gen, x + i, y + j)), `${here}: a needle at its corner`).toBeGreaterThanOrEqual(2);
+        if (!side.length) continue;
+        const [i, j] = side[0]!;
+        // The pair's other tile has none but this one beside it.
+        expect(N4.filter(([a, b]) => lv.has((y + j + b) * WORLD + x + i + a)).length, `${here}: a pair`).toBe(1);
+        if (i < 0 || j < 0) continue; // counted once, from its west or north tile
+        twins++;
+        const d = Math.abs(level - lv.get((y + j) * WORLD + x + i)!);
+        expect(d, `${here}: its shoulder`).toBeGreaterThanOrEqual(S.shoulder[0]);
+        expect(d, `${here}: its shoulder`).toBeLessThanOrEqual(S.shoulder[1]);
+      }
+      const n = tiles.length - twins;
+      expect(twins, `${at}: twins of ${n} needles`).toBeGreaterThanOrEqual(Math.floor(n / 10));
+      expect(twins, `${at}: twins of ${n} needles`).toBeLessThanOrEqual(Math.floor(n / 3));
+      // Its core: the tiles 9 or more in from its ground's edge, round the tallest needle tiles (within
+      // 8 tiles of one); its fringe: 2 or fewer in. Lands 1–8: the core 1 in 4–6, the fringe 1 in 10–40.
+      const tall = tiles.filter((t) => t.level >= 12);
+      let core = 0, coreN = 0, fringe = 0, fringeN = 0, pockets = 0;
+      const F = gen.spireField!, R = F.r1 + 2;
+      for (let y = CENTER - R; y <= CENTER + R; y++) for (let x = CENTER - R; x <= CENTER + R; x++) {
+        if (!onGround(gen, x, y)) continue;
+        const k = inward(gen, x, y), on = lv.has(y * WORLD + x);
+        if (k >= 9 && tall.some((t) => (t.x - x) ** 2 + (t.y - y) ** 2 <= 64)) { core++; if (on) coreN++; }
+        if (k <= 2) { fringe++; if (on) fringeN++; }
+        // A pocket: a 2 × 2 of floor at level 0 with needles round it (four or more of the twelve tiles round).
+        if (k < 6) continue;
+        let floor = true, ring = 0;
+        for (let j = -1; j <= 2; j++) for (let i = -1; i <= 2; i++) {
+          const inside = i >= 0 && i <= 1 && j >= 0 && j <= 1, u = x + i, v = y + j;
+          if (inside && (g.level(u, v) !== 0 || !isFloor(g.terrain(u, v)))) floor = false;
+          if (!inside && lv.has(v * WORLD + u)) ring++;
+        }
+        if (floor && ring >= 4) pockets++;
+      }
+      expect(core, at).toBeGreaterThan(150);
+      expect(core / coreN, `${at}: tiles a needle tile in the core`).toBeLessThanOrEqual(7.5);
+      expect(core / coreN, `${at}: tiles a needle tile in the core`).toBeGreaterThanOrEqual(3);
+      expect(fringe / Math.max(1, fringeN), `${at}: tiles a needle tile in the fringe`).toBeGreaterThan(2 * (core / coreN));
+      expect(pockets, `${at}: pockets of floor among the needles`).toBeGreaterThanOrEqual(5);
+    }
+  });
+
+  it('never in the starting square, on a corridor to a site or by it, in the copper field\'s keep, by a vent or the quartz vein; only where map 5 has plain floor at level 0 with no ore', () => {
+    for (const seed of LANDS) {
+      const { gen } = world(seed), five = world(seed, 5).g, at = `land ${seed}`;
+      const cf = gen.copperField, keep = OBSTACLES.copper + S.clear, V = gen.quartzVein!;
+      for (const { x, y } of needles(gen)) {
+        const here = `${at}: (${x - CENTER}, ${y - CENTER})`, t = five.terrain(x, y);
+        expect(ringOf(parcelAt(x, y)), here).toBeGreaterThanOrEqual(2);
+        expect(gen.lines.near(x, y, LineKind.Corridor, 4 * S.clear), here).toBe(false);
+        expect((x - cf.cx) ** 2 + (y - cf.cy) ** 2, here).toBeGreaterThanOrEqual(keep * keep);
+        for (const v of gen.ventSites) expect((x - v.x - 1) ** 2 + (y - v.y - 1) ** 2, here).toBeGreaterThanOrEqual((MOUNTAINS.clear.vent + S.clear) ** 2);
+        for (let k = 0; k < V.n; k++) expect((x - V.x - k * V.dx) ** 2 + (y - V.y - k * V.dy) ** 2, `${here}: by the quartz vein`).toBeGreaterThan(20 * 20);
+        expect(isFloor(t) && t !== T.Vent && five.level(x, y) === 0 && five.ore(x, y) < 0, `${here}: map 5's land there`).toBe(true);
+      }
+    }
+  });
+
+  it('out of the wind\'s way: never within `avoid.wind` 64ths of any day\'s wind (D95), and the Crown keeps its wind — its mean exposure at the prevailing bearing within 1 % of map 5\'s, its windiest spots unchanged', () => {
+    // The wind the field keeps out of is frozen in content (a land never changes under a base): today's.
+    const pb = prevailing(WORLD_SEED);
+    expect([S.wind.from, S.wind.veer], 'the wind map 6 avoids is today\'s').toEqual([pb, BAL.wind.veer]);
+    const apart = (a: number, b: number): number => { const d = (a - b) & 63; return Math.min(d, 64 - d); };
+    for (const seed of LANDS) {
+      const five = world(seed, 5), six = world(seed), at = `land ${seed}`, b = six.gen.spireField!.bearing;
+      for (const v of [0, 1, 2]) expect(apart(b, bearingOf(WORLD_SEED, v)), `${at}: bearing ${b} against the wind's veer ${v}`).toBeGreaterThanOrEqual(S.avoid.wind);
+      // The Crown's tiles where turbines stand: not the summit's own nor its ledge's (map 6 lowers them, D147: tested with the spring).
+      const SP = MAPS[6]!.cirque.spring!, SM = SP.summit, G = SP.ledge!;
+      const own = (x: number, y: number): boolean => (x - CENTER - SM.dx) ** 2 + (y - CENTER - SM.dy) ** 2 <= 81 || (x >= CENTER + G.dx0 - 1 && x <= CENTER + G.dx1 + 1 && y >= CENTER + G.dy0 - 1 && y <= CENTER + G.dy1 + 1);
+      const w5 = new WindField(five.gen), w6 = new WindField(six.gen), e5: number[] = [], e6: number[] = [], R = six.gen.crownReach;
+      for (let y = CENTER - R; y <= CENTER + R; y++) for (let x = CENTER - R; x <= CENTER + R; x++) {
+        if (biomeAt(five.g, x, y) !== BIOME.crown || own(x, y)) continue;
+        e5.push(w5.at(x, y, pb));
+        e6.push(w6.at(x, y, pb));
+      }
+      const mean = (a: number[]): number => a.reduce((s, v) => s + v, 0) / a.length;
+      const top = (a: number[]): number => mean([...a].sort((p, q) => q - p).slice(0, 50)), best = (a: number[]): number => Math.max(...a);
+      expect(e5.length, at).toBeGreaterThan(1000);
+      // Lands 1–8: 0.4–1.0 % less on the mean, 0.1–0.8 % on its best fifty (the bowl of the Crown's
+      // south side reaches the needles; the summit, never above map 4's, shelters nothing more); its
+      // windiest tile, the south-south-west peak, up to 3 % less (a bearing of its bowl meets the needles).
+      expect(mean(e6) / mean(e5), `${at}: the Crown's mean exposure ${mean(e5).toFixed(1)} → ${mean(e6).toFixed(1)}`).toBeGreaterThanOrEqual(0.99);
+      expect(best(e6) / best(e5), `${at}: the Crown's windiest tile ${best(e5)} → ${best(e6)}`).toBeGreaterThanOrEqual(0.97);
+      expect(top(e6) / top(e5), `${at}: the Crown's best fifty tiles ${top(e5).toFixed(1)} → ${top(e6).toFixed(1)}`).toBeGreaterThanOrEqual(0.99);
+    }
+  }, 60_000);
+
+  it('passages (space is a stake, D94): the floor among the needles crosses the field from its inner edge to its outer edge for a line two tiles wide, through its middle', () => {
+    for (const seed of LANDS) {
+      const { gen, g } = world(seed), F = gen.spireField!;
+      // Over 2 × 2 blocks of level floor (top-left tile), in the wedge less 2 64ths a side (not round
+      // its sides), from inside its inner radius to past its outer one.
+      const block = (x: number, y: number): boolean => {
+        for (const [i, j] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) {
+          const u = x + i, v = y + j, t = g.terrain(u, v);
+          if (!inWedge(gen, u, v, 2) || d2c(u, v) > (F.r1 + 2) ** 2 || g.level(u, v) !== 0 || !isFloor(t) || t === T.Vent) return false;
+        }
+        return true;
+      };
+      const R = F.r1 + 4, starts: number[] = [];
+      for (let y = CENTER - R; y <= CENTER + R; y++) for (let x = CENTER - R; x <= CENTER + R; x++) if (d2c(x, y) <= F.r0 * F.r0 && block(x, y)) starts.push(y * WORLD + x);
+      expect(starts.length, `land ${seed}: floor inside the field`).toBeGreaterThan(0);
+      const seen = new Set(starts), todo = [...starts];
+      let out = false;
+      for (let i = 0; i < todo.length && !out; i++) {
+        const k = todo[i]!, x = k % WORLD, y = (k - x) / WORLD;
+        out = d2c(x, y) >= F.r1 * F.r1 && d2c(x + 1, y + 1) >= F.r1 * F.r1;
+        for (const [dx, dy] of N4) {
+          const q = (y + dy) * WORLD + x + dx;
+          if (!seen.has(q) && block(x + dx, y + dy)) { seen.add(q); todo.push(q); }
+        }
+      }
+      expect(out, `land ${seed}: a way two tiles wide across the field`).toBe(true);
+    }
+  });
+
+  it('map 6 is map 5 but on its needles and its badlands, tile for tile (terrain, level, ore, richness, shading, biome; round the field and far off: its summit is tested with the spring); D136\'s faces the same; the badlands mark only plain floor at level 0 with no code of its own, on the field\'s ground, round its needles', () => {
+    for (const seed of LANDS) {
+      const five = world(seed, 5), six = world(seed), at = `land ${seed}`;
+      const on = new Set(needles(six.gen).map((t) => t.y * WORLD + t.x));
+      let diff = 0, laid = 0, bad = 0, ground = 0, wrongGround = 0, bare = 0;
+      for (const [cx, cy] of chunksOf(six.gen)) {
+        const a = five.g.chunkAt(cx, cy), b = six.g.chunkAt(cx, cy);
+        for (let k = 0; k < CHUNK * CHUNK; k++) {
+          const x = cx * CHUNK + (k & 31), y = cy * CHUNK + (k >> 5);
+          if (on.has(y * WORLD + x)) { laid++; continue; }
+          for (const f of ['terrain', 'ore', 'rich', 'level', 'height'] as const) if (a[f][k] !== b[f][k]) diff++;
+          if (b.biome[k] === BIOME.spireGround) {
+            ground++;
+            if (a.biome[k] !== BIOME.none || !PLAIN.has(a.terrain[k]!) || a.level[k] !== 0 || !onGround(six.gen, x, y)) wrongGround++;
+          } else if (a.biome[k] !== b.biome[k]) bad++;
+        }
+      }
+      // Round the needles: of the plain floor beside a needle (its four sides), nearly all marked.
+      for (const k of on) {
+        const x = k % WORLD, y = (k - x) / WORLD;
+        for (const [i, j] of N4) {
+          const u = x + i, v = y + j;
+          if (!on.has(v * WORLD + u) && PLAIN.has(five.g.terrain(u, v)) && biomeAt(five.g, u, v) === BIOME.none && biomeAt(six.g, u, v) !== BIOME.spireGround) bare++;
+        }
+      }
+      expect(laid, at).toBe(on.size);
+      expect(diff, `${at}: tiles map 6 changed off its needles`).toBe(0);
+      expect(bad, `${at}: biome codes map 6 changed but the badlands'`).toBe(0);
+      expect(wrongGround, `${at}: badlands off plain floor or off the field's ground`).toBe(0);
+      expect(ground, `${at}: badlands tiles`).toBeGreaterThan(3 * on.size);
+      expect(bare, `${at}: floor beside a needle not marked`).toBeLessThanOrEqual(Math.floor(on.size / 20));
+      expect(six.gen.facesIn(0, 0, WORLD, WORLD), at).toEqual(five.gen.facesIn(0, 0, WORLD, WORLD));
+    }
+  }, 60_000);
+
+  it('the neighbouring bases stand as on map 5: none on the field\'s parcels (`keepsClear`), the same holdings and the same layouts', () => {
+    let bases = 0;
+    for (const seed of LANDS) {
+      const mk = (v: number): Sim => new Sim({ worldSeed: WORLD_SEED, playerSeed: seed, source: new MapGen(WORLD_SEED, seed, v), foundingEpoch: WORLD_EPOCH0 + 24 });
+      const five = mk(5), six = mk(6), gen = six.grid.source as MapGen, at = `land ${seed}`;
+      const held = new Set(needles(gen).map((t) => parcelAt(t.x, t.y)));
+      for (const p of held) { const r = parcelRect(p); expect(gen.keepsClear(r.x0, r.y0, r.x1, r.y1), `${at}: parcel ${p}`).toBe(true); }
+      const sig = (sim: Sim, p: number): string => {
+        const h = sim.neighbours.holdingOf(p);
+        if (!h) return '-';
+        const L = sim.neighbours.layout(h);
+        return `${h.hub}:${h.colony}:${h.parcels}|${L.structs.map((s) => `${s.def},${s.x},${s.y},${s.rot}`).join(';')}|${L.ribbons.map((r) => [...r.tiles].join(',')).join(';')}`;
+      };
+      for (let p = 0; p < PARCEL_COLS * PARCEL_COLS; p++) {
+        if (ringOf(p) > 6) continue;
+        const s5 = sig(five, p);
+        if (s5 !== '-') bases++;
+        expect(sig(six, p), `${at}: parcel ${p} (ring ${ringOf(p)})`).toBe(s5);
+      }
+    }
+    expect(bases, 'parcels of neighbouring bases compared').toBeGreaterThan(8);
+  }, 120_000);
+
+  it('the pure accessors agree with the chunks on the field (levelAt, terrainAt, floorAt), and a needle is the same whichever chunk is made first', () => {
+    for (const seed of LANDS.slice(0, 4)) {
+      const { gen, g } = world(seed), at = `land ${seed}`, tiles = needles(gen);
+      // A fresh land asked about the needles first, before any chunk of it is made, from the last.
+      const fresh = new MapGen(WORLD_SEED, seed);
+      let diff = 0, n = 0;
+      for (const { x, y } of [...tiles].reverse()) for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+        const u = x + i, v = y + j, t = g.terrain(u, v), l = g.level(u, v);
+        n++;
+        if (fresh.levelAt(u, v) !== l || fresh.terrainAt(u, v) !== t || fresh.floorAt(u, v) !== (l === 0 && isFloor(t))) diff++;
+      }
+      expect(n, at).toBeGreaterThan(900);
+      expect(diff, `${at}: accessors off the chunks`).toBe(0);
+      // Chunk by chunk from the field's far corner back: the same needles and badlands.
+      const back = new MapGen(WORLD_SEED, seed), chunks = chunksOf(gen).reverse(), N = CHUNK * CHUNK;
+      for (const [cx, cy] of chunks) {
+        const t = new Uint8Array(N), o = new Uint8Array(N), r = new Uint16Array(N), h = new Uint8Array(N), b = new Uint8Array(N), l = new Uint8Array(N);
+        back.fill(cx, cy, t, o, r, h, b, l);
+        const c = g.chunkAt(cx, cy);
+        expect(Array.from(l), `${at}: chunk ${cx},${cy}`).toEqual(Array.from(c.level));
+        expect(Array.from(t), `${at}: chunk ${cx},${cy}`).toEqual(Array.from(c.terrain));
+        expect(Array.from(b), `${at}: chunk ${cx},${cy}`).toEqual(Array.from(c.biome));
+      }
+      expect(back.spiresIn(0, 0, WORLD, WORLD), at).toEqual(tiles);
     }
   }, 60_000);
 });

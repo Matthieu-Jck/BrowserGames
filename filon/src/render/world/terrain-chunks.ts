@@ -17,7 +17,7 @@ import { buildWindow, hasRock } from '../art/terrain';
 import type { PaintReply, PaintRequest } from '../art/terrain.worker';
 import type { CamState } from '../camera-math';
 import { reliefHead, visibleChunksP, invert, apply, type Lin } from '../projection';
-import { MAX_LEVEL } from '../relief';
+import { PEAK_LEVEL } from '../relief';
 import { C, num } from '../art/tokens';
 
 type Kind = 'g' | 'r' | 's';
@@ -225,7 +225,8 @@ export class TerrainChunks {
     const want = new Set<string>();
     const relief = t < 0.6;
     this.missing.count = 0;
-    this.visible = visibleChunksP(P, cam, vw, vh, 0, reliefHead(t, MAX_LEVEL));
+    // The headroom of the tallest relief, the spires' (D147): a spire's top shows from a chunk below the screen.
+    this.visible = visibleChunksP(P, cam, vw, vh, 0, reliefHead(t, PEAK_LEVEL));
     // Drop queued requests that are no longer wanted at this bucket.
     this.queue = this.queue.filter((q) => (q.kind === 's' ? q.sun === this.sunKey : q.ppt === (q.kind === 'g' ? ppt : rppt) || q.ppt === 8));
     for (const [cx, cy] of this.visible) {

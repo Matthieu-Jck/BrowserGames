@@ -73,6 +73,8 @@ export interface Preview {
    * neighbouring base's (`neighbour_land`) when any is, else free land (`outside_zone`). The tip says it.
    */
   buried?: { n: number; land: PlaceReason };
+  /** A conduit drag off a pipe's side (`split`: the new line draws its water there) or into it (`join`), the pipe kept as it runs (D152). The tip shows it. */
+  tee?: 'split' | 'join';
   /**
    * The copy or upgrade tool's box (D154: tiles, inclusive) and what it would take — the buildings
    * a copy captures, the line pieces an upgrade lays over (also in `doomed`, refunded).
@@ -453,6 +455,7 @@ export class Tools {
           }
         // This very ribbon already there: shown, free. A block the line runs through stays as it is.
         } else if (st.def === s.def) out.pieces.push({ def: s.def, x: st.x, y: st.y, rot: st.rot, ok: true, reason: 'ok' });
+        if (st.tee && out.tee !== 'split') out.tee = st.tee; // a tee or a join (D152): the pipe stays as it runs
       }
     }
     // Buried pieces off the claim's land (D109): the tip names the land and their count.

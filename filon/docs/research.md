@@ -57,14 +57,14 @@ A node's prerequisites by name are the node before it in its category and, writt
 | 1 | Atelier · Workshop (dn) | Mechanics (press, gears) → Twin Wire Mill (+ Steelworks; cable) · Quartz Workshop (oscillators; D128, the Face Cutter's plan's until then) |
 | 1 | Commerce (cm) | Second Post → Floor Prices |
 | 1 | Calcul du Cœur · Core Compute (an) | Overclocking (+ Quartz Workshop) → **Synthesis** (+ Twin Wire Mill; the Core's level 3) |
-| 1 | Logistique (xp) | Swift Ribbon → Great Silo → Fences and Glazed Ribbons |
+| 1 | Logistique (xp) | Swift Ribbon → Great Silo → Fences and Glazed Ribbons → Far Claim (D161) |
 | 2 | Réseau électrique · Power Grid (en) ← Énergie | Heavy Accumulator → Battery Charging |
 | 2 | Carrière · Quarry (ex) ← Extraction | Earthworks (excavator) → Sifter → Backfill → Basalt Bits |
 | 2 | Céramique et optique · Ceramics and Optics (dn) ← Fonderie | Ceramics → **Optics** (+ Electronics Workshop: its thermal cores and the Core's level 4 take circuits, D129; the Core's level 4) |
 | 2 | Automatisation · Automation (dn) ← Fonderie, Atelier | Electronics Workshop (circuits; a plan until D129) → Servomotors → Compact Assembly (+ Ceramics) |
 | 2 | Finance (cm) ← Commerce | Auto-sell (D127) · Standing Orders → Compute Plan (+ Server Room) → Server Rental |
 | 2 | Serveurs · Servers (an) ← Calcul du Cœur | Server Room (+ Electronics Workshop, D129) → Research Queue · Second Desk |
-| 2 | Territoire · Territory (xp) ← Logistique | Camouflaged Ribbon (D109) → Long Bridges → Reinforced Pylons (+ Land Registry), Far Claim (D119) · Land Registry (+ Ceramics) |
+| 2 | Territoire · Territory (xp) ← Logistique | Camouflaged Ribbon (D109) → Long Bridges → Reinforced Pylons (+ Land Registry) · Land Registry (+ Ceramics) |
 | 3 | Centrales · Power Plants (en) ← Réseau électrique | Solar Farm → Great Turbine · Geothermal → Battery Generator |
 | 3 | Mine profonde · Deep Mining (ex) ← Carrière | Deep Bore → High-Pressure Pump · Heartrock Cutters → Heavy Excavator |
 | 3 | Électronique · Electronics (dn) ← Automatisation | Etcher → Robotics · **Resonance** (the Core's level 5) |

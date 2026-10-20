@@ -3,6 +3,7 @@
 // splits its free room among its incoming offers), A3 splits (each node splits what it has
 // among its outgoing edges, knowing what they accept), B transfers, C internal updates.
 // Every allocation reads only start-of-tick state, so results never depend on node order.
+// Splits: `allocRotating` (greedy, the first way in turn first), `shareFluid` (even, for a tee's water, D152).
 import type { StateHasher } from '@/core/hash';
 import { St } from '../types';
 
@@ -102,4 +103,40 @@ export function allocRotating(es: readonly number[], rot: number, free: number, 
     given += out[e]!;
   }
   return given;
+}
+
+/**
+ * Water shared among the ways out of a tee (D152): `free` milli-items split evenly among edges `es`,
+ * each capped by caps[e] (what that way takes this tick); a way that takes less than its share hands
+ * the rest to the others, round after round, until the water is out or every way is full (max-min
+ * fair). What does not divide evenly goes one milli-item a way in turn from `rot` (`now % n` online:
+ * fair over n ticks, a short period for the catch-up). Integers in, integers out; writes out[e];
+ * returns what was handed out. Every way gets some every tick it can take any, so each branch's
+ * water stays one steady stream (a conduit's runs merge).
+ */
+export function shareFluid(es: readonly number[], rot: number, free: number, caps: Float64Array, out: Float64Array): number {
+  const n = es.length;
+  for (const e of es) out[e] = 0;
+  let left = free;
+  for (let round = 0; round <= n && left > 0; round++) {
+    let open = 0;
+    for (const e of es) if (out[e]! < caps[e]!) open++;
+    if (!open) break;
+    const share = Math.floor(left / open);
+    if (share === 0) {
+      // Less than a milli-item a way: one each, in turn from `rot`, while it lasts.
+      for (let k = 0; k < n && left > 0; k++) {
+        const e = es[(k + rot) % n]!;
+        if (out[e]! < caps[e]!) { out[e] = out[e]! + 1; left--; }
+      }
+      break;
+    }
+    for (const e of es) {
+      const a = Math.min(share, caps[e]! - out[e]!);
+      if (a <= 0) continue;
+      out[e] = out[e]! + a;
+      left -= a;
+    }
+  }
+  return free - left;
 }

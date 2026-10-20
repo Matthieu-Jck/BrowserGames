@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { T } from '@/sim/types';
 import { CHUNK, WORLD } from '@/sim/constants';
 import { Grid, type TerrainSource } from '@/sim/world/grid';
-import { facesCamera, levelOf, masksAt, MAX_LEVEL, MAX_TERRACE, SHIFT, SMOOTH, slabOutline, STEP_LEVELS, surfaceTile, tileTop, wallRuns, type OutlinePt } from './relief';
+import { facesCamera, levelOf, masksAt, MAX_LEVEL, MAX_TERRACE, PEAK_LEVEL, PEAK_TERRACE, SHIFT, SMOOTH, slabOutline, STEP_LEVELS, surfaceTile, tileTop, wallRuns, type OutlinePt } from './relief';
 import { BORDER, buildWindow, WIN, windowLevels } from './art/terrain';
 import { tileToIso } from './iso';
 
@@ -32,7 +32,9 @@ describe('tiered relief', () => {
     expect(levelOf(T.Sand, 3)).toBe(0);
     expect(levelOf(T.Rock2, 0)).toBe(STEP_LEVELS);
     for (let l = 1; l <= MAX_TERRACE; l++) expect(levelOf(T.Rock3, l)).toBe(l * STEP_LEVELS);
-    expect(levelOf(T.Rock4, 9)).toBe(MAX_LEVEL);
+    // Rock stands up to a spire's height (D147: map 6's needles, far over the mountains), no higher.
+    expect(levelOf(T.Rock4, 9)).toBe(9 * STEP_LEVELS);
+    expect(levelOf(T.Rock4, PEAK_TERRACE + 3)).toBe(PEAK_LEVEL);
   });
 
   it('a lone column is a chamfered block that never leaves its tile', () => {

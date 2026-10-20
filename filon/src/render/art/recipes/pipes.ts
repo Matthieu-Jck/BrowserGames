@@ -7,7 +7,14 @@
 // a bolted flange joint; now and then a sight-glass, a glazed band of the water's teal with its
 // glint (the stub's own); a bend is a long-radius elbow between two flanged ends; a side inlet a
 // tee with a collar at its root; a line's end — at a port, or open — a flange at the stub's mouth
-// (`PIPE.tOut` from the edge), where the stub's own flange meets it.
+// (`PIPE.tOut` from the edge), where the stub's own flange meets it. Where a line's water is shared
+// (D152: a tee, a pipe drawn off its side) a valve stands on the tee's crown: a squat bonnet bolted on
+// the tube, its stem and a brass handwheel (`drawPipeValve`) — the ports' own valve, neither turquoise
+// (in) nor coral (out): brass, it shares. A pressure gauge (D155: a fitting set into the line) stands on
+// its tile's crown: a short stem from a bolted bonnet up to a round dial facing the viewer — a dark steel
+// bezel, a cream face, the red, amber and green arcs of its scale (`BAL.pressure`) and ticks
+// (`drawPipeGauge`) — its needle a sprite of its own the view turns with the reading
+// (`drawGaugeNeedle`: one per state's colour, a brass hub; `gaugeAngle`), so it reads from mid zoom.
 //
 // Pieces are drawn in world directions on a 1 × 1 frame (no rotation: the light stays top-left),
 // each tile's tube cut square at its edges with no ink across the cut, its fill and shading run a
@@ -22,11 +29,13 @@
 // core shadow and the highlight from a light in world space (−x, a little −y, and above), only on
 // the half the camera sees (the iso view looks along (−1, −1, −1) in tile terms: a level is half a
 // tile); the silhouettes are the hulls' bridge edges, so the cuts carry no ink.
+import { BAL } from '@/content/balance';
+import { PRESSURE_MAX, type PressureState } from '@/sim/readouts/pressure';
 import { C, mix } from '../tokens';
-import { flat, ink, type Ctx, type Pt } from '../ink';
+import { ellipsePts, flat, ink, type Ctx, type Pt } from '../ink';
 import { hull, rivet } from '../shapes';
 import { IsoFrame, ShadowFrame, box, drumIso } from '../iso-shapes';
-import { PIPE } from '../pipe-ports';
+import { PIPE, valveWheelIso } from '../pipe-ports';
 
 /** A point of a path: local tile x, y and height z (levels). */
 export type P3 = readonly [number, number, number];
@@ -345,6 +354,108 @@ export function drawPipe(ctx: Ctx, f: IsoFrame, arms: string, mark: PipeMark = '
 /** Draw a tee's branch into frame `f`. */
 export function drawPipeBranch(ctx: Ctx, f: IsoFrame, side: number, full: boolean, seed = 83): void {
   branch(ctx, f, side, full, seed);
+}
+
+/** The frame a tee's sharing valve is drawn on (D152): a tile, taller than a pipe's (its handwheel stands over the crown). */
+export const valveFrame = (): IsoFrame => new IsoFrame(1, 1, 0, 1.5);
+
+/**
+ * A tee's sharing valve (D152) into frame `f` (`valveFrame`), over the tee's pieces: a squat pale
+ * bonnet on the crown at the tile's middle, bolted, then the stem and the brass handwheel.
+ */
+export function drawPipeValve(ctx: Ctx, f: IsoFrame, seed = 97): void {
+  const top = RUN.z + RUN.r * 2, b = 0.075, h = 0.12;
+  box(ctx, f, 0.5 - b, 0.5 - b, 0.5 + b, 0.5 + b, top - 0.06, top + h, { top: FLANGE, left: SHADE, right: mix(FLANGE, C.ink, 0.12) }, seed, { outline: 1.4, shadow: false });
+  for (const [dx, dy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
+    const p = f.p(0.5 + dx * b * 0.62, 0.5 + dy * b * 0.62, top + h);
+    rivet(ctx, p[0], p[1], 1.4, C.brassL);
+  }
+  valveWheelIso(ctx, f, 0.5, 0.5, top + h, top + h + PIPE.wheelUp * 0.85, C.brass, seed + 5);
+}
+
+// ── the pressure gauge (D155) ────────────────────────────────────────────────
+
+/**
+ * The dial's measures (bake px, the iso frames' 2× scale): its radius, how far its middle stands over
+ * the pipe's crown, the needle's length (× R); its sweep in canvas radians, from the lower left
+ * clockwise over the top to the lower right.
+ */
+export const GAUGE = { R: 26, rise: 40, needle: 0.74, a0: Math.PI * 0.75, sweep: Math.PI * 1.5 } as const;
+/** The colour each state shows (its needle, the Logistique view's water lines, the inspector's dial). */
+export const PRESSURE_COL: Readonly<Record<PressureState, string>> = {
+  ok: mix(C.turq, C.ledGreen, 0.45), tight: C.hazard, low: C.coral, dry: C.coralD, idle: C.steel,
+};
+/** The scale's arcs: each state's colour from where its range starts on the dial (fractions of the sweep). */
+const ARCS: ReadonlyArray<readonly [number, number, string]> = [
+  [0, BAL.pressure.tight / PRESSURE_MAX, C.coral],
+  [BAL.pressure.tight / PRESSURE_MAX, BAL.pressure.ok / PRESSURE_MAX, C.hazard],
+  [BAL.pressure.ok / PRESSURE_MAX, 1, mix(C.turq, C.ledGreen, 0.45)],
+];
+
+/** The needle's way for a pressure ‰ (canvas radians, clamped to the dial). */
+export function gaugeAngle(pressure: number): number {
+  return GAUGE.a0 + GAUGE.sweep * Math.max(0, Math.min(1, pressure / PRESSURE_MAX));
+}
+
+/** The frame a gauge is drawn on: a tile, tall enough for its dial over the crown. */
+export const gaugeFrame = (): IsoFrame => new IsoFrame(1, 1, 0, 2.4);
+
+/** The dial's middle in frame `f` (bake px): over the tile's middle, `GAUGE.rise` above the pipe's crown. */
+export function gaugeCentre(f: IsoFrame): Pt {
+  const [x, y] = f.p(0.5, 0.5, RUN.z + RUN.r * 2);
+  return [x, y - GAUGE.rise];
+}
+
+/**
+ * A dial at (cx, cy) of radius R (px) facing the viewer: a soft shadow, the dark steel bezel with its
+ * lit rim, the cream face, the scale's arcs (`ARCS`), a tick each eighth of the sweep, inked. No needle.
+ */
+export function drawDial(ctx: Ctx, cx: number, cy: number, R: number, seed: number, shadow = true): void {
+  const ring = (r: number): Pt[] => ellipsePts(cx, cy, r, r, seed, 0, 40);
+  if (shadow) flat(ctx, ellipsePts(cx + R * 0.12, cy + R * 0.16, R * 1.06, R * 1.06, seed, 0, 40), C.ink, 0.22);
+  flat(ctx, ring(R), C.steelD);
+  ink(ctx, ring(R).filter(([x, y]) => x < cx + R * 0.3 && y < cy + R * 0.3).sort((a, b) => a[0] - b[0]), { w: Math.max(1.2, R * 0.07), color: mix(C.steelL, '#ffffff', 0.4), alpha: 0.8, shade: false, taper: 0, jitter: 0, seed: seed + 1 });
+  flat(ctx, ring(R * 0.8), mix(C.paper, '#ffffff', 0.35));
+  // The scale: a band of each state's colour along the face's edge.
+  const band = (f0: number, f1: number, col: string): void => {
+    const pts: Pt[] = [], n = 18, r0 = R * 0.56, r1 = R * 0.76;
+    for (let i = 0; i <= n; i++) { const a = GAUGE.a0 + GAUGE.sweep * (f0 + ((f1 - f0) * i) / n); pts.push([cx + Math.cos(a) * r1, cy + Math.sin(a) * r1]); }
+    for (let i = n; i >= 0; i--) { const a = GAUGE.a0 + GAUGE.sweep * (f0 + ((f1 - f0) * i) / n); pts.push([cx + Math.cos(a) * r0, cy + Math.sin(a) * r0]); }
+    flat(ctx, pts, col);
+  };
+  for (const [f0, f1, col] of ARCS) band(f0, f1, col);
+  for (let k = 0; k <= 8; k++) {
+    const a = GAUGE.a0 + (GAUGE.sweep * k) / 8, r0 = k % 4 === 0 ? R * 0.42 : R * 0.5;
+    ink(ctx, [[cx + Math.cos(a) * r0, cy + Math.sin(a) * r0], [cx + Math.cos(a) * R * 0.77, cy + Math.sin(a) * R * 0.77]], { w: Math.max(1, R * (k % 4 === 0 ? 0.08 : 0.05)), shade: false, taper: 0, jitter: 0, seed: seed + 3 + k });
+  }
+  ink(ctx, ring(R * 0.8), { closed: true, w: Math.max(1, R * 0.05), color: C.steelD, shade: false, taper: 0, jitter: 0, seed: seed + 14 });
+  ink(ctx, ring(R), { closed: true, w: Math.max(1.4, R * 0.09), shade: false, taper: 0, jitter: 0, seed: seed + 15 });
+}
+
+/**
+ * A pressure gauge on the tile's crown in frame `f` (`gaugeFrame`): a squat bonnet bolted on the pipe, a
+ * dark stem up to the dial, the dial (`drawDial`) at `gaugeCentre`. Its needle is the view's own sprite.
+ */
+export function drawPipeGauge(ctx: Ctx, f: IsoFrame, seed = 101): void {
+  const top = RUN.z + RUN.r * 2, b = 0.07;
+  box(ctx, f, 0.5 - b, 0.5 - b, 0.5 + b, 0.5 + b, top - 0.06, top + 0.08, { top: FLANGE, left: SHADE, right: mix(FLANGE, C.ink, 0.12) }, seed, { outline: 1.4, shadow: false });
+  const foot = f.p(0.5, 0.5, top + 0.08), [cx, cy] = gaugeCentre(f);
+  ink(ctx, [foot, [cx, cy + GAUGE.R * 0.9]], { w: 5.2, color: C.ink, shade: false, taper: 0, jitter: 0, seed: seed + 1 });
+  ink(ctx, [foot, [cx, cy + GAUGE.R * 0.9]], { w: 2.8, color: C.steelD, shade: false, taper: 0, jitter: 0, seed: seed + 2 });
+  rivet(ctx, foot[0], foot[1], 2, C.brassL);
+  drawDial(ctx, cx, cy, GAUGE.R, seed + 5);
+}
+
+/** A needle pointing up from (cx, cy), `R` its dial's radius: a tapered blade in `col`, inked, a counterweight tail, a brass hub. */
+export function drawGaugeNeedle(ctx: Ctx, cx: number, cy: number, R: number, col: string, seed = 7): void {
+  const L = R * GAUGE.needle, w = R * 0.11;
+  const blade: Pt[] = [[cx, cy - L], [cx + w, cy], [cx + w * 0.7, cy + R * 0.2], [cx - w * 0.7, cy + R * 0.2], [cx - w, cy]];
+  flat(ctx, blade, col);
+  ink(ctx, [...blade, blade[0]!], { w: Math.max(1, R * 0.05), shade: false, taper: 0, jitter: 0, seed });
+  const hub = ellipsePts(cx, cy, R * 0.13, R * 0.13, seed, 0, 20);
+  flat(ctx, hub, C.brass);
+  ink(ctx, hub, { closed: true, w: Math.max(1, R * 0.05), shade: false, taper: 0, jitter: 0, seed: seed + 1 });
+  rivet(ctx, cx, cy, Math.max(1, R * 0.05), C.brassL);
 }
 
 /** A piece's shadow frame: the reference light's lay (world/cast-shadows.ts `SHADOW_DX`, `SHADOW_DY`). */

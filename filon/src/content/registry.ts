@@ -114,5 +114,5 @@ export const isBeltDef = (def: string): boolean => {
 };
 
 /** Laid by dragging a line (the build tool's drag, planned whole by `planBelts`): ribbons, conduits and fences (D103). */
-export const isDragDef = (def: string): boolean => isBeltDef(def) || BUILDING_KIND[buildingIdx(def)] === 'fence';
+export const isDragDef = (def: string): boolean => (isBeltDef(def) && !buildingDef(buildingIdx(def)).gauge) || BUILDING_KIND[buildingIdx(def)] === 'fence'; // a pressure gauge (D155) is set by a click
 

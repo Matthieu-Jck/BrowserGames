@@ -18,7 +18,10 @@
 //   stopping at a stub's mouth with a flange where it couples to a port or the line ends open; a
 //   straight's side inlets as tee branches; on a run's plain straights a flanged joint every
 //   `JOINT_EVERY` tiles along it and now and then a sight-glass, by the tile's place (the same tiles
-//   every time, both views alike).
+//   every time, both views alike). A tee (D152, the graph's `tees`: a line drawing water off its side)
+//   gets a branch on each side it hands water out of, and its sharing valve (`valve`); a bend with a
+//   branch off its outer side is drawn as a straight from its feeder to the branch, its way on the
+//   branch. `plan` says which flat pieces the plan lays (its tube, its inlets), in step with iso.
 import { BUILDING_KIND, buildingDef } from '@/content/registry';
 import { worldPorts } from '@/sim/entities';
 import type { Chain } from '@/sim/flow/chain';
@@ -68,8 +71,19 @@ export const JOINT_EVERY = 3;
 /** …and one in this many of the others a sight-glass (a hash of the place). */
 export const GLASS_EVERY = 7;
 
-/** A conduit tile's pipe (D145): its main piece's N E S W edges ('0' none, '1' on to the edge, '2' to a stub's mouth), a straight's mark, its tee branches. */
-export interface PipeOf { arms: string; mark: PipeMark; branches: Array<{ side: number; full: boolean }> }
+/**
+ * A conduit tile's pipe (D145): its main piece's N E S W edges ('0' none, '1' on to the edge, '2' to a
+ * stub's mouth), a straight's mark, its tee branches; whether it shares its water (D152: a tee, its
+ * valve); its plan pieces — the tube (a bend or a straight, turned, mirrored) and each inlet (turned,
+ * mirrored for one from the right).
+ */
+export interface PipeOf {
+  arms: string;
+  mark: PipeMark;
+  branches: Array<{ side: number; full: boolean }>;
+  valve: boolean;
+  plan: { corner: boolean; rot: Rot; mirror: boolean; inlets: Array<{ rot: Rot; mirror: boolean }> };
+}
 
 /**
  * The pipe conduit `e` shows (D145): `corner` and `enter` its piece (buildings-view.ts `beltPiece`:
@@ -78,23 +92,38 @@ export interface PipeOf { arms: string; mark: PipeMark; branches: Array<{ side: 
  * feeder) feeds it, it feeds the tile ahead — and stops at the stub's mouth where it couples to a
  * port (`couplingSides`) or meets nothing; a straight fed from a side gets a branch there.
  */
-export function pipeOf(sim: Sim, e: Ent, corner: boolean, enter: Rot, fall = false): PipeOf {
-  const g = sim.graph;
-  const fed = g?.feedDirs.get(tileIndex(e.x, e.y)) ?? 0, couple = couplingSides(sim, e);
+export function pipeOf(sim: Sim, e: Ent, corner: boolean, enter: Rot, fall = false, mirror = false): PipeOf {
+  const g = sim.graph, t = tileIndex(e.x, e.y);
+  const fed = g?.feedDirs.get(t) ?? 0, couple = couplingSides(sim, e), tee = g?.tees.get(t) ?? 0;
   const out = e.rot, back = opposite(corner ? enter : e.rot);
   const nx = e.x + DX[out]!, ny = e.y + DY[out]!;
   const ahead = nx >= 0 && ny >= 0 && nx < WORLD && ny < WORLD && ((g?.feedDirs.get(tileIndex(nx, ny)) ?? 0) & (1 << opposite(out))) !== 0;
   const state = (side: number, joined: boolean): string => (couple & (1 << side) || !joined ? '2' : '1');
   const arms = ['0', '0', '0', '0'];
-  arms[back] = state(back, (fed & (1 << back)) !== 0);
-  arms[out] = state(out, ahead || fall);
   const branches: PipeOf['branches'] = [];
-  if (!corner) for (const s of [(out + 1) & 3, (out + 3) & 3]) if (fed & (1 << s)) branches.push({ side: s, full: !(couple & (1 << s)) });
+  const left = ((out + 3) & 3) as Rot, right = ((out + 1) & 3) as Rot;
+  const plan: PipeOf['plan'] = { corner, rot: corner ? enter : out, mirror, inlets: [] };
+  if (corner && tee) {
+    // A bend with a branch off its outer side (D152): a straight from its feeder on to the branch's
+    // edge (a tube meets it there), its way on a branch (to the edge, or to a stub's mouth at a port).
+    const on = opposite(back) as Rot;
+    arms[back] = state(back, (fed & (1 << back)) !== 0);
+    arms[on] = '1';
+    branches.push({ side: out, full: state(out, ahead || fall) === '1' });
+    plan.corner = false; plan.rot = on; plan.mirror = false;
+    plan.inlets.push({ rot: on, mirror: out === ((on + 1) & 3) });
+  } else {
+    arms[back] = state(back, (fed & (1 << back)) !== 0);
+    arms[out] = state(out, ahead || fall);
+    // A straight's side inlets (a line merging in) and its tee's ways out (D152: a branch tube runs on to the edge).
+    if (!corner) for (const s of [right, left]) if ((fed | tee) & (1 << s)) branches.push({ side: s, full: (tee & (1 << s)) !== 0 || !(couple & (1 << s)) });
+    for (const b of branches) plan.inlets.push({ rot: out, mirror: b.side === right });
+  }
   let mark: PipeMark = '';
-  if (!corner && !branches.length && arms[back] === '1' && arms[out] === '1') {
+  if (!corner && !branches.length && arms[back] === '1' && arms[out] === '1' && !buildingDef(e.def).gauge) { // a gauge's tile (D155) wears its dial instead
     const along = out & 1 ? e.x : e.y;
     if (along % JOINT_EVERY === 0) mark = 'j';
     else if (((Math.imul(e.x, 0x45d9f3b) ^ Math.imul(e.y, 0x2c1b3c6d)) >>> 0) % GLASS_EVERY === 3) mark = 'g';
   }
-  return { arms: arms.join(''), mark, branches };
+  return { arms: arms.join(''), mark, branches, valve: tee !== 0, plan };
 }

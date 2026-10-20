@@ -26,14 +26,15 @@ import { Container, Sprite } from 'pixi.js';
 import { hash32 } from '@/core/hash';
 import { CHUNK, CHUNKS } from '@/sim/constants';
 import type { Grid } from '@/sim/world/grid';
-import { buildWindow, BORDER, columnLook, footOf, tileMasks, WIN, windowLayers, windowLevels } from '../art/terrain';
-import { columnSeed, columnVariant, drawColumn, drawFoot, footKey, topKey, type Foot, type TopLook } from '../art/rock';
+import { buildWindow, BORDER, columnLook, footOf, spireTile, tileMasks, WIN, windowLayers, windowLevels } from '../art/terrain';
+import { drawSpire, spireHeightAt, spireSeed, spireVariant } from '../art/spire';
+import { columnSeed, columnVariant, drawColumn, drawFoot, footKey, hasWall, topKey, type Foot, type TopLook } from '../art/rock';
 import { DynAtlas } from '../art/dyn-atlas';
 import { IS, IH, ILH } from '../art/iso-shapes';
 import { screenToWorld, type CamState } from '../camera-math';
 import { LH, tileToIso } from '../iso';
 import { reliefHead, tileBoxBounds, type Lin } from '../projection';
-import { ledges, MAX_LEVEL, MAX_TERRACE, slabOutline, STEP_LEVELS, tileTop, type OutlinePt } from '../relief';
+import { ledges, levelOf, MAX_LEVEL, MAX_TERRACE, PEAK_LEVEL, slabOutline, STEP_LEVELS, tileTop, type OutlinePt } from '../relief';
 import { rockZ } from './stand';
 import { C, mix, num } from '../art/tokens';
 
@@ -64,14 +65,19 @@ const FOOT_HEAD = 8;
 /** Sorting key shared with the buildings (world/stand.ts holds them all): 4 × (2 × depth) + kind. */
 export { rockZ };
 
-/** A chunk's columns: relief level, per-step masks, rock class, the top of a column that is not rock (null: rock), its face-ore vein (D87), where higher neighbours' walls rise from its top (rock.ts `Foot`: talus there). */
-interface ChunkRelief { lv: Uint8Array; masks: Uint8Array[]; cls: Uint8Array; top: Array<TopLook | null>; vein: Uint8Array; foot: Array<Foot | null>; layers: Array<number[] | null> }
+/**
+ * A chunk's columns: relief level, per-step masks, rock class, the top of a column that is not rock
+ * (null: rock), its face-ore vein (D87), where higher neighbours' walls rise from its top (rock.ts
+ * `Foot`: talus there); and its rock spires (D147: `peak`, a spire's relief height, 0 elsewhere — its
+ * `lv` is 0, no terrace —, `pvar` its look).
+ */
+interface ChunkRelief { lv: Uint8Array; masks: Uint8Array[]; cls: Uint8Array; top: Array<TopLook | null>; vein: Uint8Array; foot: Array<Foot | null>; layers: Array<number[] | null>; peak: Uint8Array; pvar: Uint8Array; high: number }
 
 export class ReliefView {
   readonly atlas = new DynAtlas();
   private readonly chunks = new Map<number, ChunkRelief>();
   /** Each block's sprites: a column's parts, each with the height its tint is worked out at (and, for a ledge, its column's masks). */
-  private readonly blocks = new Map<number, Array<{ s: Sprite; x: number; y: number; lv: number; ms: number[] | null }>>();
+  private readonly blocks = new Map<number, Array<{ s: Sprite; x: number; y: number; lv: number; ms: number[] | null; spire?: boolean }>>();
   /** The sun (ground step per relief level, tiles; quantised), its shadows' strength, and the key they were tinted for. */
   private sun: [number, number] = [0.42, 0];
   private sunAlpha = 0;
@@ -124,11 +130,14 @@ export class ReliefView {
         lv: new Uint8Array(CHUNK * CHUNK), masks: Array.from({ length: MAX_TERRACE }, () => new Uint8Array(CHUNK * CHUNK)),
         cls: new Uint8Array(CHUNK * CHUNK), top: new Array<TopLook | null>(CHUNK * CHUNK).fill(null), vein: new Uint8Array(CHUNK * CHUNK),
         foot: new Array<Foot | null>(CHUNK * CHUNK).fill(null), layers: new Array<number[] | null>(CHUNK * CHUNK).fill(null),
+        peak: new Uint8Array(CHUNK * CHUNK), pvar: new Uint8Array(CHUNK * CHUNK), high: 0,
       };
       for (let j = 0; j < CHUNK; j++) {
         for (let i = 0; i < CHUNK; i++) {
           const o = (j + BORDER) * WIN + i + BORDER, k = j * CHUNK + i;
+          if (spireTile(d, o)) { c.peak[k] = levelOf(d.terrain[o]!, d.level[o]!); c.pvar[k] = spireVariant(cx * CHUNK + i, cy * CHUNK + j); }
           c.lv[k] = lv[o]!;
+          c.high = Math.max(c.high, c.lv[k]!, c.peak[k]!);
           if (lv[o]) {
             const look = columnLook(d, lv, o);
             c.cls[k] = look.cls; c.top[k] = look.top; c.vein[k] = look.vein ? 1 : 0;
@@ -176,6 +185,22 @@ export class ReliefView {
   }
 
   /**
+   * The baked frame of a rock spire (D147, art/spire.ts `drawSpire`), `h` relief levels tall, of look
+   * `variant`: its whole height in one sprite (no ledges to cut it at; its top is its only top), a
+   * tile wide — it never leaves its tile.
+   */
+  private spireFrame(h: number, variant: number): ReturnType<DynAtlas['get']> {
+    const key = `s:${h}:${variant}`;
+    const f = this.atlas.get(key);
+    if (f || this.atlas.spent > BUDGET_MS) return f;
+    const w = 2 * IS + 2 * M, hh = 2 * IH + h * ILH + 2 * M;
+    const ox = M + IS, oy = M + h * ILH;
+    return this.atlas.add(key, w, hh, ox, oy, (ctx) => {
+      drawSpire(ctx, (u, v, z) => [ox + (u - v) * IS, oy + (u + v) * IH - z * ILH], h, { detail: 2, seed: spireSeed(h, variant), k: 1 });
+    });
+  }
+
+  /**
    * The baked talus decal at the foot of higher neighbours' walls on a top (rock.ts `drawFoot`),
    * drawn at height 0 and lifted onto the top by its sprite: a few dozen looks (hardness × where
    * the walls stand × two variants) serve every foot of the land.
@@ -201,12 +226,14 @@ export class ReliefView {
     this.on = this.on ? cam.zoom >= LOD_OFF : cam.zoom >= LOD_ON;
     if (!this.on) {
       if (was) for (const k of [...this.blocks.keys()]) this.dropBlock(Math.floor(k / PER_ROW), k % PER_ROW);
+      // Sprites off: nothing waits for a bake (a count left from the frame before would read as work pending).
+      this.pending = 0;
       return;
     }
     // View rect in world px; blocks whose box (with relief headroom) misses it are culled.
     const [vx0, vy0] = screenToWorld(cam, vw, vh, 0, 0);
     const [vx1, vy1] = screenToWorld(cam, vw, vh, vw, vh);
-    const head = reliefHead(t, MAX_LEVEL);
+    const head = reliefHead(t, PEAK_LEVEL);
     const want = new Set<number>();
     this.pending = 0;
     for (const [cx, cy] of visible) {
@@ -234,13 +261,26 @@ export class ReliefView {
    */
   private build(key: number, cx: number, cy: number, tx: number, ty: number): void {
     const c = this.chunk(cx, cy);
-    const out: Array<{ s: Sprite; x: number; y: number; lv: number; ms: number[] | null }> = [];
+    const out: Array<{ s: Sprite; x: number; y: number; lv: number; ms: number[] | null; spire?: boolean }> = [];
     let complete = true;
     for (let y = ty; y < ty + BLOCK; y++) {
       for (let x = tx; x < tx + BLOCK; x++) {
         const k = (y - cy * CHUNK) * CHUNK + (x - cx * CHUNK);
+        if (c.peak[k]) {
+          // A rock spire (D147): one sprite, untinted (its top stands over everything round it).
+          const f = this.spireFrame(c.peak[k]!, c.pvar[k]!);
+          if (!f) { complete = false; this.pending++; continue; }
+          const s = new Sprite(f.tex);
+          s.scale.set(0.5);
+          const [wx, wy] = tileToIso(x, y);
+          s.position.set(wx - f.ox * 0.5, wy - f.oy * 0.5);
+          s.zIndex = rockZ(x, y);
+          this.layer.addChild(s);
+          out.push({ s, x, y, lv: c.peak[k]!, ms: null, spire: true });
+          continue;
+        }
         if (!c.lv[k]) continue;
-        const ms = tileMasks(c.lv, c.masks, k), variant = columnVariant(x, y);
+        const ms = tileMasks(c.lv, c.masks, k), variant = columnVariant(x, y, hasWall(ms));
         let t0 = 0;
         for (const t1 of this.ledgesOf(ms)) {
           const f = this.frame(c.cls[k]!, ms, variant, c.top[k]!, c.vein[k] === 1, c.layers[k]!, t0, t1);
@@ -299,7 +339,30 @@ export class ReliefView {
     this.tinted = key;
     this.shades.clear();
     this.floorShades.clear();
-    for (const b of this.blocks.values()) for (const c of b) c.s.tint = this.tintAt(c.x, c.y, c.lv, c.ms);
+    for (const b of this.blocks.values()) for (const c of b) if (!c.spire) c.s.tint = this.tintAt(c.x, c.y, c.lv, c.ms);
+  }
+
+  /**
+   * The highest relief in the chunks round a tile's (3 × 3; relief levels): how far up a walk to the
+   * sun can meet rock there — the terraces' 12 at most, a spire's 28 only near the field (D147), so
+   * the walks elsewhere stay as short as they were.
+   */
+  private highAround(x: number, y: number): number {
+    const cx = Math.floor(x / CHUNK), cy = Math.floor(y / CHUNK);
+    let h = 0;
+    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+      const nx = cx + i, ny = cy + j;
+      if (nx < 0 || ny < 0 || nx >= CHUNKS || ny >= CHUNKS) continue;
+      h = Math.max(h, this.chunk(nx, ny).high);
+    }
+    return h;
+  }
+
+  /** A tile's spire (D147): its relief height and its look; null when it holds none. */
+  private spireOf(x: number, y: number): [number, number] | null {
+    if (x < 0 || y < 0 || x >= CHUNKS * CHUNK || y >= CHUNKS * CHUNK) return null;
+    const c = this.chunk(Math.floor(x / CHUNK), Math.floor(y / CHUNK)), k = (y % CHUNK) * CHUNK + (x % CHUNK);
+    return c.peak[k] ? [c.peak[k]!, c.pvar[k]!] : null;
   }
 
   /** A tile's per-step masks (null off the world). */
@@ -334,6 +397,9 @@ export class ReliefView {
     const tx = Math.floor(px), ty = Math.floor(py);
     const top = tileTop(this.grid, tx, ty);
     if (!top) return top;
+    // A spire (D147) stands where its solid does: tall over its middle, its skirt low at its edge.
+    const sp = this.spireOf(tx, ty);
+    if (sp) return spireHeightAt(sp[0], spireSeed(sp[0], sp[1]), px - tx, py - ty);
     const ms = this.masksOf(tx, ty);
     if (!ms || ms.every((m) => !m)) return top;
     const outs = this.outlinesOf(ms);
@@ -356,8 +422,9 @@ export class ReliefView {
     const pts = outs ? LEDGE_SAMPLES.filter(([u, v]) => inside(outs[step - 1]!, u, v) && !inside(outs[step]!, u, v)) : SAMPLES;
     if (!pts.length) return 0;
     let n = 0;
+    const reach = Math.min(PEAK_LEVEL, this.highAround(x, y)) - t;
     for (const [u, v] of pts) {
-      for (let k = 0.5; k <= MAX_LEVEL - t; k += 0.5) {
+      for (let k = 0.5; k <= reach; k += 0.5) {
         const px = x + u - dx * k, py = y + v - dy * k;
         // The cheap test first: only a tile standing higher than the ray can hold rock in the way.
         if (tileTop(this.grid, Math.floor(px), Math.floor(py)) > t + k && this.heightAt(px, py) > t + k) { n++; break; }
@@ -380,8 +447,8 @@ export class ReliefView {
     let s = this.floorShades.get(key);
     if (s === undefined) {
       s = 0;
-      const px = (qx + 0.5) / 4, py = (qy + 0.5) / 4;
-      for (let k = 0.25; k <= MAX_LEVEL; k += 0.25) {
+      const px = (qx + 0.5) / 4, py = (qy + 0.5) / 4, reach = Math.min(PEAK_LEVEL, this.highAround(Math.floor(px), Math.floor(py)));
+      for (let k = 0.25; k <= reach; k += 0.25) {
         const rx = px - dx * k, ry = py - dy * k;
         // The cheap test first: only a tile standing higher than the ray can hold rock in the way.
         if (tileTop(this.grid, Math.floor(rx), Math.floor(ry)) > k && this.heightAt(rx, ry) > k) { s = 1; break; }

@@ -1685,7 +1685,7 @@ await step('quests: CrierBelt has the claim named; the log moves on; rewards pay
   q = await FL(() => window.FL.quests());
   assert(q.done.length === 12, `done: ${q.done.length}`); // the claim's name and the tutorial's eleven quests (D101: « Le Cœur grandit » added; D114: « La vapeur »; D125: « Les scories », paid in items; the Synthesis's parts last, D90)
   const c1 = await FL(() => window.FL.credits());
-  assert(Math.abs(c1 - c0 - 1150) < 0.01, `credits ${c0} → ${c1}`); // 150 (« La Criée ») + 100 (« Le Cœur grandit ») + 600 (Survey Data) + 300 (the Synthesis's parts), D90, D101
+  assert(Math.abs(c1 - c0 - 1250) < 0.01, `credits ${c0} → ${c1}`); // 150 (« La Criée ») + 100 (« Le Cœur grandit ») + 700 (the lab, D161) + 300 (the Synthesis's parts), D90, D101
   await FL(() => window.FL.completeQuest('synth_parts'));
   assert(Math.abs((await FL(() => window.FL.credits())) - c1) < 0.01, 'paid twice');
 });

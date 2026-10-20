@@ -193,7 +193,7 @@ describe('the steam boiler (D114)', () => {
   it('the Steam plan, after the wind turbine (D143: the coal generator’s until then), brings the boiler, the pump and the conduit (a plate a tile)', () => {
     expect(treePrereq('steam')).toEqual(['wind_flower']);
     expect(PLANS.steam.lane).toBe('energy');
-    expect(buildingsUnlockedBy('steam').sort()).toEqual(['conduit', 'pump', 'steam_boiler']);
+    expect(buildingsUnlockedBy('steam').sort()).toEqual(['conduit', 'pressure_gauge', 'pump', 'steam_boiler']); // the gauge (D155) reads the water's pressure
     expect(BUILDINGS.conduit.cost).toEqual([['iron_plate', 1]]);
     // Everything the plan costs, and the buildings, in the bootstrap's materials (D36): no Tier 2 part.
     for (const id of ['pump', 'conduit', 'steam_boiler'] as const) {

@@ -10,7 +10,9 @@
 // crown, inked along both sides, the saddle under it showing either side at the tile's middle with
 // its strap across; a bend a long-radius elbow between two flanged joints (at the stub's mouth from
 // each edge, as in iso); a side inlet a tee's branch with a collar at its root; every few tiles a
-// flanged joint (`drawConduitJoint`, the tiles iso draws one on). No rails, no lights, no chevron.
+// flanged joint (`drawConduitJoint`, the tiles iso draws one on); a tee that shares its water (D152)
+// its valve's handwheel from above (`drawConduitValve`); a pressure gauge (D155) its dial facing up
+// (`drawConduitGauge`). No rails, no lights, no chevron.
 //
 // The glazed ribbon (D103) is a ribbon whose rails are glass-edged, pale ice with a bright edge;
 // its hood is laid over its items by the views (recipes/gleaners.ts `drawGlassCover`).
@@ -26,9 +28,10 @@
 // with sprocket wheels. Where it changes level, its lift up the terrace's wall is drawn apart
 // (art/recipes/lifts.ts).
 import { C, mix } from '../tokens';
-import { ink, flat, shape, type Ctx, type Pt } from '../ink';
+import { castShadow, ellipsePts, ink, flat, shape, type Ctx, type Pt } from '../ink';
 import { light, rivet } from '../shapes';
 import { PIPE, PLAN_R } from '../pipe-ports';
+import { drawDial } from './pipes';
 
 export const BELT_PX = 64;
 const S = BELT_PX;
@@ -281,6 +284,43 @@ function conduitCorner(ctx: Ctx, seed: number): void {
   flangeTop(ctx, S / 2, S - m + 2.4, Math.PI / 2, seed + 11);
   flangeTop(ctx, S - m - 2.4, S / 2, 0, seed + 12);
   flangeTop(ctx, S - m + 2.4, S / 2, 0, seed + 13);
+}
+
+/**
+ * A tee's sharing valve seen from above (D152), at the tile's middle over the tee's pieces: the
+ * bonnet's square on the tube, then the brass handwheel — a ring and its four spokes, a brass nut —
+ * the ports' own mark of a valve from above (pipe-ports.ts `pipePortTop`).
+ */
+export function drawConduitValve(ctx: Ctx, seed: number): void {
+  const c = S / 2, q = HW * 0.8;
+  const sq: Pt[] = [[c - q, c - q], [c + q, c - q], [c + q, c + q], [c - q, c + q]];
+  castShadow(ctx, sq, S * 0.04, 0.25);
+  shape(ctx, sq, PIPE_FLANGE, { w: 1.4, seed, shade: false, jitter: 0 });
+  const R = PIPE.wheel * S, ring = ellipsePts(c, c, R, R, seed + 1, 0, 24);
+  castShadow(ctx, ring, S * 0.05, 0.22);
+  for (let k = 0; k < 4; k++) {
+    const t = Math.PI / 4 + (k * Math.PI) / 2, rim: Pt = [c + Math.cos(t) * R, c + Math.sin(t) * R];
+    ink(ctx, [[c, c], rim], { w: Math.max(2.2, S * 0.05), color: C.ink, shade: false, taper: 0, jitter: 0, seed: seed + 2 + k });
+    ink(ctx, [[c, c], rim], { w: Math.max(1, S * 0.024), color: mix(C.brass, C.ink, 0.25), shade: false, taper: 0, jitter: 0, seed: seed + 6 + k });
+  }
+  ink(ctx, ring, { closed: true, w: Math.max(3, S * 0.075), color: C.ink, shade: false, taper: 0, jitter: 0, seed: seed + 10 });
+  ink(ctx, ring, { closed: true, w: Math.max(1.8, S * 0.044), color: C.brass, shade: false, taper: 0, jitter: 0, seed: seed + 11 });
+  rivet(ctx, c, c, Math.max(1.4, S * 0.03), C.brassL);
+}
+
+/** A pressure gauge's dial in plan (D155): its radius, a fraction of the tile (the view sizes its needle to it). */
+export const GAUGE_PLAN_R = 0.3;
+
+/**
+ * A pressure gauge seen in plan (D155), at the tile's middle over its tube: the bonnet's square, then
+ * the dial (recipes/pipes.ts `drawDial`: bezel, face, the scale's arcs, ticks) facing up. Its needle is
+ * the view's own sprite.
+ */
+export function drawConduitGauge(ctx: Ctx, seed: number): void {
+  const c = S / 2, q = HW * 0.9;
+  const sq: Pt[] = [[c - q, c - q], [c + q, c - q], [c + q, c + q], [c - q, c + q]];
+  shape(ctx, sq, PIPE_FLANGE, { w: 1.4, seed, shade: false, jitter: 0 });
+  drawDial(ctx, c, c, GAUGE_PLAN_R * S, seed + 1);
 }
 
 /** A tee's branch coming in from the west edge onto a straight moving north: the branch to the main tube, a collar at its root. */

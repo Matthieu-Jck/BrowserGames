@@ -23,7 +23,7 @@ atlases baked on the main thread. Render reads the sim and never mutates it.
 | [world/relief-view.ts](../src/render/world/relief-view.ts) | Near-zoom rock columns as depth-sorted sprites (cut at their ledges, each part shaded at its height; talus decals); `level(x, y)` (= `tileTop`) |
 | [world/buildings-view.ts](../src/render/world/buildings-view.ts) | Building sprites (iso + plan, lifted onto the rock top when they stand on the mountains), ribbon pieces; moving parts turning (`animate`); a production building switched off when it does not work (D83: its unlit picture, baked on demand); the incinerators' pits, their flames and their bursts (D125); the cast shadows |
 | [world/work-look.ts](../src/render/world/work-look.ts) | Pure (no Pixi): which production buildings look at work (D83) — `workOf` (at work, a passing stop, stopped, per kind; it lives in the sim's [systems/work.ts](../src/sim/systems/work.ts) since D85, the debug bases' check reads it too, and is re-exported here), `WorkLook` (sampled once per game tick, a passing stop kept lit `WORK_GRACE` ticks, the flips for the views) |
-| [world/water-ports.ts](../src/render/world/water-ports.ts) | Where the water meets the buildings (D142): `wetEntranceOf` (the entrance a water drinker's pipework is drawn on, from what joins each in the graph), `couplingSides` (the edges of a conduit tile where it couples to a port); the pipe a conduit tile shows in iso (D145, `pipeOf`: its ends on to the edge or to a stub's mouth, its tee branches, a run's joints every `JOINT_EVERY` tiles and its sight-glasses); all in the drawing signatures |
+| [world/water-ports.ts](../src/render/world/water-ports.ts) | Where the water meets the buildings (D142): `wetEntranceOf` (the entrance a water drinker's pipework is drawn on, from what joins each in the graph), `couplingSides` (the edges of a conduit tile where it couples to a port); the pipe a conduit tile shows in iso (D145, `pipeOf`: its ends on to the edge or to a stub's mouth, its tee branches, a run's joints every `JOINT_EVERY` tiles and its sight-glasses; D152: a tee's ways out as branches and its sharing valve, `valve`; a bend with a branch drawn as a straight on to the branch; `plan`, the plan's pieces in step); all in the drawing signatures |
 | [world/stand.ts](../src/render/world/stand.ts) | Pure: how high a building stands and how it sorts (D44): `computeStands` once per rebuild, `standOf` / `liftOf` for the other views, `standLevel` for the ghost, `drawnLevel` (a ribbon: its tile's top) for picking; the depth keys `rockZ`, `buildingZ`, `standZ`, `beltZ`, `pipeZ` (a conduit's raised pipe, D145), `liftZ` |
 | [world/traction-lifts.ts](../src/render/world/traction-lifts.ts) | The traction ribbons' elevators (D56): which steps get one (`liftOfBelt`), their frames baked on demand (`liftFrames`: back, car, front, plan mark); the conduits' falls one terrace down on the same sheet (D114: `fallOfConduit`, `fallFrames`) |
 | [world/belt-lift.ts](../src/render/world/belt-lift.ts) | Pure: where an item is drawn and how high (`place`: its tile's top, or on an elevator's car), where each car is (`settle`, `carAt`; an empty car's way back follows its line's pace, `returnTicks`: at most 0.4 of a step, D141), and where an item above the floor, in a shaft, at an incinerator or by a building's near face sorts among the volumes (`itemZ`: its host tile's key; D130 `fronts`), and one riding a bridge between its parts (`spanZ`, `junctionZ`) |
@@ -55,7 +55,7 @@ atlases baked on the main thread. Render reads the sim and never mutates it.
 | [art/shapes.ts](../src/render/art/shapes.ts), [iso-shapes.ts](../src/render/art/iso-shapes.ts) | Machine vocabulary seen from above (`Frame`) / in iso volume (`IsoFrame`, `Scene`) |
 | [art/terminals.ts](../src/render/art/terminals.ts) | Where the power wires meet each building: the terminal table (`TERMINALS`, one point or a few per building, in its unrotated frame), the poles' heads (`POLE`, `PYLON`), the Heart's link masts; `turnsArt` / `artRot` (which rotation a building's art is drawn in), `rotLocal` (the art's rotation rule) |
 | [art/pipe-ports.ts](../src/render/art/pipe-ports.ts) | Water ports as pipework (D142): `pipePortIso` / `pipePortTop` (the stub, its glazed band, the flange, the valve), `drawCoupling` (a conduit's end at a port, in plan), the rules `pipeAt`, `wetAlternatives`, `wetEntrance` (which entrance wears the pipework); `PIPE`, the one tube the stubs and the conduit's pipe share (D145: its axis, radius, flange, mouth), `PLAN_R` |
-| [art/recipes/pipes.ts](../src/render/art/recipes/pipes.ts) | The conduit as a raised pipe in iso (D145): `tube` (a tube swept along a path, its core shadow and highlight from a world light on the half the camera sees, its silhouettes only — never its cut ends), the pieces (`drawPipe`: each straight and elbow, ends on to the edge or to a stub's mouth, a straight's joint or sight-glass; `drawPipeBranch`: a tee's branch), their saddles and flanges, `PIPE_PIECES` / `PIPE_BRANCHES` (what the atlas bakes), `drawPipeShadow` (cast along the light and a contact shade under the tube, cut to the light-shifted tile) |
+| [art/recipes/pipes.ts](../src/render/art/recipes/pipes.ts) | The conduit as a raised pipe in iso (D145): `tube` (a tube swept along a path, its core shadow and highlight from a world light on the half the camera sees, its silhouettes only — never its cut ends), the pieces (`drawPipe`: each straight and elbow, ends on to the edge or to a stub's mouth, a straight's joint or sight-glass; `drawPipeBranch`: a tee's branch; `drawPipeValve`, a sharing tee's valve, D152: a bolted bonnet on the crown, its stem and a brass handwheel, in its own taller `valveFrame`; D155's pressure gauge: `drawPipeGauge` — bonnet, stem, the dial at `gaugeCentre` —, `drawDial` (bezel, face, the scale's arcs by `BAL.pressure`, ticks; the inspector draws it too), `drawGaugeNeedle`, `gaugeAngle`, `PRESSURE_COL`), their saddles and flanges, `PIPE_PIECES` / `PIPE_BRANCHES` (what the atlas bakes), `drawPipeShadow` (cast along the light and a contact shade under the tube, cut to the light-shifted tile) |
 | [art/recipes/](../src/render/art/recipes/) | One drawing per building (iso + plan), belts, item glyphs, status icons; `fx.ts`: the light spy, night rigs, glow / haze / cloud textures, solar panel petals, PV states; `moving.ts`: the buildings with a moving part and the geometry their two views share (D87: the face cutter's cutting drum, `CUTTER`, which turns while it works; the deep bore's rig, `BORE`, its rotary table and kelly turning while it works, §9 note 13). The face cutter (D87) is a crawler rig whose toothed drum on its back overhangs the footprint about 0.2 tile into the wall it stands against, a ramp of cut quartz behind, a conveyor up to its output chute at the front left, an ochre power house with an amber beacon and a floodlight on the rock; the quartz workshop a saw bench and a winding spindle at its back, a lapping wheel and a tray of oscillators by its output. Item glyphs: `crystal` is quartz (two milky points on a grey stone, apart from the singing quartz's three lilac prisms), `oscillator` a silver can on two copper leads |
 | [art/view-icons.ts](../src/render/art/view-icons.ts) | The views' marks (D88) in ink on a paper badge (`drawViewIcon`, `viewIconCanvas` for the DOM), their colours (`GRID_COLORS`, `SOURCE_COLOR`, `heatColor` / `HEAT`): one drawing for the world and the panels |
 | [art/silhouette.ts](../src/render/art/silhouette.ts) | A context that paints a drawing's solid fills in one colour (cast-shadow masks) |
@@ -63,6 +63,7 @@ atlases baked on the main thread. Render reads the sim and never mutates it.
 | [art/solar.ts](../src/render/art/solar.ts) | `PV` (the solar-cell colour) and `pvPanel`: draw cells with them and they get their day / night states |
 | [art/atlas.ts](../src/render/art/atlas.ts), [dyn-atlas.ts](../src/render/art/dyn-atlas.ts) | Static atlas baked at boot; on-demand atlas for relief columns |
 | [art/terrain.ts](../src/render/art/terrain.ts), [terrain.worker.ts](../src/render/art/terrain.worker.ts), [rock.ts](../src/render/art/rock.ts) | Chunk painters (ground, relief paint) and the rock-column painter, worker-safe |
+| [art/spire.ts](../src/render/art/spire.ts) | Map 6's rock spires (D147, §7.2b): a spire's solid (`spireShape`: a clump of needles, bed by bed), its painter (`drawSpire`, the sprites' and the far paint's), its cast shadow (`spireShadow`), its height at a point (`spireHeightAt`, the shade's walk) and its plan mark (`spirePlan`), worker-safe |
 | [art/ore.ts](../src/render/art/ore.ts) | The ore deposits on the ground (D99): `paintDeposits` (terrain.ts calls it once, pass 5), each ore's material `ORE_LOOK` (the item glyphs read the same tones), `richness`, `nodulesOf`; worker-safe |
 
 Related: [app.md](app.md) (frame loop, view state, picking), [input.md](input.md), [content.md](content.md),
@@ -390,9 +391,9 @@ Shared by the worker and the main thread; no DOM, no Pixi.
 
 | Concept | Rule |
 |---|---|
-| Level | `levelOf(terrain, level)`: 0 off rock. On rock it is the sim's own level (D45, `grid.level`, the paint windows' `level` array), clamped 1..6 (`MAX_TERRACE`: the mountains reach 5, map 4's spring summit 6, D115), × `STEP_LEVELS` (2): 2 to 12 relief levels (a wall's colour deepens up to the mountains' 10, `MOUNTAIN_TERRACE`, the summit as deep). Water and reclaimed ground (`Filled`) above the floor — the Crown's tarn (D63) — and a river tile above it — a stream up on a massif (map 4's drainage, D94; `isRiverT`) — stand at their level too, a column like the rock round them; any other ground has relief level 0. Since D52 (2026-10-13) it no longer comes from a smoothed height, so the drawn terraces are the levels placement, ribbons and wires obey, and a footprint the rules call level ground is drawn flat. 1 level = `LH` = 16 world px; a terrace is a one-tile-high wall. |
+| Level | `levelOf(terrain, level)`: 0 off rock. On rock it is the sim's own level (D45, `grid.level`, the paint windows' `level` array), clamped 1..6 (`MAX_TERRACE`: the mountains reach 5, map 4's spring summit 6, D115) — up to 14 on map 6's spires (`PEAK_TERRACE`, D147, §7.2b: drawn by their own painter, no terraces) —, × `STEP_LEVELS` (2): 2 to 12 relief levels (28 a spire's) (a wall's colour deepens up to the mountains' 10, `MOUNTAIN_TERRACE`, the summit as deep). Water and reclaimed ground (`Filled`) above the floor — the Crown's tarn (D63) — and a river tile above it — a stream up on a massif (map 4's drainage, D94; `isRiverT`) — stand at their level too, a column like the rock round them; any other ground has relief level 0. Since D52 (2026-10-13) it no longer comes from a smoothed height, so the drawn terraces are the levels placement, ribbons and wires obey, and a footprint the rules call level ground is drawn flat. 1 level = `LH` = 16 world px; a terrace is a one-tile-high wall. |
 | Tile top | `tileTop(land, x, y)`: THE height of a tile's top (levels; 0 = the floor), where whatever stands on it stands. Every lift reads it, so all move together when it changes: buildings on the mountains, their moving parts, shadows, night lights and wire anchors (through world/stand.ts), the build ghost, the iso picking, the overlays' marks on rock (`ReliefView.level`). Today `levelAt` over the land (a height of 0 off the world, as the paint windows read it), so it is exactly the level the sprites and the paint draw; meant to become the sim's `grid.level(x, y)` × one terrace's height. |
-| Ray | `surfaceTile(land, px, py)`: the tile a view ray meets first, from its ground point (where it crosses z = 0). A point `lv` levels up on the same ray lies `lv·SHIFT` tiles further along +x+y, so walking down from `MAX_LEVEL`, the first tile whose top reaches the ray is the rock top or cliff it hits; else the ground tile. |
+| Ray | `surfaceTile(land, px, py)`: the tile a view ray meets first, from its ground point (where it crosses z = 0). A point `lv` levels up on the same ray lies `lv·SHIFT` tiles further along +x+y, so walking down from `PEAK_LEVEL` (a spire's top, D147), the first tile whose top reaches the ray is the rock top or cliff it hits; else the ground tile. |
 | Mask | `maskAt(level, x, y, at)`, 8 bits. `M_E/M_S/M_W/M_N`: that side drops below the threshold. `M_NE/M_SE/M_SW/M_NW`: the diagonal neighbour stands as high; kept only at convex corners, so columns that look alike share one sprite. |
 | Slabs | `masksAt` returns one mask per terrace step (thresholds 2, 4, … level). A column erodes only down to its neighbours' height, never to the ground. |
 | Chamfers | A convex corner is cut 0.38 tile along each side, or all the way to the next corner where a diagonal neighbour carries the edge on. Diagonal fronts become straight walls instead of staircases. |
@@ -433,6 +434,33 @@ the sprites and the paint draw the very same rim.
   block's pale scar, occlusion at the foot, pen hatching hung from under the caprock on the shaded
   faces. Lit lip, silhouettes (ink ribbons, the ground contact heaviest), open-air verticals up the
   knee, folds.
+- **Eroded, not boxed** (D147; owner, 2026-10-19: « make this mountain in the cirque more natural
+  looking »: the cliffs ran straight along the tile grid, stacked boxes). A wall the camera sees —
+  on a tile's east or south edge, or a diagonal front — takes **cuts** (`WallCut`, `cutsOn`: one or
+  two a line, from the column's seed): broad **bays** (the wall's line wanders in and out, the rock
+  between two of them standing as a buttress), **gullies** (a V from the lip down, deepest at the top,
+  its flanks lit and shaded by the way they turn, its bed inked) and **alcoves** (an undercut at the
+  foot, the wall above overhanging it, its hollow dark). A wall's point at height z stands in from its
+  side by its cuts there (`cutDepth`, read by every mark through `at`), so the beds bend into a gully
+  and the rim bites with it. The cuts are a property of the column and the line, the same on every
+  step whose wall lies there (a wall running on up from the step below carries them on; a shorter
+  side, a chamfer's, keeps only the cuts lying whole on it and overhangs the rest), only ever inwards,
+  and nil at a side's ends, so the rim, the beds and the scree meet the next tile's. A column with a
+  wall in sight takes one of **four** looks (`columnVariant(x, y, hasWall(masks))`; the rest keep two),
+  so a long cliff shows no rhythm.
+- **Scree** at the feet (`scree`, `screeStones`): a slope of fallen rock from the side's line on the
+  ground up the wall to `screeTop` (constant at a side's ends, wandering between, fanned up under
+  each gully and into each alcove; `SCREE` at the floor, `SCREE_LEDGE` on a ledge where a wall does
+  not carry on the one below), its upper half in the wall's shade, a soft line at its top, gravel,
+  and fallen blocks along its toe over the foot's ink, kept off a side's ends. Where a cut takes the
+  wall in, the scree covers the ground in front of it in the tile (the ground under a rock tile is the
+  plan's map of its levels). The foot's ink is lighter than it was (the scree's toe, broken by the
+  blocks).
+- **Strata that wave and pinch**: each plane waves along the wall by up to 0.4 of the gap to the beds
+  either side (never across them), nil where tiles meet; a hard bed stands out of the softer one
+  under it, the recess in shadow. **A broken rim**: now and then along a lip, a block cracked off the
+  edge (`rimBlocks`: a crack running with the rim a little in from it, a short one or two out to the
+  edge, the block a shade apart).
 - **Tops** (`topMarks`, kept off the tile's edges): sand pockets with ripples in the soft rock, raised
   slabs and cracks in the harder, a boulder now and then on the hard crests, facets and glints on
   the heartrock — no grid of dots. `topColor(cls, level)`: the hardness's top, paler and cooler a
@@ -512,6 +540,52 @@ terrain.ts `paintRelief`). Reclaimed ground is fill under the water's part. The 
 level in both renderings, never as a hole down to the floor; in plan the ground paint draws it at its
 level too (pass (4b)). The plan view's fall marks are gaps.ts's.
 
+### 7.2b Spires ([spire.ts](../src/render/art/spire.ts), D147)
+
+Map 6's field of rock spires (owner, 2026-10-19: « lots of very small but tall mountains that will
+seem like big spiky mountains. Very unusual. »; the land: [engine.md](engine.md), mapgen's `spireField`)
+stands needles of rock a tile at the foot and 4 to 14 levels tall, far over the mountains' 5: the one
+land above `MAX_TERRACE`. The relief knows them by their biome's mark on rock (`SPIRE_BIOME`,
+mapgen's `BIOME.spire`; dug, a tile is floor) and their height by their level, like any rock
+(`levelOf` up to `PEAK_TERRACE`, content `SPIRES.levels`): `tileTop` is a spire's top, so a pole on it
+stands up there, a click high on it picks it (`surfaceTile` walks down from `PEAK_LEVEL`), a wire
+behind it is cut (wire-geom). Whatever must reach every top reads `PEAK_LEVEL` — the culling's
+headroom (terrain-chunks, relief-view), the shade's walk to the sun —; the terraces' columns, masks
+and paint windows keep `MAX_LEVEL`.
+
+- **Not terraces.** `windowLevels` gives a spire's tile no column (level 0: the terraces round it see
+  the floor, so they draw their walls whole towards it); the spire's own painter draws it.
+- **The solid** (`spireShape(h, seed)`, kept by look: heights × four variants, `spireVariant`):
+  a clump of one to three needles — the main one the tile's full height, a little off the middle
+  and leaning, the others shorter at its flanks (a crown of points, a fin) — and the debris round
+  its foot. A needle is a stack of rings bottom to top: its section an irregular heptagon with two
+  lobes (a fin), the same light on a face all the way up (`nrm`: no patchwork); its radius falling
+  with height (a needle as a mountain, a pillar near straight, a hoodoo to a neck under a wider cap
+  rock), a little lumpy ring by ring, worn in at the soft beds of the mesas' own table (`toneAt`, so
+  the field shows one geology); at a few of the thick beds' bases (about one in three, 2.5 levels
+  apart at least) it steps in and its section breaks anew (a ledge: a lit shelf, its lip inked); a
+  pillar's top broken at uneven heights, a hoodoo's cap rock harder and wider, its edge ragged.
+  The same rings at every detail: a sprite covers its painted self exactly.
+- **Drawn** (`drawSpire`): the debris patch on the ground and its gravel; each needle back to front,
+  ring by ring from its foot, the faces the camera sees back to front (an overhang above covers what
+  is under it), flat in three lights (lit, half, shade — an ink drawing's flats) and the bed's
+  gentle tone, a ledge's shelf and a top paler; then ridges inked where two faces' light differs,
+  cracks down the lit faces and hatching in the shade (sprites), the silhouette, a flat top's rim
+  and lit lip; blocks fallen round the foot.
+- **Two renderings.** The far paint (`paintRelief`) draws the spires among the columns in depth
+  order, from `PaintData.spires` (`buildWindow`: every spire in the window and `SPIRE_REACH` tiles
+  round the chunk — its top leans back `PEAK_LEVEL · SHIFT` tiles, its shadow falls as far); a
+  window with only spires round it is no longer empty (`hasRock`). The sprites (relief-view.ts
+  `spireFrame`, key `s:<h>:<variant>`): one frame a spire, its whole height (no ledges cut it),
+  untinted (its top stands over everything round it).
+- **Shadows.** `spireShadow` casts each needle's rings along the sun (a level's step: the rock's,
+  `reliefSun`): long tapering shadows, a cap's a blot at the end (`paintSunShadows`, from the same
+  list). The shade's walk on the rock round it and on the floor reads its solid
+  (`spireHeightAt` through relief-view's `heightAt`).
+- **Plan** (`spirePlan`, on the ground's map, which iso shows only round its foot): its debris; each
+  needle a cone shaded from the light, hachures down it (denser in the shade), a contour round its
+  foot; at its top the map-maker's peak, a small inked triangle, bigger the taller.
+
 ### 7.3 Two renderings of the same columns
 
 | | Far: relief paint | Near: relief sprites |
@@ -554,8 +628,10 @@ point exactly `level·LH` px up in iso.
 **DynAtlas** ([dyn-atlas.ts](../src/render/art/dyn-atlas.ts)) grows on demand. `add(key, w, h,
 ox, oy, draw)` bakes through a temp canvas onto shelf-packed 2048² pages (6 px padding) and
 accumulates `spent` ms. `flush()` uploads dirty pages once per frame and resets the budget. It
-never evicts: the key space is bounded (4 hardnesses × mask combinations × 2 variants × the few
-layer, part and top looks; the talus decals a few dozen). The mesas of 2026-10-16 cost about a
+never evicts: the key space is bounded (4 hardnesses × mask combinations × 2 variants — 4 for a
+column with a wall in sight, D147 — × the few layer, part and top looks; the talus decals a few
+dozen; map 6's spires 11 heights × 4 looks, `s:` keys, a tile wide and up to 28 levels tall: about
+three 2048² pages over the field). The mesas of 2026-10-16 cost about a
 fifth more atlas than the boxes did over the same views (a sweep of eight mid-zoom views round
 the cirque: 488 frames, 15.9 Mpx on 7 pages before; 667 frames, 18.9 Mpx on 9 after — the ledge
 parts, the layers, the decals). A step's layer is keyed only where it shows (a wall or a ledge). A
@@ -573,7 +649,8 @@ rockZ(x, y)                 = 8·(x + y)                                 // kind
 buildingZ(x, y, w, h)       = 4·(2x + w − 1 + 2y + h − 1) + 1           // kind 1: on the floor
 standZ(x, y, w, h, reach)   = 8·(x + w − 1 + y + h − 1 + reach) + 0.5   // standing on the mountains
 beltZ(x, y)                 = 8·(x + y) + 0.5                           // a ribbon piece on a rock top
-pipeZ(x, y)                 = 8·(x + y) + 0.6                           // a conduit's raised pipe (D145), on the floor or the rock; a tee's branch ± 0.01
+pipeZ(x, y)                 = 8·(x + y) + 0.6                           // a conduit's raised pipe (D145), on the floor or the rock; a tee's branch ± 0.01, its valve + 0.02 (D152)
+                                                                         // a pressure gauge's dial + 0.03, its needle + 0.04 (D155)
 liftZ(lowX, lowY)           = 8·(lowX + lowY) + 0.7                     // an elevator, by its low tile (+0.01 car, +0.02 front)
 // items (belt-lift.ts `itemZ`), by their host tile:
 beltZ + 0.05                                                            // on a ribbon (or bare rock) on the rock top
@@ -690,6 +767,8 @@ CSS size, so icons stay sharp on high-density screens.
 | `belt:conduit:s\|c`, `belt:conduit:inlet`, `belt:conduit:joint` | `beltKey`, `inletKey`, `CONDUIT_JOINT_KEY` | The conduit in plan (D145): a tube with darker edges and a highlight down its crown, the saddle under it at the middle; the bend between two flanged joints; a tee's branch with its collar; a straight with a flanged joint (where iso draws one) | Centre | 1/64 | As the ribbons' |
 | `pipe:<arms>`, `pipe:<arms>:j\|g` | `pipeKey(arms, mark)` | The conduit's raised pipe in iso (D145, recipes/pipes.ts): `arms` its N E S W edges ('0' none, '1' on to the edge, '2' to a stub's mouth, flanged) — every straight and elbow (24) —, a full straight's joint or sight-glass (4); a 1 × 1 iso frame | The tile's top corner (as a 1 × 1 building's) | 0.5 | None: drawn in world directions |
 | `pipe:b<side><1\|2>` | `pipeBranchKey(side, full)` | A tee's branch to an edge, to it or to a stub's mouth, its collar at the root (8) | As `pipe:` | 0.5 | None |
+| `pipe:valve`, `belt:conduit:valve` | `PIPE_VALVE_KEY`, `CONDUIT_VALVE_KEY` | A tee that shares its water (D152): its valve over its pieces in iso (bonnet, stem, brass handwheel; a 1 × 1 frame 1.5 levels high), its handwheel from above in plan (a ribbon piece, drawn unturned) | As `pipe:` / as the plan pieces | 0.5 / 1 / `BELT_PX` | None |
+| `pipe:gauge`, `belt:conduit:gauge`, `pipe:needle:<state>` | `PIPE_GAUGE_KEY`, `CONDUIT_GAUGE_KEY`, `gaugeNeedleKey(state)` | A pressure gauge (D155): its bonnet, stem and dial in iso (a 1 × 1 frame 2.4 levels high, `gaugeFrame`), its dial in plan; its needle per state's colour (`NEEDLE_PX` square, the pivot at its middle), a sprite the view turns | As `pipe:` / the plan pieces | 0.5 / 1 / `BELT_PX` | None |
 | `ic:<id>` | `iconKey` | Status cartouche, 40 px | Centre | 1 | — |
 | `b:…/body`, `bt:…/body` | `bodyKey` | A building with a moving part (`recipes/moving.ts`): its body alone (with its ports) | As its sprite | As its sprite | As its sprite |
 | `b:…/<k>`, `bt:…/<k>` | `partKey` | Phase k of its moving part, cropped to the bounds all phases paint; the phases are packed as one sheet (one page: stepping through them never breaks a batch) | As its sprite | As its sprite | As its sprite |
@@ -1170,7 +1249,9 @@ readings (`Readouts`, [src/sim/readouts/](../src/sim/readouts/)) taken by the sh
   pillar's reach (the Link tool's rounded rectangle) under the cursor. Logistique: each chain as a
   path through its tiles' centres (from its tail's edge to its head's; a leap — a bridge, a
   junction's pass — left out), an ink edge under a stroke in `heatColor(util)` by tenths, jams
-  `ledRed`, idle lines paper; the Gleaners' night (D103, `Graph.glean`): each exposed ribbon tile hatched in
+  `ledRed`, idle lines paper; a water line (a conduit) edged in the water's deep teal instead of ink,
+  a branch's path starting at its tee's centre (`Graph.drawsFrom`), each tee that shares its water
+  (D152, `Graph.tees`) ringed in paper and deep teal round a brass hub, the valve's mark; the Gleaners' night (D103, `Graph.glean`): each exposed ribbon tile hatched in
   ink with a night badge (a midnight disc, a peach crescent: `crescent`), each guarded one ringed in
   glass blue; each buried tile (D109: a camouflaged ribbon, faint on the sand otherwise) edged on both
   sides with sand dashes over an ink edge. Production: footprints washed by state (`on` turquoise, `pause` amber — a weak grid's too, D91 —, `off` coral).
@@ -1819,14 +1900,15 @@ load drifts a lot):
 | [art/recipes/moving.test.ts](../src/render/art/recipes/moving.test.ts) | Moving parts draw their body and every phase in every baked rotation (iso and plan); the turbine's red light sits on its axis in every phase; the sand wheel stays behind its split plane; the silhouette context keeps solid fills only, in one colour; every building draws as its own cast shadow |
 | [world/wire-geom.test.ts](../src/render/world/wire-geom.test.ts) | Every building that takes part in power has terminals on its footprint and under its head; the art (iso and plan, every baked rotation) draws each one; an anchor lands on a terminal, turned exactly as the art turns it (IsoFrame); a building drawn once keeps its rot-0 points; a pole takes a wire along its arm on the end pin, across it on the top pin; the Heart its nearer link mast; a building on the mountains hangs its wires from its terminals lifted by its level (a pole on the floor keeps its own); the catenary sags most at mid-span, capped, never to the ground even from the lowest terminal |
 | [art/recipes/pipes.test.ts](../src/render/art/recipes/pipes.test.ts) | The conduit's raised pipe (D145): every piece the atlas bakes (and the fall) draws its tube and bakes no lamp; the run is the ports' own tube (axis, radius, flange, mouth), raised clear of the ground, its frames tall enough; the atlas bakes every piece `pipeOf` can ask for |
-| [art/pipe-ports.test.ts](../src/render/art/pipe-ports.test.ts), [world/water-ports.test.ts](../src/render/world/water-ports.test.ts) | Water ports (D142): every building's art (iso and plan, every turn) draws pipework exactly on its `fluid` ports, a variant on the entrance it names; the rule that picks it (`wetEntrance`) and its reading of the graph (a conduit into the other entrance, a dry line into its own); a variant lights where its own look does; the plan's pipework and the coupling bake no lamp; a conduit couples at a pump's outlet and at the intake it runs into, nowhere else; a conduit's pipe (D145, `pipeOf`): on to the edge where a tube meets it, to a stub's mouth at the pump's outlet, at the intake and at an open end, a joint on a run's every third plain straight, a side line a branch |
+| [art/pipe-ports.test.ts](../src/render/art/pipe-ports.test.ts), [world/water-ports.test.ts](../src/render/world/water-ports.test.ts) | Water ports (D142): every building's art (iso and plan, every turn) draws pipework exactly on its `fluid` ports, a variant on the entrance it names; the rule that picks it (`wetEntrance`) and its reading of the graph (a conduit into the other entrance, a dry line into its own); a variant lights where its own look does; the plan's pipework and the coupling bake no lamp; a conduit couples at a pump's outlet and at the intake it runs into, nowhere else; a conduit's pipe (D145, `pipeOf`): on to the edge where a tube meets it, to a stub's mouth at the pump's outlet, at the intake and at an open end, a joint on a run's every third plain straight, a side line a branch; a tee that shares its water (D152): a branch out of its side, its valve, its plan inlet; a bend with a branch off its outer side drawn as a straight on to the branch |
 | [art/recipes/cargo.test.ts](../src/render/art/recipes/cargo.test.ts) | The sky-crane keeps the intro's numbers; the cargo drone is the same drawing (red to port, green to starboard, LEDs on the hub) and fits its canvas; the container passes through the deck's iris and the iris fits the deck (`TP_DECK_R`); the cables splay out from the container's eyes to the winches; the container draws at any depth in the iris and not at all once sunk |
 | [world/cargo-flight.test.ts](../src/render/world/cargo-flight.test.ts) | The deck mirrors the trade post's art (`TP_DECK` in the middle of `TP_PAD`, `DECK_Z`, the drone's engines over the pad) and turns with the footprint as IsoFrame turns the art; both sequences run without a jump; the container goes through the deck only while the iris is open, hangs a cable's length under the drone, leaves the deck only once hooked and lands with its swing died out; the drone never sinks into its load; both end with nothing on screen; the next drone starts once the deck is clear |
 | [world/moving-parts.test.ts](../src/render/world/moving-parts.test.ts) | Turbines turn faster in stronger wind (bounded, a mesa outspins the cirque, a turbine on the mountains the cirque floor in any gust), machines only while they work; each building's start phase and speed factor are stable and spread |
 | [world/work-look.test.ts](../src/render/world/work-look.test.ts) | D83, on the real engine: a wire mill looks at work while it crafts, keeps the look `WORK_GRACE` ticks once its ore runs out, then is switched off; a drill whose wire is cut is off at once; only flips are reported, once per tick; a turbine off on no grid, on once wired; a lab with no project off; logistics, the Heart and the excavator never watched |
 | [art/unlit.test.ts](../src/render/art/unlit.test.ts) | D83: through `unlitCtx` an opaque lamp is dark glass, its halo is left out, other paint goes through and the style is put back; `switchOffPixels` greys and darkens, keeps alpha |
 | [art/water-top.test.ts](../src/render/art/water-top.test.ts) | The water up on the rock as one body (D135): a stream running each of the eight ways, a widening, a bend, a lake and its outflow — every two raised tiles that meet read the same outline and depth along their shared edge, and a tile with no top has no water at its edge; a straight stream keeps its width; no bank from a lake's middle down its outflow; a stream's marks every third tile, never two in a row; a fall's lip spans its water and two falls side by side make one lip; the foot of a fall joined on; a river turning as it falls pours into the water beside its way (`exitOf`) and the floor's water reaches the cliff's foot; a stream turning at its level by a ledge does not fall; in plan the floor's water and the water up on the rock painted apart |
-| [art/rock.test.ts](../src/render/art/rock.test.ts) | The mesas (2026-10-16): the strata are one rising, uneven table up past the highest rock, the soft rock showing every bed; tops pale and walls deepen with height, harder rock darker; a step's rim bites only inwards (never leaves its tile, whatever the seed), meets the next tile's at a side's ends, and is no silhouette where the step above carries the wall on; a column is cut at a diagonal front's ledge, not at a corner's chamfer (`ledges`); each step wears the rock of its height (`layersOf`); a stream up on a massif (D94) stands at its level, its top running water with its way and fall, and pours a sheet down the wall it runs off (none where it does not fall) |
+| [art/rock.test.ts](../src/render/art/rock.test.ts) | The mesas (2026-10-16): the strata are one rising, uneven table up past the highest rock, the soft rock showing every bed; tops pale and walls deepen with height, harder rock darker; a step's rim bites only inwards (never leaves its tile, whatever the seed), meets the next tile's at a side's ends, and is no silhouette where the step above carries the wall on; a column is cut at a diagonal front's ledge, not at a corner's chamfer (`ledges`); each step wears the rock of its height (`layersOf`); a stream up on a massif (D94) stands at its level, its top running water with its way and fall, and pours a sheet down the wall it runs off (none where it does not fall); an eroded wall (D147): a wall the camera sees bites in by bays and gullies, only inwards and never at its ends, a wall away from it only as a lip; four looks for a column with a wall in sight, two for the rest (the first two of the four) |
+| [art/spire.test.ts](../src/render/art/spire.test.ts) | Map 6's spires (D147): a spire's solid never leaves its tile and stands its full height (its top the land's level), whatever its look; one silhouette at every detail (the sprite covers its painted self); its shade's reading stands where it is drawn; four looks; the relief reads the generator's marks (`SPIRE_BIOME`, `SPIRE_GROUND`) and stands rock to the content's tallest (`PEAK_TERRACE`); a click high on a spire picks it; a paint window lists a spire whose top leans into its chunk from `SPIRE_REACH` tiles away, and keeps it out of the terraces (no column, no masks) |
 | [art/vein.test.ts](../src/render/art/vein.test.ts) | D87: a rock tile holding a face ore is a vein column (`columnLook`), drawn with its seam and crystals on its walls (the far paint only the seam at its lightest detail); in plan a vein shows its crystals along the edges that drop to lower ground, a buried ore keeps the faint hidden dot |
 | [world/cast-shadows.test.ts](../src/render/world/cast-shadows.test.ts) | The shadow map is the identity for the reference light, sends the reference displacement to the sun's and keeps the cross direction; no shadow at night, shortest at noon, long and soft in a low sun, smooth through the day; at every hour a shadow runs straight away from the sun and nothing drawn (the far side of the seam) lies past a building's sun-side edge, which the stretch alone did at dawn; the bake's clip is exactly the far side; no shadow of the day reaches past `shadowReach`; a mask is read back where the day's map sends it (`maskCover`), stays within `maskReach` of its box at every hour, and its shade as a tint runs from white to the shadows' ink (D130) |
 | [world/stand.test.ts](../src/render/world/stand.test.ts) | A building stands at 0 on the floor, on the rock top on the mountains (`tileTop`, the highest under its footprint; the ghost asks the same, ribbons lie flat); it sorts after every column under it (its front corner too), past the flat rock its shadow falls on, never past a higher column or a building on the floor ahead (a ribbon there changes nothing), behind the lifted buildings in front of it |

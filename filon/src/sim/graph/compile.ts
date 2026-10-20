@@ -1,6 +1,8 @@
 // compile.ts — grid + entities → flow graph. Ribbon tiles are traced into chains (maximal
 // runs of one tier where each tile has exactly one feeder); a tile fed from several sides
-// starts a new chain. Buildings become nodes; every port carries at most one edge. Routing
+// starts a new chain. A conduit tile nothing feeds draws water off the side of a conduit running
+// across its back or side (D152: a tee): the tee ends its chain there and shares its water among its
+// ways out (flow/chain.ts). Buildings become nodes; every port carries at most one edge. Routing
 // blocks (kind `fork`: routers, sorters, gates) have no fixed ports: they link to whatever is
 // around them — ribbons, machine and store ports, other routing blocks — within the sides their
 // logic allows (the unloader, which pulled from the stores it touched, is retired: D117). Junctions pass
@@ -11,7 +13,7 @@
 import { BAL } from '@/content/balance';
 import { WORLD_SEED } from '@/content/world';
 import {
-  BUILDING_KIND, CORE_TAKES, CRECIPES, N_ITEMS, buildingDef, itemIdx,
+  BUILDING_KIND, CORE_TAKES, CRECIPES, N_ITEMS, buildingDef, buildingIdx, itemIdx,
 } from '@/content/registry';
 import { filterOf, recipeOf } from '../cfg';
 import { DRILL_STEP_MU, MU, WORLD } from '../constants';
@@ -52,6 +54,12 @@ export interface Graph {
   servers: Array<{ ent: number; net: number; tpm: number }>;
   /** Per ribbon tile: a mask (bit = side, 0 N … 3 W) of where it is fed from — what the views draw. */
   feedDirs: Map<number, number>;
+  /**
+   * The conduits' tees (D152): each tee tile and a mask of the sides it hands water out of besides
+   * its way on (a branch drawing off it there); `drawsFrom`, each branch's first tile and its tee.
+   */
+  tees: Map<number, number>;
+  drawsFrom: Map<number, number>;
   /**
    * Ribbon tiles whose target is not the next tile: a skybridge leaping to its far end, or a
    * line passing through crossings. Tile → the tile it hands to (views: items glide across).
@@ -112,6 +120,9 @@ const NO_STOCK = new Float64Array(0);
 
 const isBeltKind = (k: string): boolean => k === 'belt' || k === 'conduit' || k === 'bridge';
 const RUBBLE_IDX = (): number => itemIdx('stone');
+/** The pressure gauges (D155: a fitting set into a conduit line, by building index) and the conduit whose tier they take. */
+const GAUGE: readonly boolean[] = BUILDING_KIND.map((_, i) => !!buildingDef(i).gauge);
+const CONDUIT = (): number => buildingIdx('conduit');
 const WATER_IDX = (): number => itemIdx('water');
 
 interface PortRef { node: FNode; port: number; dir: Rot }
@@ -432,6 +443,31 @@ export function compileGraph(inp: CompileInput): Graph {
   const feedDirs = new Map<number, number>();
   for (const [t, fs] of beltFeederOf) for (const f of fs) feedDirs.set(t, (feedDirs.get(t) ?? 0) | (1 << sideTowards(t, f)));
   for (const pf of portFeeds) feedDirs.set(pf.tile, (feedDirs.get(pf.tile) ?? 0) | (1 << opposite(pf.ref.dir)));
+  // Tees (D152; owner, 2026-10-19: « we also need conduits that share the water between multiple
+  // paths »): a conduit tile that nothing feeds — no conduit runs into it, no outlet hands into it —
+  // draws its water off a conduit beside it on its level that runs across the edge between them:
+  // the one behind it first (a line dragged off a pipe's side), else on its left, else on its right
+  // (a drag's first leg one tile long, turning at once). Never off one running the same way beside it
+  // (two lines side by side stay two), nor off one that draws from it. The tee hands water out of
+  // that side too; the branch is fed from there (its bend reads so). Tiles in order: a total order.
+  const tees = new Map<number, number>(), drawsFrom = new Map<number, number>();
+  for (const t of [...beltAt.keys()].sort((a, b) => a - b)) {
+    const s = beltAt.get(t)!;
+    if (BUILDING_KIND[s.def] !== 'conduit' || (feeders.get(t) ?? 0) > 0) continue;
+    for (const side of [opposite(s.rot), ((s.rot + 3) & 3) as Rot, ((s.rot + 1) & 3) as Rot]) {
+      const nx = s.x + DX[side]!, ny = s.y + DY[side]!;
+      if (nx < 0 || ny < 0 || nx >= WORLD || ny >= WORLD) continue;
+      const nt = tileIndex(nx, ny), o = beltAt.get(nt);
+      if (!o || BUILDING_KIND[o.def] !== 'conduit' || lvAt(nt) !== lvAt(t)) continue;
+      const way = opposite(side); // from the tee to the branch
+      if (((o.rot - way) & 1) !== 1 || o.rot === s.rot || drawsFrom.get(nt) === t) continue;
+      drawsFrom.set(t, nt);
+      tees.set(nt, (tees.get(nt) ?? 0) | (1 << way));
+      feeders.set(t, 1);
+      feedDirs.set(t, (feedDirs.get(t) ?? 0) | (1 << side));
+      break;
+    }
+  }
 
   // A bridge goes at the pace of its line (owner, 2026-10-13: "the speed at which routers,
   // bridges etc convey the items should be the same as the input ribbon"): the ribbon feeding it
@@ -451,7 +487,7 @@ export function compileGraph(inp: CompileInput): Graph {
     return beltAt.get(at)!.def;
   };
   const paceAt = (t: number): number => {
-    if (!isBridge(t)) return beltAt.get(t)!.def;
+    if (!isBridge(t)) { const d = beltAt.get(t)!.def; return GAUGE[d] ? CONDUIT() : d; } // a pressure gauge goes at its conduit's pace (D155): one chain through it
     const known = paceMemo.get(t);
     if (known !== undefined) return known;
     let at = t, fs = beltFeederOf.get(at) ?? [];
@@ -494,7 +530,7 @@ export function compileGraph(inp: CompileInput): Graph {
   for (const [t, tg] of target) {
     if (!tg || !('belt' in tg)) continue;
     const g = tg.belt;
-    if ((feeders.get(g) ?? 0) === 1 && paceAt(g) === paceAt(t)) {
+    if ((feeders.get(g) ?? 0) === 1 && paceAt(g) === paceAt(t) && !tees.has(t)) { // a tee ends its chain (D152)
       next.set(t, g);
       prev.set(g, t);
     }
@@ -660,8 +696,7 @@ export function compileGraph(inp: CompileInput): Graph {
     // Its head's way on: the last world tile's (the span cells after a leap hand on as it would).
     const headTile = c.lastTile;
     const tg = target.get(headTile);
-    if (!tg) continue;
-    if ('belt' in tg) {
+    if (tg && 'belt' in tg) {
       const dc = chainByTile.get(tg.belt)!;
       if (dc === c && c.tiles.length > 0 && next.get(headTile) === c.tiles[0]) {
         // A closed loop feeding itself.
@@ -672,9 +707,14 @@ export function compileGraph(inp: CompileInput): Graph {
       const hx = headTile % WORLD, hy = (headTile - hx) / WORLD;
       const straight = hx === gb.x - DX[gb.rot]! && hy === gb.y - DY[gb.rot]!;
       addEdge(c, 0, dc, 0, straight ? 0 : 1);
-    } else {
+    } else if (tg) {
       addEdge(c, 0, tg.port.node, tg.port.port, 0);
     }
+    // A tee's branches (D152), after its way on, N E S W: each the only feed of its line's first tile.
+    const tee = tees.get(headTile);
+    if (!tee) continue;
+    const hx = headTile % WORLD, hy = (headTile - hx) / WORLD;
+    for (let side = 0; side < 4; side++) if (tee & (1 << side)) addEdge(c, 0, chainByTile.get(tileIndex(hx + DX[side]!, hy + DY[side]!))!, 0, 1);
   }
   for (const pf of portFeeds) {
     const dc = chainByTile.get(pf.tile)!;
@@ -768,7 +808,7 @@ export function compileGraph(inp: CompileInput): Graph {
     version: (inp.old?.version ?? 0) + 1,
     nodes, chains, nE,
     eSrc: Int32Array.from(src), eDst: Int32Array.from(dst), eSrcPort: Int32Array.from(sp), eDstPort: Int32Array.from(dp),
-    nodeByEnt, postIn, chainByTile, nets, netOfEnt, reservoirs, hearth, servers, feedDirs, jumps, accOrder, glean,
+    nodeByEnt, postIn, chainByTile, nets, netOfEnt, reservoirs, hearth, servers, feedDirs, tees, drawsFrom, jumps, accOrder, glean,
   };
 }
 

@@ -24,6 +24,14 @@ export interface PaintData {
   biome: Uint8Array;
   /** The land's level (D45): the relief's terraces. */
   level: Uint8Array;
+  /**
+   * The rock spires (map 6, D147) whose drawing or shadow may reach the chunk: from the window and a
+   * ring past it (art/terrain.ts `SPIRE_REACH`: a spire's top leans back and its shadow falls farther
+   * than a terrace's), four numbers each: its window coordinates (i, j: possibly off the window), its
+   * relief height and its look (art/spire.ts `spireVariant`). Its tiles in the window arrays are rock
+   * at its level; the terraces' painters leave them to the spire's.
+   */
+  spires?: number[];
 }
 
 /** The chunk arrays a window is cut from (a Grid chunk, or test data). */

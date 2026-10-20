@@ -14,12 +14,13 @@
 // lacks, and then nothing is laid), and its pieces as three counts — to lay, already there, refused.
 // It stays inside the window (D96: `tipPlace` flips it to the pointer's other side near an edge)
 // and, under a finger, sits above it, where the hand does not cover it.
-import { BUILDING_KIND, buildingDef, buildingIdx, itemDef } from '@/content/registry';
+import { BUILDING_KIND, buildingDef, buildingIdx, itemDef, itemIdx } from '@/content/registry';
 import { el, setAttr } from '@/core/dom';
 import { locale, t, tr, type MsgKey } from '@/i18n/i18n';
 import type { Atlas } from '@/render/art/atlas';
 import type { GhostPiece, Preview } from '@/input/tools';
 import { viewIconCanvas } from '@/render/art/view-icons';
+import { C } from '@/render/art/tokens';
 import { num } from '@/i18n/format';
 import { windOutlook } from '@/sim/readouts/wind';
 import type { Sim } from '@/sim/state';
@@ -73,7 +74,7 @@ export class Tip {
     // ressources qu'il a dans le cœur »): part of the signature, so the chip follows the stock.
     const have = cost.map(([item]) => Math.floor(sim.stock[item]! / 1000));
     const plan = pre.plan;
-    const sig = JSON.stringify([def, cost, have, pre.reason, lift, camo, pre.buried, pre.doomed.length, pre.mark?.n, pre.mark?.clear, locale(), wind?.mean, wind?.overall, plan && [plan.n, plan.kept, plan.skipped, plan.gone], pre.area?.k === 'copy' ? pre.area.ids.length : -1]);
+    const sig = JSON.stringify([def, cost, have, pre.reason, lift, camo, pre.buried, pre.tee, pre.doomed.length, pre.mark?.n, pre.mark?.clear, locale(), wind?.mean, wind?.overall, plan && [plan.n, plan.kept, plan.skipped, plan.gone], pre.area?.k === 'copy' ? pre.area.ids.length : -1]);
     if (sig === this.sig) return;
     this.sig = sig;
     this.node.hidden = false;
@@ -112,6 +113,12 @@ export class Tip {
       kids.push(el('div.tip-key.tip-buried', {}, [
         buildingIcon(this.atlas, CAMO, 18), el('span', {}, tr('build.buried', { n: pre.buried.n })), glyph('parcel'), el('span', {}, t(`reason.${pre.buried.land}` as MsgKey)),
       ]));
+    }
+    // A conduit drawn off a pipe's side, or into it (D152): the pipe, the tee's mark (a line parting in
+    // two, or two meeting), the water — shown, not told; the words for a screen reader and on hover.
+    if (pre.tee && def) {
+      const say = t(pre.tee === 'split' ? 'build.tee.split' : 'build.tee.join');
+      kids.push(el('div.tip-key.tip-tee', { 'data-tee': pre.tee, title: say, 'aria-label': say }, [buildingIcon(this.atlas, def, 18), teeMark(pre.tee), itemIcon(this.atlas, itemIdx('water'), 16)]));
     }
     // Not the claim's land: the way to it, the land mode's key (I).
     if (pre.reason === 'outside_zone' || pre.reason === 'neighbour_land') kids.push(el('div.tip-key', {}, [el('span.bb-key', {}, 'I'), glyph('parcel'), t('land.keyAct')]));
@@ -168,6 +175,22 @@ export class Tip {
 
 /** The piece that takes a ribbon up or down a step (D45). */
 const LIFT = 'traction_ribbon';
+
+/** A tee's mark for the tip (D152): a line parting in two (`split`) or two meeting in one (`join`), in the water's teal, its valve's brass hub. */
+function teeMark(k: 'split' | 'join'): SVGSVGElement {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('class', 'tip-tee-mark');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(NS, 'path');
+  path.setAttribute('d', k === 'split' ? 'M1.5 8H8M8 8l5.6-4.6M8 8l5.6 4.6M10.8 3.1l2.9.2-.4 2.8M10.8 12.9l2.9-.2-.4-2.8' : 'M2.4 3.4L8 8M2.4 12.6L8 8M8 8h6.4M12.2 5.7L14.5 8l-2.3 2.3');
+  for (const [a, v] of [['fill', 'none'], ['stroke', C.deepD], ['stroke-width', '2'], ['stroke-linecap', 'round'], ['stroke-linejoin', 'round']] as const) path.setAttribute(a, v);
+  const hub = document.createElementNS(NS, 'circle');
+  for (const [a, v] of [['cx', '8'], ['cy', '8'], ['r', '2.1'], ['fill', C.brass], ['stroke', C.ink], ['stroke-width', '0.8']] as const) hub.setAttribute(a, v);
+  svg.append(path, hub);
+  return svg;
+}
 /** The piece buried where the land refuses the others (D109). */
 const CAMO = 'camo_ribbon';
 

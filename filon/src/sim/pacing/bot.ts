@@ -159,8 +159,14 @@ const TIER1_ORDER = [
   'tr1', 'dn_quartzshop', 'en_pitch', 'xp_swift', 'ex_fastdrill', 'cm_post2', 'dn_copper', 'an_data', 'ex_brick',
   'dn3', 'en2', 'xp_bigsilo', 'xp_guard', 'dn_steel', 'dn_wiremill', 'dn_esmelt', 'cm_floor', 'tr_synth',
 ];
-/** Tier 2's, once it opens (the Core's level 3, two expertises). */
-const TIER2_ORDER = ['cm2', 'cm_autosell', 'an_servers', 'workshop', 'en_heavyacc', 'xp_camo', 'tr3', 'tr2', 'dn4'];
+/**
+ * Tier 2's, once it opens (the Core's level 3, two expertises). Far Claim (Tier 1 since D161) with
+ * them, before the camouflaged ribbon whose category it gates (D128): this base buys no far parcel,
+ * so it takes the node only once Tier 2 is open (`keepResearch`), and Tier 1 runs as before.
+ */
+const TIER2_ORDER = ['cm2', 'cm_autosell', 'an_servers', 'workshop', 'en_heavyacc', 'xp_far', 'xp_camo', 'tr3', 'tr2', 'dn4'];
+/** Nodes of Tier 1 the bot leaves until Tier 2 opens (the Core's level for it). */
+const AFTER_TIER1: ReadonlySet<string> = new Set(['xp_far']);
 
 /** The run's last tick passed: thrown by `run`, caught by `playPacing`. */
 class TimeUp extends Error {}
@@ -519,6 +525,7 @@ export class PacingBot extends Builder {
     if (!sim.unlocked('observatory') || !sim.idleLabs().length || sim.projects.length >= sim.mods.slots) return;
     let why = '';
     for (const id of [...TIER1_ORDER, ...TIER2_ORDER]) {
+      if (AFTER_TIER1.has(id) && sim.hearthLevel < BAL.tierCoreLevel[1]!) continue;
       const b = sim.researchBlock(id);
       if (b === 'done' || b === 'active' || b === 'prereq') continue;
       const r = researchNode(id)!, need = needOf(r.cost);

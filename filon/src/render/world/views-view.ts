@@ -18,7 +18,9 @@
 //   short of it, or still being built carries that flag instead (dashed frames for the first two).
 // - **Logistique** (`logistics`): every ribbon line as a heat (art/view-icons.ts `heatColor`) of
 //   its throughput against its tier's pace, a jammed line red with a stop badge at its head, a dead
-//   end's head marked (the skydocks and their drifter routes went in D108). The night (D103):
+//   end's head marked (the skydocks and their drifter routes went in D108). Water lines (the
+//   conduits) are edged in the water's deep teal instead of ink, a branch's line starts at its tee,
+//   and each tee that shares its water (D152) wears a small ring, the valve's mark. The night (D103):
 //   each ribbon tile the Gleaners reach from the desert hatched in midnight ink with a crescent
 //   moon, each one kept from them (under glass, behind a fence) ringed in glass blue. A buried
 //   line (D109: the camouflaged ribbon, faint on the sand in the normal view) edged on both sides
@@ -328,14 +330,25 @@ export class ViewsView {
         // Lines grouped by their heat bucket: one batched stroke each, over an ink edge.
         const groups = new Map<number, RibbonLook[]>();
         for (const l of looks) { const b = bucket(l); let a = groups.get(b); if (!a) groups.set(b, (a = [])); a.push(l); }
-        const lineOf = (l: RibbonLook): void => this.ribbonPath(gr, sim, l, f.levelAt, d, g?.jumps);
-        for (const ls of groups.values()) for (const l of ls) lineOf(l);
-        gr.stroke({ width: 0.5, color: num(C.ink), alpha: 0.6, cap: 'round', join: 'round' });
+        const lineOf = (l: RibbonLook): void => this.ribbonPath(gr, sim, l, f.levelAt, d, g?.jumps, g?.drawsFrom);
+        // Each line's edge: ink under a ribbon, the water's deep teal under a conduit.
+        for (const fluid of [false, true]) {
+          let any = false;
+          for (const ls of groups.values()) for (const l of ls) if (l.chain.fluid === fluid) { lineOf(l); any = true; }
+          if (any) gr.stroke({ width: 0.5, color: num(fluid ? C.deepD : C.ink), alpha: fluid ? 0.85 : 0.6, cap: 'round', join: 'round' });
+        }
         for (const [b, ls] of groups) {
           for (const l of ls) lineOf(l);
           if (b === -1) gr.stroke({ width: 0.2, color: num(C.paperD), alpha: 1, cap: 'round', join: 'round' });
           else if (b === -2) gr.stroke({ width: 0.38, color: num(C.ledRed), alpha: 1, cap: 'round', join: 'round' });
           else gr.stroke({ width: 0.34, color: num(heatColor(b * 100)), alpha: 1, cap: 'round', join: 'round' });
+        }
+        // The tees that share their water (D152): a paper ring edged in deep teal, a brass hub — the valve's mark.
+        if (g?.tees.size) {
+          for (const v of g.tees.keys()) { const x = v & 1023, y = v >> 10, o = d(f.levelAt(x, y)); gr.circle(x - o + 0.5, y - o + 0.5, 0.24); }
+          gr.fill({ color: num(C.paper), alpha: 1 }).stroke({ width: 0.09, color: num(C.deepD), alpha: 1 });
+          for (const v of g.tees.keys()) { const x = v & 1023, y = v >> 10, o = d(f.levelAt(x, y)); gr.circle(x - o + 0.5, y - o + 0.5, 0.08); }
+          gr.fill({ color: num(C.brass), alpha: 1 });
         }
         // The Gleaners' night (D103): the tiles they reach, hatched, a crescent on each; those kept from them, ringed.
         const glean = g?.glean;
@@ -388,7 +401,7 @@ export class ViewsView {
   }
 
   /** A line's path through its tiles' centres, from its tail's edge to its head's; a leap (a bridge, a junction's pass) left out. */
-  private ribbonPath(g: Graphics, sim: Sim, l: RibbonLook, levelAt: (x: number, y: number) => number, d: (lv: number) => number, jumps?: ReadonlyMap<number, number>): void {
+  private ribbonPath(g: Graphics, sim: Sim, l: RibbonLook, levelAt: (x: number, y: number) => number, d: (lv: number) => number, jumps?: ReadonlyMap<number, number>, drawsFrom?: ReadonlyMap<number, number>): void {
     // Its world tiles: the cells over a leap (D121, `isSpanTile`) are left out with the leap.
     const t = l.chain.tiles.filter((v) => !isSpanTile(v));
     if (!t.length) return;
@@ -396,7 +409,10 @@ export class ViewsView {
     const dir = (i: number): [number, number] => { const v = t[i]!, e = sim.entityAt(v & 1023, v >> 10); const r = e?.rot ?? 0; return [[0, 1, 0, -1][r]!, [-1, 0, 1, 0][r]!]; };
     let [px, py] = at(0);
     const [dx0, dy0] = dir(0);
-    g.moveTo(px - dx0 * 0.45, py - dy0 * 0.45).lineTo(px, py);
+    // A branch (D152) starts at its tee's middle, where its water is drawn off.
+    const tee = l.chain.fluid ? drawsFrom?.get(t[0]!) : undefined;
+    if (tee !== undefined) { const x = tee & 1023, y = tee >> 10, o = d(levelAt(x, y)); g.moveTo(x + 0.5 - o, y + 0.5 - o).lineTo(px, py); }
+    else g.moveTo(px - dx0 * 0.45, py - dy0 * 0.45).lineTo(px, py);
     for (let i = 1; i < t.length; i++) {
       const a = t[i - 1]!, b = t[i]!;
       const [x, y] = at(i);

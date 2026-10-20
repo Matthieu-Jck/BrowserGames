@@ -767,9 +767,10 @@ export const QUESTS = {
       { k: 'powered', defs: ['observatory'], n: 1, label: { fr: 'Le laboratoire sous tension', en: 'The lab powered' } },
       { k: 'research', id: 'tr1' },
     ],
-    // 600 (D90; 300 at D87, 100 before): the next objective buys the quartz vein's parcel, 450–575 ◉,
-    // and the purse is never below zero here (imports wait): it can always pay.
-    reward: { credits: 600 },
+    // 700 (D161: land 30 % dearer; 600 at D90, 300 at D87, 100 before): the next objective buys the
+    // quartz vein's parcel, 648–656 ◉, and the purse is never below zero here (imports wait): it can
+    // always pay.
+    reward: { credits: 700 },
     hints: [
       {
         hint: { fr: 'Un plan prêt à prendre : le journal compte ceux qui restent.', en: 'A plan ready to take: the log counts those left.' },

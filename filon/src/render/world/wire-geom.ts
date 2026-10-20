@@ -10,7 +10,7 @@ import { footprint } from '@/sim/entities';
 import type { Ent } from '@/sim/types';
 import { artRot, rotLocal, terminalsOf } from '../art/terminals';
 import { LH, tileToIso } from '../iso';
-import { MAX_LEVEL, SHIFT, tileTop, type ReliefLand } from '../relief';
+import { PEAK_LEVEL, SHIFT, tileTop, type ReliefLand } from '../relief';
 import { liftOf } from './stand';
 
 /** Where a wire meets a building: tile coords of the point it hangs from, and its height (levels, from the floor). */
@@ -112,12 +112,13 @@ const RAY_STEP = SHIFT / 2;
  * Is the point of the wire from A to B at `t` ∈ [0, 1] hidden by the relief in front of it? Its
  * ground point and height (levels, the sag taken off) give its view ray: a point `lv` levels up
  * lies `lv·SHIFT` tiles along +x +y towards the viewer, as `surfaceTile` walks it. Hidden when
- * the ray meets a tile whose top (`tileTop`) stands higher before it rises over the highest relief.
+ * the ray meets a tile whose top (`tileTop`) stands higher before it rises over the highest relief
+ * (a spire's, D147).
  */
 function hiddenAt(A: Anchor, B: Anchor, sag: number, t: number, land: ReliefLand): boolean {
   const px = A.x + (B.x - A.x) * t, py = A.y + (B.y - A.y) * t;
   const hz = A.z + (B.z - A.z) * t - (sag * 4 * t * (1 - t)) / LH;
-  for (let d = 0; hz + d / SHIFT <= MAX_LEVEL; d += RAY_STEP) {
+  for (let d = 0; hz + d / SHIFT <= PEAK_LEVEL; d += RAY_STEP) {
     if (tileTop(land, Math.floor(px + d), Math.floor(py + d)) > hz + d / SHIFT) return true;
   }
   return false;

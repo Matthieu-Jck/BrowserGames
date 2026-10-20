@@ -8,7 +8,7 @@
 import type { BuildingKind } from '@/content/types';
 import { hearthHero, hearthPanel, landscapeHero, landscapePanel } from './colony';
 import type { Panel, PanelCtx } from './kit';
-import { forkPanel, ribbonPanel, storeHero } from './logistics';
+import { forkPanel, gaugeHero, gaugePanel, ribbonPanel, storeHero, teePanel } from './logistics';
 import { producerHero } from './power';
 import { drillHero, drillPanel, generatorHero, generatorPanel, labHero, labPanel, machineHero, machinePanel, serverHero, serverPanel } from './production';
 import { tradeHero, tradePanel } from './trade';
@@ -28,6 +28,7 @@ export const HERO: Partial<Record<BuildingKind, Hero>> = {
   server: serverHero,
   hearth: hearthHero,
   storage: storeHero,
+  conduit: gaugeHero, // a pressure gauge's dial (D155); nothing for a plain conduit
   trade: tradeHero,
   excavator: landscapeHero,
   backfiller: landscapeHero,
@@ -41,7 +42,7 @@ export const PANELS: Partial<Record<BuildingKind, readonly Panel[]>> = {
   lab: [labPanel],
   server: [serverPanel],
   belt: [ribbonPanel],
-  conduit: [ribbonPanel],
+  conduit: [ribbonPanel, teePanel, gaugePanel], // a tee's water by way (D152); a gauge's network (D155)
   fork: [forkPanel],
   hearth: [hearthPanel], // no outlets to set: the Heart takes, it never gives (D34; its data outlet went with the data, D122)
   // storage: none — a silo's one item is its hero (`storeHero`), nothing more.

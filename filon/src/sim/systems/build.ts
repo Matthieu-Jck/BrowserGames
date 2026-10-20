@@ -42,7 +42,9 @@ export type PlaceReason =
   /** A skybridge's span would cross a tall building, or a tall building would stand under a bridge's span: the bridge is low, so in the isometric view it cuts through it (D124). */
   | 'bridge_over_tall'
   /** A wind turbine closer to another than `BAL.wind.spacing` tiles, middle to middle: each stands in its own wind (D132). */
-  | 'wind_spacing';
+  | 'wind_spacing'
+  /** A pressure gauge off a conduit: it is set into a conduit line, onto one of its tiles (D155). */
+  | 'needs_conduit';
 
 export type Cost = Array<{ item: number; mu: number }>;
 
@@ -156,6 +158,11 @@ export function canPlace(sim: Sim, defId: string, x: number, y: number, rot: Rot
   else if (b.kind === 'drill' && (b.drill?.ground ? !bare : !deposit)) return fail(b.drill?.ground ? 'needs_sand' : 'needs_deposit');
   if (b.kind === 'pump' && !water && !touchesWater(sim, x, y, w, h, level)) return fail('needs_water');
   if (b.kind === 'geothermal' && !vent) return fail('needs_vent');
+  // A pressure gauge (D155) is set into a conduit line: onto a conduit's tile, which it takes the place of.
+  if (b.gauge) {
+    const o = replaces.length === 1 ? sim.ents.get(replaces[0]!) : undefined;
+    if (!o || BUILDING_KIND[o.def] !== 'conduit' || buildingDef(o.def).gauge) return fail('needs_conduit');
+  }
   // On the mountains, the whole footprint or none of it (no building astride a cliff, D44).
   if (rock && rock !== w * h) return fail('terrain');
   // The claim's land (docs/land.md): a building that needs it stands wholly on held parcels;
@@ -445,6 +452,11 @@ export function loneRecipe(sim: Sim, def: number): number {
 export function placementRot(sim: Sim, defId: string, x: number, y: number, rot: Rot, turned = false): Rot {
   const def = buildingIdx(defId), b = buildingDef(def);
   if (b.drill?.face) return inWorld(x, y) ? faceRot(sim.grid, def, x, y, rot) : rot;
+  // A pressure gauge (D155) runs as the conduit it is set into, whatever the turn in hand.
+  if (b.gauge) {
+    const e = inWorld(x, y) ? sim.entityAt(x, y) : undefined;
+    return e && BUILDING_KIND[e.def] === 'conduit' ? e.rot : rot;
+  }
   if (turned || b.kind !== 'fork' || b.w !== 1 || b.h !== 1) return rot;
   const logic = b.logic ?? 'router';
   if (logic === 'distributor') return rot;

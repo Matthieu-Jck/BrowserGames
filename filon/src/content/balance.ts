@@ -40,6 +40,13 @@ export const BAL = {
   /** A camouflaged ribbon off the claim's land (D109): its cost × this, not `remoteBeltCostMult` (1: no surcharge; the kite's delay still applies). */
   camoRemoteCostMult: 1,
   runSpanTicks: 20, // parcels of the same item merge over at most 2 s
+  /**
+   * A water network's pressure (D155, sim/readouts/pressure.ts): its pumps' water against what its
+   * drinkers ask all working, ‰. From `ok` it is enough with a margin (green); from `tight` just enough
+   * (amber: one more drinker and they are short — a pump for a boiler and a brickworks, 60 for 60); under
+   * it the drinkers are short (red).
+   */
+  pressure: { tight: 1000, ok: 1250 },
 
   // ── power ────────────────────────────────────────────────────────────────
   // The wind (D95, sim/world/wind.ts): the weather's wind over open flat ground at a time (‰ of
@@ -111,18 +118,23 @@ export const BAL = {
     // exactement le cirque »): −34…+34 tiles, where map 2's Crown reaches 29–33 (36 at the tarn's peak).
     parcel: 23,
     startRings: 1,
-    base: 20_000, // centi-ocelles: every parcel, before what it holds
+    // D161 (owner, 2026-10-19: « Parcels should also be a bit more expensive »): the base, every
+    // tile's price and the deposits' all × 1.3 — every parcel 30 % dearer, what it holds weighed as
+    // before (D94); the growth unchanged, so later parcels are dearer by the same 30 %, not more. A
+    // bare parcel ≈ 673 ◉ (was 517), the quartz vein's ≈ 650 (was 500). Was base 20 000; floor 60,
+    // sliver and rock 25, water 90, river 20, salt 70, vent 3 000, dunes 15; deposits 250.
+    base: 26_000, // centi-ocelles: every parcel, before what it holds
     /**
      * Centi-ocelles per tile, by ground: what it gives to build on (rock to dig, water to pump or fill,
      * a vent to tap). Floor pays in full only where it is usable (D94, world/floor.ts: a 2 × 2 machine
      * fits on it at one level); a sliver of it pays as rock. A river gives water to pump from its bank
      * and nothing to stand on; a chasm nothing at all.
      */
-    tile: { floor: 60, sliver: 25, rock: 25, water: 90, river: 20, chasm: 0, salt: 70, vent: 3_000, dunes: 15 } as Record<string, number>,
+    tile: { floor: 78, sliver: 33, rock: 33, water: 117, river: 26, chasm: 0, salt: 91, vent: 3_900, dunes: 20 } as Record<string, number>,
     /** Centi-ocelles per deposit tile, per point of the ore's value (items.ts), at a richness of 500 (5/min): scaled by the tile's own. */
-    // 250 since D94 (was 400): on map 4 the ore lies in broken ground, and a parcel rich in it and
-    // short of room costs a little more than an open one (≈ 540–620 ◉ against ≈ 515), not half again.
-    depositPerValue: 250,
+    // 250 since D94 (was 400), 325 since D161: on map 4 the ore lies in broken ground, and a parcel rich in it and
+    // short of room costs a little more than an open one (≈ 700–810 ◉ against ≈ 670 since D161), not half again.
+    depositPerValue: 325,
     /** A parcel's ore at a glance (D94: the Terrain view's and the land panel's pips): deposit tiles for one, two, three. */
     oreTiers: [1, 13, 40] as readonly number[],
     growth: 1100, // ‰ on the price per parcel already bought (Land Charter lowers it)

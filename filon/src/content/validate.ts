@@ -338,6 +338,11 @@ export function validateContent(): string[] {
       else if (!(Number.isInteger(perMin) && perMin > 0 && perMin <= 600) || CYCLE_LCM % (600 / gcd(600, perMin)) !== 0) errs.push(`building ${id}: a ribbon of ${perMin}/min steps on no period dividing ${CYCLE_LCM}`);
       if (b.lift && perMin < (BUILDINGS.ribbon.belt?.perMin ?? 0)) errs.push(`building ${id}: a lift slower than a ribbon (${perMin}/min, D141)`);
     }
+    // A pressure gauge (D155) is a 1 × 1 fitting of a conduit line with no pace of its own (its
+    // conduit's: compile.ts), so the upgrade tool never takes it for a faster conduit; every other
+    // conduit has its pace.
+    if (b.gauge && (b.kind !== 'conduit' || b.belt || b.w !== 1 || b.h !== 1 || b.ports.length)) errs.push(`building ${id}: a gauge is a 1 × 1 conduit fitting, no pace, no ports (D155)`);
+    if (b.kind === 'conduit' && !b.gauge && !b.belt) errs.push(`building ${id}: a conduit with no pace`);
   }
   // …and an entrance for each kind of input its recipes take (D140).
   errs.push(...entranceProblems());

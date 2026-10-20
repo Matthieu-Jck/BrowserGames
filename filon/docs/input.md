@@ -266,6 +266,7 @@ the remove tool's `from ?? hover`), then a mark box, then build or ribbon pieces
 | `pieces` | `GhostPiece {def, x, y, rot, ok, reason}`: one for a building, one per planned tile of a ribbon drag (a `crossing`, `traction_ribbon` or `skybridge` piece where the plan lays one). Tiles already holding this ribbon in this direction are shown as `ok` and free; a block the drag keeps, and a tile a bridge pair leaps, get no piece (they stay as they are). |
 | `drag`, `leaps` | A ribbon drag in progress (nothing laid before the release: the ghost draws the plan faint), and its bridge pairs' ends `[x0, y0, x1, y1]` (a dashed line between them) |
 | `buried` | `{n, land}` (D109): how many camouflaged pieces stand off the claim's land, and whose land — a neighbouring base's (`neighbour_land`) when any does, else free land (`outside_zone`; `landReason`). The tip names it |
+| `tee` | `'split' \| 'join'` (D152): a conduit drag that starts on a pipe and leaves it by its side (the new line draws its water there), or ends on a pipe's side (the waters join), the pipe kept as it runs (`BeltStep.tee`; a split wins over a join). The tip shows the tee's mark |
 | `box`, `doomed` | Demolition box (tiles, inclusive) and the entity ids it would remove. Without a box, `doomed` lists what the pieces that fit would replace |
 | `mark` | `{box, clear, n}`: `n` tiles would be marked or cleared |
 | `reason` | First refusal along the preview (`PlaceReason`) |

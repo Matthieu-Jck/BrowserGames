@@ -35,11 +35,26 @@
 // in some cells of the rough ground, the longest straight wall looking east or south with floor at
 // its foot takes 2–6 tiles of face ore (`faceOf`), laid over each chunk as it was made (`fill`):
 // only ore on rock the land already had.
+//
+// Version 6 (D147) is version 5 with a field of rock spires (content `SPIRES`): in one wedge of the
+// open sand round the Crown, on the lower half of the iso screen and out of the wind's way (the
+// Crown's turbines keep theirs), many needles of hard rock a tile at the foot (some two), their level
+// their height — 4 to 14, far over `MAX_LEVEL` —, tallest and thickest in the field's core, never two
+// side by side (in the core they may touch at a corner), a lane or two across. Each needle is a
+// square of tiles' candidate (`spireCand`), standing unless a stronger one is too close
+// (`spireStands`): local, so a chunk's needles never depend on which chunk was made first. Laid over
+// each chunk as made (`fill`), as the faces are, the field's floor marked badlands for the renderer
+// (`BIOME.spireGround`): `made` (and the faces, the neighbouring bases' sampling) stays map 5's land
+// but the spring's summit and its ledge, and the pure accessors read the needles too (`spireAt`). Its
+// summit is a natural massif (content `CIRQUE_V6`, `massifPeak`) never above map 4's (the Crown keeps
+// its wind): bays in its plateau's edge by bearing, sides falling two or three a tile on its north and
+// west, map 4's own on its east and south (its stream, the floor the bases' lines run down); its ledge
+// eroded east of the stream (`ledgeAt`: bites a level or two down, a spur), its west as it was.
 import { BAL } from '@/content/balance';
 import { itemIdx } from '@/content/registry';
 import {
   ARCHETYPES, ARCHETYPE_IDS, COMMON_DEPOSITS, COS64, DEPOSIT_CHANCE, MAP_VERSION, MAPS, MOUNTAINS, RICH_MULT, RINGS, SHADE, SIN64,
-  T3_UNIQUES, T4_UNIQUES, UNIQUE_BIOMES, type ArchetypeId, type CirqueTemplate, type MapParams, type Obstacles, type QuartzFaces, type QuartzVein, type UniqueBiomeId,
+  T3_UNIQUES, T4_UNIQUES, UNIQUE_BIOMES, type ArchetypeId, type CirqueTemplate, type MapParams, type Obstacles, type QuartzFaces, type QuartzVein, type SpireField, type SummitShape, type UniqueBiomeId,
 } from '@/content/world';
 import { hash32 } from '@/core/hash';
 import { isqrt } from '@/core/fixed';
@@ -47,7 +62,7 @@ import { makeNoise2, qfbm, type Noise2 } from '@/core/noise';
 import { CENTER, CHUNK, WORLD } from '../constants';
 import { isFloor, T } from '../types';
 import { MAX_LEVEL, MOUNTAIN_LEVEL, type TerrainSource, type VeinSite } from './grid';
-import { parcelAt, ringOf } from './land';
+import { PARCEL, parcelAt, parcelRect, ringOf } from './land';
 import { ahead, eighth, headingOf, LineKind, quarter, SegIndex, tileOf, within, type Hits, type LinePt, type Seg, type Walker } from './obstacles';
 
 export interface Site { id: UniqueBiomeId; cx: number; cy: number; r: number; item: number }
@@ -60,6 +75,32 @@ interface Blob {
 /** A disc the mountains keep off: the guaranteed copper field, a unique site and its rim, a vent. */
 interface Clearing { cx: number; cy: number; r: number }
 /**
+ * A needle of map 6's spire field (D147): its footprint's corners (inclusive: one tile, or a twin's
+ * two), its level and its shoulder's (a twin's second tile; 0: none), the field's shape where it
+ * stands, its priority and its square's key (the tie-break: a total order).
+ */
+interface Spire { x0: number; y0: number; x1: number; y1: number; lv: number; lv2: number; sh: number; pri: number; key: number }
+/** A chunk's spire map (`spireChunk`): a needle's tile holds its level (1 … 254); a floor tile of the field's badlands, this. */
+const SPIRE_GROUND = 255;
+/** `spireElev`'s flags: the tile is the field's badlands (within `outline.ground` of its outline), in a lane. */
+const SP_GROUND = 1 << 28, SP_LANE = 1 << 29;
+/**
+ * Map 6's spire field in its frame (D147): its content; its middle's unit (×1024: COS64, SIN64) and
+ * its half width's sine and cosine (the wedge: |across| · cos ≤ along · sin); the box its ground lies
+ * in (inclusive, clipped to its rings); its rings as the Chebyshev distances from the centre their
+ * square spans, `c0` … `c1`; its lanes' draws across it (‰ of its half width); its main crest's
+ * radius (quarter tiles) and its branch (null: none) — where across it leaves the main crest (×1024
+ * tiles), which way along the arc (±1) and which way out (±1), how far it goes (quarter tiles) over how
+ * many tiles; its noises (the outline, the lanes, the crests).
+ */
+interface SpireFrame {
+  S: SpireField; ux: number; uy: number; sn: number; cs: number;
+  bx0: number; by0: number; bx1: number; by1: number; c0: number; c1: number;
+  lanes: readonly number[]; crest: number;
+  branch: { v: number; side: number; out: number; off: number; run: number } | null;
+  oN: Noise2; lN: Noise2; cN: Noise2;
+}
+/**
  * The quartz vein's bluff in its own frame (D87): `west` (else north) of the cirque, the face `u0`
  * tiles out along the axis, its ore on `va … vb` across it, `vc` the wall's centre line.
  */
@@ -68,9 +109,10 @@ interface Bluff { west: boolean; u0: number; va: number; vb: number; vc: number;
 /**
  * Biome codes written next to terrain (renderer decor; not saved). A river's tile (map 4, D94) holds
  * `river` + the way it flows there (0 … 7: eighths of a turn from east, clockwise), for its ripples;
- * the sea's (`sea`), for its surf.
+ * the sea's (`sea`), for its surf; a needle of map 6's spire field (D147), `spire`, and the plain
+ * floor of its ground (lanes and all; a tile with no other code), `spireGround`: badlands.
  */
-export const BIOME = { none: 0, cirque: 7, crown: 8, river: 16, sea: 24 } as const;
+export const BIOME = { none: 0, cirque: 7, crown: 8, river: 16, sea: 24, spire: 32, spireGround: 33 } as const;
 
 // A tile as `classify` sees it, packed in one integer.
 const LV = 7; //         bits 0–2: the raw level (0 … MAX_LEVEL)
@@ -135,9 +177,13 @@ export class MapGen implements TerrainSource {
    * The spring's summit (map 4, D115): its middle, its plateau's level and radius, the levels its
    * sides fall a tile, its basin's squared radii (water, deep), and the square of its reach (where
    * its sides run out; past the Crown's reach on its outer side — the land round it, the rivers and
-   * the deposits keep to that reach as before).
+   * the deposits keep to that reach as before); on map 6 its shape (D147: a natural massif) and the
+   * plateau it keeps round the basin whatever the shape (quarter tiles from its middle).
    */
-  private readonly summit: { readonly x: number; readonly y: number; readonly level: number; readonly top: number; readonly fall: number; readonly b2: number; readonly b2deep: number; readonly reach2: number } | null;
+  private readonly summit: {
+    readonly x: number; readonly y: number; readonly level: number; readonly top: number; readonly fall: number; readonly b2: number; readonly b2deep: number; readonly reach2: number;
+    readonly shape: SummitShape | null; readonly rimQ: number;
+  } | null;
   /** The quartz vein in the nearest mountain (map 3, D87): its face tiles; null on maps 1–2. */
   readonly quartzVein: VeinSite | null;
   /** The vein's bluff in its own frame (null: no vein). */
@@ -160,6 +206,17 @@ export class MapGen implements TerrainSource {
   private readonly F: QuartzFaces | null;
   private readonly faceCells = new Map<number, VeinSite | null>();
   private readonly sectorFaces = new Map<number, { cell: number; face: VeinSite } | null>();
+  /**
+   * Map 6's field of rock spires (D147; null on maps 1–5): its middle tile, its middle's bearing (64ths
+   * of a turn clockwise from east) and its radii (tiles from the centre).
+   */
+  readonly spireField: { readonly x: number; readonly y: number; readonly bearing: number; readonly r0: number; readonly r1: number } | null;
+  /** The field in its frame (null: none); each square's candidate needle and each chunk's needles' levels (null: none there), kept once found. */
+  private readonly spf: SpireFrame | null;
+  private readonly spireCands = new Map<number, Spire | null>();
+  /** Each square's needle's rounds (`spireStands`), kept once read: bit 1 its first round read, 2 standing from it; 4 its block read, 8 blocked. */
+  private readonly spireRounds = new Map<number, number>();
+  private readonly spireChunks = new Map<number, Uint8Array | null>();
   /** `lines.hits`' answer, reused tile after tile. */
   private readonly hitBuf: Hits = [null, null, null, null];
   /** The cirque template and the mountains' hardness of this map version. */
@@ -234,7 +291,13 @@ export class MapGen implements TerrainSource {
     // The spring's summit (D115: « from a higher mountain… from north to south… a little plateau, and
     // at least 6 in height »): its stream from the basin on its plateau straight down to the pool.
     const SU = SP?.summit;
-    this.summit = SU ? { x: CENTER + SU.dx, y: CENTER + SU.dy, level: SU.level, top: SU.top, fall: SU.fall, b2: SU.basin * SU.basin, b2deep: SU.deep * SU.deep, reach2: (SU.top + Math.ceil(SU.level / SU.fall)) ** 2 } : null;
+    // Map 6 (D147): a natural massif within map 4's summit (never above it), so within its reach.
+    const SH = SU?.shape ?? null;
+    this.summit = SU ? {
+      x: CENTER + SU.dx, y: CENTER + SU.dy, level: SU.level, top: SU.top, fall: SU.fall, b2: SU.basin * SU.basin, b2deep: SU.deep * SU.deep,
+      reach2: (SU.top + Math.ceil(SU.level / SU.fall)) ** 2,
+      shape: SH, rimQ: SH ? Math.ceil(4 * SU.basin) + SH.rim : 0,
+    } : null;
     const head = this.summit;
     this.springSeg = head && pool ? { ax: 4 * head.x + 2, ay: 4 * head.y + 2, bx: 4 * pool.cx + 2, by: 4 * pool.cy + 2, hw: SP!.halfWidth, kind: LineKind.River, dir: eighth(pool.cx - head.x, pool.cy - head.y) } : null;
     // The top's outer edge is at most max(rim + lift + minCrest, foot − lift + jitter), the rim
@@ -324,6 +387,62 @@ export class MapGen implements TerrainSource {
         if (NETS.size >= NETS_KEPT) NETS.delete(NETS.keys().next().value!);
         NETS.set(key, this.lines);
       }
+    }
+    // Map 6's field of spires (D147): its wedge's middle the land's draw among the bearings, never in
+    // the wind's way (any day's: the Crown's turbines keep their wind; a bearing in it is taken only if
+    // every one is), the one least in the way of the copper field (its keep and its corridor run along
+    // its bearing), of the quartz vein's side and of the vents (their corridors too); its box; its
+    // lanes across it.
+    const SPI = P.spires && this.O ? P.spires : null;
+    if (SPI) {
+      const A = SPI.avoid, apart = (a: number, b: number): number => { const d = (a - b) & 63; return Math.min(d, 64 - d); };
+      const winds = [SPI.wind.from - SPI.wind.veer, SPI.wind.from, SPI.wind.from + SPI.wind.veer];
+      const cb = headingOf(this.copperField.cx - CENTER, this.copperField.cy - CENTER);
+      const vb = this.ventSites.map((v) => headingOf(v.x + 1 - CENTER, v.y + 1 - CENTER));
+      const qb = this.bluff ? (this.bluff.west ? 32 : 48) : -1;
+      const b = SPI.bearings
+        .map((d) => ({
+          d: d & 63,
+          windy: winds.some((w) => apart(d, w) < A.wind) ? 1 : 0,
+          cost: 4 * Math.max(0, A.copper - apart(d, cb)) + (qb < 0 ? 0 : 4 * Math.max(0, A.vein - apart(d, qb))) + vb.reduce((t, v) => t + Math.max(0, A.vent - apart(d, v)), 0),
+          draw: hash32(ps, 330, d & 63),
+        }))
+        .sort((p, q) => p.windy - q.windy || p.cost - q.cost || p.draw - q.draw || p.d - q.d)[0]!.d;
+      const [r0, r1] = SPI.r, H = SPI.half;
+      // The box: the wedge's arcs sampled a 64th apart (2 tiles to spare), cut to its rings' square.
+      let bx0 = WORLD, by0 = WORLD, bx1 = -1, by1 = -1;
+      for (let k = b - H; k <= b + H; k++) for (const r of [r0, r1]) {
+        const x = CENTER + ((COS64[k & 63]! * r) >> 10), y = CENTER + ((SIN64[k & 63]! * r) >> 10);
+        bx0 = Math.min(bx0, x - 2); by0 = Math.min(by0, y - 2); bx1 = Math.max(bx1, x + 2); by1 = Math.max(by1, y + 2);
+      }
+      const home = parcelRect(parcelAt(CENTER, CENTER)), R = SPI.rings[1] * PARCEL;
+      bx0 = Math.max(bx0, home.x0 - R); by0 = Math.max(by0, home.y0 - R); bx1 = Math.min(bx1, home.x1 - 1 + R); by1 = Math.min(by1, home.y1 - 1 + R);
+      // The rings' square: the Heart's parcel's half (its edges round the Heart's tile) and a parcel a ring.
+      const hp = Math.min(CENTER - home.x0, home.x1 - 1 - CENTER, CENTER - home.y0, home.y1 - 1 - CENTER);
+      const c0 = hp + 1 + (SPI.rings[0] - 1) * PARCEL, c1 = hp + R;
+      // The lanes, off the middle either side (one: a side by the draw), each at a draw.
+      const L = SPI.lanes, n = L.count[0] + (hash32(ps, 331) % (L.count[1] - L.count[0] + 1)), side = hash32(ps, 333) & 1 ? 1 : -1;
+      const lanes = Array.from({ length: n }, (_, k) => (n === 1 ? side : k ? 1 : -1) * (L.at[0] + (hash32(ps, 332, k) % (L.at[1] - L.at[0] + 1))));
+      // The crests: the main one round the cirque at a radius of the draw, and a branch leaving it at
+      // a point across the field, running off one way along the arc, drifting in or out.
+      const CR = SPI.crests, crest = 4 * (CR.r[0] + (hash32(ps, 334) % (CR.r[1] - CR.r[0] + 1)));
+      const B = CR.branch, hb = hash32(ps, 335);
+      const branch = CR.count[0] + (hb % (CR.count[1] - CR.count[0] + 1)) > 1
+        ? {
+          v: Math.floor(((B.at[0] + (hash32(ps, 336) % (B.at[1] - B.at[0] + 1))) * (crest >> 2) * 1024 * SIN64[H]!) / (1000 * COS64[H]!)),
+          side: (hb >>> 8) & 1 ? 1 : -1, out: (hb >>> 9) & 1 ? 1 : -1,
+          off: 4 * (B.off[0] + (hash32(ps, 337) % (B.off[1] - B.off[0] + 1))), run: B.run,
+        }
+        : null;
+      this.spf = {
+        S: SPI, ux: COS64[b]!, uy: SIN64[b]!, sn: SIN64[H]!, cs: COS64[H]!, bx0, by0, bx1, by1, c0, c1, lanes, crest, branch,
+        oN: makeNoise2(hash32(ps, 18)), lN: makeNoise2(hash32(ps, 19)), cN: makeNoise2(hash32(ps, 20)),
+      };
+      const rm = (r0 + r1) >> 1;
+      this.spireField = { x: CENTER + ((COS64[b]! * rm) >> 10), y: CENTER + ((SIN64[b]! * rm) >> 10), bearing: b, r0, r1 };
+    } else {
+      this.spf = null;
+      this.spireField = null;
     }
   }
 
@@ -416,8 +535,8 @@ export class MapGen implements TerrainSource {
     if (!S) return lv;
     // The ledge below it: flat at its level, past the Crown's foot too (the stream runs level across
     // it; a works stands by it); settling makes terraces of its edges, so it is reached a level a step.
-    const G = this.C.spring?.ledge;
-    if (G && this.onLedge(x, y)) return G.level;
+    const G = this.ledgeAt(x, y);
+    if (G >= 0) return G;
     // The summit: never lower than the Crown it stands on.
     return Math.max(lv, this.peak(x, y));
   }
@@ -430,10 +549,38 @@ export class MapGen implements TerrainSource {
   private peak(x: number, y: number): number {
     const S = this.summit;
     if (!S) return 0;
-    const d = isqrt((x - S.x) * (x - S.x) + (y - S.y) * (y - S.y));
-    const up = S.level - S.fall * Math.max(0, d - S.top);
+    const dx = x - S.x, dy = y - S.y, d2 = dx * dx + dy * dy, d = isqrt(d2), H = S.shape;
+    let up = S.level - S.fall * Math.max(0, d - S.top);
+    if (H && d2 > 0 && d2 < S.reach2) up = this.massifPeak(S, H, dx, dy, d2, d, up);
     return up > 0 && !this.inVeinZone(x, y, 1) ? up : 0;
   }
+
+  /**
+   * Map 6's summit at a tile `dx`, `dy` off its middle (D147: a natural massif; content
+   * `SummitShape`), given map 4's level there (`flat`): never above it — a summit no taller nor wider
+   * anywhere shelters no Crown tile more than map 4's did (D95: the Crown's turbines keep their wind).
+   * Its rings counted from its plateau's edge as map 4 counts them (a tile's whole distance past
+   * `top`), that edge eaten in by bays — the shared noise read on a circle round its middle at the
+   * tile's bearing, up to `amp` quarter tiles —, never within the basin's rim; a ring down `falls`
+   * levels by bearing. On its `keep` arc (east and south: the stream, the ledge, the floor the bases'
+   * lines run down), none of it (map 4's summit), coming in over `blend` 64ths.
+   */
+  private massifPeak(S: NonNullable<MapGen['summit']>, H: SummitShape, dx: number, dy: number, d2: number, d: number, flat: number): number {
+    // Map 4's on the `keep` arc (clockwise from its first bearing to its second); the shape comes in over `blend` 64ths past it.
+    const b = headingOf(dx, dy), [k0, k1] = H.keep;
+    const k = ((b - k0) & 63) <= ((k1 - k0) & 63) ? 0 : Math.min(H.blend, (k0 - b) & 63, (b - k1) & 63);
+    if (k <= 0) return flat;
+    const dq = isqrt(16 * d2);
+    if (dq <= S.rimQ) return flat;
+    // The point of the tile's bearing on the circle of `ring` (not a tile: any point, as `bearing`).
+    const px = S.x + (dx * H.ring) / d, py = S.y + (dy * H.ring) / d;
+    const bay = Math.trunc((Math.floor((Math.max(0, qfbm(this.jit, px + 401, py - 263, H.scale, 2) - 112) * H.amp) / 143) * k) / H.blend);
+    const ring = Math.floor((dq + bay) / 4) - S.top;
+    if (ring <= 0) return flat;
+    const f = k < H.blend ? S.fall : qfbm(this.jit, px - 517, py + 389, H.fallScale, 2) < 128 ? H.falls[0] : H.falls[1];
+    return Math.min(flat, S.level - f * ring);
+  }
+
 
   /**
    * How far the Crown's top shoulders out at a tile (tiles, 0 on map 1): the shared noise read on
@@ -453,11 +600,27 @@ export class MapGen implements TerrainSource {
     return [CENTER + ((x - CENTER) * radius) / r, CENTER + ((y - CENTER) * radius) / r];
   }
 
-  /** Is (x, y) on the spring's ledge (map 4, D115)? */
+  /** Is (x, y) on the spring's ledge (map 4, D115; its bites too, map 6)? */
   private onLedge(x: number, y: number): boolean {
-    const G = this.C.spring?.ledge;
-    return !!G && x >= CENTER + G.dx0 && x <= CENTER + G.dx1 && y >= CENTER + G.dy0 && y <= CENTER + G.dy1;
+    return this.ledgeAt(x, y) >= 0;
   }
+
+  /**
+   * The spring's ledge at (x, y) (map 4, D115): its level, −1 off it. Map 6 (D147) erodes it: a bite
+   * lowers a tile of it (its own level), a spur adds one past it at its level.
+   */
+  private ledgeAt(x: number, y: number): number {
+    const G = this.C.spring?.ledge;
+    if (!G) return -1;
+    const dx = x - CENTER, dy = y - CENTER;
+    if (dx >= G.dx0 && dx <= G.dx1 && dy >= G.dy0 && dy <= G.dy1) {
+      for (const [bx, by, bl] of G.bites ?? []) if (bx === dx && by === dy) return bl;
+      return G.level;
+    }
+    for (const [sx, sy] of G.spurs ?? []) if (sx === dx && sy === dy) return G.level;
+    return -1;
+  }
+
 
   /**
    * The spring's water at a tile of its stream (map 4, D115): the lowest the Crown stands along the
@@ -1050,8 +1213,10 @@ export class MapGen implements TerrainSource {
     return lv[E * w + E]!;
   }
 
-  /** The land's level at a tile (D45), 0 … MAX_LEVEL, as `fill` writes it. Pure and integer. */
+  /** The land's level at a tile (D45), 0 … MAX_LEVEL (a needle of map 6's spire field: its height), as `fill` writes it. Pure and integer. */
   levelAt(x: number, y: number): number {
+    const sp = this.spireAt(x, y);
+    if (sp) return sp;
     const c = this.classify(x, y, false), raw = c & LV;
     return raw <= 1 ? raw : this.settled(x, y, c); // a tile at 0 or 1 never comes down
   }
@@ -1064,9 +1229,12 @@ export class MapGen implements TerrainSource {
 
   /**
    * Is tile (x, y) open floor at level 0, as `fill` writes it (D110: where a neighbouring base may
-   * stand, sampled without making a chunk)? A tile raw at level 0 is never raised by the settling.
+   * stand, sampled without making a chunk — but on map 6's spire field, D147, whose needles are read
+   * off the chunks there: no neighbouring base stands so near)? A tile raw at level 0 is never raised
+   * by the settling.
    */
   floorAt(x: number, y: number): boolean {
+    if (this.spireAt(x, y)) return false;
     const c = this.classify(x, y, true);
     return (c & LV) === 0 && !(c & WET) && isFloor((c >> GROUND) & 15);
   }
@@ -1074,7 +1242,8 @@ export class MapGen implements TerrainSource {
   /**
    * Does the tile rect [x0, x1) × [y0, y1) hold what the land guarantees the claim (D110): the copper
    * field, a unique site or a vent (their clearings), the quartz vein (map 3), a corridor of floor to
-   * a site (map 4, sampled every other tile)? No neighbouring base takes such a parcel.
+   * a site (map 4, sampled every other tile), the ground of the spire field (map 6, D147)? No
+   * neighbouring base takes such a parcel.
    */
   keepsClear(x0: number, y0: number, x1: number, y1: number): boolean {
     const disc = (cx: number, cy: number, r: number): boolean => {
@@ -1085,6 +1254,8 @@ export class MapGen implements TerrainSource {
     const v = this.quartzVein;
     if (v) for (let k = 0; k < v.n; k++) if (disc(v.x + k * v.dx, v.y + k * v.dy, 8)) return true;
     if (this.O) for (let y = y0; y < y1; y += 2) for (let x = x0; x < x1; x += 2) if (this.lines.hit(x, y, LineKind.Corridor)) return true;
+    const F = this.spf;
+    if (F) for (let y = Math.max(y0, F.by0); y < Math.min(y1, F.by1 + 1); y++) for (let x = Math.max(x0, F.bx0); x < Math.min(x1, F.bx1 + 1); x++) if (this.spireElev(x, y) !== -1) return true;
     return false;
   }
 
@@ -1108,6 +1279,7 @@ export class MapGen implements TerrainSource {
 
   /** Base terrain class of a tile (before deposits), as `fill` writes it. */
   terrainAt(x: number, y: number): number {
+    if (this.spireAt(x, y)) return T.Rock1 + this.spf!.S.hardness - 1;
     const c = this.classify(x, y, true), raw = c & LV;
     if (raw === 0 || c & WET) return (c >> GROUND) & 15;
     return this.rockOf(c, raw <= 1 ? raw : this.settled(x, y, c), x, y);
@@ -1246,9 +1418,30 @@ export class MapGen implements TerrainSource {
         rich[k] = rich0;
       }
     }
+    // Map 6's field of spires (D147): its needles laid over the land as made, rock at their height;
+    // the plain floor of its ground with no biome code of its own marked badlands.
+    const sp = this.spf ? this.spireChunk(cx, cy) : null;
+    if (sp) {
+      const rock = T.Rock1 + this.spf!.S.hardness - 1;
+      for (let k = 0; k < CHUNK * CHUNK; k++) {
+        const L = sp[k]!;
+        if (!L) continue;
+        if (L === SPIRE_GROUND) {
+          const t = terrain[k]!;
+          if (biome && biome[k] === BIOME.none && m.level[k] === 0 && (t === T.Sand || t === T.Hardpan || t === T.Salt)) biome[k] = BIOME.spireGround;
+          continue;
+        }
+        terrain[k] = rock;
+        ore[k] = 0;
+        rich[k] = 0;
+        if (level) level[k] = L;
+        if (height) height[k] = clamp255(SHADE.rock + SHADE.perLevel * L);
+        if (biome) biome[k] = BIOME.spire;
+      }
+    }
   }
 
-  /** A chunk as `make` gives it (map 5's faces not laid on it yet), kept for the land (`MADE`). */
+  /** A chunk as `make` gives it (map 5's faces and map 6's spires not laid on it yet), kept for the land (`MADE`). */
   private made(cx: number, cy: number): { terrain: Uint8Array; ore: Uint8Array; rich: Uint16Array; height: Uint8Array; biome: Uint8Array; level: Uint8Array } {
     const key = `${this.worldSeed}:${this.playerSeed >>> 0}:${this.mapV}:${cx}:${cy}`;
     let m = MADE.get(key);
@@ -1372,6 +1565,228 @@ export class MapGen implements TerrainSource {
     }
     this.faceCells.set(key, face);
     return face;
+  }
+
+  /**
+   * The spire field at a tile (map 6, D147): −1 off its ground (out of its wedge, its radii or its
+   * rings); else its flags (`SP_GROUND`: its badlands; `SP_LANE`: in a lane) and, inside its outline
+   * and off the lanes, its body (0 … 255, `<< 16`) and its height (‰, the low bits).
+   * - Its outline: how far in from the ground's nearest edge the tile lies (its wedge's sides, its
+   *   radii, its rings' square), less `outline.inset`, plus a wobble of the land's noise (± `wobble`
+   *   tiles), less its bays (a slower noise, up to `bays.depth` tiles in): ragged, with bays and
+   *   outlying clusters, never along the wedge's straight edges. Its body thickens
+   *   from there to whole `outline.body` tiles in; its badlands reach `outline.ground` tiles out.
+   * - Its height: the body times the crests' (one round the cirque at its radius, wandering with the
+   *   noise along the arc, a branch maybe): whole `top` tiles either side of a crest's line, `flank` ‰ `width` tiles off it,
+   *   `low` ‰ `far` tiles farther; along a crest the noise lowers it into saddles (by `saddle` ‰ of
+   *   its rise above the flanks) between its summits.
+   */
+  private spireElev(x: number, y: number): number {
+    const F = this.spf!;
+    if (x < F.bx0 || x > F.bx1 || y < F.by0 || y > F.by1) return -1;
+    const S = F.S, dx = x - CENTER, dy = y - CENTER;
+    // Along its middle and across it (×1024 tiles; across: clockwise of the middle positive).
+    const U = dx * F.ux + dy * F.uy, V = dy * F.ux - dx * F.uy, AV = Math.abs(V);
+    if (U <= 0 || AV * F.cs > U * F.sn) return -1;
+    const r2 = dx * dx + dy * dy, [r0, r1] = S.r;
+    if (r2 < r0 * r0 || r2 > r1 * r1) return -1;
+    const ring = ringOf(parcelAt(x, y));
+    if (ring < S.rings[0] || ring > S.rings[1]) return -1;
+    // The outline (×1024 tiles): in from the nearest edge, less the inset, plus the wobble.
+    const O = S.outline, r = isqrt(r2), c = Math.max(Math.abs(dx), Math.abs(dy));
+    const inward = Math.min(1024 * Math.min(r - r0, r1 - r, c - F.c0, F.c1 - c), Math.floor((U * F.sn - AV * F.cs) / 1024));
+    const bay = Math.max(0, qfbm(F.oN, x + 7777, y - 3333, O.bays.scale, 2) - 128) * O.bays.depth * 8;
+    const mask = inward - 1024 * O.inset + (qfbm(F.oN, x, y, O.scale, O.octaves) - 128) * O.wobble * 8 - bay;
+    const flags = mask >= -1024 * O.ground ? SP_GROUND : 0;
+    // A lane: its line `s` ‰ of the half width across, meandering by the noise read along it.
+    const L = S.lanes;
+    for (let k = 0; k < F.lanes.length; k++) {
+      const m = (qfbm(F.lN, U >> 10, 1000 * k + 500, L.scale, 2) - 128) * L.meander * 8;
+      const VL = Math.floor((F.lanes[k]! * U * F.sn) / (1000 * F.cs)) + m;
+      if (4 * Math.abs(V - VL) <= L.half * 1024) return flags | SP_LANE;
+    }
+    if (mask <= 0) return flags;
+    const body = Math.max(1, Math.min(255, Math.floor((mask * 255) / (1024 * O.body))));
+    // The crests (quarter tiles): the main one's radius here, wandering; the branch's off it.
+    const CR = S.crests, rq = isqrt(16 * r2), vt = V >> 10, Bc = F.branch;
+    const main = F.crest + (((qfbm(F.cN, vt, 300, CR.scale, 2) - 128) * CR.meander * 4) >> 7);
+    let d = Math.abs(rq - main);
+    if (Bc) {
+      const t = Bc.side * (V - Bc.v);
+      if (t >= 0) d = Math.min(d, Math.abs(rq - main - Math.floor((Bc.out * Bc.off * Math.min(t, 1024 * Bc.run)) / (1024 * Bc.run))));
+    }
+    const t = 4 * CR.top, w = 4 * CR.width;
+    let crest = d <= t ? 1000 : d <= w ? 1000 - Math.floor(((1000 - CR.flank) * (d - t)) / (w - t)) : CR.flank - Math.floor(((CR.flank - CR.low) * Math.min(d - w, 4 * CR.far)) / (4 * CR.far));
+    if (crest > CR.flank) crest = CR.flank + Math.floor(((crest - CR.flank) * (1000 - Math.floor((CR.saddle * qfbm(F.cN, vt, 900, CR.peaks, 2)) / 255))) / 1000);
+    return flags | (body << 16) | Math.floor((body * crest) / 255);
+  }
+
+  /**
+   * May a needle of the spire field stand on tile (x, y) (map 6, D147)? The land as made (`made`)
+   * plain floor there at level 0 with no ore, `clear` tiles off a clearing, the quartz vein's ground
+   * and a corridor to a site.
+   */
+  private spireFits(x: number, y: number): boolean {
+    const m = this.made(x >> 5, y >> 5), k = (y & 31) * CHUNK + (x & 31), t = m.terrain[k]!;
+    if (m.level[k] !== 0 || m.ore[k] !== 0 || !isFloor(t) || t === T.Vent) return false;
+    const c = this.spf!.S.clear;
+    for (const d of this.keep) {
+      const r = d.r + c;
+      if ((x - d.cx) * (x - d.cx) + (y - d.cy) * (y - d.cy) < r * r) return false;
+    }
+    return !this.inVeinZone(x, y, c) && !this.lines.near(x, y, LineKind.Corridor, 4 * c);
+  }
+
+  /**
+   * Square (a, b)'s candidate needle (map 6, D147; `cell` × `cell` tiles from (cell·a, cell·b)), or
+   * null: at a tile of it the hash picks, inside the field's outline and off its lanes, at its
+   * `density` there (by its body: whole from `dense` in), where it fits; its height by the field's
+   * there ± the hash's jitter; a twin at its `twin` ‰ there (by its body too), its shoulder on the
+   * tile east or south (where that fits too) `shoulder` levels lower. Kept once found.
+   */
+  private spireCand(a: number, b: number): Spire | null {
+    const key = b * 1024 + a, kept = this.spireCands.get(key);
+    if (kept !== undefined) return kept;
+    const S = this.spf!.S, C = S.cell, ps = this.playerSeed >>> 0, h = hash32(ps, a, b, 340);
+    const x = a * C + (h % C), y = b * C + ((h >>> 8) % C), v = this.spireElev(x, y), body = v < 0 || v & SP_LANE ? 0 : (v >> 16) & 255;
+    let sp: Spire | null = null;
+    const [d0, d1] = S.density, [L0, L1] = S.levels;
+    if (body > 0 && (h >>> 16) % 1000 < d0 + Math.floor(((d1 - d0) * Math.min(body, S.dense)) / S.dense) && this.spireFits(x, y)) {
+      const g = hash32(ps, a, b, 341), J = S.jitter;
+      // ± J levels, the middle likelier (the sum of two draws).
+      const jit = (g % (J + 1)) + ((g >>> 4) % (J + 1)) - J;
+      const lv = Math.max(L0, Math.min(L1, L0 + Math.floor(((L1 - L0) * (v & 0xffff) + 500) / 1000) + jit));
+      let x1 = x, y1 = y, lv2 = 0;
+      const [t0, t1] = S.twin;
+      if (lv > L0 && (g >>> 8) % 1000 < t0 + Math.floor(((t1 - t0) * body) / 255)) {
+        const east = (g >>> 20) & 1, tx = x + east, ty = y + 1 - east, w = this.spireElev(tx, ty);
+        if (w >= 0 && !(w & SP_LANE) && (w >> 16) & 255 && this.spireFits(tx, ty)) {
+          x1 = tx; y1 = ty;
+          lv2 = Math.max(L0, lv - S.shoulder[0] - ((g >>> 21) % (S.shoulder[1] - S.shoulder[0] + 1)));
+        }
+      }
+      sp = { x0: x, y0: y, x1, y1, lv, lv2, sh: body, pri: hash32(ps, a, b, 342), key };
+    }
+    this.spireCands.set(key, sp);
+    return sp;
+  }
+
+  /**
+   * Are two needles too close (map 6, D147), footprint to footprint: beside each other (sharing a
+   * side, or overlapping), or at a corner unless both stand where the field's body is `touch` or
+   * more? Two needles never stand side by side; in the fringe a floor tile at least between them.
+   */
+  private spireClash(s: Spire, o: Spire): boolean {
+    const gx = Math.max(o.x0 - s.x1, s.x0 - o.x1), gy = Math.max(o.y0 - s.y1, s.y0 - o.y1), touch = this.spf!.S.touch;
+    return gx <= 1 && gy <= 1 && !(gx === 1 && gy === 1 && s.sh >= touch && o.sh >= touch);
+  }
+
+  /** Does needle `o` come before needle `s` (its priority, then its square's key: a total order)? */
+  private static before(o: Spire, s: Spire): boolean {
+    return o.pri > s.pri || (o.pri === s.pri && o.key > s.key);
+  }
+
+  /** Square (a, b)'s needle in the first round (map 6, D147): no needle too close to it comes before it. */
+  private spireFirst(a: number, b: number): boolean {
+    const key = b * 1024 + a, k = this.spireRounds.get(key) ?? 0;
+    if (k & 1) return (k & 2) !== 0;
+    const s = this.spireCand(a, b);
+    let up = !!s;
+    for (let j = -1; j <= 1 && up; j++) for (let i = -1; i <= 1 && up; i++) {
+      const o = i || j ? this.spireCand(a + i, b + j) : null;
+      if (o && this.spireClash(s!, o) && MapGen.before(o, s!)) up = false;
+    }
+    this.spireRounds.set(key, this.spireRounds.get(key)! | 1 | (up ? 2 : 0));
+    return up;
+  }
+
+  /** Is square (a, b)'s needle out after the first round (map 6, D147): one too close to it stands from it? */
+  private spireBlocked(a: number, b: number): boolean {
+    const key = b * 1024 + a, k = this.spireRounds.get(key) ?? 0;
+    if (k & 4) return (k & 8) !== 0;
+    const s = this.spireCand(a, b);
+    let out = false;
+    for (let j = -1; j <= 1 && !out && s; j++) for (let i = -1; i <= 1 && !out; i++) {
+      const o = i || j ? this.spireCand(a + i, b + j) : null;
+      if (o && this.spireClash(s, o) && this.spireFirst(a + i, b + j)) out = true;
+    }
+    this.spireRounds.set(key, (this.spireRounds.get(key) ?? 0) | 4 | (out ? 8 : 0));
+    return out;
+  }
+
+  /**
+   * Does square (a, b)'s needle `s` stand (map 6, D147)? Two rounds of the same rule among the squares
+   * round it (none farther can come too close: a needle keeps to its square and the tile past it):
+   * it stands if no needle too close to it comes before it; else, unless one of those stands, if none
+   * of the needles left too close to it (neither standing nor out after the first round) comes before
+   * it. No two needles standing are too close (`spireClash`), and the answer is read off the squares
+   * within three of it: the same whichever chunk is made first.
+   */
+  private spireStands(s: Spire, a: number, b: number): boolean {
+    if (this.spireFirst(a, b)) return true;
+    if (this.spireBlocked(a, b)) return false;
+    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+      const o = i || j ? this.spireCand(a + i, b + j) : null;
+      if (o && this.spireClash(s, o) && MapGen.before(o, s) && !this.spireFirst(a + i, b + j) && !this.spireBlocked(a + i, b + j)) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Chunk (cx, cy)'s spire map (map 6, D147): a needle's tile its level, a tile of the field's ground
+   * `SPIRE_GROUND`, 0 off it; null where the field has no ground. Kept once found.
+   */
+  private spireChunk(cx: number, cy: number): Uint8Array | null {
+    const key = cy * 64 + cx, kept = this.spireChunks.get(key);
+    if (kept !== undefined) return kept;
+    const F = this.spf!, C = F.S.cell, x0 = cx * CHUNK, y0 = cy * CHUNK;
+    let out: Uint8Array | null = null;
+    if (x0 + CHUNK > F.bx0 && x0 <= F.bx1 && y0 + CHUNK > F.by0 && y0 <= F.by1) {
+      // Its badlands, lanes and all: its ground within `outline.ground` of its outline.
+      for (let y = Math.max(y0, F.by0); y < Math.min(y0 + CHUNK, F.by1 + 1); y++) for (let x = Math.max(x0, F.bx0); x < Math.min(x0 + CHUNK, F.bx1 + 1); x++) {
+        const v = this.spireElev(x, y);
+        if (v < 0 || !(v & SP_GROUND)) continue;
+        out ??= new Uint8Array(CHUNK * CHUNK);
+        out[(y - y0) * CHUNK + (x - x0)] = SPIRE_GROUND;
+      }
+      // The squares whose needle may reach into the chunk: a needle lies in its square or a tile past it.
+      const a0 = Math.floor((x0 - C) / C), a1 = Math.floor((x0 + CHUNK - 1) / C), b0 = Math.floor((y0 - C) / C), b1 = Math.floor((y0 + CHUNK - 1) / C);
+      for (let b = b0; b <= b1; b++) for (let a = a0; a <= a1; a++) {
+        const s = this.spireCand(a, b);
+        if (!s || !this.spireStands(s, a, b)) continue;
+        for (let y = s.y0; y <= s.y1; y++) for (let x = s.x0; x <= s.x1; x++) {
+          if (x < x0 || y < y0 || x >= x0 + CHUNK || y >= y0 + CHUNK) continue;
+          out ??= new Uint8Array(CHUNK * CHUNK);
+          out[(y - y0) * CHUNK + (x - x0)] = x === s.x0 && y === s.y0 ? s.lv : s.lv2;
+        }
+      }
+    }
+    this.spireChunks.set(key, out);
+    return out;
+  }
+
+  /** A needle's level at a tile (map 6, D147), 0 off them (and on maps 1–5): its chunk's needles, read once. */
+  private spireAt(x: number, y: number): number {
+    const F = this.spf;
+    if (!F || x < F.bx0 || x > F.bx1 || y < F.by0 || y > F.by1) return 0;
+    const v = this.spireChunk(x >> 5, y >> 5)?.[(y & 31) * CHUNK + (x & 31)] ?? 0;
+    return v === SPIRE_GROUND ? 0 : v;
+  }
+
+  /** The needles of the spire field (map 6, D147) on the tile rect [x0, x1) × [y0, y1): each tile and its level, row by row; none on maps 1–5. */
+  spiresIn(x0: number, y0: number, x1: number, y1: number): Array<{ x: number; y: number; level: number }> {
+    const F = this.spf, out: Array<{ x: number; y: number; level: number }> = [];
+    if (!F) return out;
+    const ax = Math.max(x0, F.bx0), ay = Math.max(y0, F.by0), bx = Math.min(x1 - 1, F.bx1), by = Math.min(y1 - 1, F.by1);
+    for (let cy = ay >> 5; ay <= by && cy <= by >> 5; cy++) for (let cx = ax >> 5; ax <= bx && cx <= bx >> 5; cx++) {
+      const sp = this.spireChunk(cx, cy);
+      if (!sp) continue;
+      for (let k = 0; k < CHUNK * CHUNK; k++) {
+        const x = cx * CHUNK + (k & 31), y = cy * CHUNK + (k >> 5);
+        if (sp[k] && sp[k] !== SPIRE_GROUND && x >= ax && x <= bx && y >= ay && y <= by) out.push({ x, y, level: sp[k]! });
+      }
+    }
+    return out.sort((p, q) => p.y - q.y || p.x - q.x);
   }
 
   /** One chunk as the land makes it (`fill`'s, which keeps it). */

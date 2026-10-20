@@ -85,16 +85,39 @@ export interface CirqueTemplate {
      * no ribbon climbs it — a line laid round it, never over); in its middle the spring's basin,
      * still water `basin` tiles round, `deep` in its heart.
      */
-    readonly summit: { readonly dx: number; readonly dy: number; readonly level: number; readonly top: number; readonly fall: number; readonly basin: number; readonly deep: number };
+    readonly summit: { readonly dx: number; readonly dy: number; readonly level: number; readonly top: number; readonly fall: number; readonly basin: number; readonly deep: number; readonly shape?: SummitShape };
     readonly halfWidth: number;
     readonly pool: { readonly dx: number; readonly dy: number; readonly radius: number; readonly deep: number };
     /**
      * A flat ledge at `level` on the Crown below the summit (offsets of its corners, inclusive), the
      * stream's column in it: the water runs level across it before its last falls, and a works
-     * stands beside it (the late base's potteries, D115: a pump on the ledge draws at its level).
+     * stands beside it (the late base's potteries, D115: a pump on the ledge draws at its level). Map 6
+     * (D147) erodes it: `bites`, tiles of it lowered to a level (offsets from the centre, level),
+     * and `spurs`, tiles past it at its level — a ragged footprint, no long straight wall.
      */
-    readonly ledge?: { readonly dx0: number; readonly dy0: number; readonly dx1: number; readonly dy1: number; readonly level: number };
+    readonly ledge?: {
+      readonly dx0: number; readonly dy0: number; readonly dx1: number; readonly dy1: number; readonly level: number;
+      readonly bites?: ReadonlyArray<readonly [number, number, number]>; readonly spurs?: ReadonlyArray<readonly [number, number]>;
+    };
   };
+}
+
+/**
+ * A natural massif for the spring's summit (map 6, D147; the lead, of map 4's: « a perfect octagon…
+ * it reads as stacked boxes »), the same for every player and never above map 4's summit on any tile
+ * (a taller or wider summit would shelter the Crown's turbines, D95): its plateau's edge eaten in by
+ * bays by bearing round its middle — the shared noise read on a circle of `ring` tiles (feature size
+ * `scale`), up to `amp` quarter tiles —, never within `rim` quarter tiles of the basin (its rock rim
+ * whole at the plateau's level); its sides falling `falls[0]` or `falls[1]` levels a tile by bearing
+ * (the shared noise again, `fallScale`: never 1, no ribbon climbs it, D115). On the bearings from
+ * `keep[0]` clockwise to `keep[1]` (blended over `blend` more) it is map 4's summit tile for tile:
+ * the spring's stream, its banks and the ledge below as they work, and the floor east of it where
+ * the bases' lines run down past it.
+ */
+export interface SummitShape {
+  readonly amp: number; readonly ring: number; readonly scale: number; readonly rim: number;
+  readonly falls: readonly [number, number]; readonly fallScale: number;
+  readonly keep: readonly [number, number]; readonly blend: number;
 }
 
 /**
@@ -205,6 +228,46 @@ export const CIRQUE_V4: CirqueTemplate = {
     // onto it), past the Crown's foot as it must (the Crown is thin here), standing as the massifs'
     // rock does (cliffs where the land round it is lower); the Crown's terraces below it to the rim.
     ledge: { dx0: 9, dy0: -28, dx1: 17, dy1: -23, level: 3 },
+  },
+};
+
+/**
+ * Map 6's cirque (D147): map 4's, its spring's summit a natural massif (`SummitShape`) on its north
+ * and west — bays in its plateau's edge, uneven sides, never above map 4's — round the same basin and
+ * stream; its ledge
+ * eroded east of the stream (the lead: « the boxiest thing in the owner's view… long straight walls
+ * on its south and east sides »): its corners there rounded, bays a level or two down along its east
+ * and south edges, a spur south (none east: the floor at x + 18 carries the bases' lines down past
+ * the summit and the ledge). West of the stream's banks — where the late base's
+ * potteries, their pump, conduit and stone lines stand on every land, and a tile round them — and the
+ * stream itself, as map 4's.
+ */
+export const CIRQUE_V6: CirqueTemplate = {
+  ...CIRQUE_V4,
+  spring: {
+    ...CIRQUE_V4.spring!,
+    summit: {
+      ...CIRQUE_V4.spring!.summit,
+      shape: {
+        amp: 12, ring: 6, scale: 5, rim: 5, falls: [2, 3], fallScale: 6,
+        // Map 4's from north-east round by east and south to south-south-west (its stream, its ledge, the
+        // floor east of it: the pacing bot's line from the north runs down there, x + 18).
+        keep: [56, 26], blend: 4,
+      },
+    },
+    ledge: {
+      ...CIRQUE_V4.spring!.ledge!,
+      //   x: 13 14 15 16 17   (the stream at 12, its banks 11–13; the ledge 9–17 × −28…−23 at 3)
+      // −28:  3  3  3  3  2
+      // −27:  3  3  3  3  3
+      // −26:  3  3  3  3  2
+      // −25:  3  3  3  3  2
+      // −24:  3  3  3  3  3
+      // −23:  3  2  3  2  1
+      // −22:  .  .  3  3  .   (a spur two tiles at least: a lone one settles as a spike would)
+      bites: [[17, -28, 2], [17, -26, 2], [17, -25, 2], [14, -23, 2], [16, -23, 2], [17, -23, 1]],
+      spurs: [[15, -22], [16, -22]],
+    },
   },
 };
 
@@ -539,7 +602,85 @@ export interface QuartzFaces {
   readonly margin: number;
 }
 
-/** What a map version reads (D63): its cirque, its Crown's foot by archetype, its mountains' hardness, its quartz vein (map 3), its obstacles (map 4), its quartz faces farther out (map 5). */
+/**
+ * A field of rock spires (map 6, D147; owner, 2026-10-19: « in an area of the desert around the
+ * cirque put lots of very small but tall mountains that will seem like big spiky mountains. Very
+ * unusual. »): in one wedge of the open sand round the Crown (`OBSTACLES.desert.sand`), many needles
+ * of hard rock a tile at the foot (some two: a shoulder beside the needle), so tall and so close
+ * that from afar they read as a range of spiky mountains with a summit line. A needle's level is its
+ * height, far over `MAX_LEVEL`: a building on its top stands up there, no ribbon climbs it. Two
+ * needles never stand side by side (but a twin's two tiles); in the core they may touch at a corner;
+ * a lane or two runs across, a pass through the range (space is a stake, D94).
+ *
+ * Where: the wedge's middle is the land's draw among `bearings` (64ths of a turn clockwise from
+ * east: the lower half of the iso screen, the needles seen over the land in front of them). Never
+ * within `avoid.wind` 64ths of where the world's wind comes from on any day (`wind`: the prevailing
+ * bearing `from` and `veer` either side, D95 — frozen here, a land never changes under a base: the
+ * Crown's turbines keep their wind); among the rest the one least in the way of the copper field
+ * (within `avoid.copper` 64ths of its bearing, its keep and its corridor, a 64th short weighing
+ * four), of the quartz vein's side (`avoid.vein`, the same) and of the vents (`avoid.vent`); ties:
+ * the land's draw. Its ground: `half` 64ths either side, from `r[0]` to `r[1]` tiles out, in parcel
+ * rings `rings[0]` (past the starting square) to `rings[1]` (short of the neighbouring bases, D110);
+ * a needle only on the land's plain floor at level 0 with no ore, `clear` tiles off a corridor to a
+ * site, a clearing and the quartz vein's ground.
+ *
+ * Its outline (the owner, of the first renders: « a rectangle of pins »): how far in from its
+ * ground's nearest edge (the wedge's sides, its radii, its rings' square) a tile lies, less
+ * `outline.inset`, plus a wobble of the land's noise (± `wobble` tiles, `scale` tiles, `octaves`),
+ * less its bays (a slower noise's rise, up to `bays.depth` tiles in): ragged, with bays and outlying
+ * clusters, never along the wedge's straight edges. Inside it the field's body thickens to whole `body` tiles
+ * in; its floor within `ground` tiles of the outline (lanes and all) is badlands for the renderer
+ * (mapgen `BIOME.spireGround`). Its skyline: the body times the crests' — the main one round the
+ * cirque at `crests.r` (the land's draw), wandering by `meander` tiles (noise of `scale` tiles along
+ * the arc); with `count` 2 a branch leaving it at a point across the field (`branch.at` ‰ of its half
+ * width), off one way along the arc, drifting in or out to `branch.off` tiles over `branch.run` —:
+ * whole `top` tiles either side of a crest's line, `flank` ‰ `width` tiles off it, `low` ‰ `far` tiles farther; along a
+ * crest the noise (`peaks` tiles) lowers it by up to `saddle` ‰ of its rise over the flanks: summits
+ * and saddles. A needle's height: `levels[0]` to `levels[1]` by it, ± up to `jitter` (the middle
+ * likelier). So 12–14 along a crest, 7–10 on its flanks, 4–6 at the fringe.
+ *
+ * Its needles: inside the outline each `cell` × `cell` square of tiles holds a candidate `density` ‰
+ * of the time (the first at the outline, the second from `dense` of body on) on a tile of it the
+ * hash picks, `twin` ‰ of them two tiles (by the body as well: its shoulder on the tile east or
+ * south, `shoulder` levels lower). Too close to another — beside it, or at its corner unless both
+ * stand where the body is `touch` or more — the one of lower priority (a hash) gives way, in two
+ * rounds (the second among those the first left undecided); those that give way leave pockets of
+ * floor here and there. The lanes: `lanes.count` of them, off the middle either side (one: a side by
+ * the land's draw) at `lanes.at` ‰ of the half width, a band `lanes.half` quarter tiles each side of
+ * a line from the wedge's inner edge to its outer one, meandering by up to `lanes.meander` tiles (a
+ * noise of `lanes.scale` tiles): no needle in it. Rock of hardness `hardness` (H3: digging one waits
+ * for the excavator).
+ */
+export interface SpireField {
+  readonly bearings: readonly number[];
+  readonly wind: { readonly from: number; readonly veer: number };
+  readonly avoid: { readonly wind: number; readonly copper: number; readonly vein: number; readonly vent: number };
+  readonly half: number;
+  readonly r: readonly [number, number];
+  readonly rings: readonly [number, number];
+  readonly clear: number;
+  readonly outline: {
+    readonly inset: number; readonly wobble: number; readonly scale: number; readonly octaves: number;
+    readonly bays: { readonly depth: number; readonly scale: number }; readonly body: number; readonly ground: number;
+  };
+  readonly crests: {
+    readonly count: readonly [number, number]; readonly r: readonly [number, number]; readonly meander: number; readonly scale: number;
+    readonly top: number; readonly width: number; readonly flank: number; readonly low: number; readonly far: number; readonly saddle: number; readonly peaks: number;
+    readonly branch: { readonly at: readonly [number, number]; readonly off: readonly [number, number]; readonly run: number };
+  };
+  readonly cell: number;
+  readonly density: readonly [number, number];
+  readonly dense: number;
+  readonly twin: readonly [number, number];
+  readonly touch: number;
+  readonly shoulder: readonly [number, number];
+  readonly levels: readonly [number, number];
+  readonly jitter: number;
+  readonly hardness: number;
+  readonly lanes: { readonly count: readonly [number, number]; readonly at: readonly [number, number]; readonly half: number; readonly meander: number; readonly scale: number };
+}
+
+/** What a map version reads (D63): its cirque, its Crown's foot by archetype, its mountains' hardness, its quartz vein (map 3), its obstacles (map 4), its quartz faces farther out (map 5), its field of spires (map 6). */
 export interface MapParams {
   readonly cirque: CirqueTemplate;
   /** The Crown's foot (tiles from the centre) on these archetypes; the others take `cirque.crownOuter`. */
@@ -567,6 +708,8 @@ export interface MapParams {
   readonly holdings?: boolean;
   /** Short quartz faces in the rough ground's walls, a few a land (map 5, D136); absent: the vein's alone (maps 1–4). */
   readonly faces?: QuartzFaces;
+  /** A field of rock spires in the open sand round the Crown (map 6, D147); absent: none (maps 1–5). */
+  readonly spires?: SpireField;
 }
 
 /**
@@ -585,8 +728,28 @@ export const QUARTZ_FACES: QuartzFaces = {
   item: 'quartz', sectors: 4, chance: 750, cell: 2, from: 116, to: 180, ring: 3, length: [2, 6], apron: 3, margin: 3,
 };
 
+/**
+ * Map 6's field of spires (D147). A wedge five 64ths either side (some 28°) from r 44 to 84 — the
+ * open sand round the Crown, seen from the cirque; a band of floor kept round the Crown's foot (its
+ * reach is r 40 at most), so a line round the cirque never meets a needle —, in parcel rings 2–3.
+ * Its middle at 14, 16 or 18 on today's world (its wind comes from the east, 62 ± 4: the bearings
+ * out of it that keep the whole wedge on the lower half of the iso screen); needles 4 to 14 levels
+ * tall (the mountains stop at 5, the spring's summit at 6), 12–14 along a crest round the cirque.
+ */
+export const SPIRES: SpireField = {
+  bearings: [60, 0, 4, 8, 12, 14, 16, 18], wind: { from: 62, veer: 4 }, avoid: { wind: 12, copper: 10, vein: 10, vent: 6 },
+  half: 5, r: [44, 84], rings: [2, 3], clear: 2,
+  outline: { inset: 5, wobble: 8, scale: 8, octaves: 3, bays: { depth: 9, scale: 20 }, body: 6, ground: 2 },
+  crests: {
+    count: [1, 2], r: [60, 66], meander: 6, scale: 18, top: 2, width: 4, flank: 450, low: 300, far: 10, saddle: 350, peaks: 10,
+    branch: { at: [-300, 300], off: [7, 10], run: 8 },
+  },
+  cell: 2, density: [250, 1000], dense: 150, twin: [120, 350], touch: 96, shoulder: [1, 3], levels: [4, 14], jitter: 1, hardness: 3,
+  lanes: { count: [1, 2], at: [250, 450], half: 7, meander: 9, scale: 12 },
+};
+
 /** The map version a new base is founded on (saved as `mapV`; a save without it is on map 1). */
-export const MAP_VERSION = 5;
+export const MAP_VERSION = 6;
 
 /**
  * Every map version, kept for the bases founded on it: a land never changes under a base. A new
@@ -635,6 +798,20 @@ export const MAPS: Readonly<Record<number, MapParams>> = {
     oreBlock: 2,
     holdings: true,
     faces: QUARTZ_FACES,
+  },
+  // Map 5's land with a field of rock spires in a wedge of the open sand round the Crown (D147):
+  // laid over it as made, the rest tile for tile map 5's but the spring's summit, a natural massif
+  // (`CIRQUE_V6`); map 5's bases keep their land (D63).
+  6: {
+    cirque: CIRQUE_V6,
+    crownOuter: { closed: 31, steppe: 27 },
+    hardness: MOUNTAINS.hardness,
+    quartz: QUARTZ_VEIN,
+    obstacles: OBSTACLES,
+    oreBlock: 2,
+    holdings: true,
+    faces: QUARTZ_FACES,
+    spires: SPIRES,
   },
 };
 

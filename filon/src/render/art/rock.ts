@@ -29,7 +29,7 @@
 // one crystal drawing the plan's seam and the machines share).
 // Worker-safe (Canvas2D only).
 import { hash32, hashUnit } from '@/core/hash';
-import { facesCamera, MAX_LEVEL, MOUNTAIN_TERRACE, slabOutline, shadeOf, STEP_LEVELS, type OutlinePt } from '../relief';
+import { facesCamera, M_E, M_S, MAX_LEVEL, MOUNTAIN_TERRACE, slabOutline, shadeOf, STEP_LEVELS, type OutlinePt } from '../relief';
 import { C, mix, rgba } from './tokens';
 import { ink, type Ctx, type Pt } from './ink';
 import { lipSpan, paintWaterTop, type UV, type WaterLook } from './water-top';
@@ -134,8 +134,8 @@ function bedsIn(rank: number, z0: number, z1: number): number[] {
   return out;
 }
 
-/** The tone of the bed at height z, for planes of rank ≥ `rank`. */
-function toneAt(rank: number, z: number): number {
+/** The tone of the bed at height z, for planes of rank ≥ `rank` (the spires' bands read it too: one geology, D147). */
+export function toneAt(rank: number, z: number): number {
   let t = BED0;
   for (const b of BEDS) {
     if (b.z > z) break;
@@ -161,11 +161,16 @@ export const footKey = (f: Foot): string => {
 };
 
 /**
- * Which look a column takes (one of two), hashed from the world tile: the same for the sprites and
- * the far paint. (Three for a plateau's inner tiles cost a quarter more atlas for little: their
- * marks are few and kept off the tile's edges.)
+ * Which look a column takes, hashed from the world tile: the same for the sprites and the far
+ * paint. One of four for a column with a wall the camera sees (`walls`, `hasWall`: its erosion cuts
+ * differ from tile to tile along a cliff, so a long wall shows no rhythm, D147), one of two for the
+ * rest (a plateau's inner tiles: their marks are few and kept off the tile's edges; more cost atlas
+ * for little). The two are the first two of the four.
  */
-export const columnVariant = (x: number, y: number): number => hash32(x, y, 0x77) & 1;
+export const columnVariant = (x: number, y: number, walls = false): number => hash32(x, y, 0x77) & (walls ? 3 : 1);
+
+/** Does a column show a wall to the camera (a step dropping east or south: the walls the iso view sees)? */
+export const hasWall = (masks: readonly number[]): boolean => masks.some((m) => (m & (M_E | M_S)) !== 0);
 
 /** The seed of a column's marks and shape, from what its sprite's key holds: sprites and paint draw the same rim. */
 export const columnSeed = (cls: number, masks: readonly number[], variant: number): number =>
@@ -262,6 +267,94 @@ const OVERRUN = 0.014;
 /** A lip's irregularity: a small wander, and maybe a notch. */
 interface LipShape { readonly fa: number; readonly fb: number; readonly amp: number; readonly m: number; readonly ph: number; readonly notch: { g: number; w: number; d: number } | null }
 
+// ── erosion cuts (D147) ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * An erosion cut in a wall the camera sees (D147; owner, 2026-10-19: « make this mountain in the
+ * cirque more natural looking »: the cliffs ran straight along the tile grid, boxes not rock): a
+ * gully (`kind` 0: a V cut from the lip down, deepest at the top, its scree fanned out at its foot),
+ * a bay (1: a rounded recess the wall's whole height, the rock between two of them a buttress) or an
+ * alcove (2: an undercut at the foot, wind-scoured, the wall above overhanging it). `c` its middle
+ * and `w` its half-width along its line (tiles), `d` its depth (tiles, inwards). The wall only ever
+ * bites inwards, and never at a side's ends, where it meets the next tile's: what the rules read
+ * (the tile is rock) and what the next tile draws stay as they were.
+ */
+interface WallCut { readonly kind: 0 | 1 | 2; readonly c: number; readonly w: number; readonly d: number }
+
+/** How high an alcove reaches up its wall (levels). */
+const ALCOVE = 1.1;
+/** How far from a side's ends a cut keeps (tiles along its line): the rock between two tiles' cuts a buttress. */
+const CUT_END = 0.06;
+
+/**
+ * A column's cuts along one line it may have a wall the camera sees on (D147): 0 its east edge
+ * (u = 1), 1 its south edge (v = 1), 2 the south-east diagonal (u + v = 1, a diagonal front). From
+ * the column's seed only (the look's: the sprites and the far paint cut the same), the same for
+ * every step whose wall lies on that line — a wall running on up carries its cuts on; a step whose
+ * side is shorter (a chamfer ends it) keeps only the cuts lying whole on it, and overhangs the
+ * others. One or two a line: broad bays most often (the cliff's line wanders in and out, the rock
+ * left between them standing as buttresses), gullies, now and then an alcove at the foot.
+ */
+function cutsOn(seed: number, line: number): WallCut[] {
+  const out: WallCut[] = [];
+  const h = (m: number): number => hashUnit(seed, line * 31, 0xc07 + m);
+  const make = (r: number, a: number, b: number, salt: number): WallCut | null => {
+    const kind: 0 | 1 | 2 = r < 0.46 ? 1 : r < 0.84 ? 0 : 2;
+    const room = (b - a) / 2;
+    const want = kind === 1 ? 0.13 + h(salt + 1) * 0.22 : kind === 0 ? 0.07 + h(salt + 1) * 0.06 : 0.1 + h(salt + 1) * 0.1;
+    const w = Math.min(room, want);
+    if (w < 0.05) return null;
+    const c = a + w + h(salt + 2) * (b - a - 2 * w);
+    const d = kind === 1 ? 0.1 + h(salt + 3) * 0.17 : kind === 0 ? 0.16 + h(salt + 3) * 0.14 : 0.08 + h(salt + 3) * 0.08;
+    return { kind, c, w, d };
+  };
+  if (h(0) < 0.16) return out;
+  const first = make(h(1), CUT_END, 1 - CUT_END, 10);
+  if (!first) return out;
+  out.push(first);
+  // A second in the larger stretch left, now and then.
+  if (h(2) < 0.45) {
+    const lo = first.c - first.w - 0.03, hi = first.c + first.w + 0.03;
+    const [a, b] = lo - CUT_END > 1 - CUT_END - hi ? [CUT_END, lo] : [hi, 1 - CUT_END];
+    const second = b - a > 0.12 ? make(h(3), a, b, 20) : null;
+    if (second) out.push(second);
+  }
+  return out;
+}
+
+/** Which line (`cutsOn`) a side lies on, and its ends along it; null for any other side. */
+function lineOf(p: OutlinePt, q: OutlinePt): { line: number; pa: number; pb: number } | null {
+  const e = 1e-6;
+  if (Math.abs(p.u - 1) < e && Math.abs(q.u - 1) < e) return { line: 0, pa: p.v, pb: q.v };
+  if (Math.abs(p.v - 1) < e && Math.abs(q.v - 1) < e) return { line: 1, pa: p.u, pb: q.u };
+  if (Math.abs(p.u + p.v - 1) < e && Math.abs(q.u + q.v - 1) < e) return { line: 2, pa: p.u, pb: q.u };
+  return null;
+}
+
+/**
+ * How far a wall stands in from its side at fraction g along it, at height z (levels), its column
+ * `L` levels high (D147): its cuts' — a gully's V deepest at the lip and two fifths as deep at the
+ * foot, a bay's rounded recess a little deeper low down, an alcove's undercut fading up to
+ * `ALCOVE`. Nil off its cuts and at its ends.
+ */
+function cutDepth(sd: Side, g: number, z: number): number {
+  if (!sd.cuts.length) return 0;
+  const t = sd.pa + (sd.pb - sd.pa) * g;
+  let out = 0;
+  for (const c of sd.cuts) {
+    const x = Math.abs(t - c.c) / c.w;
+    if (x >= 1) continue;
+    const bell = 0.5 + 0.5 * Math.cos(Math.PI * x);
+    if (c.kind === 0) out += c.d * (1 - x) * (0.4 + 0.6 * clamp01(z / sd.L));
+    else if (c.kind === 1) out += c.d * bell * (0.8 + 0.2 * clamp01(1 - z / sd.L));
+    else out += c.d * bell * clamp01(1 - z / ALCOVE);
+  }
+  return out;
+}
+
+/** What `sidesOf` needs to cut a slab's walls (D147): the column's seed, its height, the slab's top. */
+interface CutSpec { readonly seed: number; readonly L: number; readonly z1: number }
+
 /** One side of a slab's outline, and what its painter needs to know. */
 interface Side {
   readonly p: OutlinePt;
@@ -286,6 +379,12 @@ interface Side {
   /** Fractions along it of its rim's samples, and the rim there (u, v). */
   fs: number[];
   rim: Array<readonly [number, number]>;
+  /** Its erosion cuts (D147, a wall the camera sees on one of `cutsOn`'s lines), its ends along that line, its column's height and its slab's top (levels). */
+  cuts: WallCut[];
+  pa: number;
+  pb: number;
+  L: number;
+  z1: number;
 }
 
 /** Fractions of p→q that run along a silhouette side of `other` (collinear with it). */
@@ -322,10 +421,10 @@ function bite(s: LipShape, g: number): number {
   return d;
 }
 
-/** The rim of a side at fraction f (tile-local u, v): bitten inwards along its lips. */
+/** The rim of a side at fraction f (tile-local u, v): bitten inwards along its lips, and by its cuts (D147). */
 function rimAt(s: Side, f: number): readonly [number, number] {
-  let d = 0;
-  for (const l of s.lips) if (f >= l.fa - 1e-6 && f <= l.fb + 1e-6) { d = bite(l, (f - l.fa) / (l.fb - l.fa || 1)); break; }
+  let d = cutDepth(s, f, s.z1);
+  for (const l of s.lips) if (f >= l.fa - 1e-6 && f <= l.fb + 1e-6) { d += bite(l, (f - l.fa) / (l.fb - l.fa || 1)); break; }
   return [s.p.u + (s.q.u - s.p.u) * f + s.iu * d, s.p.v + (s.q.v - s.p.v) * f + s.iv * d];
 }
 
@@ -337,26 +436,36 @@ const onLip = (s: Side, f: number): boolean => s.lips.some((l) => f >= l.fa - 1e
  * and its rim sampled every `step` tiles — bitten (`jitter`) and its corners rounded off where
  * both sides meeting there are lips. Nothing moves where a side meets the next tile's.
  */
-function sidesOf(pts: readonly OutlinePt[], below: readonly OutlinePt[] | null, above: readonly OutlinePt[] | null, rnd: (n: number) => number, step: number, jitter: boolean): Side[] {
+function sidesOf(pts: readonly OutlinePt[], below: readonly OutlinePt[] | null, above: readonly OutlinePt[] | null, rnd: (n: number) => number, step: number, jitter: boolean, cut: CutSpec | null = null): Side[] {
   const n = pts.length;
   const sides: Side[] = pts.map((p, i) => {
     const q = pts[(i + 1) % n]!;
     const du = q.u - p.u, dv = q.v - p.v, len = Math.hypot(du, dv) || 1e-9;
     const a = Math.atan2(-du, dv);
+    const vis = p.sil && facesCamera(a);
+    // Its erosion cuts (D147): a wall the camera sees on one of the cut lines, the cuts lying whole on it.
+    const ln = cut && vis ? lineOf(p, q) : null;
+    const lo = ln ? Math.min(ln.pa, ln.pb) : 0, hi = ln ? Math.max(ln.pa, ln.pb) : 0;
+    const cuts = ln ? cutsOn(cut!.seed, ln.line).filter((c) => c.c - c.w >= lo - 1e-6 && c.c + c.w <= hi + 1e-6) : [];
+    const gully = cuts.some((c) => c.kind === 0);
     const spans = !p.sil ? [] : above ? rest(along(p, q, above)) : [[0, 1] as [number, number]];
     const lips = spans.map(([fa, fb], j): LipShape => {
       const h = (k: number): number => rnd(2000 + i * 53 + j * 11 + k);
       const lenT = (fb - fa) * len;
       let notch: LipShape['notch'] = null;
-      if (jitter && lenT > 0.32 && h(3) < 0.55) {
-        const g = 0.3 + h(4) * 0.4, w = (0.06 + h(5) * 0.06) / lenT;
-        notch = { g, w: Math.min(w, g * 0.85, (1 - g) * 0.85), d: 0.06 + h(6) * 0.09 };
+      // A notch in the lip now and then (fewer where a gully already bites it).
+      if (jitter && lenT > 0.32 && h(3) < (gully ? 0.25 : 0.62)) {
+        const g = 0.3 + h(4) * 0.4, w = (0.06 + h(5) * 0.07) / lenT;
+        notch = { g, w: Math.min(w, g * 0.85, (1 - g) * 0.85), d: 0.07 + h(6) * 0.11 };
       }
-      return { fa, fb, amp: jitter ? 0.02 + h(0) * 0.025 : 0, m: 1 + Math.floor(h(1) * 3), ph: h(2) * 6.283, notch };
+      return { fa, fb, amp: jitter ? 0.025 + h(0) * 0.035 : 0, m: 1 + Math.floor(h(1) * 3), ph: h(2) * 6.283, notch };
     });
     const cov = below && p.sil ? along(p, q, below) : [];
     const flush = cov.length > 0 && rest(cov).length === 0;
-    return { p, q, len, a, sh: shadeOf(a), sil: p.sil, vis: p.sil && facesCamera(a), iu: -dv / len, iv: du / len, lips, flush, c0: 0, c1: 0, fs: [], rim: [] };
+    return {
+      p, q, len, a, sh: shadeOf(a), sil: p.sil, vis, iu: -dv / len, iv: du / len, lips, flush, c0: 0, c1: 0, fs: [], rim: [],
+      cuts, pa: ln?.pa ?? 0, pb: ln?.pb ?? 1, L: cut?.L ?? 1, z1: cut?.z1 ?? 0,
+    };
   });
   // Round off the corners between two lips (the outline is convex: every corner sticks out).
   if (jitter) {
@@ -378,6 +487,8 @@ function sidesOf(pts: readonly OutlinePt[], below: readonly OutlinePt[] | null, 
       fs.push(l.fa, l.fb);
       if (l.notch) for (const dg of [-1, -0.5, 0, 0.5, 1]) fs.push(l.fa + (l.notch.g + dg * l.notch.w) * (l.fb - l.fa));
     }
+    // A cut's shape at every detail (the far paint's coarse rim too): its edges, its middle, between.
+    for (const c of s.cuts) for (const dg of [-1, -0.6, -0.3, 0, 0.3, 0.6, 1]) fs.push((c.c + dg * c.w - s.pa) / (s.pb - s.pa));
     fs.sort((x, y) => x - y);
     s.fs = fs.filter((f, k) => f >= f0 - 1e-9 && f <= f1 + 1e-9 && (k === 0 || f - fs[k - 1]! > 1e-4));
     s.rim = s.fs.map((f) => rimAt(s, f));
@@ -408,11 +519,16 @@ function topOutline(sides: readonly Side[]): OutlinePt[] {
  */
 export function slabTop(masks: readonly number[], t: number, seed: number): OutlinePt[] {
   const rnd = (n: number): number => hashUnit(seed, n, 0x6f + t * 977);
-  return topOutline(sidesOf(slabOutline(masks, t), t > 0 ? slabOutline(masks, t - 1) : null, t + 1 < masks.length ? slabOutline(masks, t + 1) : null, rnd, 0.06, true));
+  const cut: CutSpec = { seed, L: masks.length * STEP_LEVELS, z1: (t + 1) * STEP_LEVELS };
+  return topOutline(sidesOf(slabOutline(masks, t), t > 0 ? slabOutline(masks, t - 1) : null, t + 1 < masks.length ? slabOutline(masks, t + 1) : null, rnd, 0.06, true, cut));
 }
 
-/** A point of a wall: its foot (straight, on the tile's outline) and its rim (bitten); which side it is on, and whether its top is a lip. */
-interface Station { fu: number; fv: number; ru: number; rv: number; s: number; lip: boolean }
+/**
+ * A point of a wall: its foot (on the tile's outline: `g` along its side) and its rim (bitten, and
+ * cut: D147); which side it is on, and whether its top is a lip. The wall between stands in from
+ * the foot by its cuts at each height (`cutDepth`).
+ */
+interface Station { fu: number; fv: number; ru: number; rv: number; s: number; lip: boolean; g: number }
 
 /** A run of camera-facing walls, its stations and, per side, the stations its wall spans (the corner between two sides goes with the later one). */
 interface Run { sts: Station[]; core: Station[]; spans: Array<{ s: number; from: number; to: number }>; openStart: boolean; openEnd: boolean }
@@ -438,7 +554,7 @@ function runsOf(sides: readonly Side[]): Run[] {
       const s = sides[i]!, last = s.fs.length - 1, from = core.length;
       s.fs.forEach((f, k) => {
         const g = k === 0 ? 0 : k === last ? 1 : f;
-        core.push({ fu: s.p.u + (s.q.u - s.p.u) * g, fv: s.p.v + (s.q.v - s.p.v) * g, ru: s.rim[k]![0], rv: s.rim[k]![1], s: i, lip: onLip(s, f) });
+        core.push({ fu: s.p.u + (s.q.u - s.p.u) * g, fv: s.p.v + (s.q.v - s.p.v) * g, ru: s.rim[k]![0], rv: s.rim[k]![1], s: i, lip: onLip(s, f), g });
       });
       bounds.push([i, from, core.length - 1]);
     }
@@ -473,16 +589,29 @@ function drawSlab(ctx: Ctx, P: Proj, cls: number, pts: readonly OutlinePt[], bel
   // A pool's top keeps its straight outline (its shore runs on into the next tile's); rock the
   // water only reaches keeps its rim.
   const jitter = !pool || pool.kind === 'rock';
-  const sides = sidesOf(pts, below, above, rnd, o.detail >= 2 ? 0.06 : o.detail === 1 ? 0.12 : 0.25, jitter);
+  // Erosion cuts in the walls the camera sees (D147), on plain rock: a column of water, or one with
+  // a quartz vein in its face (D87: the seam runs along the wall's plane), keeps its walls whole.
+  const cut: CutSpec | null = (!o.top || o.top.kind === 'rock') && !o.vein ? { seed: o.seed, L, z1 } : null;
+  const sides = sidesOf(pts, below, above, rnd, o.detail >= 2 ? 0.06 : o.detail === 1 ? 0.12 : 0.25, jitter, cut);
   const runs = runsOf(sides);
+  // A wall's point at height z: its foot, in by its cuts at that height, and near the top drawn in
+  // towards its rim's bite (the knee: a rounded lip).
   const at = (st: Station, z: number): Pt => {
-    if (z <= z1 - KNEE || (st.ru === st.fu && st.rv === st.fv)) return P(st.fu, st.fv, z);
+    const sd = sides[st.s]!, w = sd.cuts.length ? cutDepth(sd, st.g, z) : 0;
+    const bu = st.fu + sd.iu * w, bv = st.fv + sd.iv * w;
+    if (z <= z1 - KNEE) return P(bu, bv, z);
+    const wt = sd.cuts.length ? cutDepth(sd, st.g, z1) : 0;
+    const tu = st.ru - (st.fu + sd.iu * wt), tv = st.rv - (st.fv + sd.iv * wt);
+    if (Math.abs(tu) + Math.abs(tv) < 1e-9) return P(bu, bv, z);
     const e = clamp01((z - (z1 - KNEE)) / KNEE), s = e * e * (3 - 2 * e);
-    return P(st.fu + (st.ru - st.fu) * s, st.fv + (st.rv - st.fv) * s, z);
+    return P(bu + tu * s, bv + tv * s, z);
   };
 
   // ── walls ──
   for (const run of runs) wall(ctx, P, at, cls, sides, run, z0, z1, o, rnd);
+  // Scree at their feet (D147), on plain rock (a column of water keeps its walls bare: its falls).
+  const screed = !o.top || o.top.kind === 'rock';
+  if (screed) for (const run of runs) scree(ctx, P, at, cls, sides, run, z0, z1, o, rnd);
   if (o.vein && o.detail >= 1) for (const [r, run] of runs.entries()) veinCrystals(ctx, P, veinRun(sides, run), z0, z1, o, rnd, r);
 
   // ── top ──
@@ -503,6 +632,14 @@ function drawSlab(ctx: Ctx, P: Proj, cls: number, pts: readonly OutlinePt[], bel
     poly(ctx, topPts);
     ctx.clip();
     topMarks(ctx, P, cls, z1, o, rnd);
+    ctx.restore();
+  }
+  // A broken rim (D147): blocks cracked off the lip, about to fall.
+  if (o.detail >= 2 && jitter && (!pool || pool.kind === 'rock')) {
+    ctx.save();
+    poly(ctx, topPts);
+    ctx.clip();
+    rimBlocks(ctx, P, sides, z1, cls, o, rnd);
     ctx.restore();
   }
   // Water, reclaimed ground, or the water round it reaching this rock: its part of the body.
@@ -546,9 +683,10 @@ function drawSlab(ctx: Ctx, P: Proj, cls: number, pts: readonly OutlinePt[], bel
   }
   for (const run of runs) {
     if (z0 === 0) {
+      // The scree's toe on the floor (D147: lighter than the cliff's foot it was, the stones break it).
       const bottom = run.sts.map((st) => P(st.fu, st.fv, 0));
-      if (o.detail >= 2) ink(ctx, bottom, { w: 2.3 * k, seed: o.seed + 7, taper: 0.03, jitter: 0.25 });
-      else line(ctx, bottom, C.ink, 1.4 * k, 0.88);
+      if (o.detail >= 2) ink(ctx, bottom, { w: 1.8 * k, seed: o.seed + 7, taper: 0.03, jitter: 0.35 });
+      else line(ctx, bottom, C.ink, 1.25 * k, 0.8);
     } else {
       for (const sp of run.spans) {
         if (sides[sp.s]!.flush) continue;
@@ -566,6 +704,8 @@ function drawSlab(ctx: Ctx, P: Proj, cls: number, pts: readonly OutlinePt[], bel
       if (Math.abs(sides[st.s]!.a - sides[run.spans[j]!.s]!.a) > 0.1) line(ctx, [P(st.fu, st.fv, z0), at(st, z1 - KNEE), at(st, z1)], C.ink, 0.75 * k, 0.4);
     }
   }
+  // Fallen blocks along the scree's toe, over its ink (D147).
+  if (screed && o.detail >= 1) for (const run of runs) screeStones(ctx, P, cls, sides, run, z0, o, rnd);
   // A stream's fall lands at the foot of the wall it pours down (the wall's lowest slab there).
   if (o.top?.kind === 'river' && o.top.fall && o.detail >= 1) {
     for (const [i, sd] of sides.entries()) if (sd.vis && !sd.flush && fallsDown(sd, o.top)) splash(ctx, P, sides, i, z0, o, rnd);
@@ -616,14 +756,17 @@ function wall(ctx: Ctx, P: Proj, at: (st: Station, z: number) => Pt, cls: number
   const look = ROCK[cls]!, k = o.k, sts = run.sts;
   const rank = rankOf(cls, o.detail);
   const planes = bedsIn(rank, z0, z1);
-  // Each plane wanders a little along the wall — nil where a tile meets the next.
+  // Each plane waves along the wall, the beds pinching and swelling (D147: « strata that wave and
+  // pinch rather than run as even bands ») — never across its neighbours (less than half the gap to
+  // either), and nil where a tile meets the next.
   const wob = new Map<number, (u: number, v: number) => number>();
   const wobOf = (b: number): ((u: number, v: number) => number) => {
     let f = wob.get(b);
     if (!f) {
-      const amp = o.detail === 0 ? 0 : 0.025 + hashUnit(o.seed, b, 0xb0) * 0.035, m = 1 + (hash32(o.seed, b, 0xb1) & 1), ph = hashUnit(o.seed, b, 0xb2) * 6.283;
+      const gap = Math.min(BEDS[b]!.z - (BEDS[b - 1]?.z ?? 0), (BEDS[b + 1]?.z ?? BEDS[b]!.z + 1) - BEDS[b]!.z);
+      const amp = o.detail === 0 ? 0 : Math.min(0.13, 0.4 * gap) * (0.55 + hashUnit(o.seed, b, 0xb0) * 0.45), m = 1 + (hash32(o.seed, b, 0xb1) & 1), ph = hashUnit(o.seed, b, 0xb2) * 6.283;
       const g = (s: number): number => Math.sin(Math.PI * s) * Math.sin(2 * Math.PI * m * s + ph);
-      f = (u, v) => amp * (g(u) + g(v));
+      f = (u, v) => amp * Math.max(-1, Math.min(1, g(u) + g(v)));
       wob.set(b, f);
     }
     return f;
@@ -681,6 +824,8 @@ function wall(ctx: Ctx, P: Proj, at: (st: Station, z: number) => Pt, cls: number
     }
     flush();
     if (bed.rank === 2 && o.detail >= 1) {
+      // A hard bed stands out of the softer one under it (D147): the recess under it in shadow.
+      fillPoly(ctx, band(0, sts.length - 1, (st) => Math.max(z0, zOf(st, b) - 0.08), (st) => zOf(st, b)), rgba(C.ink, 0.09));
       for (const sp of run.spans) {
         if (sides[sp.s]!.sh > 0.5) continue;
         line(ctx, sts.slice(sp.from, sp.to + 1).map((st) => at(st, Math.min(z1, zOf(st, b) + 0.06))), look.rim, 0.9 * k, 0.45);
@@ -714,6 +859,7 @@ function wall(ctx: Ctx, P: Proj, at: (st: Station, z: number) => Pt, cls: number
     if (o.detail >= 1) gullies(ctx, P, at, cls, sides, run, z0, z1, o, rnd);
   }
   if (o.vein) veinSeam(ctx, P, veinRun(sides, run), z0, z1, o, rnd);
+  if (o.detail >= 1) cutShade(ctx, at, cls, sides, run, z0, z1, o);
   ctx.restore();
   // A fall's sheet over the wall, run a hair down over the slab below where the wall carries on
   // (that slab's sheet, drawn first: no seam across a tall fall where its slabs meet).
@@ -725,6 +871,140 @@ function wall(ctx: Ctx, P: Proj, at: (st: Station, z: number) => Pt, cls: number
     for (const sp of run.spans) if (fallsDown(sides[sp.s]!, o.top)) waterfall(ctx, at, sides, sp.s, z0, z1, o, rnd, down);
     ctx.restore();
   }
+}
+
+/** A point of a wall in the tile (u, v): side `sd`'s at fraction g, in by its cuts at height z. */
+const wallPt = (sd: Side, g: number, z: number): [number, number] => {
+  const w = cutDepth(sd, g, z);
+  return [sd.p.u + (sd.q.u - sd.p.u) * g + sd.iu * w, sd.p.v + (sd.q.v - sd.p.v) * g + sd.iv * w];
+};
+
+/**
+ * The cuts' light (D147), over the wall's beds: each flank of a gully or a bay shaded by the way it
+ * turns — the one turned from the light darker, the one turned to it paler — a gully's bed inked
+ * down its V; an alcove's hollow dark under the wall overhanging it, the overhang's lip inked.
+ */
+function cutShade(ctx: Ctx, at: (st: Station, z: number) => Pt, cls: number, sides: readonly Side[], run: Run, z0: number, z1: number, o: ColumnOpts): void {
+  const look = ROCK[cls]!, k = o.k;
+  const zs = [z0, (z0 + z1) / 2, Math.max(z0, z1 - KNEE), z1 - KNEE / 2, z1].filter((z, i, a) => i === 0 || z > a[i - 1]! + 1e-6);
+  for (const sp of run.spans) {
+    const s = sp.s, sd = sides[s]!;
+    if (!sd.cuts.length) continue;
+    const fOf = (t: number): number => (t - sd.pa) / (sd.pb - sd.pa);
+    const st = (g: number): Station => ({ ...stationAt(sides, s, g), g });
+    /** A stretch of the wall from fraction g0 to g1, z0 → z1 (or up to `top`). */
+    const patch = (g0: number, g1: number, top = z1): Pt[] => {
+      const n = 4, lo: Pt[] = [], hi: Pt[] = [], zz = zs.filter((z) => z < top - 1e-6).concat(top);
+      for (let i = 0; i <= n; i++) { const q = st(g0 + ((g1 - g0) * i) / n); lo.push(at(q, z0)); hi.push(at(q, top)); }
+      const right = zz.slice(1, -1).map((z) => at(st(g1), z)), left = zz.slice(1, -1).reverse().map((z) => at(st(g0), z));
+      return [...lo, ...right, ...hi.reverse(), ...left];
+    };
+    for (const c of sd.cuts) {
+      const fa = fOf(c.c - c.w), fm = fOf(c.c), fb = fOf(c.c + c.w), f0 = Math.min(fa, fb), f1 = Math.max(fa, fb);
+      const zm = c.kind === 2 ? z0 : (z0 + z1) / 2;
+      for (const [g0, g1] of [[f0, fm], [fm, f1]] as const) {
+        const A = wallPt(sd, g0, zm), B = wallPt(sd, g1, zm);
+        const diff = shadeOf(Math.atan2(-(B[0] - A[0]), B[1] - A[1])) - sd.sh;
+        if (Math.abs(diff) < 0.04) continue;
+        const top = c.kind === 2 ? Math.min(z1, ALCOVE) : z1;
+        if (top <= z0 + 1e-6) continue;
+        const soft = c.kind === 1 ? 0.6 : 1;
+        fillPoly(ctx, patch(g0, g1, top), diff > 0 ? rgba(C.ink, Math.min(0.34, diff * 0.5) * soft) : rgba(look.rim, Math.min(0.26, -diff * 0.4) * soft));
+      }
+      if (c.kind === 0) {
+        // The gully's bed: a dark line down the V, broken by a ledge or two.
+        const q = st(fm);
+        line(ctx, zs.map((z) => at(q, z)), mix(look.line, C.ink, 0.3), 0.9 * k, 0.5);
+      } else if (c.kind === 2 && z0 < ALCOVE) {
+        // The alcove: its hollow in shadow, the lip of the overhang over it.
+        const top = Math.min(z1, ALCOVE * 0.85);
+        fillPoly(ctx, patch(f0 + (f1 - f0) * 0.12, f1 - (f1 - f0) * 0.12, top), rgba(C.ink, 0.2));
+        const lip: Pt[] = [];
+        for (let i = 0; i <= 6; i++) { const g = f0 + ((f1 - f0) * i) / 6; lip.push(at(st(g), Math.min(z1, ALCOVE * (0.8 + 0.2 * Math.abs(i - 3) / 3)))); }
+        line(ctx, lip, look.line, 0.9 * k, 0.5);
+      }
+    }
+  }
+}
+
+/** How high the scree at a wall's foot reaches up it (levels): at the floor, and on a ledge. */
+const SCREE = 0.55, SCREE_LEDGE = 0.2;
+
+/**
+ * The height (levels) the scree reaches at a wall's station (D147): `base` (constant at a side's
+ * ends, so the scree runs on into the next tile's), wandering between, banked up into a fan under a
+ * gully and into an alcove's hollow.
+ */
+function screeTop(sd: Side, g: number, base: number, rnd: (n: number) => number, s: number): number {
+  const ends = clamp01((g * sd.len) / 0.1) * clamp01(((1 - g) * sd.len) / 0.1);
+  let h = base + 0.12 * Math.sin(Math.PI * g) * Math.sin(2 * Math.PI * (1 + Math.floor(rnd(9300 + s) * 2)) * g + rnd(9310 + s) * 6.28);
+  const t = sd.pa + (sd.pb - sd.pa) * g;
+  for (const c of sd.cuts) {
+    const x = Math.abs(t - c.c) / (c.w * 1.6);
+    if (x < 1) h += (c.kind === 0 ? 1.0 : c.kind === 2 ? 0.35 : 0.2) * (1 - x) * (1 - x) * ends;
+  }
+  return h;
+}
+
+/**
+ * Scree at the foot of a run of wall (D147; owner: « scree and talus fans at the feet »): a slope of
+ * fallen rock from the side's line on the ground (its toe) up the wall to `screeTop` — fanned out
+ * under each gully, into each alcove — in the pale of broken rock, gravel in it, its top a soft
+ * line. Where a cut takes the wall in, the scree covers the ground before it in the tile (the
+ * ground paint under a rock tile is the plan's map of its levels). At the floor, and on a ledge
+ * where a wall does not carry on the wall below.
+ */
+function scree(ctx: Ctx, P: Proj, at: (st: Station, z: number) => Pt, cls: number, sides: readonly Side[], run: Run, z0: number, z1: number, o: ColumnOpts, rnd: (n: number) => number): void {
+  const k = o.k, sts = run.sts;
+  for (const sp of run.spans) {
+    const sd = sides[sp.s]!;
+    if (z0 > 0 && sd.flush) continue;
+    const base = z0 === 0 ? SCREE : SCREE_LEDGE;
+    const sts1 = sts.slice(sp.from, sp.to + 1);
+    if (sts1.length < 2) continue;
+    const hOf = (st: Station): number => Math.min(z1 - 0.25, z0 + screeTop(sd, st.g, base, rnd, sp.s));
+    const toe = sts1.map((st) => P(st.fu, st.fv, z0)), top = sts1.map((st) => at(st, hOf(st)));
+    // Broken rock lying at its angle of rest looks up: paler than the wall over it, even in the shade.
+    const col = mix(topColor(cls, z0), wallColor(cls, sd.sh, z0), 0.14 + sd.sh * 0.18);
+    fillPoly(ctx, [...toe, ...top.slice().reverse()], col);
+    if (o.detail >= 1) {
+      // The scree's upper half in the wall's shade (a slope steepening into the wall), a soft
+      // shadow along its top on the wall, and its gravel.
+      const mid = sts1.map((st) => at(st, z0 + (hOf(st) - z0) * 0.55));
+      fillPoly(ctx, [...mid, ...top.slice().reverse()], rgba(mix(col, C.ink, 0.5), 0.22));
+      line(ctx, top, C.ink, 1.1 * k, 0.2);
+      ctx.fillStyle = rgba(ROCK[cls]!.line, 0.42);
+      const n = Math.round(sd.len * (o.detail >= 2 ? 26 : 9));
+      for (let i = 0; i < n; i++) {
+        const g = 0.03 + rnd(9400 + sp.s * 211 + i) * 0.94, q = { ...stationAt(sides, sp.s, g), g }, e = rnd(9500 + sp.s * 211 + i) ** 1.3;
+        const lo = P(q.fu, q.fv, z0), hi = at(q, hOf(q));
+        const x = lo[0] + (hi[0] - lo[0]) * e, y = lo[1] + (hi[1] - lo[1]) * e;
+        ctx.beginPath(); ctx.arc(x, y, (0.5 + rnd(9600 + sp.s * 211 + i) * 0.8) * k, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+}
+
+/** Fallen blocks along the scree's toe (D147: « fallen boulders »), over the foot's ink: the biggest few, kept off the side's ends (the next tile's are its own). */
+function screeStones(ctx: Ctx, P: Proj, cls: number, sides: readonly Side[], run: Run, z0: number, o: ColumnOpts, rnd: (n: number) => number): void {
+  const look = ROCK[cls]!, k = o.k;
+  const lit = mix(look.lit, '#ffffff', 0.16);
+  const blocks: Array<{ u: number; v: number; r: number; i: number; s: number; dark: string }> = [];
+  for (const sp of run.spans) {
+    const sd = sides[sp.s]!;
+    if (z0 > 0 && sd.flush) continue;
+    const n = Math.round(sd.len * (2.5 + rnd(9700 + sp.s) * 3.5) * (z0 === 0 ? 1 : 0.5));
+    for (let i = 0; i < n; i++) {
+      const h = (m: number): number => rnd(9710 + sp.s * 97 + i * 7 + m);
+      const g = 0.08 + h(0) * 0.84, r = 0.025 + h(1) ** 1.6 * 0.06;
+      // Against the wall's foot (in by its cuts there), out to the side's line at most.
+      const w = cutDepth(sd, g, z0), d = Math.max(r * 0.75, w * h(2));
+      blocks.push({ u: sd.p.u + (sd.q.u - sd.p.u) * g + sd.iu * d, v: sd.p.v + (sd.q.v - sd.p.v) * g + sd.iv * d, r, i, s: sp.s, dark: wallColor(cls, Math.min(1, sd.sh + 0.25), z0) });
+    }
+  }
+  // Back to front.
+  blocks.sort((a, b) => a.u + a.v - (b.u + b.v));
+  for (const b of blocks) stone(ctx, P, blob(b.u, b.v, b.r, 5, (m) => rnd(9900 + b.s * 131 + b.i * 9 + m)), z0, b.r * 1.5, lit, b.dark, k);
 }
 
 /** A stream's way as a tile-local unit vector. */
@@ -821,7 +1101,7 @@ function splash(ctx: Ctx, P: Proj, sides: readonly Side[], s: number, z0: number
 /** A wall's station at fraction f of side s (for the marks placed along a side). */
 function stationAt(sides: readonly Side[], s: number, f: number): Station {
   const sd = sides[s]!, [ru, rv] = rimAt(sd, f);
-  return { fu: sd.p.u + (sd.q.u - sd.p.u) * f, fv: sd.p.v + (sd.q.v - sd.p.v) * f, ru, rv, s, lip: onLip(sd, f) };
+  return { fu: sd.p.u + (sd.q.u - sd.p.u) * f, fv: sd.p.v + (sd.q.v - sd.p.v) * f, ru, rv, s, lip: onLip(sd, f), g: f };
 }
 
 /** Desert varnish: dark streaks (now and then a pale one) hanging from the lip down the face. */
@@ -988,7 +1268,7 @@ function gullies(ctx: Ctx, P: Proj, at: (st: Station, z: number) => Pt, cls: num
 // ── tops ────────────────────────────────────────────────────────────────────────────────────────
 
 /** An irregular blob round (u, v) of radius r (tiles), `n` points. */
-function blob(u: number, v: number, r: number, n: number, h: (m: number) => number): Array<[number, number]> {
+export function blob(u: number, v: number, r: number, n: number, h: (m: number) => number): Array<[number, number]> {
   const out: Array<[number, number]> = [];
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2 + h(i) * 0.4, rr = r * (0.72 + h(20 + i) * 0.5);
@@ -998,7 +1278,7 @@ function blob(u: number, v: number, r: number, n: number, h: (m: number) => numb
 }
 
 /** A stone standing on a top at height z (iso): its shaded body, its lit top `hb` levels up, inked. */
-function stone(ctx: Ctx, P: Proj, ring: ReadonlyArray<readonly [number, number]>, z: number, hb: number, lit: string, dark: string, k: number): void {
+export function stone(ctx: Ctx, P: Proj, ring: ReadonlyArray<readonly [number, number]>, z: number, hb: number, lit: string, dark: string, k: number): void {
   const base = ring.map(([u, v]) => P(u, v, z)), top = ring.map(([u, v]) => P(u, v, z + hb));
   ctx.fillStyle = dark;
   ctx.beginPath();
@@ -1107,6 +1387,41 @@ function topMarks(ctx: Ctx, P: Proj, cls: number, z: number, o: ColumnOpts, rnd:
       const [x, y] = P(0.3 + rnd(531) * 0.4, 0.3 + rnd(532) * 0.4, z);
       ctx.fillStyle = C.led;
       ctx.beginPath(); ctx.arc(x, y, 1.6 * k, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+}
+
+/**
+ * A broken rim (D147; owner: « a broken rim on the tops »): along a lip now and then, a block
+ * cracked off the edge — a crack running with the rim a little in from it, a short one or two out
+ * to the edge, the block's face a shade apart — kept off the side's ends (the next tile's rim is its
+ * own). Clipped to the top by the caller.
+ */
+function rimBlocks(ctx: Ctx, P: Proj, sides: readonly Side[], z: number, cls: number, o: ColumnOpts, rnd: (n: number) => number): void {
+  const look = ROCK[cls]!, k = o.k;
+  for (const [s, sd] of sides.entries()) {
+    if (!sd.sil || sd.len < 0.35) continue;
+    for (const [j, l] of sd.lips.entries()) {
+      const h = (m: number): number => rnd(9950 + s * 61 + j * 13 + m);
+      const lenT = (l.fb - l.fa) * sd.len;
+      if (lenT < 0.35 || h(0) > 0.55) continue;
+      const span = Math.min(0.45, (0.18 + h(1) * 0.25) / lenT), fa = l.fa + (l.fb - l.fa) * (0.1 + h(2) * (0.8 - span)), fb = fa + (l.fb - l.fa) * span;
+      const d = 0.06 + h(3) * 0.06, n = 6;
+      const crack: Pt[] = [], edge: Pt[] = [];
+      for (let i = 0; i <= n; i++) {
+        const f = fa + ((fb - fa) * i) / n, [ru, rv] = rimAt(sd, f), dd = d * (0.75 + 0.5 * h(10 + i)) * Math.min(1, Math.sin((Math.PI * i) / n) * 2.2);
+        crack.push(P(ru + sd.iu * dd, rv + sd.iv * dd, z));
+        edge.push(P(ru, rv, z));
+      }
+      // The block: its top a touch paler on a lit side, darker on a shaded one.
+      fillPoly(ctx, [...crack, ...edge.reverse()], sd.sh < 0.5 ? rgba(look.rim, 0.28) : rgba(look.line, 0.12));
+      line(ctx, crack, look.line, 0.85 * k, 0.6);
+      // A crack or two out to the edge: the block breaking up.
+      for (let c = 0; c < 1 + (h(20) < 0.5 ? 1 : 0); c++) {
+        const i = 2 + Math.floor(h(21 + c) * (n - 3));
+        const f = fa + ((fb - fa) * i) / n, [ru, rv] = rimAt(sd, f);
+        line(ctx, [crack[i]!, P(ru + sd.iu * 0.01, rv + sd.iv * 0.01, z)], look.line, 0.7 * k, 0.5);
+      }
     }
   }
 }

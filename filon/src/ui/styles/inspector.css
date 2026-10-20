@@ -63,6 +63,23 @@
 .kbuf-cap { display: block; margin: 4px 0 1px; font-size: 10.5px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--c-ink-soft); }
 .kbuf-cap:first-of-type { margin-top: 0; }
 .kbuf-held { flex: none; min-width: 4.6em; text-align: right; font-size: 11px; color: var(--c-ink-soft); white-space: nowrap; }
+/* A tee's ways (D152, inspector/logistics.ts `teePanel`): the way, what it feeds, its share. */
+.ktee-way { flex: none; display: inline-flex; align-items: baseline; gap: 4px; min-width: 6.4em; font-size: 12px; }
+.ktee-arrow { font-weight: 700; color: var(--c-turq-d); }
+/* A pressure gauge (D155, inspector/logistics.ts `gaugeHero`, `gaugePanel`): its dial and state; the pumps' and drinkers' rows; what to add. */
+.kgauge { display: flex; align-items: center; gap: 12px; }
+.kgauge-dial { flex: none; width: 84px; height: 84px; }
+.kgauge-word { font-size: 16px; letter-spacing: 0.02em; }
+.kgauge-who-slot, .kgauge-who { display: inline-flex; flex: none; gap: 2px; min-width: 60px; }
+.kgauge-fix { flex-wrap: wrap; gap: 10px; }
+.kgauge-fix-lead { font-weight: 700; color: var(--c-ink-soft); }
+.kgauge-add { display: inline-flex; align-items: center; gap: 3px; font-size: 13px; }
+.kgauge-add canvas { width: 22px; height: 22px; }
+.kgauge-add[data-locked] { opacity: 0.55; }
+.kgauge-add .kmark { width: 1.1em; height: 1.1em; }
+/* A junction's deck end from before D158: the deck's mark, the building it comes down on, the words. */
+.kjunction-old { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.kjunction-old canvas { display: block; flex: none; }
 
 /* ── rows, notes, lists ─────────────────────────────────────────────────── */
 .inspector h4 { margin: 10px 0 4px; font-size: 15px; }

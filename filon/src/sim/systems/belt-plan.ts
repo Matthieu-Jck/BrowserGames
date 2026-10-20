@@ -28,7 +28,11 @@
 //    ribbon off the claim's free land costs nothing even at the remote rate, so it stays plain.
 // 4. One budget in path order: a long drag runs out of materials (`unaffordable`) exactly where
 //    laying it tile by tile would.
-// Conduits get 1, 2 and 4 only: no junction, lift or bridge carries fluids. Fences (D103) are laid the
+// Conduits get 1, 2 and 4 only: no junction, lift or bridge carries fluids; a pressure gauge (D155) the
+// drag runs through along its way is kept, as a routing block is (a click with a conduit takes it out). A conduit drag that starts
+// on a conduit and leaves it by its side keeps that tile as it is — the new line draws water off it
+// there, a tee (D152, compile.ts `tees`) — and one that ends on a conduit's side keeps it too, the two
+// waters joining; only on a conduit with a way on (one that ends there turns, as before). Fences (D103) are laid the
 // same way, a fence on each free tile of the drag (one already there is kept, whatever its way).
 import { BUILDING_IDS, BUILDING_KIND, buildingDef, buildingIdx } from '@/content/registry';
 import { DX, DY, type Rot } from '../types';
@@ -53,6 +57,8 @@ export interface BeltStep extends PlaceCheck {
   skip: boolean;
   /** Leapt by one of the drag's bridge pairs (D73): left as it is. */
   leapt?: boolean;
+  /** A conduit the drag starts on and leaves by its side (`split`: the new line draws off it) or ends on from its side (`join`), kept as it is (D152). */
+  tee?: 'split' | 'join';
 }
 
 export type BeltPath = ReadonlyArray<readonly [number, number, Rot]>;
@@ -91,8 +97,12 @@ export function planBelts(sim: Sim, defId: string, path: BeltPath): BeltStep[] {
       const k = BUILDING_KIND[o.def];
       const keep = o.def === def
         ? o.rot === rot || b.kind === 'fence' // a fence has no way: one already there is kept (D103)
-        : n > 1 && b.replaceGroup !== undefined && buildingDef(o.def).replaceGroup === b.replaceGroup && k !== 'belt' && k !== 'conduit';
+        : n > 1 && b.replaceGroup !== undefined && buildingDef(o.def).replaceGroup === b.replaceGroup && ((k !== 'belt' && k !== 'conduit') || (!!buildingDef(o.def).gauge && o.rot === rot)); // a pressure gauge on the line (D155) stays
       if (keep) return kept(x, y, rot, BUILDING_IDS[o.def]!);
+      // Off a pipe's side, or into it (D152): the pipe stays as it runs, a tee or a join.
+      if (b.kind === 'conduit' && k === 'conduit' && n > 1 && (i === 0 || i === n - 1) && ((o.rot - rot) & 1) === 1 && goesOn(sim, x, y)) {
+        return { ...kept(x, y, o.rot, BUILDING_IDS[o.def]!), tee: i === 0 ? 'split' : 'join' };
+      }
       if (items && k === 'belt' && ((o.rot - rot) & 1) === 1 && learnt(sim, JUNCTION) && throughAt(path, i)) what = JUNCTION;
     }
     // A step (D77): the traction ribbon takes it, once learnt. One already there, the same way, is
@@ -162,6 +172,13 @@ export function landReason(sim: Sim, x: number, y: number): PlaceReason | null {
 }
 
 const isJunction = (st: BeltStep): boolean => !st.skip && buildingIdx(st.def) === JUNCTION;
+
+/** Does the conduit on (x, y) hand its water on — to the tile ahead, a port, a branch — rather than end there (D152)? */
+function goesOn(sim: Sim, x: number, y: number): boolean {
+  sim.ensureCompiled();
+  const t = tileIndex(x, y), c = sim.graph.chainByTile.get(t);
+  return !!c && (c.lastTile !== t || c.outE.length > 0);
+}
 const leapable = (st: BeltStep): boolean => !st.skip && !st.ok && LEAPABLE.has(st.reason);
 
 /** Does a drag run straight through path tile i: in line with the tiles before and after it? */

@@ -20,6 +20,10 @@
 //
 // Conduits (fluids) still flow continuously: a FIFO of parcels ("runs": an item, a quantity and
 // the window of ticks in which it reaches the head), only the head run leaving, up to `thrMu` a tick.
+// A conduit whose head is a tee (D152: compile's `tees`, a line drawing water off its side) has
+// several ways out: what leaves the head is shared among them evenly, a full way's share going to
+// the others (node.ts `shareFluid`, turned by `now % n`), and counted per way (`shared`, the
+// inspector's bars; the views' only, never hashed).
 //
 // The Gleaners (D103, D112: they come in groups): a ribbon's exposed cells (`gleanCells`: its tiles
 // beside open desert floor, sim/world/reach.ts) may be raided once every `GLEAN_WINDOW` ticks on the
@@ -43,7 +47,7 @@ import { N_ITEMS, itemDef, itemIdx } from '@/content/registry';
 import { hash32, type StateHasher } from '@/core/hash';
 import { ceilDiv } from '@/core/fixed';
 import { MU, WORLD } from '../constants';
-import { FNode, type TickCtx } from './node';
+import { FNode, shareFluid, type TickCtx } from './node';
 import type { Rot } from '../types';
 
 export interface Run { item: number; mu: number; from: number; to: number }
@@ -184,6 +188,7 @@ export const tileUnder = (t: number): number => t % SPAN_TILE;
 export const VIA_BEHIND = -2, VIA_NONE = -1;
 
 const NO_CELLS = new Int32Array(0);
+const NO_SHARE = new Float64Array(0);
 
 export class Chain extends FNode {
   readonly kind = 'chain' as const;
@@ -223,6 +228,8 @@ export class Chain extends FNode {
   raidHeld = 0;
 
   // ── fluids ───────────────────────────────────────────────────────────────
+  /** A tee's head (D152): milli-items each way out took (by `outE` index), since this graph; the views' only (never hashed or saved). */
+  shared: Float64Array = NO_SHARE;
   runs: Run[] = [];
   head = 0;
   readonly transit: number;
@@ -352,8 +359,10 @@ export class Chain extends FNode {
     }
   }
 
-  /** A whole item leaves all at once or not at all; a conduit's water as it fits. */
+  /** A whole item leaves all at once or not at all; a conduit's water as it fits — a tee's shared among its ways (D152). */
   override split(ctx: TickCtx): void {
+    const n = this.outE.length;
+    if (this.fluid && n > 1) { shareFluid(this.outE, ctx.now % n, ctx.offMu[this.outE[0]!]!, ctx.acc, ctx.q); return; }
     for (const e of this.outE) {
       const off = ctx.offMu[e]!, acc = ctx.acc[e]!;
       ctx.q[e] = this.fluid ? Math.min(off, acc) : off >= MU && acc >= MU ? MU : 0;
@@ -361,7 +370,16 @@ export class Chain extends FNode {
   }
 
   override take(_port: number, item: number, mu: number, ctx: TickCtx): void {
-    if (this.fluid) { this.takeFluid(mu, ctx); return; }
+    if (this.fluid) {
+      // A tee's water by way (D152), for the inspector: what each of its ways took, cumulative.
+      if (this.outE.length > 1 && ctx.edge !== undefined) {
+        if (this.shared.length !== this.outE.length) this.shared = new Float64Array(this.outE.length);
+        const k = this.outE.indexOf(ctx.edge);
+        if (k >= 0) this.shared[k] = this.shared[k]! + mu;
+      }
+      this.takeFluid(mu, ctx);
+      return;
+    }
     const L = this.cells.length;
     this.cells[L - 1] = 0;
     this.content -= mu;

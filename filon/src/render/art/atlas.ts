@@ -11,7 +11,8 @@
 // conduit in iso is a raised pipe (D145, recipes/pipes.ts): every piece a conduit tile can show —
 // each straight and elbow with its ends full or stopped at a stub's mouth, a straight's joint and
 // sight-glass, the tee branches — is a 1 × 1 iso frame (`pipeKey`, `pipeBranchKey`); its plan
-// pieces stay ribbon pieces (a tube), with a flanged joint's variant (`CONDUIT_JOINT_KEY`).
+// pieces stay ribbon pieces (a tube), with a flanged joint's variant (`CONDUIT_JOINT_KEY`); a tee's
+// sharing valve (D152) is one more frame each way (`PIPE_VALVE_KEY`, `CONDUIT_VALVE_KEY`).
 import { CanvasSource, Rectangle, Texture } from 'pixi.js';
 import { BUILDING_IDS, ITEM_IDS, buildingDef, buildingIdx, isBeltDef } from '@/content/registry';
 import type { BuildingId } from '@/content/buildings';
@@ -22,8 +23,9 @@ import { artLevels, drawBuilding, drawBuildingMoving, needsRotations } from './r
 import { drawBuildingTop, drawBuildingTopMoving, needsRotationsTop, TOP_MARGIN, TOP_PX } from './recipes/buildings-top';
 import { MOVING } from './recipes/moving';
 import { drawItem, GLYPH } from './recipes/items';
-import { BELT_PX, BELT_TIERS, drawCamoVent, drawConduitJoint, drawCorner, drawDeck, drawInlet, drawStraight, type BeltTier } from './recipes/belts';
-import { PIPE_BRANCHES, PIPE_PIECES, drawPipe, drawPipeBranch, pipeFrame, type PipeMark } from './recipes/pipes';
+import { BELT_PX, BELT_TIERS, drawCamoVent, drawConduitGauge, drawConduitJoint, drawConduitValve, drawCorner, drawDeck, drawInlet, drawStraight, type BeltTier } from './recipes/belts';
+import { GAUGE, PIPE_BRANCHES, PIPE_PIECES, PRESSURE_COL, drawGaugeNeedle, drawPipe, drawPipeBranch, drawPipeGauge, drawPipeValve, gaugeFrame, pipeFrame, valveFrame, type PipeMark } from './recipes/pipes';
+import type { PressureState } from '@/sim/readouts/pressure';
 import { C } from './tokens';
 import { drawCoupling, wetAlternatives } from './pipe-ports';
 import { drawIcon, ICON, ICON_IDS } from './recipes/icons';
@@ -93,6 +95,15 @@ export const pipeKey = (arms: string, mark: PipeMark = ''): string => `pipe:${ar
 export const pipeBranchKey = (side: number, full: boolean): string => `pipe:b${side}${full ? 1 : 2}`;
 /** The conduit's plan straight with a flanged joint (D145). */
 export const CONDUIT_JOINT_KEY = 'belt:conduit:joint';
+/** A tee's sharing valve (D152): over its pieces in iso (`PIPE_VALVE_KEY`), its handwheel from above in plan (`CONDUIT_VALVE_KEY`). */
+export const PIPE_VALVE_KEY = 'pipe:valve';
+export const CONDUIT_VALVE_KEY = 'belt:conduit:valve';
+/** A pressure gauge (D155): its stem and dial in iso (`PIPE_GAUGE_KEY`), its dial in plan (`CONDUIT_GAUGE_KEY`), its needle by state (both views: the view turns it). */
+export const PIPE_GAUGE_KEY = 'pipe:gauge';
+export const CONDUIT_GAUGE_KEY = 'belt:conduit:gauge';
+export const gaugeNeedleKey = (state: PressureState): string => `pipe:needle:${state}`;
+/** The needle frames' side (bake px; its pivot at the middle). */
+export const NEEDLE_PX = Math.ceil(GAUGE.R * 2.2);
 /** The body alone of a building sprite (`bKey` / `btKey`) whose moving part is drawn apart. */
 export const bodyKey = (key: string): string => `${key}/body`;
 /** Phase k of the moving part of a building sprite (`bKey` / `btKey`), anchored like the sprite. */
@@ -263,6 +274,31 @@ export function bakeAtlas(): Atlas {
     const f = pipeFrame(), { canvas, ctx } = canvasOf(f.W, f.H);
     drawPipeBranch(ctx, f, side, full);
     pieces.push({ key: pipeBranchKey(side, full), canvas, ox: f.ox, oy: f.oy, k: 0.5 });
+  }
+  {
+    const f = valveFrame(), { canvas, ctx } = canvasOf(f.W, f.H);
+    drawPipeValve(ctx, f);
+    pieces.push({ key: PIPE_VALVE_KEY, canvas, ox: f.ox, oy: f.oy, k: 0.5 });
+  }
+  {
+    const { canvas, ctx } = canvasOf(BELT_PX, BELT_PX);
+    drawConduitValve(ctx, 17);
+    pieces.push({ key: CONDUIT_VALVE_KEY, canvas, ox: BELT_PX / 2, oy: BELT_PX / 2, k: 1 / BELT_PX });
+  }
+  {
+    const f = gaugeFrame(), { canvas, ctx } = canvasOf(f.W, f.H);
+    drawPipeGauge(ctx, f);
+    pieces.push({ key: PIPE_GAUGE_KEY, canvas, ox: f.ox, oy: f.oy, k: 0.5 });
+  }
+  {
+    const { canvas, ctx } = canvasOf(BELT_PX, BELT_PX);
+    drawConduitGauge(ctx, 19);
+    pieces.push({ key: CONDUIT_GAUGE_KEY, canvas, ox: BELT_PX / 2, oy: BELT_PX / 2, k: 1 / BELT_PX });
+  }
+  for (const state of Object.keys(PRESSURE_COL) as PressureState[]) {
+    const { canvas, ctx } = canvasOf(NEEDLE_PX, NEEDLE_PX);
+    drawGaugeNeedle(ctx, NEEDLE_PX / 2, NEEDLE_PX / 2, GAUGE.R, PRESSURE_COL[state]);
+    pieces.push({ key: gaugeNeedleKey(state), canvas, ox: NEEDLE_PX / 2, oy: NEEDLE_PX / 2, k: 0.5 });
   }
   for (const id of ICON_IDS) {
     const { canvas, ctx } = canvasOf(ICON, ICON);

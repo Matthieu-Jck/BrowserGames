@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { BAL } from '@/content/balance';
 import { buildingIdx, itemIdx } from '@/content/registry';
+import { QUESTS } from '@/content/quests';
 import { PLAN_IDS } from '@/content/research';
 import { MAP_VERSION, WORLD_SEED } from '@/content/world';
 import { CENTER, WORLD_EPOCH0 } from './constants';
@@ -94,7 +95,7 @@ describe('the quartz vein (map 3, D87)', () => {
     }
   });
 
-  it('its parcel costs what a first purchase can pay', () => {
+  it('its parcel costs what a first purchase can pay: the research lab’s reward alone pays it (D161: 700 ◉)', () => {
     const prices: number[] = [];
     for (const seed of SEEDS.slice(0, 12)) {
       const sim = landSim(seed);
@@ -102,7 +103,7 @@ describe('the quartz vein (map 3, D87)', () => {
       prices.push(sim.landPrice(parcelAt(V.x, V.y)));
     }
     if (process.env.VEIN_REPORT) console.log('vein parcel prices (◉):', prices.map((c) => Math.round(c / 100)).join(' '));
-    for (const c of prices) expect(c).toBeLessThan(60_000);
+    for (const c of prices) expect(c).toBeLessThanOrEqual(QUESTS.field_journal.reward.credits! * 100);
   });
 });
 

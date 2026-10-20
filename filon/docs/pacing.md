@@ -282,3 +282,15 @@ After D146, the tutorial's factory alone (a player who expands earns more):
    - The hint's sorter spot can be a bend, where no sorter takes the line in.
    - Options: let a sorter laid over a bend take its line in from the side it comes from, or have the hint ask for « le dernier ruban droit ».
 7. **The Core's surplus** (2 000–3 000 each of ore, quartz and sand by hour 3): auto-sell is Tier 2. A first quest or delivery order that sells it would show the player its value.
+
+## Re-run after D161 (land 30 % dearer, Far Claim in Tier 1)
+
+The hints player, lands 1–3. The bot leaves Far Claim until Tier 2 opens (its base buys no far parcel), so the milestones are D146's to the minute (the quartz quest 39–40, the Synthesis 139–148, Tier 2 open 161–170) and every night holds at 1 000 ‰. Taken in Tier 1's idle lab minutes instead, it shifted the research by 4 minutes and moved the steam boiler's coal shortfall (its own drill, short by day already) into night 3 on land 2: 575 ‰ for 12 s.
+
+| Hour 1, lands 1 / 2 / 3 | Before | After |
+|---|---|---|
+| The vein's parcel | 502 / 503 / 500 ◉ | 649 / 654 / 645 ◉ |
+| Rewards | 1 150 ◉ | 1 250 ◉ (the lab's 700) |
+| Purse at the hour's end | 1 812 / 1 834 / 1 933 ◉ | 1 765 / 1 783 / 1 892 ◉ |
+
+Sales do not move (hour 2: 1 679–1 817 ◉); the purse never goes below zero and never waits on money.

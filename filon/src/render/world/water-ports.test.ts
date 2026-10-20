@@ -69,12 +69,12 @@ describe('water ports in the world (D142)', () => {
     const pipe = (sim: Sim, x: number, y: number) => { const e = ent(sim, x, y), p = beltPiece(sim, e); return pipeOf(sim, e, p.corner, p.rot); };
     const { sim } = base([[520, 507, 3], [519, 507, 3], [518, 507, 0]], 0);
     // N E S W: out of the pump (its east end at the outlet's mouth) on to the next tile (west).
-    expect(pipe(sim, 520, 507)).toEqual({ arms: '0201', mark: '', branches: [] });
+    expect(pipe(sim, 520, 507)).toMatchObject({ arms: '0201', mark: '', branches: [] });
     // A plain length: on to both edges; 519 is a multiple of JOINT_EVERY along x — a joint.
     expect(519 % JOINT_EVERY).toBe(0);
-    expect(pipe(sim, 519, 507)).toEqual({ arms: '0101', mark: 'j', branches: [] });
+    expect(pipe(sim, 519, 507)).toMatchObject({ arms: '0101', mark: 'j', branches: [] });
     // The bend into the boiler: in from the east edge, out north at the intake's mouth.
-    expect(pipe(sim, 518, 507)).toEqual({ arms: '2100', mark: '', branches: [] });
+    expect(pipe(sim, 518, 507)).toMatchObject({ arms: '2100', mark: '', branches: [], valve: false });
     // A line that ends on nothing: its last end stops at the mouth, capped.
     const open = base([[520, 507, 3], [519, 507, 3]]);
     expect(pipe(open.sim, 519, 507).arms).toBe('0102');
@@ -85,6 +85,30 @@ describe('water ports in the world (D142)', () => {
     const t = pipe(tee.sim, 519, 507);
     expect(t.branches).toEqual([{ side: 2, full: true }]);
     expect(t.mark).toBe(''); // no mark on a tee
+    expect(t.valve).toBe(false); // two waters joining: no sharing valve
+    expect(t.plan.inlets).toEqual([{ rot: 3, mirror: false }]); // the plan's inlet on its left (moving west: south)
+  });
+
+  it('a tee that shares its water (D152): a branch out of each side it hands water out of, its valve; a bend with a branch is a straight on to the branch', () => {
+    const pipe = (sim: Sim, x: number, y: number) => { const e = ent(sim, x, y), p = beltPiece(sim, e); return pipeOf(sim, e, p.corner, p.rot, false, p.mirror); };
+    // The main line west from the pump into the boiler; a branch drawn south off (519, 507).
+    const { sim } = base([[520, 507, 3], [519, 507, 3], [518, 507, 0]]);
+    expect(sim.placeBelts('conduit', [[519, 507, 2], [519, 508, 2], [519, 509, 2]])).toBe(2); // the tee kept as it runs
+    sim.ensureCompiled();
+    const t = pipe(sim, 519, 507);
+    expect(t).toMatchObject({ arms: '0101', mark: '', branches: [{ side: 2, full: true }], valve: true });
+    expect(t.plan).toEqual({ corner: false, rot: 3, mirror: false, inlets: [{ rot: 3, mirror: false }] });
+    // The branch's first tile: fed from its north edge, a plain straight on south.
+    expect(pipe(sim, 519, 508)).toMatchObject({ arms: '1010', branches: [], valve: false });
+    // The bend into the boiler (in from the east, out north), a branch drawn west off its outer side:
+    // a straight from its feeder (east) on to the branch (west), its way on (north) a branch.
+    expect(sim.placeBelts('conduit', [[518, 507, 3], [517, 507, 3]])).toBe(1); // (518, 507) kept: it hands on into the boiler
+    sim.ensureCompiled();
+    const b = pipe(sim, 518, 507);
+    expect(b.arms).toBe('0101'); // in from the east edge, on to the west edge (the branch's tube)
+    expect(b.branches).toEqual([{ side: 0, full: false }]); // its way on, north, to the intake's mouth
+    expect(b.valve).toBe(true);
+    expect(b.plan).toMatchObject({ corner: false, rot: 3, inlets: [{ rot: 3, mirror: true }] });
   });
 });
 

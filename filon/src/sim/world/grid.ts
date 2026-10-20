@@ -73,7 +73,8 @@ export const MOUNTAIN_LEVEL = 5;
 /**
  * The highest level of the land: the mountains', or a level over them on map 4's spring summit
  * (D115; owner, 2026-10-17: « the bigger moutain needs to be a little plateau, and at least 6 in
- * height »).
+ * height »). Map 6's rock spires (D147) stand higher, needles a tile at the foot (content
+ * `SPIRES.levels`): the one land above it, laid over the land after it settles, never settled.
  */
 export const MAX_LEVEL = 6;
 

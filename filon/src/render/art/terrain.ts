@@ -29,14 +29,28 @@ import { BORDER, WIN, fillPolys, march, strokeSegs, type ChunkArrays, type Ctx2,
 import { exitOf, FLOW_DX, FLOW_DY, paintChasms, paintWater, wayOf, wayTo } from './gaps';
 import { paintDeposits } from './ore';
 import { reaches } from './water-top';
-import { columnSeed, columnShadow, columnVariant, crystal, drawColumn, QZ, ROCK, SAND_POCKET, topColor, type Foot, type Proj, type TopLook } from './rock';
-import { isRiverT, isRockT, isWaterT, levelOf, maskAt, masksAt, MAX_TERRACE, SHIFT, slabOutline, SMOOTH, STEP_LEVELS, type OutlinePt } from '../relief';
+import { columnSeed, columnShadow, columnVariant, crystal, drawColumn, hasWall, QZ, ROCK, SAND_POCKET, topColor, type Foot, type Proj, type TopLook } from './rock';
+import { drawSpire, SPIRE_BIOME, spirePlan, spireSeed, spireShadow, spireVariant } from './spire';
+import { isRiverT, isRockT, isWaterT, levelOf, maskAt, masksAt, MAX_TERRACE, PEAK_LEVEL, SHIFT, slabOutline, SMOOTH, STEP_LEVELS, type OutlinePt } from '../relief';
 
 export { BORDER, WIN } from './paint-kit';
 export type { ChunkArrays, PaintData } from './paint-kit';
 export { RIVER_BIOME } from './gaps';
 
-/** Cut the paint window of chunk (cx, cy): the chunk plus BORDER tiles all round. */
+/**
+ * How far past a chunk a rock spire (map 6, D147) may stand and still reach into it (tiles): its top
+ * leans back `PEAK_LEVEL · SHIFT` tiles in the oblique paint, and its shadow falls as far (the
+ * sun's step a level is at most `SHADOW_REACH / MAX_LEVEL`, half a tile).
+ */
+export const SPIRE_REACH = Math.ceil(PEAK_LEVEL * SHIFT) + 1;
+
+/** Is window tile o a rock spire (D147: its biome's mark, on rock — dug, it is floor)? */
+export const spireTile = (d: PaintData, o: number): boolean => d.biome[o] === SPIRE_BIOME && isRockT(d.terrain[o]!);
+
+/**
+ * Cut the paint window of chunk (cx, cy): the chunk plus BORDER tiles all round, and the spires
+ * (D147) in it and `SPIRE_REACH` tiles round the chunk (`PaintData.spires`).
+ */
 export function buildWindow(chunkAt: (cx: number, cy: number) => ChunkArrays, cx: number, cy: number, worldTiles: number): PaintData {
   const n = WIN * WIN;
   const d: PaintData = {
@@ -58,6 +72,16 @@ export function buildWindow(chunkAt: (cx: number, cy: number) => ChunkArrays, cx
       d.level[o] = c.level[k]!;
     }
   }
+  // The spires whose top or shadow may reach the chunk (D147).
+  const sp: number[] = [], R = SPIRE_REACH, ox = cx * 32 - BORDER, oy = cy * 32 - BORDER;
+  for (let y = Math.max(0, cy * 32 - R); y < Math.min(worldTiles, cy * 32 + 32 + R); y++) {
+    for (let x = Math.max(0, cx * 32 - R); x < Math.min(worldTiles, cx * 32 + 32 + R); x++) {
+      const c = chunkAt(x >> 5, y >> 5), k = (y & 31) * 32 + (x & 31);
+      if (c.biome[k] !== SPIRE_BIOME || !isRockT(c.terrain[k]!)) continue;
+      sp.push(x - ox, y - oy, levelOf(c.terrain[k]!, c.level[k]!), spireVariant(x, y));
+    }
+  }
+  if (sp.length) d.spires = sp;
   return d;
 }
 
@@ -66,7 +90,9 @@ const GROUND: Record<number, string> = {
   [T.Dug]: C.dug, [T.Filled]: C.filled, [T.Shallow]: C.shallow, [T.Deep]: C.deep,
   [T.Rock1]: C.rock1, [T.Rock2]: C.rock2, [T.Rock3]: C.rock3, [T.Rock4]: C.rock4,
 };
-const BIOME_TINT: Record<number, string> = { 1: C.turqL, 2: C.warn, 3: C.coralL, 4: C.inkSoft, 5: C.lilacL, 6: C.lilac, 7: C.cirque };
+/** The floor of the spires' field (map 6, D147: mapgen's `BIOME.spireGround`): badlands, rubble fallen from the needles. */
+export const SPIRE_GROUND = 33;
+const BIOME_TINT: Record<number, string> = { 1: C.turqL, 2: C.warn, 3: C.coralL, 4: C.inkSoft, 5: C.lilacL, 6: C.lilac, 7: C.cirque, [SPIRE_GROUND]: '#d7aa88' };
 
 const hex = (h: string): [number, number, number] => {
   const p = parseInt(h.slice(1), 16);
@@ -89,7 +115,7 @@ export function paintChunk(ctx: Ctx2, d: PaintData, ppt: number, scratch: (w: nu
       const tt = t(i, j);
       let col = isRockT(tt) || isWaterT(tt) || tt === T.Hardpan || tt === T.Vent ? C.sand : (GROUND[tt] ?? C.sand);
       const b = d.biome[at(i, j)]!;
-      if (b && BIOME_TINT[b] && !isRockT(tt) && !isWaterT(tt)) col = mix(col, BIOME_TINT[b], b === 7 ? 1 : 0.28);
+      if (b && BIOME_TINT[b] && !isRockT(tt) && !isWaterT(tt)) col = mix(col, BIOME_TINT[b], b === 7 ? 1 : b === SPIRE_GROUND ? 0.42 : 0.28);
       const h = d.height[at(i, j)]!;
       col = mix(col, '#ffffff', Math.max(0, (h - 120) / 900));
       const [r, g, bb] = hex(col);
@@ -109,14 +135,27 @@ export function paintChunk(ctx: Ctx2, d: PaintData, ppt: number, scratch: (w: nu
       if (isRockT(tt) || isWaterT(tt) || tt === T.Chasm || tt === T.River) continue;
       const wx = wx0 + i, wy = wy0 + j;
       const px = (i - B) * ppt, py = (j - B) * ppt;
-      const n = tt === T.Salt ? 1 : tt === T.Hardpan ? 2 : dots;
-      ctx.fillStyle = rgba(mix(GROUND[tt] ?? C.sand, C.ink, 0.4), 0.45);
+      // The spires' badlands (D147): twice the grit, darker, and now and then a fallen stone.
+      const bad = d.biome[at(i, j)] === SPIRE_GROUND;
+      const n = tt === T.Salt ? 1 : tt === T.Hardpan ? 2 : bad ? dots * 2 : dots;
+      ctx.fillStyle = rgba(mix(GROUND[tt] ?? C.sand, C.ink, bad ? 0.5 : 0.4), bad ? 0.55 : 0.45);
       for (let q = 0; q < n; q++) {
         const h = hash32(wx, wy, q, 0x5e);
         const ox = (h & 1023) / 1024, oy = ((h >>> 10) & 1023) / 1024, rr = (0.55 + ((h >>> 20) & 7) / 10) * Math.max(0.6, k);
         ctx.beginPath();
         ctx.arc(px + ox * ppt, py + oy * ppt, rr, 0, Math.PI * 2);
         ctx.fill();
+      }
+      if (bad && ppt >= 16 && hashUnit(wx, wy, 0x7a) < 0.35) {
+        const cx = px + (0.2 + hashUnit(wx, wy, 0x7b) * 0.6) * ppt, cy = py + (0.2 + hashUnit(wx, wy, 0x7c) * 0.6) * ppt, r = (0.05 + hashUnit(wx, wy, 0x7d) * 0.05) * ppt;
+        ctx.save();
+        ctx.fillStyle = rgba(C.ink, 0.2);
+        ctx.beginPath(); ctx.ellipse(cx + r * 0.5, cy + r * 0.6, r, r * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#c98f70';
+        ctx.beginPath(); ctx.ellipse(cx, cy, r, r * 0.75, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = rgba(C.ink, 0.6); ctx.lineWidth = 0.8 * k; ctx.stroke();
+        ctx.restore();
+        continue;
       }
       if (ppt >= 16 && (tt === T.Sand || tt === T.DuneSea) && hashUnit(wx, wy, 0x71) < (tt === T.DuneSea ? 0.6 : 0.22)) {
         // Dune ripple: a shallow arc across the tile.
@@ -183,6 +222,13 @@ export function paintChunk(ctx: Ctx2, d: PaintData, ppt: number, scratch: (w: nu
   //    flush beside it, as in iso, not a canyon down to the floor), its own water over it after. ──
   paintRockMap(ctx, d, ppt);
   paintWater(ctx, d, ppt, (i, j) => raised(d, i, j));
+  // The spires (D147) seen from above: contour rings tightening to a peak, hachures, a soft shadow.
+  const sp = d.spires ?? [];
+  for (let n = 0; n < sp.length; n += 4) {
+    const i = sp[n]!, j = sp[n + 1]!;
+    if (i < B - 1 || j < B - 1 || i > B + 32 || j > B + 32) continue;
+    spirePlan(ctx, (i - B) * ppt, (j - B) * ppt, ppt, sp[n + 2]!, spireSeed(sp[n + 2]!, sp[n + 3]!));
+  }
 
   // ── 5. deposits (ore.ts, D99: each ore its own material, denser where richer), then vents,
   //    face seams and biome decor ─────────────────────────────────────────────
@@ -287,8 +333,9 @@ function insetChain(c: { pts: readonly OutlinePt[]; closed: boolean }, d: number
 function paintRockMap(ctx: Ctx2, d: PaintData, ppt: number): void {
   const B = BORDER, k = ppt / 32;
   const tt = (i: number, j: number): number => d.terrain[j * WIN + i]!;
-  // A column: rock, or water (or reclaimed ground) up on the rock, at its level as in iso (D135).
-  const col = (i: number, j: number): boolean => isRockT(tt(i, j)) || raised(d, i, j);
+  // A column: rock, or water (or reclaimed ground) up on the rock, at its level as in iso (D135); a
+  // spire is no terrace (D147: its own mark, `spirePlan`).
+  const col = (i: number, j: number): boolean => (isRockT(tt(i, j)) && !spireTile(d, j * WIN + i)) || raised(d, i, j);
   // The relief level of a window tile as the iso columns read it (0 off them and off the window).
   const rl = (i: number, j: number): number => (i < 0 || j < 0 || i >= WIN || j >= WIN || !col(i, j) ? 0 : levelOf(tt(i, j), d.level[j * WIN + i]!));
   const rock = march(col, ppt);
@@ -622,11 +669,12 @@ function faceSeam(ctx: Ctx2, d: PaintData, i: number, j: number, ppt: number): v
   ctx.restore();
 }
 
-/** Levels and per-step masks of the window (0 outside the valid ring). */
+/** Levels and per-step masks of the window (0 outside the valid ring, and on a spire: D147, `spireTile`). */
 export function windowLevels(d: PaintData): { lv: Uint8Array; masks: Uint8Array[] } {
   const lv = new Uint8Array(WIN * WIN);
   const masks = Array.from({ length: MAX_TERRACE }, () => new Uint8Array(WIN * WIN));
-  for (let j = SMOOTH; j < WIN - SMOOTH; j++) for (let i = SMOOTH; i < WIN - SMOOTH; i++) lv[j * WIN + i] = levelOf(d.terrain[j * WIN + i]!, d.level[j * WIN + i]!);
+  // A spire (D147) is no terrace: its painter draws it whole, the terraces round it see the floor.
+  for (let j = SMOOTH; j < WIN - SMOOTH; j++) for (let i = SMOOTH; i < WIN - SMOOTH; i++) { const o = j * WIN + i; lv[o] = spireTile(d, o) ? 0 : levelOf(d.terrain[o]!, d.level[o]!); }
   const L = (i: number, j: number): number => (i < 0 || j < 0 || i >= WIN || j >= WIN ? 0 : lv[j * WIN + i]!);
   for (let j = SMOOTH + 1; j < WIN - SMOOTH - 1; j++) {
     for (let i = SMOOTH + 1; i < WIN - SMOOTH - 1; i++) {
@@ -807,18 +855,22 @@ export function paintRelief(ctx: Ctx2, d: PaintData, ppt: number, scratch: (w: n
   const { lv, masks } = windowLevels(d);
   const lo = SMOOTH + 1, hi = WIN - SMOOTH - 1;
   const size = 32 * ppt;
-  const cols: Array<[number, number]> = [];
+  // Each column, and each spire (D147: from the ring past the window too, `PaintData.spires`; its
+  // index there), whose oblique extent reaches the chunk: from the footprint back by L·SHIFT tiles.
+  const cols: Array<[number, number, number]> = [];
+  const reaches = (i: number, j: number, L: number): boolean => {
+    const x1 = (i - B + 1) * ppt, y1 = (j - B + 1) * ppt;
+    const x0 = (i - B - L * SHIFT) * ppt, y0 = (j - B - L * SHIFT) * ppt;
+    return !(x1 < 0 || y1 < 0 || x0 > size || y0 > size);
+  };
   for (let j = lo; j < hi; j++) {
     for (let i = lo; i < hi; i++) {
       const L = lv[j * WIN + i]!;
-      if (!L) continue;
-      // Oblique extent: from the footprint back by L·SHIFT tiles.
-      const x1 = (i - B + 1) * ppt, y1 = (j - B + 1) * ppt;
-      const x0 = (i - B - L * SHIFT) * ppt, y0 = (j - B - L * SHIFT) * ppt;
-      if (x1 < 0 || y1 < 0 || x0 > size || y0 > size) continue;
-      cols.push([i, j]);
+      if (L && reaches(i, j, L)) cols.push([i, j, -1]);
     }
   }
+  const sp = d.spires ?? [];
+  for (let n = 0; n < sp.length; n += 4) if (reaches(sp[n]!, sp[n + 1]!, sp[n + 2]!)) cols.push([sp[n]!, sp[n + 1]!, n]);
   if (!cols.length) return false;
   cols.sort((a, b) => a[0] + a[1] - (b[0] + b[1]) || a[1] - b[1]);
   const proj = (i: number, j: number): Proj => (u, v, z) => [(i - B + u - z * SHIFT) * ppt, (j - B + v - z * SHIFT) * ppt];
@@ -828,14 +880,15 @@ export function paintRelief(ctx: Ctx2, d: PaintData, ppt: number, scratch: (w: n
 
   const detail = ppt >= 32 ? 1 : 0;
   const k = Math.max(0.35, ppt / 70);
-  for (const [i, j] of cols) {
+  for (const [i, j, n] of cols) {
+    if (n >= 0) { drawSpire(ctx, proj(i, j), sp[n + 2]!, { detail, seed: spireSeed(sp[n + 2]!, sp[n + 3]!), k }); continue; }
     const o = j * WIN + i, { cls, top, vein } = columnLook(d, lv, o);
     const wx = d.cx * 32 - B + i, wy = d.cy * 32 - B + j;
     // The sprite's own seed (its look's): the paint draws the very rim the sprite does, so nothing
     // of it shows round a sprite's bitten edge where both are drawn.
     const ms = tileMasks(lv, masks, o);
     const layers = top && top.kind !== 'rock' ? null : windowLayers(d, lv, o, cls, ms.length);
-    drawColumn(ctx, proj(i, j), cls, ms, { detail, seed: columnSeed(cls, ms, columnVariant(wx, wy)), k, top, vein, layers });
+    drawColumn(ctx, proj(i, j), cls, ms, { detail, seed: columnSeed(cls, ms, columnVariant(wx, wy, hasWall(ms))), k, top, vein, layers });
   }
   return true;
 }
@@ -883,11 +936,22 @@ export function paintSunShadows(ctx: Ctx2, d: PaintData, ppt: number, sun: reado
       columnShadow(ctx, P, L, masks[0]![j * WIN + i]!, sx, sy);
     }
   }
+  // The spires' long shadows (D147), from the ring past the window too.
+  const sp = d.spires ?? [];
+  for (let n = 0; n < sp.length; n += 4) {
+    const i = sp[n]!, j = sp[n + 1]!, L = sp[n + 2]!, sx = sun[0] * L, sy = sun[1] * L;
+    const x0 = (i - B + Math.min(0, sx) - 0.5) * ppt, x1 = (i - B + 1.5 + Math.max(0, sx)) * ppt;
+    const y0 = (j - B + Math.min(0, sy) - 0.5) * ppt, y1 = (j - B + 1.5 + Math.max(0, sy)) * ppt;
+    if (x1 < 0 || y1 < 0 || x0 > size || y0 > size) continue;
+    any = true;
+    spireShadow(ctx, (u, v) => [(i - B + u) * ppt, (j - B + v) * ppt], L, spireSeed(L, sp[n + 3]!), sun[0], sun[1]);
+  }
   return any;
 }
 
-/** Does the window hold any rock (columns that could lean into the chunk)? */
+/** Does the window hold any rock (columns that could lean into the chunk), or a spire round it (D147)? */
 export function hasRock(d: PaintData): boolean {
+  if (d.spires?.length) return true;
   for (let o = 0; o < d.terrain.length; o++) if (isRockT(d.terrain[o]!)) return true;
   return false;
 }

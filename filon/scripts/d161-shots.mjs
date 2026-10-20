@@ -1,0 +1,22 @@
+// d161-shots.mjs — D161's two captures: the land panel on a far parcel for sale at Tier 1, the tree with Far Claim in Tier 1.
+import { chromium } from 'playwright-core';
+const URL = 'http://localhost:5380';
+const browser = await chromium.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--use-angle=metal', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR' })).newPage();
+page.on('pageerror', (e) => console.log('pageerror:', e.message));
+await page.goto(`${URL}/?seed=1`, { waitUntil: 'networkidle' });
+await page.waitForFunction(() => !!window.FL && window.FL.ready(), undefined, { timeout: 20000 });
+await page.evaluate(() => { for (const id of ['xp_swift', 'xp_bigsilo', 'xp_guard', 'xp_far']) window.FL.unlock(id); window.FL.app.sim.grantCredits(200_000); });
+const far = await page.evaluate(() => window.FL.parcel(3, 0));
+await page.evaluate(([x, y]) => window.FL.lookAt(x, y, 0.8), far.at);
+await page.evaluate(() => window.FL.app.views.toggle('land'));
+await page.waitForFunction(() => window.FL.view().t === 1);
+await page.evaluate((p) => { window.FL.app.landTool.selected = p; }, far.p);
+await page.waitForTimeout(2500);
+await page.screenshot({ path: 'scripts/d161-land.png' });
+console.log('far parcel', far.p, 'level', await page.evaluate(() => window.FL.app.sim.hearthLevel), 'block', await page.evaluate((p) => window.FL.app.sim.buyBlock(p), far.p));
+await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
+await page.evaluate(() => window.FL.open('research'));
+await page.waitForTimeout(1500);
+await page.screenshot({ path: 'scripts/d161-tree.png' });
+await browser.close();

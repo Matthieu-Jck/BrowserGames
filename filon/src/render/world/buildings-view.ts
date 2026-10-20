@@ -10,7 +10,7 @@
 // conduit pouring a terrace down its downpipe (D114, the same file). A skybridge's deck spans the
 // gap to its far end, lifted above the ground in iso. Sorters show their chosen item. A conduit is a
 // pipe (D145): in iso a raised tube among the volumes on the floor too (`addPipe`: its piece from
-// water-ports.ts `pipeOf`, its tee branches either side of it, world/stand.ts `pipeZ`), with a short
+// water-ports.ts `pipeOf`, its tee branches either side of it, a sharing tee's valve over them (D152), world/stand.ts `pipeZ`), with a short
 // cast shadow of its own (baked on the shadows' sheet, never stretched: one offset for all of them,
 // `pipeShades`, moved with the sun); in plan a flat tube on the plan layer.
 //
@@ -80,10 +80,11 @@ import { footprint } from '@/sim/entities';
 import { tileIndex } from '@/sim/world/grid';
 import { TPS, WORLD } from '@/sim/constants';
 import { turbineWind, weatherAt, type Producer } from '@/sim/power/network';
-import { CAMO_VENT_KEY, CONDUIT_JOINT_KEY, COUPLING_KEY, bKey, bodyKey, btKey, beltKey, iKey, inletKey, partKey, pipeBranchKey, pipeKey, wetKey, type Atlas } from '../art/atlas';
-import { RUN, drawPipe, drawPipeBranch, drawPipeShadow, pipeShadowFrame } from '../art/recipes/pipes';
+import { CAMO_VENT_KEY, CONDUIT_GAUGE_KEY, CONDUIT_JOINT_KEY, CONDUIT_VALVE_KEY, COUPLING_KEY, PIPE_GAUGE_KEY, PIPE_VALVE_KEY, bKey, gaugeNeedleKey, bodyKey, btKey, beltKey, iKey, inletKey, partKey, pipeBranchKey, pipeKey, wetKey, type Atlas } from '../art/atlas';
+import { GAUGE, RUN, drawPipe, drawPipeBranch, drawPipeShadow, drawPipeValve, gaugeAngle, gaugeCentre, gaugeFrame, pipeShadowFrame } from '../art/recipes/pipes';
+import { pressureAt, readPressure } from '@/sim/readouts/pressure';
 import { DynAtlas, type DynFrame } from '../art/dyn-atlas';
-import { BELT_PX, BELT_TIERS, type BeltTier } from '../art/recipes/belts';
+import { BELT_PX, BELT_TIERS, GAUGE_PLAN_R, type BeltTier } from '../art/recipes/belts';
 import { SKY, artLevelOf, drawBuildingShadow, isoHead, shadowFrameOf, type SkyPiece } from '../art/recipes/buildings';
 import { MOVING } from '../art/recipes/moving';
 import { drawOff } from '../art/recipes/off';
@@ -327,11 +328,16 @@ interface Rec {
   look: Look | null;
   pit: Pit | null;
   car: Car | null;
+  /** A pressure gauge's needles (D155), turned by `readGauges`. */
+  gauge: GaugeRec | null;
   seen: number;
 }
 
+/** A pressure gauge's needles (D155): its tile, the iso and plan sprites, the state and pressure they show. */
+interface GaugeRec { x: number; y: number; iso: Sprite; plan: Sprite; state: string; p: number }
+
 const newRec = (sig: string, ent: number, rank: number, bucket: number): Rec => ({
-  sig, ent, rank, sprites: [], bucket, culled: false, shadows: [], liftShadows: [], spinner: null, look: null, pit: null, car: null, seen: 0,
+  sig, ent, rank, sprites: [], bucket, culled: false, shadows: [], liftShadows: [], spinner: null, look: null, pit: null, car: null, gauge: null, seen: 0,
 });
 
 /** The children of `layer` but those in `gone`, in their order: the layer emptied and refilled in one pass. */
@@ -391,6 +397,9 @@ export class BuildingsView {
   private readonly hidden = new Set<number>();
   /** The incinerators' pits. */
   private readonly pits = new Set<Pit>();
+  /** The pressure gauges' needles (D155), and when they were last read (graph version, tick; -1: read at the next frame). */
+  private readonly gauges = new Set<GaugeRec>();
+  private gaugeAt = { ver: -1, tick: -1 };
   /** Which production buildings look at work (D83), sampled per game tick; the lights view reads it too. */
   readonly work = new WorkLook();
   /** Each watched building's look, by entity; those waiting for an unlit picture; the unlit pictures. */
@@ -516,8 +525,8 @@ export class BuildingsView {
       const p = beltPiece(sim, e);
       const fed = p.corner ? 0 : (sim.graph?.feedDirs.get(tileIndex(e.x, e.y)) ?? 0) & ((1 << ((e.rot + 3) & 3)) | (1 << ((e.rot + 1) & 3)));
       const l = this.liftOf(sim, e), fl = this.fallOf(sim, e);
-      const pipe = kind === 'conduit' ? pipeOf(sim, e, p.corner, p.rot, !!fl) : null;
-      return `r${e.def},${e.x},${e.y},${e.rot},${+p.corner}${p.rot}${+p.mirror},${fed},${tileTop(sim.grid, e.x, e.y)}${l?.shaft ? `,${l.rot}${+l.up},${l.x},${l.y},${l.low}` : ''}${fl ? `,f${fl.low},${fl.h}` : ''}${pipe ? `,c${couplingSides(sim, e)},${pipe.arms}${pipe.mark}${pipe.branches.map((b) => `${b.side}${+b.full}`).join('')}` : ''}`;
+      const pipe = kind === 'conduit' ? pipeOf(sim, e, p.corner, p.rot, !!fl, p.mirror) : null;
+      return `r${e.def},${e.x},${e.y},${e.rot},${+p.corner}${p.rot}${+p.mirror},${fed},${tileTop(sim.grid, e.x, e.y)}${l?.shaft ? `,${l.rot}${+l.up},${l.x},${l.y},${l.low}` : ''}${fl ? `,f${fl.low},${fl.h}` : ''}${pipe ? `,c${couplingSides(sim, e)},${pipe.arms}${pipe.mark}${pipe.branches.map((b) => `${b.side}${+b.full}`).join('')}${pipe.valve ? 'v' : ''}` : ''}`;
     }
     const id = BUILDING_IDS[e.def]! as BuildingId;
     const logic = buildingDef(e.def).logic;
@@ -548,6 +557,7 @@ export class BuildingsView {
     if (r.look) this.looks.set(r.ent, r.look);
     if (r.pit) this.pits.add(r.pit);
     if (r.car) this.cars.add(r.car);
+    if (r.gauge) { this.gauges.add(r.gauge); this.gaugeAt.ver = -1; }
     this.joinBucket(r);
   }
 
@@ -584,6 +594,7 @@ export class BuildingsView {
       if (r.look) { r.look.dead = true; if (this.looks.get(r.ent) === r.look) this.looks.delete(r.ent); }
       if (r.pit) this.pits.delete(r.pit);
       if (r.car) this.cars.delete(r.car);
+      if (r.gauge) this.gauges.delete(r.gauge);
       if (r.bucket >= 0) this.buckets.get(r.bucket)?.recs.delete(r);
       if (r.culled) this.nCulled--;
     }
@@ -681,6 +692,7 @@ export class BuildingsView {
     // The elevators' cars, where the items view last left them.
     if (this.carHeight) for (const c of this.cars) c.s.position.y = c.y0 - this.carHeight(c.x, c.y) * LH;
     if (this.pits.size) this.burn(sim, seconds * TPS);
+    if (this.gauges.size) this.readGauges(sim);
     const dt = this.lastSec < 0 ? 0 : seconds - this.lastSec;
     this.lastSec = seconds;
     if (!this.spinners.size || dt <= 0) return;
@@ -759,6 +771,33 @@ export class BuildingsView {
     const fr = this.atlas.frames.get(key);
     if (!fr || this.offSheet.spent > OFF_BAKE_MS) return null;
     return this.offSheet.add(key, fr.w, fr.h, fr.ox, fr.oy, (ctx) => drawOff(ctx, id, rot, iso, body, fr.w, fr.h, wet)).tex;
+  }
+
+  /**
+   * The pressure gauges' needles (D155): their networks read (sim/readouts/pressure.ts) when the graph
+   * changed or half a second of game time went by — a needle turned to its pressure (`gaugeAngle`), its
+   * colour its state's (a texture swap) only when they change. Read from the sim, never changing it.
+   */
+  private readGauges(sim: Sim): void {
+    const g = sim.graph;
+    if (!g || (g.version === this.gaugeAt.ver && Math.abs(sim.tick - this.gaugeAt.tick) < 5)) return;
+    this.gaugeAt = { ver: g.version, tick: sim.tick };
+    const r = readPressure(sim);
+    for (const gr of this.gauges) {
+      const net = pressureAt(sim, gr.x, gr.y, r);
+      const state = net?.state ?? 'idle', p = net?.pressure ?? 0;
+      if (state !== gr.state) {
+        const tex = this.atlas.textures.get(gaugeNeedleKey(state));
+        if (tex) { gr.iso.texture = tex; gr.plan.texture = tex; }
+        gr.state = state;
+      }
+      if (p !== gr.p) { const a = gaugeAngle(p) + Math.PI / 2; gr.iso.rotation = a; gr.plan.rotation = a; gr.p = p; }
+    }
+  }
+
+  /** The gauges shown and what their needles read (debug, shots, smoke). */
+  gaugeLook(): Array<{ x: number; y: number; state: string; p: number }> {
+    return [...this.gauges].map((g) => ({ x: g.x, y: g.y, state: g.state, p: g.p }));
   }
 
   /** Watched buildings, how many look switched off, how many unlit pictures are baked (debug, smoke). */
@@ -1484,10 +1523,10 @@ export class BuildingsView {
     const p = beltPiece(sim, e);
     // A buried line (D109) shows a vent on the odd straight tile, by a hash of the tile: the same tiles every time.
     const vent = tier === 'camo_ribbon' && !p.corner && camoVent(e.x, e.y);
+    const lv = tileTop(sim.grid, e.x, e.y);
+    if (BUILDING_KIND[e.def] === 'conduit') { this.addPipe(sim, e, p, lv); return; } // a conduit, or a gauge set into one (D155)
     const tex = this.atlas.textures.get(vent ? CAMO_VENT_KEY : beltKey(tier, p.corner));
     if (!tex) return;
-    const lv = tileTop(sim.grid, e.x, e.y);
-    if (tier === 'conduit') { this.addPipe(sim, e, p, lv); return; }
     this.beltSprite(tex, e.x, e.y, p.rot, p.mirror, lv);
     this.addLift(sim, e);
     if (p.corner) return;
@@ -1510,7 +1549,7 @@ export class BuildingsView {
    */
   private addPipe(sim: Sim, e: Ent, p: ReturnType<typeof beltPiece>, lv: number): void {
     const fall = this.fallOf(sim, e);
-    const pipe = pipeOf(sim, e, p.corner, p.rot, !!fall);
+    const pipe = pipeOf(sim, e, p.corner, p.rot, !!fall, p.mirror);
     const flatPiece = (key: string, rot: Rot, mirror: boolean): void => {
       const tex = this.atlas.textures.get(key);
       if (!tex) return;
@@ -1518,16 +1557,47 @@ export class BuildingsView {
       s.setFromMatrix(beltMatrix(e.x, e.y, rot, mirror));
       this.lay(s, this.planLayer, PLAN_Z.belt);
     };
-    flatPiece(pipe.mark === 'j' ? CONDUIT_JOINT_KEY : beltKey('conduit', p.corner), p.rot, p.mirror);
-    for (const b of pipe.branches) flatPiece(inletKey('conduit'), e.rot, b.side === ((e.rot + 1) & 3));
+    const pl = pipe.plan;
+    flatPiece(pipe.mark === 'j' ? CONDUIT_JOINT_KEY : beltKey('conduit', pl.corner), pl.rot, pl.mirror);
+    for (const i of pl.inlets) flatPiece(inletKey('conduit'), i.rot, i.mirror);
     const couple = couplingSides(sim, e);
     for (let side = 0; side < 4; side++) if (couple & (1 << side)) flatPiece(COUPLING_KEY, side as Rot, false);
+    const gauge = !!buildingDef(e.def).gauge; // a pressure gauge (D155) stands where a tee's valve would
+    if (pipe.valve && !gauge) flatPiece(CONDUIT_VALVE_KEY, 0, false); // a tee's sharing valve (D152), over its pieces
+    if (gauge) flatPiece(CONDUIT_GAUGE_KEY, 0, false);
     const z = pipeZ(e.x, e.y);
     this.isoPipe(pipeKey(pipe.arms, pipe.mark), e, lv, z, (ctx, f) => drawPipe(ctx, f, pipe.arms, pipe.mark));
     for (const b of pipe.branches) {
       this.isoPipe(pipeBranchKey(b.side, b.full), e, lv, z + (b.side === 1 || b.side === 2 ? PIPE_DZ : -PIPE_DZ), (ctx, f) => drawPipeBranch(ctx, f, b.side, b.full));
     }
+    // The valve stands on the tee's crown, after its branches (the near one included).
+    if (pipe.valve && !gauge) this.isoPipe(PIPE_VALVE_KEY, e, lv, z + 2 * PIPE_DZ, (ctx, f) => drawPipeValve(ctx, f));
+    if (gauge) this.addGauge(e, lv, z);
     this.addFall(sim, e);
+  }
+
+  /**
+   * A pressure gauge's dial (D155) over its pipe in iso (after the pipe's pieces) and its needles —
+   * in iso at the dial's middle, in plan over the plan dial — registered for `readGauges` to turn.
+   */
+  private addGauge(e: Ent, lv: number, z: number): void {
+    const [wx, wy] = tileToIso(e.x, e.y, lv);
+    this.place(PIPE_GAUGE_KEY, this.objectLayer, wx, wy, 1, 0xffffff, z + 3 * PIPE_DZ);
+    const tex = this.atlas.textures.get(gaugeNeedleKey('idle'));
+    if (!tex) return;
+    const f = gaugeFrame(), [cx, cy] = gaugeCentre(f);
+    const iso = new Sprite(tex);
+    iso.anchor.set(0.5);
+    iso.scale.set(0.5);
+    iso.position.set(wx + (cx - f.ox) * 0.5, wy + (cy - f.oy) * 0.5);
+    this.lay(iso, this.objectLayer, z + 4 * PIPE_DZ);
+    const plan = new Sprite(tex);
+    plan.anchor.set(0.5);
+    plan.scale.set(GAUGE_PLAN_R / GAUGE.R); // the plan dial's radius (tiles) for the needle's dial (bake px)
+    plan.position.set(e.x + 0.5, e.y + 0.5);
+    this.lay(plan, this.planLayer, PLAN_Z.belt);
+    iso.rotation = plan.rotation = gaugeAngle(0) + Math.PI / 2;
+    this.cur!.gauge = { x: e.x, y: e.y, iso, plan, state: 'idle', p: 0 };
   }
 
   /**

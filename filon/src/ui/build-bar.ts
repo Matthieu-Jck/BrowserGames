@@ -17,7 +17,7 @@ import type { NotifyKind } from '@/core/kinds';
 import { locale, t, tr, type MsgKey } from '@/i18n/i18n';
 import { pipetteCap } from './keycap';
 import { modCap } from './mod-key';
-import { CAMO_VENT_KEY, beltKey, btKey, frameCanvas, iKey, type Atlas } from '@/render/art/atlas';
+import { CAMO_VENT_KEY, CONDUIT_GAUGE_KEY, beltKey, btKey, frameCanvas, iKey, type Atlas } from '@/render/art/atlas';
 import { BELT_TIERS } from '@/render/art/recipes/belts';
 import { TOP_MARGIN, TOP_PX } from '@/render/art/recipes/buildings-top';
 import { C } from '@/render/art/tokens';
@@ -164,7 +164,8 @@ export function buildingIcon(atlas: Atlas, def: string, size: number, lv = 1): H
  * the middle, so its icon reads as a trail in the sand.
  */
 function beltIcon(atlas: Atlas, def: string, size: number): HTMLCanvasElement | null {
-  const key = beltKey(def in BELT_TIERS ? def : 'ribbon', false);
+  const gauge = !!buildingDef(buildingIdx(def)).gauge; // a pressure gauge (D155): the conduit with its dial in the middle
+  const key = beltKey(gauge ? 'conduit' : def in BELT_TIERS ? def : 'ribbon', false);
   const f = atlas.frames.get(key);
   if (!f) return null;
   const c = document.createElement('canvas');
@@ -180,6 +181,8 @@ function beltIcon(atlas: Atlas, def: string, size: number): HTMLCanvasElement | 
     const g = vent && Math.abs(y - (c.height - s) / 2) < 1 ? vent : f;
     ctx.drawImage(atlas.pages[g.page]!, g.x, g.y, g.w, g.h, x, y, s, s);
   }
+  const dial = gauge ? atlas.frames.get(CONDUIT_GAUGE_KEY) : undefined;
+  if (dial) { const d = s * 1.5; ctx.drawImage(atlas.pages[dial.page]!, dial.x, dial.y, dial.w, dial.h, (c.width - d) / 2, (c.height - d) / 2, d, d); }
   return c;
 }
 

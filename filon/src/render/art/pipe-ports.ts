@@ -142,13 +142,17 @@ export function pipePortIso(ctx: Ctx, f: IsoFrame, px: number, py: number, side:
 
 /** The valve on a pipe: a dark stem from the pipe's top `z0` up to its handwheel at `z1`, the wheel's ring and spokes, a brass nut for a hub (its lamp is at the stem's foot: `pipePortIso`). */
 function valveIso(ctx: Ctx, f: IsoFrame, x: number, y: number, z0: number, z1: number, io: 'in' | 'out', seed: number): void {
+  valveWheelIso(ctx, f, x, y, z0, z1, wheelOf(io), seed);
+}
+
+/** `valveIso`'s drawing, its handwheel in `col` (a tee's sharing valve, D152, recipes/pipes.ts: brass). */
+export function valveWheelIso(ctx: Ctx, f: IsoFrame, x: number, y: number, z0: number, z1: number, col: string, seed: number): void {
   const a = f.p(x, y, z0 - 0.04), b = f.p(x, y, z1);
   ink(ctx, [a, b], { w: 4.6, color: C.ink, shade: false, taper: 0, jitter: 0, seed });
   ink(ctx, [a, b], { w: 2.4, color: C.steelD, shade: false, taper: 0, jitter: 0, seed: seed + 1 });
   const [ex, ey] = f.ell(PIPE.wheel);
   const ring = ellipsePts(b[0], b[1], ex, ey, seed, 0, 28);
   castShadow(ctx, ring, 4, 0.2);
-  const col = wheelOf(io);
   for (let k = 0; k < 4; k++) {
     const t = Math.PI / 4 + (k * Math.PI) / 2;
     const rim: Pt = [b[0] + Math.cos(t) * ex, b[1] + Math.sin(t) * ey];

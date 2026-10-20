@@ -141,7 +141,7 @@ export const BUILDINGS = {
   },
   conduit: {
     name: { fr: 'Conduit', en: 'Conduit' },
-    desc: { fr: 'Le ruban de l’eau : 240/min, des pompes aux chaudières et aux fours à céramique. Ne porte que des fluides ; se trace en glissant.', en: 'The water ribbon: 240/min, from pumps to boilers and ceramic ovens. Carries fluids only; lay it by dragging.' },
+    desc: { fr: 'Le ruban de l’eau : 240/min, des pompes aux chaudières et aux fours à céramique. Ne porte que des fluides et se trace en glissant ; tiré du flanc d’un autre conduit, il en partage l’eau.', en: 'The water ribbon: 240/min, from pumps to boilers and ceramic ovens. Carries fluids only and is laid by dragging; drawn off another conduit’s side, it shares its water.' },
     // Tier 1 since D114, a plate a tile (it was a ceramic, which only Tier 2 makes).
     kind: 'conduit', replaceGroup: 'fluid', category: 'logistics', w: 1, h: 1, needsZone: false, onRock: true, unlock: 'steam',
     cost: [['iron_plate', 1]], ports: [], belt: { ticksPerTile: 2, perMin: 240 },
@@ -561,6 +561,17 @@ export const BUILDINGS = {
     desc: { fr: 'Un établi d’atelier : bobine le fil de cuivre sur un noyau de fer (deux fils et une plaque par bobine) et, avec la Mécanique, monte des moteurs électriques (deux bobines et un engrenage). Deux entrées à l’arrière.', en: 'A workshop bench: winds copper wire on an iron core (two wires and a plate a coil) and, with Mechanics, builds electric motors (two coils and a gear). Two inputs at the back.' },
     kind: 'machine', category: 'production', w: 2, h: 2, needsZone: true, unlock: 'assembly_bench', crafts: true, kw: 60, idleKw: 6,
     cost: [['iron_plate', 20], ['copper_wire', 4]], ports: [P(0, 1, 'S', 'in'), P(1, 1, 'S', 'in'), P(0, 0, 'N', 'out')],
+  },
+  // ── appended (D155): the pressure gauge ───────────────────────────────────
+  // A fitting set into a conduit (owner, 2026-10-19: « a special thing to attach to a conduit that will
+  // tell the player the pressure in it »): a dial on the pipe whose needle reads its water network's
+  // pumps against its drinkers (sim/readouts/pressure.ts). It carries the water as the conduit did; a
+  // conduit laid back over it by a click takes it out. With the conduit's plan (Steam).
+  pressure_gauge: {
+    name: { fr: 'Manomètre', en: 'Pressure Gauge' },
+    desc: { fr: 'Se pose sur un conduit et lit la pression de son réseau d’eau : ce que les pompes donnent contre ce que les machines boivent. Vert : assez ; ambre : juste ; rouge : trop peu, il faut plus de pompes ou une pompe haute pression.', en: 'Fits onto a conduit and reads its water network’s pressure: what the pumps give against what the machines drink. Green: enough; amber: tight; red: too little, add pumps or a high-pressure pump.' },
+    kind: 'conduit', replaceGroup: 'fluid', category: 'logistics', w: 1, h: 1, needsZone: false, onRock: true, unlock: 'steam', gauge: true,
+    cost: [['iron_plate', 2], ['glass', 1], ['copper_wire', 1]], ports: [],
   },
 } as const satisfies Record<string, BuildingDef>;
 

@@ -139,6 +139,8 @@ export interface FilonDebug {
   vein(): { x: number; y: number; dx: number; dy: number; n: number; look: number; parcel: number; spots: Array<[number, number, number]> } | null;
   /** The sea's coast straight out from the cirque (map 4, D94); with a zoom, the camera jumps there. Null where there is no sea. */
   sea(zoom?: number): [number, number] | null;
+  /** The field of rock spires (map 6, D147): its middle tile, its wedge's bearing (64ths) and radii, its needles' count and the tallest (levels); with a zoom, the camera jumps to look at it. Null on maps 1–5. */
+  spires(zoom?: number): { x: number; y: number; bearing: number; r0: number; r1: number; count: number; tallest: number } | null;
   /** This epoch's bid / ask of an item (◉). */
   price(item: string): { bid: number; ask: number };
   /** The first built trade post (0 = none). */
@@ -441,6 +443,15 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
       const p = app.sim.grid.source.seaPoint?.() ?? null;
       if (p && zoom !== undefined) app.camera.centerOnTile(p[0], p[1], zoom);
       return p;
+    },
+    spires: (zoom) => {
+      const src = app.sim.grid.source as { spireField?: { x: number; y: number; bearing: number; r0: number; r1: number } | null; spiresIn?: (x0: number, y0: number, x1: number, y1: number) => Array<{ level: number }> };
+      const f = src.spireField;
+      if (!f) return null;
+      const all = src.spiresIn?.(f.x - f.r1, f.y - f.r1, f.x + f.r1, f.y + f.r1) ?? [];
+      // In iso a needle's top shows a few tiles back along −x −y from its foot: look a little past the middle.
+      if (zoom !== undefined) app.camera.centerOnTile(f.x - 4, f.y - 4, zoom);
+      return { ...f, count: all.length, tallest: all.reduce((m, s) => Math.max(m, s.level), 0) };
     },
     price: (item) => {
       const i = ITEM_IDS.indexOf(item as never);

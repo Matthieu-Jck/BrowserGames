@@ -160,6 +160,13 @@ export interface BuildingDef {
    */
   readonly camo?: boolean;
   /**
+   * A pressure gauge (D155): a fitting set into a conduit line (kind `conduit`, 1 × 1, no `belt` of its
+   * own — the line's pace is its conduit's: graph/compile.ts), placed by a click on a conduit only
+   * (`needs_conduit`), turned as that conduit runs; it carries the water as the conduit did and reads its
+   * water network's pressure (sim/readouts/pressure.ts). Never laid by dragging.
+   */
+  readonly gauge?: boolean;
+  /**
    * A power link point (D25: the pillars and the Hearth): `range` = how far its wires reach
    * (tiles, footprint edge to edge), `slots` = how many wires it holds. `tall`: the Reinforced Pylons
    * research (`mods.pylonLink`) lengthens its wires. `climb` (levels, D78): how far its wires may

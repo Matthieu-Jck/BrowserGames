@@ -430,11 +430,11 @@ describe('quests', () => {
     expect(logged(sim, 'unlockPlan').map((c) => (c as { id: string }).id)).toEqual([
       ...first, ...PLAN_IDS.filter((p) => ![...first, 'observatory'].includes(p)), 'observatory',
     ]);
-    // Ocelles: quests 6, 7, 8 and 10 pay 150 + 100 + 600 + 300 ◉ (on top of the trade — the starter
+    // Ocelles: quests 6, 7, 8 and 10 pay 150 + 100 + 700 (D161) + 300 ◉ (on top of the trade — the starter
     // contract among the purchases, D101 —, less the research's tokens if any, D68/D105, and the
     // vein's parcel, D87).
     const t = sim.trade;
-    expect(sim.credits - credits0 - (t.earned - t.spent) + sim.tokenStats.totalCents + sim.land.paid.get(parcelAt(468, 511))!).toBe((150 + 100 + 600 + 300) * 100);
+    expect(sim.credits - credits0 - (t.earned - t.spent) + sim.tokenStats.totalCents + sim.land.paid.get(parcelAt(468, 511))!).toBe((150 + 100 + 700 + 300) * 100);
     // The Core raised by the player's own command, once (D101: no quest grants a level).
     expect(logged(sim, 'hearthUp')).toHaveLength(1);
     // The register's title for the way past the Crown (D101: « Le quartz de la paroi » grants it).

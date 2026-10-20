@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { T } from '@/sim/types';
 import { ledges, levelOf, MAX_LEVEL, masksAt, STEP_LEVELS } from '../relief';
-import { BEDS, columnSeed, columnVariant, drawColumn, ROCK, slabTop, topColor, wallColor } from './rock';
+import { BEDS, columnSeed, columnVariant, drawColumn, hasWall, ROCK, slabTop, topColor, wallColor } from './rock';
 import { BORDER, WIN, columnLook, layersOf, windowLevels, type PaintData } from './terrain';
 import { depthColor } from './water-top';
 import { C, rgba } from './tokens';
@@ -97,6 +97,41 @@ describe('a step’s rim', () => {
     const ms = [3, 0];
     expect(columnSeed(1, ms, columnVariant(5, 9))).toBe(columnSeed(1, ms, columnVariant(5, 9)));
     expect([0, 1]).toContain(columnVariant(123, 456));
+  });
+});
+
+describe('an eroded wall (D147)', () => {
+  // A row two levels up running along x, the floor south of it: its south wall faces the camera.
+  const row = masksAt(field([[0, 0, 0], [2, 2, 2], [0, 0, 0]]), 1, 1);
+
+  it('wanders in and out where the camera sees it: bays and gullies bite its rim, only inwards, never at its ends', () => {
+    let deepest = 0, cut = 0;
+    for (let seed = 1; seed < 60; seed++) {
+      const top = slabTop(row, 0, seed);
+      const south = top.filter((p) => p.v > 0.5 && p.u > 0.02 && p.u < 0.98);
+      const d = Math.max(...south.map((p) => 1 - p.v));
+      deepest = Math.max(deepest, d);
+      if (d > 0.12) cut++;
+      // The ends of its south side are the tile's corners: the next tile's rim meets it there.
+      expect(top.some((p) => Math.abs(p.u - 1) < 1e-9 && Math.abs(p.v - 1) < 1e-9) || top.some((p) => Math.abs(p.u - 1) < 1e-9 && p.v > 0.9)).toBe(true);
+      for (const p of top) { expect(p.v).toBeLessThanOrEqual(1 + 1e-9); expect(p.v).toBeGreaterThanOrEqual(-1e-9); }
+    }
+    expect(cut).toBeGreaterThan(30);
+    expect(deepest).toBeGreaterThan(0.2);
+    // Its north side (a wall away from the camera) only wanders as a lip does (its bite, a notch now and then): no cuts.
+    for (let seed = 1; seed < 60; seed++) for (const p of slabTop(row, 0, seed)) if (p.v < 0.4 && p.u > 0.02 && p.u < 0.98) expect(p.v).toBeLessThan(0.26);
+  });
+
+  it('a column with a wall in sight takes one of four looks, the rest one of two (the first two of the four)', () => {
+    const seen = new Set<number>();
+    for (let x = 0; x < 64; x++) {
+      const v = columnVariant(x, 3, true);
+      seen.add(v);
+      expect(v & 1).toBe(columnVariant(x, 3));
+    }
+    expect([...seen].sort()).toEqual([0, 1, 2, 3]);
+    expect(hasWall(row)).toBe(true);
+    expect(hasWall(masksAt(field([[2, 2, 2], [2, 2, 2], [2, 2, 2]]), 1, 1))).toBe(false);
   });
 });
 
