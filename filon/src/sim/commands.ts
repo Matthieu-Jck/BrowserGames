@@ -8,6 +8,7 @@
 import type { Emblem } from '@/content/emblem';
 import type { MarketEvent } from '@/market/types';
 import type { Sim } from './state';
+import type { Blueprint } from './systems/blueprint';
 import type { Rot } from './types';
 
 export type Command =
@@ -70,7 +71,14 @@ export type Command =
   /** The expertises (D93): an earned one chosen into an empty slot, in place at once. */
   | { k: 'expertise'; slot: number; id: string }
   /** A réorientation: the slot's expertise replaced by `id` — paid, in place 24 h later. */
-  | { k: 'reorient'; slot: number; id: string };
+  | { k: 'reorient'; slot: number; id: string }
+  /**
+   * The blueprints' library (D154): a blueprint saved under a name, renamed, deleted. A paste is no
+   * command of its own: its pieces are `place`s, its wires `link`s, each logged (systems/blueprint.ts).
+   */
+  | { k: 'bpSave'; bp: Blueprint; name: string }
+  | { k: 'bpRename'; id: number; name: string }
+  | { k: 'bpDelete'; id: number };
 
 export type CommandKind = Command['k'];
 
@@ -148,6 +156,9 @@ export function exec(sim: Sim, cmd: Command): boolean {
     case 'autoSell': return sim.setAutoSell(cmd.item, cmd.at);
     case 'expertise': return sim.chooseExpertise(cmd.slot, cmd.id) === null;
     case 'reorient': return sim.reorient(cmd.slot, cmd.id) === null;
+    case 'bpSave': return sim.saveBlueprint(cmd.bp, cmd.name) > 0;
+    case 'bpRename': return sim.renameBlueprint(cmd.id, cmd.name);
+    case 'bpDelete': return sim.deleteBlueprint(cmd.id);
     default: { const never: never = cmd; return never; } // a new Command kind must be handled here
   }
 }

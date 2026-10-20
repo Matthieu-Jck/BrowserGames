@@ -18,7 +18,8 @@ bind by the layout's letter.
 | [belt-path.ts](../src/input/belt-path.ts) | `beltPath`: the L a ribbon drag lays; `dirTo` |
 | [link-tool.ts](../src/input/link-tool.ts) | `LinkTool`: the « Relier » tool (power wires, D25) — source, clicks → `link` / `unlink`, `LinkPreview` |
 | [land-tool.ts](../src/input/land-tool.ts) | `LandTool`: the land mode (« Terrain », D60) — on / off, the hovered parcel, the one a click picks; the land panel buys and leases (§4c) |
-| [belt-path.test.ts](../src/input/belt-path.test.ts), [bindings.test.ts](../src/input/bindings.test.ts), [link-tool.test.ts](../src/input/link-tool.test.ts) | Unit tests of the folder |
+| [undo.ts](../src/input/undo.ts) | `UndoStack` (D154): each gesture that laid or took down, one step; `record`, `undo` through `remove` / `place` / `link`; `DEPTH` (§4d) |
+| [belt-path.test.ts](../src/input/belt-path.test.ts), [bindings.test.ts](../src/input/bindings.test.ts), [link-tool.test.ts](../src/input/link-tool.test.ts), [undo.test.ts](../src/input/undo.test.ts) | Unit tests of the folder |
 
 Related: [app.md](app.md) (controls map actions to app operations; picking maps screen to tile),
 [render.md](render.md) (the ghost, ribbon bend pieces, camera), [ui.md](ui.md) (build bar, tip),
@@ -79,8 +80,9 @@ read by the app yet.
    Space never presses it again.
 3. Everything else goes through **`resolveKey(e)`** (bindings.ts, pure and unit-tested), which
    holds all the precedence:
-   - with Ctrl or Cmd, only `undo` exists, matched by the layout's letter (AZERTY's Z sits on
-     KeyW); Ctrl+C, Ctrl+X, Ctrl+R… do nothing in the game;
+   - with Ctrl or Cmd, only the chords exist (`CHORDS`, D154), matched by the layout's letter
+     (AZERTY's Z sits on KeyW): Z undo, C copy, V paste; Ctrl+X, Ctrl+R… stay the browser's. A
+     chord of ours is `preventDefault`ed (no page copy or paste);
    - the digit row (`slotOf(e.code)`: Digit1 → 0 … Digit0 → 9, without Alt) → `{ slot, shift }`
      → `onSlot`: Shift opens a category tab, otherwise a slot of the open tray (opening the last
      category first);
@@ -139,11 +141,15 @@ There are two kinds of binding:
 |---|---|---|---|
 | `panUp`/`panDown`/`panLeft`/`panRight` | KeyW/↑, KeyS/↓, KeyA/←, KeyD/→ (AZERTY Z Q S D) | code, held | Keyboard pan (`Input.frame`) |
 | `fast` | ShiftLeft, ShiftRight | code, held | Pan ×2.5 |
-| `rotate` | `r` | key | `tools.rotate(±1)` (Shift+R reverses) |
+| `rotate` | `r` | key | `tools.rotate(±1)` (Shift+R reverses); a blueprint in hand turns a quarter about its middle |
 | `pipette` | KeyQ (AZERTY A) | code | Takes the building under the cursor in hand, with its rotation (not the Hearth) |
 | `deconstruct` | `x` | key | Toggles the demolition tool |
 | `cancel` | Escape | code | Unwinds one layer: screen (a page of it first) → drag or tool → selection → a specialised view (back to Normal, D88) → build mode → the main menu (not under automation, [app.md](app.md)) |
-| `undo` | `z` + Ctrl/Cmd | key | Not handled (M8) |
+| `undo` | `z` + Ctrl/Cmd (`CHORDS`) | key | The last placement, ribbon drag, paste, upgrade or demolition taken back (D154, §4d; a toast says what) |
+| `copy` | `c` + Ctrl/Cmd | key | The copy tool (a box; D154), or with a building inspected that building copied at once |
+| `paste` | `v` + Ctrl/Cmd | key | The last copy in hand as a paste |
+| `library` | `k` | key | The blueprints' library panel (D154, [ui.md](ui.md#the-blueprints-library-d154)) — KeyK on both layouts |
+| `upgrade` | `n` | key | The upgrade tool (D154: « niveau », next tier), once a faster ribbon is learnt — KeyN on both layouts |
 | `zoomIn` / `zoomOut` | codes `Equal` `NumpadAdd` (+ key `+`) / `Minus` `NumpadSubtract` | code | ×1.25 / ×0.8 about the screen centre — while the tech tree is open, its zoom instead (D111: `ScreenHost.zoomKey`), and `0` (Digit0, the tenth slot) shows the whole tree. By position: `-` `=` on QWERTY, `)` `=` on AZERTY (whose `-` is the 6, a build slot) |
 | `viewPower` | `p` | key | The **Électricité** view (D88: the grids, their sources and draw, the troubles; [ui.md](ui.md#the-specialised-views-d88)), or back to Normal — P was the power overlay's key, which the view replaces; offered once the tutorial shows the power. KeyP on both layouts |
 | `viewLogistics` | `f` | key | The **Logistique** view (D88: the ribbons' throughput as a heat, jams, dead ends, the Gleaners' night), or back to Normal — F (flux, flow) was kept for a flow overlay. KeyF on both layouts |
@@ -151,7 +157,7 @@ There are two kinds of binding:
 | `viewWind` | `v` | key | The **Vent** view (D95: where the wind blows, from where, the turbines; [ui.md](ui.md#the-specialised-views-d88)), or back to Normal — V for vent; offered once the Anémométrie plan is learnt (`App.viewShown`). KeyV on both layouts |
 | `scrResearch` / `scrStats` | `t` / `g` | key | Opens the screen (the tree once the tutorial has revealed it; the Statistics once the ledger plan is unlocked, D41) |
 | `scrExpertise` | `e` | key | Opens the Expertise window once the Core mounts its Archive (level 3, D93); a click on the Archive does too |
-| `scrMarket` | `m` | key | Not handled (M6) |
+| `scrMarket` | `m` | key | The Crier; with a blueprint in hand, its mirror instead (D154: « miroir », mirror), or a toast naming the building that has no mirror twin |
 | `home` | `h` | key | Glides back to the Hearth |
 | `perf` | Backquote, IntlBackslash | code | Perf overlay |
 | `build` | `b` | key | Toggles build mode (plan view) |
@@ -174,6 +180,9 @@ Space (pan modifier) is hard-coded in `input.ts`, not in the table.
 | `belt` | `def`, `rot`, `from`, `flip` | `select` when `isDragDef(def)` (kind `belt`, `conduit` or `fence` — D103: a fence line is dragged like a ribbon and planned by `planBelts`, one fence a free tile) |
 | `remove` | `from` | `demolish()` |
 | `mark` | `from`, `clear` | `mark()` |
+| `copy` | `from` | `copy()` (D154) |
+| `paste` | `bp`, `rot`, `mirror` | `paste(bp = clipboard)`; a copy's release |
+| `upgrade` | `from` | `upgrade()` (D154) |
 | `null` | — | Nothing in hand |
 
 **Gestures** (tiles; the app forwards them only on the plan side):
@@ -184,6 +193,9 @@ Space (pan modifier) is hard-coded in `input.ts`, not in the table.
 | `belt` | `from` = tile | Lays the sim's plan of `beltPath(from → tile)` (`placeBelts`) → `{placed: n}` (with `left: {n, reason}` when the plan left tiles out: their count, the first one's reason), or the plan's first refusal (none when the drag only runs over what is already there) | Drops the drag, else puts the tool away | — |
 | `remove` | `from` = tile | Removes the box → `{removed}` | Starts a right box | Removes the box → `{removed}` |
 | `mark` | `from`, `clear = false` | `designate(box, true)` → `{marked}` | `from`, `clear = true` | `designate(box, false)` → `{cleared}` |
+| `copy` | `from` = tile | `capture(box)` → the clipboard, in hand as `paste` → `{copied}` (`{empty}` over nothing) | Puts the tool away | — |
+| `paste` | `sim.paste(bp, tile, rot, mirror)` → `{placed}` (`skipped: {n, reason}` when pieces were set aside), `{short, refused: 'unaffordable'}` when the Core cannot pay the whole | — | Puts the tool away | — |
+| `upgrade` | `from` = tile | `upgradeArea(box)` → `{upgraded}` (`skipped` likewise, or `{short}`) | Puts the tool away | — |
 | none | (Input pans or selects) | — | Starts a right box | Removes the box → `{removed}` |
 
 - **Placement.** `originFor(def, rot, hx, hy)` centres the rotated footprint on the cursor; for even
@@ -258,10 +270,12 @@ the remove tool's `from ?? hover`), then a mark box, then build or ribbon pieces
 | `mark` | `{box, clear, n}`: `n` tiles would be marked or cleared |
 | `reason` | First refusal along the preview (`PlaceReason`) |
 | `cost` | Map from item index to milli-items, net: each piece's `canPlace` cost (or the building's base `costOf` when refused before costing), minus the base cost of what it replaces. Only items actually spent are listed, so the tip's "missing" test (stock < cost) is the affordability rule |
+| `area` | The copy or upgrade tool's box (D154) and what it takes: the buildings a copy captures, the line pieces an upgrade lays over |
+| `plan` | A paste or an upgrade planned (D154): `n` to lay, `kept` already standing as they should, `skipped`, `short` (the Core cannot pay the whole: nothing would be laid), `gone` (pieces of a building the content no longer has), a paste's `box` (its whole frame) |
 
 GhostView draws it, keying its redraw on `pieces`, `box`, `doomed`, `mark`, `drag`, `leaps` and the hover
 ([render.md](render.md#10-world-views)). The tip shows the cost, the refusal and the mark count.
-`ToolResult {placed?, removed?, refused?, left?, marked?, cleared?}` becomes toasts in the app's build
+`ToolResult {placed?, removed?, refused?, left?, marked?, cleared?, copied?, short?, upgraded?, skipped?, empty?}` becomes toasts in the app's build
 mode: a refusal shows its `reason.*` string, a drag laid in part how many tiles it left out and why
 (`toast.left`, D77), and removals and marks get info toasts.
 
@@ -317,6 +331,38 @@ nothing is placed, a left drag still pans, and it is driven by the shell.
 
 [land-facts.test.ts](../src/ui/land-facts.test.ts) checks its order (a click picks, Esc lets the
 parcel go, then the mode).
+
+## 4d. Blueprints and undo (D154)
+
+The copy, paste and upgrade tools are `Tools` states (above); their rules are the engine's
+([engine.md](engine.md#blueprints-d154), [sim/systems/blueprint.ts](../src/sim/systems/blueprint.ts)).
+
+| | |
+|---|---|
+| Copy | Ctrl/⌘+C (or the library's « Copier une zone »): the copy tool; a box dragged over the base captures every building touching it (not the Core) — its place from the corner, rotation, recipe, a routing block's items, the wires between two pieces. The blueprint becomes `clipboard` and comes in hand at once as a paste. With a building inspected, Ctrl/⌘+C copies that one building straight away |
+| Paste | Ctrl/⌘+V (the clipboard), or « Prendre » in the library. The ghost is the plan at the cursor (the blueprint's middle on it, as `originFor`): each piece checked by `canPlace`, the whole costed net of what it replaces. R turns it a quarter, M mirrors it when every building has a twin (`mirrorBlocker`). A click lays it through `place` and `link` — nothing when the Core is short (the toast lists what it lacks); the pieces that do not fit are skipped (counted in the toast). The paste stays in hand for the next one; right click or Esc puts it away |
+| Upgrade | N, or the Logistique tray's « Améliorer » slot, once a faster ribbon is learnt (`upgradeOpen`): a box; on release every ribbon in it goes one tier up (`nextTier`), paid whole |
+| Undo | Ctrl/⌘+Z: the last step back (below) |
+
+The paste's plan is cached (`pastePlan`) while the cursor, the turn, the mirror, the tick and the
+entity table stay the same: the ghost asks for it every frame. While a blueprint tool is in hand
+the build bar's tray steps aside (`trayHidden`); a category's tab brings it back and puts the tool
+away. A finger taps a paste down (`touchTool` 'tap') and drags a copy or upgrade box.
+
+**The undo stack** ([undo.ts](../src/input/undo.ts)). `Tools.undo.record(sim, candidates, fn)`
+wraps every gesture that lays or takes down: the build tool's click, a ribbon drag, a paste, an
+upgrade, the demolition box (left or right), and the inspector's « Démolir » (`Tools.removeOne`).
+`candidates` are what it may take down (what its pieces replace, what its box holds), copied
+before with their place, rotation, `cfg` and wires; what it put up is every id from the table's
+`nextId` on. `undo` takes the last step back: what it put up comes down (`remove`, refunded in
+full), what it took down goes back (`place` with `turned`, its settings) and its wires to what
+stands (`link`); older steps are re-pointed at the ids put back. Limits: `DEPTH` = 32 steps, this
+session and this colony (a debug base or an import makes the old steps meaningless: they are
+dropped); not undone — wires strung by hand, marks, settings, land, research; what comes back
+comes back empty (its items went to the Core) and only where its ground is free and the Core can pay
+for it again (else `failed`, in the toast); a ribbon laid off the claim's land refunds its price,
+not the kites' surcharge (as any removal). Every undo is ordinary commands in the log: a replay
+needs no history.
 
 ## 5. `belt-path.ts`
 
@@ -382,8 +428,9 @@ the build bar scrolls (D96). Real fingers are driven by `scripts/responsive.mjs`
 ## 7. Pitfalls and known gaps
 
 - **Layouts** (fixed in the architecture pass, guarded by `bindings.test.ts`): zoom keys are
-  positional (no more AZERTY `-` on the 6 slot), Ctrl/Cmd chords only mean undo (by letter, so
-  AZERTY Ctrl+Z is not a pan), selects keep their keys, a focused button no longer eats Space.
+  positional (no more AZERTY `-` on the 6 slot), Ctrl/Cmd chords only mean undo, copy and paste
+  (D154; by letter, so AZERTY Ctrl+Z is not a pan), selects keep their keys, a focused button no
+  longer eats Space.
 - **The pipette's hint names the layout's key** (fixed 2026-10-15, [ui/keycap.ts](../src/ui/keycap.ts)):
   the build hint says `{pip}`, the letter at `KeyQ` on this keyboard — from the browser's layout
   map (`navigator.keyboard.getLayoutMap()`, Chromium), else from the keys the player presses
@@ -400,4 +447,4 @@ the build bar scrolls (D96). Real fingers are driven by `scripts/responsive.mjs`
   `edgeScroll` setting exists but nothing implements it.
 - **Replaced buildings in the ghost:** GhostView draws `doomed` only inside a demolition box, so the
   entities a placement or drag would replace are listed in the preview but not highlighted yet.
-- **Tests:** `belt-path.ts` and `bindings.ts` (`resolveKey`, both layouts) have unit tests; `Tools` is driven by the smoke test, and its build-tool rotation (the ghost over a ribbon, R, `turned`, D98) by [entry-rot.test.ts](../src/sim/entry-rot.test.ts). The drag plan it shows is the sim's `planBelts`, tested in [replace.test.ts](../src/sim/replace.test.ts).
+- **Tests:** `belt-path.ts`, `bindings.ts` (`resolveKey`, both layouts) and `undo.ts` (with the copy, paste and upgrade gestures of `Tools`, D154) have unit tests; `Tools` is driven by the smoke test, and its build-tool rotation (the ghost over a ribbon, R, `turned`, D98) by [entry-rot.test.ts](../src/sim/entry-rot.test.ts). The drag plan it shows is the sim's `planBelts`, tested in [replace.test.ts](../src/sim/replace.test.ts).

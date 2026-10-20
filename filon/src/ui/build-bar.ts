@@ -16,6 +16,7 @@ import { el, setAttr, setText } from '@/core/dom';
 import type { NotifyKind } from '@/core/kinds';
 import { locale, t, tr, type MsgKey } from '@/i18n/i18n';
 import { pipetteCap } from './keycap';
+import { modCap } from './mod-key';
 import { CAMO_VENT_KEY, beltKey, btKey, frameCanvas, iKey, type Atlas } from '@/render/art/atlas';
 import { BELT_TIERS } from '@/render/art/recipes/belts';
 import { TOP_MARGIN, TOP_PX } from '@/render/art/recipes/buildings-top';
@@ -78,6 +79,37 @@ export interface BuildBarHost {
   linking?(): boolean;
   /** Turn the building in hand (R; D96: the « Tourner » button, shown on touch screens, where there is no R). */
   rotate?(): void;
+  /**
+   * Blueprints (D154): the library's panel (K: its copy and paste are there, and on Ctrl/⌘+C, V), on
+   * while it is open or a copy or paste is in hand; the upgrade tool (N), the Logistique tray's last
+   * slot once a faster ribbon is learnt; the tray hidden while a blueprint tool is in hand (the ghost
+   * is what matters then, and a big tray would cover it).
+   */
+  blueprints?: {
+    library(): void; libraryOn(): boolean;
+    upgrade(): void; upgrading(): boolean; upgradeShown(): boolean;
+    trayHidden(): boolean;
+    /** A blueprint in hand: « Tourner » turns it, « Miroir » mirrors it (a finger has no R nor M). */
+    pasting(): boolean; mirror(): void;
+  };
+}
+
+/** The upgrade tool's icon (D154): a swift ribbon's piece with a turquoise arrow climbing over it, inked. */
+function upgradeIcon(atlas: Atlas, size: number): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = c.height = Math.ceil(size);
+  const g = c.getContext('2d');
+  const ribbon = buildingIcon(atlas, 'swift_ribbon', size);
+  if (!g) return c;
+  if (ribbon) g.drawImage(ribbon, (c.width - ribbon.width) / 2, (c.height - ribbon.height) / 2);
+  const s = c.width, cx = s * 0.66, top = s * 0.18, bot = s * 0.7, w = s * 0.13;
+  g.beginPath();
+  g.moveTo(cx, top); g.lineTo(cx + w * 1.6, top + w * 1.8); g.lineTo(cx + w * 0.55, top + w * 1.8);
+  g.lineTo(cx + w * 0.55, bot); g.lineTo(cx - w * 0.55, bot); g.lineTo(cx - w * 0.55, top + w * 1.8); g.lineTo(cx - w * 1.6, top + w * 1.8);
+  g.closePath();
+  g.fillStyle = C.glowTurq; g.fill();
+  g.lineWidth = s * 0.035; g.strokeStyle = C.ink; g.lineJoin = 'round'; g.stroke();
+  return c;
 }
 
 /** The Link tool's icon: two pillar heads and the wire sagging between them, inked. */
@@ -163,9 +195,14 @@ export class BuildBar {
   private readonly markBtn: HTMLButtonElement;
   /** « Tourner » (D96): R for a finger, while a building or a ribbon is in hand (responsive.css shows it on touch screens only). */
   private readonly rotateBtn: HTMLButtonElement;
+  /** « Miroir » (D154): M for a finger, while a blueprint is in hand (shown on touch screens, as « Tourner »). */
+  private readonly mirrorBtn: HTMLButtonElement;
   private readonly backBtn: HTMLButtonElement;
   /** The Énergie tray's « Relier » tool slot (null while another tray is open). */
   private linkBtn: HTMLButtonElement | null = null;
+  /** Blueprints (D154): the « Gabarits » tab (null without the host's blueprints), and the Logistique tray's « Améliorer » slot (null while another tray is open). */
+  private readonly libraryBtn: HTMLButtonElement | null;
+  private upgradeBtn: HTMLButtonElement | null = null;
   /** Labels built once and re-set on refresh, so they follow a language switch. */
   private readonly labels: Array<[HTMLElement, MsgKey]> = [];
   // ── what is unlocked ──
@@ -197,7 +234,10 @@ export class BuildBar {
     this.markBtn = el<'button'>('button.bb-tab.bb-demolish.bb-mark', { onclick: () => host.mark() }, [el('span.bb-key', {}, 'C'), this.label(el('span.bb-label.lettering'), 'build.mark')]);
     this.backBtn = el<'button'>('button.bb-tab.bb-back', { onclick: () => host.openCategory(null) }, [el('span.bb-key', {}, 'B'), this.label(el('span.bb-label.lettering'), 'view.toIso')]);
     this.rotateBtn = el<'button'>('button.bb-tab.bb-rotate', { type: 'button', hidden: true, onclick: () => host.rotate?.() }, [el('span.bb-key', {}, 'R'), el('span.bb-turn', { 'aria-hidden': 'true' }, '⟳'), this.label(el('span.bb-label.lettering'), 'build.rotate')]);
-    tabRow.append(this.rotateBtn, this.markBtn, this.demolishBtn, this.backBtn);
+    const bp = host.blueprints;
+    this.mirrorBtn = el<'button'>('button.bb-tab.bb-rotate.bb-mirror', { type: 'button', hidden: true, onclick: () => bp?.mirror() }, [el('span.bb-key', {}, 'M'), el('span.bb-turn', { 'aria-hidden': 'true' }, '⇋'), this.label(el('span.bb-label.lettering'), 'build.mirror')]);
+    this.libraryBtn = bp ? el<'button'>('button.bb-tab.bb-demolish.bb-bp', { type: 'button', 'data-tool': 'library', onclick: () => bp.library() }, [el('span.bb-key', {}, 'K'), this.label(el('span.bb-label.lettering'), 'build.library')]) : null;
+    tabRow.append(this.rotateBtn, this.mirrorBtn, ...(this.libraryBtn ? [this.libraryBtn] : []), this.markBtn, this.demolishBtn, this.backBtn);
     this.tray = el('div.bb-tray');
     this.hintEl = el('div.bb-hint');
     this.root = el('section.buildbar', { 'data-screen': 'buildbar' }, [this.tray, tabRow, this.hintEl]);
@@ -238,6 +278,7 @@ export class BuildBar {
     this.tray.replaceChildren();
     this.slots = [];
     this.linkBtn = null;
+    this.upgradeBtn = null;
     if (!cat) return;
     const L = locale();
     unlockedTray(sim, cat).forEach((def, i) => {
@@ -272,6 +313,16 @@ export class BuildBar {
       ]);
       this.tray.append(this.linkBtn);
     }
+    // The Logistique tray ends with the upgrade tool (D154): its ribbons a tier up (N), once a faster one is learnt.
+    const bp = this.host.blueprints;
+    if (cat === 'logistics' && bp?.upgradeShown()) {
+      this.upgradeBtn = el<'button'>('button.bb-slot.bb-tool', { 'data-tool': 'upgrade', onclick: () => bp.upgrade() }, [
+        upgradeIcon(this.atlas, 54),
+        el('span.bb-key', {}, 'N'),
+        el('span.bb-name', {}, t('build.upgrade')),
+      ]);
+      this.tray.append(this.upgradeBtn);
+    }
   }
 
   /** 4 Hz: what is unlocked, the tabs and the open tray, affordability, the tool in hand. */
@@ -298,9 +349,17 @@ export class BuildBar {
     }
     setAttr(this.demolishBtn, 'data-on', this.host.demolishing() ? '' : null);
     setAttr(this.markBtn, 'data-on', this.host.marking() ? '' : null);
-    setAttr(this.rotateBtn, 'hidden', this.host.rotate && this.host.current() ? null : '');
+    const pasting = !!this.host.blueprints?.pasting();
+    setAttr(this.rotateBtn, 'hidden', this.host.rotate && (this.host.current() || pasting) ? null : '');
+    setAttr(this.mirrorBtn, 'hidden', pasting ? null : '');
     const rv = revealed(sim);
     setAttr(this.markBtn, 'hidden', rv && !rv.has('brush') ? '' : null);
+    const bp = this.host.blueprints;
+    if (bp) {
+      if (this.libraryBtn) setAttr(this.libraryBtn, 'data-on', bp.libraryOn() ? '' : null);
+      if (this.upgradeBtn) setAttr(this.upgradeBtn, 'data-on', bp.upgrading() ? '' : null);
+      setAttr(this.tray, 'data-hidden', bp.trayHidden() ? '' : null);
+    }
     if (this.linkBtn) setAttr(this.linkBtn, 'data-on', this.host.linking?.() ? '' : null);
     const cur = this.host.current();
     for (const s of this.slots) {
@@ -311,7 +370,7 @@ export class BuildBar {
       for (const c of s.chips) setAttr(c.node, 'data-poor', sim.stock[c.item]! < c.mu ? '' : null);
     }
     // The pipette's key as this keyboard prints it (keycap.ts), not as the language guesses.
-    setText(this.hintEl, cat ? tr(this.host.hint(), { pip: pipetteCap() }) : '');
+    setText(this.hintEl, cat ? tr(this.host.hint(), { pip: pipetteCap(), mod: modCap() }) : '');
   }
 
   /** Does any tray hold a building unlocked but not seen yet (a dot on « Construire » while building is closed, D88)? */

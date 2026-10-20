@@ -7,8 +7,12 @@
 // the parcels, buy or lease one) is a mode of its own: it puts every tool away and turns the
 // board to the plan view (zoomed out to see a few parcels), and taking any tool or opening a
 // category ends it; ending it stands the colony back up in iso unless a category is open.
+// Blueprints (D154): the copy tool (Ctrl/⌘+C; with a building inspected, that building copied),
+// the paste (Ctrl/⌘+V: the clipboard in hand; R turns it, M mirrors it when it can), the upgrade
+// tool (N, once a faster ribbon is learnt), the library's panel (K), and Ctrl/⌘+Z, the last step
+// taken back — each a toast saying what it did.
 import { BAL } from '@/content/balance';
-import { BUILDING_KIND, buildingDef, buildingIdx } from '@/content/registry';
+import { BUILDING_KIND, buildingDef, buildingIdx, itemDef } from '@/content/registry';
 import type { BuildCategory, BuildingDef } from '@/content/types';
 import { bus } from '@/core/bus';
 import { locale, t, tr, type MsgKey } from '@/i18n/i18n';
@@ -18,7 +22,11 @@ import type { LinkTool, LinkToolResult } from '@/input/link-tool';
 import type { LandTool } from '@/input/land-tool';
 import type { Sim } from '@/sim/state';
 import type { Rot } from '@/sim/types';
+import { footprint } from '@/sim/entities';
+import { upgradeOpen, type Blueprint } from '@/sim/systems/blueprint';
+import { num } from '@/i18n/format';
 import type { BuildBar } from '@/ui/build-bar';
+import { modCap } from '@/ui/mod-key';
 import type { Toasts } from '@/ui/toasts';
 import type { ViewState } from './view';
 
@@ -37,6 +45,10 @@ export interface BuildModeDeps {
   land: LandTool;
   /** The camera's zoom, read and glided to (the land mode zooms out to show a few parcels). */
   zoom?: { get(): number; glide(z: number): void };
+  /** The blueprints' library panel (D154): shown, and toggled. */
+  library?: { open(): boolean; toggle(on?: boolean): void };
+  /** The entity inspected (0: none): Ctrl/⌘+C copies it. */
+  selected?(): number;
 }
 
 /** The land mode's zoom at most: a parcel about 180 px on screen in plan (TOP 32 px a tile), several in view. */
@@ -54,6 +66,9 @@ export class BuildMode {
   /** Open a construction category (plan view), or close building (null: back to iso). */
   open(cat: BuildCategory | null): void {
     this.endLand();
+    // A category's tab while a blueprint tool is in hand (D154): its tray comes back, the tool goes.
+    const k = this.d.tools.state?.k;
+    if (cat && cat !== this.category && (k === 'copy' || k === 'paste' || k === 'upgrade')) this.d.tools.state = null;
     this.category = cat;
     if (cat) this.last = cat;
     else { this.d.tools.state = null; this.d.link.stop(); }
@@ -83,6 +98,73 @@ export class BuildMode {
     this.endLand();
     if (!this.category) this.open(this.last);
     this.d.tools.demolish();
+  }
+
+  /** Ready to place something: tools in hand need the plan view — a category open (the last one), the Link tool and the land mode put away. */
+  private ready(): void {
+    this.d.link.stop();
+    this.endLand();
+    if (!this.category) this.open(this.last);
+  }
+
+  /**
+   * Ctrl/⌘+C (D154): the building inspected, copied at once (its blueprint in hand); else the copy
+   * tool, toggled — a box dragged over what to copy.
+   */
+  copy(): void {
+    const sel = this.d.selected?.() ?? 0, sim = this.d.sim(), e = sel ? sim.ents.get(sel) : undefined;
+    if (e && sel !== sim.hearthId) {
+      const [w, h] = footprint(e.def, e.rot);
+      const bp = sim.capture(e.x, e.y, e.x + w - 1, e.y + h - 1);
+      if (bp) { this.d.tools.clipboard = bp; this.ready(); this.d.tools.paste(bp); this.d.deselect(); this.report({ copied: bp.pieces.length }); return; }
+    }
+    if (this.d.tools.state?.k === 'copy') { this.d.tools.state = null; return; }
+    this.ready();
+    this.d.tools.copy();
+    this.d.deselect();
+  }
+
+  /** Ctrl/⌘+V, or « Poser » in the library: a blueprint in hand (the clipboard by default). */
+  paste(bp?: Blueprint): void {
+    const b = bp ?? this.d.tools.clipboard;
+    if (!b) { this.d.toasts.show('info', t('bp.toast.noCopy', { mod: modCap() })); return; }
+    this.ready();
+    this.d.tools.paste(b);
+    this.d.deselect();
+  }
+
+  /** N (D154): the upgrade tool, toggled — once a faster ribbon is learnt (else a toast says which). */
+  upgrade(): void {
+    if (this.d.tools.state?.k === 'upgrade') { this.d.tools.state = null; return; }
+    if (!upgradeOpen(this.d.sim())) { this.d.toasts.show('info', t('bp.toast.noTier', { res: nodeName('xp_swift')[locale()] })); return; }
+    this.ready();
+    this.d.tools.upgrade();
+    this.d.deselect();
+  }
+
+  /** M with a blueprint in hand (D154): mirrored, or a toast naming the building that has no mirror twin. True when a blueprint was in hand. */
+  mirror(): boolean {
+    if (this.d.tools.state?.k !== 'paste') return false;
+    const stop = this.d.tools.mirror();
+    if (stop) this.d.toasts.show('warn', t('bp.toast.noMirror', { name: buildingDef(buildingIdx(stop)).name[locale()] }));
+    return true;
+  }
+
+  /** Ctrl/⌘+Z (D154): the last step taken back, and what it did. */
+  undo(): void {
+    const r = this.d.tools.undoLast();
+    const toasts = this.d.toasts;
+    if (!r) { toasts.show('info', t('bp.toast.noUndo')); return; }
+    toasts.show(r.failed ? 'warn' : 'info', tr('bp.toast.undo', { n: r.removed + r.restored }) + (r.failed ? ` · ${tr('bp.toast.undoFailed', { n: r.failed })}` : ''));
+    bus.emit('sfx', { cue: r.removed ? 'demolish' : 'place', n: Math.max(1, r.removed + r.restored) });
+  }
+
+  /** K (D154): the library's panel, toggled (the land mode put away). */
+  library(): void {
+    const lib = this.d.library;
+    if (!lib) return;
+    if (!lib.open()) { this.endLand(); this.d.deselect(); }
+    lib.toggle();
   }
 
   /** The landscaping brush: dig / fill marks (toggles). */
@@ -170,6 +252,7 @@ export class BuildMode {
   hint(): MsgKey {
     if (this.d.link.active) return this.d.link.source ? 'build.hint.linkFrom' : 'build.hint.link';
     const k = this.d.tools.state?.k;
+    if (k === 'copy' || k === 'paste' || k === 'upgrade') return `build.hint.${k}`;
     return k === 'build' ? 'build.hint.build' : k === 'belt' ? 'build.hint.belt' : k === 'remove' ? 'build.hint.remove' : k === 'mark' ? 'build.hint.mark' : 'build.hint.none';
   }
 
@@ -178,14 +261,21 @@ export class BuildMode {
     const toasts = this.d.toasts;
     // Off the claim's land (D60): the way to it, the land mode's key, after the reason.
     const land = r.refused === 'outside_zone' || r.refused === 'neighbour_land' ? ` · ${t('land.keyHint')}` : '';
-    if (r.refused) toasts.show('bad', t('toast.refused', { why: t(`reason.${r.refused}` as MsgKey) }) + land);
+    if (r.refused && !r.short) toasts.show('bad', t('toast.refused', { why: t(`reason.${r.refused}` as MsgKey) }) + land);
     // A drag laid in part: the tiles it left out, and why (D77: a step wants a traction ribbon).
     if (r.left) toasts.show('bad', tr('toast.left', { n: r.left.n, why: t(`reason.${r.left.reason}` as MsgKey) }));
     if (r.removed) toasts.show('info', tr('toast.removed', { n: r.removed }));
     if (r.marked) toasts.show('info', tr('toast.marked', { n: r.marked }));
     if (r.cleared) toasts.show('info', tr('toast.cleared', { n: r.cleared }));
+    // Blueprints (D154): a copy in hand, an empty box, what a paste or an upgrade lacks, ribbons lifted.
+    if (r.copied) toasts.show('good', tr('bp.toast.copied', { n: r.copied }));
+    if (r.empty) toasts.show('info', t('bp.toast.empty'));
+    if (r.short) toasts.show('bad', t('bp.toast.short', { what: [...r.short].sort((a, b) => a[0] - b[0]).map(([it, mu]) => `${num(Math.ceil(mu / 1000))} ${itemDef(it).name[locale()]}`).join(', ') }));
+    if (r.upgraded) toasts.show('info', tr('bp.toast.upgraded', { n: r.upgraded }));
+    if (r.skipped) toasts.show('bad', tr('bp.toast.skipped', { n: r.skipped.n, why: t(`reason.${r.skipped.reason}` as MsgKey) }));
     // Sound (app/sound.ts): one cue for what the tool did — a ribbon drag ticks once per tile laid.
-    if (r.placed) bus.emit('sfx', { cue: this.d.tools.state?.k === 'belt' ? 'ribbon' : 'place', n: r.placed });
+    if (r.placed || r.upgraded) bus.emit('sfx', { cue: this.d.tools.state?.k === 'belt' || r.upgraded ? 'ribbon' : 'place', n: r.placed ?? r.upgraded });
+    else if (r.copied) bus.emit('sfx', { cue: 'select' });
     else if (r.removed) bus.emit('sfx', { cue: 'demolish', n: r.removed });
     else if (r.marked || r.cleared) bus.emit('sfx', { cue: 'mark' });
     else if (r.refused) bus.emit('sfx', { cue: 'refused' });

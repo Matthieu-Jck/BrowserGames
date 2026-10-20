@@ -27,13 +27,13 @@
 #ui .toast { max-width: 100%; }
 #ui .qlog { top: calc(var(--hud-b) + 10px); left: calc(var(--gap) + var(--safe-l)); max-height: max(120px, calc(100% - var(--hud-b) - var(--bar-h) - 3 * var(--gap) - var(--safe-b))); }
 /* The side panels: under the HUD's right cluster, above the open build bar, sized by clamp(). */
-#ui .inspector, #ui .vpanel, #ui .land {
+#ui .inspector, #ui .vpanel, #ui .land, #ui .bpl {
   top: calc(var(--hud-rb) + 18px);
   right: calc(var(--gap) + var(--safe-r));
   max-height: calc(100% - var(--hud-rb) - 18px - var(--bar-h) - var(--gap) - var(--safe-b) - 6px);
 }
 #ui .inspector, #ui .vpanel { width: clamp(292px, 23%, 330px); }
-#ui .land { width: clamp(286px, 22%, 316px); }
+#ui .land, #ui .bpl { width: clamp(286px, 22%, 316px); }
 /* The Stock panel (D96): under the HUD on the left, over the quest log (which steps aside), above the bar. */
 #ui .stockp {
   top: calc(var(--hud-b) + 10px); left: calc(var(--gap) + var(--safe-l)); width: clamp(300px, 24%, 360px); z-index: 1;
@@ -96,7 +96,7 @@
 
   /* The side panels: bottom sheets, full width (a column of 600 px at most), above the open build
      bar and never over the HUD; half-way open, folded to their header, or pulled up (ui/sheet.ts). */
-  #ui .inspector, #ui .vpanel, #ui .land, #ui .stockp, #ui .purse {
+  #ui .inspector, #ui .vpanel, #ui .land, #ui .bpl, #ui .stockp, #ui .purse {
     --sheet-peek: 84px;
     --sheet-max: calc(100% - var(--hud-b) - var(--bar-h) - 2 * var(--gap) - var(--safe-b) - 4px);
     top: auto; width: auto;
@@ -108,12 +108,12 @@
     transition: max-height 180ms ease;
     overscroll-behavior: contain;
   }
-  #ui :is(.inspector, .vpanel, .land, .stockp, .purse)[data-sheet='full'] { max-height: var(--sheet-max); }
-  #ui :is(.inspector, .vpanel, .land, .stockp, .purse)[data-sheet='peek'] { max-height: min(var(--sheet-peek), var(--sheet-max)); overflow: hidden; }
-  #ui :is(.inspector, .vpanel, .land, .stockp, .purse)[data-dragging] { transition: none; }
+  #ui :is(.inspector, .vpanel, .land, .bpl, .stockp, .purse)[data-sheet='full'] { max-height: var(--sheet-max); }
+  #ui :is(.inspector, .vpanel, .land, .bpl, .stockp, .purse)[data-sheet='peek'] { max-height: min(var(--sheet-peek), var(--sheet-max)); overflow: hidden; }
+  #ui :is(.inspector, .vpanel, .land, .bpl, .stockp, .purse)[data-dragging] { transition: none; }
   /* One sheet at a time: the Stock, opened on purpose, over the others (they come back when it closes). */
   #ui .stockp, #ui .purse { z-index: 2; }
-  #ui:has(> :is(.stockp, .purse):not([hidden])) :is(.inspector, .vpanel, .land) { display: none; }
+  #ui:has(> :is(.stockp, .purse):not([hidden])) :is(.inspector, .vpanel, .land, .bpl) { display: none; }
   #ui .sheet-grip {
     display: flex; justify-content: center; align-items: center; position: sticky; top: 0; z-index: 2;
     width: calc(100% + 24px); height: 24px; margin: 0 -12px 2px; padding: 0; cursor: grab; touch-action: none;
@@ -125,7 +125,7 @@
   /* The tutorial's log: at most the window's width, a third of its height; it steps aside while a
      sheet is up (the player is reading the sheet; the log comes back when it closes). */
   #ui .qlog { width: min(304px, calc(100% - 2 * var(--gap) - var(--safe-l) - var(--safe-r))); max-height: min(36%, calc(100% - var(--hud-b) - var(--bar-h) - 3 * var(--gap))); }
-  #ui:has(> :is(.inspector, .vpanel, .land, .stockp, .purse):not([hidden])) .qlog { display: none; }
+  #ui:has(> :is(.inspector, .vpanel, .land, .bpl, .stockp, .purse):not([hidden])) .qlog { display: none; }
 
   /* The build bar: the categories in one row that scrolls sideways, the tray one row of slots that scrolls too. */
   #ui .buildbar { gap: 5px; }
@@ -173,11 +173,11 @@
 
 /* ── narrow and on its side: the sheet docks right, beside the world ─────────── */
 @media (max-width: 899px) and (orientation: landscape) {
-  #ui .inspector, #ui .vpanel, #ui .land, #ui .stockp, #ui .purse {
+  #ui .inspector, #ui .vpanel, #ui .land, #ui .bpl, #ui .stockp, #ui .purse {
     left: auto; width: min(400px, 56%);
     max-height: var(--sheet-max);
   }
-  #ui :is(.inspector, .vpanel, .land, .stockp, .purse)[data-sheet='half'] { max-height: min(var(--sheet-max), 70%); }
+  #ui :is(.inspector, .vpanel, .land, .bpl, .stockp, .purse)[data-sheet='half'] { max-height: min(var(--sheet-max), 70%); }
   /* The notices on the world's side, clear of the sheet. */
   #ui .toasts { left: calc(var(--gap) + var(--safe-l)); transform: none; align-items: flex-start; max-width: 42%; }
   #ui .toast { font-size: 13px; padding: 4px 11px; }
@@ -211,7 +211,7 @@
   #ui .bb-slot > canvas { height: 36px; }
   #ui .bb-name { min-height: 0; -webkit-line-clamp: 1; line-clamp: 1; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
   #ui .bb-tray { padding: 4px 6px; }
-  #ui :is(.inspector, .vpanel, .land, .stockp, .purse) { --sheet-peek: 74px; }
+  #ui :is(.inspector, .vpanel, .land, .bpl, .stockp, .purse) { --sheet-peek: 74px; }
   #screens .crier .cr-orbit { height: 220px; }
   #screens .research .rs-detail { max-height: 52%; }
 }

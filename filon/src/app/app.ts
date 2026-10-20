@@ -53,6 +53,8 @@ import { installSheet } from '@/ui/sheet';
 import type { FlowLine } from '@/ui/purse-facts';
 import { parcelCentre } from '@/sim/world/land';
 import { LandPanel } from '@/ui/land-panel';
+import { BlueprintPanel } from '@/ui/blueprint-panel';
+import { upgradeOpen } from '@/sim/systems/blueprint';
 import { ViewBar } from '@/ui/views/view-bar';
 import { ViewPanel } from '@/ui/views/view-panel';
 import { analyticsOn } from '@/ui/analytics';
@@ -136,6 +138,8 @@ export class App {
   readonly landTool = new LandTool();
   /** The land mode's card (where the inspector sits): the legend, the picked parcel, buy / lease. */
   readonly landPanel: LandPanel;
+  /** The blueprints' library (D154, K): the copy in hand to save, the blueprints saved in the base. */
+  readonly library: BlueprintPanel;
   /** The specialised views (D88): which one is on show and what it reads; the selector; the side card. */
   readonly views: MapViews;
   readonly viewBar: ViewBar;
@@ -248,6 +252,8 @@ export class App {
       sim: () => this.sim, tools: this.tools, view: this.view, bar: () => this.bar, toasts: this.toasts, deselect: () => this.select(0), link: this.link, select: (id) => this.select(id),
       land: this.landTool,
       zoom: { get: () => this.camera.target.zoom, glide: (z) => this.camera.glideTo(this.camera.target.tx, this.camera.target.ty, z) },
+      library: { open: () => this.library?.open ?? false, toggle: (on) => this.library.toggle(on) },
+      selected: () => this.selected,
     });
     this.views = new MapViews({ sim: () => this.sim, land: this.landTool, setLand: (on) => this.build.land(on), lit: (id) => this.buildings.work.isLit(id) });
     this.screens = new ScreenHost(document.getElementById('screens'));
@@ -286,6 +292,13 @@ export class App {
       link: () => this.build.link(),
       linking: () => this.link.active,
       rotate: () => this.tools.rotate(1),
+      blueprints: {
+        library: () => this.build.library(),
+        libraryOn: () => this.library.open || this.tools.state?.k === 'copy' || this.tools.state?.k === 'paste',
+        upgrade: () => this.build.upgrade(), upgrading: () => this.tools.state?.k === 'upgrade', upgradeShown: () => upgradeOpen(this.sim),
+        trayHidden: () => { const k = this.tools.state?.k; return k === 'copy' || k === 'paste' || k === 'upgrade'; },
+        pasting: () => this.tools.state?.k === 'paste', mirror: () => { this.build.mirror(); },
+      },
     });
     this.inspector = new Inspector(atlas, {
       sim: () => this.sim,
@@ -303,6 +316,14 @@ export class App {
       facet: () => { const v = this.views.current; return v === 'power' || v === 'logistics' || v === 'production' ? v : v === 'wind' ? 'power' : null; },
     });
     this.landPanel = new LandPanel({ sim: () => this.sim, active: () => this.landTool.active, selected: () => this.landTool.selected, close: () => this.build.land(false), notify });
+    this.library = new BlueprintPanel(atlas, {
+      sim: () => this.sim,
+      held: () => { const s = this.tools.state; return s?.k === 'paste' ? s.bp : this.tools.clipboard; },
+      take: (bp) => this.build.paste(bp),
+      copy: () => this.build.copy(),
+      clipboard: () => this.tools.clipboard,
+      notify,
+    });
     this.viewPanel = new ViewPanel(atlas, {
       sim: () => this.sim, view: () => this.views.current, data: () => this.views.data, covered: () => !!this.selected,
       close: () => this.views.set('normal'), focus: (id) => this.focus(id), goTo: (x, y) => this.camera.glideTo(x, y),
@@ -313,9 +334,9 @@ export class App {
     document.body.append(this.depositCard.root);
     this.neighbourCard.atlas = this.atlas;
     document.body.append(this.neighbourCard.root); // a neighbouring base's card, on a click on its pieces (D110)
-    document.getElementById('ui')?.append(this.hud.root, this.hud.stock.root, this.hud.purse.root, this.inspector.root, this.landPanel.root, this.viewPanel.root, this.bar.root, this.toasts.root);
+    document.getElementById('ui')?.append(this.hud.root, this.hud.stock.root, this.hud.purse.root, this.inspector.root, this.landPanel.root, this.library.root, this.viewPanel.root, this.bar.root, this.toasts.root);
     // On a narrow window the side panels and the Stock are bottom sheets with a grip (D96, ui/sheet.ts).
-    for (const panel of [this.inspector.root, this.landPanel.root, this.viewPanel.root, this.hud.stock.root, this.hud.purse.root]) installSheet(panel);
+    for (const panel of [this.inspector.root, this.landPanel.root, this.library.root, this.viewPanel.root, this.hud.stock.root, this.hud.purse.root]) installSheet(panel);
     // The building card listens on the bar (event delegation). It lives on <body> above the
     // tutorial's guide (the player is reading it), below the naming modal and the tip.
     this.card = new BuildingCard(atlas, { sim: () => this.sim, covered: () => !!this.screens.current }, this.bar.root);
@@ -352,6 +373,7 @@ export class App {
   select(id: number): void {
     if (this.selected === id) return;
     this.selected = id;
+    if (id && this.library?.open) this.library.toggle(false); // the inspector takes the library's place (D154)
     this.inspector?.refresh();
     bus.emit('selection:changed', { entity: id || null });
   }
@@ -419,8 +441,8 @@ export class App {
   }
 
   removeEntity(id: number): void {
-    const e = this.sim.ents.get(id);
-    if (e && this.sim.remove(e.x, e.y)) {
+    // One step of the undo stack (D154): Ctrl/⌘+Z puts it back.
+    if (this.tools.removeOne(id)) {
       this.toasts.show('info', tr('toast.removed', { n: 1 }));
       bus.emit('sfx', { cue: 'demolish' });
     }
@@ -537,6 +559,7 @@ export class App {
       this.card.refresh();
       this.inspector.refresh();
       this.landPanel.refresh();
+      this.library.refresh();
       this.viewPanel.refresh();
       this.screens.refresh();
       this.guide.refresh();

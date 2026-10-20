@@ -46,6 +46,7 @@ import { projectDone, type Project, type StartBlock } from './research/runtime';
 import type { Job, JobKind } from './space';
 import * as build from './systems/build';
 import * as beltPlan from './systems/belt-plan';
+import * as blueprint from './systems/blueprint';
 import * as configure from './systems/configure';
 import * as landscape from './systems/landscape';
 import * as power from './systems/power';
@@ -198,6 +199,10 @@ export class Sim {
    */
   readonly gleaned = new Float64Array(N_ITEMS);
   gleaners: gleaners.GleanState = gleaners.newGleanState();
+
+  // ── the blueprints' library (D154, systems/blueprint.ts) ─────────────────
+  /** The blueprints the player saved, in saving order: kept in the save (so an export carries them), not hashed — the base's notes, not its state. */
+  readonly blueprints: blueprint.Blueprint[] = [];
 
   // ── the compiled flow graph (derived, rebuilt when `dirty`) ──────────────
   graph!: Graph;
@@ -365,6 +370,22 @@ export class Sim {
     return true;
   }
   upgradeHearth(): ReturnType<typeof build.upgradeHearth> { return build.upgradeHearth(this); }
+
+  // ── blueprints (D154, systems/blueprint.ts): the player's commands, nothing new for the land ──
+  /** What stands in an inclusive box, as a blueprint (null: nothing). A read: nothing logged. */
+  capture(ax: number, ay: number, bx: number, by: number): blueprint.Blueprint | null { return blueprint.capture(this, ax, ay, bx, by); }
+  /** A paste planned at the cursor: each piece checked, the whole costed against the Core (the ghost shows it). */
+  planPaste(bp: blueprint.Blueprint, hx: number, hy: number, turn: Rot, mirror: boolean): ReturnType<typeof blueprint.planPaste> { return blueprint.planPaste(this, bp, hx, hy, turn, mirror); }
+  /** Paste: the pieces that fit laid by `place`, wired by `link` (each logged); paid whole or not at all. */
+  paste(bp: blueprint.Blueprint, hx: number, hy: number, turn: Rot, mirror: boolean): blueprint.LayResult { return blueprint.paste(this, bp, hx, hy, turn, mirror); }
+  /** An area's ribbons one tier up, planned (the upgrade tool's preview). */
+  planUpgrade(ax: number, ay: number, bx: number, by: number): blueprint.Plan { return blueprint.planUpgrade(this, ax, ay, bx, by); }
+  /** Upgrade an area: each ribbon laid over by the next tier unlocked (`place`, replaced and refunded); paid whole. */
+  upgradeArea(ax: number, ay: number, bx: number, by: number): blueprint.LayResult { return blueprint.upgradeArea(this, ax, ay, bx, by); }
+  /** Save a blueprint to the library under a name (logged); its id, 0 when refused. */
+  saveBlueprint(bp: blueprint.Blueprint, name: string): number { return blueprint.saveBlueprint(this, bp, name); }
+  renameBlueprint(id: number, name: string): boolean { return blueprint.renameBlueprint(this, id, name); }
+  deleteBlueprint(id: number): boolean { return blueprint.deleteBlueprint(this, id); }
   /** Finish the remote constructions due by `now` (online: each tick; offline: at their event). */
   completeConstructions(now = this.tick): number[] { return build.completeConstructions(this, now); }
 

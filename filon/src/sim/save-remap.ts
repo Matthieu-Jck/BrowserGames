@@ -69,6 +69,7 @@ export const FIELDS: { readonly [K in keyof Required<SaveData>]: Kind } = {
   costFloor: 'plain', costFloorD129: 'plain', notes: 'plain', respecs: 'plain', lastRespec: 'plain', designated: 'plain', jobs: 'refs',
   market: 'plain', trade: 'index', quests: 'plain', value: 'plain', expertise: 'plain',
   gleaners: 'index',
+  blueprints: 'plain', // by content ids (D154): nothing to re-point
 };
 
 /** The same for the trade section. */

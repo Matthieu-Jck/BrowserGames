@@ -10,14 +10,21 @@
 // then the ghost is a transparent placeholder of that plan; one laid in part says how many tiles
 // it left out and why. The preview tells the ghost what would happen — what it replaces, what it
 // costs net — and why not.
+// Blueprints (D154): the copy tool (a box: what stands in it becomes the clipboard, in hand at once
+// as a paste), the paste (the blueprint as a ghost on the cursor, R turns it, M mirrors it when it
+// can; a click lays the pieces that fit through `place`, paid whole or not at all), and the upgrade
+// tool (a box: its ribbons one tier up). Every gesture that lays or takes down is one step of the
+// undo stack (Ctrl/⌘+Z, undo.ts).
 import { BUILDING_IDS, BUILDING_KIND, buildingDef, buildingIdx, costOf, isDragDef } from '@/content/registry';
 import { footprint, forTiles } from '@/sim/entities';
 import { oreSnap } from '@/sim/ore-blocks';
 import { refundCost } from '@/sim/refund';
 import { landReason } from '@/sim/systems/belt-plan';
+import { entsInBox, mirrorBlocker, type Blueprint, type Plan } from '@/sim/systems/blueprint';
 import type { PlaceCheck, PlaceReason, Sim } from '@/sim/state';
 import { isRock, T, type Rot } from '@/sim/types';
 import { beltPath } from './belt-path';
+import { UndoStack, type UndoResult } from './undo';
 
 /** The bridge end a drag lays in pairs over its obstacles (D73). */
 const BRIDGE_ID = BUILDING_IDS[BUILDING_KIND.indexOf('bridge')] ?? '';
@@ -29,7 +36,13 @@ export type ToolState =
   | { k: 'build'; def: string; rot: Rot; turned?: boolean }
   | { k: 'belt'; def: string; rot: Rot; from: [number, number] | null; flip: boolean }
   | { k: 'remove'; from: [number, number] | null }
-  | { k: 'mark'; from: [number, number] | null; clear: boolean };
+  | { k: 'mark'; from: [number, number] | null; clear: boolean }
+  /** The copy tool (D154): a box whose buildings become the clipboard. */
+  | { k: 'copy'; from: [number, number] | null }
+  /** A blueprint in hand (D154): turned `rot` quarter turns, mirrored left ⇄ right. */
+  | { k: 'paste'; bp: Blueprint; rot: Rot; mirror: boolean }
+  /** The upgrade tool (D154): a box whose ribbons go one tier up. */
+  | { k: 'upgrade'; from: [number, number] | null };
 
 export interface GhostPiece { def: string; x: number; y: number; rot: Rot; ok: boolean; reason: PlaceReason }
 
@@ -60,6 +73,17 @@ export interface Preview {
    * neighbouring base's (`neighbour_land`) when any is, else free land (`outside_zone`). The tip says it.
    */
   buried?: { n: number; land: PlaceReason };
+  /**
+   * The copy or upgrade tool's box (D154: tiles, inclusive) and what it would take — the buildings
+   * a copy captures, the line pieces an upgrade lays over (also in `doomed`, refunded).
+   */
+  area?: { k: 'copy' | 'upgrade'; box: [number, number, number, number]; ids: number[] };
+  /**
+   * A paste or an upgrade planned (D154): pieces laid, kept as they stand, skipped; its box (the
+   * paste's, x y w h); `short`: the Core cannot pay the whole (nothing would be laid); `gone`:
+   * pieces whose building the content no longer knows.
+   */
+  plan?: { n: number; kept: number; skipped: number; short: boolean; gone: number; box?: [number, number, number, number] };
 }
 
 export interface ToolResult {
@@ -70,6 +94,16 @@ export interface ToolResult {
   left?: { n: number; reason: PlaceReason };
   marked?: number;
   cleared?: number;
+  /** A copy (D154): its pieces (the blueprint is the clipboard, in hand as a paste). */
+  copied?: number;
+  /** A paste or an upgrade refused whole: what the Core lacks (mu by item). */
+  short?: Map<number, number>;
+  /** Ribbons an upgrade laid over (D154). */
+  upgraded?: number;
+  /** A paste or an upgrade laid in part (D154): the pieces set aside, and why the first was. */
+  skipped?: { n: number; reason: PlaceReason };
+  /** An empty box: the copy took nothing. */
+  empty?: boolean;
 }
 
 /** Footprint origin that puts the cursor tile in the footprint's middle. */
@@ -90,12 +124,67 @@ export class Tools {
   /** Right-button demolition box (works with any tool in the plan view). */
   private rbox: [number, number] | null = null;
   private lastRot: Rot = 0;
+  /** The last copy (D154): Ctrl/⌘+V takes it in hand again. Not saved: the library keeps blueprints. */
+  clipboard: Blueprint | null = null;
+  /** Ctrl/⌘+Z (D154): each gesture that laid or took down, one step. */
+  readonly undo = new UndoStack();
+  /** The paste's plan, kept while nothing it reads has changed (cursor, turn, mirror, the base, the tick). */
+  private planKey = '';
+  private planned: (Plan & { box: [number, number, number, number] }) | null = null;
 
   constructor(private readonly sim: () => Sim) {}
 
   get def(): string | null {
     return this.state && (this.state.k === 'build' || this.state.k === 'belt') ? this.state.def : null;
   }
+
+  /** The copy tool (D154): drag a box over what to copy. */
+  copy(): void {
+    this.state = { k: 'copy', from: null };
+  }
+
+  /** A blueprint in hand (D154): the clipboard by default. False when there is none. */
+  paste(bp: Blueprint | null = this.clipboard): boolean {
+    if (!bp) return false;
+    this.state = { k: 'paste', bp, rot: 0, mirror: false };
+    return true;
+  }
+
+  /** The upgrade tool (D154): drag a box over ribbons to lift them a tier. */
+  upgrade(): void {
+    this.state = { k: 'upgrade', from: null };
+  }
+
+  /**
+   * M with a blueprint in hand: mirror it left ⇄ right — when every building in it has a mirror twin
+   * (D154). Returns null when done (or nothing in hand), else the building that stops it.
+   */
+  mirror(): string | null {
+    const s = this.state;
+    if (s?.k !== 'paste') return null;
+    const stop = mirrorBlocker(s.bp);
+    if (stop) return stop;
+    s.mirror = !s.mirror;
+    return null;
+  }
+
+  /** Ctrl/⌘+Z: the last step taken back (null: nothing to undo). */
+  undoLast(): UndoResult | null {
+    return this.undo.undo(this.sim());
+  }
+
+  /** The paste in hand planned at the cursor (cached: a plan checks every piece). */
+  private pastePlan(sim: Sim, s: Extract<ToolState, { k: 'paste' }>, h: [number, number]): Plan & { box: [number, number, number, number] } {
+    const key = `${h[0]},${h[1]},${s.rot},${s.mirror},${sim.tick},${sim.ents.nextId},${sim.ents.map.size}`;
+    if (key !== this.planKey || s.bp !== this.plannedBp || !this.planned) {
+      const p = sim.planPaste(s.bp, h[0], h[1], s.rot, s.mirror);
+      this.planned = { ...p, box: [p.layout.x, p.layout.y, p.layout.w, p.layout.h] };
+      this.plannedBp = s.bp;
+      this.planKey = key;
+    }
+    return this.planned;
+  }
+  private plannedBp: Blueprint | null = null;
 
   /** The marking brush: drag a box over rock (dig) or water / salt flats (fill). */
   mark(): void {
@@ -115,7 +204,7 @@ export class Tools {
     if (this.rbox) { this.rbox = null; return true; }
     const s = this.state;
     if (!s) return false;
-    if ((s.k === 'belt' || s.k === 'remove' || s.k === 'mark') && s.from) { s.from = null; return true; }
+    if ((s.k === 'belt' || s.k === 'remove' || s.k === 'mark' || s.k === 'copy' || s.k === 'upgrade') && s.from) { s.from = null; return true; }
     this.state = null;
     return true;
   }
@@ -124,7 +213,7 @@ export class Tools {
   dropDrag(): boolean {
     if (this.rbox) { this.rbox = null; return true; }
     const s = this.state;
-    if (s && (s.k === 'belt' || s.k === 'remove' || s.k === 'mark') && s.from) { s.from = null; return true; }
+    if (s && (s.k === 'belt' || s.k === 'remove' || s.k === 'mark' || s.k === 'copy' || s.k === 'upgrade') && s.from) { s.from = null; return true; }
     return false;
   }
 
@@ -135,7 +224,8 @@ export class Tools {
    */
   rotate(dir: 1 | -1 = 1): void {
     const s = this.state;
-    if (!s || s.k === 'remove' || s.k === 'mark') return;
+    if (!s || s.k === 'remove' || s.k === 'mark' || s.k === 'copy' || s.k === 'upgrade') return;
+    if (s.k === 'paste') { s.rot = ((s.rot + dir + 4) & 3) as Rot; return; } // the blueprint turns about its middle (D154)
     if (s.k === 'belt' && s.from) { s.flip = !s.flip; return; }
     const h = this.hover;
     const shown = s.k === 'build' && h ? this.sim().placementRot(s.def, ...snapOrigin(this.sim(), s.def, s.rot, h[0], h[1]), s.rot, !!s.turned) : s.rot;
@@ -171,9 +261,21 @@ export class Tools {
     }
     if (!s) return {};
     if (s.k === 'build') {
-      const [ox, oy] = snapOrigin(this.sim(), s.def, s.rot, x, y);
-      const r = this.sim().place(s.def, ox, oy, s.rot, undefined, !!s.turned);
+      const sim = this.sim();
+      const [ox, oy] = snapOrigin(sim, s.def, s.rot, x, y);
+      // What it would replace may come back with Ctrl+Z (D154).
+      const was = sim.canPlace(s.def, ox, oy, sim.placementRot(s.def, ox, oy, s.rot, !!s.turned)).replaces;
+      const r = this.undo.record(sim, was, () => sim.place(s.def, ox, oy, s.rot, undefined, !!s.turned));
       return r.ok ? { placed: 1 } : { refused: r.reason };
+    }
+    if (s.k === 'paste') {
+      const sim = this.sim();
+      const plan = this.pastePlan(sim, s, [x, y]);
+      const r = this.undo.record(sim, plan.pieces.flatMap((p) => p.replaces), () => sim.paste(s.bp, x, y, s.rot, s.mirror));
+      this.planKey = '';
+      if (r.short) return { short: r.short, refused: 'unaffordable' };
+      if (!r.placed && !r.set) return r.reason ? { refused: r.reason } : {};
+      return r.skipped ? { placed: r.placed, skipped: { n: r.skipped, reason: r.reason ?? 'occupied' } } : { placed: r.placed };
     }
     if (s.k === 'mark') { s.from = [x, y]; s.clear = false; return {}; }
     s.from = [x, y];
@@ -213,8 +315,9 @@ export class Tools {
       this.lastRot = s.rot;
       const sim = this.sim();
       // The plan before laying it: the tiles it leaves out (a drag over what is already there leaves none).
-      const out = sim.planBelts(s.def, path).filter((st) => !st.skip && !st.ok);
-      const placed = sim.placeBelts(s.def, path);
+      const plan = sim.planBelts(s.def, path);
+      const out = plan.filter((st) => !st.skip && !st.ok);
+      const placed = this.undo.record(sim, plan.flatMap((st) => st.replaces), () => sim.placeBelts(s.def, path));
       if (placed > 0) return out.length ? { placed, left: { n: out.length, reason: out[0]!.reason } } : { placed };
       // Nothing laid: the first refusal of the plan, if any.
       return out.length ? { refused: out[0]!.reason } : {};
@@ -223,6 +326,25 @@ export class Tools {
       const [ax, ay] = s.from;
       s.from = null;
       return { removed: this.removeBox(ax, ay, x, y) };
+    }
+    if (s.k === 'copy' && s.from) {
+      const [ax, ay] = s.from;
+      s.from = null;
+      const bp = this.sim().capture(ax, ay, x, y);
+      if (!bp) return { empty: true };
+      this.clipboard = bp;
+      this.paste(bp); // in hand at once, as a ghost on the cursor
+      return { copied: bp.pieces.length };
+    }
+    if (s.k === 'upgrade' && s.from) {
+      const [ax, ay] = s.from;
+      s.from = null;
+      const sim = this.sim();
+      const plan = sim.planUpgrade(ax, ay, x, y);
+      if (!plan.n) return plan.reason ? { refused: plan.reason } : {};
+      const r = this.undo.record(sim, plan.pieces.flatMap((p) => p.replaces), () => sim.upgradeArea(ax, ay, x, y));
+      if (r.short) return { short: r.short, refused: 'unaffordable' };
+      return r.skipped ? { upgraded: r.placed, skipped: { n: r.skipped, reason: r.reason ?? 'occupied' } } : { upgraded: r.placed };
     }
     return {};
   }
@@ -241,12 +363,21 @@ export class Tools {
 
   private removeBox(ax: number, ay: number, bx: number, by: number): number {
     const sim = this.sim();
-    let n = 0;
-    for (const id of this.boxIds(ax, ay, bx, by)) {
-      const e = sim.ents.get(id);
-      if (e && sim.remove(e.x, e.y)) n++;
-    }
-    return n;
+    const ids = this.boxIds(ax, ay, bx, by);
+    return this.undo.record(sim, ids, () => {
+      let n = 0;
+      for (const id of ids) {
+        const e = sim.ents.get(id);
+        if (e && sim.remove(e.x, e.y)) n++;
+      }
+      return n;
+    });
+  }
+
+  /** Take one building down as one undo step (the inspector's « Démolir »). */
+  removeOne(id: number): boolean {
+    const sim = this.sim(), e = sim.ents.get(id);
+    return !!e && this.undo.record(sim, [id], () => sim.remove(e.x, e.y));
   }
 
   /** What the ghost shows for the current tool and hover. */
@@ -271,6 +402,21 @@ export class Tools {
         if (s.clear ? sim.designated.has(t) : !sim.designated.has(t) && (isRock(tt) || tt === T.Shallow || tt === T.Deep || tt === T.Salt)) n++;
       }
       out.mark = { box: b, clear: s.clear, n };
+      return out;
+    }
+    if (s?.k === 'copy' || s?.k === 'upgrade') {
+      const from = s.from ?? h;
+      const b: [number, number, number, number] = [Math.min(from[0], h[0]), Math.min(from[1], h[1]), Math.max(from[0], h[0]), Math.max(from[1], h[1])];
+      if (s.k === 'copy') { out.area = { k: 'copy', box: b, ids: entsInBox(sim, b[0], b[1], b[2], b[3]) }; return out; }
+      const plan = sim.planUpgrade(b[0], b[1], b[2], b[3]);
+      out.area = { k: 'upgrade', box: b, ids: plan.pieces.flatMap((p) => p.replaces) };
+      this.fromPlan(plan, out);
+      return out;
+    }
+    if (s?.k === 'paste') {
+      const plan = this.pastePlan(sim, s, h);
+      this.fromPlan(plan, out);
+      out.plan!.box = plan.box;
       return out;
     }
     if (!s || s.k === 'remove') return out;
@@ -322,6 +468,21 @@ export class Tools {
     // Only what is actually spent (a downgrade gives more back than it costs).
     for (const [item, mu] of out.cost) if (mu <= 0) out.cost.delete(item);
     return out;
+  }
+
+  /**
+   * A paste's or an upgrade's plan as the ghost and the tip show it (D154): each piece (one already
+   * standing as it should is shown, free), what the pieces replace (refunded, amber), the net cost, and
+   * the first refusal — `unaffordable` when the Core cannot pay the whole, for then nothing is laid.
+   */
+  private fromPlan(plan: Plan, out: Preview): void {
+    for (const p of plan.pieces) {
+      out.pieces.push({ def: BUILDING_IDS[p.def]!, x: p.x, y: p.y, rot: p.rot, ok: p.ok, reason: p.reason });
+      if (p.ok) for (const id of p.replaces) out.doomed.push(id);
+    }
+    for (const [item, mu] of plan.cost) out.cost.set(item, mu);
+    out.reason = plan.short.size ? 'unaffordable' : plan.reason;
+    out.plan = { n: plan.n, kept: plan.kept, skipped: plan.skipped, short: plan.short.size > 0, gone: plan.gone };
   }
 }
 

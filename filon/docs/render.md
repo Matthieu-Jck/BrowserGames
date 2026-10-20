@@ -1060,7 +1060,11 @@ volumes (`sorted`, NaN on the floor). For the Gleaners (D112), `watch` (tiles) a
 (sprites only: in plan it is already under the incinerator's sprite).
 
 **GhostView.** On `ghost` (tile units), `draw(pre, sim, hover, showHover)` redraws only when a
-JSON signature of the `Preview` changes. Each piece shows its plan sprite (alpha 0.72, reddened
+JSON signature of the `Preview` changes. Blueprints (D154): the copy tool's box in turquoise with
+the footprints it takes tinted (`pre.area`, `k: 'copy'`), the upgrade tool's box in amber over the
+faster pieces it would lay (`'upgrade'`; what they replace amber under them, as any placement), a
+paste's pieces as a placement's and a dashed ink frame round the whole blueprint (`pre.plan.box`,
+`dashRect`); all in the signature. Each piece shows its plan sprite (alpha 0.72, reddened
 when refused), or a straight belt piece for ribbons — the traction ribbon's for a ribbon refused at a
 step (`needs_lift`, D77): the piece that would take it. Its footprint is washed and outlined on top,
 cyan when it fits and red (`ledRed`) when it does not: the `Graphics` sits above the sprite

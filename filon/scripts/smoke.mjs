@@ -237,6 +237,68 @@ await step('build: place over things — a router clicked onto a ribbon replaces
   assert(e && e.def === 'ribbon' && e.rot === 2, 'the crossed line was cut');
 });
 
+await step('blueprints (D154): Ctrl+C and a box copy a small line, R turns the copy, a click pastes it turned, Ctrl+Z takes it back', async () => {
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await FL(() => { window.FL.tool(null); window.FL.selected(0); });
+  // A free 9 × 9 square near the Core: a line of four ribbons east into a router along its top row,
+  // the paste turned a quarter (a column going south) below it.
+  const at = await FL(() => {
+    const sim = window.FL.app.sim;
+    const free = (x, y) => { const c = sim.canPlace('ribbon', x, y, 1); return c.ok && c.replaces.length === 0; };
+    for (let r = 8; r < 40; r++) for (let y = 512 - r; y <= 512 + r; y++) for (let x = 512 - r; x <= 512 + r; x++) {
+      if (Math.max(Math.abs(x - 512), Math.abs(y - 512)) !== r) continue;
+      let ok = true;
+      for (let dy = -1; dy < 9 && ok; dy++) for (let dx = -1; dx < 9 && ok; dx++) ok = free(x + dx, y + dy);
+      if (ok) {
+        sim.placeBelts('ribbon', [0, 1, 2, 3].map((k) => [x + k, y, 1]));
+        sim.place('router', x + 4, y, 1);
+        return [x, y];
+      }
+    }
+    return null;
+  });
+  assert(at, 'no free square for the line');
+  const [lx, ly] = at;
+  await FL(([x, y]) => window.FL.lookAt(x + 3, y + 2, 1.3), at); // the line mid-screen, clear of the toasts at the top
+  await page.waitForTimeout(300);
+  await page.keyboard.press('Control+c');
+  const bp = await FL(() => window.FL.tool());
+  assert(bp && bp.k === 'copy', `Ctrl+C did not take the copy tool: ${JSON.stringify(bp)}`);
+  // The tools work on the plan side: the copy tool opened building, wait for the morph.
+  await page.waitForFunction(() => window.FL.view().t === 1, undefined, { timeout: 4000 });
+  const [ax, ay] = await tileXY(lx, ly);
+  const [bx, by] = await tileXY(lx + 4, ly);
+  await page.mouse.move(ax - 6, ay - 6);
+  await page.mouse.down();
+  await page.mouse.move(bx + 6, by + 6, { steps: 6 });
+  await page.waitForTimeout(120);
+  await page.screenshot({ path: shot('smoke-blueprint-copy.png') });
+  await page.mouse.up();
+  let info = await FL(() => window.FL.blueprint());
+  assert(info.paste && info.paste.pieces === 5, `the copy is not in hand: ${JSON.stringify(info)}`);
+  await page.keyboard.press('r');
+  info = await FL(() => window.FL.blueprint());
+  assert(info.paste.rot === 1, `R did not turn the copy: ${JSON.stringify(info.paste)}`);
+  // Turned, it is a column five tall: its middle on (lx + 2, ly + 5) puts it on (lx + 2, ly + 3…ly + 7).
+  const [px, py] = await tileXY(lx + 2, ly + 5);
+  await page.mouse.move(px, py, { steps: 4 });
+  await page.waitForTimeout(200);
+  info = await FL(() => window.FL.blueprint());
+  assert(info.plan && info.plan.n === 5 && !info.plan.short, `the paste would not go whole: ${JSON.stringify(info.plan)}`);
+  await page.screenshot({ path: shot('smoke-blueprint-paste.png') });
+  const n0 = await FL(() => window.FL.app.sim.ents.map.size);
+  await page.mouse.click(px, py);
+  const laid = await FL(([x, y]) => [0, 1, 2, 3, 4].map((k) => window.FL.entityAt(x, y + k)), [lx + 2, ly + 3]);
+  assert(laid.slice(0, 4).every((e) => e && e.def === 'ribbon' && e.rot === 2), `the ribbons were not laid turned south: ${JSON.stringify(laid)}`);
+  assert(laid[4] && laid[4].def === 'router' && laid[4].rot === 2, `the router was not laid turned: ${JSON.stringify(laid[4])}`);
+  assert((await FL(() => window.FL.app.sim.ents.map.size)) === n0 + 5, 'the paste laid something else');
+  await page.keyboard.press('Control+z');
+  assert((await FL(() => window.FL.app.sim.ents.map.size)) === n0, 'Ctrl+Z did not take the paste back');
+  assert(!(await FL(([x, y]) => window.FL.entityAt(x, y), [lx + 2, ly + 3])), 'a pasted ribbon stayed');
+  await page.keyboard.press('Escape');
+});
+
 await step('build: off the claim’s land a kiln is refused, with the reason and the land key', async () => {
   await page.keyboard.press('Escape');
   await FL(() => window.FL.tool('kiln'));

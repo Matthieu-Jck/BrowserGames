@@ -14,7 +14,10 @@
 // coral where not, and an arrow from the machine into the wall on its working side. A piece a drag
 // buries (D109: the camouflaged ribbon, where the land refuses the dragged one) is drawn a little
 // stronger — sand on sand fades — inside a dashed ink frame, so a mixed drag shows which tiles go
-// underground. Redrawn only when the preview changes.
+// underground. Blueprints (D154): the copy tool's box in turquoise, what it would take tinted inside
+// it; the upgrade tool's box in amber over the faster pieces it would lay; a paste's pieces as any
+// placement's (turquoise where they go, coral where they do not, amber under what they replace),
+// inside a dashed ink frame round the whole blueprint. Redrawn only when the preview changes.
 //
 // A building that would stand above the floor (D44: on the mountains; world/stand.ts, from the
 // one height function, relief.ts `tileTop`) is shown where it would stand: in iso its ghost is
@@ -60,6 +63,18 @@ function buriedFrame(g: Graphics, x: number, y: number, m: number): void {
     g.moveTo(x + s, y + a).lineTo(x + e, y + a).moveTo(x + s, y + b).lineTo(x + e, y + b);
     g.moveTo(x + a, y + s).lineTo(x + a, y + e).moveTo(x + b, y + s).lineTo(x + b, y + e);
   }
+}
+
+/** A dashed rectangle's path (tile units): dashes of `d` and gaps alike along each side (stroked by the caller). */
+function dashRect(g: Graphics, x: number, y: number, w: number, h: number, d: number): void {
+  const side = (ax: number, ay: number, bx: number, by: number): void => {
+    const len = Math.abs(bx - ax) + Math.abs(by - ay);
+    for (let s = 0; s < len; s += 2 * d) {
+      const e = Math.min(len, s + d);
+      g.moveTo(ax + ((bx - ax) * s) / len, ay + ((by - ay) * s) / len).lineTo(ax + ((bx - ax) * e) / len, ay + ((by - ay) * e) / len);
+    }
+  };
+  side(x, y, x + w, y); side(x + w, y, x + w, y + h); side(x + w, y + h, x, y + h); side(x, y + h, x, y);
 }
 
 /** A bridge pair's leap (tile units, centre to centre): turquoise dashes, gaps between. */
@@ -112,7 +127,7 @@ export class GhostView {
 
   draw(pre: Preview | null, sim: Sim, hover: [number, number] | null, showHover: boolean): void {
     this.follow();
-    const sig = JSON.stringify([pre?.pieces.map((p) => [p.def, p.x, p.y, p.rot, p.ok, p.reason]), pre?.box, pre?.doomed, pre?.mark, pre?.drag, pre?.leaps, showHover ? hover : null]);
+    const sig = JSON.stringify([pre?.pieces.map((p) => [p.def, p.x, p.y, p.rot, p.ok, p.reason]), pre?.box, pre?.doomed, pre?.mark, pre?.drag, pre?.leaps, pre?.area?.k, pre?.area?.box, pre?.area?.ids.length, pre?.plan?.box, showHover ? hover : null]);
     if (sig === this.sig) return;
     this.sig = sig;
     for (const c of this.box.removeChildren()) c.destroy();
@@ -182,6 +197,26 @@ export class GhostView {
       }
       // A bridge pair's leap: a dashed line from end to end, over what it leaves as it is.
       for (const [x0, y0, x1, y1] of pre.leaps ?? []) leapDash(g, x0 + 0.5, y0 + 0.5, x1 + 0.5, y1 + 0.5);
+      // The copy or upgrade tool's box (D154): turquoise round what a copy takes (its buildings tinted), amber round an upgrade.
+      if (pre.area) {
+        const [x0, y0, x1, y1] = pre.area.box;
+        const col = pre.area.k === 'copy' ? OK : SWAP;
+        if (pre.area.k === 'copy') {
+          for (const id of pre.area.ids) {
+            const e = sim.ents.get(id);
+            if (!e) continue;
+            const [w, h] = footprint(e.def, e.rot);
+            g.rect(e.x, e.y, w, h).fill({ color: OK, alpha: 0.24 });
+          }
+        }
+        g.rect(x0, y0, x1 - x0 + 1, y1 - y0 + 1).fill({ color: col, alpha: 0.07 }).stroke({ width: 0.08, color: col, alpha: 0.95 });
+      }
+      // A paste's whole blueprint: a dashed ink frame (D154).
+      if (pre.plan?.box) {
+        const [x0, y0, w, h] = pre.plan.box;
+        dashRect(g, x0 - 0.12, y0 - 0.12, w + 0.24, h + 0.24, 0.45);
+        g.stroke({ width: 0.07, color: INK, alpha: 0.75, cap: 'round' });
+      }
       if (pre.mark) {
         const [x0, y0, x1, y1] = pre.mark.box;
         const col = pre.mark.clear ? num(C.ink) : num(C.coral);
@@ -198,7 +233,7 @@ export class GhostView {
         g.rect(x0, y0, x1 - x0 + 1, y1 - y0 + 1).fill({ color: BAD, alpha: 0.08 }).stroke({ width: 0.08, color: BAD, alpha: 0.95 });
       }
     }
-    if (showHover && hover && !(pre && (pre.pieces.length || pre.box || pre.mark))) {
+    if (showHover && hover && !(pre && (pre.pieces.length || pre.box || pre.mark || pre.area))) {
       g.rect(hover[0], hover[1], 1, 1).stroke({ width: 0.05, color: 0xffffff, alpha: 0.85 });
     }
   }

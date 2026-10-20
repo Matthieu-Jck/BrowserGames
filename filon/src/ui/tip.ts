@@ -10,6 +10,8 @@
 // kW (the words — the wind's factor here — in its tooltip). A drag that buries pieces off the
 // claim's land (D109): the camouflaged ribbon's icon, how many, and whose land; a ribbon refused on a
 // neighbouring base's land, the camouflaged ribbon that would take it (T, the tree, while it is still to learn).
+// A blueprint in hand or an upgrade box (D154): the whole's cost against the Core (coral where it
+// lacks, and then nothing is laid), and its pieces as three counts — to lay, already there, refused.
 // It stays inside the window (D96: `tipPlace` flips it to the pointer's other side near an edge)
 // and, under a finger, sits above it, where the hand does not cover it.
 import { BUILDING_KIND, buildingDef, buildingIdx, itemDef } from '@/content/registry';
@@ -70,13 +72,25 @@ export class Tip {
     // sélectionné un truc à construire qui coûte des ressources, il faut lui afficher le nombre de
     // ressources qu'il a dans le cœur »): part of the signature, so the chip follows the stock.
     const have = cost.map(([item]) => Math.floor(sim.stock[item]! / 1000));
-    const sig = JSON.stringify([def, cost, have, pre.reason, lift, camo, pre.buried, pre.doomed.length, pre.mark?.n, pre.mark?.clear, locale(), wind?.mean, wind?.overall]);
+    const plan = pre.plan;
+    const sig = JSON.stringify([def, cost, have, pre.reason, lift, camo, pre.buried, pre.doomed.length, pre.mark?.n, pre.mark?.clear, locale(), wind?.mean, wind?.overall, plan && [plan.n, plan.kept, plan.skipped, plan.gone], pre.area?.k === 'copy' ? pre.area.ids.length : -1]);
     if (sig === this.sig) return;
     this.sig = sig;
     this.node.hidden = false;
     const L = locale();
     const kids: HTMLElement[] = [];
-    if (def) {
+    // The copy tool's box (D154): how many buildings it takes.
+    if (pre.area?.k === 'copy') kids.push(el('div.tip-plan', {}, [el('span.tip-n', { 'data-k': 'copy' }, [el('i', {}, '⧉'), el('b', {}, String(pre.area.ids.length))])]));
+    // A paste or an upgrade (D154): its pieces — to lay, already standing, refused — before its cost.
+    if (plan) {
+      kids.push(el('div.tip-plan', { title: t('bp.tip.count', { n: plan.n, kept: plan.kept, skipped: plan.skipped }) }, [
+        el('span.tip-n', { 'data-k': 'lay' }, [el('i', {}, '✓'), el('b', {}, String(plan.n))]),
+        plan.kept ? el('span.tip-n', { 'data-k': 'kept' }, [el('i', {}, '='), el('b', {}, String(plan.kept))]) : null,
+        plan.skipped ? el('span.tip-n', { 'data-k': 'skip' }, [el('i', {}, '✕'), el('b', {}, String(plan.skipped))]) : null,
+      ]));
+      if (plan.gone) kids.push(el('div.tip-why', {}, tr('bp.tip.gone', { n: plan.gone })));
+    }
+    if (def || plan) {
       kids.push(el('div.tip-cost', {}, cost.length
         ? cost.map(([item, mu], k) => el('span.tip-chip', { 'data-poor': sim.stock[item]! < mu ? '' : null, title: t('tip.costHave', { item: itemDef(item).name[L], n: num(Math.ceil(mu / 1000)), have: num(have[k]!) }) }, [
           itemIcon(this.atlas, item, 16), el('b', {}, String(Math.ceil(mu / 1000))), el('small.tip-have', {}, `/ ${compactNum(have[k]!)}`),

@@ -9,7 +9,10 @@
 // the parcel under the cursor, a right click unwinds, a drag pans. The specialised views (D88: P
 // Électricité, F Logistique, O Production, I Terrain) toggle on their keys; Esc takes a view other
 // than Terrain back to Normal after the selection, before closing building. A click on the Core's
-// Archive (its level-3 corner piece) opens the Expertise window, as E does (D93).
+// Archive (its level-3 corner piece) opens the Expertise window, as E does (D93). Blueprints (D154):
+// Ctrl/⌘+C the copy tool (or the building inspected, copied), Ctrl/⌘+V the last copy in hand, Ctrl/⌘+Z
+// the last step undone, K the library's panel, N the upgrade tool; M mirrors a blueprint in hand
+// (the Crier's key otherwise). Esc closes the library after the selection.
 import { BUILDING_IDS } from '@/content/registry';
 import { bus } from '@/core/bus';
 import type { Action } from '@/input/bindings';
@@ -43,7 +46,8 @@ export class Controls {
   /** What one finger does with the tool in hand (D96, input/touch.ts): a building is placed by a tap; a ribbon, a box or the brush drag. */
   get touchTool(): TouchTool {
     if (!this.toolActive) return 'none';
-    return this.app.tools.state?.k === 'build' ? 'tap' : 'drag';
+    const k = this.app.tools.state?.k;
+    return k === 'build' || k === 'paste' ? 'tap' : 'drag';
   }
 
   /** A second finger came down: the drag or right box under way is dropped, the tool stays in hand. */
@@ -128,7 +132,14 @@ export class Controls {
       case 'viewWind': if (app.viewShown('wind')) app.views.toggle('wind'); break;
       case 'scrResearch': if (shows(app, 'research')) app.screens.open('research'); break;
       case 'scrStats': if (analyticsOn(app.sim, 'ledger')) app.screens.open('stats'); break; // the ledger plan (D41)
-      case 'scrMarket': if (shows(app, 'crier')) app.screens.open('market'); break;
+      // M: a blueprint in hand mirrors (D154: « miroir », mirror); else the Crier, the market.
+      case 'scrMarket': if (!app.build.mirror() && shows(app, 'crier')) app.screens.open('market'); break;
+      // Blueprints (D154): from building on (the tutorial's « build » reveal), like the tools.
+      case 'undo': if (shows(app, 'build')) app.build.undo(); break;
+      case 'copy': if (shows(app, 'build')) app.build.copy(); break;
+      case 'paste': if (shows(app, 'build')) app.build.paste(); break;
+      case 'library': if (shows(app, 'build')) app.build.library(); break;
+      case 'upgrade': if (shows(app, 'build')) app.build.upgrade(); break;
       case 'scrExpertise': if (archiveOpen(app.sim)) app.screens.open('expertise'); break; // D93: once the Core mounts its Archive
       case 'cancel':
         if (app.screens.current) { app.screens.back(); break; }
@@ -138,6 +149,7 @@ export class Controls {
         if (app.build.landCancel()) break;
         if (app.tools.cancel()) break;
         if (app.selected) { app.select(0); break; }
+        if (app.library.open) { app.library.toggle(false); break; } // the blueprints' library (D154)
         if (app.views.cancel()) break;
         if (app.build.category) { app.build.open(null); break; }
         if (app.screens.escapeTo) app.screens.open(app.screens.escapeTo); // nothing left: the main menu

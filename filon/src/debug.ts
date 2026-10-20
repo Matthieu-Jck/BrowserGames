@@ -50,6 +50,19 @@ export interface FilonDebug {
   mapView(v?: MapView): { view: MapView; marks: number; panel: boolean; version: number };
   /** Take a building in hand ('demolish' for the demolition tool, 'link' for the Link tool, null to drop it). */
   tool(def?: string | null): { k: string; def: string | null } | null;
+  /**
+   * Blueprints (D154): the tool in hand's blueprint side (a paste's turn, mirror and pieces; its plan at
+   * the hover: laid, kept, skipped, short), the clipboard's pieces, the library (id, name, pieces), the
+   * undo steps held. 'copy' / 'paste' / 'upgrade' in `tool()` take those tools.
+   */
+  blueprint(): {
+    paste: { rot: number; mirror: boolean; pieces: number } | null;
+    plan: { n: number; kept: number; skipped: number; short: boolean } | null;
+    clipboard: number;
+    library: Array<{ id: number; name: string; pieces: number; icon: string }>;
+    undo: number;
+    panel: boolean;
+  };
   /** Screen px (CSS) of a tile's centre in the current view. */
   tileToScreen(tx: number, ty: number): [number, number];
   /** The inspected entity (0 = none); with an id, selects it. */
@@ -284,11 +297,26 @@ export function installDebug(app: App, extras: { echo(msg: string): Promise<unkn
     tool: (def) => {
       if (def === 'demolish') app.build.demolish();
       else if (def === 'mark') app.build.mark();
+      else if (def === 'copy') app.build.copy();
+      else if (def === 'paste') app.build.paste();
+      else if (def === 'upgrade') app.build.upgrade();
       else if (def === 'link') { app.build.link(); return app.link.active ? { k: 'link', def: null } : null; }
       else if (def === null) { app.tools.state = null; app.link.stop(); }
       else if (def !== undefined) app.build.pick(def);
       const s = app.tools.state;
       return s ? { k: s.k, def: s.k === 'build' || s.k === 'belt' ? s.def : null } : null;
+    },
+    blueprint: () => {
+      const s = app.tools.state;
+      const pre = s?.k === 'paste' || s?.k === 'upgrade' ? app.tools.preview().plan : undefined;
+      return {
+        paste: s?.k === 'paste' ? { rot: s.rot, mirror: s.mirror, pieces: s.bp.pieces.length } : null,
+        plan: pre ? { n: pre.n, kept: pre.kept, skipped: pre.skipped, short: pre.short } : null,
+        clipboard: app.tools.clipboard?.pieces.length ?? 0,
+        library: app.sim.blueprints.map((b) => ({ id: b.id, name: b.name, pieces: b.pieces.length, icon: b.icon })),
+        undo: app.tools.undo.size,
+        panel: app.library.open,
+      };
     },
     tileToScreen: (tx, ty) => app.picker.tileToScreen(tx, ty),
     selected: (id) => {

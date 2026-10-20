@@ -1,0 +1,57 @@
+/* blueprints.css — the blueprints' library (ui/blueprint-panel.ts, D154): a side panel where the
+   inspector sits (its place and size are responsive.css's, with the other side panels: a bottom
+   sheet on a narrow window). It borrows `.insp-head`, `.insp-x`, `.insp-note` and the tip's chips. */
+.bpl {
+  position: fixed; right: 12px; top: 76px; width: 300px;
+  overflow: auto; padding: 10px 12px 12px; font-size: 13px; line-height: 1.35;
+}
+.bpl[hidden] { display: none; }
+.bpl-head small { display: block; color: var(--c-ink-soft); font-size: 11.5px; }
+.bpl-label { margin: 8px 0 3px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--c-turq-d); }
+.bpl-hand:empty { display: none; }
+.bpl-list { display: grid; gap: 7px; margin-top: 9px; }
+.bpl-row {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center;
+  padding: 6px 7px; border-radius: 9px 7px 10px 8px / 8px 10px 7px 9px;
+  border: 1.5px solid color-mix(in srgb, var(--c-ink) 22%, transparent); background: var(--c-paper);
+}
+.bpl-row-hand { border-style: dashed; border-color: var(--c-turq-d); background: color-mix(in srgb, var(--c-turq-l) 22%, var(--c-paper)); }
+/* The main building's icon over the little plan of the pieces. */
+.bpl-fig { position: relative; display: grid; place-items: center; width: 64px; min-height: 52px; }
+.bpl-fig > canvas:first-child { position: absolute; left: -4px; top: -6px; width: 30px; height: auto; z-index: 1; filter: drop-shadow(1px 1px 0 var(--c-paper)); }
+.bpl-plan { display: block; max-width: 64px; border-radius: 3px; box-shadow: 1.5px 1.5px 0 var(--c-ink); image-rendering: pixelated; }
+.bpl-body { display: grid; gap: 2px; min-width: 0; }
+.bpl-title { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bpl-size { color: var(--c-ink-soft); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.bpl-cost { display: flex; flex-wrap: wrap; gap: 2px 7px; font-size: 12px; }
+.bpl-cost .tip-chip canvas { width: 14px; height: 14px; }
+.bpl-name {
+  width: 100%; min-width: 0; padding: 2px 6px; font: inherit; font-weight: 600; font-size: 13.5px;
+  border: 1.5px solid var(--c-ink); border-radius: 6px; background: var(--c-paper); color: var(--c-ink);
+}
+.bpl-acts { display: grid; gap: 4px; justify-items: end; }
+.bpl-act { font-size: 13px; padding: 3px 10px; }
+.bpl-tools { display: flex; gap: 3px; }
+.bpl-icon-btn {
+  min-width: 26px; height: 24px; padding: 0 5px; border: 1.5px solid color-mix(in srgb, var(--c-ink) 35%, transparent);
+  border-radius: 6px; background: var(--c-paper); color: var(--c-ink); font-size: 13px; cursor: pointer;
+}
+.bpl-icon-btn:hover { background: var(--c-peach-l); }
+.bpl-del.btn.danger { min-width: 0; font-size: 12px; font-weight: 700; }
+.bpl-empty { margin-top: 4px; }
+.bpl-hint { margin-top: 10px; font-size: 11.5px; }
+/* The build bar's « Gabarits » tab (D154): shown with the bar open, like Démolir; on while the library is open or a copy or paste is in hand. */
+.bb-bp[data-on] { background: var(--c-turq); color: var(--c-paper); }
+/* The tip over a paste or an upgrade (ui/tip.ts, D154): its pieces as three counts. */
+.tip-plan { display: flex; gap: 10px; margin-bottom: 3px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.tip-n { display: inline-flex; align-items: center; gap: 3px; }
+.tip-n i { font-style: normal; font-weight: 700; }
+.tip-n[data-k='lay'] i { color: var(--c-turq-d); }
+.tip-n[data-k='kept'] i { color: var(--c-ink-soft); }
+.tip-n[data-k='skip'] { color: var(--c-coral-d); font-weight: 700; }
+/* A blueprint tool in hand (D154): the tray steps aside, the ghost is what matters (a category's tab brings it back). */
+.buildbar[data-open] .bb-tray[data-hidden] { display: none; }
+/* Copy an area, paste the last copy: the two gestures as buttons (a finger has no Ctrl). */
+.bpl-gestures { display: flex; gap: 6px; margin-top: 8px; }
+.bpl-gesture { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 3px 10px; }
+.bpl-gesture .bb-key { font-size: 11px; }

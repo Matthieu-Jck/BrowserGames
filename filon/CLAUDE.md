@@ -2,7 +2,7 @@
 
 A persistent factory / logistics browser game, titled **Ocelle** since 2026-10-13 (working title FILON: the `filon/` folder, the `filon.*` storage keys, `window.FL` and `FilonDebug` keep it on purpose; [D46](docs/decisions.md)) (Vite 5 + TypeScript strict + PixiJS 8.21 + vitest). The owner speaks French; code, comments and docs are in English, and the game UI is French-first with English.
 
-**Read first:** [ARCHITECTURE.md](ARCHITECTURE.md) (layers, invariants, where code goes), then the doc for the area you touch (`docs/`). Any player-facing text follows [docs/lore.md](docs/lore.md): no humans at the base, « le Cœur » for the Hearth, « base » not « colonie ». The game design is in `~/.claude/plans/nous-allons-creer-un-mighty-perlis.md` (French): sections 3–6 cover the rules and numbers, section 10 the milestones. Status and next steps are in [docs/roadmap.md](docs/roadmap.md).
+**Read first:** [docs/map.md](docs/map.md): for each kind of change, the files to edit, the tests to run and the doc section to update. Open only those. Read [ARCHITECTURE.md](ARCHITECTURE.md) §2 (the non-negotiables) once; read the other docs by `grep`-ing the section you need, never whole (`decisions.md`: grep the `| Dnnn |` row). Any player-facing text follows [docs/lore.md](docs/lore.md): no humans at the base, « le Cœur » for the Hearth, « base » not « colonie ». The game design is in `~/.claude/plans/nous-allons-creer-un-mighty-perlis.md` (French): sections 3–6 cover the rules and numbers, section 10 the milestones. Status and next steps are in [docs/roadmap.md](docs/roadmap.md).
 
 ## Commands (run from `filon/`)
 
@@ -15,7 +15,7 @@ A persistent factory / logistics browser game, titled **Ocelle** since 2026-10-1
 | `npm run smoke` | end-to-end in the system Chrome (playwright-core) against a running :5183 server; writes `scripts/*.png` |
 | `node scripts/shots.mjs` | named screenshots for visual review |
 
-A change is **done** when typecheck, `npm test`, the build and the smoke test are green, and you have looked at the relevant screenshots. Run node scripts from `filon/` (or `scripts/`) so `playwright-core` resolves. The in-app browser pane is often a hidden tab, and a hidden tab pauses `requestAnimationFrame`, so test interactions through the headless smoke test, not by clicking in a hidden pane.
+A **commit** is done when typecheck, `npm test`, the build and the smoke test are green and the relevant screenshots have been looked at: the lead checks that once per commit. A session checks only what [docs/map.md](docs/map.md) gives for its kind of change. Run node scripts from `filon/` (or `scripts/`) so `playwright-core` resolves. The in-app browser pane is often a hidden tab, and a hidden tab pauses `requestAnimationFrame`, so test interactions through the headless smoke test, not by clicking in a hidden pane.
 
 ## Hard rules
 
@@ -40,6 +40,16 @@ A change is **done** when typecheck, `npm test`, the build and the smoke test ar
 - DOM UI: build with `el()`, update with change-only `setText`/`setAttr`, rebuild only when a signature changes (refresh runs at 4 Hz).
 - Art is generated in code (Canvas2D in a style close to Moebius ink drawings, then cached in atlases); there are no image files.
 - Docs: relative links, symbols in backticks, no line numbers. **Update the docs in the same change** when you move or add a module, a rule or an extension point.
+
+## Keep the cost down
+
+The owner pays for every token (2026-10-19: « each session is going extremely far even for very tiny changes »).
+
+- Size the work to the change, as the table in [docs/map.md](docs/map.md) says. A number or a text needs a typecheck and the area's tests, and nothing else: no screenshots, no smoke, no bench.
+- Don't explore: the map names the files. Don't re-read what you just wrote. Don't paste long logs; `grep` them.
+- One round of screenshots for a visual change, not a series. Look at one or two, not a contact sheet of fifty.
+- Report in a few lines: what changed, the files, the tests. No essays.
+- The lead runs the full suite, the bench, the build and the smoke once per commit; sessions run only their area's tests.
 
 ## Working with subagents
 

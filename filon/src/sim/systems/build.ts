@@ -94,7 +94,7 @@ function refundOf(sim: Sim, ids: readonly number[], item: number): number {
  * round. Distributors, junctions and masts work (and are drawn) the same in every
  * rotation: re-placing one turned would change nothing.
  */
-function turns(def: number): boolean {
+export function turns(def: number): boolean {
   const b = buildingDef(def);
   if (b.ports.length > 0 || b.w !== b.h) return true;
   if (b.kind === 'belt' || b.kind === 'conduit' || b.kind === 'bridge') return true;

@@ -17,6 +17,7 @@ import type { ImportOrder, PostActivity, Shipment, TradeLine } from './trade';
 import { loadQuests, saveQuests, type QuestSave } from './systems/quests';
 import { loadValue, saveValue, type ValueState } from './systems/value';
 import { loadExpertise, saveExpertise, type ExpertiseSave } from './systems/expertise';
+import { cleanBlueprint, type Blueprint } from './systems/blueprint';
 import type { TerrainSource } from './world/grid';
 import type { Rot } from './types';
 import { forTiles } from './entities';
@@ -179,6 +180,12 @@ export interface SaveData {
    * marks since (tile, milli-items). Absent: nothing taken yet.
    */
   gleaners?: { gleaned: number[]; dusk?: number[] | null; dawn?: number[] | null; marks?: Array<[number, number]> };
+  /**
+   * The blueprints' library (D154, systems/blueprint.ts): each saved blueprint by content ids (its
+   * pieces' buildings, recipes, routing items), so a reordered content table leaves it alone. The
+   * base's notes, not its state: not hashed. Absent: none saved. No save version: optional.
+   */
+  blueprints?: Blueprint[];
 }
 
 export function serialize(sim: Sim): SaveData {
@@ -267,8 +274,16 @@ export function serialize(sim: Sim): SaveData {
       dawn: sim.gleaners.dawn ? Array.from(sim.gleaners.dawn) : null,
       marks: [...sim.gleaners.marks].sort((a, b) => a[0] - b[0]),
     },
+    ...(sim.blueprints.length ? { blueprints: sim.blueprints.map((b) => copyBlueprint(b)) } : {}),
   };
 }
+
+/** A blueprint's own copy (a save never shares arrays with the live library). */
+const copyBlueprint = (b: Blueprint): Blueprint => ({
+  ...b,
+  pieces: b.pieces.map((p) => ({ ...p, ...(p.filters ? { filters: [...p.filters] } : {}) })),
+  wires: b.wires.map(([a, c]) => [a, c] as [number, number]),
+});
 
 export function deserialize(saved: SaveData, source: TerrainSource): Sim {
   if (saved.v !== SAVE_VERSION) throw new Error(`save version ${saved.v} needs migration to ${SAVE_VERSION}`);
@@ -407,6 +422,11 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
     sim.gleaners.dusk = d.gleaners.dusk ? Float64Array.from(d.gleaners.dusk.slice(0, N_ITEMS)) : null;
     sim.gleaners.dawn = d.gleaners.dawn ? Float64Array.from(d.gleaners.dawn.slice(0, N_ITEMS)) : null;
     for (const [tile, mu] of d.gleaners.marks ?? []) sim.gleaners.marks.set(tile, mu);
+  }
+  // The blueprints' library (D154): what reads whole is kept; a malformed one is dropped.
+  for (const b of Array.isArray(d.blueprints) ? d.blueprints : []) {
+    const bp = cleanBlueprint(b);
+    if (bp && bp.id > 0 && !sim.blueprints.some((o) => o.id === bp.id)) sim.blueprints.push(bp);
   }
   sim.rebuildDerived();
   sim.ensureCompiled();

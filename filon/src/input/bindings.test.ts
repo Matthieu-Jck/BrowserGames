@@ -42,12 +42,23 @@ describe('key bindings', () => {
     expect(resolveKey(k('KeyO', 'o'))).toEqual({ action: 'viewProduction' });
   });
 
-  it('with Ctrl / Cmd only undo exists (by letter: AZERTY Ctrl+Z is not a pan), and Z alone is not undo', () => {
+  it('with Ctrl / Cmd only the chords exist: undo, copy, paste (by letter: AZERTY Ctrl+Z is not a pan); Z, C, V alone are not them', () => {
     expect(resolveKey(k('KeyW', 'z', { ctrlKey: true }))).toEqual({ action: 'undo' });
     expect(resolveKey(k('KeyZ', 'z', { metaKey: true }))).toEqual({ action: 'undo' });
-    expect(resolveKey(k('KeyC', 'c', { ctrlKey: true }))).toBeNull(); // copy, not the brush
+    expect(resolveKey(k('KeyC', 'c', { ctrlKey: true }))).toEqual({ action: 'copy' }); // the copy tool (D154), not the brush
+    expect(resolveKey(k('KeyV', 'v', { metaKey: true }))).toEqual({ action: 'paste' });
     expect(resolveKey(k('KeyX', 'x', { metaKey: true }))).toBeNull(); // cut, not demolish
     expect(resolveKey(k('Digit1', '1', { ctrlKey: true }))).toBeNull();
+    expect(resolveKey(k('KeyC', 'c', { ctrlKey: true, altKey: true }))).toBeNull();
     expect(resolveKey(k('KeyZ', 'z'))).not.toEqual({ action: 'undo' });
+    expect(resolveKey(k('KeyC', 'c'))).toEqual({ action: 'mark' }); // the brush
+    expect(resolveKey(k('KeyV', 'v'))).toEqual({ action: 'viewWind' });
+  });
+
+  it('the blueprints\' keys (D154): K the library, N the upgrade tool, on both layouts', () => {
+    expect(resolveKey(k('KeyK', 'k'))).toEqual({ action: 'library' });
+    expect(resolveKey(k('KeyN', 'n'))).toEqual({ action: 'upgrade' });
+    // Each letter bound once: no other action answers to K or N.
+    expect(resolveKey(k('KeyK', 'k', { shiftKey: true }))).toEqual({ action: 'library' });
   });
 });

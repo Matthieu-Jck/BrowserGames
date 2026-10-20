@@ -4,7 +4,7 @@
 
 export type Action =
   | 'panUp' | 'panDown' | 'panLeft' | 'panRight' | 'fast'
-  | 'rotate' | 'pipette' | 'deconstruct' | 'cancel' | 'undo'
+  | 'rotate' | 'pipette' | 'deconstruct' | 'cancel' | 'undo' | 'copy' | 'paste' | 'library' | 'upgrade'
   | 'zoomIn' | 'zoomOut'
   | 'viewPower' | 'viewLogistics' | 'viewProduction' | 'viewWind'
   | 'scrResearch' | 'scrMarket' | 'scrStats' | 'scrExpertise' | 'home' | 'perf' | 'build' | 'mark'
@@ -22,7 +22,14 @@ export const BINDINGS: Record<Action, Binding> = {
   pipette: { codes: ['KeyQ'] },
   deconstruct: { keys: ['x'] },
   cancel: { codes: ['Escape'] },
-  undo: { keys: ['z'] }, // with Ctrl/Cmd only (checked by the caller)
+  // With Ctrl/Cmd only, by the layout's letter (`CHORDS`): undo, copy, paste (D154).
+  undo: {},
+  copy: {},
+  paste: {},
+  // Blueprints (D154): the library (K, « gabarits » being G's statistics' letter) and the upgrade
+  // tool (N, « niveau » / next tier); KeyK and KeyN on both layouts, free of every other binding.
+  library: { keys: ['k'] },
+  upgrade: { keys: ['n'] },
   // The two keys right of the digit row, by position: - = on QWERTY, ) = on AZERTY (whose -
   // sits on the 6, a build slot); numpad + − everywhere.
   zoomIn: { codes: ['Equal', 'NumpadAdd'], keys: ['+'] },
@@ -71,23 +78,31 @@ export function slotOf(code: string): number | null {
   return d === 0 ? 9 : d - 1;
 }
 
+/**
+ * The Ctrl / Cmd chords, by the layout's letter (AZERTY's Z sits where QWERTY has W): undo the last
+ * placement, paste or demolition; the copy tool (or the building inspected, copied); the last copy
+ * in hand (D154). Ctrl+X, Ctrl+R… stay the browser's.
+ */
+export const CHORDS: Readonly<Record<string, Action>> = { z: 'undo', c: 'copy', v: 'paste' };
+
 /** Is this action a held (continuous) one? */
 export const HELD: ReadonlySet<Action> = new Set(['panUp', 'panDown', 'panLeft', 'panRight', 'fast']);
 
 export type KeyEventLike = Pick<KeyboardEvent, 'code' | 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey'>;
 
 /**
- * What a key press means, all precedence in one place: with Ctrl / Cmd only undo exists (by
- * the layout's letter: AZERTY's Z sits where QWERTY has W); the digit row picks build slots
- * by position (Shift: a category); then physical codes, then layout letters.
+ * What a key press means, all precedence in one place: with Ctrl / Cmd only the chords exist
+ * (`CHORDS`, by the layout's letter); the digit row picks build slots by position (Shift: a
+ * category); then physical codes, then layout letters.
  */
 export function resolveKey(e: KeyEventLike): { slot: number; shift: boolean } | { action: Action } | null {
   if (e.ctrlKey || e.metaKey) {
     const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-    return BINDINGS.undo.keys?.includes(key) ? { action: 'undo' } : null;
+    const a = e.altKey ? undefined : CHORDS[key];
+    return a ? { action: a } : null;
   }
   const slot = slotOf(e.code);
   if (slot !== null && !e.altKey) return { slot, shift: e.shiftKey };
-  const a = actionOf(e);
-  return a && a !== 'undo' ? { action: a } : null;
+  const a = actionOf(e); // the chords' actions have no plain key
+  return a ? { action: a } : null;
 }

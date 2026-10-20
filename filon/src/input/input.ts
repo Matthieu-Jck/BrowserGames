@@ -199,6 +199,7 @@ export class Input {
     const r = resolveKey(e);
     if (!r) return;
     if ('slot' in r) { this.hooks.onSlot(r.slot, r.shift); e.preventDefault(); return; }
+    if (e.ctrlKey || e.metaKey) e.preventDefault(); // a chord of ours (undo, copy, paste: D154), not the page's
     const a = r.action;
     if (HELD.has(a)) { this.held.add(a); return; }
     if (e.repeat) return;
