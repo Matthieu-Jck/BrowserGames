@@ -18,9 +18,8 @@
 //      buys under the same holds at its fixed price, off the market, and is gone once bought in full;
 //   2a. the delivery orders close (filled: paid and rewarded; missed: what they got paid at the bid
 //      less the fee), offers past their time are withdrawn, a new order is posted when due (D153);
-//   2b. auto-sell (cm_autosell, D127): what the Core holds beyond each switched-on item's
-//      threshold is sold at the bid, less the Core's fee (D126) — the threshold below the Core's cap
-//      (D163), so its lines don't back up on it;
+//   2b. auto-sell (cm_autosell, D127, D164): what each tick set aside of a switched-on item beyond
+//      the Core's cap is sold at the bid less half (`BAL.autoSell.fee`);
 //   3. the cargo no order wants, none on its way and none left in its container leaves it (the
 //      graph is then recompiled: the entrance takes the item again);
 //   4. the market settles that epoch with the mu sold / bought → the next epoch's prices;
@@ -29,19 +28,16 @@
 import { book } from '../purse';
 import { BAL } from '@/content/balance';
 import { BUILDING_KIND, ITEM_IDS, N_ITEMS, itemDef, itemIdx } from '@/content/registry';
-import { PLAN_IDS, planDef } from '@/content/research';
 import { afterFee, valueCents } from '@/market/pricing';
 import { LocalMarketService } from '@/market/service';
 import { EPOCH } from '../constants';
 import { ReservoirNode } from '../flow/nodes';
-import { effectiveCost } from '../research/runtime';
 import {
   deliveryTicks, LEDGER_MAX, orderSlots, orderTrades, postCap, throughputMu, tradeLevel,
   type ImportOrder, type SpotSide, type TradeLine, type TradeRefusal,
 } from '../trade';
 import type { Ent } from '../types';
 import type { Sim } from '../state';
-import { planCost } from './research';
 import { deliveryEpoch, fillAtPost } from './orders';
 
 /** Can this item go through the Crier at all (a market depth, not a fluid)? */
@@ -247,81 +243,88 @@ export function setFloorPrice(sim: Sim, item: string, cents: number | null): boo
   return true;
 }
 
-// ── auto-sell (cm_autosell, D127) ─────────────────────────────────────────
-// Owner, 2026-10-18: « il faudrait qu'une amélioration de l'arbre permette de faire de la vente
-// automatique des items qui arrivent en surplus dans le cœur (+10 000) ». At each boundary what the
-// Core holds of a switched-on item beyond its threshold is sold (`autoSales`). The threshold stays
-// under the Core's cap (`BAL.autoSell.maxShare`, D163), so a minute's arrivals fit below the cap and
-// its lines don't back up; the cap itself is the Core's usual one (until D163 it was lifted, and an
-// item nobody bought — a bid of nothing — piled up past 10 000 without end: owner, 2026-10-20, « the
-// core somehow has more than 10k of an item stored. And the auto-sell doesn't work I think »). An
-// item with no buyer now fills to the cap and backs its line up, seen, as any full item does.
-// Offline-exact by construction: the boundary's sale is this same call, and the levels are ordinary.
-
+// ── auto-sell (cm_autosell, D127, D164) ───────────────────────────────────
+// Owner, 2026-10-21: « the core can only store 10k of each item. If an item arrives and would be
+// 10'001, it's sold instead with a tax of 50% ». The Core takes a switched-on item without its cap, so
+// the lines bringing it never back up (`autoSellCaps`). At the end of each tick, whatever stands
+// beyond the cap is set aside (`autoOverflow`), and each boundary sells what was set aside
+// (`autoSales`). The Core's stock never shows more than its cap. Before D164 a threshold the player
+// set was sold down to at each minute's end; the old values stay in saves and logs, unused.
+// Offline: the catch-up never sees the item full (its cap lifted: NORMAL), and calls `autoOverflow`
+// after each step as online does after each tick. When the only flows are arrivals, the step's
+// overflow is the ticks' summed. A Core that both receives and hands out the item at its cap dips
+// below it between online ticks, so online sets aside a little more there: the two agree within
+// a few items.
 
 /** Auto-sell researched: its settings act only then (they stay saved otherwise). */
 export const autoSellOn = (sim: Sim): boolean => sim.mods.flags.has('autoSell');
 
-/** The highest threshold an item may take (whole items): a share of the Core's cap, room left under it for a minute's arrivals (D163). */
-export const autoSellMax = (sim: Sim): number => Math.floor((sim.hearthCap() * BAL.autoSell.maxShare) / 1_000_000);
+/**
+ * The Core's room for an item it auto-sells (mu): none to speak of. A sentinel, not a number to tune:
+ * far above any stock, and exact in float arithmetic with any level added to it.
+ */
+export const UNCAPPED = 2 ** 50;
+
+/** The Core's caps for the graph compiler (mu, per item; null: its one cap for all): an auto-sold item's lifted. */
+export function autoSellCaps(sim: Sim): Float64Array | null {
+  if (!autoSellOn(sim) || !sim.trade.autoSell.size) return null;
+  const caps = new Float64Array(N_ITEMS).fill(sim.hearthCap());
+  for (const it of sim.trade.autoSell.keys()) caps[it] = UNCAPPED;
+  return caps;
+}
 
 /**
- * Switch auto-sell on for a tradable item at a threshold (whole items, `BAL.autoSell.min` up to the
- * Core's cap), move its threshold, or switch it off (null). Logged; the graph is recompiled (the
- * Core's cap for the item goes or comes back). False when refused or when nothing changes.
+ * Switch auto-sell on or off for a tradable item. Logged (`at`: 0 when on, null when off; older logs
+ * hold a threshold, read as on). The graph is recompiled, since the Core's cap for the item goes or
+ * comes back. False when refused or when nothing changes.
  */
-export function setAutoSell(sim: Sim, item: string, at: number | null): boolean {
+export function setAutoSell(sim: Sim, item: string, on: boolean): boolean {
   if (!autoSellOn(sim)) return false;
   const it = ITEM_IDS.indexOf(item as never);
   if (!tradable(it)) return false;
   const t = sim.trade;
-  if (at === null) { if (!t.autoSell.delete(it)) return false; }
-  else {
-    if (!Number.isInteger(at) || at < BAL.autoSell.min || at > autoSellMax(sim) || t.autoSell.get(it) === at) return false;
-    t.autoSell.set(it, at);
-  }
-  sim.log.push({ tick: sim.tick, cmd: { k: 'autoSell', item, at } });
+  if (on === t.autoSell.has(it)) return false;
+  if (on) t.autoSell.set(it, 0);
+  else t.autoSell.delete(it);
+  sim.log.push({ tick: sim.tick, cmd: { k: 'autoSell', item, at: on ? 0 : null } });
   sim.dirty = true;
   return true;
 }
 
-
 /**
- * What the Core keeps of an auto-sold item at a boundary (mu); the rest is sold. Its threshold, never
- * above the Core's cap (beyond it the Core would have refused the item: selling it is the point);
- * raised to what an open plan or a queued research costs of it — a sale never makes the base short
- * of an item (the Stock's shortages, ui/stock-facts.ts); never below CrierBelt's restart reserve (D36).
+ * The end of a tick (and of a catch-up step): what the Core holds of each auto-sold item beyond its
+ * cap is set aside for the boundary's sale. It no longer counts as stock, so the Core holds its cap.
  */
-export function autoSellKeep(sim: Sim, it: number): number {
-  let need = (sim.trade.autoSell.get(it) ?? autoSellMax(sim)) * 1000;
-  for (const id of PLAN_IDS) {
-    if (sim.done.has(id) || !planDef(id)!.prereq.every((q) => sim.done.has(q))) continue;
-    for (const c of planCost(id)) if (c.item === it && c.mu > need) need = c.mu;
+export function autoOverflow(sim: Sim): void {
+  const t = sim.trade;
+  if (!t.autoSell.size || !autoSellOn(sim)) return;
+  const cap = sim.hearthCap();
+  for (const it of t.autoSell.keys()) {
+    const over = sim.stock[it]! - cap;
+    if (over <= 0) continue;
+    sim.stock[it] = cap;
+    t.autoPend.set(it, (t.autoPend.get(it) ?? 0) + over);
   }
-  for (const id of sim.labQueue.values()) for (const c of effectiveCost(id, sim.mods).cost) if (c.item === it && c.mu > need) need = c.mu;
-  // Never above the highest threshold (D163): a save's older threshold at the cap would hold the whole
-  // cap and never sell, now that the Core no longer takes an auto-sold item beyond it.
-  return Math.max(sim.reserveFloor(it), Math.min(autoSellMax(sim) * 1000, need));
 }
 
 /**
- * The boundary's auto-sales (D127), after the posts' own: each switched-on item, in item order, its
- * whole items beyond what the Core keeps, at the epoch's bid less the Core's fee (`spotFee`'s sale:
- * `BAL.coreSellFee`, D126). Booked as a post's sales are — in `t.sold` (the market sees the supply),
- * the lifetime totals, and the ledger as an `autoSell` line from the Core (the purse's breakdown,
- * D102). The posts' floor prices are theirs (cm_floor): the Core's surplus goes at the bid.
+ * The boundary's auto-sales (D127, D164), after the posts' own: each item set aside, in item order,
+ * its whole items at the epoch's bid less `BAL.autoSell.fee` (half); a part of an item waits for
+ * the next minute. Nobody buying it (a bid of nothing), it goes for nothing, seen on its line in the
+ * Stock and in the ledger. Booked as a post's sales are: in `t.sold` (the market sees the supply), in
+ * the lifetime totals, and in the ledger as an `autoSell` line from the Core (the purse's
+ * breakdown, D102). The posts' floor prices are theirs (cm_floor): the Core's surplus goes at the bid.
  */
 function autoSales(sim: Sim, bid: readonly number[]): void {
   const t = sim.trade;
-  if (!t.autoSell.size || !autoSellOn(sim)) return;
-  const f = spotFee(sim, 'sell');
-  for (const it of [...t.autoSell.keys()].sort((a, b) => a - b)) {
-    if ((bid[it] ?? 0) <= 0 || sim.stock[it]! < 1000) continue;
-    const n = Math.floor((sim.stock[it]! - autoSellKeep(sim, it)) / 1000);
-    if (n <= 0) continue;
-    const mu = n * 1000;
-    sim.stock[it] = sim.stock[it]! - mu;
-    const cents = afterFee(valueCents(mu, bid[it]!, 'sell'), 'sell', f);
+  if (!t.autoPend.size) return;
+  for (const it of [...t.autoPend.keys()].sort((a, b) => a - b)) {
+    const pend = t.autoPend.get(it)!;
+    const mu = Math.floor(pend / 1000) * 1000;
+    if (mu <= 0) continue;
+    if (pend - mu > 0) t.autoPend.set(it, pend - mu);
+    else t.autoPend.delete(it);
+    const cents = afterFee(valueCents(mu, Math.max(0, bid[it] ?? 0), 'sell'), 'sell', BAL.autoSell.fee);
     sim.credits += cents;
     t.earned += cents;
     t.sold[it] = t.sold[it]! + mu;

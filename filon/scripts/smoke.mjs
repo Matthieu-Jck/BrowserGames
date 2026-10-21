@@ -1423,7 +1423,7 @@ await step('stock (D96): no stock bar on the HUD; « Stock » opens the Heart\'s
   await FL(() => window.FL.resume());
 });
 
-await step('auto-sell (D127): on the late base the Stock shows a ◉ per item, its auto-sold item marked; a click switches another on, its threshold edited in place; the purse breaks out « Vente automatique »', async () => {
+await step('auto-sell (D127, D164): on the late base the Stock shows a ◉ per item, its auto-sold item marked; a click switches another on, and what comes beyond the Core\'s cap is sold; the purse breaks out « Vente automatique »', async () => {
   const saves = await FL(() => window.FL.debugSaves());
   if (!saves) { console.log('    (no debug page on this build)'); return; }
   await FL(() => window.FL.pause());
@@ -1434,15 +1434,15 @@ await step('auto-sell (D127): on the late base the Stock shows a ◉ per item, i
   await page.waitForFunction(() => !document.querySelector('[data-hud-stock]')?.hidden, undefined, { timeout: 2000 });
   await page.click('[data-hud-stock]');
   await page.waitForTimeout(1300); // a refresh, and a second of the rates' samples
-  // The late base auto-sells its most plentiful item (scenarios.ts): its row is marked, its line and threshold shown.
+  // The late base auto-sells its most plentiful item (scenarios.ts): its row is marked, its line shown.
   const a = await FL(() => {
     const root = document.querySelector('[data-screen="stock"]');
     const on = [...root.querySelectorAll('.stk-row[data-auto]')];
     return { toggles: root.querySelectorAll('[data-stock-auto]:not([hidden])').length, on: on.map((n) => n.getAttribute('data-item')),
-      at: on[0]?.querySelector('[data-stock-at]')?.textContent ?? '', line: on[0]?.querySelector('.stk-sold')?.textContent ?? '',
+      line: on[0]?.querySelector('.stk-sold')?.textContent ?? '',
       engine: [...window.FL.app.sim.trade.autoSell.keys()].length };
   });
-  assert(a.toggles >= 5 && a.on.length === 1 && a.engine === 1 && /seuil/.test(a.at) && /Vendu automatiquement/.test(a.line), `the auto-sold row: ${JSON.stringify(a)}`);
+  assert(a.toggles >= 5 && a.on.length === 1 && a.engine === 1 && /Vendu automatiquement/.test(a.line), `the auto-sold row: ${JSON.stringify(a)}`);
   // Another item switched on: the one the Core takes in fastest (its rate), not yet on.
   const pick = await FL(() => {
     const rows = [...document.querySelectorAll('[data-screen="stock"] .stk-row[data-item]:not([data-auto])')].filter((n) => !n.querySelector('[data-stock-auto]')?.hidden);
@@ -1453,13 +1453,13 @@ await step('auto-sell (D127): on the late base the Stock shows a ◉ per item, i
   assert(pick, 'no item to switch on');
   await page.click(`[data-stock-auto="${pick}"]`);
   await page.waitForFunction((id) => !!document.querySelector(`[data-screen="stock"] .stk-row[data-item="${id}"][data-auto]`), pick, { timeout: 2000 });
-  // Its threshold edited in place: the chip gives way to a field; 100, Enter.
-  await page.click(`[data-stock-at="${pick}"]`);
-  await page.waitForSelector(`[data-stock-at-in="${pick}"]:not([hidden])`, { timeout: 1000 });
-  await page.fill(`[data-stock-at-in="${pick}"]`, '100');
-  await page.keyboard.press('Enter');
-  const set = await FL((id) => ({ at: window.FL.app.sim.trade.autoSell.get(window.FL.itemIndex(id)), log: window.FL.app.sim.log.filter((l) => l.cmd.k === 'autoSell').map((l) => l.cmd) }), pick);
-  assert(set.at === 100 && set.log.length >= 2, `the threshold: ${JSON.stringify(set)}`);
+  // A logged command; the Core filled to its cap of it, so what comes next is sold (D164).
+  const set = await FL((id) => {
+    const sim = window.FL.app.sim, i = window.FL.itemIndex(id), room = Math.floor(sim.hearthCap() / 1000) - Math.floor(sim.stock[i] / 1000);
+    if (room > 0) sim.grant(id, room);
+    return { on: sim.trade.autoSell.has(i), log: sim.log.filter((l) => l.cmd.k === 'autoSell').map((l) => l.cmd) };
+  }, pick);
+  assert(set.on && set.log.length >= 2 && set.log.at(-1).at === 0, `switched on: ${JSON.stringify(set)}`);
   // Ten game minutes one at a time (the HUD samples the purse once a minute): the surplus sold.
   for (let m = 0; m < 10; m++) { await FL(() => window.FL.tick(600)); await page.waitForTimeout(100); }
   if (await FL(() => document.querySelector('[data-screen="stock"]').hasAttribute('hidden'))) await page.click('[data-hud-stock]');

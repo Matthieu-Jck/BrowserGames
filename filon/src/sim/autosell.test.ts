@@ -1,12 +1,11 @@
-// autosell.test.ts — auto-sell (cm_autosell, D127; owner, 2026-10-18: « une amélioration de l'arbre
-// permette de faire de la vente automatique des items qui arrivent en surplus dans le cœur »): the
-// setting as a logged command within its bounds; the sale at a minute's end (the Core's surplus at
-// the bid less 40 %, on the ledger and in the purse's journal); the Core keeping its cap for a
-// switched-on item, its threshold under it so its line never backs up (D163); what it keeps (an open plan's need, a queued research's, the
-// restart reserve); saves; and the catch-up, bit for bit with ticking.
+// autosell.test.ts — auto-sell (cm_autosell, D127; D164, owner, 2026-10-21: « the core can only store
+// 10k of each item. If an item arrives and would be 10'001, it's sold instead with a tax of 50% »):
+// the switch as a logged command (an older log's threshold reads as on); what comes beyond the Core's
+// cap set aside as it arrives and sold at the minute's end at the bid less half, on the ledger and in
+// the purse's journal; the Core never holding more than its cap, its line never backing up; saves
+// (what was set aside included, an older save's threshold read as on); and the catch-up, bit for bit.
 import { describe, it, expect } from 'vitest';
 import { BAL } from '@/content/balance';
-import { PLAN_IDS, planDef } from '@/content/research';
 import { itemIdx } from '@/content/registry';
 import { afterFee, valueCents } from '@/market/pricing';
 import { replay } from './commands';
@@ -15,8 +14,7 @@ import type { ReservoirNode } from './flow/nodes';
 import { catchUp } from './offline/catchup';
 import { deserialize, serialize } from './serialize';
 import type { Sim } from './state';
-import { planCost } from './systems/research';
-import { autoSellMax } from './systems/trade';
+import { UNCAPPED } from './systems/trade';
 import { drillToHearth, steadyPower, testSim, testSource, IRON } from './testkit';
 
 /** Auto-sell learnt outside the commands (a research: a test colony is not replayed from its founding). */
@@ -26,151 +24,116 @@ const toEnd = (sim: Sim): number => EPOCH - (sim.tick % EPOCH);
 /** Give the Core `n` whole items of an item in all (a grant, logged). */
 const fill = (sim: Sim, item: string, n: number): void => sim.grant(item, n - Math.floor(sim.stock[itemIdx(item)]! / 1000));
 const autoLines = (sim: Sim) => sim.trade.ledger.filter((l) => l.kind === 'autoSell');
+/** A base whose drill brings ore to a Core already full of it. */
+const fullOfOre = (auto: boolean): Sim => {
+  const s = learn(testSim());
+  s.skipTutorial();
+  steadyPower(s);
+  drillToHearth(s);
+  fill(s, 'iron_ore', s.hearthCap() / 1000);
+  if (auto) expect(s.setAutoSell('iron_ore', true)).toBe(true);
+  return s;
+};
 
-describe('auto-sell (D127)', () => {
-  it('is set by a logged command within its bounds, only once researched, and replays', () => {
+describe('auto-sell (D127, D164)', () => {
+  it('is switched on and off by a logged command, only once researched, and replays; an older log’s threshold reads as on', () => {
     const a = testSim();
     a.skipTutorial();
-    expect(a.setAutoSell('iron_plate', 1000), 'not researched').toBe(false);
+    expect(a.setAutoSell('iron_plate', true), 'not researched').toBe(false);
     learn(a);
-    const cap = autoSellMax(a); // the highest threshold, 90 % of the Core's cap (D163)
-    expect(a.setAutoSell('iron_plate', cap + 1), 'above the highest threshold').toBe(false);
-    expect(a.setAutoSell('iron_plate', BAL.autoSell.min - 1), 'below the floor').toBe(false);
-    expect(a.setAutoSell('water', 1000), 'a fluid never reaches the Crier').toBe(false);
-    expect(a.setAutoSell('iron_plate', 1.5), 'whole items').toBe(false);
-    expect(a.setAutoSell('iron_plate', 2000)).toBe(true);
-    expect(a.setAutoSell('iron_plate', 2000), 'nothing changes').toBe(false);
-    expect(a.setAutoSell('iron_plate', cap)).toBe(true);
-    expect(a.setAutoSell('glass', 300)).toBe(true);
-    expect(a.setAutoSell('glass', null)).toBe(true);
-    expect(a.setAutoSell('glass', null), 'already off').toBe(false);
-    expect([...a.trade.autoSell]).toEqual([[itemIdx('iron_plate'), cap]]);
+    expect(a.setAutoSell('iron_plate', true)).toBe(true);
+    expect(a.setAutoSell('iron_plate', true), 'nothing changes').toBe(false);
+    expect(a.setAutoSell('water', true), 'a fluid never reaches the Crier').toBe(false);
+    expect(a.setAutoSell('glass', true)).toBe(true);
+    expect(a.setAutoSell('glass', false)).toBe(true);
+    expect(a.setAutoSell('glass', false), 'already off').toBe(false);
+    expect([...a.trade.autoSell.keys()]).toEqual([itemIdx('iron_plate')]);
     expect(a.log.filter((l) => l.cmd.k === 'autoSell').map((l) => l.cmd)).toEqual([
-      { k: 'autoSell', item: 'iron_plate', at: 2000 }, { k: 'autoSell', item: 'iron_plate', at: cap },
-      { k: 'autoSell', item: 'glass', at: 300 }, { k: 'autoSell', item: 'glass', at: null },
+      { k: 'autoSell', item: 'iron_plate', at: 0 }, { k: 'autoSell', item: 'glass', at: 0 }, { k: 'autoSell', item: 'glass', at: null },
     ]);
-    fill(a, 'iron_plate', cap);
-    a.setAutoSell('iron_plate', 1000);
+    fill(a, 'iron_plate', a.hearthCap() / 1000);
     a.run(3 * EPOCH);
     const b = learn(testSim());
     replay(b, a.log, a.tick);
     expect(b.hash()).toBe(a.hash());
     expect(autoLines(b)).toEqual(autoLines(a));
+    // A log from before D164 held a threshold: on.
+    const c = learn(testSim());
+    replay(c, [{ tick: c.tick, cmd: { k: 'autoSell', item: 'iron_ore', at: 2000 } }]);
+    expect(c.trade.autoSell.has(IRON())).toBe(true);
   });
 
-  it('sells what the Core holds beyond the threshold at the minute’s end, at the bid less the Core’s 40 %', () => {
-    const sim = learn(testSim());
-    sim.skipTutorial();
-    const plate = itemIdx('iron_plate');
-    fill(sim, 'iron_plate', 3000);
-    expect(sim.setAutoSell('iron_plate', 1000)).toBe(true);
-    sim.run(toEnd(sim) - 1);
-    const before = sim.stock[plate]!, bid = sim.prices.bid[plate]!, credits = sim.credits, journal = sim.purseLog.autoSell;
-    sim.run(1);
-    const mu = before - 1_000_000;
-    const cents = afterFee(valueCents(mu, bid, 'sell'), 'sell', BAL.coreSellFee);
-    expect(mu).toBe(2_000_000);
-    expect(sim.stock[plate]).toBe(1_000_000);
+  it('sets aside what comes beyond the cap as it arrives, and sells it at the minute’s end at the bid less half', () => {
+    const sim = fullOfOre(true);
+    const cap = sim.hearthCap();
+    sim.run(toEnd(sim));
+    sim.trade.ledger.length = 0;
+    const credits = sim.credits, journal = sim.purseLog.autoSell, sold0 = sim.trade.soldTotal[IRON()]!;
+    // A minute tick by tick: the Core holds its cap, never more; what came beyond waits to be sold.
+    let bid = 0;
+    for (let k = 0; k < EPOCH; k++) {
+      if (k === EPOCH - 1) bid = sim.prices.bid[IRON()]!;
+      sim.run(1);
+      expect(sim.stock[IRON()]!).toBeLessThanOrEqual(cap);
+    }
+    expect(sim.stock[IRON()]).toBe(cap);
+    const [l] = autoLines(sim);
+    expect(l, 'one sale at the minute’s end').toBeDefined();
+    expect(l!.mu % 1000).toBe(0);
+    expect(l!.mu).toBeGreaterThan(0);
+    const cents = afterFee(valueCents(l!.mu, bid, 'sell'), 'sell', BAL.autoSell.fee);
+    expect(l!.cents).toBe(cents);
     expect(sim.credits - credits).toBe(cents);
     expect(sim.purseLog.autoSell - journal).toBe(cents);
-    expect(autoLines(sim)).toEqual([{ epoch: sim.absEpoch(), post: sim.hearthId, item: plate, kind: 'autoSell', mu, cents }]);
-    expect(sim.trade.soldTotal[plate]).toBe(mu);
-    // A post's sale of the same would have kept 80 %: the Core's pays 60 % (D126).
-    expect(cents).toBeLessThan(afterFee(valueCents(mu, bid, 'sell'), 'sell', BAL.tradeFee));
-    // Nothing more while the Core holds no more than the threshold.
-    sim.run(2 * EPOCH);
-    expect(autoLines(sim)).toHaveLength(1);
+    expect(sim.trade.soldTotal[IRON()]! - sold0).toBe(l!.mu);
+    // Half the bid: less than a sale from the Core's stock (its 40 %, D126).
+    expect(cents).toBeLessThan(afterFee(valueCents(l!.mu, bid, 'sell'), 'sell', BAL.coreSellFee));
+    expect(sim.trade.autoPend.get(IRON()) ?? 0).toBeLessThan(1000); // a part of an item waits
   });
 
-  it('sells a switched-on item down to its threshold each minute, so its line runs on; the Core’s cap stays (D163)', () => {
-    const build = (auto: boolean): Sim => {
-      const s = learn(testSim());
-      s.skipTutorial();
-      steadyPower(s);
-      drillToHearth(s);
-      fill(s, 'iron_ore', s.hearthCap() / 1000); // the Core full of ore
-      if (auto) expect(s.setAutoSell('iron_ore', 4000)).toBe(true);
-      s.run(toEnd(s));
-      return s;
-    };
-    const full = build(false), sold = build(true);
+  it('never backs its line up: the full Core refuses the ore, the auto-sold one takes it all (D164)', () => {
+    const full = fullOfOre(false), sold = fullOfOre(true);
     sold.ensureCompiled();
-    const core = sold.graph.hearth as ReservoirNode;
-    expect(core.capOf(IRON())).toBe(sold.hearthCap()); // no lifted cap since D163
-    expect(core.capOf(itemIdx('iron_plate'))).toBe(sold.hearthCap());
+    expect((sold.graph.hearth as ReservoirNode).capOf(IRON())).toBe(UNCAPPED); // taken beyond the cap
+    expect((sold.graph.hearth as ReservoirNode).capOf(itemIdx('iron_plate'))).toBe(sold.hearthCap());
     const p0 = [full.produced[IRON()]!, sold.produced[IRON()]!];
     for (let m = 0; m < 5; m++) {
       full.run(EPOCH);
       sold.run(EPOCH);
-      // At each minute's end the Core holds its threshold again, what came beyond it sold.
-      expect(sold.stock[IRON()]).toBe(4_000_000);
+      expect(sold.stock[IRON()]).toBe(sold.hearthCap());
     }
     expect(full.stock[IRON()]).toBe(full.hearthCap());
-    // The full Core refused the ore: its drill stood blocked once its ribbon filled; the auto-sold one ran on.
     const madeFull = full.produced[IRON()]! - p0[0]!, madeSold = sold.produced[IRON()]! - p0[1]!;
     expect(madeSold).toBeGreaterThan(madeFull + 20_000);
     expect(autoLines(sold).length).toBeGreaterThanOrEqual(5);
     // Switched off, the cap is back.
-    expect(sold.setAutoSell('iron_ore', null)).toBe(true);
+    expect(sold.setAutoSell('iron_ore', false)).toBe(true);
     sold.ensureCompiled();
     expect((sold.graph.hearth as ReservoirNode).capOf(IRON())).toBe(sold.hearthCap());
   });
 
-  it('never holds more than its highest threshold, 90 % of the cap: an older save’s threshold at the cap sells again (D163)', () => {
+  it('keeps its settings and what it set aside through a save; an older save’s threshold reads as on; acts only while researched', () => {
     const sim = learn(testSim());
-    sim.skipTutorial();
-    steadyPower(sim);
-    drillToHearth(sim);
-    const max = autoSellMax(sim);
-    expect(max).toBe(Math.floor((sim.hearthCap() * BAL.autoSell.maxShare) / 1_000_000));
-    expect(sim.setAutoSell('iron_ore', max + 1)).toBe(false); // above the highest threshold: refused
-    // A threshold saved before D163, at the whole cap, as an old save would hold it.
-    sim.trade.autoSell.set(IRON(), sim.hearthCap() / 1000);
-    sim.dirty = true;
-    fill(sim, 'iron_ore', sim.hearthCap() / 1000);
-    sim.run(toEnd(sim));
-    expect(sim.stock[IRON()]).toBe(max * 1000); // sold down to the highest threshold
-    for (let m = 0; m < 3; m++) { sim.run(EPOCH); expect(sim.stock[IRON()]!).toBeLessThanOrEqual(sim.hearthCap()); }
-  });
-
-  it('keeps what an open plan or a queued research costs, never more than its highest threshold, never under the restart reserve', () => {
-    // A new base (no plan taken): the open plans wait on their plates.
-    const sim = learn(testSim(undefined, { plans: false }));
-    const plate = itemIdx('iron_plate');
-    sim.setAutoSell('iron_plate', BAL.autoSell.min);
-    const open = PLAN_IDS.filter((id) => !sim.done.has(id) && planDef(id)!.prereq.every((q) => sim.done.has(q)));
-    const need = Math.max(0, ...open.flatMap((id) => planCost(id).filter((c) => c.item === plate).map((c) => c.mu)));
-    expect(need, 'an open plan costs plates').toBeGreaterThan(0);
-    expect(sim.autoSellKeep(plate)).toBe(Math.max(sim.reserveFloor(plate), Math.min(sim.hearthCap(), Math.max(BAL.autoSell.min * 1000, need))));
-    // A queued research's resources (D122): glass for the Solar Farm.
-    const all = learn(testSim());
-    const glass = itemIdx('glass');
-    all.setAutoSell('glass', BAL.autoSell.min);
-    expect(all.autoSellKeep(glass)).toBe(BAL.autoSell.min * 1000);
-    all.labQueue.set(1, 'en_solarfarm');
-    expect(all.autoSellKeep(glass)).toBe(120_000);
-    // A threshold above what the Core may hold (an older setting) keeps the highest threshold (D163).
-    all.trade.autoSell.set(glass, 1_000_000);
-    expect(all.autoSellKeep(glass)).toBe(autoSellMax(all) * 1000);
-  });
-
-  it('keeps its settings through a save; acts only while researched', () => {
-    const sim = learn(testSim());
-    sim.setAutoSell('iron_plate', 1200);
-    sim.setAutoSell('glass', 300);
+    sim.setAutoSell('iron_plate', true);
+    sim.setAutoSell('glass', true);
+    sim.trade.autoPend.set(itemIdx('glass'), 2500);
     const back = deserialize(JSON.parse(JSON.stringify(serialize(sim))), testSource());
     expect([...back.trade.autoSell]).toEqual([...sim.trade.autoSell]);
+    expect([...back.trade.autoPend]).toEqual([[itemIdx('glass'), 2500]]);
     expect(back.hash()).toBe(sim.hash());
-    // A save from before D127 has no field: nothing switched on.
+    // A save from before D127 has no field: nothing switched on; one from before D164 held a threshold.
     const old = serialize(learn(testSim()));
     expect(old.trade!.autoSell).toBeUndefined();
     expect(deserialize(old, testSource()).trade.autoSell.size).toBe(0);
+    old.trade!.autoSell = [[itemIdx('glass'), 4000]];
+    expect([...deserialize(old, testSource()).trade.autoSell]).toEqual([[itemIdx('glass'), 0]]);
     // Without the research the setting stays but sells nothing and lifts no cap.
+    sim.trade.autoPend.clear();
     sim.done.delete('cm_autosell');
     sim.rebuildDerived();
     sim.ensureCompiled();
     expect((sim.graph.hearth as ReservoirNode).capOf(itemIdx('iron_plate'))).toBe(sim.hearthCap());
-    fill(sim, 'iron_plate', 3000);
+    fill(sim, 'iron_plate', sim.hearthCap() / 1000 + 50);
     sim.run(2 * EPOCH);
     expect(autoLines(sim)).toHaveLength(0);
   });
@@ -181,9 +144,9 @@ describe('auto-sell (D127)', () => {
       s.skipTutorial();
       steadyPower(s);
       drillToHearth(s);
-      fill(s, 'iron_ore', 600);
-      s.setAutoSell('iron_ore', 500);
-      s.setAutoSell('iron_plate', 200); // the Core holds fewer: nothing to sell, its cap lifted all the same
+      fill(s, 'iron_ore', s.hearthCap() / 1000 - 40); // the cap reached a little way in
+      s.setAutoSell('iron_ore', true);
+      s.setAutoSell('iron_plate', true); // none comes: nothing to sell, its cap lifted all the same
       s.run(300);
       return s;
     };
@@ -197,6 +160,7 @@ describe('auto-sell (D127)', () => {
     expect(off.credits).toBe(on.credits);
     expect(off.purseLog.autoSell).toBe(on.purseLog.autoSell);
     expect(Array.from(off.stock)).toEqual(Array.from(on.stock));
+    expect([...off.trade.autoPend]).toEqual([...on.trade.autoPend]);
     expect(off.hash()).toBe(on.hash());
     expect(rep.incidents.filter((i) => i.kind === 'storageFull')).toEqual([]);
   });

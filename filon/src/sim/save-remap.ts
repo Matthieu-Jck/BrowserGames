@@ -77,7 +77,7 @@ export const FIELDS: { readonly [K in keyof Required<SaveData>]: Kind } = {
 export const TRADE_FIELDS: { readonly [K in keyof Required<NonNullable<SaveData['trade']>>]: Kind } = {
   cargo: 'index', orders: 'index', nextOrderId: 'plain', inflight: 'index', sold: 'index', bought: 'index',
   ledger: 'index', activity: 'refs', earned: 'plain', spent: 'plain', soldTotal: 'index', boughtTotal: 'index', floors: 'index',
-  autoSell: 'index', starterTaken: 'plain',
+  autoSell: 'index', autoPend: 'index', starterTaken: 'plain',
 };
 
 const sigOf = (r: CRecipe): string =>
@@ -332,6 +332,7 @@ export function remapSave(d: SaveData, to: ContentTable = contentTable(), retire
     ...(t.floors ? { floors: t.floors.filter(([it]) => item(it) >= 0).map(([it, c]) => [item(it), c] as [number, number]) } : {}),
     // Auto-sell (D127): a gone item's setting goes with it.
     ...(t.autoSell ? { autoSell: t.autoSell.filter(([it]) => item(it) >= 0).map(([it, at]) => [item(it), at] as [number, number]) } : {}),
+    ...(t.autoPend ? { autoPend: t.autoPend.filter(([it]) => item(it) >= 0).map(([it, mu]) => [item(it), mu] as [number, number]) } : {}),
   };
 
   for (let j = 0; j < NT; j++) stock[j]! += refund[j]!;

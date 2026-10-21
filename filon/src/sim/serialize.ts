@@ -167,8 +167,10 @@ export interface SaveData {
     boughtTotal?: number[];
     /** Floor Prices: [item, centi-◉ an item]. */
     floors?: Array<[number, number]>;
-    /** Auto-sell (D127): [item, threshold in whole items] for each item switched on (absent: none). */
+    /** Auto-sell (D127): [item, 0] for each item switched on (absent: none; before D164 the number was a threshold). */
     autoSell?: Array<[number, number]>;
+    /** What the Core set aside beyond its cap this minute, to sell at the boundary (D164): [item, mu] (absent: none). */
+    autoPend?: Array<[number, number]>;
     /** The starter contract was signed (D101; absent: not yet). Its order, while it runs, is in `orders` with its `starter` left. */
     starterTaken?: boolean;
   };
@@ -271,6 +273,7 @@ export function serialize(sim: Sim): SaveData {
       boughtTotal: Array.from(sim.trade.boughtTotal),
       floors: [...sim.trade.floors].sort((a, b) => a[0] - b[0]),
       ...(sim.trade.autoSell.size ? { autoSell: [...sim.trade.autoSell].sort((a, b) => a[0] - b[0]) } : {}),
+      ...(sim.trade.autoPend.size ? { autoPend: [...sim.trade.autoPend].sort((a, b) => a[0] - b[0]) } : {}),
       starterTaken: sim.trade.starterTaken,
     },
     quests: saveQuests(sim.quests),
@@ -407,7 +410,8 @@ export function deserialize(saved: SaveData, source: TerrainSource): Sim {
     if (d.trade.soldTotal) t.soldTotal.set(d.trade.soldTotal.slice(0, N_ITEMS));
     if (d.trade.boughtTotal) t.boughtTotal.set(d.trade.boughtTotal.slice(0, N_ITEMS));
     for (const [it, cents] of d.trade.floors ?? []) t.floors.set(it, cents);
-    for (const [it, at] of d.trade.autoSell ?? []) t.autoSell.set(it, at);
+    for (const [it] of d.trade.autoSell ?? []) t.autoSell.set(it, 0); // an older save's threshold: on (D164)
+    for (const [it, mu] of d.trade.autoPend ?? []) t.autoPend.set(it, mu);
     t.starterTaken = d.trade.starterTaken ?? false;
   }
   // A save from before D131: a post's one store held both its cargo and what its entrance brought

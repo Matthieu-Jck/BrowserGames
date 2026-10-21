@@ -15,13 +15,12 @@
 // top, coral and « plein » at it, where the Heart takes no more and what comes to it waits on the
 // ribbons (owner, 2026-10-17: « il faut expliquer au joueur que le core ne peut contenir que X de
 // chaque item au maximum »). One cap for every item (D122: the data's own cap went with the data).
-// Auto-sell (D127, once researched): a small ◉ at each tradable item's row end switches it on — the
-// Core then sells what it holds beyond a threshold (at most 90 % of its cap, D163) at each minute's
-// end. The threshold stands on the gauge as an ink mark, and as a chip beside it, which a click edits
-// in place (each change a logged command, `Sim.setAutoSell`); under them « Vendu automatiquement :
-// +X ◉/h » (the purse's own figure for the item, ui/purse-facts.ts). An auto-sold item is never « plein ».
+// Auto-sell (D127, D164, once researched): a small ◉ at each tradable item's row end switches it on
+// (a logged command, `Sim.setAutoSell`). What then comes to the Core of the item beyond its cap is
+// sold at half the bid, and the row's line says « Vendu automatiquement : +X ◉/h » (the purse's own
+// figure for the item, ui/purse-facts.ts). An auto-sold item is never « plein »: its lines run on.
 import { BAL } from '@/content/balance';
-import { autoSellMax, autoSellOn, tradable } from '@/sim/systems/trade';
+import { autoSellOn, tradable } from '@/sim/systems/trade';
 import { ITEM_IDS, itemIdx } from '@/content/registry';
 import { nodeName } from '@/content/research';
 import { buildingDef, buildingIdx } from '@/content/registry';
@@ -74,7 +73,7 @@ function needName(s: Shortage): string {
 interface Row {
   node: HTMLElement; val: HTMLElement; rate: HTMLElement; need: HTMLElement; fill: HTMLElement;
   /** Auto-sell (D127): its toggle, the threshold's mark on the gauge, the line under it (what it sold, the threshold, its edit). */
-  auto: HTMLButtonElement; mark: HTMLElement; line: HTMLElement; sold: HTMLElement; at: HTMLButtonElement; edit: HTMLInputElement;
+  auto: HTMLButtonElement; line: HTMLElement; sold: HTMLElement;
 }
 
 export class StockPanel {
@@ -112,58 +111,19 @@ export class StockPanel {
       const val = el('b.stk-val'), rate = el('span.stk-rate'), need = el('span.stk-need'), fill = el('i');
       const id = ITEM_IDS[item]!;
       const auto = el<'button'>('button.stk-auto', { type: 'button', 'data-stock-auto': id, 'aria-pressed': 'false', hidden: true, onclick: () => this.toggleAuto(item) }, '◉');
-      const mark = el('i.stk-mark', { 'aria-hidden': 'true' });
       const sold = el('span.stk-sold');
-      const at = el<'button'>('button.stk-at', { type: 'button', 'data-stock-at': id, onclick: () => this.editAt(item) });
-      const edit = el<'input'>('input.stk-at-in', {
-        type: 'number', step: '100', inputmode: 'numeric', hidden: true, 'data-stock-at-in': id,
-        onkeydown: (e: KeyboardEvent) => { if (e.key === 'Enter') this.commitAt(item); else if (e.key === 'Escape') { e.stopPropagation(); this.closeAt(item); } },
-        onblur: () => this.commitAt(item),
-      });
       const line = el('div.stk-autoline', { hidden: true }, [sold]);
-      const gauge = el('span.stk-gauge', {}, [el('span.stk-fill', {}, [fill, mark]), at, edit]);
+      const gauge = el('span.stk-gauge', {}, [el('span.stk-fill', {}, [fill])]);
       const node = el('div.stk-row', { 'data-item': id }, [itemIcon(this.atlas, item, 22), el('span.stk-name'), need, val, rate, auto, gauge, line]);
-      r = { node, val, rate, need, fill, auto, mark, line, sold, at, edit };
+      r = { node, val, rate, need, fill, auto, line, sold };
       this.rows.set(item, r);
     }
     return r;
   }
 
-  /** Auto-sell switched on (at its default threshold, the Core's cap at most) or off: a logged command. */
+  /** Auto-sell switched on or off: a logged command. */
   private toggleAuto(item: number): void {
-    const sim = this.sim;
-    if (!sim) return;
-    const id = ITEM_IDS[item]!;
-    sim.setAutoSell(id, sim.trade.autoSell.has(item) ? null : Math.min(BAL.autoSell.at, autoSellMax(sim)));
-  }
-
-  /** The threshold edited in place: its chip gives way to a number field. */
-  private editAt(item: number): void {
-    const sim = this.sim, r = this.rows.get(item);
-    if (!sim || !r) return;
-    r.edit.min = String(BAL.autoSell.min);
-    r.edit.max = String(autoSellMax(sim));
-    r.edit.value = String(sim.trade.autoSell.get(item) ?? BAL.autoSell.at);
-    setAttr(r.at, 'hidden', '');
-    setAttr(r.edit, 'hidden', null);
-    r.edit.focus();
-    r.edit.select();
-  }
-
-  /** The field read (clamped to what the Core may hold) and set; the chip back. */
-  private commitAt(item: number): void {
-    const sim = this.sim, r = this.rows.get(item);
-    if (!sim || !r || r.edit.hidden) return;
-    const v = Math.round(Number(r.edit.value));
-    if (Number.isFinite(v) && sim.trade.autoSell.has(item)) sim.setAutoSell(ITEM_IDS[item]!, Math.max(BAL.autoSell.min, Math.min(autoSellMax(sim), v)));
-    this.closeAt(item);
-  }
-
-  private closeAt(item: number): void {
-    const r = this.rows.get(item);
-    if (!r) return;
-    setAttr(r.edit, 'hidden', '');
-    setAttr(r.at, 'hidden', this.sim?.trade.autoSell.has(item) ? null : '');
+    this.sim?.setAutoSell(ITEM_IDS[item]!, !this.sim.trade.autoSell.has(item));
   }
 
   /**
@@ -211,33 +171,26 @@ export class StockPanel {
       setAttr(r.node, 'title', d !== null ? t('hud.stock.tipRate', { item: itemName(i), n, rate: t('hud.perMin', { v: dv || '0' }) }) : t('hud.stock.tip', { item: itemName(i), n }));
       const lack = lacks.get(i);
       setAttr(r.node, 'data-lack', lack ? (lack.out ? 'out' : 'short') : null);
-      // Auto-sell (D127): the toggle once researched (a tradable item); on, the threshold's mark and its line.
-      const at = autoOn ? sim.trade.autoSell.get(i) : undefined;
+      // Auto-sell (D127, D164): the toggle once researched (a tradable item); on, its line.
+      const on = autoOn && sim.trade.autoSell.has(i);
       setAttr(r.auto, 'hidden', autoOn && tradable(i) ? null : '');
-      setAttr(r.auto, 'aria-pressed', at !== undefined ? 'true' : 'false');
-      setAttr(r.auto, 'title', t(at !== undefined ? 'stock.auto.off' : 'stock.auto.on'));
-      setAttr(r.node, 'data-auto', at !== undefined ? '' : null);
-      setAttr(r.line, 'hidden', at !== undefined ? null : '');
-      if (at === undefined) setAttr(r.at, 'hidden', '');
-      else if (r.edit.hidden) setAttr(r.at, 'hidden', null);
-      if (at !== undefined) {
-        r.mark.style.left = `${Math.min(100, (at * 100000) / Math.max(1, capI))}%`;
+      setAttr(r.auto, 'aria-pressed', on ? 'true' : 'false');
+      setAttr(r.auto, 'title', t(on ? 'stock.auto.off' : 'stock.auto.on'));
+      setAttr(r.node, 'data-auto', on ? '' : null);
+      setAttr(r.line, 'hidden', on ? null : '');
+      if (on) {
         const v = sold(i);
-        // Nobody buys it (a bid of nothing): it isn't sold, and the Core keeps it until full (D163).
+        // Nobody buys it (a bid of nothing): what comes beyond the cap goes for nothing (D164).
         const none = (sim.prices.bid[i] ?? 0) <= 0;
-        setText(r.sold, none ? t('stock.auto.noBuyer') : v ? t('stock.auto.sold', { v: perHour(v) }) : t('stock.auto.wait'));
+        setText(r.sold, none ? t('stock.auto.noBuyer') : v ? t('stock.auto.sold', { v: perHour(v) }) : t('stock.auto.wait', { n: compact(Math.floor(capI / 1000)) }));
         setAttr(r.line, 'data-none', none ? '' : null);
-        setText(r.at, t('stock.auto.at', { n: compact(at) }));
-        const keep = Math.floor(sim.autoSellKeep(i) / 1000);
-        setAttr(r.at, 'title', `${t('stock.auto.atTip', { n: num(at), min: num(BAL.autoSell.min), max: num(autoSellMax(sim)) })}${keep > at ? ` ${t('stock.auto.keep', { n: num(keep) })}` : ''}`);
-        setAttr(r.edit, 'aria-label', t('stock.auto.edit'));
-      } else if (!r.edit.hidden) this.closeAt(i);
-      // Its share of what the Heart can hold of it: near the top, full (the Heart takes no more of it;
-      // an auto-sold item too since D163, when nobody buys it).
+      }
+      // Its share of what the Heart can hold of it: near the top, full (the Heart takes no more of it).
+      // An auto-sold item fills its gauge but is never full: what comes beyond is sold (D164).
       const share = Math.min(1000, Math.floor((sim.stock[i]! * 1000) / Math.max(1, capI)));
-      const full = share >= 1000;
+      const full = share >= 1000 && !on;
       r.fill.style.width = `${share / 10}%`;
-      setAttr(r.node, 'data-fill', full ? 'full' : share >= 900 && at === undefined ? 'near' : null);
+      setAttr(r.node, 'data-fill', full ? 'full' : share >= 900 && !on ? 'near' : null);
       setText(r.need, lack ? `−${num(Math.ceil(lack.missing / 1000))}` : full ? t('stock.full') : '');
       setAttr(r.need, 'title', lack ? t(lack.out ? 'stock.out' : 'stock.short', { n: num(Math.ceil(lack.missing / 1000)), need: needName(lack) }) : full ? t('stock.fullTip', { n: num(Math.floor(capI / 1000)) }) : null);
     }

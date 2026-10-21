@@ -75,17 +75,7 @@
 .stk-auto[hidden] { display: none; }
 .stk-gauge { grid-column: 2 / -1; display: flex; align-items: center; gap: 6px; min-width: 0; }
 .stk-gauge > .stk-fill { flex: 1 1 auto; position: relative; }
-.stk-row[data-auto] .stk-fill { overflow: visible; }
-.stk-fill > .stk-mark { display: none; position: absolute; top: -4px; bottom: -4px; width: 2px; height: auto; margin-left: -1px; border-radius: 1px; background: var(--c-ink); }
-.stk-row[data-auto] .stk-fill > .stk-mark { display: block; }
 .stk-autoline { grid-column: 2 / -1; min-width: 0; font-size: 11.5px; font-weight: 600; color: var(--c-turq-d); }
 .stk-autoline[hidden] { display: none; }
 .stk-sold { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-[data-none] .stk-sold { color: var(--c-coral-d); } /* auto-sold, nobody buys it (D163) */
-.stk-at {
-  flex: none; padding: 0 7px; border-radius: 999px; cursor: pointer; font: 600 11px/1.45 var(--f-body);
-  color: var(--c-ink); background: transparent; border: 1.5px dashed var(--c-ink-soft);
-}
-.stk-at:hover { border-style: solid; border-color: var(--c-ink); }
-.stk-at[hidden], .stk-at-in[hidden] { display: none; }
-.stk-at-in { flex: none; width: 6.5em; padding: 1px 4px; font: 600 12px var(--f-body); border: 1.5px solid var(--c-ink); border-radius: 5px; background: var(--c-paper); color: var(--c-ink); }
+[data-none] .stk-sold { color: var(--c-coral-d); } /* auto-sold, nobody buys it: goes for nothing (D164) */

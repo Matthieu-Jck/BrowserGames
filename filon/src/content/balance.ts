@@ -194,12 +194,11 @@ export const BAL = {
   // to the post by ribbon (D126; owner, 2026-10-18: « le tradepost a une taxe de 20 %, mais la vente directe
   // d'objets depuis le cœur 40 %, pour encourager l'acheminement vers le tradepost »).
   coreSellFee: 400,
-  // Auto-sell (cm_autosell, D127; owner, 2026-10-18: « une amélioration de l'arbre permette de faire de
-  // la vente automatique des items qui arrivent en surplus dans le cœur (+10 000) »): what the Core
-  // holds of a switched-on item beyond its threshold is sold at each minute's end, at the bid less
-  // `coreSellFee`. `at`: the threshold an item starts with (whole items, at most the Core's cap);
-  // `min`: the lowest a player may set (the Core keeps a working stock).
-  autoSell: { at: 10_000, min: 100, maxShare: 900 }, // maxShare ‰ of the Core's cap: the highest threshold (D163)
+  // Auto-sell (cm_autosell, D127; D164, owner, 2026-10-21: « the core can only store 10k of each item.
+  // If an item arrives and would be 10'001, it's sold instead with a tax of 50% »): what comes to the
+  // Core of a switched-on item beyond its cap is set aside as it arrives and sold at the minute's end,
+  // at the bid less `fee` (‰).
+  autoSell: { fee: 500 },
   tradeThroughput: [120, 240, 480], // items/min
   liftDelayMin: [3, 2, 1], // minutes from a purchase to the lift-off, by trade-post level (D113: was 10, 6, 3)
   tradeOrders: 2,           // standing import orders (Standing Orders: +4)

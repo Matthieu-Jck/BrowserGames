@@ -87,7 +87,7 @@ import { filterFeed, sortWaste } from './scenario-waste';
 import { basicsWorks } from './scenario-basics';
 import { workOf, looksAtWork, type Work } from './systems/work';
 import { flows, objectiveProgress } from './systems/quests';
-import { autoSellMax, tradables } from './systems/trade';
+import { tradables } from './systems/trade';
 
 /** The longest the build waits for the Fabrique's first purchases (their quarter hour and the post's lift). */
 const FABRIQUE_WARM_MAX = 26 * EPOCH;
@@ -1235,20 +1235,13 @@ function late(b: Builder): void {
 }
 
 /**
- * Auto-sell (D127) on the late base's most plentiful item, at this share of what the Core holds of it
- * (‰, in hundreds): it sells at once and then what comes beyond — the Stock's mark mid-way along what
- * it holds, its line and the purse's « Vente automatique » there from the first minutes.
+ * Auto-sell (D127, D164) on the late base's most plentiful item: what comes to the Core of it beyond
+ * its cap is sold at half the bid. Its row in the Stock is marked from the start (a command).
  */
-const LATE_AUTOSELL_SHARE = 500;
-
-/** The Core's most plentiful tradable item sold beyond half of what it holds (a command). */
 function autoSell(b: Builder): void {
   const sim = b.sim;
   const top = [...tradables()].sort((x, y) => sim.stock[y]! - sim.stock[x]! || x - y)[0];
-  if (top === undefined) { b.skip('autosell'); return; }
-  const n = Math.floor((sim.stock[top]! * LATE_AUTOSELL_SHARE) / 1000 / 1000 / 100) * 100;
-  const at = Math.max(BAL.autoSell.min, Math.min(autoSellMax(sim), n));
-  if (!sim.setAutoSell(ITEM_IDS[top]!, at)) b.skip('autosell');
+  if (top === undefined || !sim.setAutoSell(ITEM_IDS[top]!, true)) b.skip('autosell');
 }
 
 /**

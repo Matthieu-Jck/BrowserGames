@@ -321,7 +321,7 @@ export class Sim {
     const old = this.graph ?? null;
     this.graph = compileGraph({
       ents: this.ents, grid: this.grid, mods: this.mods, now: this.tick, worldSeed: this.worldSeed,
-      hearthStock: this.stock, hearthCap: this.hearthCap(), hearthCaps: null, hearthLevel: this.hearthLevel, stores: this.stores, selling: this.selling, old,
+      hearthStock: this.stock, hearthCap: this.hearthCap(), hearthCaps: trade.autoSellCaps(this), hearthLevel: this.hearthLevel, stores: this.stores, selling: this.selling, old,
       refund: (item, mu) => this.refund(item, mu),
       busyLabs: research.busyLabs(this),
       tradeAccepts: trade.exportAccepts(this),
@@ -513,10 +513,8 @@ export class Sim {
   priceForecast(minutes: number): ReturnType<typeof trade.priceForecast> { return trade.priceForecast(this, minutes); }
   /** Floor Prices: the bid (centi-◉ an item) under which the posts hold an item back (null: none). */
   setFloorPrice(item: string, cents: number | null): boolean { return trade.setFloorPrice(this, item, cents); }
-  /** Auto-sell (cm_autosell, D127): sell what the Core holds of `item` beyond `at` whole items each minute (null: off). Logged; false when refused. */
-  setAutoSell(item: string, at: number | null): boolean { return trade.setAutoSell(this, item, at); }
-  /** What the Core keeps of an auto-sold item at the minute's end (mu): its threshold, raised to an open plan's or a queued research's need, never below the reserve. */
-  autoSellKeep(item: number): number { return trade.autoSellKeep(this, item); }
+  /** Auto-sell (cm_autosell, D127, D164): what the Core receives of `item` beyond its cap is sold at half the bid. Logged; false when refused or unchanged. */
+  setAutoSell(item: string, on: boolean): boolean { return trade.setAutoSell(this, item, on); }
   cancelImport(id: number): boolean { return trade.cancelImport(this, id); }
   /** The starter contract (D101): CrierBelt's one-time copper ore at a fixed price, off the market, on `post`. The order's id or a refusal (`no_post`, `taken`, `slots`). */
   takeStarter(post: number): number | TradeRefusal { return trade.takeStarter(this, post); }
@@ -593,6 +591,7 @@ export class Sim {
     gleaners.gleanBefore(this);
     runPhases(this.graph, this.graph.nodes, this.ctx, this.graph.accOrder);
     gleaners.gleanAfter(this);
+    trade.autoOverflow(this); // what came beyond the Core's cap of an auto-sold item: set aside for sale (D164)
     research.researchTick(this);
     landscape.landscapeTick(this);
     this.tick++;
@@ -681,6 +680,7 @@ export class Sim {
     h.int(t.nextOrderId).int(t.earned).int(t.spent).ints(t.sold).ints(t.bought).int(t.starterTaken ? 1 : 0);
     // Auto-sell's thresholds (D127; nothing when none, so older states hash as before).
     for (const [it, at] of [...t.autoSell].sort((a, b) => a[0] - b[0])) h.int(it).int(at);
+    for (const [it, mu] of [...t.autoPend].sort((a, b) => a[0] - b[0])) h.int(it).int(mu);
     orders.hashDeliveries(this.deliveries, h); // CrierBelt's delivery orders (D153)
     h.str(JSON.stringify(this.market.save()));
     quests.hashQuests(this.quests, h);

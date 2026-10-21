@@ -26,6 +26,7 @@ import { renewableKw, weatherAt, weatherKey } from '../power/network';
 import { modsKey } from '../research/modifiers';
 import { condKey, flowAt, gleanAt, materialize, restoreGroup, rotOf, scanGroup, Scratch, statAt, warmUp, type Cond, type GroupSnap, type Regime, type ResCond } from './steady';
 import { gleanNight, markTaken } from '../systems/gleaners';
+import { autoOverflow } from '../systems/trade';
 import { newReport, type AwayReport } from './report';
 
 // Module copies of the constants the per-segment passes read (D137, as in steady.ts): under
@@ -760,6 +761,9 @@ export function catchUp(sim: Sim, ticks: number, opts: CatchUpOptions = {}): Awa
       const res = g.reservoirs[Math.floor(k / N_ITEMS)]!, i = k % N_ITEMS;
       if (res.stock[i]! < 0) { rep.clampedMu[i] = rep.clampedMu[i]! - res.stock[i]!; res.stock[i] = 0; }
     }
+    // What came to the Core beyond its cap of an auto-sold item: set aside for the boundary's sale, as
+    // online at each tick's end (D164).
+    autoOverflow(sim);
     for (const n of accNets) {
       const m = netModes[n]!;
       if (!m.accRate) continue;

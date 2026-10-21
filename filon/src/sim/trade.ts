@@ -135,11 +135,13 @@ export interface TradeState {
   /** Floor Prices (cm_floor): per item, the bid (centi-◉ an item) under which the posts hold it back. */
   floors: Map<number, number>;
   /**
-   * Auto-sell (cm_autosell, D127): per item switched on, its threshold in whole items — what the Core
-   * holds beyond it is sold at each boundary (systems/trade.ts `autoSales`), and the Core takes the
-   * item under its threshold, which stays below the Core's cap (D163).
+   * Auto-sell (cm_autosell, D127, D164): the items switched on. The Core takes them beyond its cap,
+   * and what goes beyond is set aside (`autoPend`) and sold at the boundary (systems/trade.ts). The
+   * number is unused since D164: older saves and logs kept a threshold there.
    */
   autoSell: Map<number, number>;
+  /** What the Core set aside of each auto-sold item beyond its cap this minute (mu), to be sold at the boundary (D164). */
+  autoPend: Map<number, number>;
   /** Lifetime ocelles earned and spent through the Crier (centi-◉), and mu sold / bought per item. */
   earned: number;
   spent: number;
@@ -153,7 +155,7 @@ export function newTradeState(nItems: number): TradeState {
   return {
     cargo: new Map(), orders: [], nextOrderId: 1, inflight: [],
     sold: new Float64Array(nItems), bought: new Float64Array(nItems),
-    ledger: [], activity: new Map(), floors: new Map(), autoSell: new Map(), earned: 0, spent: 0,
+    ledger: [], activity: new Map(), floors: new Map(), autoSell: new Map(), autoPend: new Map(), earned: 0, spent: 0,
     soldTotal: new Float64Array(nItems), boughtTotal: new Float64Array(nItems),
     starterTaken: false,
   };
